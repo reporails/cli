@@ -18,6 +18,7 @@ sha=$(git rev-parse HEAD)
 
 uv run poe pylint_struct
 uv run poe arch
+uv run poe test_markers
 bash scripts/pre-release-check.sh
 
 if [ "$(git rev-parse HEAD)" != "$sha" ] || [ -n "$(git status --porcelain)" ]; then

@@ -19,7 +19,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     RETRYABLE_ERRORS,
     FunnelError,
 )
-from reporails_cli.core.platform.policy.exclusion import excluded_by_name
+from reporails_cli.core.platform.policy.exclusion import FolderValue, parse_folder_value
 
 logger = logging.getLogger(__name__)
 
@@ -174,14 +174,33 @@ def _dense_dirs_and_route(payload: WireObject, cap: int) -> tuple[tuple[tuple[st
     return _shown_dirs(per_file, total), _route(_files_by_name(per_file), per_file, total - cap)
 
 
+def _name_candidate(part: str) -> FolderValue | None:
+    """The folder name `--exclude-dirs` would read `part` as; `None` when it names no folder, a path, or is refused."""
+    try:
+        value = parse_folder_value(part, ())
+    except ValueError:
+        return None
+    return value if value is not None and not value.anchored else None
+
+
 def _files_by_name(per_file: dict[str, int]) -> dict[str, set[str]]:
-    """Each folder name -> the files `--exclude-dirs <name>` leaves out (the name anywhere in the path)."""
-    folders = frozenset(part for path in per_file for part in path.split("/")[:-1])
-    by_name: dict[str, set[str]] = {}
+    """Each folder name -> the files `--exclude-dirs <name>` leaves out (the name anywhere in the path).
+
+    The names are the folder segments of the paths that `--exclude-dirs` accepts as a single name;
+    each is tried once against each distinct folder it appears in.
+    """
+    in_folder: dict[str, list[str]] = {}
     for path in per_file:
-        for part in set(path.split("/")):
-            if excluded_by_name((part,), folders):
-                by_name.setdefault(part, set()).add(path)
+        in_folder.setdefault(path.rpartition("/")[0], []).append(path)
+    parsed: dict[str, FolderValue | None] = {}
+    by_name: dict[str, set[str]] = {}
+    for folder, paths in in_folder.items():
+        for part in dict.fromkeys(folder.split("/")):
+            if part not in parsed:
+                parsed[part] = _name_candidate(part)
+            candidate = parsed[part]
+            if candidate is not None and candidate.holds(folder):
+                by_name.setdefault(candidate.text, set()).update(paths)
     return by_name
 
 

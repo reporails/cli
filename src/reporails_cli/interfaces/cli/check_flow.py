@@ -237,9 +237,12 @@ def _resolve_scope_at_target(state: CheckState, capability_paths: frozenset[Path
     if agent_arg:
         _validate_agent(agent_arg, console)
     # A single file is checked whatever is excluded, so its pass lists nothing and records nothing.
-    flags, named = (state.inputs.exclude_dirs, state.inputs.exclude_files), _named_paths(state, capability_paths)
+    flags, (named, narrowed) = (
+        (state.inputs.exclude_dirs, state.inputs.exclude_files),
+        _named_paths(state, capability_paths),
+    )
     scan = not state.targets.single_file
-    found = discover_scope(state.targets.target, agent_arg, *flags, scan_files=scan, named=named, narrowed=bool(named))
+    found = discover_scope(state.targets.target, agent_arg, *flags, scan_files=scan, named=named, narrowed=narrowed)
     state.render.excluded, state.scope.exclusions = found.excluded, found.exclusions
     state.scope.detected, state.scope.filtered = found.detected, found.filtered
     state.scope.effective_agent, state.scope.assumed, state.scope.mixed = (

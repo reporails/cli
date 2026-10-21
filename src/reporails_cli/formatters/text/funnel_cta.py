@@ -180,7 +180,7 @@ def format_cta(err: FunnelError, *, command_line: bool = True) -> str:
         if err.status is None:
             text += _atom_cap_route(err, tier, command_line)
         elif tier == "pro":
-            text += " \u2014 let us know your use case"
+            text += " Let us know your use case."
     return _with_url(text, url)
 
 
@@ -207,7 +207,7 @@ def _atom_cap_route(err: FunnelError, tier: str, command_line: bool = True) -> s
     else:
         lines.append("Leaving folders out does not bring the project under the cap.")
     if tier == "pro":
-        lines.append("If you need the whole project checked, let us know your use case")
+        lines.append("If you need the whole project checked, let us know your use case.")
     return "".join(f"\n{line}" for line in lines)
 
 

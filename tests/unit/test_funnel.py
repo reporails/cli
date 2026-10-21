@@ -9,13 +9,13 @@ from typing import ClassVar
 
 import pytest
 
-from reporails_cli.core.discovery.agent_discovery import is_excluded
 from reporails_cli.core.platform.dto.diagnostics import (
     ENTITLED_TIERS,
     UNENTITLED_TIERS,
     FunnelError,
     LintResponse,
 )
+from reporails_cli.core.platform.policy.exclusion import FolderValue
 from reporails_cli.core.platform.policy.preflight import (
     UNIVERSAL_ATOM_CAP,
     WIRE_MAX_FILES,
@@ -763,12 +763,12 @@ def _dense_payload(spec: list[tuple[str, int]]) -> dict[str, object]:
 
 def _atoms_left(payload: dict[str, object], route: tuple[str, ...]) -> int:
     files = payload["files"]
-    excluded = frozenset(route)
+    folders = [FolderValue((name,)) for name in route]
     left = 0
     for atom in payload["atoms"]:  # type: ignore[attr-defined]
         path = files[atom["fi"]]["path"]  # type: ignore[index]
         outside = path.startswith(("~/", "/"))
-        if outside or not is_excluded(Path(path), Path(), excluded):
+        if outside or not any(folder.holds(Path(path).as_posix()) for folder in folders):
             left += 1
     return left
 
@@ -794,6 +794,23 @@ class TestAtomCapRoute:
         assert err.exclude_route == ("api", "tests")
         assert _atoms_left(payload, err.exclude_route) <= UNIVERSAL_ATOM_CAP
         assert _atoms_left(payload, err.exclude_route[:1]) > UNIVERSAL_ATOM_CAP
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_funnel
+    def test_a_folder_name_exclude_dirs_would_refuse_is_never_routed(self) -> None:
+        payload = _dense_payload([("a*b/x.md", 6000), ("x?y/y.md", 3000), ("ROOT.md", 2000)])
+        err = preflight_oversized(payload, has_api_key=False)
+        assert err is not None
+        assert err.dense_dirs[0] == ("a*b", 6000)
+        assert err.exclude_route == ()
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_funnel
+    def test_a_bracketed_folder_name_can_be_routed(self) -> None:
+        payload = _dense_payload([("[slug]/x.md", 6000), ("a*b/y.md", 3000), ("ROOT.md", 2000)])
+        err = preflight_oversized(payload, has_api_key=False)
+        assert err is not None
+        assert err.exclude_route == ("[slug]",)
 
     @pytest.mark.unit
     @pytest.mark.subsys_funnel
@@ -849,7 +866,7 @@ class TestAtomCapRoute:
             assert "--exclude-dirs" not in cta
         assert err is not None
         assert err.tier == "pro"
-        assert "let us know your use case" in cta
+        assert "let us know your use case." in cta
         assert cta.rstrip().endswith("reporails.com/contact/atoms")
         assert cta.index("api, tests") < cta.index("let us know your use case")
         anonymous = plain_cta(preflight_oversized(payload, has_api_key=False))  # type: ignore[arg-type]
@@ -940,9 +957,7 @@ class TestAtomCapRoute:
             upgrade_url="https://reporails.com/contact/atoms",
         )
         cta = plain_cta(err)
-        assert cta.startswith(
-            "Project exceeds 10,000-atom cap (12,000 atoms). \u2014 let us know your use case \u2192 "
-        )
+        assert cta.startswith("Project exceeds 10,000-atom cap (12,000 atoms). Let us know your use case. \u2192 ")
         assert cta.endswith("reporails.com/contact/atoms")
         assert "Leave these out" not in cta
 

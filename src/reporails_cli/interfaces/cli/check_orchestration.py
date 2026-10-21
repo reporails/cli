@@ -106,12 +106,21 @@ def _resolve_capability_paths(
     return paths, unresolved
 
 
-def _named_paths(state: CheckState, capability_paths: frozenset[Path]) -> frozenset[Path]:
-    """The files the run names: capability paths, path targets that are files, and the single file."""
+def _named_paths(state: CheckState, capability_paths: frozenset[Path]) -> tuple[frozenset[Path], bool]:
+    """The files the run names, and whether the run covers nothing but those files.
+
+    Named: capability paths, path targets that are files, and the single file. The run is narrowed to them
+    only when every target is a named file: a folder target or a capability listing (a bare capability
+    such as `skills`) keeps the run wide.
+    """
     single = state.targets.single_file
-    return frozenset(
+    named = frozenset(
         capability_paths | {t for t in state.targets.path_targets if t.is_file()} | ({single} if single else set())
     )
+    only_files = all(name for _, name in state.targets.capability_specs) and all(
+        t.is_file() for t in state.targets.path_targets
+    )
+    return named, bool(named) and only_files
 
 
 def _resolved_within_target(f: Path, target: Path) -> bool:

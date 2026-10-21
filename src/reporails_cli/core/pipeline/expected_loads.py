@@ -73,7 +73,7 @@ def expected_loads(target: Path) -> JsonObject:
             root,
             AGENT,
             gated_file_types(AGENT),
-            exclusions.walk_dirs,
+            exclusions,
             project_config=project_config,
         )
     skipped = [SkippedFile(path, "setting_off", None) for path in switched_off]
@@ -110,7 +110,7 @@ def _loaded_files(
     """The non-empty instruction and rule files Claude Code loads (the user's own included), the instruction
     files among them, and the launch files the `instructionFiles` setting turns off (each with its
     file type)."""
-    found = discover_from_config(root, AGENT, exclusions.walk_dirs, project_config=project_config, repo_scoped=False)
+    found = discover_from_config(root, AGENT, exclusions, project_config=project_config, repo_scoped=False)
     instruction, rules = (set(bucket) for bucket in found[:2]) if found is not None else (set(), set())
     files: list[JsonValue] = []
     read_instructions: dict[Path, str] = {}

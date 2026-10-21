@@ -334,7 +334,7 @@ def print_text_result(
     _print_header(tier)
     if not result.findings:
         console.print(f"  {'ok' if ascii_mode else chr(0x2713)}  No findings.")
-        render_excluded_line(result, scored=has_quality)
+        render_excluded_line(result, scored=False)
         print_not_evaluated(console, result.omissions.not_evaluated)
         _print_notices(result.reply.notices, ascii_mode, blank_before=not _render_funnel_cta(funnel_error))
         return

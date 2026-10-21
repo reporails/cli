@@ -10,7 +10,7 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
-from reporails_cli.core.discovery.exclusions import DEFAULT_EXCLUDE_DIRS
+from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.discovery.walk import safe_resolve, walk_files, walk_glob_matches
 from reporails_cli.core.lint.mechanical.checks import (
     CheckArgs,
@@ -347,9 +347,10 @@ def skill_entrypoint_present(
     entry = str(arg_value(args, "entry", "SKILL.md"))
     roots = one_level_skills_roots(classified_files, root)
     missing: list[str] = []
+    exclusions = run_exclusions(args, root)
     for skills_root in sorted(roots):
         for sub in slot_subfolders(skills_root):
-            if not (sub / entry).is_file():
+            if not (sub / entry).is_file() and not exclusions.leaves_out(sub):
                 rel = sub.relative_to(root).as_posix() if sub.is_relative_to(root) else sub.name
                 missing.append(rel)
     if not missing:
@@ -385,7 +386,7 @@ def frontmatter_valid_glob(
     exclusions = run_exclusions(args, root)
     subjects = [
         f
-        for f in walk_files(target, exclusions.feature_walk_dirs, lambda f: f.suffix in MARKDOWN_RULE_SUFFIXES)
+        for f in walk_files(target, exclusions, lambda f: f.suffix in MARKDOWN_RULE_SUFFIXES)
         if not exclusions.leaves_out(f)
     ]
     if classified_files:
@@ -428,12 +429,13 @@ def _validate_file_globs(
     key = path_filter_key(f, root)
     raw = read.data.get(key) if key else next((read.data[k] for k in _PATH_KEYS if read.data.get(k)), None)
     paths: Sequence[JsonValue] = split_top_level_commas(raw) if isinstance(raw, str) else as_list(raw)
+    defaults = RunExclusions.none(root)
     for p in paths:
         if not isinstance(p, str):
             return CheckResult(passed=False, message=f"{f.name}: non-string path: {p}")
         if p.count("[") != p.count("]"):
             return CheckResult(passed=False, message=f"{f.name}: unbalanced brackets: {p}")
-        if require_matches and next(walk_glob_matches(root, p, DEFAULT_EXCLUDE_DIRS), None) is None:
+        if require_matches and next(walk_glob_matches(root, p, defaults), None) is None:
             unresolved.append((f"{f.relative_to(root).as_posix()}:{_frontmatter_line(read.block, p)}", p))
     return None
 

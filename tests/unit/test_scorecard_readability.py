@@ -352,7 +352,7 @@ class TestExcludedLineOnEveryTextPath:
         from reporails_cli.core.platform.runtime.merger import CombinedResult
         from reporails_cli.formatters.text import display
 
-        result = CombinedResult(quality=None, **fields)  # type: ignore[arg-type]
+        result = CombinedResult(**{"quality": None, **fields})  # type: ignore[arg-type]
         display.print_text_result(result, elapsed_ms=0, ascii_mode=True, verbose=False)
         return capsys.readouterr().out
 
@@ -365,6 +365,18 @@ class TestExcludedLineOnEveryTextPath:
         assert "No findings." in out
         assert "Excluded  docs/, *.generated.md — not checked" in out
         assert "imported text" not in out
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_no_findings_run_prints_no_score_so_the_line_drops_the_score_clause(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        out = self._no_findings(
+            capsys, omissions=Omissions(excluded_dirs=("docs",)), quality=_Quality(display_score=7.4)
+        )
+        assert "No findings." in out
+        assert "Excluded  docs/ — not checked" in out
+        assert "the score covers the rest" not in out
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux

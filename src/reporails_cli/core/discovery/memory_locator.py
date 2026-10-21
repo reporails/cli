@@ -8,7 +8,7 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.agent_config import load_config_file_types
 from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES, glob_file_type_patterns
-from reporails_cli.core.discovery.exclusions import load_project_exclude_dirs
+from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, pattern_list
 
 logger = logging.getLogger(__name__)
@@ -27,16 +27,14 @@ class MemoryEntry:
     body: str
 
 
-def memory_entries_for_agent(
-    agent: str, project_root: Path, exclude_dirs: frozenset[str] | None = None
-) -> list[MemoryEntry]:
+def memory_entries_for_agent(agent: str, project_root: Path, exclusions: RunExclusions) -> list[MemoryEntry]:
     """Enumerate memory entries declared by an agent's config.
 
     Returns `[]` when the agent has no memory surface OR the surface
     exists but holds no entries. Callers should treat empty lists as
     "nothing to validate", not "agent unknown" — `discover_from_config`
-    handles agent presence detection separately. `exclude_dirs` is the folders the walk
-    does not enter; `None` reads the project's configured `exclude_dirs`.
+    handles agent presence detection separately. `exclusions` holds the folders the walk
+    does not enter.
     """
     file_types = load_config_file_types(agent)
     if not file_types:
@@ -46,7 +44,7 @@ def memory_entries_for_agent(
         spec = file_types.get(capability)
         if not isinstance(spec, dict):
             continue
-        entries.extend(_entries_from_directory_globs(agent, capability, spec, project_root, exclude_dirs))
+        entries.extend(_entries_from_directory_globs(agent, capability, spec, project_root, exclusions))
     return entries
 
 
@@ -55,7 +53,7 @@ def _entries_from_directory_globs(
     capability: str,
     spec: JsonObject,
     project_root: Path,
-    exclude_dirs: frozenset[str] | None = None,
+    exclusions: RunExclusions,
 ) -> list[MemoryEntry]:
     """Enumerate `*.md` files inside directory-glob patterns (claude shape).
 
@@ -73,9 +71,7 @@ def _entries_from_directory_globs(
         return []
     # Pass empty properties — directory-glob dispatch in glob_file_type_patterns
     # only needs the patterns themselves for trailing-slash enumeration.
-    if exclude_dirs is None:
-        exclude_dirs = load_project_exclude_dirs(project_root)
-    paths = glob_file_type_patterns(project_root, patterns, {}, exclude_dirs)
+    paths = glob_file_type_patterns(project_root, patterns, {}, exclusions)
     entries: list[MemoryEntry] = []
     for path in paths:
         try:

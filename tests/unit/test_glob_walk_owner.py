@@ -10,6 +10,7 @@ import pytest
 
 from reporails_cli.core.discovery import walk
 from reporails_cli.core.discovery.agent_discovery import ci_glob, glob_file_type_patterns
+from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.lint.mechanical.checks import _resolve_glob_targets
 
 
@@ -43,7 +44,9 @@ def test_symlinked_rules_folder_is_discovered(tmp_path: Path) -> None:
     _write(shared / "deep" / "more.md")
     (tmp_path / ".claude" / "rules").mkdir(parents=True)
     os.symlink(shared, tmp_path / ".claude" / "rules" / "linked", target_is_directory=True)
-    found = glob_file_type_patterns(tmp_path, [".claude/rules/**/*.md"], {"scope": "path_scoped"}, frozenset())
+    found = glob_file_type_patterns(
+        tmp_path, [".claude/rules/**/*.md"], {"scope": "path_scoped"}, RunExclusions.none(tmp_path)
+    )
     assert _rel(tmp_path, found) == {".claude/rules/linked/style.md", ".claude/rules/linked/deep/more.md"}
 
 
@@ -54,7 +57,7 @@ def test_symlinked_skill_folder_is_discovered(tmp_path: Path) -> None:
     _write(real / "SKILL.md")
     (tmp_path / ".claude" / "skills").mkdir(parents=True)
     os.symlink(real, tmp_path / ".claude" / "skills" / "deploy", target_is_directory=True)
-    found = glob_file_type_patterns(tmp_path, [".claude/skills/*/SKILL.md"], {}, frozenset())
+    found = glob_file_type_patterns(tmp_path, [".claude/skills/*/SKILL.md"], {}, RunExclusions.none(tmp_path))
     assert _rel(tmp_path, found) == {".claude/skills/deploy/SKILL.md"}
 
 
@@ -65,7 +68,7 @@ def test_ci_glob_never_lists_a_nested_excluded_folder(tmp_path: Path, monkeypatc
     _write(tmp_path / "web" / "core" / "deep" / "y.md")
     _write(tmp_path / "a" / "node_modules" / "pkg" / "z.md")
     listed = _spy_listings(monkeypatch)
-    found = ci_glob(tmp_path, "**/*.md", frozenset({"core", "node_modules"}))
+    found = ci_glob(tmp_path, "**/*.md", RunExclusions.parse(tmp_path, ["core", "node_modules"], ()))
     assert _rel(tmp_path, found) == {"a/.claude/agents/x.md"}
     assert listed
     assert not [p for p in listed if Path(p).name in {"core", "node_modules", "deep", "pkg"}]
@@ -99,9 +102,11 @@ def test_mechanical_targets_are_files_only(tmp_path: Path) -> None:
 @pytest.mark.subsys_lint
 def test_case_insensitive_prefix_folders_are_resolved(tmp_path: Path) -> None:
     _write(tmp_path / ".Claude" / "Agents" / "x.md")
-    found = ci_glob(tmp_path, ".claude/agents/*.md", frozenset())
+    found = ci_glob(tmp_path, ".claude/agents/*.md", RunExclusions.none(tmp_path))
     assert _rel(tmp_path, found) == {".Claude/Agents/x.md"}
-    assert _rel(tmp_path, ci_glob(tmp_path, ".claude/agents/X.MD", frozenset())) == {".Claude/Agents/x.md"}
+    assert _rel(tmp_path, ci_glob(tmp_path, ".claude/agents/X.MD", RunExclusions.none(tmp_path))) == {
+        ".Claude/Agents/x.md"
+    }
 
 
 @pytest.mark.unit
@@ -110,7 +115,7 @@ def test_case_sensitive_match_is_the_default(tmp_path: Path) -> None:
     _write(tmp_path / ".Claude" / "x.md")
     if (tmp_path / ".claude").exists():
         pytest.skip("case-insensitive filesystem: .claude and .Claude are the same folder")
-    assert list(walk.walk_glob_matches(tmp_path, ".claude/*.md", frozenset())) == []
+    assert list(walk.walk_glob_matches(tmp_path, ".claude/*.md", RunExclusions.none(tmp_path))) == []
 
 
 @pytest.mark.unit
@@ -119,7 +124,7 @@ def test_symlink_cycle_terminates(tmp_path: Path) -> None:
     rules = tmp_path / ".claude" / "rules"
     _write(rules / "a.md")
     os.symlink(tmp_path / ".claude", rules / "loop", target_is_directory=True)
-    found = ci_glob(tmp_path, ".claude/rules/**/*.md", frozenset())
+    found = ci_glob(tmp_path, ".claude/rules/**/*.md", RunExclusions.none(tmp_path))
     assert ".claude/rules/a.md" in _rel(tmp_path, found)
 
 
@@ -136,6 +141,9 @@ def test_walk_stats_no_regular_file(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         return real(self, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(Path, "is_file", spy)
-    assert _rel(tmp_path, walk.walk_markdown(tmp_path, frozenset())) == {"a/one.md", "two.md"}
-    assert _rel(tmp_path, walk.walk_glob_matches(tmp_path, "**/*.md", frozenset())) == {"a/one.md", "two.md"}
+    assert _rel(tmp_path, walk.walk_markdown(tmp_path, RunExclusions.none(tmp_path))) == {"a/one.md", "two.md"}
+    assert _rel(tmp_path, walk.walk_glob_matches(tmp_path, "**/*.md", RunExclusions.none(tmp_path))) == {
+        "a/one.md",
+        "two.md",
+    }
     assert stats == []

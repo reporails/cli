@@ -11,15 +11,14 @@ import math
 import os
 import re
 from collections.abc import Hashable
-from fnmatch import fnmatchcase
-from functools import lru_cache
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import ClassVar, NamedTuple
 
 import yaml
 from yaml.constructor import SafeConstructor
 from yaml.resolver import Resolver
 
+from reporails_cli.core.platform.contract.glob_pattern import glob_matches
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 
 logger = logging.getLogger(__name__)
@@ -277,54 +276,6 @@ def read_frontmatter_file(path: Path, *, lenient: bool = False) -> Frontmatter |
     except OSError:
         return None
     return read_frontmatter(text, lenient=lenient)
-
-
-def _segments_match(parts: tuple[str, ...], pattern: tuple[str, ...]) -> bool:
-    """Whether path segments match glob segments; a `**` segment spans zero or more directories."""
-    if not pattern:
-        return not parts
-    head, rest = pattern[0], pattern[1:]
-    if head == "**":
-        if not rest:
-            return bool(parts)
-        return any(_segments_match(parts[skip:], rest) for skip in range(len(parts) + 1))
-    return bool(parts) and fnmatchcase(parts[0], head) and _segments_match(parts[1:], rest)
-
-
-_BRACE_GROUP = re.compile(r"\{([^{}]*,[^{}]*)\}")
-
-
-@lru_cache(maxsize=1024)
-def brace_alternatives(glob: str) -> tuple[str, ...]:
-    """The globs a `{a,b}` group stands for (`*.{ts,tsx}` -> `*.ts`, `*.tsx`); the glob itself without one.
-
-    Pure function, cached. Only a group holding a comma expands: `{x}` and `{{x}}` stay literal.
-    """
-    group = _BRACE_GROUP.search(glob)
-    if group is None:
-        return (glob,)
-    head, tail = glob[: group.start()], glob[group.end() :]
-    return tuple(alt for option in group.group(1).split(",") for alt in brace_alternatives(head + option + tail))
-
-
-def glob_matches(path: str, pattern: str, *, anchored: bool = False) -> bool:
-    """Whether a posix path matches a glob pattern, one path segment at a time.
-
-    Pure function. `*` and `?` stay inside one segment; a `**` segment spans zero or more
-    directories (`a/**/b.md` matches `a/b.md` and `a/x/y/b.md`), and a trailing `**` needs
-    at least one more segment. A `{a,b}` group matches any of its alternatives. An anchored or
-    absolute pattern must match the whole path;
-    any other matches the path's trailing segments (`AGENTS.md` matches `pkg/AGENTS.md`).
-    """
-    parts = PurePosixPath(path).parts
-    for alternative in brace_alternatives(pattern):
-        glob = PurePosixPath(alternative)
-        if not glob.parts:
-            continue
-        segments = glob.parts if anchored or glob.is_absolute() else ("**", *glob.parts)
-        if _segments_match(parts, segments):
-            return True
-    return False
 
 
 def expand_home_pattern(pattern: str) -> str:

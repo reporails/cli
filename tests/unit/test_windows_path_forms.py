@@ -6,7 +6,8 @@ from pathlib import PureWindowsPath
 
 import pytest
 
-from reporails_cli.core.platform.utils.utils import config_pattern_matches, glob_matches
+from reporails_cli.core.platform.contract.glob_pattern import glob_matches
+from reporails_cli.core.platform.utils.utils import config_pattern_matches
 
 
 @pytest.mark.unit

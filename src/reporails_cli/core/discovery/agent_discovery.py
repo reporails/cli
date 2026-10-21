@@ -21,7 +21,7 @@ from reporails_cli.core.discovery.agent_config import (
     extract_properties,
     load_config_file_types,
 )
-from reporails_cli.core.discovery.exclusions import load_project_exclude_dirs
+from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
 from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.project_root import resolve_project_root, user_level_agent_dir
 from reporails_cli.core.discovery.read_gates import apply_read_gate
@@ -31,6 +31,7 @@ from reporails_cli.core.discovery.surface_config import (
     surface_include_patterns,
 )
 from reporails_cli.core.discovery.walk import (
+    Pruner,
     documented_path,
     list_dir,
     walk_glob,
@@ -38,7 +39,6 @@ from reporails_cli.core.discovery.walk import (
     walk_markdown,
 )
 from reporails_cli.core.platform.contract.json_value import JsonObject
-from reporails_cli.core.platform.policy.exclusion import excluded_by_name
 from reporails_cli.core.platform.utils.utils import config_pattern_matches, is_rooted_pattern, matches_any_glob
 
 if TYPE_CHECKING:
@@ -58,26 +58,15 @@ _USER_SCOPE_OPT_IN_CAPABILITIES = frozenset({"subagent_memory"})
 _PROJECT_SCOPED_HOME_CAPABILITIES = frozenset({"memory"})
 
 
-def ci_glob(target: Path, pattern: str, exclude_dirs: frozenset[str] = frozenset()) -> list[Path]:
+def ci_glob(target: Path, pattern: str, skip: Pruner) -> list[Path]:
     """Case-insensitive glob (`claude.md` == `CLAUDE.md`).
 
     Repos in the wild use mixed filename casing and the agent specs do not
     mandate exact case (the AGENTS.md spec is silent on casing), so a
     lowercase copy is a real instruction file and must be collected. The walk
-    does not enter a folder named in `exclude_dirs`.
+    does not enter a folder `skip` prunes.
     """
-    return list(walk_glob_matches(target, pattern, exclude_dirs, ignore_case=True))
-
-
-def is_excluded(path: Path, target: Path, exclude_dirs: frozenset[str]) -> bool:
-    """Check if any path component is in the exclusion set."""
-    if not exclude_dirs:
-        return False
-    try:
-        rel = path.relative_to(target)
-    except ValueError:
-        return False
-    return excluded_by_name(rel.parts, exclude_dirs)
+    return list(walk_glob_matches(target, pattern, skip, ignore_case=True))
 
 
 def walk_ancestors(start: Path, filename: str, stop: Path) -> list[Path]:
@@ -208,7 +197,7 @@ def _run_descendant_recursive(
     target: Path,
     pattern: str,
     nested: bool,
-    exclude_dirs: frozenset[str],
+    exclusions: RunExclusions,
     repo_cache: dict[Path, bool] | None = None,
 ) -> list[Path]:
     """Descendant walk for **/<leaf> patterns.
@@ -227,13 +216,13 @@ def _run_descendant_recursive(
     walk_root = target / Path(*prefix_parts) if prefix_parts else target
     if not walk_root.is_dir():
         return []
-    results = walk_glob(walk_root, filename, exclude_dirs)
+    results = walk_glob(walk_root, filename, exclusions)
     if nested:
         results = [m for m in results if m.parent != target]
     return [
         m
         for m in results
-        if not is_excluded(m, target, exclude_dirs)
+        if not exclusions.covers(m)
         and config_pattern_matches(m.relative_to(target).as_posix(), pattern, ignore_case=True)
         and not (repo_cache is not None and in_nested_repository(m, target, pattern, repo_cache))
     ]
@@ -243,7 +232,7 @@ def glob_file_type_patterns(
     target: Path,
     patterns: list[str],
     properties: Mapping[str, str | list[str]] | None,
-    exclude_dirs: frozenset[str],
+    exclusions: RunExclusions,
 ) -> list[Path]:
     """Glob file_type patterns against target directory.
 
@@ -271,7 +260,7 @@ def glob_file_type_patterns(
         if pattern.endswith("/"):
             # Directory glob (`.claude/agent-memory/*/`, `~/.claude/projects/*/memory/`)
             # -> enumerate `*.md` files inside the matched directories.
-            _glob_directory_entries(pattern, target, found, exclude_dirs)
+            _glob_directory_entries(pattern, target, found, exclusions)
             continue
         if is_rooted_pattern(pattern):
             _glob_external(pattern, target, found)
@@ -284,22 +273,18 @@ def glob_file_type_patterns(
         if eager_global and (is_recursive_leaf or is_bare_leaf):
             if project_root is None:
                 project_root = resolve_project_root(target)
-            found.extend(
-                m for m in walk_ancestors(target, filename, project_root) if not is_excluded(m, target, exclude_dirs)
-            )
+            found.extend(m for m in walk_ancestors(target, filename, project_root) if not exclusions.covers(m))
         elif eager_global and "**" not in pattern:
             if project_root is None:
                 project_root = resolve_project_root(target)
-            found.extend(
-                m for m in ci_glob(project_root, pattern, exclude_dirs) if not is_excluded(m, target, exclude_dirs)
-            )
+            found.extend(m for m in ci_glob(project_root, pattern, exclusions) if not exclusions.covers(m))
         elif is_recursive_leaf:
-            found.extend(_run_descendant_recursive(target, pattern, nested, exclude_dirs, cache))
+            found.extend(_run_descendant_recursive(target, pattern, nested, exclusions, cache))
         else:
             found.extend(
                 m
-                for m in ci_glob(target, pattern, exclude_dirs)
-                if not is_excluded(m, target, exclude_dirs)
+                for m in ci_glob(target, pattern, exclusions)
+                if not exclusions.covers(m)
                 and not (cache is not None and in_nested_repository(m, target, pattern, cache))
             )
     return found
@@ -321,7 +306,7 @@ def _glob_directory_entries(
     pattern: str,
     target: Path,
     found: list[Path],
-    exclude_dirs: frozenset[str],
+    exclusions: RunExclusions,
 ) -> None:
     """Enumerate `*.md` files inside directories matching a trailing-slash pattern.
 
@@ -343,24 +328,22 @@ def _glob_directory_entries(
         for d in glob.glob(expanded_str):
             base = Path(d)
             if base.is_dir():
-                found.extend(walk_markdown(base, exclude_dirs))
+                found.extend(walk_markdown(base, exclusions))
         return
 
     # In-tree pattern: resolve glob relative to target, enumerate .md inside each dir
-    for base in _resolve_in_tree_dirs(dir_pattern, target, exclude_dirs):
-        found.extend(
-            entry for entry in walk_markdown(base, exclude_dirs) if not is_excluded(entry, target, exclude_dirs)
-        )
+    for base in _resolve_in_tree_dirs(dir_pattern, target, exclusions):
+        found.extend(entry for entry in walk_markdown(base, exclusions) if not exclusions.covers(entry))
 
 
 def _resolve_in_tree_dirs(
     dir_pattern: str,
     target: Path,
-    exclude_dirs: frozenset[str],
+    exclusions: RunExclusions,
 ) -> list[Path]:
     """Resolve an in-tree directory glob (no trailing slash) to existing directories."""
     candidates = [Path(p) for p in glob.glob(str(target / dir_pattern))]
-    return [p for p in candidates if p.is_dir() and not is_excluded(p, target, exclude_dirs)]
+    return [p for p in candidates if p.is_dir() and not exclusions.covers(p)]
 
 
 def _repo_scoped_patterns(
@@ -401,7 +384,7 @@ class _AgentScope:
     target: Path
     agent_id: str
     project_config: ProjectConfig | None
-    excluded: frozenset[str]
+    exclusions: RunExclusions
     repo_scoped: bool
     user_dir: Path | None
     exclude_globs: list[str]
@@ -416,7 +399,7 @@ def _discover_surface(
     target = scope.target
     patterns = _repo_scoped_patterns(extract_patterns(spec), ft_name, scope.repo_scoped, scope.user_dir)
     # A plugin component pattern resolves against each plugin root found here.
-    patterns = expand_plugin_patterns(patterns, target, scope.excluded, scope.plugin_roots)
+    patterns = expand_plugin_patterns(patterns, target, scope.exclusions, scope.plugin_roots)
     if not patterns:
         return None
     properties = extract_properties(spec)
@@ -428,7 +411,7 @@ def _discover_surface(
     # Inject per-surface include patterns from .ails/config.yml
     patterns = patterns + surface_include_patterns(scope.agent_id, ft_name, scope.project_config)
 
-    found = glob_file_type_patterns(target, patterns, properties, scope.excluded)
+    found = glob_file_type_patterns(target, patterns, properties, scope.exclusions)
 
     if scope.exclude_globs:
         found = [p for p in found if not matches_any_glob(p, scope.exclude_globs, target)]
@@ -442,7 +425,7 @@ def _agent_scope(
     target: Path,
     agent_id: str,
     file_types: JsonObject,
-    extra_exclude_dirs: frozenset[str] | None,
+    exclusions: RunExclusions | None,
     *,
     project_config: ProjectConfig | None,
     repo_scoped: bool,
@@ -458,7 +441,7 @@ def _agent_scope(
         target=target,
         agent_id=agent_id,
         project_config=project_config,
-        excluded=extra_exclude_dirs or load_project_exclude_dirs(target),
+        exclusions=exclusions if exclusions is not None else load_run_exclusions(target),
         repo_scoped=repo_scoped,
         user_dir=target if repo_scoped and user_level_agent_dir(target) == target else None,
         exclude_globs=[
@@ -471,7 +454,7 @@ def discover_ungated(
     target: Path,
     agent_id: str,
     file_type_names: tuple[str, ...],
-    extra_exclude_dirs: frozenset[str],
+    exclusions: RunExclusions,
     *,
     project_config: ProjectConfig | None,
 ) -> list[Path]:
@@ -479,9 +462,7 @@ def discover_ungated(
     found as discovery finds them but before the agent's read gate narrows them. Every path is
     kept under its own name, whatever it links to."""
     file_types = load_config_file_types(agent_id) or {}
-    scope = _agent_scope(
-        target, agent_id, file_types, extra_exclude_dirs, project_config=project_config, repo_scoped=True
-    )
+    scope = _agent_scope(target, agent_id, file_types, exclusions, project_config=project_config, repo_scoped=True)
     found: set[Path] = set()
     for name in file_type_names:
         spec = file_types.get(name)
@@ -494,7 +475,7 @@ def discover_ungated(
 def discover_from_config(
     target: Path,
     agent_id: str,
-    extra_exclude_dirs: frozenset[str] | None = None,
+    exclusions: RunExclusions | None = None,
     *,
     project_config: ProjectConfig | None = None,
     repo_scoped: bool = False,
@@ -513,7 +494,7 @@ def discover_from_config(
         return None
 
     scope = _agent_scope(
-        target, agent_id, file_types, extra_exclude_dirs, project_config=project_config, repo_scoped=repo_scoped
+        target, agent_id, file_types, exclusions, project_config=project_config, repo_scoped=repo_scoped
     )
     buckets: dict[SurfaceBucket, list[Path]] = {bucket: [] for bucket in SURFACE_BUCKETS}
     for ft_name, spec in file_types.items():

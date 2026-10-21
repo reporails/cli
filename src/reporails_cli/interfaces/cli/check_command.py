@@ -7,10 +7,19 @@ from pathlib import Path
 
 import typer
 
+from reporails_cli.core.platform.policy.exclusion import first_folder_value_problem
 from reporails_cli.interfaces.cli.completion import complete_agent, complete_rule_token, complete_target_token
 from reporails_cli.interfaces.cli.helpers import _print_unknown_rule, console
 from reporails_cli.interfaces.cli.option_groups import command_options
 from reporails_cli.interfaces.cli.typer_app import app
+
+
+def _checked_exclude_dirs(values: list[str] | None) -> list[str] | None:
+    """Refuse a `--exclude-dirs` value that is not a folder name or a folder path."""
+    problem = first_folder_value_problem(values or [])
+    if problem is not None:
+        raise typer.BadParameter(f"{problem}; use --exclude-files for file patterns")
+    return values
 
 
 @dataclass
@@ -35,7 +44,10 @@ class CheckOptions:
         autocompletion=complete_agent,
     )
     exclude_dirs: list[str] | None = typer.Option(  # noqa: RUF009
-        None, "--exclude-dirs", help="Directories to exclude"
+        None,
+        "--exclude-dirs",
+        help="Folders to leave out: a name, or a path from the project root",
+        callback=_checked_exclude_dirs,
     )
     exclude_files: list[str] | None = typer.Option(  # noqa: RUF009
         None, "--exclude-files", help="File globs to exclude"

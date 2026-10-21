@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.discovery.memory_locator import _entries_from_directory_globs
 
 
@@ -16,6 +17,6 @@ def test_a_scope_holding_one_pattern_as_text_enumerates_its_directory(tmp_path: 
     (tmp_path / "mem" / "note.md").write_text("# n\n", encoding="utf-8")
     spec = {"scopes": {"project": {"patterns": "mem/"}}}
 
-    entries = _entries_from_directory_globs("claude", "subagent_memory", spec, tmp_path)
+    entries = _entries_from_directory_globs("claude", "subagent_memory", spec, tmp_path, RunExclusions.none(tmp_path))
 
     assert [e.path.name for e in entries] == ["note.md"]

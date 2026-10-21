@@ -76,7 +76,7 @@ def _resolve_glob_targets(pattern: str, root: Path, exclusions: RunExclusions | 
     `get_target_files` bounds the result back to in-scope instruction files.
     """
     exclusions = exclusions or load_run_exclusions(root)
-    return [m for m in walk_glob_matches(root, pattern, exclusions.feature_walk_dirs) if not exclusions.leaves_out(m)]
+    return [m for m in walk_glob_matches(root, pattern, exclusions) if not exclusions.leaves_out(m)]
 
 
 def get_target_files(

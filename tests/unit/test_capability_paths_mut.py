@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.classify import location_matches_mode
-from reporails_cli.core.discovery.agent_discovery import is_excluded
+from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.platform.dto.models import FileTypeDeclaration
 from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
 
@@ -75,15 +75,13 @@ class TestLooseLeafPattern:
         assert is_loose_leaf_pattern("CLAUDE.md") is True
 
 
-# ── is_excluded out-of-tree path (L315) ───────────────────
+# ── covers out-of-tree path ───────────────────
 
 
 class TestUnderExcludedDir:
     @pytest.mark.unit
     @pytest.mark.subsys_classify
     def test_path_outside_project_root_is_not_excluded(self, tmp_path: Path) -> None:
-        # A path outside project_root can't be relativized; the ValueError path
-        # must report "not excluded".
-        # Kills L315 `return False -> True`.
+        # A path outside the root can't be relativized and must report "not excluded".
         outside = Path("/totally/unrelated/elsewhere/file.md")
-        assert is_excluded(outside, tmp_path, frozenset({"node_modules"})) is False
+        assert RunExclusions.parse(tmp_path, ["node_modules"], ()).covers(outside) is False
