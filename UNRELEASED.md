@@ -2,6 +2,7 @@
 
 ### Added
 
+- MCP: a new `prepare` tool maps a project's instruction files without checking them, so the next `validate` returns sooner.
 - The reporails plugin's context x-ray can now see which instruction files Claude Code should load in a project and why an AGENTS.md is skipped; an AGENTS.md that links to, or is a copy with exactly the same text of, a CLAUDE.md that loads wherever the AGENTS.md would, is reported as that file rather than as skipped; your own `~/.claude/CLAUDE.md` and `~/.claude/rules/` files are listed; a project CLAUDE.md that links to your own `~/.claude/CLAUDE.md` is listed as the project's own file; under `managed-only` the x-ray leaves out exactly the files Claude Code leaves out at launch; an empty file, or one holding only frontmatter, which Claude Code sends nothing for, is not expected to load.
 
 ### Changed

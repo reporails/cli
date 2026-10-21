@@ -25,7 +25,7 @@ A skill's supporting markdown files (`reference.md`, `examples/*.md`, anything b
 
 ## Plugin support
 
-Recognition (above) is what `ails check` **scans**. The reporails **plugin** is how each agent **runs** the remedy loop: it delivers the `ails` skill and the reporails MCP server as a portable [Agent Plugins](https://agent-plugins.org) package. Agents that consume the portable form need no wrapper; the rest carry a thin native manifest. Installing the plugin registers the MCP server (`validate` / `remedy_brief` / `preflight` / `explain`) and loads the `ails` skill — one skill, maintained once, across all five.
+Recognition (above) is what `ails check` **scans**. The reporails **plugin** is how each agent **runs** the remedy loop: it delivers the `ails` skill and the reporails MCP server as a portable [Agent Plugins](https://agent-plugins.org) package. Agents that consume the portable form need no wrapper; the rest carry a thin native manifest. Installing the plugin registers the MCP server (`validate` / `prepare` / `remedy_brief` / `preflight` / `explain`) and loads the `ails` skill — one skill, maintained once, across all five.
 
 Install it in your agent:
 

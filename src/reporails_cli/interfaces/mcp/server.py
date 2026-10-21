@@ -1,12 +1,8 @@
 """MCP server for reporails — exposes validation tools to MCP clients.
 
-Registers `validate` / `preflight` / `explain` on the mcp 2.x high-level
-`MCPServer`. `validate` and `preflight` return a pre-built `CallToolResult`
-(see `_result`) carrying the wire payload as `structured_content` plus a compact
-text mirror; `explain` returns text with `structured_output=False`. Returning a
-pre-built result rather than a typed return leaves `output_schema` unset, so the
-SDK derives no output schema from an internal model — only the explicit wire
-payload is exposed and no non-wire field can reach the schema.
+Registers `validate` / `prepare` / `remedy_brief` / `heal_apply` / `preflight` / `explain` on the
+mcp 2.x high-level `MCPServer`. Tools return a pre-built `CallToolResult` (see `_result`): the wire
+payload as `structured_content` plus a compact text mirror, with no derived output schema.
 """
 
 import asyncio
@@ -31,6 +27,7 @@ from reporails_cli.interfaces.mcp import snapshots
 from reporails_cli.interfaces.mcp.feedback import file_feedback
 from reporails_cli.interfaces.mcp.heal_apply import heal_apply_message, heal_apply_write, release_written
 from reporails_cli.interfaces.mcp.idle_release import lifespan, touch_activity
+from reporails_cli.interfaces.mcp.prepare import prepare_for_path
 from reporails_cli.interfaces.mcp.remedy_brief import build_remedy_brief
 from reporails_cli.interfaces.mcp.rule_tools import explain_tool, preflight_tool
 from reporails_cli.interfaces.mcp.scan_fingerprint import (
@@ -46,7 +43,12 @@ from reporails_cli.interfaces.mcp.tools import (
     run_pipeline_for_path,
     unpaid_signed_in_reply,
 )
-from reporails_cli.interfaces.mcp.validate_targets import keep_target_locations, resolve_validate_targets
+from reporails_cli.interfaces.mcp.validate_targets import (
+    keep_target_locations,
+    named_files,
+    resolve_validate_targets,
+    target_tokens,
+)
 
 # The long-lived MCP server never needs a heavy ML backend: block it before any tool runs, so a
 # transitive import cannot pull one in and slow the first validate call.
@@ -85,11 +87,6 @@ class _CircuitState:
 _validate_states: dict[str, _CircuitState] = {}
 
 
-def _target_tokens(targets: list[str] | None) -> tuple[str, ...]:
-    """The distinct non-empty target tokens, sorted — one spelling per set of targets."""
-    return tuple(sorted({t.strip() for t in targets or () if t and t.strip()}))
-
-
 def _state_key(path: str, tokens: tuple[str, ...]) -> str:
     """The circuit-breaker / workflow key: the resolved path, plus the targets when any — a
     targeted `validate` and a whole-project one keep separate counters and workflows."""
@@ -113,14 +110,11 @@ def _serve_remedy_brief(
 
 
 def _remedy_brief_reply(path: str, location: int, targets: list[str] | None, has_guide: bool) -> JsonObject:
-    """`remedy_brief(path, location, targets, has_guide)`'s body: a caller that does not
-    carry the rewrite guide (`has_guide` false) is refused with `plugin_update_required` before
-    anything else — no state read, no build, no snapshot, no breaker counter touched. Reads the last `validate(path,
-    targets)`'s stored workflow and scan root, and builds the location's rewrite brief.
-    Never runs `validate`'s own pipeline for `path`. A
-    served brief (no error) resets the path's `call_count` — the agent is still working this
-    rewrite loop, not re-validating without progress — so a multi-round pass survives
-    past `_MAX_CALLS`; `consecutive_unchanged` (the actual no-progress guard) is untouched.
+    """`remedy_brief(path, location, targets, has_guide)`'s body: a caller without the rewrite
+    guide (`has_guide` false) is refused with `plugin_update_required` before anything else. Reads
+    the last `validate(path, targets)`'s stored workflow and scan root and builds the location's
+    rewrite brief, never running `validate`'s pipeline. A served brief resets the path's
+    `call_count` so a multi-round pass survives past `_MAX_CALLS`; `consecutive_unchanged` is untouched.
 
     An unpaid or offline caller's `validate` never carries a `workflow` key at all (a
     DIFFERENT cause from never having called `validate`): `workflow_requires_pro` names that
@@ -135,7 +129,7 @@ def _remedy_brief_reply(path: str, location: int, targets: list[str] | None, has
                 "Update the plugin, then run heal again."
             ),
         }
-    state = _validate_states.get(_state_key(path, _target_tokens(targets)))
+    state = _validate_states.get(_state_key(path, target_tokens(targets)))
     if state is None or not state.full_payload:
         return {
             "error": "no_workflow",
@@ -220,21 +214,17 @@ def _with_preservation(
 async def _fresh_validate_payload(
     path: str, tokens: tuple[str, ...], scan_root: Path, state: _CircuitState
 ) -> JsonObject | tuple[JsonObject, RulesetMap | None, float | None]:
-    """Run the pipeline fresh (never served from `state.full_payload`) — resolve `tokens` to a
-    location selection first when targeted, narrow the payload's `workflow.locations` to it
-    (`keep_target_locations`), and memoize the map/score on `state` for the next same-content
-    `validate` / preservation pass. Returns `(payload, ruleset_map, score)`; a target-resolution
-    failure returns its own error payload instead (the caller returns it unchanged)."""
+    """Run the pipeline fresh (never served from `state.full_payload`): resolve `tokens` first,
+    narrow `workflow.locations` to them (`keep_target_locations`) and memoize the map/score on
+    `state`. Returns `(payload, ruleset_map, score)`, or the target-resolution error payload."""
     selection: tuple[set[Path], set[Path]] | None = None
     if tokens:
         resolved = await asyncio.to_thread(resolve_validate_targets, tokens, scan_root)
         if isinstance(resolved, dict):
             return resolved
         selection = resolved
-    # Blocking pipeline work (mapping, m-probes, server lint) runs off the event loop so a
-    # slow map/lint never blocks other concurrent tool calls.
-    named = (frozenset(selection[0]),) if selection is not None and selection[0] else ()
-    payload, ruleset_map, score = await asyncio.to_thread(run_pipeline_for_path, path, True, *named)
+    # Blocking pipeline work runs off the event loop.
+    payload, ruleset_map, score = await asyncio.to_thread(run_pipeline_for_path, path, True, named_files(selection))
     if selection is not None and "files" in payload:
         payload = keep_target_locations(payload, *selection, scan_root, tokens)
     if "files" in payload:
@@ -303,9 +293,8 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None = Non
 
     The circuit-breaker state read-modify-write runs inline on the event loop (no `await`
     between the `_validate_states` read and its write), so concurrent same-path calls serialize;
-    only the blocking pipeline (`run_pipeline_for_path`) is offloaded to a worker thread. The
-    pipeline always runs `full=True` internally and the bounded view is derived here via
-    `bound_validate_payload`, so a cached full payload serves either shape. Returns a
+    only the blocking pipeline is offloaded to a worker thread. The pipeline always runs
+    `full=True` and the bounded view is derived via `bound_validate_payload`. Returns a
     structured dict for every expected condition (needs_install / path_not_found /
     circuit_breaker); an unexpected exception propagates for the SDK to surface.
     """
@@ -322,7 +311,7 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None = Non
     # keep a same-content repeat validate from ever hitting the cached reply).
     scan_root = _resolve_scan_target(target)[0]
 
-    tokens = _target_tokens(targets)
+    tokens = target_tokens(targets)
     state, unchanged, base_hash = await _begin_validate_call(path, tokens, full, target, scan_root)
 
     if state.call_count > _MAX_CALLS or state.consecutive_unchanged >= _MAX_UNCHANGED:
@@ -387,7 +376,7 @@ async def _heal_apply_reply(path: str, targets: list[str] | None = None) -> str:
     if model_error is not None or not target.exists():
         return heal_apply_message(model_error or {"error": f"Path not found: {target}"})
     scan_root = _resolve_scan_target(target)[0]
-    result = await _fresh_validate_payload(path, _target_tokens(targets), scan_root, _CircuitState())
+    result = await _fresh_validate_payload(path, target_tokens(targets), scan_root, _CircuitState())
     if isinstance(result, dict):
         return heal_apply_message(result)
     payload, ruleset_map, _score = result
@@ -476,8 +465,27 @@ async def validate(path: str = ".", full: bool = False, targets: list[str] | Non
     payload = await _run_validate(path, bool(full), targets)
     if not has_text_view(payload, full=bool(full)):
         return _result(payload)
-    state = _validate_states.setdefault(_state_key(path, _target_tokens(targets)), _CircuitState())
+    state = _validate_states.setdefault(_state_key(path, target_tokens(targets)), _CircuitState())
     return _text_result(render_text_view(unseen_notices(payload, state.shown_notices)))
+
+
+@server.tool(
+    name="prepare",
+    description=(
+        "Map the instruction files that `validate(path, targets)` checks, without checking them, so the next"
+        " `validate` with the same `path` and `targets` returns sooner. Makes no server call and returns no"
+        " findings: `files` is how many files are ready. The reporails plugin calls it in the background as"
+        " files load or change."
+    ),
+    annotations=_READ_ONLY,
+)
+async def prepare(path: str = ".", targets: list[str] | None = None) -> CallToolResult:
+    """Map the files `validate` would check; see the tool description."""
+    touch_activity()
+    try:
+        return _result(await asyncio.to_thread(prepare_for_path, path, targets))
+    except ConfigUnreadableError as exc:
+        return _result(_config_unreadable(exc))
 
 
 @server.tool(

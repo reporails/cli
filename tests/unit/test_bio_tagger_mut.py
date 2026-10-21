@@ -475,7 +475,7 @@ def test_concurrent_cold_graph_hash_does_not_raise(tmp_path: Path, monkeypatch: 
     mutation landing while another thread's `json.dumps` walks the same dict raises
     `RuntimeError: dictionary changed size during iteration`; `core/pipeline/mapping.py`
     lets that propagate out of `compute_identity` uncaught, and `interfaces/mcp/tools.py
-    ::_build_map` swallows it into a bare `logger.warning` + `None` — surfaced to the
+    ::build_map` swallows it into a bare `logger.warning` + `None` — surfaced to the
     MCP client only as `brief_unavailable`'s generic "produced no map".
 
     `json.dumps` is monkeypatched to walk `_sidecar_data`'s items with a small sleep

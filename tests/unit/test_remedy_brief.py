@@ -110,7 +110,7 @@ def test_a_file_with_no_map_makes_the_whole_brief_a_structured_error(monkeypatch
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_no_map_names_the_mapper_s_own_swallowed_exception(monkeypatch, tmp_path: Path) -> None:
-    """The live concurrency defect: `_build_map` swallows a mapper exception into a payload
+    """The live concurrency defect: `build_map` swallows a mapper exception into a payload
     `mapper_error` field (`interfaces/mcp/tools.py`). `brief_unavailable`'s message must name
     THAT — not the generic "produced no map" — and must prefer it over a bare `error` field
     when both are present, since `mapper_error` is the more specific cause."""
@@ -703,7 +703,9 @@ def test_a_brief_after_a_project_validate_takes_a_fresh_baseline(monkeypatch, tm
     edited = "# T\n\nKeep `foo`.\n"
     file.write_text(edited, encoding="utf-8")
     monkeypatch.setattr(server, "model_not_ready_error", lambda: None)
-    monkeypatch.setattr(server, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None))
+    monkeypatch.setattr(
+        server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(): ({"files": {}}, fake_map, None)
+    )
     server._validate_states.clear()
     asyncio.run(server._run_validate(str(tmp_path), True))
     remedy_brief.build_remedy_brief(location, tmp_path, fake_map)

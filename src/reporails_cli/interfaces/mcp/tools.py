@@ -65,6 +65,18 @@ class LeftOut(NamedTuple):
 NOTHING_LEFT_OUT = LeftOut()
 
 
+class Scope(NamedTuple):
+    """Which files a `validate` at one path checks, and how they are read."""
+
+    scan_root: Path
+    single_file: Path | None
+    filter_agents: list[DetectedAgent]
+    effective_agent: str
+    instruction_files: list[Path]
+    file_type_by_path: dict[str, str]
+    left_out: LeftOut
+
+
 def _unknown_agent_error(agent: str) -> JsonObject:
     """The structured MCP equivalent of the CLI's `_validate_agent` exit.
 
@@ -130,7 +142,7 @@ def _discover_files(
     return found.filtered, found.effective_agent, instruction_files, file_type_by_path, found.excluded, found.exclusions
 
 
-def _build_map(
+def build_map(
     target: Path, instruction_files: list[Path], filter_agents: list[DetectedAgent] | None = None
 ) -> tuple[RulesetMap | None, str | None]:
     """Build the ruleset map via the shared warm path, so `validate` reuses a warm model
@@ -231,39 +243,6 @@ def _display_score(result: CombinedResult, target: Path | None = None, scan_root
     return None
 
 
-def _run_pipeline(
-    target: Path, full: bool = False, named: frozenset[Path] = frozenset()
-) -> tuple[JsonObject, RulesetMap | None, float | None]:
-    """Run the full check pipeline; returns `(payload, ruleset_map, file_score)`.
-
-    A file `target` narrows discovery to its project root and the validated set
-    to that single file, mirroring the CLI single-path mode. Unless `full` is set the
-    payload is bounded to a top-N-per-file envelope so a large repo stays under the
-    harness per-tool-result token cap. `ruleset_map` is `None` on a structured
-    error/needs-install payload (the caller checks `payload` for that). `file_score` is
-    the single file's own display score (`None` for a directory target or an unscored
-    file) — the same value `remedy_brief` reports for that file.
-    """
-    scan_root, single_file = _resolve_scan_target(target)
-    discovery = _discover_files(scan_root, single_file=single_file, named=named)
-    if isinstance(discovery, dict):
-        return discovery, None, None
-    model_error = model_not_ready_error()
-    if model_error is not None:
-        return model_error, None, None
-    filter_agents, effective_agent, instruction_files, file_type_by_path, excluded, exclusions = discovery
-    return _lint_discovered(
-        scan_root,
-        effective_agent,
-        instruction_files,
-        filter_agents,
-        file_type_by_path=file_type_by_path,
-        full=full,
-        single_file=single_file,
-        left_out=LeftOut(excluded, exclusions),
-    )
-
-
 def _lint_discovered(
     scan_root: Path,
     effective_agent: str,
@@ -294,7 +273,7 @@ def _lint_discovered(
     top-N-per-file envelope (aggregate stats + surface_health stay whole).
     """
 
-    ruleset_map, mapper_error = _build_map(scan_root, instruction_files, filter_agents)
+    ruleset_map, mapper_error = build_map(scan_root, instruction_files, filter_agents)
     result, funnel_error = _check_and_assemble(
         scan_root,
         instruction_files,
@@ -539,24 +518,63 @@ def _rules_missing_payload() -> JsonObject:
     }
 
 
+def scope_for_path(path: str, named: frozenset[Path] = frozenset()) -> Scope | JsonObject:
+    """The files a `validate` at `path` checks, or the reply to give when there is nothing to check.
+
+    A directory `path` roots at itself and a file `path` at its project, with that one file
+    checked. For a directory `path`, `named` holds files the caller named, which are checked
+    whatever is excluded; for a file `path` it is ignored. The reply is a structured payload
+    when the rules are missing, the path does not exist, the agent is unknown, the project has
+    no instruction files (the empty-project envelope) or the model set is not ready.
+    """
+    if not is_initialized():
+        return _rules_missing_payload()
+    target = Path(path).resolve()
+    if not target.exists():
+        return {"error": f"Path not found: {target}"}
+    scan_root, single_file = _resolve_scan_target(target)
+    discovery = _discover_files(scan_root, single_file=single_file, named=named)
+    if isinstance(discovery, dict):
+        return discovery
+    model_error = model_not_ready_error()
+    if model_error is not None:
+        return model_error
+    filter_agents, effective_agent, instruction_files, file_type_by_path, excluded, exclusions = discovery
+    return Scope(
+        scan_root,
+        single_file,
+        filter_agents,
+        effective_agent,
+        instruction_files,
+        file_type_by_path,
+        LeftOut(excluded, exclusions),
+    )
+
+
 def run_pipeline_for_path(
     path: str, full: bool = False, named: frozenset[Path] = frozenset()
 ) -> tuple[JsonObject, RulesetMap | None, float | None]:
     """Run the pipeline for `path` (directory or file); returns `(payload, ruleset_map,
     file_score)`. `ruleset_map` and `file_score` are `None` on a structured error/needs-install
-    payload — the caller checks `"error"` / `"needs_install"` in the payload. For a directory
-    `path`, `named` holds files the caller named, which are checked whatever is excluded; the
-    Excluded record still lists every pattern the user set. For a file `path` only that file is
-    named and `named` is ignored.
+    payload — the caller checks `"error"` / `"needs_install"` in the payload. A file `path`
+    narrows the validated set to that single file; unless `full` is set the payload is bounded
+    to a top-N-per-file envelope so a large repo stays under the harness per-tool-result token
+    cap, and `file_score` is that single file's own display score (`None` for a directory or an
+    unscored file). `named` is read as in `scope_for_path`.
     """
-    if not is_initialized():
-        return _rules_missing_payload(), None, None
-    target = Path(path).resolve()
-    if not target.exists():
-        return {"error": f"Path not found: {target}"}, None, None
-    # When `path` is an existing file, the pipeline narrows discovery to the
-    # file's project root and the validated set to that single file.
     try:
-        return _run_pipeline(target, full=full, named=named)
+        scope = scope_for_path(path, named)
+        if isinstance(scope, dict):
+            return scope, None, None
+        return _lint_discovered(
+            scope.scan_root,
+            scope.effective_agent,
+            scope.instruction_files,
+            scope.filter_agents,
+            file_type_by_path=scope.file_type_by_path,
+            full=full,
+            single_file=scope.single_file,
+            left_out=scope.left_out,
+        )
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return {"error": str(e)}, None, None

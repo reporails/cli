@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
@@ -370,6 +371,10 @@ def _apply_run_context(ruleset_map: RulesetMap, filtered_agents: list[DetectedAg
     stamp_file_agents(ruleset_map, filtered_agents, target)
 
 
+# One map at a time in this process; a caller that waited reads the map the first one cached.
+_MAP_LOCK = threading.Lock()
+
+
 def map_instruction_files(
     target: Path,
     instruction_files: list[Path],
@@ -402,26 +407,27 @@ def map_instruction_files(
     agree on attribution.
     """
 
-    emit = progress if progress is not None else (lambda _msg: None)
+    with _MAP_LOCK:
+        emit = progress if progress is not None else (lambda _msg: None)
 
-    full_cache = FullMapCache(get_global_cache_dir())
-    identity = compute_identity(
-        list(instruction_files), root=target, segmentation=get_project_config(target).mapper.segmentation
-    )
-    cached = full_cache.get(identity)
-    if cached is not None:
-        _apply_run_context(cached, filtered_agents, target)
-        return cached
+        full_cache = FullMapCache(get_global_cache_dir())
+        identity = compute_identity(
+            list(instruction_files), root=target, segmentation=get_project_config(target).mapper.segmentation
+        )
+        cached = full_cache.get(identity)
+        if cached is not None:
+            _apply_run_context(cached, filtered_agents, target)
+            return cached
 
-    daemon_status = _resolve_daemon(emit, spawn_daemon=spawn_daemon)
+        daemon_status = _resolve_daemon(emit, spawn_daemon=spawn_daemon)
 
-    ruleset_map = _map_via_daemon_or_process(
-        daemon_status, list(instruction_files), target, get_project_config(target).mapper, emit
-    )
-    if ruleset_map is not None:
-        full_cache.put(identity, ruleset_map)  # the map as mapped; a later run with other agents decides again
-        _apply_run_context(ruleset_map, filtered_agents, target)
-    return ruleset_map
+        ruleset_map = _map_via_daemon_or_process(
+            daemon_status, list(instruction_files), target, get_project_config(target).mapper, emit
+        )
+        if ruleset_map is not None:
+            full_cache.put(identity, ruleset_map)  # the map as mapped; a later run with other agents decides again
+            _apply_run_context(ruleset_map, filtered_agents, target)
+        return ruleset_map
 
 
 def _resolve_daemon(emit: Callable[[str], None], *, spawn_daemon: bool = True) -> DaemonStatus:

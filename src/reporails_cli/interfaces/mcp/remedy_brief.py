@@ -62,7 +62,7 @@ _NO_MAP_FALLBACK = "its pipeline run produced no map"
 def _pipeline_failure_reason(payload: JsonObject) -> str:
     """The best available cause string from a pipeline `payload` that yielded no map:
     the mapper's own swallowed exception text (`mapper_error` — see
-    `interfaces/mcp/tools.py::_build_map`) when there is one, else the payload's own
+    `interfaces/mcp/tools.py::build_map`) when there is one, else the payload's own
     `message` / `error` field (discovery's `needs_install` / unknown-agent / path-not-found
     payloads), else `_NO_MAP_FALLBACK` naming nothing more specific."""
     reason = payload.get("mapper_error") or payload.get("message") or payload.get("error")

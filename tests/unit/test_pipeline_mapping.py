@@ -766,6 +766,60 @@ def test_apply_generic_scan_warns_when_the_fold_fails(monkeypatch, caplog):
     assert any("Generic scanning skipped" in r.getMessage() and "disk gone" in r.getMessage() for r in caplog.records)
 
 
+# ---------------------------------------------------------------------------
+# One map at a time per process
+# ---------------------------------------------------------------------------
+
+
+def _real_cache_project(monkeypatch, tmp_path: Path) -> Path:
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "CLAUDE.md").write_text("# Project\n\nRun the tests.\n", encoding="utf-8")
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.get_global_cache_dir", lambda: tmp_path / "cache")
+    monkeypatch.setattr(
+        "reporails_cli.core.pipeline.mapping._resolve_daemon",
+        lambda *_a, **_k: mapping.DaemonStatus.UNAVAILABLE,
+    )
+    return project
+
+
+def _slow_counting_map(monkeypatch, calls: list[int]) -> None:
+    import time
+
+    def slow_map(*_a: object, **_k: object) -> RulesetMap:
+        calls.append(1)
+        time.sleep(0.3)
+        return _ruleset_map("slow")
+
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping._map_via_daemon_or_process", slow_map)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+@pytest.mark.requires_model
+def test_two_threads_mapping_the_same_files_map_once(monkeypatch, tmp_path):
+    """The caller that waited for the first map reads the map the first one cached."""
+    import threading
+
+    project = _real_cache_project(monkeypatch, tmp_path)
+    calls: list[int] = []
+    _slow_counting_map(monkeypatch, calls)
+    results: list[RulesetMap | None] = []
+
+    def run() -> None:
+        results.append(mapping.map_instruction_files(project, [project / "CLAUDE.md"], spawn_daemon=False))
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(calls) == 1
+    assert len(results) == 2 and all(r is not None for r in results)
+    assert results[0].generated_at == results[1].generated_at == "slow"
+
+
 @pytest.mark.unit
 @pytest.mark.subsys_map
 @pytest.mark.parametrize(("agent", "other_added"), [("claude", False), ("", True)])
@@ -854,3 +908,16 @@ def test_an_agent_whose_file_types_cannot_be_read_claims_no_file(monkeypatch, tm
     path.write_text("x\n", encoding="utf-8")
     assert mapping._claimed_by_other(path, "claude", tmp_path) is False
     assert mapping._kind_of(path, unreadable, tmp_path) == "instruction_files"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+@pytest.mark.requires_model
+def test_a_single_call_still_maps_once(monkeypatch, tmp_path):
+    project = _real_cache_project(monkeypatch, tmp_path)
+    calls: list[int] = []
+    _slow_counting_map(monkeypatch, calls)
+
+    result = mapping.map_instruction_files(project, [project / "CLAUDE.md"], spawn_daemon=False)
+
+    assert result is not None and calls == [1]
