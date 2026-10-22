@@ -41,6 +41,7 @@
 - A build check fails when a fixed set of named values is spelled out as plain text in another list or table instead of using the names; the one place that did it, the capability-level table, now uses the names.
 - Build checks fail when the environment is read, or a program is started, outside the one place that owns it.
 - The event-log file-mode tests and the linked-AGENTS.md test run on POSIX systems only.
+- The event-log pruning test checks file modes on POSIX systems only.
 - Every build check, not only the quick local one, fails on a test that is marked as more than one kind of test or as none.
 
 ## 0.6.4
