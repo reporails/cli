@@ -5,13 +5,13 @@
 ### Added
 
 - MCP: a new `prepare` tool maps a project's instruction files without checking them, so the next `validate` returns sooner. It sees files added or removed since its last call.
-- The reporails plugin's context x-ray can now see which instruction files Claude Code should load in a project and why an AGENTS.md is skipped; an AGENTS.md that links to, or is a copy with exactly the same text of, a CLAUDE.md that loads wherever the AGENTS.md would, is reported as that file rather than as skipped; your own `~/.claude/CLAUDE.md` and `~/.claude/rules/` files are listed; a project CLAUDE.md that links to your own `~/.claude/CLAUDE.md` is listed as the project's own file; under `managed-only` the x-ray leaves out exactly the files Claude Code leaves out at launch; an empty file, or one holding only frontmatter, which Claude Code sends nothing for, is not expected to load.
+- `ails expected-loads` names which instruction files Claude Code should load in a project and why an AGENTS.md is skipped; an AGENTS.md that links to, or is a copy with exactly the same text of, a CLAUDE.md that loads wherever the AGENTS.md would, is reported as that file rather than as skipped; your own `~/.claude/CLAUDE.md` and `~/.claude/rules/` files are listed; a project CLAUDE.md that links to your own `~/.claude/CLAUDE.md` is listed as the project's own file; under `managed-only` it leaves out exactly the files Claude Code leaves out at launch; an empty file, or one holding only frontmatter, which Claude Code sends nothing for, is not expected to load.
 
 ### Changed
 
 - A global npm install stays on its version until you update it; `ails version` shows `npm` for an install from the npm package (npx included) and `ails update` prints the command that updates it.
 - A run through the npm package no longer re-checks the package index for a newer release every time it starts.
-- The context x-ray's event logs in `~/.reporails/xray/` are private to you, removed after 30 days (sooner if Claude Code is set to keep sessions for less), and the folder stays under 100 MB.
+- Event logs in `~/.reporails/xray/` are private to you, removed after 30 days (sooner if Claude Code is set to keep sessions for less), and the folder stays under 100 MB.
 - `ails expected-loads` names, for each AGENTS.md Claude Code skips, the `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` that made it skip the file.
 - The MCP `validate` tool now tells the agent which messages are announcements from reporails, so it shows them as announcements rather than as account messages.
 - A folder value in `--exclude-dirs` or `exclude_dirs` that holds `*`, `?`, a backslash or a `..` step stops the run with an error that names the flag or the config file it came from and points to `--exclude-files` / `exclude_files` for file patterns; such a value used to be listed as left out while leaving nothing out. `ails config set exclude_dirs` refuses it before writing, with an error that names the setting, and the MCP tools answer `config_unreadable`.
