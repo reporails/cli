@@ -6,6 +6,7 @@ sooner. Nothing here contacts the server, reads an account or counts as a `valid
 
 from pathlib import Path
 
+from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.interfaces.mcp.tools import Scope, _resolve_scan_target, build_map, scope_for_path
 from reporails_cli.interfaces.mcp.validate_targets import named_files, resolve_validate_targets, target_tokens
@@ -19,6 +20,9 @@ def prepare_for_path(path: str, targets: list[str] | None = None) -> JsonObject:
     cannot be built.
     """
     try:
+        # A long-running server keeps the detected-agent list between calls: detect afresh, so a
+        # file added or removed since the last call is mapped as `validate` will find it.
+        clear_agent_cache()
         named: frozenset[Path] = frozenset()
         tokens = target_tokens(targets)
         target = Path(path).resolve()

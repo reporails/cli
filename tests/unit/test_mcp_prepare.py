@@ -98,3 +98,20 @@ def test_prepare_answers_mapper_unavailable_when_no_map_comes_back(project, monk
 
     monkeypatch.setattr(tools, "map_instruction_files", broken)
     assert prepare_for_path(str(project)) == {"error": "mapper_unavailable", "mapper_error": "RuntimeError: no model"}
+
+
+def test_prepare_maps_a_file_added_since_the_last_call(project, monkeypatch):
+    mapped: list[list[str]] = []
+
+    def record(_target, files, **_k):
+        mapped.append(sorted(Path(f).name for f in files))
+        return _map(len(files))
+
+    monkeypatch.setattr(tools, "map_instruction_files", record)
+    prepare_for_path(str(project))
+    rules = project / ".claude" / "rules"
+    rules.mkdir(parents=True)
+    (rules / "style.md").write_text("# Style\n\nUse snake_case for functions.\n", encoding="utf-8")
+    prepare_for_path(str(project))
+    assert "style.md" not in mapped[0]
+    assert "style.md" in mapped[1]
