@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import sys
 import time
 from pathlib import Path
 
@@ -230,6 +231,9 @@ def test_agents_md_linking_to_claude_local_md_is_an_alias(tmp_path: Path) -> Non
 
 @pytest.mark.unit
 @pytest.mark.subsys_classify
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="a linked AGENTS.md whose target sits in a left-out folder is not listed on Windows"
+)
 def test_agents_md_linking_into_agents_dir_or_excluded_folder_stays_skipped(tmp_path: Path) -> None:
     root = _project(tmp_path)
     _write(root / "CLAUDE.md")
@@ -503,6 +507,7 @@ def test_oversize_folder_loses_oldest_sessions_first(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_classify
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no POSIX file modes")
 def test_non_log_files_are_left_alone_and_logs_become_private(tmp_path: Path) -> None:
     folder = _xray()
     other = _write(folder / "notes.txt", "mine")
@@ -521,6 +526,7 @@ def test_non_log_files_are_left_alone_and_logs_become_private(tmp_path: Path) ->
 
 @pytest.mark.unit
 @pytest.mark.subsys_classify
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no POSIX file modes")
 def test_missing_folder_is_created_private(tmp_path: Path) -> None:
     expected_loads(_project(tmp_path))
     assert stat.S_IMODE(_xray().stat().st_mode) == 0o700
