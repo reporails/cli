@@ -7,6 +7,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -99,5 +100,7 @@ def test_expected_loads_prunes_the_event_logs_it_names(tmp_path: Path) -> None:
     assert out["event_log_dir"] == str(xray)
     assert [Path(i["path"]).name for i in out["files"]] == ["CLAUDE.md"]
     assert sorted(p.name for p in xray.iterdir()) == [fresh.name]
-    assert stat.S_IMODE(fresh.stat().st_mode) == 0o600
-    assert stat.S_IMODE(xray.stat().st_mode) == 0o700
+    # Windows has no POSIX file modes; the pruning above is checked everywhere.
+    if sys.platform != "win32":
+        assert stat.S_IMODE(fresh.stat().st_mode) == 0o600
+        assert stat.S_IMODE(xray.stat().st_mode) == 0o700
