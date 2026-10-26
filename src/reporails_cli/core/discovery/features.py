@@ -26,6 +26,7 @@ from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.walk import is_under, safe_resolve
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.results import DetectedFeatures, HookEntry
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.core.platform.utils.hook_config import HookConfig, hook_sites, read_hook_config
 from reporails_cli.core.platform.utils.utils import is_rooted_pattern, matches_any_glob
 
@@ -263,11 +264,13 @@ def _agent_hook_files(target: Path, agent_id: str, scan: _SurfaceScan | None = N
 
 def _hook_file_label(path: Path, target: Path) -> str:
     """A hook file as shown to the user: project-relative, `~/`-relative in the home folder, else absolute."""
-    resolved = path.resolve()
-    for base, prefix in ((target, ""), (Path.home(), "~/")):
-        if resolved.is_relative_to(safe_resolve(base)):
-            return prefix + resolved.relative_to(safe_resolve(base)).as_posix()
-    return path.as_posix()
+    resolved, root = safe_resolve(path), safe_resolve(target)
+    home, real_home = Path.home(), safe_resolve(Path.home())
+    if resolved.is_relative_to(real_home) and not resolved.is_relative_to(root):
+        resolved = home / resolved.relative_to(real_home)
+    elif not resolved.is_relative_to(root):
+        return path.as_posix()
+    return normalize_finding_path(resolved.as_posix(), root)
 
 
 def _agent_hook_entries(target: Path, agent_id: str, scan: _SurfaceScan | None = None) -> list[HookEntry]:

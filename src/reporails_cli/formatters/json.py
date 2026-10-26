@@ -146,7 +146,15 @@ def _format_workflow(wf: RemediationWorkflow, project_root: Path) -> JsonObject:
         "locations": [_location(loc) for loc in wf.locations],
     }
     if wf.listed:
-        out["listed"] = [{"rule": e.rule, "reason": e.reason, "count": e.count} for e in wf.listed]
+        out["listed"] = [
+            {
+                "rule": e.rule,
+                "reason": e.reason,
+                "count": e.count,
+                **({"files": [_rel(f) for f in e.files]} if e.files else {}),
+            }
+            for e in wf.listed
+        ]
     return out
 
 

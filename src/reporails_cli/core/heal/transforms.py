@@ -22,7 +22,7 @@ from reporails_cli.core.heal.mechanical_fixers import (
 from reporails_cli.core.heal.preservation.conditions import conditional
 from reporails_cli.core.heal.preservation.fragments import opens_step, rewrite_cut
 from reporails_cli.core.lint.client_checks import running_sentences
-from reporails_cli.core.mapper.classify import HEDGE_ADVERB_LEADS, hedges_with_should
+from reporails_cli.core.mapper.classify import DROPPABLE_LEADS, hedges_with_should
 from reporails_cli.core.mapper.instructions import holds_comma_series, opens_command, without_joining_word
 from reporails_cli.core.mapper.md_parser import code_spans, emphasis_runs, link_spans
 from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark
@@ -34,9 +34,8 @@ from reporails_cli.core.platform.dto.ruleset import LIST_ITEM_FORMATS, PROSE_OR_
 # The joint between two instructions the mapper cut apart: a mark (or spaced dash) and a joining `and` it left behind.
 _JOINT_TAIL_RE = re.compile(r"(?:\s*[\u2014\u2013;,]|\s-)\s*(?:and\s+)?$", re.IGNORECASE)
 _NEVER_RE = re.compile(r"(Never|never)\b(?=\s+\S)")
-_HEDGE_WORDS = HEDGE_ADVERB_LEADS | {"please"}
 _HEDGE_RE = re.compile(
-    rf"(?:you\s+should|try\s+to|(?:{'|'.join(sorted(_HEDGE_WORDS))})\b,?)\s+",
+    rf"(?:you\s+should|try\s+to|(?:{'|'.join(sorted(DROPPABLE_LEADS))})\b,?)\s+",
     re.IGNORECASE,
 )
 _OBJECT_TRIM = " \t.,;:!?*_"

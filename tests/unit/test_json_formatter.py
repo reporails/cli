@@ -639,3 +639,20 @@ class TestExcludedBlock:
         payload = empty_result_payload(None, (("agents",), ("a.md",)))
         assert payload["excluded"] == {"dirs": ["agents"], "files": ["a.md"], "imported_text_counted": False}
         assert empty_result_payload()["excluded"] == {"dirs": [], "files": [], "imported_text_counted": False}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_diagnostic
+def test_a_listed_excluded_entry_names_its_files_relative_to_the_root(tmp_path: Path) -> None:
+    from reporails_cli.core.platform.dto.diagnostics import ListedFinding, RemediationWorkflow
+
+    wf = RemediationWorkflow(
+        listed=(
+            ListedFinding("X:1", "excluded", 2, files=(str(tmp_path / "sub" / "CLAUDE.md"),)),
+            ListedFinding("X:2", "no-gain", 1),
+        )
+    )
+    out = format_combined_result(_result(reply=ServerReply(workflow=wf)), project_root=tmp_path)
+    listed = out["workflow"]["listed"]
+    assert listed[0]["files"] == ["sub/CLAUDE.md"]
+    assert "files" not in listed[1]

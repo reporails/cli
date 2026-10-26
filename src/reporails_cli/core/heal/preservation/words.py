@@ -9,14 +9,14 @@ import re
 from collections.abc import Iterable, Sequence
 from typing import Protocol
 
-from reporails_cli.core.mapper.classify import HEDGE_WORDS, NEGATION_WORDS
+from reporails_cli.core.mapper.classify import DROPPABLE_LEADS, HEDGE_WORDS, NEGATION_WORDS
 from reporails_cli.core.mapper.classify_lexicon import STOPWORDS
 from reporails_cli.core.platform.dto.ruleset import AtomFormat, Modality
 
 WORD_RE = re.compile(r"[a-zA-Z0-9_']+")
 
 # Hedge words and `please` are dropped from content words too: a rewrite removes them.
-_SKIPPED = STOPWORDS | HEDGE_WORDS | {"please"}
+_SKIPPED = STOPWORDS | HEDGE_WORDS | DROPPABLE_LEADS
 
 # A negation cue: the `n't` contraction suffix, or a standalone negation word (the classifier's
 # negation words, and `without`).

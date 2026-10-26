@@ -427,6 +427,70 @@ class TestValidateTargets:
         assert "nope" in missing["message"]
 
 
+class TestHealExcludeComposed:
+    """`heal_exclude: [CLAUDE.md]` through the real `validate` pipeline with a stubbed paid reply:
+    the entry is anchored at the project root, so the nested `pkg/CLAUDE.md` keeps its location
+    and the root file's rules are listed under `excluded` with the file named."""
+
+    @pytest.fixture
+    def project(self, monkeypatch, tmp_path: Path) -> Path:
+        from reporails_cli.core.platform.dto.diagnostics import (
+            LintResponse,
+            LintResult,
+            LocationFinding,
+            RemediationWorkflow,
+            WorkflowLocation,
+        )
+        from reporails_cli.interfaces.mcp import server
+
+        server._validate_states.clear()
+        (tmp_path / ".ails").mkdir()
+        (tmp_path / ".ails" / "config.yml").write_text("heal_exclude: [CLAUDE.md]\n", encoding="utf-8")
+        places = ("CLAUDE.md", "pkg/CLAUDE.md")
+        for place in places:
+            (tmp_path / place).parent.mkdir(exist_ok=True)
+            (tmp_path / place).write_text("# Project\n\nRun `pytest` before committing.\n", encoding="utf-8")
+        locations = tuple(
+            WorkflowLocation(
+                order=i,
+                element=place,
+                kind="main",
+                loading="",
+                files=(str(tmp_path / place),),
+                findings=(LocationFinding(rule="CORE:C:0042", file=str(tmp_path / place), line=1, pi=None),),
+            )
+            for i, place in enumerate(places, start=1)
+        )
+        reply = LintResult(
+            report=None,  # type: ignore[arg-type]
+            tier="pro",
+            workflow=RemediationWorkflow(locations=locations),
+        )
+        monkeypatch.setattr(
+            "reporails_cli.core.platform.adapters.api_client.AilsClient.lint",
+            lambda self, *args, **kwargs: LintResponse(result=reply),
+        )
+        return tmp_path
+
+    @pytest.mark.e2e
+    @pytest.mark.subsys_server
+    @requires_rules
+    @requires_model
+    def test_a_bare_entry_excludes_the_root_file_only_and_names_it(self, project: Path) -> None:
+        workflow = _bounded_reply(project)["workflow"]
+        assert [loc["files"] for loc in workflow["locations"]] == [["pkg/CLAUDE.md"]]
+        [group] = workflow["listed"]
+        assert "heal_exclude" in group["reason"]
+        [entry] = group["rules"]
+        assert entry["rule"] == "CORE:C:0042"
+        assert entry["files"] == ["CLAUDE.md"]
+
+        from reporails_cli.formatters.mcp_view import render_text_view
+
+        listed = [line for line in render_text_view(_bounded_reply(project)).splitlines() if "\u00d71" in line]
+        assert listed and "(CLAUDE.md)" in listed[0]
+
+
 class TestPreflightTool:
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux

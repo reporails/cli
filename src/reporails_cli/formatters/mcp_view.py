@@ -206,11 +206,17 @@ def _workflow_lines(payload: JsonObject, rules: JsonObject) -> list[str]:
     return lines
 
 
-def _row(loc: JsonObject) -> str:
-    files = [str(f) for f in as_list(loc.get("files"))]
+def _files_shown(entry: JsonObject) -> str:
+    """The files an entry names: the first few, then how many more."""
+    files = [str(f) for f in as_list(entry.get("files"))]
     shown = ", ".join(files[:_ROW_FILES_SHOWN])
     if len(files) > _ROW_FILES_SHOWN:
         shown += f", +{len(files) - _ROW_FILES_SHOWN} more"
+    return shown
+
+
+def _row(loc: JsonObject) -> str:
+    shown = _files_shown(loc)
     cells = (
         loc.get("order"),
         loc.get("kind"),
@@ -300,6 +306,11 @@ def _finding_lines(findings: JsonValue, rules: JsonObject, depth: int) -> list[s
     return lines
 
 
+def _named_files(entry: JsonObject) -> str:
+    shown = _files_shown(entry)
+    return f" ({shown})" if shown else ""
+
+
 def _listed_lines(listed: JsonValue, rules: JsonObject) -> list[str]:
     groups = [g for g in as_list(listed) if isinstance(g, dict)]
     if not groups:
@@ -307,7 +318,7 @@ def _listed_lines(listed: JsonValue, rules: JsonObject) -> list[str]:
     lines = ["workflow.listed:"]
     for group in groups:
         entries = "; ".join(
-            f"{rule_label(str(r.get('rule', '')), rules)} \u00d7{r.get('count', 0)}"
+            f"{rule_label(str(r.get('rule', '')), rules)} \u00d7{r.get('count', 0)}{_named_files(r)}"
             for r in as_list(group.get("rules"))
             if isinstance(r, dict)
         )

@@ -344,14 +344,19 @@ def list_heal_excluded(
 
     The rows leave their location (`prune_workflow`: a location left with nothing is dropped,
     the rest are numbered again from 1). Each rule that fired on an excluded file is listed once
-    with its row count.
+    with its row count and the files it fired on (the project-relative paths `norm` gives).
     """
     counts: dict[str, int] = {}
+    files_of: dict[str, list[str]] = {}
     for loc in workflow.locations:
         rows = (*((f.file, f.rule) for f in walk_findings(loc.findings)), *((r.file, r.rule) for r in loc.relations))
         for file, rule in rows:
-            if excluded(norm(file)):
-                counts[rule] = counts.get(rule, 0) + 1
+            rel = norm(file)
+            if not excluded(rel):
+                continue
+            counts[rule] = counts.get(rule, 0) + 1
+            if rel not in files_of.setdefault(rule, []):
+                files_of[rule].append(rel)
     if not counts:
         return workflow
     pruned = prune_workflow(
@@ -359,7 +364,10 @@ def list_heal_excluded(
     )
     listed = (
         *pruned.listed,
-        *(ListedFinding(rule=rule, reason=HEAL_EXCLUDED_REASON, count=n) for rule, n in counts.items()),
+        *(
+            ListedFinding(rule=rule, reason=HEAL_EXCLUDED_REASON, count=n, files=tuple(files_of[rule]))
+            for rule, n in counts.items()
+        ),
     )
     return replace(pruned, listed=listed, summary=workflow_summary(pruned.locations, listed))
 
@@ -378,7 +386,9 @@ def apply_config_listing(result: CombinedResult, project_root: Path | None = Non
     patterns = get_project_config(project_root).heal_exclude if project_root is not None else []
     if patterns and project_root is not None:
         projected = list_heal_excluded(
-            projected, lambda rel: matches_any_glob(project_root / rel, patterns, project_root), norm
+            projected,
+            lambda rel: matches_any_glob(project_root / rel, patterns, project_root, root_anchored=True),
+            norm,
         )
     return result if projected is workflow else replace(result, reply=replace(result.reply, workflow=projected))
 

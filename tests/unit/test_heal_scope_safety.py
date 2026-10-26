@@ -135,3 +135,22 @@ def test_heal_leaves_files_in_heal_exclude_unchanged(tmp_path: object) -> None:
     assert archived.read_bytes() == archived_before
     assert "`pyproject.toml`" in kept.read_text(encoding="utf-8")
     assert {Path(f["file_path"]).resolve() for f in fixes} == {kept.resolve()}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_a_bare_heal_exclude_name_drops_only_the_root_file(tmp_path: object) -> None:
+    """`heal_exclude: [CLAUDE.md]` is anchored at the project root: a nested `sub/CLAUDE.md` stays writable."""
+    from pathlib import Path
+
+    from reporails_cli.core.heal.apply import allowed_set
+
+    base = Path(str(tmp_path)).resolve()
+    (base / ".ails").mkdir()
+    (base / ".ails" / "config.yml").write_text("heal_exclude: [CLAUDE.md]\n", encoding="utf-8")
+    (base / "sub").mkdir()
+    files = [base / "CLAUDE.md", base / "sub" / "CLAUDE.md"]
+    for f in files:
+        f.write_text("# Doc\n", encoding="utf-8")
+
+    assert allowed_set(base, files) == {base / "sub" / "CLAUDE.md"}

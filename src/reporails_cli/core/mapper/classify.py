@@ -57,6 +57,8 @@ _LATE_DONOT_RE = re.compile(r"\bdo not\b|\bdon't\b|\bdo NOT\b", re.IGNORECASE)
 
 # The hedge leads that can be dropped alone, leaving the instruction (`Perhaps run the linter`).
 HEDGE_ADVERB_LEADS: frozenset[str] = frozenset({"perhaps", "maybe", "possibly", "ideally"})
+# The words that can be dropped alone from the front of an instruction: the hedge adverbs and `please`.
+DROPPABLE_LEADS: frozenset[str] = HEDGE_ADVERB_LEADS | {"please"}
 # The hedge words that, opening an instruction (after `you` / `we` / `please`), make all of it a
 # suggestion (`Prefer real objects`, `Try not to mock`, `Perhaps run the linter`).
 HEDGE_LEADS: frozenset[str] = HEDGE_ADVERB_LEADS | {"prefer", "preferably", "consider", "try"}

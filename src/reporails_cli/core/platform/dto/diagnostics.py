@@ -349,11 +349,15 @@ class WorkflowLocation:
 
 @dataclass(frozen=True)
 class ListedFinding:
-    """A firing rule that takes no remediation location, with the reason code and how many rows."""
+    """A firing rule that takes no remediation location, with the reason code and how many rows.
+
+    `files` names the files the rows sit in when the reason is about files (`excluded`).
+    """
 
     rule: str
     reason: str
     count: int = 0
+    files: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

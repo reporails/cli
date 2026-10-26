@@ -63,7 +63,7 @@ def allowed_set(target: Path, allowed_files: Iterable[Path] | None) -> set[Path]
     allowed = {safe_resolve(p) for p in allowed_files} if allowed_files is not None else None
     patterns = get_project_config(target).heal_exclude
     if allowed is not None and patterns:
-        allowed = {p for p in allowed if not matches_any_glob(p, patterns, safe_resolve(target))}
+        allowed = {p for p in allowed if not matches_any_glob(p, patterns, safe_resolve(target), root_anchored=True)}
     return allowed
 
 

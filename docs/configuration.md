@@ -232,16 +232,17 @@ Explicitly targeting an excluded file still scans it — `ails check ./.claude/a
 
 ## Keeping heal off a file
 
-`heal_exclude` keeps the rewrite off files you want checked but never changed, such as an archived copy of an instruction file. Each entry is a glob matched against the file path **relative to the project root**; `**` spans any number of folders.
+`heal_exclude` keeps the rewrite off files you want checked but never changed, such as an archived copy of an instruction file. Each entry is a glob matched against the file path **relative to the project root**; `**` spans any number of folders. A bare file name matches only at the project root, so `CLAUDE.md` leaves a `CLAUDE.md` in a subfolder alone; write `**/CLAUDE.md` to match that name at any depth.
 
 ```yaml
 # PROJECT_ROOT/.ails/config.yml
 heal_exclude:
   - "archive/**"             # everything under archive/
   - docs/legacy/CLAUDE.md    # that exact file
+  - "**/CHANGELOG.md"        # that name at any depth
 ```
 
-The file is still checked and scored: its findings, its score and the project score do not change. `ails check --heal` leaves the file unchanged. Its findings are not offered for a rewrite; they are listed instead, with the reason `excluded` and a note naming the file. Only `.ails/config.yml` and `.ails/config.local.yml` in the project are read for this key; a `heal_exclude` in `~/.reporails/config.yml` has no effect.
+The file is still checked and scored: its findings, its score and the project score do not change. `ails check --heal` leaves the file unchanged. Its findings are not offered for a rewrite; they are listed instead, with the reason `excluded` and the files they sit in, as paths relative to the project root. Only `.ails/config.yml` and `.ails/config.local.yml` in the project are read for this key; a `heal_exclude` in `~/.reporails/config.yml` has no effect.
 
 To leave a file out of checking altogether, use `exclude_files` above.
 

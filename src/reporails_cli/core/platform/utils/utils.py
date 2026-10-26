@@ -330,11 +330,13 @@ def config_pattern_matches(
     return glob_matches(subject, expanded, anchored=anchor_loose_leaf or not is_loose_leaf_pattern(clean))
 
 
-def matches_any_glob(path: Path, patterns: list[str], target: Path) -> bool:
+def matches_any_glob(path: Path, patterns: list[str], target: Path, *, root_anchored: bool = False) -> bool:
     """Check whether path matches any glob pattern relative to target.
 
     Pure function. Tries the target-relative path first, then the absolute
-    path, so patterns may include or omit the project-root prefix.
+    path, so patterns may include or omit the project-root prefix. With `root_anchored`
+    each pattern is a glob anchored at `target` and only the target-relative path is
+    tried: a bare name (`CLAUDE.md`) matches only at the root, `**/CLAUDE.md` at any depth.
     """
     if not patterns:
         return False
@@ -342,6 +344,8 @@ def matches_any_glob(path: Path, patterns: list[str], target: Path) -> bool:
         rel = path.relative_to(target).as_posix()
     except ValueError:
         rel = path.as_posix()
+    if root_anchored:
+        return any(config_pattern_matches(rel, p, anchor_loose_leaf=True) for p in patterns)
     return any(glob_matches(rel, pattern) or glob_matches(path.as_posix(), pattern) for pattern in patterns)
 
 

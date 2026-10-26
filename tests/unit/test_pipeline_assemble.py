@@ -383,14 +383,13 @@ def test_assemble_records_the_agents_whose_rules_ran(tmp_path):
     )
 
 
-def _archive_project(tmp_path, config: str):
+def _archive_project(tmp_path, config: str, places=("AGENTS.md", "archive/AGENTS.md")):
     """A project with a main file and an archived copy, each holding one served finding."""
     from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
     from reporails_cli.core.platform.dto.models import LocalFinding
 
     (tmp_path / ".ails").mkdir()
     (tmp_path / ".ails" / "config.yml").write_text(config, encoding="utf-8")
-    places = ("AGENTS.md", "archive/AGENTS.md")
     locations = tuple(
         WorkflowLocation(
             order=i,
@@ -426,6 +425,22 @@ def test_a_heal_excluded_file_keeps_its_findings_and_takes_no_rewrite_location(t
     assert [loc.order for loc in result.reply.workflow.locations] == [1]
     [entry] = result.reply.workflow.listed
     assert (entry.rule, entry.reason, entry.count) == ("CODEX:E:0001", "excluded", 1)
+    assert entry.files == ("archive/AGENTS.md",)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_a_bare_heal_exclude_name_matches_only_at_the_project_root(tmp_path, dev_rules_dir):
+    """A bare `AGENTS.md` entry is anchored at the project root: the nested copy keeps its location."""
+    result = _archive_project(tmp_path, "heal_exclude: [AGENTS.md]\n", places=("AGENTS.md", "sub/AGENTS.md"))
+
+    assert [loc.element for loc in result.reply.workflow.locations] == ["sub/AGENTS.md"]
+    [entry] = result.reply.workflow.listed
+    assert (entry.reason, entry.count, entry.files) == ("excluded", 1, ("AGENTS.md",))
+
+    (tmp_path / "d").mkdir()
+    deep = _archive_project(tmp_path / "d", "heal_exclude: ['**/AGENTS.md']\n", places=("AGENTS.md", "sub/AGENTS.md"))
+    assert not deep.reply.workflow.locations
 
 
 @pytest.mark.unit

@@ -85,7 +85,7 @@ class CombinedStats:
     client_check_count: int = 0
     server_diagnostic_count: int = 0
     # The agents whose rules ran; lets the summary name the agent even when no ruleset map
-    # exists (no model on disk). Set by the assemble spine, empty for a hand-built result.
+    # exists (no model on disk); empty when none ran.
     agents: tuple[str, ...] = ()
 
 
@@ -102,9 +102,7 @@ class ServerReply:
     # The diagnostics outcome when the request was rejected, timed out, or never
     # reached the service (a `FunnelError`); `None` when a response arrived normally
     # or no request was made. Carries the reason so JSON / github output can name it
-    # (`offline` alone does not). Not populated by `merge_results` itself —
-    # the caller attaches it once it has both the merged result and the funnel
-    # outcome (see `interfaces/cli/check_orchestration.py::_dispatch_output`).
+    # (`offline` alone does not).
     server_error: FunnelError | None = None
 
 
@@ -136,8 +134,7 @@ class CombinedResult:
     cross_file_coordinates: tuple[CrossFileCoordinate, ...] = ()  # free tier
     level: Level = Level.L0
     reply: ServerReply = field(default_factory=ServerReply)
-    # The hooks found in the project's agent hook configs, set by the assemble spine from the
-    # features it already computes for the level; empty for a hand-built result.
+    # The hooks found in the project's agent hook configs; empty when none were read.
     hooks: tuple[HookEntry, ...] = ()
     omissions: Omissions = field(default_factory=Omissions)
 
