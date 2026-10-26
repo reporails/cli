@@ -42,8 +42,8 @@ def test_run_local_checks_threads_scoped_into_m_probes(monkeypatch, scoped):
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_run_pipeline_scopes_a_single_file_target(monkeypatch, tmp_path):
-    """`_run_pipeline` on a file target must run the mechanical probes `scoped=True`,
+def test_run_pipeline_for_path_scopes_a_single_file_target(monkeypatch, tmp_path):
+    """`run_pipeline_for_path` on a file target must run the mechanical probes `scoped=True`,
     while a directory target (below) runs them unscoped."""
     captured = {}
     single_file = tmp_path / "CLAUDE.md"
@@ -53,7 +53,9 @@ def test_run_pipeline_scopes_a_single_file_target(monkeypatch, tmp_path):
         "reporails_cli.interfaces.mcp.tools._discover_files",
         lambda _target, single_file=None, named=frozenset(): ([], "claude", [single_file], {}, ((), ()), None),
     )
-    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools._build_map", lambda *_a, **_k: (None, None))
+    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.is_initialized", lambda: True)
+    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.model_not_ready_error", lambda: None)
+    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.build_map", lambda *_a, **_k: (None, None))
     monkeypatch.setattr(
         "reporails_cli.core.lint.rule_runner.run_m_probes",
         lambda *_a, **kw: captured.update(kw) or [],
@@ -64,14 +66,14 @@ def test_run_pipeline_scopes_a_single_file_target(monkeypatch, tmp_path):
     )
     monkeypatch.setattr("reporails_cli.formatters.json.format_combined_result", lambda *_a, **_k: {"files": {}})
 
-    tools._run_pipeline(single_file, full=True)
+    tools.run_pipeline_for_path(str(single_file), full=True)
 
     assert captured.get("scoped") is True
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_run_pipeline_does_not_scope_a_directory_target(monkeypatch, tmp_path):
+def test_run_pipeline_for_path_does_not_scope_a_directory_target(monkeypatch, tmp_path):
     captured = {}
     claude_md = tmp_path / "CLAUDE.md"
     claude_md.write_text("# Claude\n", encoding="utf-8")
@@ -80,7 +82,9 @@ def test_run_pipeline_does_not_scope_a_directory_target(monkeypatch, tmp_path):
         "reporails_cli.interfaces.mcp.tools._discover_files",
         lambda _target, single_file=None, named=frozenset(): ([], "claude", [claude_md], {}, ((), ()), None),
     )
-    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools._build_map", lambda *_a, **_k: (None, None))
+    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.is_initialized", lambda: True)
+    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.model_not_ready_error", lambda: None)
+    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.build_map", lambda *_a, **_k: (None, None))
     monkeypatch.setattr(
         "reporails_cli.core.lint.rule_runner.run_m_probes",
         lambda *_a, **kw: captured.update(kw) or [],
@@ -91,7 +95,7 @@ def test_run_pipeline_does_not_scope_a_directory_target(monkeypatch, tmp_path):
     )
     monkeypatch.setattr("reporails_cli.formatters.json.format_combined_result", lambda *_a, **_k: {"files": {}})
 
-    tools._run_pipeline(tmp_path, full=True)
+    tools.run_pipeline_for_path(str(tmp_path), full=True)
 
     assert captured.get("scoped") is False
 

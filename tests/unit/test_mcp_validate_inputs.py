@@ -308,7 +308,9 @@ def test_a_run_that_maps_more_files_does_not_read_as_a_change_on_the_next_call(
 def pipeline_replies(project: Path, monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     """The real `_fresh_validate_payload`, fed by a pipeline stub that answers from a queue."""
     replies: list[dict[str, Any]] = []
-    monkeypatch.setattr(server, "run_pipeline_for_path", lambda path, full: (replies.pop(0), None, 0.0))
+    monkeypatch.setattr(
+        server, "run_pipeline_for_path", lambda path, full, named=frozenset(): (replies.pop(0), None, 0.0)
+    )
     monkeypatch.setattr(server, "_with_preservation", lambda payload, *a, **k: payload)
     return replies
 

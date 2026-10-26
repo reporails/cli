@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.exclusions import DEFAULT_EXCLUDE_DIRS
+from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.discovery.features import detect_features_filesystem
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="symlinks require admin on Windows")
@@ -63,7 +63,7 @@ class TestWalkGlobFollowsSymlinkedDirs:
         skills_dir.mkdir(parents=True)
         os.symlink(str(canonical), str(skills_dir / "audit"))
 
-        results = walk_glob(skills_dir, "SKILL.md", DEFAULT_EXCLUDE_DIRS)
+        results = walk_glob(skills_dir, "SKILL.md", RunExclusions.none(skills_dir))
 
         rel = [str(p.relative_to(project)) for p in results]
         assert ".claude/skills/audit/SKILL.md" in rel
@@ -85,7 +85,7 @@ class TestWalkGlobFollowsSymlinkedDirs:
         os.symlink(str(b), str(a / "loop"))
         os.symlink(str(a), str(b / "loop"))
 
-        results = walk_glob(root, "SKILL.md", DEFAULT_EXCLUDE_DIRS)
+        results = walk_glob(root, "SKILL.md", RunExclusions.none(root))
 
         # Must find the file exactly once despite the cycle; must not hang.
         assert len(results) == 1
@@ -107,7 +107,7 @@ class TestWalkGlobFollowsSymlinkedDirs:
         os.symlink(str(canonical), str(project / "via_a"))
         os.symlink(str(canonical), str(project / "via_b"))
 
-        results = walk_glob(project, "SKILL.md", DEFAULT_EXCLUDE_DIRS)
+        results = walk_glob(project, "SKILL.md", RunExclusions.none(project))
 
         assert len(results) == 1
 
@@ -125,7 +125,7 @@ class TestCiGlobSkipsDanglingSymlinks:
 
         os.symlink(str(tmp_path / "missing-target.md"), str(tmp_path / "CLAUDE.md"))
 
-        assert ci_glob(tmp_path, "CLAUDE.md") == []
+        assert ci_glob(tmp_path, "CLAUDE.md", RunExclusions.none(tmp_path)) == []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -138,7 +138,7 @@ class TestCiGlobSkipsDanglingSymlinks:
         (rules / "real.md").write_text("# Real\n")
         os.symlink(str(tmp_path / "hub" / "gone.md"), str(rules / "dangling.md"))
 
-        results = ci_glob(tmp_path, ".claude/rules/*.md")
+        results = ci_glob(tmp_path, ".claude/rules/*.md", RunExclusions.none(tmp_path))
 
         assert [p.name for p in results] == ["real.md"]
 
@@ -152,6 +152,6 @@ class TestCiGlobSkipsDanglingSymlinks:
         target.write_text("# Shared\n")
         os.symlink(str(target), str(tmp_path / "CLAUDE.md"))
 
-        results = ci_glob(tmp_path, "CLAUDE.md")
+        results = ci_glob(tmp_path, "CLAUDE.md", RunExclusions.none(tmp_path))
 
         assert [p.name for p in results] == ["CLAUDE.md"]

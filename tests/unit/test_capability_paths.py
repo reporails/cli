@@ -263,6 +263,7 @@ def test_symlinked_declared_folder_is_listed(tmp_path: Path) -> None:
 @pytest.mark.subsys_classify
 def test_literal_pattern_is_found_without_a_walk(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from reporails_cli.core.discovery import walk
+    from reporails_cli.core.discovery.exclusions import RunExclusions
 
     (tmp_path / "CLAUDE.md").write_text("# x\n")
     (tmp_path / "big" / "deep").mkdir(parents=True)
@@ -270,7 +271,7 @@ def test_literal_pattern_is_found_without_a_walk(tmp_path: Path, monkeypatch: py
     (tmp_path / "node_modules").mkdir()
     (tmp_path / "node_modules" / "AGENTS.md").write_text("x\n")
     monkeypatch.setattr(walk, "_walk", lambda *a, **k: pytest.fail("walked"))
-    skip = frozenset({"node_modules"})
+    skip = RunExclusions.parse(tmp_path, ["node_modules"], ())
     assert list(walk.walk_glob_matches(tmp_path, "/CLAUDE.md", skip)) == [tmp_path / "CLAUDE.md"]
     assert list(walk.walk_glob_matches(tmp_path, "node_modules/AGENTS.md", skip)) == []
     assert list(walk.walk_glob_matches(tmp_path, "missing.md", skip)) == []

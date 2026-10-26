@@ -23,6 +23,17 @@ os.environ.update(_SUITE_ENV)
 
 
 @pytest.fixture(autouse=True)
+def _fresh_npm_launch(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
+    """No test inherits the npm launch variable or a cached read of it."""
+    from reporails_cli.core.platform.config import bootstrap
+
+    monkeypatch.delenv("AILS_LAUNCHER", raising=False)
+    bootstrap.consume_npm_launch.cache_clear()
+    yield
+    bootstrap.consume_npm_launch.cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def _fresh_mcp_snapshots(monkeypatch: pytest.MonkeyPatch) -> None:
     """Each test starts with no briefed-file baselines held by the MCP server."""
     from reporails_cli.interfaces.mcp import snapshots

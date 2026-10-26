@@ -22,7 +22,7 @@ from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_excl
 from reporails_cli.core.discovery.memory_locator import memory_entries_for_agent
 from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.read_gates import apply_read_gate
-from reporails_cli.core.discovery.walk import safe_resolve, walk_glob_matches
+from reporails_cli.core.discovery.walk import Pruner, safe_resolve, walk_glob_matches
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 from reporails_cli.core.platform.dto.models import FileTypeDeclaration
@@ -215,10 +215,10 @@ def list_capability_targets(
         if decl is None:
             continue
         if _is_user_scope_memory(ft_name, decl.patterns):
-            paths = _user_scope_memory_paths(agent, project_root, exclusions.walk_dirs)
+            paths = _user_scope_memory_paths(agent, project_root, exclusions)
             paths = [p for p in paths if not exclusions.leaves_out(p)]
         else:
-            paths = _glob_patterns(decl.patterns, project_root, exclusions.walk_dirs, decl=decl)
+            paths = _glob_patterns(decl.patterns, project_root, exclusions, decl=decl)
             paths = [p for p in paths if not exclusions.leaves_out(p)]
             # A file the agent reads only under a condition is its target only then.
             paths = apply_read_gate(agent, ft_name, paths, project_root)
@@ -240,7 +240,7 @@ def _list_referenced_targets(agent: str, project_root: Path, exclusions: RunExcl
     in the project — if disabled, returns an empty list (classifier won't
     walk).
     """
-    discovered = discover_from_config(project_root, agent, extra_exclude_dirs=exclusions.walk_dirs)
+    discovered = discover_from_config(project_root, agent, exclusions=exclusions)
     if discovered is None:
         return []
     instruction_files = [f for f in discovered[0] if not exclusions.leaves_out(f)]
@@ -278,9 +278,9 @@ def _is_user_scope_memory(ft_name: str, patterns: tuple[str, ...]) -> bool:
     return any(p.startswith("~/") for p in patterns)
 
 
-def _user_scope_memory_paths(agent: str, project_root: Path, exclude_dirs: frozenset[str]) -> list[Path]:
-    """Resolve user-scope memory entries via memory_locator, not entering `exclude_dirs`."""
-    return [entry.path for entry in memory_entries_for_agent(agent, project_root, exclude_dirs)]
+def _user_scope_memory_paths(agent: str, project_root: Path, exclusions: RunExclusions) -> list[Path]:
+    """Resolve user-scope memory entries via memory_locator, not entering the folders `exclusions` skips."""
+    return [entry.path for entry in memory_entries_for_agent(agent, project_root, exclusions)]
 
 
 def resolve_capability(
@@ -327,7 +327,7 @@ def _find_declaration(
 def _glob_patterns(
     patterns: tuple[str, ...],
     project_root: Path,
-    skip_dirs: frozenset[str],
+    skip: Pruner,
     decl: FileTypeDeclaration | None = None,
 ) -> list[Path]:
     """Expand glob patterns under project_root. Skips user/managed-scope patterns.
@@ -338,8 +338,8 @@ def _glob_patterns(
     the project tree — drop patterns that start with `~/`, an absolute
     path outside `project_root`, or `/etc/`-style managed locations.
 
-    `skip_dirs` holds folder names to skip — any matched path with a
-    directory of that name between `project_root` and the file is dropped.
+    `skip` prunes folders — a walk does not enter a folder it prunes, so no file
+    below one is matched.
 
     `decl` carries the file_type semantics — when provided, files matched
     via a loose-leaf pattern (`**/X.md` or bare `X.md`) are filtered by the
@@ -357,7 +357,7 @@ def _glob_patterns(
     # A plugin component pattern resolves against each plugin root under the project.
     expanded = [
         pattern
-        for pattern in expand_plugin_patterns(list(patterns), project_root, skip_dirs)
+        for pattern in expand_plugin_patterns(list(patterns), project_root, skip)
         if not is_rooted_pattern(pattern)
     ]
     if not expanded:
@@ -365,7 +365,7 @@ def _glob_patterns(
     seen_resolved: set[Path] = set()
     out: list[Path] = []
     for pattern in expanded:
-        for path in sorted(walk_glob_matches(project_root, pattern, skip_dirs)):
+        for path in sorted(walk_glob_matches(project_root, pattern, skip)):
             if decl is not None and not location_matches_mode(path, decl, {project_root}, pattern):
                 continue
             resolved = safe_resolve(path)

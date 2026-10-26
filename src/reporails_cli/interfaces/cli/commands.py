@@ -6,7 +6,7 @@ import shutil
 
 import typer
 
-from reporails_cli.core.install.self_update import detect_install_method
+from reporails_cli.core.install.self_update import detect_install_method, npm_update_hint
 from reporails_cli.core.platform.utils.version import installed_version
 from reporails_cli.interfaces.cli.helpers import console, run_uv_tool
 from reporails_cli.interfaces.cli.typer_app import app
@@ -40,7 +40,12 @@ def show_version() -> None:
 
 
 def _update_engine() -> bool:
-    """Upgrade the engine with uv; True when it is current or was installed."""
+    """Upgrade the engine with the tool that installed it; True when it is current or was installed."""
+    hint = npm_update_hint(detect_install_method())
+    if hint:
+        console.print(hint)
+        return True
+
     uv = shutil.which("uv")
     if not uv:
         console.print("[red]uv not found.[/red] Install it: https://docs.astral.sh/uv/")
@@ -52,6 +57,9 @@ def _update_engine() -> bool:
 
     result = run_uv_tool(uv, "upgrade", "reporails-cli")
 
+    if result is None:
+        console.print("[red]Update failed:[/red] uv could not be run or did not finish in time.")
+        return False
     if result.returncode == 0:
         output = result.stdout.strip() or result.stderr.strip()
         if "already up to date" in output.lower() or "nothing to upgrade" in output.lower():
@@ -62,10 +70,11 @@ def _update_engine() -> bool:
 
     # Maybe not installed as a tool yet — install instead
     result2 = run_uv_tool(uv, "install", "reporails-cli", "--force")
-    if result2.returncode == 0:
+    if result2 is not None and result2.returncode == 0:
         console.print("[green]Installed latest version.[/green]")
         return True
-    console.print(f"[red]Update failed:[/red] {result2.stderr.strip()}")
+    detail = result2.stderr.strip() if result2 is not None else "uv could not be run or did not finish in time."
+    console.print(f"[red]Update failed:[/red] {detail}")
     return False
 
 

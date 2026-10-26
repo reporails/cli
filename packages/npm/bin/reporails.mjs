@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 
 import { execSync, spawn } from "node:child_process";
-import { platform } from "node:os";
-import { argv, exit } from "node:process";
+import { accessSync, constants, readFileSync, statSync } from "node:fs";
+import { homedir, platform } from "node:os";
+import { join } from "node:path";
+import { argv, env, exit } from "node:process";
 
 const PYPI_PACKAGE = "reporails-cli";
 const CLI_COMMAND = "ails";
+const VERSION = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+).version;
 
 const HELP = `
 ails — Validate and score AI instruction files
@@ -48,19 +53,51 @@ function commandExists(cmd) {
   }
 }
 
-function ensureUv() {
-  if (commandExists("uv")) return;
+// The folders Astral's uv installer writes to, in the installer's own order.
+function uvInstallDirs() {
+  const dirs = [];
+  if (env.UV_INSTALL_DIR) dirs.push(env.UV_INSTALL_DIR);
+  if (env.CARGO_DIST_FORCE_INSTALL_DIR) dirs.push(env.CARGO_DIST_FORCE_INSTALL_DIR);
+  if (env.XDG_BIN_HOME) dirs.push(env.XDG_BIN_HOME);
+  if (env.XDG_DATA_HOME) dirs.push(join(env.XDG_DATA_HOME, "..", "bin"));
+  dirs.push(join(homedir(), ".local", "bin"));
+  // Legacy installer folder.
+  dirs.push(env.CARGO_HOME ? join(env.CARGO_HOME, "bin") : join(homedir(), ".cargo", "bin"));
+  return dirs;
+}
 
-  console.log("uv not found — installing...");
+function findInstalledUvx() {
+  const file = platform() === "win32" ? "uvx.exe" : "uvx";
+  const runnable = (p) => {
+    try {
+      if (!statSync(p).isFile()) return false;
+      if (platform() !== "win32") accessSync(p, constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const dir = uvInstallDirs().find((d) => runnable(join(d, file)));
+  return dir ? { cmd: join(dir, file), dir } : null;
+}
+
+// Returns the uvx to run: on PATH, else in the installer's folders, else
+// installed first. `dir` is set when uvx is not on PATH.
+function ensureUvx() {
+  if (commandExists("uvx")) return { cmd: "uvx", dir: null };
+  const found = findInstalledUvx();
+  if (found) return found;
+
+  console.error("uv not found — installing...");
   try {
     if (platform() === "win32") {
       execSync(
         'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"',
-        { stdio: "inherit" },
+        { stdio: ["ignore", 2, 2] },
       );
     } else {
       execSync("curl -LsSf https://astral.sh/uv/install.sh | sh", {
-        stdio: "inherit",
+        stdio: ["ignore", 2, 2],
       });
     }
   } catch {
@@ -68,12 +105,19 @@ function ensureUv() {
     exit(1);
   }
 
-  if (!commandExists("uv")) {
+  const installed = commandExists("uvx") ? { cmd: "uvx", dir: null } : findInstalledUvx();
+  if (!installed) {
     console.error(
-      "uv was installed but is not on PATH. Restart your shell or add it to PATH, then retry.",
+      `uv was installed but uvx was not found in ${uvInstallDirs().join(", ")}. Open a new terminal (the installer adds uv to PATH there) and run the command again.`,
     );
     exit(1);
   }
+  if (installed.dir) {
+    console.error(
+      `uv was installed to ${installed.dir}. Open a new terminal so uv (and an ails installed by \`ails install\`) is on PATH there.`,
+    );
+  }
+  return installed;
 }
 
 // ---------------------------------------------------------------------------
@@ -81,10 +125,12 @@ function ensureUv() {
 // ---------------------------------------------------------------------------
 
 function proxy(args) {
-  ensureUv();
+  const uvx = ensureUvx();
+  const childEnv = { ...env, AILS_LAUNCHER: "npm" };
 
-  const child = spawn("uvx", ["--refresh-package", PYPI_PACKAGE, "--from", PYPI_PACKAGE, CLI_COMMAND, ...args], {
+  const child = spawn(uvx.cmd, ["--from", `${PYPI_PACKAGE}==${VERSION}`, CLI_COMMAND, ...args], {
     stdio: "inherit",
+    env: childEnv,
   });
 
   child.on("error", (err) => {

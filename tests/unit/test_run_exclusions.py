@@ -45,9 +45,11 @@ def _gs_project(tmp_path: Path, config: str = "") -> Path:
 def test_flags_join_config_for_folders_and_globs(tmp_path: Path) -> None:
     _write_config(tmp_path, "exclude_dirs: [ext]\nexclude_files: ['a/*.md']\n")
     excl = load_run_exclusions(tmp_path, ["docs"], ["b/*.md"])
-    assert excl.dirs == {"ext", "docs"}
+    assert {d.text for d in excl.dirs} == {"ext", "docs"}
     assert set(excl.files) == {"a/*.md", "b/*.md"}
-    assert excl.walk_dirs == DEFAULT_EXCLUDE_DIRS | {"ext", "docs"}
+    for name in (*DEFAULT_EXCLUDE_DIRS, "ext", "docs"):
+        assert excl.prunes(str(tmp_path / name), name, os.path.realpath(tmp_path / name))
+    assert not excl.prunes(str(tmp_path / "other"), "other", str(tmp_path / "other"))
 
 
 @pytest.mark.unit
@@ -71,20 +73,20 @@ def test_leaves_out_logical_resolved_and_symlinked_root(tmp_path: Path, monkeypa
     link = tmp_path / "link"
     link.symlink_to(real, target_is_directory=True)
     # Root given through the link, path given resolved.
-    assert RunExclusions(root=link, dirs=frozenset({"ext"})).leaves_out((real / "ext" / "x.md").resolve())
+    assert RunExclusions.parse(link, ["ext"], ()).leaves_out((real / "ext" / "x.md").resolve())
     # Root resolved, path given through the link.
-    assert RunExclusions(root=real.resolve(), dirs=frozenset({"ext"})).leaves_out(link / "ext" / "x.md")
+    assert RunExclusions.parse(real.resolve(), ["ext"], ()).leaves_out(link / "ext" / "x.md")
     # Glob form through the link.
     assert RunExclusions(root=link, files=("ext/*.md",)).leaves_out((real / "ext" / "x.md").resolve())
     # Relative logical path against an absolute root's cwd-independent form (cwd on the same drive).
     monkeypatch.chdir(tmp_path)
-    assert RunExclusions(root=real, dirs=frozenset({"ext"})).leaves_out(Path(os.path.relpath(real / "ext" / "x.md")))
+    assert RunExclusions.parse(real, ["ext"], ()).leaves_out(Path(os.path.relpath(real / "ext" / "x.md")))
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_record_sorted_drops_put_back_keeps_unmatched(tmp_path: Path) -> None:
-    excl = RunExclusions(root=tmp_path, dirs=frozenset({"zeta", "ext", "gone"}), files=("b/*.md", "a/*.md", "b/*.md"))
+    excl = RunExclusions.parse(tmp_path, ["zeta", "ext", "gone"], ["b/*.md", "a/*.md", "b/*.md"])
     assert excl.record() == (("ext", "gone", "zeta"), ("a/*.md", "b/*.md"))
     named = excl.with_named([tmp_path / "ext" / "x.md", tmp_path / "a" / "y.md"])
     assert named.record() == (("ext", "gone", "zeta"), ("a/*.md", "b/*.md"))
@@ -94,15 +96,19 @@ def test_record_sorted_drops_put_back_keeps_unmatched(tmp_path: Path) -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_leaves_out_exempts_named_paths_and_walks_keep_their_folders(tmp_path: Path) -> None:
-    excl = RunExclusions(root=tmp_path, dirs=frozenset({"ext", "other"}), files=("a/*.md",))
+    excl = RunExclusions.parse(tmp_path, ["ext", "other"], ["a/*.md"])
     named = excl.with_named([tmp_path / "ext" / "x.md", tmp_path / "a" / "y.md"])
     assert excl.leaves_out(tmp_path / "ext" / "x.md")
     assert not named.leaves_out(tmp_path / "ext" / "x.md")
     assert not named.leaves_out(tmp_path / "a" / "y.md")
     assert named.leaves_out(tmp_path / "ext" / "z.md")
     assert named.leaves_out(tmp_path / "other" / "z.md")
-    assert "ext" in excl.feature_walk_dirs and "other" in excl.feature_walk_dirs
-    assert "ext" not in named.feature_walk_dirs and "other" in named.feature_walk_dirs
+    assert excl.prunes(str(tmp_path / "ext"), "ext", str(tmp_path / "ext")) and excl.prunes(
+        str(tmp_path / "other"), "other", str(tmp_path / "other")
+    )
+    assert not named.prunes(str(tmp_path / "ext"), "ext", str(tmp_path / "ext")) and named.prunes(
+        str(tmp_path / "other"), "other", str(tmp_path / "other")
+    )
 
 
 # ─── The link walk ──────────────────────────────────────────────────────
@@ -113,7 +119,7 @@ def test_leaves_out_exempts_named_paths_and_walks_keep_their_folders(tmp_path: P
 @pytest.mark.parametrize(
     "excl",
     [
-        lambda root: RunExclusions(root=root, dirs=frozenset({"ext"})),
+        lambda root: RunExclusions.parse(root, ["ext"], ()),
         lambda root: RunExclusions(root=root, files=("ext/*.md",)),
     ],
     ids=["folder", "glob"],
@@ -139,9 +145,7 @@ def test_walker_never_enters_a_left_out_target(tmp_path: Path, excl) -> None:
 def test_walker_never_skips_a_seed(tmp_path: Path) -> None:
     project = _gs_project(tmp_path)
     seed = project / "ext" / "notes.md"
-    edges = walk_markdown_links(
-        {seed: "main"}, project, {seed}, exclusions=RunExclusions(root=project, dirs=frozenset({"ext"}))
-    )
+    edges = walk_markdown_links({seed: "main"}, project, {seed}, exclusions=RunExclusions.parse(project, ["ext"], ()))
     assert edges == []  # the seed itself is walked; its only link (a.md) is left out
     other = project / "CLAUDE.md"
     edges = walk_markdown_links(
@@ -208,4 +212,87 @@ def test_mcp_discover_files_fold_never_checks_a_left_out_file(tmp_path, case, co
     assert not names & {"notes.md", "ref.md", "a.md"}
     assert "docs/b.md" in discovered[3]
     assert not any("ext" in k.split("/") for k in discovered[3])
-    assert discovered[5].dirs | set(discovered[5].files)
+    assert discovered[5].dirs or discovered[5].files
+
+
+# ─── The Excluded record on a narrowed run ──────────────────────────────
+
+
+def _scope_state(project: Path, path_targets: set[Path], specs: list[tuple[str, str]]) -> CheckState:
+    clear_agent_cache()
+    inputs = CheckInputs(
+        targets=[],
+        format_opt="json",
+        agent="claude",
+        exclude_dirs=["ext"],
+        exclude_files=None,
+        ascii_mode=True,
+        strict=False,
+        verbose=False,
+        heal=False,
+        dry_run=False,
+        cwd=False,
+        project_root=project,
+    )
+    state = CheckState(inputs=inputs)
+    state.targets.target = project
+    state.targets.path_targets = path_targets
+    state.targets.capability_specs = specs
+    return state
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.parametrize(
+    ("case", "kept"),
+    [
+        ("file", False),
+        ("file+folder", True),
+        ("file+listing", True),
+        ("named-capability", False),
+        ("named-capability+listing", True),
+    ],
+)
+def test_excluded_record_drops_a_named_files_pattern_only_when_the_run_is_only_named_files(
+    tmp_path: Path, case: str, kept: bool
+) -> None:
+    project = _gs_project(tmp_path)
+    named = project / "ext" / "notes.md"
+    targets, specs, cap_paths = {named}, [], frozenset()
+    if case == "file+folder":
+        targets = {named, project / "docs"}
+    elif case == "file+listing":
+        specs = [("hooks", "")]
+    elif case.startswith("named-capability"):
+        targets, specs, cap_paths = set(), [("skills", "backlog")], frozenset({named})
+        if case.endswith("listing"):
+            specs.append(("hooks", ""))
+    state = _scope_state(project, targets, specs)
+    check_flow._resolve_scope_at_target(state, cap_paths)
+    assert (state.render.excluded[0] == ("ext",)) is kept
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+def test_covers_a_named_folder_hit_spares_a_folder_holding_a_named_file(tmp_path: Path) -> None:
+    named_file = tmp_path / "pkg" / "docs" / "a.md"
+    named_file.parent.mkdir(parents=True)
+    named_file.write_text("x")
+    (named_file.parent / "b.md").write_text("x")
+    excl = RunExclusions.parse(tmp_path, ["docs"], ()).with_named([named_file])
+    assert not excl.covers(named_file)
+    assert not excl.covers(tmp_path / "pkg" / "docs")
+    assert not excl.covers(tmp_path / "pkg" / "docs" / "b.md")
+    assert excl.covers(tmp_path / "docs" / "b.md")
+    assert not excl.covers(tmp_path / "pkg" / "other.md")
+    assert not excl.covers(tmp_path.parent / "docs" / "b.md")
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_a_file_named_like_a_default_folder_is_not_covered_but_its_contents_are(tmp_path: Path) -> None:
+    (tmp_path / "build").write_text("x")
+    (tmp_path / "dist").mkdir()
+    excl = RunExclusions.none(tmp_path)
+    assert not excl.covers(tmp_path / "build")
+    assert excl.covers(tmp_path / "dist" / "a.md")

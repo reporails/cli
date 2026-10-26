@@ -127,7 +127,7 @@ class TestStructuredOutput:
         from reporails_cli.interfaces.mcp.server import server as mcp_server
 
         tools = {t.name: t for t in _run_async(mcp_server.list_tools())}
-        for name in ("validate", "remedy_brief", "preflight", "explain"):
+        for name in ("validate", "prepare", "remedy_brief", "preflight", "explain"):
             assert tools[name].annotations is not None
             assert tools[name].annotations.read_only_hint is True
 
@@ -142,12 +142,12 @@ class TestListTools:
     @pytest.mark.subsys_cli_ux
     @pytest.mark.subsys_api
     def test_all_tools_present(self) -> None:
-        """list_tools should return the current surface: validate, remedy_brief, heal_apply, preflight, explain."""
+        """list_tools returns the current surface: validate, prepare, remedy_brief, heal_apply, preflight, explain."""
         from reporails_cli.interfaces.mcp.server import server as mcp_server
 
         tools = _run_async(mcp_server.list_tools())
         names = {t.name for t in tools}
-        assert names == {"validate", "remedy_brief", "heal_apply", "preflight", "explain"}
+        assert names == {"validate", "prepare", "remedy_brief", "heal_apply", "preflight", "explain"}
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
@@ -294,11 +294,11 @@ class TestValidateTool:
     @pytest.mark.subsys_cli_ux
     @pytest.mark.subsys_api
     def test_runtime_error_returns_error_json(self, level2_project: Path) -> None:
-        """RuntimeError from _run_pipeline must return JSON error, not crash."""
+        """RuntimeError from scope_for_path must return JSON error, not crash."""
         with (
             patch("reporails_cli.interfaces.mcp.tools.is_initialized", return_value=True),
             patch(
-                "reporails_cli.interfaces.mcp.tools._run_pipeline",
+                "reporails_cli.interfaces.mcp.tools.scope_for_path",
                 side_effect=RuntimeError("Unsupported operating system"),
             ),
         ):

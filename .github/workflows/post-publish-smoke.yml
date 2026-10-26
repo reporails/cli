@@ -165,7 +165,10 @@ jobs:
       - name: Verify npx + smoke check
         shell: bash
         run: |
-          npx --yes "@reporails/cli@$VERSION" version
+          out="$(npx --yes "@reporails/cli@$VERSION" version | tr -d '\r')"
+          echo "$out"
+          echo "$out" | grep -qxF "CLI:     $VERSION"
+          echo "$out" | grep -qxF "Install: npm"
           mkdir -p smoke-project
           cat > smoke-project/CLAUDE.md << 'FIXTURE'
           # My Project

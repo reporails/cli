@@ -8,8 +8,8 @@ from pathlib import Path
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.lint.regex.compiler import CompiledCheck
 from reporails_cli.core.lint.regex.not_evaluated import record_not_evaluated, rule_id_of
+from reporails_cli.core.platform.contract.glob_pattern import glob_matches
 from reporails_cli.core.platform.dto.models import LocalFinding
-from reporails_cli.core.platform.utils.utils import glob_matches
 
 
 @dataclass(frozen=True)

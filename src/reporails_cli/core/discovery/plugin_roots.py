@@ -12,10 +12,11 @@ manifest is never read as a plugin's skills.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from pathlib import Path
 
-from reporails_cli.core.discovery.walk import ListedEntry, list_dir
+from reporails_cli.core.discovery.walk import ListedEntry, Pruner, child_real, list_dir
 from reporails_cli.core.platform.contract.json_value import JsonObject, pattern_list
 from reporails_cli.core.platform.utils.utils import config_pattern_matches
 
@@ -57,31 +58,34 @@ def _holds_marker(directory: Path, marker: str) -> bool:
         return False
 
 
-def _is_searchable_dir(entry: ListedEntry, exclude_dirs: frozenset[str]) -> bool:
-    if entry.name.startswith(".") or entry.name in exclude_dirs:
-        return False
-    return entry.is_dir and not entry.is_symlink
+def _searchable_real(entry: ListedEntry, skip: Pruner, parent_real: str) -> str | None:
+    """The canonical path of a listed folder worth searching (not hidden, not a symlink, not pruned), else `None`."""
+    if entry.name.startswith(".") or not entry.is_dir or entry.is_symlink:
+        return None
+    real = child_real(entry.path, entry.name, parent_real, False)
+    return None if skip.prunes(entry.path, entry.name, real) else real
 
 
-def find_plugin_roots(target: Path, marker: str, exclude_dirs: frozenset[str]) -> list[Path]:
+def find_plugin_roots(target: Path, marker: str, skip: Pruner) -> list[Path]:
     """Directories at or below `target` (up to a few levels) that hold `marker`.
 
-    Hidden directories and excluded ones are not searched; `target` itself is always
+    Hidden directories and ones `skip` prunes are not searched; `target` itself is always
     checked. Sorted, so the expansion order is stable.
     """
     root = target if target.is_dir() else target.parent
     found: list[Path] = []
-    frontier = [root]
+    frontier = [(root, os.path.realpath(root))]
     for depth in range(_MAX_ROOT_DEPTH + 1):
-        next_frontier: list[Path] = []
-        for directory in frontier:
+        next_frontier: list[tuple[Path, str]] = []
+        for directory, directory_real in frontier:
             if _holds_marker(directory, marker):
                 found.append(directory)
             if depth == _MAX_ROOT_DEPTH:
                 continue
-            next_frontier.extend(
-                Path(entry.path) for entry in list_dir(str(directory)) or () if _is_searchable_dir(entry, exclude_dirs)
-            )
+            for entry in list_dir(str(directory)) or ():
+                real = _searchable_real(entry, skip, directory_real)
+                if real is not None:
+                    next_frontier.append((Path(entry.path), real))
         frontier = next_frontier
     return sorted(found)
 
@@ -89,7 +93,7 @@ def find_plugin_roots(target: Path, marker: str, exclude_dirs: frozenset[str]) -
 def expand_plugin_patterns(
     patterns: list[str],
     target: Path,
-    exclude_dirs: frozenset[str],
+    skip: Pruner,
     roots_by_marker: dict[str, list[Path]] | None = None,
 ) -> list[str]:
     """Replace each `<marker>/pattern` with one root-relative pattern per plugin root found
@@ -106,7 +110,7 @@ def expand_plugin_patterns(
             continue
         marker, rest = split
         if marker not in roots_by_marker:
-            roots_by_marker[marker] = find_plugin_roots(root, marker, exclude_dirs)
+            roots_by_marker[marker] = find_plugin_roots(root, marker, skip)
         for plugin_root in roots_by_marker[marker]:
             prefix = plugin_root.relative_to(root).as_posix()
             out.append(rest if prefix == "." else f"{prefix}/{rest}")

@@ -103,6 +103,8 @@ def _load_registry() -> dict[str, JsonObject]:
 
 
 _ACTIVATION_KEYS = (
+    "precedence",
+    "scope",
     "activation",
     "path_key",
     "always_key",
@@ -293,6 +295,12 @@ def _trigger_activation(path: Path, props: JsonObject) -> tuple[str, str, tuple[
     return loading, scope, ()
 
 
+def _nested_activation(path: Path, props: JsonObject, loading: str, scope: str) -> tuple[str, str, tuple[str, ...]]:
+    """Scope a nested file by location, reading a non-empty `path_key` filter to make it path scoped."""
+    globs = _parse_frontmatter_globs(path, str(props["path_key"])) if "path_key" in props else ()
+    return (loading, "path_scoped", globs) if globs else (loading, scope, ())
+
+
 def _resolve_activation(path: Path, props: JsonObject, loading: str, scope: str) -> tuple[str, str, tuple[str, ...]]:
     """The loading, scope and globs a file's frontmatter gives it, from the activation keys its
     file type (or location scope) declares.
@@ -301,10 +309,11 @@ def _resolve_activation(path: Path, props: JsonObject, loading: str, scope: str)
     start; a non-empty `path_key` filter makes it path scoped; with no filter, a `description_key`
     value lets the agent pick the file by description (`on_invocation`), and a declared `always_key`
     or `description_key` without either leaves it for manual attachment (`on_demand`). A path-filtered
-    type declaring none of those loads at session start without its filter. A nested file is scoped by
-    where it lives, never by frontmatter.
+    type declaring none of those loads at session start without its filter.
     """
-    if scope == "nested" or loading not in ("on_demand", "on_invocation"):
+    if scope == "nested":
+        return _nested_activation(path, props, loading, scope)
+    if loading not in ("on_demand", "on_invocation"):
         return loading, scope, ()
     always_key = props.get("always_key")
     if loading == "on_demand" and props.get("trigger_key"):
@@ -316,8 +325,10 @@ def _resolve_activation(path: Path, props: JsonObject, loading: str, scope: str)
         return loading, scope, globs
     description_key = props.get("description_key")
     if description_key and _frontmatter_text(path, str(description_key)):
-        return "on_invocation", "global", ()
-    return ("on_demand" if always_key or description_key else "session_start"), "global", ()
+        activation = "on_invocation"
+    else:
+        activation = "on_demand" if always_key or description_key else "session_start"
+    return activation, "global", ()
 
 
 # File types whose body loads when the agent or the user invokes them.
@@ -379,3 +390,28 @@ def file_type_of(path: Path, root: Path, registry: dict[str, JsonObject]) -> str
     rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
     match = _find_best_registry_match(rel.lower(), registry, path, root)
     return match[1] if match is not None else "generic"
+
+
+class FileRead(NamedTuple):
+    """How an agent reads a file: its file type, when it loads and from which precedence scope."""
+
+    file_type: str
+    loading: str
+    precedence: str
+
+
+def file_read_by(agent_id: str, path: Path, root: Path, registry: dict[str, JsonObject]) -> FileRead | None:
+    """The file type, loading and precedence `agent_id`'s own file types give `path`, None when none matches.
+
+    Loading is the mapper's own (`_detect_file_activation`); precedence is the matched location scope's.
+    """
+    config = registry.get(agent_id)
+    if config is None:
+        return None
+    own = {agent_id: config}
+    rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
+    match = _find_best_registry_match(rel.lower(), own, path, root)
+    if match is None:
+        return None
+    loading, _, _, _, file_type, _ = _detect_file_activation(path, root, own)
+    return FileRead(file_type, loading, str(match[2].get("precedence", "")))

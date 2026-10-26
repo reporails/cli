@@ -27,12 +27,16 @@ def _write(path: Path, text: str = "# Notes\n\nRun the tests.\n") -> Path:
     return path
 
 
-def _settings(path: Path, *, mode: str | None = None, enabled: bool | None = None) -> None:
+CURRENT_ID = "cc-plugin-agents-md@builtin"
+LEGACY_ID = "agents-md@builtin"
+
+
+def _settings(path: Path, *, mode: str | None = None, enabled: bool | None = None, plugin_id: str = LEGACY_ID) -> None:
     data: dict = {}
     if mode is not None:
-        data["pluginConfigs"] = {"agents-md@builtin": {"options": {"instructionFiles": mode}}}
+        data["pluginConfigs"] = {plugin_id: {"options": {"instructionFiles": mode}}}
     if enabled is not None:
-        data["enabledPlugins"] = {"agents-md@builtin": enabled}
+        data["enabledPlugins"] = {plugin_id: enabled}
     _write(path, json.dumps(data))
 
 
@@ -72,6 +76,39 @@ def test_default_mode_without_any_setting(no_managed: Path, tmp_path: Path) -> N
 def test_user_settings_pick_the_mode(no_managed: Path, tmp_path: Path, mode: str) -> None:
     _settings(_user_settings(), mode=mode)
     assert claude_instruction_files_mode(tmp_path) == mode
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+@pytest.mark.parametrize("plugin_id", [CURRENT_ID, LEGACY_ID])
+def test_the_mode_is_read_under_either_plugin_id(no_managed: Path, tmp_path: Path, plugin_id: str) -> None:
+    _settings(_user_settings(), mode="managed-only", plugin_id=plugin_id)
+    assert claude_instruction_files_mode(tmp_path) == "managed-only"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_the_current_id_wins_when_one_file_sets_both(no_managed: Path, tmp_path: Path) -> None:
+    _write(
+        _user_settings(),
+        json.dumps(
+            {
+                "pluginConfigs": {
+                    LEGACY_ID: {"options": {"instructionFiles": "claude-md"}},
+                    CURRENT_ID: {"options": {"instructionFiles": "managed-only"}},
+                }
+            }
+        ),
+    )
+    assert claude_instruction_files_mode(tmp_path) == "managed-only"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+@pytest.mark.parametrize("plugin_id", [CURRENT_ID, LEGACY_ID])
+def test_a_turned_off_plugin_reads_claude_md_under_either_id(no_managed: Path, tmp_path: Path, plugin_id: str) -> None:
+    _settings(_user_settings(), mode="claude-md-and-agents-md", enabled=False, plugin_id=plugin_id)
+    assert claude_instruction_files_mode(tmp_path) == "claude-md"
 
 
 @pytest.mark.unit

@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.discovery.features import (
     _detect_auto_memory,
     _hooks_key_is_set,
@@ -64,7 +65,7 @@ def test_bare_mcp_json_with_no_detected_agent_grants_no_hooks(tmp_path: Path) ->
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_hooks_key_is_set_missing_file_is_false(tmp_path: Path) -> None:
-    assert _hooks_key_is_set(tmp_path / "nope.json", _SurfaceScan(exclude_dirs=frozenset())) is False  # kills L175
+    assert _hooks_key_is_set(tmp_path / "nope.json", _SurfaceScan(RunExclusions.none(tmp_path))) is False  # kills L175
 
 
 @pytest.mark.unit
@@ -72,7 +73,7 @@ def test_hooks_key_is_set_missing_file_is_false(tmp_path: Path) -> None:
 def test_hooks_key_is_set_malformed_json_is_false(tmp_path: Path) -> None:
     p = tmp_path / "settings.json"
     p.write_text("{ not valid json")
-    assert _hooks_key_is_set(p, _SurfaceScan(exclude_dirs=frozenset())) is False  # kills L181
+    assert _hooks_key_is_set(p, _SurfaceScan(RunExclusions.none(tmp_path))) is False  # kills L181
 
 
 @pytest.mark.unit
@@ -80,7 +81,7 @@ def test_hooks_key_is_set_malformed_json_is_false(tmp_path: Path) -> None:
 def test_hooks_key_is_set_dict_without_hooks_is_false(tmp_path: Path) -> None:
     p = tmp_path / "settings.json"
     p.write_text('{"other": 1}')
-    assert _hooks_key_is_set(p, _SurfaceScan(exclude_dirs=frozenset())) is False  # kills L182 and→or
+    assert _hooks_key_is_set(p, _SurfaceScan(RunExclusions.none(tmp_path))) is False  # kills L182 and→or
 
 
 @pytest.mark.unit
@@ -88,7 +89,7 @@ def test_hooks_key_is_set_dict_without_hooks_is_false(tmp_path: Path) -> None:
 def test_hooks_key_is_set_dict_with_hooks_is_true(tmp_path: Path) -> None:
     p = tmp_path / "settings.json"
     p.write_text('{"hooks": {"PreToolUse": []}}')
-    assert _hooks_key_is_set(p, _SurfaceScan(exclude_dirs=frozenset())) is True
+    assert _hooks_key_is_set(p, _SurfaceScan(RunExclusions.none(tmp_path))) is True
 
 
 # ──────────────────────────────────────────────────────────────────

@@ -6,7 +6,6 @@ Rule-token resolution, heal-authorization, model availability, and the wall-cloc
 from __future__ import annotations
 
 import logging
-import os
 import signal
 import sys
 
@@ -15,6 +14,7 @@ import typer
 from reporails_cli.core.heal.apply import heal_signed_in
 from reporails_cli.core.mapper.model_manifest import ModelFetchError
 from reporails_cli.core.mapper.model_store import ensure_models_available
+from reporails_cli.core.platform.config.bootstrap import env_int
 from reporails_cli.core.platform.dto.diagnostics import FunnelError
 from reporails_cli.interfaces.cli.helpers import console
 
@@ -82,13 +82,8 @@ def _resume_check_timeout(remaining: float) -> None:
 def _check_timeout_ceiling() -> int:
     """Wall-clock ceiling (seconds) for a single `ails check`; 0 disables. Default 600."""
 
-    raw = os.environ.get("AILS_CHECK_TIMEOUT_S", "").strip()
-    if not raw:
-        return 600
-    try:
-        return int(raw)
-    except ValueError:
-        return 600
+    timeout = env_int("AILS_CHECK_TIMEOUT_S")
+    return 600 if timeout is None else timeout
 
 
 def _arm_check_timeout() -> None:

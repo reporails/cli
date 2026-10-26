@@ -21,7 +21,7 @@ from reporails_cli.core.discovery.agent_config import (
 )
 from reporails_cli.core.discovery.agent_discovery import discover_from_config
 from reporails_cli.core.discovery.agent_markers import agent_has_marker, dir_prefix_from_glob
-from reporails_cli.core.discovery.exclusions import load_project_exclude_dirs
+from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
 from reporails_cli.core.discovery.file_aliases import clear_alias_cache, dedupe_with_aliases, store_alias_cache
 from reporails_cli.core.discovery.read_gates import reads_as_fallback
 from reporails_cli.core.discovery.surface_config import config_names_agent
@@ -30,7 +30,6 @@ from reporails_cli.core.platform.contract.json_value import JsonObject, as_str, 
 from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
 if TYPE_CHECKING:
-    from reporails_cli.core.discovery.exclusions import RunExclusions
     from reporails_cli.core.platform.dto.results import ProjectConfig
 
 
@@ -152,21 +151,17 @@ def _detect_agent(
     agent_type: AgentType,
     *,
     known: dict[str, AgentType],
-    project_excludes: frozenset[str],
+    exclusions: RunExclusions,
     project_config: ProjectConfig | None,
 ) -> DetectedAgent | None:
     """The agent's detected files and directories under `target`, None when it has no scannable footprint."""
     agent_id = agent_type.id
     # Fast marker check — skip agents with no footprint (avoids tree walks)
-    if not (
-        agent_has_marker(target, agent_type, known, project_excludes) or config_names_agent(agent_id, project_config)
-    ):
+    if not (agent_has_marker(target, agent_type, known, exclusions) or config_names_agent(agent_id, project_config)):
         return None
 
     # Config-driven discovery from bundled config.yml
-    config_result = discover_from_config(
-        target, agent_id, project_excludes, project_config=project_config, repo_scoped=True
-    )
+    config_result = discover_from_config(target, agent_id, exclusions, project_config=project_config, repo_scoped=True)
     if config_result is None:
         return None
     instruction_files, rule_files, config_files = config_result
@@ -202,8 +197,7 @@ def detect_agents(target: Path) -> list[DetectedAgent]:
     if cached is not None:
         return cached
 
-    # Load project exclude_dirs early so discovery skips noise directories
-    project_excludes = load_project_exclude_dirs(target)
+    exclusions = load_run_exclusions(target)
 
     # Load project config for per-surface include/exclude + fallback filenames
     project_config = get_project_config(target)
@@ -217,7 +211,7 @@ def detect_agents(target: Path) -> list[DetectedAgent]:
                 target,
                 agent_type,
                 known=known,
-                project_excludes=project_excludes,
+                exclusions=exclusions,
                 project_config=project_config,
             )
         )

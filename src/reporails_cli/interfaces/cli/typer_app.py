@@ -12,6 +12,7 @@ import click
 import typer
 from typer.core import TyperGroup
 
+from reporails_cli.core.platform.config.bootstrap import consume_npm_launch
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.runtime import _torch_blocker
 
@@ -22,6 +23,7 @@ class _AilsGroup(TyperGroup):
     """Root command group: an unreadable config file ends any command with one error line and exit code 2."""
 
     def invoke(self, ctx: click.Context) -> object:
+        consume_npm_launch()
         try:
             return super().invoke(ctx)
         except ConfigUnreadableError as exc:

@@ -8,8 +8,15 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.discovery import walk as ad
-from reporails_cli.core.discovery.exclusions import DEFAULT_EXCLUDE_DIRS
+from reporails_cli.core.discovery.exclusions import RunExclusions
 from tests.conftest import skip_if_case_insensitive_fs
+
+
+class _PruneNothing:
+    """A pruner that skips no folder."""
+
+    def prunes(self, path: str, name: str, real: str) -> bool:
+        return False
 
 
 def _tree(root: Path) -> None:
@@ -41,7 +48,10 @@ def test_walks_in_one_pass_read_each_directory_once(tmp_path: Path, scans: list[
     skip_if_case_insensitive_fs(tmp_path)
     _tree(tmp_path)
     with ad.shared_dir_listings():
-        found = [ad.walk_glob(tmp_path, name, DEFAULT_EXCLUDE_DIRS) for name in ("CLAUDE.md", "AGENTS.md", "SKILL.md")]
+        found = [
+            ad.walk_glob(tmp_path, name, RunExclusions.none(tmp_path))
+            for name in ("CLAUDE.md", "AGENTS.md", "SKILL.md")
+        ]
     assert [len(f) for f in found] == [1, 1, 1]
     assert len(scans) == len(set(scans)) == 6
 
@@ -51,7 +61,7 @@ def test_walks_in_one_pass_read_each_directory_once(tmp_path: Path, scans: list[
 def test_walks_outside_a_pass_read_the_disk_each_time(tmp_path: Path, scans: list[str]) -> None:
     _tree(tmp_path)
     for name in ("CLAUDE.md", "AGENTS.md"):
-        ad.walk_glob(tmp_path, name, DEFAULT_EXCLUDE_DIRS)
+        ad.walk_glob(tmp_path, name, RunExclusions.none(tmp_path))
     assert len(scans) == 12
 
 
@@ -60,10 +70,10 @@ def test_walks_outside_a_pass_read_the_disk_each_time(tmp_path: Path, scans: lis
 def test_a_new_pass_sees_a_file_added_since_the_last_one(tmp_path: Path) -> None:
     _tree(tmp_path)
     with ad.shared_dir_listings():
-        before = ad.walk_glob(tmp_path, "AGENTS.md", DEFAULT_EXCLUDE_DIRS)
+        before = ad.walk_glob(tmp_path, "AGENTS.md", RunExclusions.none(tmp_path))
     (tmp_path / "a" / "d" / "AGENTS.md").write_text("x\n", encoding="utf-8")
     with ad.shared_dir_listings():
-        after = ad.walk_glob(tmp_path, "AGENTS.md", DEFAULT_EXCLUDE_DIRS)
+        after = ad.walk_glob(tmp_path, "AGENTS.md", RunExclusions.none(tmp_path))
     assert len(before) == 1
     assert sorted(p.relative_to(tmp_path).as_posix() for p in after) == ["a/b/AGENTS.md", "a/d/AGENTS.md"]
 
@@ -74,9 +84,11 @@ def test_shared_and_unshared_walks_find_the_same_files_in_the_same_order(tmp_pat
     _tree(tmp_path)
     (tmp_path / "loop").symlink_to(tmp_path, target_is_directory=True)
     (tmp_path / "e" / "link").symlink_to(tmp_path / "a" / "b", target_is_directory=True)
-    plain = [ad.walk_glob(tmp_path, n, frozenset({"d"})) for n in ("AGENTS.md", "SKILL.md")]
+    plain = [ad.walk_glob(tmp_path, n, RunExclusions.parse(tmp_path, ["d"], ())) for n in ("AGENTS.md", "SKILL.md")]
     with ad.shared_dir_listings():
-        shared = [ad.walk_glob(tmp_path, n, frozenset({"d"})) for n in ("AGENTS.md", "SKILL.md")]
+        shared = [
+            ad.walk_glob(tmp_path, n, RunExclusions.parse(tmp_path, ["d"], ())) for n in ("AGENTS.md", "SKILL.md")
+        ]
     assert plain == shared
     assert all(plain)
 
@@ -87,7 +99,7 @@ def test_a_symlink_to_an_ancestor_is_entered_once(tmp_path: Path) -> None:
     skip_if_case_insensitive_fs(tmp_path)
     _tree(tmp_path)
     (tmp_path / "a" / "b" / "up").symlink_to(tmp_path / "a", target_is_directory=True)
-    found = ad.walk_glob(tmp_path, "SKILL.md", DEFAULT_EXCLUDE_DIRS)
+    found = ad.walk_glob(tmp_path, "SKILL.md", RunExclusions.none(tmp_path))
     assert sorted(p.relative_to(tmp_path).as_posix() for p in found) == ["a/b/c/SKILL.md"]
 
 
@@ -96,9 +108,9 @@ def test_a_symlink_to_an_ancestor_is_entered_once(tmp_path: Path) -> None:
 def test_markdown_walk_and_name_walk_share_one_scan_of_each_directory(tmp_path: Path, scans: list[str]) -> None:
     _tree(tmp_path)
     with ad.shared_dir_listings():
-        by_name = ad.walk_glob(tmp_path, "AGENTS.md", DEFAULT_EXCLUDE_DIRS)
-        markdown = sorted(p.name for p in ad.walk_markdown(tmp_path, DEFAULT_EXCLUDE_DIRS))
-        files = sorted(p.name for p in ad.walk_files(tmp_path, DEFAULT_EXCLUDE_DIRS))
+        by_name = ad.walk_glob(tmp_path, "AGENTS.md", RunExclusions.none(tmp_path))
+        markdown = sorted(p.name for p in ad.walk_markdown(tmp_path, RunExclusions.none(tmp_path)))
+        files = sorted(p.name for p in ad.walk_files(tmp_path, RunExclusions.none(tmp_path)))
     assert [p.name for p in by_name] == ["AGENTS.md"]
     assert markdown == ["AGENTS.md", "CLAUDE.md", "SKILL.md", "skill.md"] == files
     assert len(scans) == len(set(scans)) == 6
@@ -108,8 +120,8 @@ def test_markdown_walk_and_name_walk_share_one_scan_of_each_directory(tmp_path: 
 @pytest.mark.subsys_lint
 def test_markdown_walk_outside_a_pass_reads_the_disk_each_time(tmp_path: Path, scans: list[str]) -> None:
     _tree(tmp_path)
-    list(ad.walk_markdown(tmp_path, DEFAULT_EXCLUDE_DIRS))
-    list(ad.walk_markdown(tmp_path, DEFAULT_EXCLUDE_DIRS))
+    list(ad.walk_markdown(tmp_path, RunExclusions.none(tmp_path)))
+    list(ad.walk_markdown(tmp_path, RunExclusions.none(tmp_path)))
     assert len(scans) == 12
 
 
@@ -118,10 +130,10 @@ def test_markdown_walk_outside_a_pass_reads_the_disk_each_time(tmp_path: Path, s
 def test_a_pass_entered_inside_a_pass_keeps_sharing_its_listings(tmp_path: Path, scans: list[str]) -> None:
     _tree(tmp_path)
     with ad.shared_dir_listings():
-        ad.walk_glob(tmp_path, "AGENTS.md", DEFAULT_EXCLUDE_DIRS)
+        ad.walk_glob(tmp_path, "AGENTS.md", RunExclusions.none(tmp_path))
         with ad.shared_dir_listings():
-            ad.walk_glob(tmp_path, "SKILL.md", DEFAULT_EXCLUDE_DIRS)
-        ad.walk_glob(tmp_path, "CLAUDE.md", DEFAULT_EXCLUDE_DIRS)
+            ad.walk_glob(tmp_path, "SKILL.md", RunExclusions.none(tmp_path))
+        ad.walk_glob(tmp_path, "CLAUDE.md", RunExclusions.none(tmp_path))
     assert len(scans) == len(set(scans)) == 6
 
 
@@ -139,8 +151,8 @@ def test_markdown_walk_order_and_content_match_os_walk(tmp_path: Path) -> None:
         seen.update(os.path.realpath(os.path.join(dirpath, d)) for d in dirs)
         expected.extend(p for p in (Path(dirpath) / f for f in files) if p.suffix == ".md" and p.is_file())
     with ad.shared_dir_listings():
-        shared = list(ad.walk_markdown(tmp_path, DEFAULT_EXCLUDE_DIRS))
-    assert list(ad.walk_markdown(tmp_path, DEFAULT_EXCLUDE_DIRS)) == expected == shared
+        shared = list(ad.walk_markdown(tmp_path, RunExclusions.none(tmp_path)))
+    assert list(ad.walk_markdown(tmp_path, RunExclusions.none(tmp_path))) == expected == shared
     assert expected
 
 
@@ -154,9 +166,9 @@ def test_plugin_root_and_marker_scans_replay_the_walkers_listings(tmp_path: Path
     _tree(tmp_path)
     registry = get_known_agents()
     with ad.shared_dir_listings():
-        ad.walk_glob(tmp_path, "CLAUDE.md", DEFAULT_EXCLUDE_DIRS)
+        ad.walk_glob(tmp_path, "CLAUDE.md", RunExclusions.none(tmp_path))
         assert scan_marker_at(tmp_path, registry["claude"], registry)
-        assert find_plugin_roots(tmp_path, ".claude-plugin/plugin.json", DEFAULT_EXCLUDE_DIRS) == []
+        assert find_plugin_roots(tmp_path, ".claude-plugin/plugin.json", RunExclusions.none(tmp_path)) == []
     assert len(scans) == len(set(scans))
 
 
@@ -169,5 +181,5 @@ def test_walk_glob_warns_on_circular_symlink_named_like_the_file(
     (tmp_path / "sub" / "x").symlink_to(tmp_path / "sub" / "CLAUDE.md")
     (tmp_path / "sub" / "CLAUDE.md").symlink_to(tmp_path / "sub" / "x")
     with caplog.at_level("WARNING"):
-        assert ad.walk_glob(tmp_path, "CLAUDE.md", frozenset()) == []
+        assert ad.walk_glob(tmp_path, "CLAUDE.md", _PruneNothing()) == []
     assert any("Circular symlink detected" in r.getMessage() for r in caplog.records)

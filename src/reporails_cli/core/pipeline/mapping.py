@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
@@ -50,6 +51,8 @@ from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.observability.log_levels import quiet_loggers
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
+logger = logging.getLogger(__name__)
+
 
 class ScopeDiscovery(NamedTuple):
     """What one discovery pass found at a scan root."""
@@ -61,9 +64,9 @@ class ScopeDiscovery(NamedTuple):
     filtered: list[DetectedAgent]
     files: list[Path]
     # The `(folders, file globs)` this pass left out because the user set them; empty when it listed no files.
-    excluded: tuple[tuple[str, ...], tuple[str, ...]] = ((), ())
+    excluded: tuple[tuple[str, ...], tuple[str, ...]]
     # The run's exclusions: the command-line patterns joined with the project's config.
-    exclusions: RunExclusions | None = None
+    exclusions: RunExclusions
 
 
 def discover_scope(
@@ -134,7 +137,12 @@ def resolve_agent_filters(
         filtered = list(all_detected)
     exclusions = exclusions or RunExclusions.none(target)
     filtered = filter_agents_by_exclusions(filtered, exclusions)
-    return effective, assumed, mixed, _place_named(filtered, all_detected, exclusions, effective, target)
+    return (
+        effective,
+        assumed,
+        mixed,
+        _place_named(filtered, all_detected, exclusions, effective, target, explicit=explicit),
+    )
 
 
 def _place_named(
@@ -143,12 +151,16 @@ def _place_named(
     exclusions: RunExclusions,
     effective_agent: str,
     target: Path,
+    *,
+    explicit: bool,
 ) -> list[DetectedAgent]:
     """`filtered` plus the named files that a user pattern matches yet no directory walk listed.
 
     Such a file (its folder pruned from the detection walk by a configured folder) goes to the
     agent that listed it in ``detected``, else to the effective agent under the list its file type
-    maps to. A named file no user pattern matches is not added. Lists are copied before they grow.
+    maps to. With an explicit agent, a file another agent lists is not placed, nor is an unlisted
+    file only another agent's file types classify: those files are not part of the run. A named
+    file no user pattern matches is not added. Lists are copied before they grow.
     """
 
     wanted = _unlisted_named(filtered, exclusions)
@@ -162,7 +174,15 @@ def _place_named(
         for a in filtered
     ]
     for path in wanted:
-        owner, kind, listed_path = listed.get(path) or (effective_agent, _kind_of(path, effective_agent, target), path)
+        found = listed.get(path)
+        if found is None:
+            kind = _kind_of(path, effective_agent, target)
+            if kind is None and explicit and _claimed_by_other(path, effective_agent, target):
+                continue
+            found = (effective_agent, kind or "instruction_files", path)
+        owner, kind, listed_path = found
+        if explicit and owner != effective_agent:
+            continue
         _append_file(out, owner, kind, listed_path)
     return out
 
@@ -197,19 +217,44 @@ def _by_resolved_path(agents: list[DetectedAgent]) -> dict[Path, tuple[str, str,
 _KINDS = ("instruction_files", "rule_files", "config_files")
 
 
-def _kind_of(path: Path, agent: str, target: Path) -> str:
-    """The file list (``instruction_files``, ``rule_files`` or ``config_files``) `path`'s type maps to."""
+def _claimed_by_other(path: Path, agent: str, target: Path) -> bool:
+    """True when the file types of a known agent other than `agent` classify `path`."""
+
+    return any(_claims(path, other, target) for other in get_known_agents() if other != agent)
+
+
+def _claims(path: Path, agent: str, target: Path) -> bool:
+    """True when the file types of `agent` classify `path`; False when they cannot be read."""
 
     try:
-        declarations = load_file_types(agent, project_root=target)
-        classified = classify_files(target, [path], declarations)
+        return _classified_kind(path, agent, target) is not None
+    except (OSError, ValueError):
+        return False
+
+
+def _kind_of(path: Path, agent: str, target: Path) -> str | None:
+    """The file list (``instruction_files``, ``rule_files`` or ``config_files``) `path`'s type maps to.
+
+    ``None`` when the agent's file types do not classify `path`; ``instruction_files`` when they
+    cannot be read.
+    """
+
+    try:
+        return _classified_kind(path, agent, target)
     except (OSError, ValueError):
         return "instruction_files"
+
+
+def _classified_kind(path: Path, agent: str, target: Path) -> str | None:
+    """Like `_kind_of`, but raises OSError or ValueError when the agent's file types cannot be read."""
+
+    declarations = load_file_types(agent, project_root=target)
+    classified = classify_files(target, [path], declarations)
     if not classified:
-        return "instruction_files"
+        return None
     declaration = next((d for d in declarations if d.name == classified[0].file_type), None)
     if declaration is None:
-        return "instruction_files"
+        return None
     bucket = categorize_file_type(list(declaration.patterns), dict(classified[0].properties))
     if bucket == "rule":
         return "rule_files"
@@ -249,7 +294,8 @@ def apply_generic_scan(
             classified = classify_files(
                 target, list(instruction_files), file_types, generic_scanning=True, exclusions=exclusions
             )
-    except (OSError, ValueError):
+    except (OSError, ValueError) as err:
+        logger.warning("Generic scanning skipped: %s", err)
         return [], {}
 
     ft_by_path = {normalize_finding_path(str(cf.path), target): cf.file_type for cf in classified}
@@ -325,6 +371,10 @@ def _apply_run_context(ruleset_map: RulesetMap, filtered_agents: list[DetectedAg
     stamp_file_agents(ruleset_map, filtered_agents, target)
 
 
+# One map at a time in this process; a caller that waited reads the map the first one cached.
+_MAP_LOCK = threading.Lock()
+
+
 def map_instruction_files(
     target: Path,
     instruction_files: list[Path],
@@ -357,26 +407,27 @@ def map_instruction_files(
     agree on attribution.
     """
 
-    emit = progress if progress is not None else (lambda _msg: None)
+    with _MAP_LOCK:
+        emit = progress if progress is not None else (lambda _msg: None)
 
-    full_cache = FullMapCache(get_global_cache_dir())
-    identity = compute_identity(
-        list(instruction_files), root=target, segmentation=get_project_config(target).mapper.segmentation
-    )
-    cached = full_cache.get(identity)
-    if cached is not None:
-        _apply_run_context(cached, filtered_agents, target)
-        return cached
+        full_cache = FullMapCache(get_global_cache_dir())
+        identity = compute_identity(
+            list(instruction_files), root=target, segmentation=get_project_config(target).mapper.segmentation
+        )
+        cached = full_cache.get(identity)
+        if cached is not None:
+            _apply_run_context(cached, filtered_agents, target)
+            return cached
 
-    daemon_status = _resolve_daemon(emit, spawn_daemon=spawn_daemon)
+        daemon_status = _resolve_daemon(emit, spawn_daemon=spawn_daemon)
 
-    ruleset_map = _map_via_daemon_or_process(
-        daemon_status, list(instruction_files), target, get_project_config(target).mapper, emit
-    )
-    if ruleset_map is not None:
-        full_cache.put(identity, ruleset_map)  # the map as mapped; a later run with other agents decides again
-        _apply_run_context(ruleset_map, filtered_agents, target)
-    return ruleset_map
+        ruleset_map = _map_via_daemon_or_process(
+            daemon_status, list(instruction_files), target, get_project_config(target).mapper, emit
+        )
+        if ruleset_map is not None:
+            full_cache.put(identity, ruleset_map)  # the map as mapped; a later run with other agents decides again
+            _apply_run_context(ruleset_map, filtered_agents, target)
+        return ruleset_map
 
 
 def _resolve_daemon(emit: Callable[[str], None], *, spawn_daemon: bool = True) -> DaemonStatus:

@@ -17,8 +17,8 @@ from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES
 from reporails_cli.core.discovery.agent_surfaces import agent_main_names
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.platform.contract.errors import BundledConfigMissingError
+from reporails_cli.core.platform.contract.glob_pattern import glob_matches
 from reporails_cli.core.platform.contract.json_value import as_object, pattern_list
-from reporails_cli.core.platform.utils.utils import glob_matches
 
 _CONFIG_NAMES = frozenset(("settings.json", ".mcp.json", "config.yml", "settings.local.json"))
 

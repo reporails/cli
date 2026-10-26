@@ -7,10 +7,26 @@ once per shell to register them.
 
 from __future__ import annotations
 
+import functools
+from collections.abc import Callable
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import detect_agents
 from reporails_cli.core.platform.adapters.rules_query import list_known_agents, load_all_rules
+from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
+
+
+def _no_candidates_when_config_unreadable(complete: Callable[[str], list[str]]) -> Callable[[str], list[str]]:
+    """Wrap a completion callback so an unreadable config offers no candidates instead of an error."""
+
+    @functools.wraps(complete)
+    def guarded(incomplete: str) -> list[str]:
+        try:
+            return complete(incomplete)
+        except ConfigUnreadableError:
+            return []
+
+    return guarded
 
 
 def complete_rule_token(incomplete: str) -> list[str]:
@@ -26,6 +42,7 @@ def complete_rule_token(incomplete: str) -> list[str]:
     return sorted(out)
 
 
+@_no_candidates_when_config_unreadable
 def complete_capability(incomplete: str) -> list[str]:
     """Complete a capability keyword for the currently-detected agent."""
     from reporails_cli.core.classify.capability_paths import (  # pylint: disable=import-outside-toplevel  # startup: loads when completing
@@ -47,6 +64,7 @@ def complete_agent(incomplete: str) -> list[str]:
     return sorted(a for a in list_known_agents() if a.startswith(incomplete))
 
 
+@_no_candidates_when_config_unreadable
 def complete_target_token(incomplete: str) -> list[str]:
     """Complete a target token for `ails check`: bare capability, `capability:name`, or path prefix.
 

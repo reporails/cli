@@ -9,8 +9,10 @@ Four rules, all pure `ast`:
 - A1 private group: a string-collection literal (set, tuple or list display, `frozenset(...)` /
   `set(...)` / `tuple(...)` / `list(...)` of one literal, or the members of an inline `Literal[...]`)
   with at least two distinct members, outside the owner module, whose members all belong to one
-  vocabulary. Import the owner's named group, or add the group beside the owner. Dict displays are
-  not groups.
+  vocabulary. Import the owner's named group, or add the group beside the owner. For a `str`-Enum /
+  `StrEnum` vocabulary a string group or a dict keyed by the members' string values fails anywhere,
+  the owner module included: use a group of members, a dict keyed by members, or `X(value)`. Dict
+  displays over a `Literal` vocabulary are not groups (mypy checks their keys).
 - A2 unowned shared group: two such literals in different modules that share at least two members
   while one contains the other, or whose Jaccard similarity is above 0.5. The shared members
   belong in one named group in one module. `__all__` and dict displays are not compared.
@@ -68,6 +70,7 @@ class Vocabulary:
     name: str
     owner: str
     members: frozenset[str]
+    enum: bool = False
 
 
 @dataclass(frozen=True)
@@ -77,6 +80,7 @@ class Group:
     module: str
     line: int
     members: frozenset[str]
+    is_dict: bool = False
 
     @property
     def site(self) -> str:
@@ -108,9 +112,11 @@ def _string_elements(elts: Iterable[ast.expr]) -> list[str] | None:
 
 
 def _display_members(node: ast.AST) -> list[str] | None:
-    """Members of a set/tuple/list display of string constants, else None."""
+    """Members of a set/tuple/list display of string constants (or a dict display's keys), else None."""
     if isinstance(node, (ast.Set, ast.Tuple, ast.List)):
         return _string_elements(node.elts)
+    if isinstance(node, ast.Dict):
+        return _string_elements([k if k is not None else ast.Pass() for k in node.keys])
     return None
 
 
@@ -166,9 +172,9 @@ def _vocabulary_definitions(tree: ast.Module) -> Iterator[tuple[str, list[str], 
 def collect_vocabularies(sources: list[Path], root: Path) -> list[Vocabulary]:
     """Every closed string vocabulary defined in `sources`, owned by its defining module."""
     return [
-        Vocabulary(name, _rel(py, root), frozenset(members))
+        Vocabulary(name, _rel(py, root), frozenset(members), isinstance(definition, ast.ClassDef))
         for py in sources
-        for name, members, _ in _vocabulary_definitions(_parse(py))
+        for name, members, definition in _vocabulary_definitions(_parse(py))
     ]
 
 
@@ -214,16 +220,22 @@ def collect_groups(sources: list[Path], root: Path) -> list[Group]:
             consumed.add(id(inner))
             if id(inner) in skip or len(set(members)) < 2:
                 continue
-            groups.append(Group(_rel(py, root), getattr(node, "lineno", 0), frozenset(members)))
+            groups.append(
+                Group(_rel(py, root), getattr(node, "lineno", 0), frozenset(members), isinstance(node, ast.Dict))
+            )
     return groups
 
 
 def private_group_violations(sources: list[Path], root: Path, groups: list[Group] | None = None) -> list[Violation]:
-    """A1: a group whose members all belong to one vocabulary, outside the owner module."""
+    """A1: a group inside one vocabulary, outside its owner; for enum vocabularies anywhere, dicts included."""
     vocabularies = collect_vocabularies(sources, root)
     out: list[Violation] = []
     for group in groups if groups is not None else collect_groups(sources, root):
-        matches = [v for v in vocabularies if group.members <= v.members and v.owner != group.module]
+        matches = [
+            v
+            for v in vocabularies
+            if group.members <= v.members and (v.enum or (v.owner != group.module and not group.is_dict))
+        ]
         if not matches:
             continue
         vocab = min(matches, key=lambda v: (len(v.members), v.name))
@@ -240,7 +252,7 @@ def private_group_violations(sources: list[Path], root: Path, groups: list[Group
 
 def shared_group_violations(sources: list[Path], root: Path, groups: list[Group] | None = None) -> list[Violation]:
     """A2: two groups in different modules where one contains the other or most members are shared."""
-    groups = groups if groups is not None else collect_groups(sources, root)
+    groups = [g for g in (groups if groups is not None else collect_groups(sources, root)) if not g.is_dict]
     out: list[Violation] = []
     for i, left in enumerate(groups):
         for right in groups[i + 1 :]:
@@ -409,16 +421,56 @@ def test_a1_private_subset_of_a_vocabulary_fires(tmp_path: Path) -> None:
     assert "Fmt" in found[0].detail and "vocab.py" in found[0].detail
 
 
+_ENUM = 'from enum import StrEnum\nclass InstallMethod(StrEnum):\n    NPM = "npm"\n    NPX = "npx"\n    UV = "uv"\n'
+
+
+@pytest.mark.architecture
+def test_a1_dict_keyed_by_vocabulary_values_fires(tmp_path: Path) -> None:
+    """A string-keyed dict over a StrEnum's values fires inside and outside the enum's module."""
+    sources = _plant(
+        tmp_path,
+        {
+            "vocab.py": _VOCAB,
+            "install.py": _ENUM + '_LAUNCHERS = {"npm": InstallMethod.NPM, "npx": InstallMethod.NPX}\n',
+            "red.py": 'from install import InstallMethod\nT = {"npm": 1, "uv": 2}\n',
+            "wrapped.py": 'WRAPPED = frozenset({"prose": 1, "list": 2})\n',
+        },
+    )
+    found = private_group_violations(sources, tmp_path)
+    assert {v.key for v in found} == {"A1 red.py:2", "A1 install.py:6", "A1 wrapped.py:1"}
+
+
+@pytest.mark.architecture
+def test_a1_stays_quiet_on_member_keys_literal_tables_and_constructor(tmp_path: Path) -> None:
+    """Member-keyed dicts, string-keyed tables over a Literal vocabulary and `X(value)` pass."""
+    sources = _plant(
+        tmp_path,
+        {
+            "vocab.py": _VOCAB + 'RANK = {"prose": 0, "list": 1}\n',
+            "install.py": (
+                _ENUM + "RANK = {InstallMethod.NPM: 1, InstallMethod.NPX: 2}\n"
+                "GROUP = frozenset({InstallMethod.NPM, InstallMethod.NPX})\n"
+                "def parse(value: str) -> InstallMethod:\n    return InstallMethod(value)\n"
+            ),
+            "other.py": (
+                "from install import InstallMethod\nT = {InstallMethod.NPM: 1, InstallMethod.UV: 2}\n"
+                'LITERAL_TABLE = {"prose": 1, "table": 2}\n'
+            ),
+        },
+    )
+    assert private_group_violations(sources, tmp_path) == []
+
+
 @pytest.mark.architecture
 def test_a1_stays_quiet_on_owner_group_and_unrelated_sets(tmp_path: Path) -> None:
-    """The owner's subgroup, a group with a foreign member, a one-member set and a dict pass."""
+    """The owner's subgroup, a group with a foreign member, a one-member set and a foreign-keyed dict pass."""
     sources = _plant(
         tmp_path,
         {
             "vocab.py": _VOCAB,
             "green.py": (
                 'OTHER = {"prose", "unrelated"}\nSINGLE = {"prose"}\n'
-                'MAP = {"prose": 1, "list": 2}\n'
+                'MAP = {"prose": 1, "unrelated": 2}\n'
                 "from vocab import LISTY\nUSES = LISTY\n"
             ),
         },

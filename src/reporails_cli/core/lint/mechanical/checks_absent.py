@@ -14,6 +14,7 @@ from reporails_cli.core.lint.mechanical.checks import (
     run_exclusions,
     target_texts,
 )
+from reporails_cli.core.platform.contract.glob_pattern import GLOB_CHARS
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 from reporails_cli.core.platform.policy.matching import _prop_matches
@@ -30,7 +31,7 @@ def _scope_dir_from_glob(glob_pattern: str) -> str:
     parts = glob_pattern.replace("\\", "/").split("/")
     dirs: list[str] = []
     for part in parts:
-        if any(c in part for c in "*?[{"):
+        if GLOB_CHARS & set(part):
             break
         dirs.append(part)
     return "/".join(dirs)
@@ -90,9 +91,7 @@ def file_absent(
         scope_root = root / scope_dir
         direct_path = scope_root / pattern
         matches = [
-            m
-            for m in walk_glob_matches(scope_root, f"**/{pattern}", exclusions.feature_walk_dirs)
-            if not exclusions.leaves_out(m)
+            m for m in walk_glob_matches(scope_root, f"**/{pattern}", exclusions) if not exclusions.leaves_out(m)
         ]
     else:
         direct_path = root / pattern

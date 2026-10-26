@@ -63,7 +63,7 @@ def test_rule_paths_glob_matches_files_inside_a_left_out_folder(tmp_path: Path) 
 def test_file_absent_ignores_a_forbidden_file_in_a_left_out_folder(tmp_path: Path) -> None:
     (tmp_path / "vendored").mkdir()
     (tmp_path / "vendored" / "BAD.md").write_text("x\n", encoding="utf-8")
-    left_out = RunExclusions(root=tmp_path, dirs=frozenset({"vendored"}), walk_dirs=frozenset({"vendored"}))
+    left_out = RunExclusions.parse(tmp_path, ["vendored"], ())
     args = {"pattern": "**/BAD.md", "_exclusions": left_out}
     assert file_absent(tmp_path, args, []).passed
     kept = RunExclusions.none(tmp_path)

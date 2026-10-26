@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from reporails_cli.core.discovery import plugin_roots as _plugin_roots
+from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.discovery.walk import list_dir
 
 if TYPE_CHECKING:
@@ -98,7 +99,7 @@ def agent_has_marker(
     target: Path,
     agent_type: AgentType,
     registry: dict[str, AgentType],
-    exclude_dirs: frozenset[str],
+    exclusions: RunExclusions,
 ) -> bool:
     """Fast existence check — does this agent likely apply at target?
 
@@ -107,5 +108,5 @@ def agent_has_marker(
     """
     markers = _plugin_roots.plugin_markers(agent_type.instruction_patterns)
     return scan_marker_at(target, agent_type, registry) or any(
-        _plugin_roots.find_plugin_roots(target, marker, exclude_dirs) for marker in markers
+        _plugin_roots.find_plugin_roots(target, marker, exclusions) for marker in markers
     )

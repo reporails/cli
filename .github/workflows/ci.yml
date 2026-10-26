@@ -51,6 +51,9 @@ jobs:
       - name: Type check
         run: uv run poe type
 
+      - name: Test markers
+        run: uv run poe test_markers
+
       - name: Rule lint
         run: uv run poe test_lint
 

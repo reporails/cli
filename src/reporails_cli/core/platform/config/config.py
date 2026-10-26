@@ -36,6 +36,7 @@ from reporails_cli.core.platform.dto.results import (
     ProjectConfig,
     SubagentHooks,
 )
+from reporails_cli.core.platform.policy.exclusion import first_folder_value_problem
 from reporails_cli.core.platform.utils.utils import (
     load_yaml_file,
     non_text_items,
@@ -219,7 +220,8 @@ def read_config_file(config_path: Path, check_items: bool = True) -> JsonObject:
     when the file cannot be read, is not UTF-8, is not valid YAML, or is not a mapping.
     With `check_items` (the default) it also raises for a setting of the wrong shape: a list
     holding a non-text item, an `agents` / `surfaces` entry that is not a mapping, or a
-    `rule_thresholds` value that is not a whole number. A caller
+    `rule_thresholds` value that is not a whole number, or an `exclude_dirs` item that is not a
+    folder name or a folder path. A caller
     that is about to replace such a setting passes False and gets the mapping as written.
     """
     if not config_path.exists():
@@ -233,12 +235,40 @@ def read_config_file(config_path: Path, check_items: bool = True) -> JsonObject:
     if not isinstance(data, dict):
         raise ConfigUnreadableError(f"{config_path}: the file is not a mapping of settings")
     if check_items:
-        for key in TEXT_LIST_KEYS:
-            _check_text_list(config_path, key, data.get(key))
-        for key in _MAPPING_KEYS:
-            _check_mapping(config_path, key, data.get(key))
-        _check_thresholds(config_path, data.get("rule_thresholds"))
+        for key in (*TEXT_LIST_KEYS, *_MAPPING_KEYS, "rule_thresholds"):
+            _check_shape(config_path, key, data.get(key))
+        _check_folder_values(config_path, data.get("exclude_dirs"))
     return data
+
+
+def _check_shape(config_path: Path, key: str, value: JsonValue) -> None:
+    """Raise ConfigUnreadableError when `value` is not the shape the setting `key` reads."""
+    if key in TEXT_LIST_KEYS:
+        _check_text_list(config_path, key, value)
+    elif key in _MAPPING_KEYS:
+        _check_mapping(config_path, key, value)
+    elif key == "rule_thresholds":
+        _check_thresholds(config_path, value)
+
+
+def setting_value_problem(key: str, value: JsonValue) -> str | None:
+    """The problem with a setting's value, worded without any file path; None when it has none.
+
+    Only `exclude_dirs` has one: an item that is not a folder name or a folder path.
+    """
+    if key != "exclude_dirs" or not isinstance(value, list):
+        return None
+    problem = first_folder_value_problem(value)
+    if problem is None:
+        return None
+    return f"exclude_dirs: {problem}; list file patterns under exclude_files"
+
+
+def _check_folder_values(config_path: Path, value: JsonValue) -> None:
+    """Raise ConfigUnreadableError, naming the file, for the first `exclude_dirs` item that is not a folder."""
+    problem = setting_value_problem("exclude_dirs", value)
+    if problem is not None:
+        raise ConfigUnreadableError(f"{config_path}: {problem}")
 
 
 def _list_keys(config_cls: type) -> tuple[str, ...]:

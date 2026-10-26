@@ -750,3 +750,174 @@ def test_the_cache_holds_the_map_as_mapped_before_membership_is_applied(monkeypa
 
     assert seen == [("skills", "")]  # cached as mapped
     assert (result.files[0].type, result.files[0].skill) == ("generic", "")  # then decided for this run
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+def test_apply_generic_scan_warns_when_the_fold_fails(monkeypatch, caplog):
+    """A failed fold returns no imports and says generic scanning was skipped."""
+
+    def boom(*_a, **_k):
+        raise OSError("disk gone")
+
+    monkeypatch.setattr(mapping, "load_file_types", boom)
+    with caplog.at_level(logging.WARNING, logger=mapping.__name__):
+        assert mapping.apply_generic_scan(Path("/proj"), [], "claude", True) == ([], {})
+    assert any("Generic scanning skipped" in r.getMessage() and "disk gone" in r.getMessage() for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# One map at a time per process
+# ---------------------------------------------------------------------------
+
+
+def _real_cache_project(monkeypatch, tmp_path: Path) -> Path:
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "CLAUDE.md").write_text("# Project\n\nRun the tests.\n", encoding="utf-8")
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.get_global_cache_dir", lambda: tmp_path / "cache")
+    monkeypatch.setattr(
+        "reporails_cli.core.pipeline.mapping._resolve_daemon",
+        lambda *_a, **_k: mapping.DaemonStatus.UNAVAILABLE,
+    )
+    return project
+
+
+def _slow_counting_map(monkeypatch, calls: list[int]) -> None:
+    import time
+
+    def slow_map(*_a: object, **_k: object) -> RulesetMap:
+        calls.append(1)
+        time.sleep(0.3)
+        return _ruleset_map("slow")
+
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping._map_via_daemon_or_process", slow_map)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+@pytest.mark.requires_model
+def test_two_threads_mapping_the_same_files_map_once(monkeypatch, tmp_path):
+    """The caller that waited for the first map reads the map the first one cached."""
+    import threading
+
+    project = _real_cache_project(monkeypatch, tmp_path)
+    calls: list[int] = []
+    _slow_counting_map(monkeypatch, calls)
+    results: list[RulesetMap | None] = []
+
+    def run() -> None:
+        results.append(mapping.map_instruction_files(project, [project / "CLAUDE.md"], spawn_daemon=False))
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(calls) == 1
+    assert len(results) == 2 and all(r is not None for r in results)
+    assert results[0].generated_at == results[1].generated_at == "slow"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+@pytest.mark.parametrize(("agent", "other_added"), [("claude", False), ("", True)])
+def test_explicit_agent_places_no_file_another_agent_owns(tmp_path, agent, other_added):
+    """A named file inside a left-out folder that another agent lists is placed under that agent
+    only when no agent was asked for; an explicit run never gains the other agent."""
+    from reporails_cli.core.discovery.agents import DetectedAgent, get_known_agents
+    from reporails_cli.core.discovery.exclusions import RunExclusions
+
+    known = get_known_agents()
+    cursor_file = tmp_path / "ext" / ".cursor" / "rules" / "r.mdc"
+    cursor_file.parent.mkdir(parents=True)
+    cursor_file.write_text("- Use uv.\n", encoding="utf-8")
+    claude_md = tmp_path / "CLAUDE.md"
+    claude_md.write_text("# P\n", encoding="utf-8")
+    detected = [
+        DetectedAgent(known["claude"], [claude_md], [], []),
+        DetectedAgent(known["cursor"], [], [], [cursor_file]),
+    ]
+    exclusions = RunExclusions.parse(tmp_path, ["ext"], ()).with_named([cursor_file])
+
+    _, _, _, filtered = mapping.resolve_agent_filters(agent, detected, tmp_path, exclusions)
+
+    ids = [d.agent_type.id for d in filtered]
+    assert ("cursor" in ids) is other_added
+    placed = [f for d in filtered for f in (*d.instruction_files, *d.rule_files, *d.config_files)]
+    assert (cursor_file in placed) is other_added
+
+
+def _unlisted_named_case(tmp_path, folder, rel):
+    """A claude-only detection (the named file is not listed) and exclusions leaving out `folder`."""
+    from reporails_cli.core.discovery.agents import DetectedAgent, get_known_agents
+    from reporails_cli.core.discovery.exclusions import RunExclusions
+
+    named = tmp_path / rel
+    named.parent.mkdir(parents=True)
+    named.write_text("- Use uv.\n", encoding="utf-8")
+    claude_md = tmp_path / "CLAUDE.md"
+    claude_md.write_text("# P\n", encoding="utf-8")
+    detected = [DetectedAgent(get_known_agents()["claude"], [claude_md], [], [])]
+    return named, detected, RunExclusions.parse(tmp_path, [folder], ()).with_named([named])
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+def test_explicit_agent_skips_an_unlisted_file_its_types_do_not_classify(tmp_path):
+    """A cursor file the config left out of detection is not placed under an explicit claude run."""
+    named, detected, exclusions = _unlisted_named_case(tmp_path, "rules", ".cursor/rules/a.mdc")
+    _, _, _, filtered = mapping.resolve_agent_filters("claude", detected, tmp_path, exclusions)
+    placed = [f for d in filtered for f in (*d.instruction_files, *d.rule_files, *d.config_files)]
+    assert named not in placed
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+def test_explicit_agent_places_an_unlisted_file_its_types_classify(tmp_path):
+    named, detected, exclusions = _unlisted_named_case(tmp_path, "rules", ".claude/rules/x.md")
+    _, _, _, filtered = mapping.resolve_agent_filters("claude", detected, tmp_path, exclusions)
+    claude = next(d for d in filtered if d.agent_type.id == "claude")
+    assert named in claude.rule_files
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+def test_without_an_explicit_agent_an_unclassified_unlisted_file_is_an_instruction_file(tmp_path):
+    named, detected, exclusions = _unlisted_named_case(tmp_path, "rules", ".cursor/rules/a.mdc")
+    _, _, _, filtered = mapping.resolve_agent_filters("", detected, tmp_path, exclusions)
+    placed = [f for d in filtered for f in (*d.instruction_files, *d.rule_files, *d.config_files)]
+    assert named in placed
+
+
+@pytest.mark.unit
+def test_an_agent_whose_file_types_cannot_be_read_claims_no_file(monkeypatch, tmp_path):
+    real = mapping.load_file_types
+    others = [a for a in mapping.get_known_agents() if a != "claude"]
+    unreadable = others[0]
+
+    def load(agent, *args, **kwargs):
+        if agent == unreadable:
+            raise OSError("unreadable")
+        return real(agent, *args, **kwargs)
+
+    monkeypatch.setattr(mapping, "load_file_types", load)
+    monkeypatch.setattr(mapping, "get_known_agents", lambda: {unreadable: object()})
+    path = tmp_path / "notes.md"
+    path.write_text("x\n", encoding="utf-8")
+    assert mapping._claimed_by_other(path, "claude", tmp_path) is False
+    assert mapping._kind_of(path, unreadable, tmp_path) == "instruction_files"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+@pytest.mark.requires_model
+def test_a_single_call_still_maps_once(monkeypatch, tmp_path):
+    project = _real_cache_project(monkeypatch, tmp_path)
+    calls: list[int] = []
+    _slow_counting_map(monkeypatch, calls)
+
+    result = mapping.map_instruction_files(project, [project / "CLAUDE.md"], spawn_daemon=False)
+
+    assert result is not None and calls == [1]

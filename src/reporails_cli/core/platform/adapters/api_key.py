@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Callable
 
 from reporails_cli.core.platform.config.credentials import env_api_key, load_credentials_record
+from reporails_cli.core.platform.config.endpoints import DEFAULT_SERVER_URL, server_url
 from reporails_cli.core.platform.contract.errors import PlatformError
 
 logger = logging.getLogger(__name__)
-
-# The diagnostics server used when `AILS_SERVER_URL` is unset.
-DEFAULT_SERVER_URL = "https://api.reporails.com"
 
 
 def api_key_from_credentials() -> str:
@@ -51,8 +48,7 @@ def default_server_api_key() -> str:
 
     A key paired with another server (a local or staging one) is not returned.
     """
-    server = os.environ.get("AILS_SERVER_URL", "").strip().rstrip("/")
-    if server and server != DEFAULT_SERVER_URL:
+    if server_url() != DEFAULT_SERVER_URL:
         return ""
     return resolve_api_key()
 

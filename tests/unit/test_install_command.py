@@ -13,6 +13,7 @@ import pytest
 from typer.testing import CliRunner
 
 from reporails_cli.core.platform.utils.version import installed_version
+from reporails_cli.interfaces.cli import helpers as helpers_module
 from reporails_cli.interfaces.cli import install as install_module
 from reporails_cli.interfaces.cli.main import app
 
@@ -47,7 +48,8 @@ def test_install_to_path_pins_a_floor_not_an_exact_version(monkeypatch: pytest.M
     `uv tool upgrade` keeps an `==` pin forever, so only a floor lets a later
     `ails update` / `uv tool upgrade` move the engine past this version.
     """
-    monkeypatch.setattr(install_module.shutil, "which", lambda cmd: None if cmd == "ails" else "/usr/bin/uv")
+    monkeypatch.setattr(install_module.shutil, "which", lambda cmd, path=None: "/usr/bin/uv")
+    monkeypatch.setattr(install_module, "_ails_in_folder", lambda entry: None)
 
     calls: list[list[str]] = []
 
@@ -58,7 +60,7 @@ def test_install_to_path_pins_a_floor_not_an_exact_version(monkeypatch: pytest.M
         result.stderr = ""
         return result
 
-    monkeypatch.setattr(install_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(helpers_module.subprocess, "run", fake_run)
 
     assert install_module._install_to_path() is True
     assert len(calls) == 1
@@ -106,7 +108,7 @@ def _setup(
 ) -> None:
     monkeypatch.setattr(install_module, "_install_to_path", lambda: True)
     monkeypatch.setattr(install_module.shutil, "which", lambda cmd: f"/bin/{cmd}" if cmd in present else None)
-    monkeypatch.setattr(install_module.subprocess, "run", runner)
+    monkeypatch.setattr(helpers_module.subprocess, "run", runner)
     monkeypatch.setattr("reporails_cli.core.platform.adapters.api_key.has_api_key", lambda: key)
     if tmp_path is not None:
         monkeypatch.chdir(tmp_path)
@@ -206,7 +208,7 @@ def test_install_timeout_and_oserror_do_not_abort(monkeypatch: pytest.MonkeyPatc
         raise next(outcomes, OSError("nope"))
 
     _setup(monkeypatch, _Runner(), {"claude", "uvx"})
-    monkeypatch.setattr(install_module.subprocess, "run", boom)
+    monkeypatch.setattr(helpers_module.subprocess, "run", boom)
 
     result = _runner_invoke()
 
@@ -269,7 +271,7 @@ def _update_setup(monkeypatch: pytest.MonkeyPatch, runner: _Runner, present: set
 
     monkeypatch.setattr(commands_module, "_update_engine", lambda: True)
     monkeypatch.setattr(install_module.shutil, "which", lambda cmd: f"/bin/{cmd}" if cmd in present else None)
-    monkeypatch.setattr(install_module.subprocess, "run", runner)
+    monkeypatch.setattr(helpers_module.subprocess, "run", runner)
 
 
 @pytest.mark.unit
@@ -723,8 +725,15 @@ def _path_install(
     monkeypatch: pytest.MonkeyPatch, ails: str, uv: str | None, cache_dir: str | None
 ) -> tuple[bool, list[list[str]]]:
     """Run `_install_to_path` with `ails` on PATH, uv reporting `cache_dir` (None: the command fails)."""
-    found = {"ails": ails, "uv": uv}
-    monkeypatch.setattr(install_module.shutil, "which", lambda cmd: found.get(cmd))
+    monkeypatch.setenv("PATH", os.path.dirname(ails))
+
+    def which(cmd: str, mode: int = os.F_OK | os.X_OK, path: str | None = None) -> str | None:
+        return uv if cmd == "uv" else None
+
+    monkeypatch.setattr(install_module.shutil, "which", which)
+    monkeypatch.setattr(
+        install_module, "_ails_in_folder", lambda entry: ails if entry == os.path.dirname(ails) else None
+    )
     calls: list[list[str]] = []
 
     def fake_run(cmd: list[str], **kwargs: Any) -> MagicMock:
@@ -736,7 +745,7 @@ def _path_install(
         result.stderr = ""
         return result
 
-    monkeypatch.setattr(install_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(helpers_module.subprocess, "run", fake_run)
     return install_module._install_to_path(), calls
 
 

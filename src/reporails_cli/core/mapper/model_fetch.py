@@ -45,7 +45,7 @@ from reporails_cli.core.mapper.model_manifest import (
     models_present,
 )
 from reporails_cli.core.platform.adapters.api_key import default_server_api_key
-from reporails_cli.core.platform.config.bootstrap import env_flag
+from reporails_cli.core.platform.config.bootstrap import env_flag, env_text, running_in_github_actions
 
 # ─── Host ───────────────────────────────────────────────────
 
@@ -265,7 +265,7 @@ def cache_damaged(version: str = MODEL_VERSION) -> bool:
 
 def _base_url(version: str) -> str:
     """Resolved host base URL: the env override if set, else the default host."""
-    override = os.environ.get(_ENV_URL, "").strip()
+    override = env_text(_ENV_URL)
     if override:
         return override.rstrip("/")
     return _DEFAULT_BASE.format(version=version)
@@ -391,7 +391,7 @@ def _download_all(root: Path, version: str, *, force: bool = False) -> None:
             _print(f"Repairing reporails model ({len(kept)} of {len(FETCH_SHA256)} checked files still valid)…")
         else:
             _print(f"Downloading reporails model (~{_APPROX_TOTAL_MB} MB, one time)…")
-        if os.environ.get("GITHUB_ACTIONS") == "true":
+        if running_in_github_actions():
             _print(_CI_CACHE_HINT)
         staging = Path(tempfile.mkdtemp(prefix=f".{version}.staging.", dir=parent))
         with _http_client(_auth_headers(base, version)) as client:

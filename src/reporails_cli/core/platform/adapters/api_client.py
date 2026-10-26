@@ -8,14 +8,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
 import httpx
 
-from reporails_cli.core.platform.adapters.api_key import DEFAULT_SERVER_URL, resolve_api_key
+from reporails_cli.core.platform.adapters.api_key import resolve_api_key
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER, notices_from_header
 from reporails_cli.core.platform.adapters.payload import encode_msgpack, mapped_paths, project_local, project_payload
 from reporails_cli.core.platform.adapters.rate_cooldown import active_cooldown, record_cooldown
@@ -23,9 +22,11 @@ from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workf
 from reporails_cli.core.platform.config.bootstrap import env_flag
 from reporails_cli.core.platform.config.config import get_global_config
 from reporails_cli.core.platform.config.credentials import (
+    env_tier,
     refresh_stored_tier,
     signed_in_recently,
 )
+from reporails_cli.core.platform.config.endpoints import DEFAULT_SERVER_URL, server_url
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_int, as_object, as_str, opt_int
 from reporails_cli.core.platform.dto.diagnostics import (
     DEFAULT_RETRY_AFTER_S,
@@ -91,9 +92,9 @@ class AilsClient:
     """
 
     def __init__(self, api_key: str | None = None) -> None:
-        self.base_url = os.environ.get("AILS_SERVER_URL") or DEFAULT_SERVER_URL
+        self.base_url = server_url()
         self.api_key = api_key or resolve_api_key()
-        self.tier = os.environ.get("AILS_TIER") or _tier_from_config() or "free"
+        self.tier = env_tier() or _tier_from_config() or "free"
 
     def lint(
         self,
@@ -176,7 +177,7 @@ class AilsClient:
     def _sent_stored_key(self) -> bool:
         """True only for a request to the real service that carried the key as its Authorization header."""
         dev_mode = env_flag("AILS_DEV_MODE")
-        return bool(self.api_key) and not dev_mode and self.base_url.rstrip("/") == DEFAULT_SERVER_URL.rstrip("/")
+        return bool(self.api_key) and not dev_mode and self.base_url == DEFAULT_SERVER_URL
 
     def _remember_tier(self, tier: str) -> None:
         """Keep the stored tier in step with the tier a server reply named (stored key only)."""
@@ -185,7 +186,7 @@ class AilsClient:
 
     def diagnose_request(self, content_type: str) -> tuple[str, dict[str, str]]:
         """The diagnose URL and request headers for this client, for a body of `content_type`."""
-        base = self.base_url.rstrip("/")
+        base = self.base_url
         ua = _user_agent()
         if env_flag("AILS_DEV_MODE"):
             return f"{base}/diagnose", {"X-Tier": self.tier, "Content-Type": content_type, "User-Agent": ua}

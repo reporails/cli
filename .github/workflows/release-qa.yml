@@ -53,6 +53,9 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: uv run mypy --platform=win32 src/
 
+      - name: Test markers
+        run: uv run poe test_markers
+
       - name: Rule lint
         run: uv run poe test_lint
 

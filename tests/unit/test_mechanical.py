@@ -410,6 +410,24 @@ class TestSkillEntrypointPresent:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
+    @pytest.mark.parametrize(
+        ("left_out", "listed"),
+        [([], True), (["nofile"], False), (["./.claude/skills/nofile"], False), (["other"], True)],
+    )
+    def test_a_skill_folder_the_run_leaves_out_is_not_listed_as_missing_its_entry(
+        self, tmp_path: Path, left_out: list[str], listed: bool
+    ) -> None:
+        from reporails_cli.core.discovery.exclusions import RunExclusions
+
+        self._make_skill(tmp_path, "alpha")
+        (tmp_path / ".claude" / "skills" / "nofile").mkdir()
+        args = {"_exclusions": RunExclusions.parse(tmp_path, left_out, ())}
+        result = skill_entrypoint_present(tmp_path, args, self._classified_alpha(tmp_path))
+        assert result.passed is not listed
+        assert ("nofile" in result.message) is listed
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_missing_entrypoint_in_sibling_dir_fails(self, tmp_path: Path) -> None:
         self._make_skill(tmp_path, "alpha")  # real skill anchors the skills-root
         broken = tmp_path / ".claude" / "skills" / "broken"

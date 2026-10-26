@@ -10,6 +10,7 @@ from pathlib import Path
 
 import yaml
 
+from reporails_cli.core.platform.config.bootstrap import env_text
 from reporails_cli.core.platform.contract.errors import CredentialsUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, as_str
 from reporails_cli.core.platform.utils.utils import fast_yaml_load
@@ -49,6 +50,11 @@ def read_credentials() -> JsonObject:
 def env_api_key() -> str:
     """The `AILS_API_KEY` env override ("" when unset); it wins over the stored key."""
     return os.environ.get("AILS_API_KEY", "")
+
+
+def env_tier() -> str:
+    """The `AILS_TIER` env override, stripped ("" when unset)."""
+    return env_text("AILS_TIER")
 
 
 def identity_and_tier(creds: JsonObject, api_key: str) -> tuple[bool, str]:

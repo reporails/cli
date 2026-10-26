@@ -8,9 +8,14 @@ from typing import get_type_hints
 
 import typer
 import yaml
+from rich.markup import escape
 
 from reporails_cli.core.platform.config.bootstrap import get_global_config_path, get_project_config_path
-from reporails_cli.core.platform.config.config import TEXT_LIST_KEYS, read_config_file
+from reporails_cli.core.platform.config.config import (
+    TEXT_LIST_KEYS,
+    read_config_file,
+    setting_value_problem,
+)
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.results import GlobalConfig, ProjectConfig
 from reporails_cli.core.platform.utils.utils import forget_yaml_file
@@ -136,6 +141,10 @@ def config_set(
         console.print(f"Settable keys: {', '.join(sorted(settable))}")
         raise typer.Exit(2)
     parsed = _parse_value(settable[key], value)
+    problem = setting_value_problem(key, parsed)
+    if problem is not None:
+        console.print(f"[red]Error:[/red] {escape(problem)}", soft_wrap=True)
+        raise typer.Exit(2)
 
     if global_:
         data = _load_global_config(check_items=False)

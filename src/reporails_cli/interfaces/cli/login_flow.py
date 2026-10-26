@@ -7,9 +7,7 @@ from __future__ import annotations
 
 import logging
 import math
-import os
 import socket
-import subprocess
 import sys
 import time
 from datetime import UTC, datetime
@@ -21,6 +19,7 @@ from rich.markup import escape
 from reporails_cli.core.platform.adapters.key_check import check_api_key
 from reporails_cli.core.platform.adapters.notices_seen import due_notices, visible_notices
 from reporails_cli.core.platform.adapters.sign_in import poll_sign_in, revoke_sign_in, start_sign_in
+from reporails_cli.core.platform.config.bootstrap import env_text, running_in_ci
 from reporails_cli.core.platform.config.credentials import (
     clear_credentials,
     credentials_path,
@@ -37,7 +36,7 @@ from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, STILL_RE
 from reporails_cli.core.platform.dto.sign_in import SignedIn, SignInGrant
 from reporails_cli.formatters.text.funnel_cta import OTHER_AGENT_HEAL_TEXT, UNPAID_PITCH_LINE, upgrade_link_line
 from reporails_cli.formatters.text.notices import print_notices
-from reporails_cli.interfaces.cli.helpers import _is_ci, console
+from reporails_cli.interfaces.cli.helpers import console, launch_detached
 
 logger = logging.getLogger(__name__)
 
@@ -148,30 +147,20 @@ def _can_show_browser() -> bool:
     Never in CI. Otherwise a non-blank `BROWSER` setting says how to open one. Without it, macOS and
     Windows can unless the session is over SSH, and every other system needs `DISPLAY` or `WAYLAND_DISPLAY`.
     """
-    if _is_ci():
+    if running_in_ci():
         return False
-    if (os.environ.get("BROWSER") or "").strip():
+    if env_text("BROWSER"):
         return True
     if sys.platform == "darwin" or sys.platform.startswith("win"):
-        return not any(os.environ.get(name) for name in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"))
-    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+        return not any(env_text(name) for name in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"))
+    return bool(env_text("DISPLAY") or env_text("WAYLAND_DISPLAY"))
 
 
 def _open_in_browser(url: str) -> None:
     """Open `url` from a detached child that ignores the working directory and holds none of the caller's streams."""
     if not sys.executable:
         return
-    creationflags = 0
-    if sys.platform == "win32":
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
-    subprocess.Popen(  # pylint: disable=consider-using-with  # detached browser launcher outlives this call
-        [sys.executable, "-I", "-m", "webbrowser", "-t", url],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=sys.platform != "win32",
-        creationflags=creationflags,
-    )
+    launch_detached([sys.executable, "-I", "-m", "webbrowser", "-t", url])
 
 
 def _is_the_websites_link(url: str, site: str) -> bool:

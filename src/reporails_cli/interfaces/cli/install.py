@@ -7,16 +7,17 @@ import logging
 import os
 import re
 import shutil
-import subprocess
-from pathlib import Path
+from itertools import pairwise
+from pathlib import Path, PureWindowsPath
 
 import typer
 
+from reporails_cli.core.platform.config.bootstrap import env_text, environment_without
 from reporails_cli.core.platform.config.credentials import effective_tier
 from reporails_cli.core.platform.dto.diagnostics import UNENTITLED_TIERS
 from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 from reporails_cli.core.platform.utils.version import UNKNOWN_VERSION, installed_version
-from reporails_cli.interfaces.cli.helpers import console, run_uv_tool
+from reporails_cli.interfaces.cli.helpers import ProgramRun, console, run_program, run_uv_tool
 from reporails_cli.interfaces.cli.typer_app import app
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ _PLUGIN_ID = "reporails@reporails"
 _MARKETPLACE = "reporails"
 _STEP_TIMEOUT = 120
 _WARM_TIMEOUT = 300
+_DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD"
 
 # The reporails plugin is a portable Agent Plugins package that carries the
 # `ails` skill and the `reporails` MCP server. Claude Code and Codex install it
@@ -57,27 +59,66 @@ _SESSION_ENV = (
 
 def _uv_cache_dir(uv: str) -> str | None:
     """uv's cache folder as uv reports it; None when uv cannot say."""
-    try:
-        result = subprocess.run([uv, "cache", "dir"], capture_output=True, text=True, timeout=10, check=False)
-    except (OSError, subprocess.TimeoutExpired):
+    result = run_program([uv, "cache", "dir"], timeout=10)
+    if result is None or result.returncode != 0:
         return None
-    return result.stdout.strip() or None if result.returncode == 0 else None
+    return result.stdout.strip() or None
 
 
-def _is_temporary_ails(ails_path: str, uv: str | None) -> bool:
-    """True when `ails_path` sits in uv's cache, i.e. a one-shot `uvx` environment."""
-    cache = _uv_cache_dir(uv) if uv else None
-    if cache:
-        return Path(os.path.realpath(ails_path)).is_relative_to(os.path.realpath(cache))
-    return "/.cache/uv/" in ails_path
+def _in_default_uv_cache(ails_path: str) -> bool:
+    """Whether the path sits in one of uv's default cache folders: `~/.cache/uv` or `%LOCALAPPDATA%\\uv\\cache`."""
+    parts = [part.lower() for part in PureWindowsPath(ails_path).parts]
+    pairs = list(pairwise(parts))
+    return (".cache", "uv") in pairs or ("uv", "cache") in pairs
+
+
+def _under_node_modules(ails_path: str) -> bool:
+    return "node_modules" in PureWindowsPath(ails_path).parts
+
+
+def _is_temporary_ails(ails_path: str, cache_dir: str | None) -> bool:
+    """True for an `ails` inside a `node_modules` folder or in uv's cache.
+
+    That is a one-shot or project copy, not a PATH install. `cache_dir` is uv's cache folder; without
+    it, uv's default cache folders count.
+    """
+    if _under_node_modules(ails_path):
+        return True
+    if cache_dir:
+        return Path(os.path.realpath(ails_path)).is_relative_to(os.path.realpath(cache_dir))
+    return _in_default_uv_cache(ails_path)
+
+
+def _ails_names(windows: bool, pathext: str) -> list[str]:
+    """File names that count as the `ails` program in one folder.
+
+    Windows runs only a name with a PATHEXT extension, so there is no bare `ails` there. An unset or
+    empty PATHEXT means `.COM;.EXE;.BAT;.CMD`.
+    """
+    if windows:
+        return [f"ails{ext}" for ext in (pathext or _DEFAULT_PATHEXT).split(";") if ext]
+    return ["ails"]
+
+
+def _ails_in_folder(entry: str) -> str | None:
+    """The `ails` executable directly inside PATH folder `entry`, or None."""
+    for name in _ails_names(os.name == "nt", env_text("PATHEXT")):
+        candidate = os.path.join(entry, name)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
 
 
 def _install_to_path() -> bool:
     """Install ails to PATH via uv tool install. Returns True on success."""
     uv = shutil.which("uv")
-    # Already on PATH as a real install (not uvx one-shot)?
-    ails_path = shutil.which("ails")
-    if ails_path and not _is_temporary_ails(ails_path, uv):
+
+    # Already on PATH as a real install (not a uvx or node_modules one-shot)?
+    entries = [entry for entry in env_text("PATH").split(os.pathsep) if entry]
+    copies = [hit for hit in (_ails_in_folder(entry) for entry in entries) if hit]
+    cache_dir = _uv_cache_dir(uv) if uv and any(not _under_node_modules(copy) for copy in copies) else None
+    ails_path = next((copy for copy in copies if not _is_temporary_ails(copy, cache_dir)), None)
+    if ails_path:
         console.print(f"  [dim]ails already on PATH: {ails_path}[/dim]")
         return True
 
@@ -92,19 +133,17 @@ def _install_to_path() -> bool:
     version = installed_version()
     spec = "reporails-cli" if version == UNKNOWN_VERSION else f"reporails-cli>={version}"
     console.print("  Installing ails to PATH...")
-    try:
-        result = run_uv_tool(uv, "install", spec, "--force")
-        if result.returncode == 0:
-            console.print("  [green]ails installed to PATH[/green]")
-            return True
-        logger.warning("uv tool install failed: %s", result.stderr.strip())
-        console.print(f"  [yellow]PATH install failed: {result.stderr.strip()}[/yellow]")
-        console.print("  [dim]You can still use: npx @reporails/cli check[/dim]")
-        return False
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        logger.warning("uv tool install error: %s", exc)
+    result = run_uv_tool(uv, "install", spec, "--force")
+    if result is None:
         console.print("  [yellow]PATH install failed — use npx @reporails/cli instead[/yellow]")
         return False
+    if result.returncode == 0:
+        console.print("  [green]ails installed to PATH[/green]")
+        return True
+    logger.warning("uv tool install failed: %s", result.stderr.strip())
+    console.print(f"  [yellow]PATH install failed: {result.stderr.strip()}[/yellow]")
+    console.print("  [dim]You can still use: npx @reporails/cli check[/dim]")
+    return False
 
 
 def _is_local_path(source: str) -> bool:
@@ -117,7 +156,7 @@ def _plugin_source() -> str:
 
     A path is made absolute so every command resolves it to the same folder.
     """
-    value = os.environ.get(_PLUGIN_SOURCE_ENV, "").strip() or _PLUGIN_REPO
+    value = env_text(_PLUGIN_SOURCE_ENV) or _PLUGIN_REPO
     if _is_local_path(value):
         return os.path.abspath(os.path.expanduser(value))
     return value
@@ -139,7 +178,7 @@ def _git_root(start: Path) -> Path:
 
 
 def _codex_home() -> Path:
-    return Path(os.environ.get("CODEX_HOME") or "~/.codex").expanduser().resolve()
+    return Path(env_text("CODEX_HOME") or "~/.codex").expanduser().resolve()
 
 
 def _engine_spec(version: str) -> str:
@@ -154,14 +193,9 @@ def _engine_spec(version: str) -> str:
     return f"reporails-cli>={major}.{minor}.{patch},<{major}.{minor + 1}"
 
 
-def _run(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str] | None:
-    """Run one agent command without the agent-session variables; None on OSError or timeout."""
-    env = {k: v for k, v in os.environ.items() if k not in _SESSION_ENV}
-    try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=_STEP_TIMEOUT, check=False, env=env, cwd=cwd)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        logger.warning("%s failed: %s", cmd[0], exc)
-        return None
+def _run(cmd: list[str], cwd: Path | None = None) -> ProgramRun | None:
+    """Run one agent command without the agent-session variables; None when it cannot start or runs out of time."""
+    return run_program(cmd, timeout=_STEP_TIMEOUT, env=environment_without(_SESSION_ENV), cwd=cwd)
 
 
 def _normalize_source(value: str) -> str:
@@ -410,16 +444,8 @@ def _warm_engine() -> None:
         return
     spec = _engine_spec(installed_version())
     console.print("  Preparing the plugin's engine...")
-    try:
-        result = subprocess.run(
-            [uvx, "--from", spec, "ails", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=_WARM_TIMEOUT,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        logger.warning("engine warm-up failed: %s", exc)
+    result = run_program([uvx, "--from", spec, "ails", "--version"], timeout=_WARM_TIMEOUT)
+    if result is None:
         return
     if result.returncode != 0:
         logger.warning("engine warm-up failed: %s", result.stderr.strip())

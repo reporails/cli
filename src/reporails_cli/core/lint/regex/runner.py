@@ -7,7 +7,7 @@ from pathlib import Path
 
 import regex as re
 
-from reporails_cli.core.discovery.exclusions import load_project_exclude_dirs
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.discovery.walk import safe_resolve, walk_files, walk_markdown
 from reporails_cli.core.lint.regex import matching
 from reporails_cli.core.lint.regex.compiler import (
@@ -52,7 +52,7 @@ def _resolve_scan_targets(
         return targets
 
     scan_dir = target if target.is_dir() else target.parent
-    excluded = load_project_exclude_dirs(scan_dir)
+    excluded = load_run_exclusions(scan_dir)
     targets = list(walk_markdown(scan_dir, excluded))
     if not targets:
         targets = list(walk_files(scan_dir, excluded, _is_text_file))

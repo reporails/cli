@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-CI_ENV_VARS = ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "CIRCLECI")  # mirrors helpers._is_ci
+CI_ENV_VARS = ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "CIRCLECI")  # mirrors running_in_ci
 
 # Tests never download the model set, and never reach a hosted service: a closed local port
 # fails fast, so a check runs its offline path.

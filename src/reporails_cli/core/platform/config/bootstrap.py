@@ -3,25 +3,61 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
+from functools import cache
 from pathlib import Path
 
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 
 
+def env_text(var_name: str) -> str:
+    """The env var's value with surrounding spaces removed ("" when unset)."""
+    return os.environ.get(var_name, "").strip()
+
+
+def env_int(var_name: str) -> int | None:
+    """The env var as an integer; None when unset, blank or not an integer."""
+    raw = env_text(var_name)
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def running_in_github_actions() -> bool:
+    """True when the process runs under GitHub Actions."""
+    return os.environ.get("GITHUB_ACTIONS") == "true"
+
+
+def running_in_ci() -> bool:
+    """True when the process runs under a CI system."""
+    return running_in_github_actions() or any(env_text(var) for var in ("CI", "GITLAB_CI", "JENKINS_URL", "CIRCLECI"))
+
+
+def environment_without(names: Iterable[str]) -> dict[str, str]:
+    """The process environment minus the named variables."""
+    dropped = set(names)
+    return {key: value for key, value in os.environ.items() if key not in dropped}
+
+
 def env_flag(var_name: str) -> bool:
     """True when the env var is set to anything but blank, 0, false, no or off (case and spaces ignored)."""
-    return os.environ.get(var_name, "").strip().lower() not in ("", "0", "false", "no", "off")
+    return env_text(var_name).lower() not in ("", "0", "false", "no", "off")
+
+
+@cache
+def consume_npm_launch() -> bool:
+    """Whether the npm package started this process; the first call reads and clears the launch variable."""
+    return os.environ.pop("AILS_LAUNCHER", "").strip() == "npm"
 
 
 def parse_idle_timeout_env(var_name: str, default_s: int) -> int | None:
     """Parse an idle-timeout env var (seconds): unset/blank/non-numeric → default,
     a positive int → that value, 0 or negative → None (idle shutdown disabled)."""
-    raw = os.environ.get(var_name, "").strip()
-    if not raw:
-        return default_s
-    try:
-        value = int(raw)
-    except ValueError:
+    value = env_int(var_name)
+    if value is None:
         return default_s
     return value if value > 0 else None
 
@@ -38,6 +74,11 @@ def get_reporails_home() -> Path:
 def get_daemon_dir() -> Path:
     """Get ~/.reporails/daemon/ — global daemon socket and PID."""
     return REPORAILS_HOME / "daemon"
+
+
+def get_xray_log_dir() -> Path:
+    """Get ~/.reporails/xray/ — per-session event logs of the context x-ray."""
+    return REPORAILS_HOME / "xray"
 
 
 def get_global_cache_dir() -> Path:

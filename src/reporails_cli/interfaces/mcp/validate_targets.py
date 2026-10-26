@@ -21,6 +21,16 @@ from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValu
 from reporails_cli.interfaces.mcp.remedy_brief import resolve_from_root
 
 
+def target_tokens(targets: list[str] | None) -> tuple[str, ...]:
+    """The distinct non-empty target tokens, sorted — one spelling per set of targets."""
+    return tuple(sorted({t.strip() for t in targets or () if t and t.strip()}))
+
+
+def named_files(selection: tuple[set[Path], set[Path]] | None) -> frozenset[Path]:
+    """The files a resolved target selection names directly (none for no selection)."""
+    return frozenset(selection[0]) if selection is not None else frozenset()
+
+
 def _resolve_one_target(
     token: str, token_agent: str, scan_root: Path, effective_agent: str, exclusions: RunExclusions | None
 ) -> tuple[set[Path], set[Path]] | JsonObject:

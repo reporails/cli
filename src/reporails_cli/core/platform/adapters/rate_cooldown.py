@@ -44,7 +44,7 @@ def _cooldown_path() -> Path:
 
 def _principal_key(base_url: str, api_key: str) -> str:
     """Opaque per-endpoint, per-credential key; the raw API key is never stored."""
-    return hashlib.sha256(f"{base_url.rstrip('/')}\0{api_key}".encode()).hexdigest()[:32]
+    return hashlib.sha256(f"{base_url}\0{api_key}".encode()).hexdigest()[:32]
 
 
 def _load() -> JsonObject:

@@ -17,7 +17,7 @@ Lives at the root of your repo.
 
 ```yaml
 default_agent: claude              # Which agent's rules to run by default
-exclude_dirs: [examples]           # Extra directory names to skip during discovery (added to the built-in defaults below)
+exclude_dirs: [examples]           # Extra folders to skip during discovery: a name, or a path from the project root (added to the built-in defaults below)
 disabled_rules: [CORE:C:0010]      # Rule IDs to disable entirely
 heal_exclude: ["archive/**"]       # Files that are still checked and scored, but that heal never rewrites
 ```
@@ -123,7 +123,7 @@ steps:
   - run: ails check
 ```
 
-Install a pinned version as shown (or `uvx --from "reporails-cli==<version>" ails check` where `uv` is set up). `npx @reporails/cli` always runs the latest CLI whatever version you give it, so it cannot be pinned for this key. `actions/cache` saves only when the job succeeds: a job that fails on `ails check --strict` findings saves nothing, and the next run downloads the model again. The GitHub Action keeps the model even when the check fails.
+Install a pinned version as shown (or `uvx --from "reporails-cli==<version>" ails check` where `uv` is set up). A pinned `npx @reporails/cli@<version>` or `npm install -g @reporails/cli@<version>` runs exactly that version from 0.6.5 on (earlier npm releases ran the latest release whatever version was named), so it can key the cache too; a bare `npx @reporails/cli` runs the latest release unless a copy is installed globally or in the project, where npx runs that copy. `actions/cache` saves only when the job succeeds: a job that fails on `ails check --strict` findings saves nothing, and the next run downloads the model again. The GitHub Action keeps the model even when the check fails.
 
 When `ails` downloads the model inside GitHub Actions, it prints a line pointing to this section.
 
@@ -174,7 +174,15 @@ Use the rule ID shown next to the finding in `ails check` output (e.g. `CORE:C:0
 
 ## Excluding directories
 
-`exclude_dirs` is a list of directory *names* (not paths). Any directory matching one of these names is skipped no matter where it appears. The setting exists because the discovery walk scans every directory looking for instruction files — without an exclude list it would descend into vendored trees (`node_modules`, `vendor/`), build output (`dist/`, `target/`), and data dumps (`data/`), surfacing third-party `CLAUDE.md` / `AGENTS.md` files you didn't author and slowing the scan.
+`exclude_dirs` is a list of folders, each written as a folder name or a folder path:
+
+- A value without a `/` (`examples`) is a folder *name*: every folder with that name is skipped, no matter where it appears.
+- A value with a `/` (`.claude/rules`, `./docs`, `/docs`, `docs/.`) is a folder *path* from the project root: only that folder is skipped. `./docs` and `/docs` both mean the `docs` folder at the root, not a `docs` folder deeper down.
+- A trailing `/` is ignored, so `docs/` is the name `docs`. An absolute path inside the project is read from the project root.
+- `[` and `]` are ordinary characters, so `[slug]` and `app/[id]` name those folders.
+- A value holding `*`, `?`, a backslash or a `..` step is not a folder and stops the run with an error that names where the value came from. For file patterns use `exclude_files` / `--exclude-files` (below).
+
+The scan does not go into a folder you leave out, whether you gave it as a name or as a path, nor into a symlink that points inside one. The one exception is a left-out folder that holds a file you name on the command line: the scan enters it so that file can be checked, and everything else in it stays left out. The setting exists because the discovery walk scans every directory looking for instruction files — without an exclude list it would descend into vendored trees (`node_modules`, `vendor/`), build output (`dist/`, `target/`), and data dumps (`data/`), surfacing third-party `CLAUDE.md` / `AGENTS.md` files you didn't author and slowing the scan.
 
 The [built-in list above](#built-in-directory-excludes) already covers the common cases. Add to `exclude_dirs` only when your project has a non-standard tree:
 
@@ -467,7 +475,7 @@ Always present, regardless of tier: `offline`, `server_error`, `tier`, `quality`
 
 `not_evaluated` lists the checks that did not finish on a file, as `{rule, file}`; it is `[]` when every check finished. A check that runs out of time on a very large file reports no finding for that file rather than a guess, so a rule named here was neither passed nor failed there. Text output names them in one line per file under the results.
 
-`excluded` lists what you left out of the run, as `{dirs, files, imported_text_counted}`. `dirs` and `files` are the patterns you pass on the command line (`--exclude-dirs`, `--exclude-files`) joined with `exclude_dirs` and `exclude_files` from your config, sorted and without repeats; neither replaces the other. Both are `[]` when you excluded nothing, and the folders skipped by default (such as `node_modules`) are not listed. A folder name matches that folder at any depth; a value with a `/` (`.claude/rules`) is a folder path from the project root; a trailing `/` is ignored. A file or capability you name on the command line is checked even inside a left-out folder. On a run narrowed to named targets, the patterns a named target matches are not listed, and a run of a single file lists none. `imported_text_counted` is `true` when text a checked file imports with `@path` comes from a left-out file (that text still counts inside the importing file), and `false` otherwise. When `dirs` or `files` is non-empty, the score covers only the rest of the project.
+`excluded` lists what you left out of the run, as `{dirs, files, imported_text_counted}`. `dirs` and `files` are the patterns you pass on the command line (`--exclude-dirs`, `--exclude-files`) joined with `exclude_dirs` and `exclude_files` from your config, sorted and without repeats; neither replaces the other. Both are `[]` when you excluded nothing, and the folders skipped by default (such as `node_modules`) are not listed. A folder name matches that folder at any depth; a value with a `/` (`.claude/rules`) is a folder path from the project root and is listed that way, with a single folder at the root listed as `./docs`; a trailing `/` is ignored. A file or capability you name on the command line is checked even inside a left-out folder. On a run whose targets are all named files, the patterns a named file matches are not listed; a run that also covers a folder or a capability listing lists them. A run of a single file lists none. `imported_text_counted` is `true` when text a checked file imports with `@path` comes from a left-out file (that text still counts inside the importing file), and `false` otherwise. When `dirs` or `files` is non-empty, the score covers only the rest of the project.
 
 Two additive fields enrich the output when the analysis service has data for the run. Both are **additive and backward-compatible** — existing JSON consumers and CI baselines that ignore them keep working unchanged:
 

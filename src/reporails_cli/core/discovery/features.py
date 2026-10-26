@@ -130,8 +130,7 @@ class _SurfaceScan:
     """What one feature detection shares: the project's excluded folders and the plugin
     roots already found, so each plugin marker is searched for once."""
 
-    exclude_dirs: frozenset[str]
-    exclusions: RunExclusions | None = None
+    exclusions: RunExclusions
     roots_by_marker: dict[str, list[Path]] = field(default_factory=dict)
     hook_configs: dict[Path, HookConfig | None] = field(default_factory=dict)
 
@@ -143,15 +142,13 @@ class _SurfaceScan:
 
     def keep(self, paths: list[Path]) -> list[Path]:
         """`paths` without the files the run leaves out (a file the user named is never left out)."""
-        if self.exclusions is None:
-            return paths
         return [p for p in paths if not self.exclusions.leaves_out(p)]
 
     @classmethod
     def for_target(cls, target: Path, exclusions: RunExclusions | None = None) -> _SurfaceScan:
         """The scan for `target` under `exclusions` (the project's own when none is given)."""
         exclusions = exclusions or load_run_exclusions(target)
-        return cls(exclude_dirs=exclusions.feature_walk_dirs, exclusions=exclusions)
+        return cls(exclusions=exclusions)
 
 
 def _scan_for(target: Path, scan: _SurfaceScan | None) -> _SurfaceScan:
@@ -170,7 +167,7 @@ def _surface_patterns(
     return expand_plugin_patterns(
         [p for p in patterns if not is_rooted_pattern(p)] if repo_only else patterns,
         target,
-        scan.exclude_dirs,
+        scan.exclusions,
         scan.roots_by_marker,
     )
 
@@ -194,7 +191,7 @@ def _agent_surface_files(
     patterns = _surface_patterns(target, spec, scan)
     if not patterns:
         return []
-    return scan.keep(glob_file_type_patterns(target, patterns, extract_properties(spec), scan.exclude_dirs))
+    return scan.keep(glob_file_type_patterns(target, patterns, extract_properties(spec), scan.exclusions))
 
 
 def _agent_has_surface(target: Path, agent_id: str, surface_name: str, scan: _SurfaceScan | None = None) -> bool:
@@ -230,7 +227,7 @@ def _hook_scope_matches(target: Path, agent_id: str, scan: _SurfaceScan, *, repo
         patterns = _surface_patterns(
             target, {"scopes": {scope: scope_spec}} if scopes else spec, scan, repo_only=repo_only
         )
-        for match in scan.keep(glob_file_type_patterns(target, patterns, props, scan.exclude_dirs)):
+        for match in scan.keep(glob_file_type_patterns(target, patterns, props, scan.exclusions)):
             if match not in seen:
                 seen.add(match)
                 found.append((scope, match))
@@ -318,7 +315,7 @@ def _agent_nested_instruction_files(target: Path, agent_id: str, scan: _SurfaceS
         patterns = _surface_patterns(target, ft, scan)
         if not patterns:
             continue
-        found.extend(scan.keep(glob_file_type_patterns(target, patterns, extract_properties(ft), scan.exclude_dirs)))
+        found.extend(scan.keep(glob_file_type_patterns(target, patterns, extract_properties(ft), scan.exclusions)))
     return found
 
 

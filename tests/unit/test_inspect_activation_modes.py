@@ -50,6 +50,8 @@ def _loading(root: Path, rel: str, frontmatter: str, registry=None):
         (ANTI, "trigger: glob\n", ("on_demand", "global", ())),
         # Claude unchanged
         (".claude/rules/a.md", "", ("session_start", "global", ())),
+        ("sub/.claude/rules/a.md", "", ("on_demand", "nested", ())),
+        ("sub/.claude/rules/a.md", 'paths: "src/**"\n', ("on_demand", "path_scoped", ("src/**",))),
         (".claude/rules/a.md", 'paths: "src/**"\n', ("on_demand", "path_scoped", ("src/**",))),
     ],
 )
@@ -71,3 +73,22 @@ def test_activation_mode(tmp_path: Path, rel: str, frontmatter: str, expected) -
 def test_copilot_reads_claude_rules_by_paths(tmp_path: Path, frontmatter: str, expected) -> None:
     registry = {"copilot": _load_registry()["copilot"]}
     assert _loading(tmp_path, ".claude/rules/a.md", frontmatter, registry) == expected
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+@pytest.mark.parametrize(
+    ("rel", "frontmatter", "expected"),
+    [
+        (".claude/rules/py.md", "", ("session_start", "global", ())),
+        (".claude/rules/py.md", 'paths: ["src/**/*.py"]\n', ("on_demand", "path_scoped", ("src/**/*.py",))),
+        (".gemini/config/rules/a.md", "trigger: manual\n", ("on_demand", "global", ())),
+        (".gemini/config/rules/a.md", 'trigger: glob\nglobs: "src/**"\n', ("on_demand", "path_scoped", ("src/**",))),
+    ],
+)
+def test_user_rule_keeps_its_frontmatter_conditions(tmp_path: Path, rel: str, frontmatter: str, expected) -> None:
+    """A rule in the user rules folder loads at session start unless its own frontmatter makes it conditional."""
+    path = Path.home() / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"---\n{frontmatter}---\n\nBody.\n" if frontmatter else "Body.\n", encoding="utf-8")
+    assert _detect_file_activation(path, tmp_path, _load_registry())[:3] == expected

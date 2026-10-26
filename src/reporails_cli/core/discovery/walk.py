@@ -20,9 +20,9 @@ import logging
 import os
 from collections.abc import Callable, Iterator
 from pathlib import Path, PurePosixPath
-from typing import NamedTuple
+from typing import NamedTuple, Protocol
 
-from reporails_cli.core.platform.utils.utils import brace_alternatives, glob_matches
+from reporails_cli.core.platform.contract.glob_pattern import GLOB_CHARS, brace_alternatives, glob_matches
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,13 @@ def is_under(path: Path, root: Path) -> bool:
         return path.resolve().is_relative_to(safe_resolve(root))
     except (OSError, RuntimeError, ValueError):
         return False
+
+
+class Pruner(Protocol):  # pylint: disable=too-few-public-methods  # a protocol of one question
+    """Which folders a walk skips."""
+
+    def prunes(self, path: str, name: str, real: str) -> bool:
+        """True when the listed folder `path` named `name` (canonical path `real`) is skipped."""
 
 
 class ListedEntry(NamedTuple):
@@ -145,26 +152,29 @@ def list_dir(path: str) -> list[ListedEntry] | None:
     return listed
 
 
-def _descend_real(
-    entry: ListedEntry, exclude_dirs: frozenset[str], visited_real: set[str], parent_real: str
-) -> str | None:
+def child_real(path: str, name: str, parent_real: str, is_symlink: bool) -> str:
+    """The canonical path of the listed child `name` at `path` of a folder whose canonical path is `parent_real`.
+
+    A plain folder's canonical path is its parent's plus its name; a symlink or a Windows
+    junction is resolved.
+    """
+    return os.path.realpath(path) if is_symlink or os.path.isjunction(path) else os.path.join(parent_real, name)
+
+
+def _descend_real(entry: ListedEntry, skip: Pruner, visited_real: set[str], parent_real: str) -> str | None:
     """The canonical path of a listed entry worth descending into, else `None`.
 
     Follows directory symlinks (so symlinked skills/rules surface) and
     tracks canonical paths in `visited_real` to break cycles —
     each physical directory is entered at most once across the walk.
-
-    A plain directory's canonical path is its parent's canonical path plus its name, so
-    only a symlink pays for a path resolution; resolving every directory on a large tree
-    cost seconds per walk.
     """
-    if entry.name in exclude_dirs or not entry.is_dir:
+    if not entry.is_dir:
         return None
     try:
-        real = os.path.realpath(entry.path) if entry.is_symlink else os.path.join(parent_real, entry.name)
+        real = child_real(entry.path, entry.name, parent_real, entry.is_symlink)
     except OSError:
         return None
-    if real in visited_real:
+    if skip.prunes(entry.path, entry.name, real) or real in visited_real:
         return None
     visited_real.add(real)
     return real
@@ -194,11 +204,11 @@ def _same_file(first: Path, second: Path) -> bool:
         return False
 
 
-def walk_glob(root: Path, filename: str, exclude_dirs: frozenset[str]) -> list[Path]:
+def walk_glob(root: Path, filename: str, skip: Pruner) -> list[Path]:
     """Every regular file under root that answers to the documented name `filename`, skipping
-    excluded dirs.
+    the folders `skip` prunes.
 
-    Much faster than Path.glob("**/name") because it prunes excluded
+    Much faster than Path.glob("**/name") because it prunes skipped
     subtrees during traversal instead of filtering afterwards.
 
     A file is found by its exact name, or by a differently-cased name only when the filesystem
@@ -206,29 +216,24 @@ def walk_glob(root: Path, filename: str, exclude_dirs: frozenset[str]) -> list[P
     the documented spelling; on a case-sensitive filesystem a lowercase `agents.md` is not
     `AGENTS.md`.
     """
-    found = _walk(root, exclude_dirs, lambda path: documented_path(path, filename) is not None)
+    found = _walk(root, skip, lambda path: documented_path(path, filename) is not None)
     return [named for path in found if (named := documented_path(path, filename)) is not None]
 
 
-def walk_markdown(root: Path, exclude_dirs: frozenset[str]) -> Iterator[Path]:
+def walk_markdown(root: Path, skip: Pruner) -> Iterator[Path]:
     """Yield every regular `.md` file under root, following symlinks safely and not
-    entering a directory named in `exclude_dirs`."""
-    yield from _walk(root, exclude_dirs, lambda p: p.suffix == ".md")
+    entering a folder `skip` prunes."""
+    yield from _walk(root, skip, lambda p: p.suffix == ".md")
 
 
-def walk_files(
-    root: Path, exclude_dirs: frozenset[str], predicate: Callable[[Path], bool] | None = None
-) -> Iterator[Path]:
+def walk_files(root: Path, skip: Pruner, predicate: Callable[[Path], bool] | None = None) -> Iterator[Path]:
     """Yield every regular file under root, following symlinks safely and not entering a
-    directory named in `exclude_dirs`.
+    folder `skip` prunes.
 
     Optional `predicate` further filters the yielded files (e.g. text-file
     detection for the regex runner's catch-all fallback).
     """
-    yield from _walk(root, exclude_dirs, predicate)
-
-
-_GLOB_CHARS = frozenset("*?[{")
+    yield from _walk(root, skip, predicate)
 
 
 def glob_prefix_dir(pattern: str) -> str:
@@ -237,24 +242,33 @@ def glob_prefix_dir(pattern: str) -> str:
     gives `.claude/skills`; `CLAUDE.md` and `**/x.md` give `""`."""
     prefix: list[str] = []
     for segment in pattern.lstrip("/").split("/")[:-1]:
-        if segment in ("", ".", "..") or _GLOB_CHARS & set(segment):
+        if segment in ("", ".", "..") or GLOB_CHARS & set(segment):
             break
         prefix.append(segment)
     return "/".join(prefix)
 
 
-def _blocked_prefix(glob: str, exclude_dirs: frozenset[str]) -> bool:
-    """Whether a pattern's leading folders include an excluded folder or a `..` step, so it
+def _blocked_prefix(root: str, glob: str, skip: Pruner) -> bool:
+    """Whether a pattern's leading folders include a pruned folder or a `..` step, so it
     matches nothing."""
-    folders = PurePosixPath(glob).parts[:-1]
-    return ".." in PurePosixPath(glob).parts or bool(exclude_dirs.intersection(_literal_folders(folders)))
+    parts = PurePosixPath(glob).parts
+    if ".." in parts:
+        return True
+    literal = _literal_folders(parts[:-1])
+    folder, real = root, os.path.realpath(root)
+    for name in literal:
+        folder = os.path.join(folder, name)
+        real = child_real(folder, name, real, os.path.islink(folder))
+        if skip.prunes(folder, name, real):
+            return True
+    return False
 
 
 def _literal_folders(folders: tuple[str, ...]) -> tuple[str, ...]:
     """The leading folders of a pattern up to its first glob segment."""
     out: list[str] = []
     for segment in folders:
-        if _GLOB_CHARS & set(segment):
+        if GLOB_CHARS & set(segment):
             break
         out.append(segment)
     return tuple(out)
@@ -290,18 +304,16 @@ def _literal_matches(root: Path, glob: str, ignore_case: bool) -> Iterator[Path]
                 yield Path(entry.path)
 
 
-def walk_glob_matches(
-    root: Path, pattern: str, exclude_dirs: frozenset[str], *, ignore_case: bool = False
-) -> Iterator[Path]:
+def walk_glob_matches(root: Path, pattern: str, skip: Pruner, *, ignore_case: bool = False) -> Iterator[Path]:
     """Yield every regular file under `root` matching `pattern` anchored at `root` (a leading `/`
     is dropped), walking only the pattern's literal prefix folder. A symlinked prefix folder is
-    entered; excluded folders are skipped below it. A pattern with no glob character is checked as
+    entered; folders `skip` prunes are skipped below it. A pattern with no glob character is checked as
     one path, without a walk. With `ignore_case` the pattern matches names and prefix folders
     without regard to case."""
     glob = pattern.lstrip("/")
-    if _blocked_prefix(glob, exclude_dirs):
+    if _blocked_prefix(str(root), glob, skip):
         return
-    if not _GLOB_CHARS & set(glob):
+    if not GLOB_CHARS & set(glob):
         yield from _literal_matches(root, glob, ignore_case)
         return
     prefix = glob_prefix_dir(glob)
@@ -317,7 +329,7 @@ def walk_glob_matches(
         start_prefix = str(start)
         start_rel = os.path.relpath(start, root).replace(os.sep, "/")
         base = "" if start_rel == "." else start_rel + "/"
-        for entry in _walk_files(start, exclude_dirs, report_loops=False):
+        for entry in _walk_files(start, skip, report_loops=False):
             name = entry.name.lower() if ignore_case else entry.name
             if leaves is not None and not any(glob_matches(name, leaf, anchored=True) for leaf in leaves):
                 continue
@@ -333,15 +345,15 @@ def _leaf_globs(glob: str) -> tuple[str, ...] | None:
     return None if "**" in leaves or "" in leaves else leaves
 
 
-def _walk(root: Path, exclude_dirs: frozenset[str], predicate: Callable[[Path], bool] | None) -> Iterator[Path]:
+def _walk(root: Path, skip: Pruner, predicate: Callable[[Path], bool] | None) -> Iterator[Path]:
     """Every regular file under `root` (see `_walk_files`), as a `Path` that passes `predicate`."""
-    for entry in _walk_files(root, exclude_dirs):
+    for entry in _walk_files(root, skip):
         full_path = Path(entry.path)
         if predicate is None or predicate(full_path):
             yield full_path
 
 
-def _walk_files(root: Path, exclude_dirs: frozenset[str], *, report_loops: bool = True) -> Iterator[ListedEntry]:
+def _walk_files(root: Path, skip: Pruner, *, report_loops: bool = True) -> Iterator[ListedEntry]:
     """Shared walker — top-down over listed directories with canonical-path cycle tracking.
 
     Yields each listed regular file. A plain file is taken from the listing as it stands; a
@@ -359,7 +371,7 @@ def _walk_files(root: Path, exclude_dirs: frozenset[str], *, report_loops: bool 
         kept: list[tuple[str, str]] = []
         for entry in list_dir(current) or ():
             if entry.is_dir:
-                real = _descend_real(entry, exclude_dirs, visited_real, current_real)
+                real = _descend_real(entry, skip, visited_real, current_real)
                 if real is not None:
                     kept.append((entry.path, real))
             elif not entry.is_symlink:
