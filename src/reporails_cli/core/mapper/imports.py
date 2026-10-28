@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from reporails_cli.core.discovery.project_root import resolve_project_root_for_file
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.md_parser import line_offsets
 from reporails_cli.core.mapper.structure import code_ranges, in_any_span
@@ -66,21 +67,32 @@ def import_target(ref: str, source_path: Path) -> Path:
     return Path(ref).expanduser() if ref.startswith("~") else source_path.parent / ref
 
 
+def import_boundary(source_path: Path) -> Path:
+    """The folder an `@import` chain starting at `source_path` may not leave: the project that
+    holds the file, symlinks resolved."""
+    return safe_resolve(resolve_project_root_for_file(source_path))
+
+
 def _resolve_import_target(
     ref: str,
     source_path: Path,
     visited: set[str],
+    boundary: Path,
 ) -> Path | None:
     """Resolve an @path reference to a file path.
 
     Returns the resolved Path if it should be expanded, or None if it should
-    be left as-is (non-markdown ext, circular, broken, etc.).
+    be left as-is (non-markdown ext, circular, broken, outside `boundary`, etc.).
+    A reference that resolves outside `boundary` stays a literal reference, so a
+    checked file cannot pull in a file the project does not hold.
     """
     target = import_target(ref, source_path)
     try:
         target = target.resolve(strict=False)
     except (OSError, RuntimeError):
         return None  # circular or broken symlink
+    if not target.is_relative_to(boundary):
+        return None
     if target.suffix.lower() not in _EXPANDABLE_EXT:
         return None
     if str(target) in visited:
@@ -96,6 +108,7 @@ def expand_imports(
     *,
     depth: int = 0,
     visited: set[str] | None = None,
+    boundary: Path | None = None,
 ) -> str:
     """Expand @path inline imports in instruction file content.
 
@@ -117,13 +130,15 @@ def expand_imports(
         return content
     if visited is None:
         visited = {str(safe_resolve(source_path))}
+    if boundary is None:
+        boundary = import_boundary(source_path)
 
     ranges = code_ranges(content) if IMPORT_REF_RE.search(content) else []
 
     def _replace(match: re.Match[str]) -> str:
         if in_any_span(match.start(), ranges):
             return match.group(0)
-        target = _resolve_import_target(match.group(1), source_path, visited)
+        target = _resolve_import_target(match.group(1), source_path, visited, boundary)
         if target is None:
             return match.group(0)
         try:
@@ -136,7 +151,7 @@ def expand_imports(
         # cycle) should be rejected by `_resolve_import_target`.
         visited.add(str(target))
         try:
-            return expand_imports(imported, target, depth=depth + 1, visited=visited)
+            return expand_imports(imported, target, depth=depth + 1, visited=visited, boundary=boundary)
         finally:
             visited.discard(str(target))
 
@@ -149,7 +164,7 @@ LineOrigin = tuple[Path | None, int]
 _Line = tuple[str, LineOrigin]
 
 
-def _expand_file_lines(content: str, source_path: Path, depth: int, visited: set[str]) -> list[_Line]:
+def _expand_file_lines(content: str, source_path: Path, depth: int, visited: set[str], boundary: Path) -> list[_Line]:
     """Every line of one file's `content` with its imports expanded, each carrying its origin.
 
     `depth` 0 is the file being expanded itself, whose lines carry a `None` origin path;
@@ -164,19 +179,30 @@ def _expand_file_lines(content: str, source_path: Path, depth: int, visited: set
     out: list[_Line] = []
     for idx, (line, line_start) in enumerate(zip(lines, line_offsets(lines), strict=True)):
         out.extend(
-            _expand_one_line(line, line_start, (origin_path, idx + 1), source_path, visited, ranges=ranges, depth=depth)
+            _expand_one_line(
+                line,
+                line_start,
+                (origin_path, idx + 1),
+                source_path,
+                visited,
+                boundary=boundary,
+                ranges=ranges,
+                depth=depth,
+            )
         )
     return out
 
 
-def _expand_one_match(match: re.Match[str], source_path: Path, visited: set[str], depth: int) -> list[_Line] | None:
+def _expand_one_match(
+    match: re.Match[str], source_path: Path, visited: set[str], boundary: Path, depth: int
+) -> list[_Line] | None:
     """Resolve and expand one `@import` match into its lines, or `None` when it stays a literal reference.
 
     Adds `target` to `visited` only for the duration of its own expansion
     (ancestor-chain membership — see `expand_imports`), so a sibling reference
     to the same target elsewhere still expands.
     """
-    target = _resolve_import_target(match.group(1), source_path, visited)
+    target = _resolve_import_target(match.group(1), source_path, visited, boundary)
     if target is None:
         return None
     try:
@@ -185,7 +211,7 @@ def _expand_one_match(match: re.Match[str], source_path: Path, visited: set[str]
         return None
     visited.add(str(target))
     try:
-        return _expand_file_lines(imported, target, depth + 1, visited)
+        return _expand_file_lines(imported, target, depth + 1, visited, boundary)
     finally:
         visited.discard(str(target))
 
@@ -197,6 +223,7 @@ def _expand_one_line(
     source_path: Path,
     visited: set[str],
     *,
+    boundary: Path,
     ranges: list[tuple[int, int]],
     depth: int,
 ) -> list[_Line]:
@@ -208,7 +235,7 @@ def _expand_one_line(
     matches = [m for m in IMPORT_REF_RE.finditer(line) if not in_any_span(line_start + m.start(), ranges)]
     if not matches:
         return [(line, origin)]
-    expansions = [_expand_one_match(m, source_path, visited, depth) for m in matches]
+    expansions = [_expand_one_match(m, source_path, visited, boundary, depth) for m in matches]
     return _splice(line, origin, matches, expansions)
 
 
@@ -265,6 +292,7 @@ def expand_imports_with_origins(
     detection mirror `expand_imports`.
     """
     visited: set[str] = {str(safe_resolve(source_path))}
+    boundary = import_boundary(source_path)
     ranges = code_ranges(content) if IMPORT_REF_RE.search(content) else []
     orig_lines = content.split("\n")
 
@@ -273,7 +301,7 @@ def expand_imports_with_origins(
     origins: list[tuple[Path, int] | None] = []
     for idx, (line, line_start) in enumerate(zip(orig_lines, line_offsets(orig_lines), strict=True)):
         for text, (path, line_no) in _expand_one_line(
-            line, line_start, (None, idx + 1), source_path, visited, ranges=ranges, depth=0
+            line, line_start, (None, idx + 1), source_path, visited, boundary=boundary, ranges=ranges, depth=0
         ):
             out_lines.append(text)
             line_map.append(idx + 1)

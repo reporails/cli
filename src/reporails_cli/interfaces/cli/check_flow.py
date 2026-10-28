@@ -22,6 +22,7 @@ import typer
 
 from reporails_cli.core.classify.capability_paths import canonicalize_capability, classify_target_token
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.heal.apply import heal_bound
 from reporails_cli.core.pipeline.mapping import (
     apply_generic_scan,
     discover_scope,
@@ -384,7 +385,8 @@ def _flow_heal(state: CheckState) -> None:
             server_replied=state.pipeline.lint_result is not None,
         )
         return
-    heal_scope = state.targets.single_path if state.targets.single_path is not None else state.targets.target
+    single = state.targets.single_path
+    heal_scope = heal_bound(single, state.targets.target) if single is not None else state.targets.target
     candidate = (
         [f for f in state.scope.instruction_files if f in state.render.capability_paths]
         if state.render.capability_paths

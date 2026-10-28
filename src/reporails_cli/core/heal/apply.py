@@ -67,6 +67,15 @@ def allowed_set(target: Path, allowed_files: Iterable[Path] | None) -> set[Path]
     return allowed
 
 
+def heal_bound(scope: Path, project_root: Path) -> Path:
+    """The folder heal may not write outside: `scope` when it is a folder, else `project_root`.
+
+    A file named as the scope would bound heal by its own real path, so a symlink at that
+    path would pass for any destination; the project holding the file bounds it instead.
+    """
+    return scope if scope.is_dir() else project_root
+
+
 def resolved_within(path: Path, scope: Path) -> bool:
     """True when the file's real (symlink-resolved) location is within `scope`: heal writes through to the
     real file, so a file whose real path escapes the named scope is never written."""

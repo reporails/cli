@@ -154,3 +154,24 @@ def test_a_bare_heal_exclude_name_drops_only_the_root_file(tmp_path: object) -> 
         f.write_text("# Doc\n", encoding="utf-8")
 
     assert allowed_set(base, files) == {base / "sub" / "CLAUDE.md"}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_single_file_heal_refuses_a_symlink_to_a_file_outside_the_project(tmp_path: Path) -> None:
+    """A single-file heal target is itself a symlink out of the project: its real path is not within the
+    bound heal takes for a file scope (the project), so heal never writes through it."""
+    from reporails_cli.core.heal.apply import heal_bound, resolved_within
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    outside = tmp_path / "outside.md"
+    outside.write_text("keep\n", encoding="utf-8")
+    link = project / "CLAUDE.md"
+    link.symlink_to(outside)
+    inside = project / "AGENTS.md"
+    inside.write_text("ok\n", encoding="utf-8")
+
+    assert not resolved_within(link, heal_bound(link, project))
+    assert resolved_within(inside, heal_bound(inside, project))
+    assert resolved_within(link, heal_bound(project, project)) is False
