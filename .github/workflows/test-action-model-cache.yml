@@ -24,7 +24,7 @@ jobs:
     name: "Model cache: first run, strict check with findings"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Create fixture with findings
         run: |
           mkdir -p /tmp/model-cache-strict
@@ -57,7 +57,7 @@ jobs:
     steps:
       - name: Mark job start
         run: touch "$RUNNER_TEMP/job-start"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Create fixture
         run: |
           mkdir -p /tmp/model-cache-fixture
