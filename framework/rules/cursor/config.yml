@@ -151,7 +151,8 @@ file_types:
     # tab hooks beforeTabFileRead, afterTabFileEdit; app hook workspaceOpen.
     # Command (default) and prompt hook types; cloud agents run command hooks only.
     # subagentStart carries parent_conversation_id; subagentStop carries
-    # agent_transcript_path.
+    # agent_transcript_path. Plugins (.cursor-plugin/plugin.json) carry command hooks,
+    # run from CURSOR_PLUGIN_ROOT, after enterprise, team, project and user hooks.
     source: https://cursor.com/docs/hooks
     format: schema_validated
     scope: global
@@ -338,6 +339,10 @@ intercept_events:
   beforeReadFile: [Read]
 
 # How this agent's hooks reach a sub-agent it starts, from the agent's own docs.
+# Re-verified 2026-10-28 against https://cursor.com/docs/hooks: the page documents only
+# subagentStart (parent_conversation_id, subagent_id) and subagentStop
+# (agent_transcript_path); it does not say tool hooks fire inside a subagent, and the
+# common payload carries no acting-agent field, so both stay unconfirmed.
 subagent_hooks:
   fire_in_subagents: {value: unconfirmed}
   identifies_agent: {value: unconfirmed}
