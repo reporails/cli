@@ -8,6 +8,13 @@ measure of the suite's power: a test earns its place by killing mutants, not by
 asserting shape.
 
     uv run python scripts/mutation_probe.py <src.py> <pytest_target> [max_mutants]
+    uv run python scripts/mutation_probe.py <src.py> --cmd "<killing command>" [max_mutants] [--timeout S]
+
+`--cmd` replaces the pytest target with an upper-tier killing command (e.g.
+`uv run behave tests/behave --tags=@offline --stop`): exit 0 = the mutant SURVIVED, any other
+exit = CAUGHT. The command runs once on the unmutated source first and must exit 0, so a
+broken command is never read as a 100% kill-rate. The run drives the installed `ails` binary,
+so the mutated module must be the one that binary imports (an editable install of this tree).
 
 Accuracy contract (so the headline number stays honest):
   - Mutations apply at exact `tokenize` OPERATOR/keyword positions, never by line
@@ -40,11 +47,13 @@ from __future__ import annotations
 import atexit
 import io
 import os
+import shlex
 import signal
 import subprocess
 import sys
 import tokenize
 from pathlib import Path
+from typing import NamedTuple
 
 # Per-mutant wall-clock ceiling. A mutant that makes the suite loop forever (the
 # operator that terminates a `while` flipped to a never-true condition) would hang
@@ -70,10 +79,17 @@ def _pytest_cmd() -> list[str]:
         return [str(venv_pytest)]
     return ["uv", "run", "pytest"]
 
+
 # Exact-string swaps at OPERATOR / keyword token positions — each a plausible bug.
 SWAPS: dict[str, str] = {
-    ">=": ">", "<=": "<", "==": "!=", "!=": "==",
-    "and": "or", "or": "and", "True": "False", "False": "True",
+    ">=": ">",
+    "<=": "<",
+    "==": "!=",
+    "!=": "==",
+    "and": "or",
+    "or": "and",
+    "True": "False",
+    "False": "True",
     "is": "is not",
 }
 
@@ -131,13 +147,48 @@ def run_tests(target: str) -> str:
     try:
         r = subprocess.run(
             [*_pytest_cmd(), *target.split(), "-q", "-x", "--no-header", "-p", "no:cacheprovider"],
-            capture_output=True, text=True, timeout=_MUTANT_TIMEOUT_S, env=env,
+            capture_output=True,
+            text=True,
+            timeout=_MUTANT_TIMEOUT_S,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         return "hang"
     if r.returncode in _PYTEST_INVOCATION_BROKEN:
         return "error"
     return "survived" if r.returncode == 0 else "caught"
+
+
+def run_command(command: str, timeout: int) -> str:
+    """Run an upper-tier killing command against the on-disk mutant.
+
+    Returns "survived" (exit 0), "caught" (any other exit) or "hang" (over `timeout` seconds,
+    counted with the caught mutants like a pytest hang). `PYTHONDONTWRITEBYTECODE=1` is forced
+    for the same stale-bytecode reason as `run_tests`.
+    """
+    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    try:
+        r = subprocess.run(shlex.split(command), capture_output=True, text=True, timeout=timeout, env=env)
+    except subprocess.TimeoutExpired:
+        return "hang"
+    return "survived" if r.returncode == 0 else "caught"
+
+
+def _validate_command(command: str, timeout: int) -> str | None:
+    """Run the killing command once on the unmutated source; an error message unless it exits 0.
+
+    A command that cannot start, or is red before any mutant, would read every mutant as
+    caught: refuse it before a mutant is written.
+    """
+    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    try:
+        r = subprocess.run(shlex.split(command), capture_output=True, text=True, timeout=timeout, env=env)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"killing command {command!r} did not complete on the unmutated source: {exc}"
+    if r.returncode != 0:
+        tail = (r.stdout + r.stderr)[-2000:]
+        return f"killing command {command!r} exits {r.returncode} on the unmutated source:\n{tail}"
+    return None
 
 
 def _validate_target(target: str) -> str | None:
@@ -151,27 +202,68 @@ def _validate_target(target: str) -> str | None:
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     r = subprocess.run(
         [*_pytest_cmd(), *target.split(), "--collect-only", "-q"],
-        capture_output=True, text=True, env=env,
+        capture_output=True,
+        text=True,
+        env=env,
     )
     if r.returncode in _PYTEST_INVOCATION_BROKEN:
         return (r.stdout + r.stderr).strip() or f"pytest exited {r.returncode} collecting {target!r}"
     return None
 
 
+def _option(argv: list[str], flag: str) -> tuple[list[str], str | None]:
+    """`argv` without `flag <value>`, and that value (None when the flag is absent)."""
+    if flag not in argv:
+        return argv, None
+    i = argv.index(flag)
+    if i + 1 >= len(argv):
+        raise SystemExit(f"{flag} needs a value")
+    return argv[:i] + argv[i + 2 :], argv[i + 1]
+
+
+class _Args(NamedTuple):
+    src: Path
+    target: str  # the pytest target; "" when a killing command is given
+    command: str | None
+    cap: int
+    timeout: int
+
+
+def _parse_args(raw: list[str]) -> _Args | None:
+    """The probe's arguments, or None when they do not name a module and a killer."""
+    argv, command = _option(raw, "--cmd")
+    argv, timeout_text = _option(argv, "--timeout")
+    timeout = int(timeout_text) if timeout_text is not None else _MUTANT_TIMEOUT_S
+    if not argv or (command is None and len(argv) < 2):
+        return None
+    if command is not None:
+        return _Args(Path(argv[0]), "", command, int(argv[1]) if len(argv) > 1 else 60, timeout)
+    return _Args(Path(argv[0]), argv[1], None, int(argv[2]) if len(argv) > 2 else 60, timeout)
+
+
+def _baseline_error(args: _Args) -> str | None:
+    """Why the killer cannot give a verdict on the unmutated source, or None when it can."""
+    if args.command is None:
+        error = _validate_target(args.target)
+        return (
+            None if error is None else f"pytest cannot collect target {args.target!r} — not a mutant verdict:\n{error}"
+        )
+    error = _validate_command(args.command, args.timeout)
+    return None if error is None else f"the killing command is not a green baseline — not a mutant verdict:\n{error}"
+
+
 def main() -> int:
-    if len(sys.argv) < 3:
+    args = _parse_args(sys.argv[1:])
+    if args is None:
         print(__doc__)
         return 2
-    src = Path(sys.argv[1])
-    target = sys.argv[2]
-    cap = int(sys.argv[3]) if len(sys.argv) > 3 else 60
+    src, target, command, cap, timeout = args
 
-    # Fail fast on a broken target BEFORE any mutant is written — a typo'd or renamed
-    # pytest target must never be misread as a clean 100% kill-rate.
-    collect_error = _validate_target(target)
-    if collect_error is not None:
-        print(f"ERROR: pytest cannot collect target {target!r} — not a mutant verdict:", file=sys.stderr)
-        print(collect_error, file=sys.stderr)
+    # Fail fast BEFORE any mutant is written — a typo'd or renamed pytest target (or a killing
+    # command that is red or will not start) must never be misread as a clean 100% kill-rate.
+    baseline_error = _baseline_error(args)
+    if baseline_error is not None:
+        print(f"ERROR: {baseline_error}", file=sys.stderr)
         return 1
 
     original = src.read_text()
@@ -192,7 +284,7 @@ def main() -> int:
 
     caught = survived = skipped = hung = errors = 0
     survivors: list[str] = []
-    print(f"module={src.name} sites={len(sites)} timeout={_MUTANT_TIMEOUT_S}s/mutant", flush=True)
+    print(f"module={src.name} sites={len(sites)} timeout={timeout}s/mutant", flush=True)
 
     try:
         for row, c0, c1, old, new in sites:
@@ -208,7 +300,7 @@ def main() -> int:
                 continue
             src.write_text(source)
             try:
-                verdict = run_tests(target)
+                verdict = run_tests(target) if command is None else run_command(command, timeout)
             finally:
                 src.write_text(original)
             if verdict == "survived":
@@ -231,8 +323,7 @@ def main() -> int:
     hung_note = f", {hung} via-timeout" if hung else ""
     error_note = f", {errors} pytest-errors (excluded)" if errors else ""
     print(
-        f"\nKILL-RATE: {rate} caught{hung_note}  "
-        f"({survived} survived, {skipped} invalid-skipped{error_note})",
+        f"\nKILL-RATE: {rate} caught{hung_note}  ({survived} survived, {skipped} invalid-skipped{error_note})",
         flush=True,
     )
     if survivors:
