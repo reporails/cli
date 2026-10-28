@@ -1,0 +1,5 @@
+{
+  "hooks": {
+    "OnToolUse": [{ "type": "command", "command": "echo hook" }]
+  }
+}
