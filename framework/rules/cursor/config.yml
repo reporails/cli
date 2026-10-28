@@ -143,7 +143,15 @@ file_types:
         maintainer: human
 
   hooks:
-    # 20+ events; command + prompt hook types
+    # 21 events (re-verified 2026-10-28 against the source below): agent hooks
+    # sessionStart, sessionEnd, preToolUse, postToolUse, postToolUseFailure,
+    # subagentStart, subagentStop, beforeShellExecution, afterShellExecution,
+    # beforeMCPExecution, afterMCPExecution, beforeReadFile, afterFileEdit,
+    # beforeSubmitPrompt, preCompact, stop, afterAgentResponse, afterAgentThought;
+    # tab hooks beforeTabFileRead, afterTabFileEdit; app hook workspaceOpen.
+    # Command (default) and prompt hook types; cloud agents run command hooks only.
+    # subagentStart carries parent_conversation_id; subagentStop carries
+    # agent_transcript_path.
     source: https://cursor.com/docs/hooks
     format: schema_validated
     scope: global

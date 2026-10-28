@@ -39,7 +39,7 @@ registry: framework/rules/codex/config.yml
 
 **Precedence**: Closer to cwd wins (appears later in the concatenated prompt). Layered config order (highest first): cloud-managed requirements (ChatGPT Business/Enterprise) → macOS MDM → `/etc/codex/requirements.toml` → `managed_config.toml` → `~/.codex/config.toml` → project `.codex/config.toml` chain. System layers cannot be overridden; lower layers can fill unset fields.
 
-**Hooks**: Discovered next to active config layers. Two forms — standalone `hooks.json` files (`~/.codex/hooks.json`, `<repo>/.codex/hooks.json`) OR inline `[hooks]` tables inside `config.toml`. 12 events (re-verified 2026-09-30, expanded from 10): `SessionStart`, `SessionEnd`, `SubagentStart`, `SubagentStop`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, `UserPromptSubmit`, `Stop`, `Interrupt`. Handler types `command` and `mcp_tool` (`prompt`/`agent` are parsed but skipped). Requires `[features] codex_hooks = true` in config.toml.
+**Hooks**: Discovered next to active config layers. Two forms — standalone `hooks.json` files (`~/.codex/hooks.json`, `<repo>/.codex/hooks.json`) OR inline `[hooks]` tables inside `config.toml`. 14 events (re-verified 2026-10-28): the 12 on the docs page — `SessionStart`, `SessionEnd`, `SubagentStart`, `SubagentStop`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, `UserPromptSubmit`, `Stop`, `Interrupt` — plus `PreModelRequest` and `PostModelRequest`, which `rust-v0.164.0` adds and the docs page does not yet list. Handler types `command` and `mcp_tool` (`prompt`/`agent` are parsed but skipped). The feature key is `hooks` under `[features]`, on by default; `codex_hooks` is a deprecated alias.
 
 **Plugins**: Componentized — each plugin can bundle skills, app mappings, MCP server configuration, presentation assets, and hooks. Managed via `/plugins` command. Marketplace support and remote install/uninstall added in 2026.
 
@@ -57,7 +57,7 @@ registry: framework/rules/codex/config.yml
 - [Managed Configuration (Enterprise)](https://learn.chatgpt.com/docs/enterprise/managed-configuration) — `requirements.toml` paths (Unix and Windows), what it constrains, MDM precedence
 - [Skills](https://learn.chatgpt.com/docs/build-skills) — SKILL.md spec, 6 discovery scopes (CWD, parent, repo root, user, admin, system bundled), `agents/openai.yaml` metadata
 - [Rules](https://learn.chatgpt.com/docs/agent-configuration/rules) — Starlark `.rules`, `prefix_rule(pattern, decision, justification)`, project + user paths
-- [Hooks](https://learn.chatgpt.com/docs/hooks) — `hooks.json` and inline `[hooks]`, 12 events (incl. SessionEnd, PermissionRequest, PreCompact/PostCompact, SubagentStart/Stop, Interrupt), `command`/`mcp_tool` handlers, `codex_hooks` feature flag
+- [Hooks](https://learn.chatgpt.com/docs/hooks) — `hooks.json` and inline `[hooks]`, 12 events (incl. SessionEnd, PermissionRequest, PreCompact/PostCompact, SubagentStart/Stop, Interrupt), `command`/`mcp_tool` handlers, `hooks` feature key (`codex_hooks` deprecated alias)
 - [Subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents) — TOML definitions, required `developer_instructions`, per-agent `model`/`sandbox_mode`/`mcp_servers` overrides
 - [MCP](https://learn.chatgpt.com/docs/extend/mcp) — `[mcp_servers.<id>]` STDIO/HTTP, OAuth, project (trusted) and user scope
 - [Automations (Desktop)](https://learn.chatgpt.com/docs/automations) — Sidebar-managed recurring tasks. On-disk path NOT in official docs as of audit date; patterns left empty.

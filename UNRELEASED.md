@@ -7,6 +7,7 @@
 ### Fixed
 
 - A `heal_exclude` entry that is a bare file name now matches only at the project root, as documented, and the findings listed as `excluded` name the files they sit in.
+- The hook event-type check for Antigravity, Codex, Copilot and Cursor now accepts each agent's current hook events — Antigravity's `SessionStart` and Codex's `PreModelRequest` / `PostModelRequest` among them — instead of reporting them as unrecognized.
 
 ### Removed
 

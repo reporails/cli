@@ -27,7 +27,7 @@ go-forward cross-agent primary. Its own state lives under `~/.gemini/antigravity
 | Settings               | `.gemini/settings.json`, `.gemini/settings.toml`                    | JSON / TOML                             | Singleton    | Project config, hooks, policies                                                    |
 | User state             | `~/.gemini/antigravity/` (`conversations/`, `brain/`, `global_workflows/`) | Mixed                           | Collection   | Antigravity private state and memory                                              |
 | Custom commands        | `.gemini/commands/*.toml`                                           | TOML (`{{args}}`, `!{shell}`, `@{file}`)| Collection   | Slash-command prompt templates                                                     |
-| Hooks                  | `.gemini/settings.json` `hooks` key                                | JSON                                    | Collection   | Lifecycle event hooks (kept from Gemini CLI; wire format inherited — see below)    |
+| Hooks                  | `.agents/hooks.json`, `~/.gemini/config/hooks.json`                | JSON                                    | Collection   | Lifecycle event hooks (dedicated `hooks.json`; see below)                          |
 | MCP config             | `.agents/mcp_config.json`, `~/.gemini/antigravity/mcp_config.json`  | JSON                                    | Collection   | Dedicated lightweight MCP server profile (separated from primary settings)         |
 | Plugins (Extensions)   | `~/.gemini/antigravity-cli/plugins/`, `.gemini/extensions/`         | JSON / Code                             | Collection   | Plugin bundles (Gemini "Extensions" are now Antigravity "plugins")                 |
 | System prompt override | `.gemini/system-prompt.md`                                          | Markdown                                | Singleton    | Replace default system prompt                                                      |
@@ -41,7 +41,7 @@ go-forward cross-agent primary. Its own state lives under `~/.gemini/antigravity
 
 **Backward-compat**: Antigravity keeps reading `GEMINI.md` and `~/.gemini/GEMINI.md`, so existing Gemini-CLI instruction files continue to validate under this agent. The `gemini` agent slug was retired into `antigravity` on 2026-06-21 (no separate 6th pack).
 
-**Hooks — UNCONFIRMED format**: Google's blog confirms Antigravity keeps Hooks, but `antigravity.google/docs` is JS-rendered and not machine-fetchable, so the exact wire format is unverified. The `hooks` file_type and the 3 `ANTIGRAVITY:S:*` hook rules inherit the Gemini-CLI `.gemini/settings.json` `hooks` shape (11 events: SessionStart, SessionEnd, BeforeAgent, AfterAgent, BeforeModel, AfterModel, BeforeToolSelection, BeforeTool, AfterTool, PreCompress, Notification) pending accessible Antigravity hook docs.
+**Hooks**: a dedicated `hooks.json` — project `.agents/hooks.json`, global `~/.gemini/config/hooks.json`, or an installed plugin's own `hooks.json` — not the Gemini-CLI `.gemini/settings.json` `hooks` key. 6 events (re-verified 2026-10-28 against [the hooks reference](https://antigravity.google/docs/hooks/)): `SessionStart`, `PreToolUse`, `PostToolUse`, `PreInvocation`, `PostInvocation`, `Stop`. Handler `type` is optional and defaults to `command`, the only supported type; `command` is required. The 3 `ANTIGRAVITY:S:*` hook rules check this shape.
 
 ## Sources
 

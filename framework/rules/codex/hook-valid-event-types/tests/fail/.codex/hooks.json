@@ -1,1 +1,6 @@
-# No recognized events
+{
+  "hooks": {
+    "SessionStart": [{ "type": "command", "command": "echo start" }],
+    "OnToolUse": [{ "type": "command", "command": "echo hook" }]
+  }
+}
