@@ -66,6 +66,10 @@ jobs:
       - name: Integration tests
         run: uv run poe test_integration
 
+      # The suite sets its own hermetic environment; the api-backed scenarios skip loudly offline.
+      - name: Behavioral tests
+        run: uv run poe test_behave
+
       # Smoke suite is hermetic: tests/smoke/conftest.py forces offline
       # diagnostics (no network), HOME is isolated, and tests that can only
       # be observed via the mapper model declare `requires_model` so they
