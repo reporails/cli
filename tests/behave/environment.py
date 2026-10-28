@@ -32,17 +32,16 @@ def before_all(context) -> None:
 
 
 def before_scenario(context, scenario) -> None:
+    if "api" in scenario.tags and not context.api_up:
+        context.api_skipped.append(scenario.name)
+        scenario.skip(f"local api not answering at {LOCAL_API_URL} — api-backed scenario NOT run")
+        return  # nothing is built for a skipped scenario, so nothing is left to tear down
     context.tmpdir = Path(tempfile.mkdtemp(prefix="ails-behave-"))
     context.home = scenario_home(context.tmpdir, context.real_models)
     context.project = None  # the steps build it (a git project with instruction files)
     context.result = None  # the last CompletedProcess from a real `ails` run
-    context.run_env = None  # extra environment for the binary; the `@api` scenarios point it at the local api
-    if "api" in scenario.tags:
-        if not context.api_up:
-            context.api_skipped.append(scenario.name)
-            scenario.skip(f"local api not answering at {LOCAL_API_URL} — api-backed scenario NOT run")
-            return
-        context.run_env = dict(LOCAL_API_ENV)
+    # `@api` scenarios point the binary at the local api
+    context.run_env = dict(LOCAL_API_ENV) if "api" in scenario.tags else None
 
 
 def after_all(context) -> None:

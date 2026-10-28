@@ -125,7 +125,7 @@ _PYTEST_NO_TESTS_COLLECTED = 5
 _PYTEST_INVOCATION_BROKEN = {_PYTEST_USAGE_ERROR, _PYTEST_NO_TESTS_COLLECTED}
 
 
-def run_tests(target: str) -> str:
+def run_tests(target: str, timeout: int = _MUTANT_TIMEOUT_S) -> str:
     """Run the suite against the on-disk mutant.
 
     Returns one of: "survived" (suite PASSED — the bug would ship), "caught"
@@ -149,7 +149,7 @@ def run_tests(target: str) -> str:
             [*_pytest_cmd(), *target.split(), "-q", "-x", "--no-header", "-p", "no:cacheprovider"],
             capture_output=True,
             text=True,
-            timeout=_MUTANT_TIMEOUT_S,
+            timeout=timeout,
             env=env,
         )
     except subprocess.TimeoutExpired:
@@ -300,7 +300,7 @@ def main() -> int:
                 continue
             src.write_text(source)
             try:
-                verdict = run_tests(target) if command is None else run_command(command, timeout)
+                verdict = run_tests(target, timeout) if command is None else run_command(command, timeout)
             finally:
                 src.write_text(original)
             if verdict == "survived":
