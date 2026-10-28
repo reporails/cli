@@ -21,7 +21,8 @@
 # "~/.gemini/config/hooks.json" — no longer the Gemini-CLI `.gemini/settings.json`
 # shape. 6 events (SessionStart, PreToolUse, PostToolUse, PreInvocation,
 # PostInvocation, Stop), handler `type` optional (defaults to "command"; `command`
-# is the only supported type), `command` required, `timeout` optional. See the `hooks` file_type and the 3 ANTIGRAVITY:S:* hook rules below.
+# is the only supported type), `command` required, `timeout` optional. See the
+# `hooks` file_type and the 3 ANTIGRAVITY:S:* hook rules below.
 
 agent: antigravity
 version: "0.5.0"

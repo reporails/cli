@@ -57,7 +57,7 @@ registry: framework/rules/codex/config.yml
 - [Managed Configuration (Enterprise)](https://learn.chatgpt.com/docs/enterprise/managed-configuration) — `requirements.toml` paths (Unix and Windows), what it constrains, MDM precedence
 - [Skills](https://learn.chatgpt.com/docs/build-skills) — SKILL.md spec, 6 discovery scopes (CWD, parent, repo root, user, admin, system bundled), `agents/openai.yaml` metadata
 - [Rules](https://learn.chatgpt.com/docs/agent-configuration/rules) — Starlark `.rules`, `prefix_rule(pattern, decision, justification)`, project + user paths
-- [Hooks](https://learn.chatgpt.com/docs/hooks) — `hooks.json` and inline `[hooks]`, 12 events (incl. SessionEnd, PermissionRequest, PreCompact/PostCompact, SubagentStart/Stop, Interrupt), `command`/`mcp_tool` handlers, `hooks` feature key (`codex_hooks` deprecated alias)
+- [Hooks](https://learn.chatgpt.com/docs/hooks) — `hooks.json` and inline `[hooks]`, 12 documented events (plus `PreModelRequest`/`PostModelRequest` from `rust-v0.164.0`; incl. SessionEnd, PermissionRequest, PreCompact/PostCompact, SubagentStart/Stop, Interrupt), `command`/`mcp_tool` handlers, `hooks` feature key (`codex_hooks` deprecated alias)
 - [Subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents) — TOML definitions, required `developer_instructions`, per-agent `model`/`sandbox_mode`/`mcp_servers` overrides
 - [MCP](https://learn.chatgpt.com/docs/extend/mcp) — `[mcp_servers.<id>]` STDIO/HTTP, OAuth, project (trusted) and user scope
 - [Automations (Desktop)](https://learn.chatgpt.com/docs/automations) — Sidebar-managed recurring tasks. On-disk path NOT in official docs as of audit date; patterns left empty.
