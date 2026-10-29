@@ -47,7 +47,7 @@ file_types:
     scopes:
       project:
         # https://antigravity.google/docs/rules (2026-10-29): "<dir>/.agents/AGENTS.md or <dir>/.agents/GEMINI.md"
-        patterns: ["**/AGENTS.md", "**/GEMINI.md", "**/.agents/AGENTS.md", "**/.agents/GEMINI.md"]
+        patterns: ["**/AGENTS.md", "**/GEMINI.md"]  # also covers <dir>/.agents/AGENTS.md and <dir>/.agents/GEMINI.md
         precedence: project
         vcs: committed
         maintainer: human
@@ -139,6 +139,7 @@ file_types:
           - "~/.gemini/config/rules/*.md"
           - "~/.gemini/antigravity-cli/rules/*.md"
           - "~/.gemini/antigravity-cli/plugins/*/rules/*.md"
+          # derived: plugin folder location (docs/plugins) + plugin rules/ layout; not stated as one path
           - "~/.gemini/config/plugins/*/rules/*.md"
         precedence: user
         vcs: external
@@ -252,8 +253,6 @@ file_types:
           - "~/.gemini/settings.toml"
           # (unverified: not in docs as of 2026-10-29) legacy ~/.gemini/antigravity/ state dir
           - "~/.gemini/antigravity/**"
-          # https://antigravity.google/docs/enterprise (2026-10-29): 'set "enableAdc": true in `~/.gemini/config/config.json`'
-          - "~/.gemini/config/config.json"
           # https://antigravity.google/docs/settings?tab=cli: "~/.gemini/antigravity-cli/settings.json"
           - "~/.gemini/antigravity-cli/settings.json"
         precedence: user
@@ -359,6 +358,7 @@ file_types:
       user:
         patterns:
           - "~/.gemini/config/mcp_config.json"
+          # derived: plugin folder location (docs/plugins) + plugin mcp_config.json; not stated as one path
           - "~/.gemini/config/plugins/*/mcp_config.json"
           # (unverified/legacy: not in docs as of 2026-10-29) prior path, superseded by ~/.gemini/config/mcp_config.json
           - "~/.gemini/antigravity/mcp_config.json"
