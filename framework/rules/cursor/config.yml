@@ -1,10 +1,10 @@
 # Cursor Agent Configuration
 # Schema: schemas/agent.schema.yml v0.5.0
 #
-# Last verified: 2026-09-03
+# Last verified: 2026-10-29
 #
 # Items intentionally NOT included here (not measurable on disk):
-#   - User Rules (Cursor Settings UI text)
+#   - User Rules (in-app, Customize -> Rules)
 #   - Team Rules (Cursor dashboard, cloud-managed)
 #   - Cursor Automations (cloud-only, no on-disk file)
 #   - Cursor Memories (cloud / agent-state, no static project file)
@@ -81,6 +81,7 @@ file_types:
 
   legacy_cursorrules:
     # Deprecated, replaced by .cursor/rules/
+    # (unverified: the rules docs page does not mention .cursorrules)
     source: https://cursor.com/docs/rules
     deprecated: true
     format: freeform
@@ -99,6 +100,7 @@ file_types:
     # Primary directories per docs: .agents/skills and .cursor/skills. .claude/skills
     # and .codex/skills are cross-agent legacy compatibility paths.
     # https://cursor.com/docs/skills: "including nested project subdirectories such as `apps/web/.cursor/skills/` in a monorepo"
+    # Optional frontmatter per docs: paths, disable-model-invocation, icon, color, metadata (name, description required).
     # The nested sentence names `.agents/skills` and `.cursor/skills` only; the Claude and Codex roots are not stated nested.
     source: https://cursor.com/docs/skills
     format: [frontmatter, freeform]
@@ -200,6 +202,7 @@ file_types:
 
   commands:
     # Slash commands — freeform markdown
+    # (unverified: docs name no .cursor/commands path; /migrate-to-skills converts commands to skills)
     source: https://cursor.com/docs/context/commands
     format: freeform
     scope: task_scoped
@@ -238,6 +241,7 @@ file_types:
   managed_policy:
     # MDM on macOS (.mobileconfig), Group Policy on Windows (ADMX/ADML),
     # policy.json on Linux
+    # Verified 2026-10-29 (cursor.com/docs/enterprise/deployment-patterns): Linux "~/.cursor/policy.json"
     source: https://cursor.com/docs/enterprise
     format: schema_validated
     scope: global

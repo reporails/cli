@@ -1,10 +1,11 @@
 # GitHub Copilot Agent Configuration
 # Schema: schemas/agent.schema.yml v0.5.0
 #
-# Last verified: 2026-09-03
+# Last verified: 2026-10-29
 #
 # Items intentionally NOT included here (not measurable on disk):
 #   - Copilot Memory: cloud-hosted (GitHub), no local file
+#   - Copilot app automations: UI-managed, no on-disk file
 #   - Copilot Spaces: GitHub web UI, no local file
 #   - Org instructions: GitHub org settings, web-managed
 #   - GitHub MCP via web UI: not local file

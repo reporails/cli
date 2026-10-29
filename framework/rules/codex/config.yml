@@ -5,7 +5,7 @@
 # does not indicate a Codex project. Detection requires .codex/ markers
 # (config.toml, rules/, agents/, hooks.json) or AGENTS.override.md.
 #
-# Last verified: 2026-09-03
+# Last verified: 2026-10-29
 #
 # Items intentionally NOT included here (cannot be statically measured):
 #   - fallback_main: project_doc_fallback_filenames is user-configurable in
@@ -102,6 +102,7 @@ file_types:
         vcs: committed
         maintainer: human
       user:
+        # build-skills lists only $HOME/.agents/skills for USER scope; ~/.codex/skills is unverified (docs do not list it).
         patterns: ["~/.agents/skills/**/*.md", "~/.codex/skills/**/*.md"]
         entry_patterns: ["~/.agents/skills/*/SKILL.md", "~/.codex/skills/*/SKILL.md"]
         precedence: user

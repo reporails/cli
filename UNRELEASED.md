@@ -4,6 +4,9 @@
 
 ### Changed
 
+- Antigravity's main and rules files are now also found at `.agents/AGENTS.md`, `.agents/GEMINI.md`, `.agent/rules/` and `~/.gemini/antigravity-cli/rules/`, and its plugin `mcp_config.json` files are checked as MCP config.
+- The Codex, Copilot, Cursor and Antigravity agent pages now state what each agent's docs say: Codex custom agents cannot override sandbox, approval, provider or MCP settings, Copilot's `excludeAgent` takes `cloud-agent`, Cursor ignores a plain `.md` in `.cursor/rules`, and Antigravity keeps hooks in `hooks.json`, not `settings.json`.
+
 ### Fixed
 
 - A `heal_exclude` entry that is a bare file name now matches only at the project root, as documented, and the findings listed as `excluded` name the files they sit in.
