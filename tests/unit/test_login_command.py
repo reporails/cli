@@ -48,7 +48,7 @@ class _Site:
         monkeypatch.setattr(login_flow, "poll_sign_in", self._poll)
         monkeypatch.setattr(login_flow, "revoke_sign_in", self._revoke)
         monkeypatch.setattr(login_flow, "check_api_key", self._check)
-        monkeypatch.setattr(login_flow, "open_in_browser", self.opened.append)
+        monkeypatch.setattr(helpers, "launch_detached", lambda cmd: self.opened.append(cmd[-1]))
 
     def _sleep(self, seconds: float) -> None:
         self.sleeps.append(seconds)
@@ -91,7 +91,7 @@ def _on_platform(monkeypatch: pytest.MonkeyPatch, platform: str = "darwin") -> N
     """Run the command on `platform`, with no screen and no SSH session unless the test sets one."""
     for name in _ENV_THAT_DECIDES:
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr(login_flow, "sys", _FakeSys(platform))
+    monkeypatch.setattr(helpers, "sys", _FakeSys(platform))
 
 
 @pytest.fixture
@@ -205,6 +205,7 @@ def test_the_page_opens_in_a_real_child_that_ignores_the_working_directory(
     cwd.mkdir()
     (cwd / "webbrowser.py").write_text(f"open({shadowed.as_posix()!r}, 'w').write('x')\n", encoding="utf-8")
     monkeypatch.chdir(cwd)
+    monkeypatch.delenv("CI", raising=False)
     monkeypatch.setenv("BROWSER", f'"{Path(sys.executable).as_posix()}" "{program.as_posix()}" %s')
     helpers.open_in_browser("https://reporails.com/x")
     deadline = time.monotonic() + 5
@@ -602,3 +603,15 @@ def test_login_shows_a_promo_without_the_env_var(site: _Site, monkeypatch: pytes
     out = _login_with_promo(site, monkeypatch, tmp_path)
     assert "Fixture promo" in out
     assert "Payment failed" in out
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_the_shared_browser_opener_starts_nothing_where_no_screen_can_show_a_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started: list[list[str]] = []
+    monkeypatch.setattr(helpers, "launch_detached", started.append)
+    _on_platform(monkeypatch, "linux")
+    helpers.open_in_browser("http://127.0.0.1:1/")
+    assert started == []

@@ -12,7 +12,7 @@ import typer
 from rich.console import Console
 
 from reporails_cli.core.discovery.agents import get_known_agents
-from reporails_cli.core.platform.config.bootstrap import running_in_ci
+from reporails_cli.core.platform.config.bootstrap import env_text, running_in_ci
 from reporails_cli.core.platform.dto.models import Level
 from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
 
@@ -60,10 +60,26 @@ def launch_detached(cmd: list[str]) -> None:
     )
 
 
+def _can_show_browser() -> bool:
+    """True when this machine can show a page.
+
+    Never in CI. Otherwise a non-blank `BROWSER` setting says how to open one. Without it, macOS and
+    Windows can unless the session is over SSH, and every other system needs `DISPLAY` or `WAYLAND_DISPLAY`.
+    """
+    if running_in_ci():
+        return False
+    if env_text("BROWSER"):
+        return True
+    if sys.platform == "darwin" or sys.platform.startswith("win"):
+        return not any(env_text(name) for name in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"))
+    return bool(env_text("DISPLAY") or env_text("WAYLAND_DISPLAY"))
+
+
 def open_in_browser(url: str) -> None:
     """Open `url` from a detached child that ignores the working directory and holds none of the caller's
-    streams; a browser that cannot start logs one warning and returns."""
-    if not sys.executable:
+    streams; nothing starts where no screen can show a page, and a browser that cannot start logs one
+    warning and returns."""
+    if not sys.executable or not _can_show_browser():
         return
     try:
         launch_detached([sys.executable, "-I", "-m", "webbrowser", "-t", url])
