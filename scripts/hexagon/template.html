@@ -9,7 +9,7 @@
     --surface-0: #fcfcfb; --surface-1: #ffffff; --surface-2: #f2f1ee; --border: #dddcd7;
     --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #77766f;
     --ring-0: #2a78d6; --ring-1: #eb6834; --ring-2: #1baf7a; --ring-3: #eda100;
-    --edge: #8a8983; --critical: #d03b3b; --planned: #77766f;
+    --edge: #8a8983; --critical: #d03b3b;
     --st-critical: #d03b3b; --st-serious: #ec835a; --st-warning: #fab219;
   }
   @media (prefers-color-scheme: dark) {
@@ -18,7 +18,7 @@
       --surface-0: #111110; --surface-1: #1a1a19; --surface-2: #242422; --border: #34342f;
       --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
       --ring-0: #3987e5; --ring-1: #d95926; --ring-2: #199e70; --ring-3: #c98500;
-      --edge: #9a998f; --critical: #e66767; --planned: #8f8e86;
+      --edge: #9a998f; --critical: #e66767;
     }
   }
   :root[data-theme="dark"] .viz-root {
@@ -26,7 +26,7 @@
     --surface-0: #111110; --surface-1: #1a1a19; --surface-2: #242422; --border: #34342f;
     --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
     --ring-0: #3987e5; --ring-1: #d95926; --ring-2: #199e70; --ring-3: #c98500;
-    --edge: #9a998f; --critical: #e66767; --planned: #8f8e86;
+    --edge: #9a998f; --critical: #e66767;
   }
   :root[data-theme="light"] .viz-root { color-scheme: light; }
   * { box-sizing: border-box; }
@@ -44,7 +44,6 @@
   .legend { display: flex; gap: 14px; margin-left: auto; flex-wrap: wrap; color: var(--text-secondary); }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
   .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
-  .sw.dash { background: none; border: 2px dashed var(--planned); }
   .sw.line { height: 0; width: 18px; border-top: 2px dashed var(--critical); border-radius: 0; }
   main { display: grid; grid-template-columns: 1fr 380px; min-height: 0; }
   #stage { position: relative; min-height: 0; overflow: hidden; background: var(--surface-1); cursor: grab; }
@@ -117,9 +116,6 @@
     <div id="stage">
       <svg id="svg" viewBox="-840 -840 1680 1680" role="img" aria-label="Concentric hexagon rings of the cli layers with import arrows">
         <defs>
-          <pattern id="hatch" patternUnits="userSpaceOnUse" width="10" height="10" patternTransform="rotate(45)">
-            <line x1="0" y1="0" x2="0" y2="10" stroke="var(--planned)" stroke-width="2" opacity=".55"/>
-          </pattern>
           <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>
           </marker>
@@ -150,7 +146,6 @@ const ANGLES = {
   pipeline: -90, lint: -50, heal: -10, classify: 30, mapper: 70, cache: 110, discovery: 150, install: 190,
   cli: -90, mcp: 30, formatters: 150,
 };
-const PLANNED_EDGES = [];
 const ACTORS = [
   { id: "a-term", label: "You, in a terminal", meta: "ails check / heal / map", angle: -90, r: 790, to: "cli" },
   { id: "a-agent", label: "Coding agent (MCP host)", meta: "Claude Code, Codex, Copilot, Cursor, Antigravity", angle: 22, r: 790, to: "mcp" },
@@ -180,7 +175,7 @@ const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
 const maxLines = Math.max(...DATA.nodes.map((n) => n.lines));
 for (const n of nodes) {
   [n.x, n.y] = pt(ANGLES[n.id], RING_R[n.ring]);
-  n.size = n.planned ? 46 : 34 + 30 * Math.sqrt(n.lines / maxLines);
+  n.size = 34 + 30 * Math.sqrt(n.lines / maxLines);
   n.out = DATA.edges.filter((e) => e.s === n.id);
   n.in = DATA.edges.filter((e) => e.d === n.id);
 }
@@ -208,10 +203,10 @@ for (let i = 0; i < RING_EDGE.length; i++) {
 const ports = document.getElementById("ports");
 for (const a of ACTORS) {
   [a.x, a.y] = pt(a.angle, a.r);
-  a.g = el("g", { "data-planned": a.planned ? "1" : "" }, ports);
+  a.g = el("g", {}, ports);
   const t = byId[a.to];
   el("line", { x1: a.x, y1: a.y, x2: t.x, y2: t.y, stroke: css("--text-muted"), "stroke-width": 1.5, "stroke-dasharray": "2 6", opacity: .7 }, a.g);
-  el("rect", { x: a.x - 105, y: a.y - 24, width: 210, height: 48, rx: 8, fill: css("--surface-2"), stroke: css("--border"), "stroke-dasharray": a.planned ? "6 4" : "" }, a.g);
+  el("rect", { x: a.x - 105, y: a.y - 24, width: 210, height: 48, rx: 8, fill: css("--surface-2"), stroke: css("--border") }, a.g);
   el("text", { x: a.x, y: a.y - 3, class: "actor-label", "text-anchor": "middle" }, a.g).textContent = a.label;
   el("text", { x: a.x, y: a.y + 14, class: "actor-meta", "text-anchor": "middle" }, a.g).textContent = a.meta;
 }
@@ -228,31 +223,29 @@ function edgePath(s, d) {
   const cx = (x1 + x2) / 2 - uy * bend, cy = (y1 + y2) / 2 + ux * bend;
   return `M${x1.toFixed(1)},${y1.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
 }
-function addEdge(e, planned) {
+function addEdge(e) {
   const s = byId[e.s], d = byId[e.d];
-  const w = planned ? 1.5 : 1 + Math.log2(e.n + 1) * .9;
+  const w = 1 + Math.log2(e.n + 1) * .9;
   const p = el("path", { d: edgePath(s, d), class: "edge", "stroke-width": w, "marker-end": "url(#arr)" }, edgesG);
   // wide invisible hit target for hover
   const hit = el("path", { d: edgePath(s, d), fill: "none", stroke: "transparent", "stroke-width": Math.max(12, w + 8) }, edgesG);
-  const rec = { e, planned, p, hit };
+  const rec = { e, p, hit };
   hit.addEventListener("mousemove", (ev) => showTip(ev, edgeTip(rec)));
   hit.addEventListener("mouseleave", hideTip);
   hit.addEventListener("click", (ev) => { ev.stopPropagation(); select(e.s); });
   edgeEls.push(rec);
 }
 DATA.edges.forEach((e) => addEdge(e, false));
-PLANNED_EDGES.forEach(([s, d]) => addEdge({ s, d, n: 0, kind: "planned", note: "", pairs: [] }, true));
 
 // Cells
 const cellsG = document.getElementById("cells");
 for (const n of nodes) {
   const g = el("g", { class: "cell", tabindex: 0, role: "button", "aria-label": `${n.id}, ${RING_NAMES[n.ring]}` }, cellsG);
   n.g = g;
-  el("polygon", { class: "body", points: hexPoints(n.x, n.y, n.size, false), fill: n.planned ? "url(#hatch)" : css(RING_VAR[n.ring]), "stroke-dasharray": n.planned ? "7 5" : "" }, g);
-  if (n.planned) g.querySelector("polygon").setAttribute("stroke", css("--planned"));
+  el("polygon", { class: "body", points: hexPoints(n.x, n.y, n.size, false), fill: css(RING_VAR[n.ring]) }, g);
   el("text", { x: n.x, y: n.y + n.size + 18, class: "cell-label", "text-anchor": "middle" }, g).textContent = n.id;
   el("text", { x: n.x, y: n.y + n.size + 34, class: "cell-meta", "text-anchor": "middle" }, g).textContent =
-    n.planned ? "not built" : `${n.files} files · ${fmt(n.lines)} lines`;
+    `${n.files} files · ${fmt(n.lines)} lines`;
   g.addEventListener("mousemove", (ev) => showTip(ev, cellTip(n)));
   g.addEventListener("mouseleave", hideTip);
   g.addEventListener("click", (ev) => { ev.stopPropagation(); select(n.id); });
@@ -278,7 +271,6 @@ function cellTip(n) {
 }
 function edgeTip(r) {
   const e = r.e;
-  if (r.planned) return `<b>${esc(e.s)} → ${esc(e.d)}</b><br><span class="m">planned dependency of the event bus</span>`;
   const kind = e.kind === "violation" ? `<span class="warn">breaks a layer rule — ${esc(e.note)}</span>` :
     e.kind === "lateral" ? `<span class="m">same ring (lateral)</span>` : `<span class="m">points inward</span>`;
   const fs = FINDINGS.filter((f) => f.edges.some(([a, b]) => a === e.s && b === e.d));
@@ -332,14 +324,12 @@ function findingsSection(list) {
 let selected = null;
 function paintEdges() {
   const showAll = document.getElementById("showAll").checked;
-  const showPlanned = false;
   for (const r of edgeEls) {
-    const { e, planned, p, hit } = r;
+    const { e, p, hit } = r;
     const touches = selected && (e.s === selected || e.d === selected);
-    let visible = planned ? showPlanned && selFinding === null : (showAll || touches || (showFindings() && edgeSev[e.s + "|" + e.d]) || (selFinding !== null && FINDINGS[selFinding].edges.some(([a, b]) => a === e.s && b === e.d)));
+    let visible = (showAll || touches || (showFindings() && edgeSev[e.s + "|" + e.d]) || (selFinding !== null && FINDINGS[selFinding].edges.some(([a, b]) => a === e.s && b === e.d)));
     let stroke = css("--edge"), opacity = .16, dash = "";
-    if (planned) { stroke = css("--planned"); dash = "6 5"; opacity = .55; }
-    const sev = showFindings() && !planned ? edgeSev[e.s + "|" + e.d] : null;
+    const sev = showFindings() ? edgeSev[e.s + "|" + e.d] : null;
     if (sev) { stroke = css(SEV[sev].var); dash = sev === "critical" ? "" : "7 4"; opacity = .9; }
     if (selFinding !== null) {
       const inF = FINDINGS[selFinding].edges.some(([a, b]) => a === e.s && b === e.d);
@@ -349,14 +339,13 @@ function paintEdges() {
     if (selected) {
       if (touches) {
         opacity = 1;
-        if (e.kind !== "violation" && !planned) stroke = css(RING_VAR[byId[e.s === selected ? e.d : e.s].ring]);
+        if (e.kind !== "violation") stroke = css(RING_VAR[byId[e.s === selected ? e.d : e.s].ring]);
       } else if (!sev) opacity = .05;
     }
     p.setAttribute("stroke", stroke); p.setAttribute("stroke-dasharray", dash);
     p.setAttribute("opacity", visible ? opacity : 0);
     hit.style.display = visible ? "" : "none";
   }
-  document.querySelectorAll("#ports g").forEach((g) => { g.style.display = g.dataset.planned && !showPlanned ? "none" : ""; });
   for (const n of nodes) if (n.badge) n.badge.style.display = showFindings() ? "" : "none";
   for (const n of nodes) {
     if (selFinding !== null) { const on = FINDINGS[selFinding].nodes.includes(n.id); n.g.classList.toggle("dim", !on); n.g.classList.toggle("sel", on); continue; }
@@ -404,7 +393,7 @@ function renderPanel() {
   } else {
     const n = byId[selected];
     panel.innerHTML = `<h2>${esc(n.id)}</h2>
-      <p class="tag"><i class="sw ${n.planned ? "dash" : ""}" style="${n.planned ? "" : `background:var(${RING_VAR[n.ring]})`}"></i>${RING_NAMES[n.ring]}${n.planned ? "" : ` · ${n.files} files · ${fmt(n.lines)} lines`}</p>
+      <p class="tag"><i class="sw" style="background:var(${RING_VAR[n.ring]})"></i>${RING_NAMES[n.ring]} · ${n.files} files · ${fmt(n.lines)} lines</p>
       <p>${esc(n.purpose || "")}</p>
       ${(nodeFind[n.id] || []).length ? `<h3>Findings</h3>${findingsSection(nodeFind[n.id])}` : ""}
       <h3>Imports from</h3>${edgeRows(n.out, "d")}<h3>Imported by</h3>${edgeRows(n.in, "s")}
