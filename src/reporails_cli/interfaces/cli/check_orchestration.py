@@ -13,7 +13,6 @@ import json
 import logging
 import os
 import sys
-import time
 from contextlib import AbstractContextManager
 from dataclasses import replace
 from pathlib import Path
@@ -35,7 +34,7 @@ from reporails_cli.core.heal.apply import resolved_within, suppressed_by_path
 from reporails_cli.core.platform.adapters.notices_seen import due_notices
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, FunnelError
 from reporails_cli.core.platform.observability.log_levels import quiet_loggers
-from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
+from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
 from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path
 from reporails_cli.formatters import github as github_formatter
 from reporails_cli.formatters import json as json_formatter
@@ -492,33 +491,34 @@ def _run_heal_pass(
     `workflow` is the paid remediation workflow; the fixes are the ones it lists.
     """
     show = sys.stdout.isatty() and output_format != "json"
-    heal_start = time.perf_counter()
-    # A line the author annotated with an `ails-disable-line` directive is reviewed —
-    # heal must not mechanically rewrite it. Key the suppressed lines by resolved path
-    # so they match the atom files regardless of path form.
-    suppressed = suppressed_by_path(scope.instruction_files, target)
-    # The mechanical pass writes only within the scoped `instruction_files` set — it
-    # cannot rewrite a mapped file outside scope. Section suggestions never write.
-    keyed = _apply_keyed_fixes(
-        ruleset_map,
-        target,
-        workflow,
-        dry_run=dry_run,
-        show_progress=show,
-        console=console,
-        allowed_files=scope.instruction_files,
-        suppressed=suppressed,
-    )
-    suggested = _collect_section_suggestions(
-        target,
-        scope.instruction_files,
-        ruleset_map,
-        scope.effective_agent,
-        show_progress=show,
-        console=console,
-        exclusions=scope.exclusions,
-    )
-    heal_ms = round((time.perf_counter() - heal_start) * 1000, 1)
+    stopwatch = Stopwatch()
+    with get_stage_timer().stage("heal"):
+        # A line the author annotated with an `ails-disable-line` directive is reviewed —
+        # heal must not mechanically rewrite it. Key the suppressed lines by resolved path
+        # so they match the atom files regardless of path form.
+        suppressed = suppressed_by_path(scope.instruction_files, target)
+        # The mechanical pass writes only within the scoped `instruction_files` set — it
+        # cannot rewrite a mapped file outside scope. Section suggestions never write.
+        keyed = _apply_keyed_fixes(
+            ruleset_map,
+            target,
+            workflow,
+            dry_run=dry_run,
+            show_progress=show,
+            console=console,
+            allowed_files=scope.instruction_files,
+            suppressed=suppressed,
+        )
+        suggested = _collect_section_suggestions(
+            target,
+            scope.instruction_files,
+            ruleset_map,
+            scope.effective_agent,
+            show_progress=show,
+            console=console,
+            exclusions=scope.exclusions,
+        )
+    heal_ms = round(stopwatch.ms, 1)
     _output_heal_results(
         keyed.fixes,
         suggested,

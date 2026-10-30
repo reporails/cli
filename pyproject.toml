@@ -37,8 +37,7 @@ dependencies = [
     # where SIGALRM is unavailable). Drop-in replacement for stdlib `re`.
     "regex>=2024.11.6",
     # Embedding stack — ONNX Runtime + HF tokenizers on the bundled embedding model.
-    # No torch, no sentence-transformers. See core/platform/runtime/_torch_blocker.py
-    # and core/mapper/onnx_embedder.py for the reason and the wiring.
+    # No torch, no sentence-transformers.
     "onnxruntime>=1.18,<2",
     "tokenizers>=0.19,<1",
     "numpy>=1.26,<3",

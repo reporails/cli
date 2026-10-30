@@ -28,7 +28,7 @@ from reporails_cli.core.pipeline.mapping import (
     discover_scope,
 )
 from reporails_cli.core.platform.config.config import get_project_config
-from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
+from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
 from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.interfaces.cli.check_notices import (
     _emit_empty_run,
@@ -133,7 +133,7 @@ class CheckPipeline:
     """Pipeline outputs — mapping, probes, content/client checks, server lint."""
 
     stage_timer: StageTimer = field(default_factory=get_stage_timer)
-    start_time: float = 0.0
+    stopwatch: Stopwatch = field(default_factory=Stopwatch)
     ruleset_map: RulesetMap | None = None
     m_findings: list[LocalFinding] = field(default_factory=list)
     content_findings: list[LocalFinding] = field(default_factory=list)

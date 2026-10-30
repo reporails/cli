@@ -27,3 +27,4 @@
 - The map caches live with the mapper and path tagging with discovery, so the cache, discovery, mapper and classify packages no longer import each other in a loop.
 - The unformatted-code check owns which tokens it reports, so the lint package no longer imports heal; the rule-loading and file-property matching helpers other packages call are public.
 - Tests: an architecture floor fails on a platform-layer import outside its layer row, a package cycle among the core packages and a cross-package import of a private name; `poe hexagon` regenerates the import-graph view.
+- One logging setup and one stage timer serve `ails`, the MCP server and the mapper daemon (`AILS_STAGE_TIMING=1` also times heal, each MCP tool call and each daemon request); the torch import blocker is removed.

@@ -18,7 +18,8 @@ from reporails_cli.core.mapper.model_manifest import ModelFetchError
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.core.platform.runtime import _torch_blocker
+from reporails_cli.core.platform.observability.log_levels import configure_logging
+from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
 from reporails_cli.core.platform.utils.utils import compact_json
 from reporails_cli.core.platform.utils.version import installed_version
 from reporails_cli.formatters.mcp import bound_validate_payload, with_rule_labels
@@ -49,10 +50,6 @@ from reporails_cli.interfaces.mcp.validate_targets import (
     resolve_validate_targets,
     target_tokens,
 )
-
-# The long-lived MCP server never needs a heavy ML backend: block it before any tool runs, so a
-# transitive import cannot pull one in and slow the first validate call.
-_torch_blocker.install()
 
 # Circuit breaker: content-aware loop detection.
 _MAX_CALLS = 10
@@ -404,11 +401,9 @@ _READ_ONLY = ToolAnnotations(read_only_hint=True)
 def _result(payload: JsonObject) -> CallToolResult:
     """Wrap a payload as a compact structured result.
 
-    Returns `structuredContent` (machine-readable, ending the consumer string-parse)
-    plus a COMPACT text mirror for back-compat. Returning a pre-built result skips the
-    SDK's pretty-printed auto-serialization, whose indented duplicate of the payload
-    dominated the reply — the token
-    economy the bounded envelope exists to protect.
+    Returns `structuredContent` (machine-readable) plus a COMPACT text mirror for back-compat.
+    A pre-built result skips the SDK's pretty-printed auto-serialization, whose indented
+    duplicate of the payload dominated the reply.
     """
     return CallToolResult(
         content=[TextContent(type="text", text=compact_json(payload))],
@@ -417,8 +412,7 @@ def _result(payload: JsonObject) -> CallToolResult:
 
 
 def _text_result(text: str) -> CallToolResult:
-    """A reply whose only channel is its text: a client that shows the structured block in place
-    of the text (or drops a structured-only result) still shows the model this view."""
+    """A reply whose only channel is its text, so a client that drops structured results still shows it."""
     return CallToolResult(content=[TextContent(type="text", text=text)])
 
 
@@ -462,11 +456,12 @@ def _text_result(text: str) -> CallToolResult:
 async def validate(path: str = ".", full: bool = False, targets: list[str] | None = None) -> CallToolResult:
     """Validate instruction files; see the tool description for the response shape."""
     touch_activity()
-    payload = await _run_validate(path, bool(full), targets)
-    if not has_text_view(payload, full=bool(full)):
-        return _result(payload)
-    state = _validate_states.setdefault(_state_key(path, target_tokens(targets)), _CircuitState())
-    return _text_result(render_text_view(unseen_notices(payload, state.shown_notices)))
+    with get_stage_timer().stage("mcp validate"):
+        payload = await _run_validate(path, bool(full), targets)
+        if not has_text_view(payload, full=bool(full)):
+            return _result(payload)
+        state = _validate_states.setdefault(_state_key(path, target_tokens(targets)), _CircuitState())
+        return _text_result(render_text_view(unseen_notices(payload, state.shown_notices)))
 
 
 @server.tool(
@@ -482,10 +477,11 @@ async def validate(path: str = ".", full: bool = False, targets: list[str] | Non
 async def prepare(path: str = ".", targets: list[str] | None = None) -> CallToolResult:
     """Map the files `validate` would check; see the tool description."""
     touch_activity()
-    try:
-        return _result(await asyncio.to_thread(prepare_for_path, path, targets))
-    except ConfigUnreadableError as exc:
-        return _result(_config_unreadable(exc))
+    with get_stage_timer().stage("mcp prepare"):
+        try:
+            return _result(await asyncio.to_thread(prepare_for_path, path, targets))
+        except ConfigUnreadableError as exc:
+            return _result(_config_unreadable(exc))
 
 
 @server.tool(
@@ -511,7 +507,8 @@ async def remedy_brief(
 ) -> CallToolResult:
     """Return the rewrite brief for one workflow location; see the tool description."""
     touch_activity()
-    return _result(await asyncio.to_thread(_serve_remedy_brief, path, int(location), targets, bool(has_guide)))
+    with get_stage_timer().stage("mcp remedy_brief"):
+        return _result(await asyncio.to_thread(_serve_remedy_brief, path, int(location), targets, bool(has_guide)))
 
 
 @server.tool(
@@ -529,7 +526,8 @@ async def remedy_brief(
 async def heal_apply(path: str = ".", targets: list[str] | None = None) -> CallToolResult:
     """Apply the project's deterministic fixes; see the tool description."""
     touch_activity()
-    return _text_result(await _run_heal_apply(path, targets))
+    with get_stage_timer().stage("mcp heal_apply"):
+        return _text_result(await _run_heal_apply(path, targets))
 
 
 @server.tool(
@@ -548,10 +546,11 @@ async def heal_apply(path: str = ".", targets: list[str] | None = None) -> CallT
 async def preflight(capability: str, agent: str = "") -> CallToolResult:
     """Return workflow-ordered rules for authoring a file of `capability`."""
     touch_activity()
-    try:
-        return _result(preflight_tool(capability, agent))
-    except ConfigUnreadableError as exc:
-        return _result(_config_unreadable(exc))
+    with get_stage_timer().stage("mcp preflight"):
+        try:
+            return _result(preflight_tool(capability, agent))
+        except ConfigUnreadableError as exc:
+            return _result(_config_unreadable(exc))
 
 
 @server.tool(
@@ -567,15 +566,14 @@ async def preflight(capability: str, agent: str = "") -> CallToolResult:
 async def explain(rule_id: str) -> str:
     """Explain one rule as readable text (a JSON error string for an unknown rule).
 
-    Text-only by design: `explain` is human-readable, so it carries no structured
-    output mirror. The unknown-rule error is serialized to a JSON string so a
-    caller still reads one shape.
+    Text-only by design: no structured output mirror. The unknown-rule error is a JSON string.
     """
     touch_activity()
-    try:
-        result = explain_tool(rule_id)
-    except ConfigUnreadableError as exc:
-        result = _config_unreadable(exc)
+    with get_stage_timer().stage("mcp explain"):
+        try:
+            result = explain_tool(rule_id)
+        except ConfigUnreadableError as exc:
+            result = _config_unreadable(exc)
     return result if isinstance(result, str) else json.dumps(result)
 
 
@@ -592,6 +590,7 @@ def _prewarm_models() -> None:
 
 def main() -> None:
     """Entry point for the MCP server (stdio transport)."""
+    configure_logging()
     threading.Thread(target=_prewarm_models, name="model-prewarm", daemon=True).start()
     server.run("stdio")
 
