@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>reporails cli — hexagonal architecture</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  .viz-root {
+    --surface-0: #fcfcfb; --surface-1: #ffffff; --surface-2: #f2f1ee; --border: #dddcd7;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #77766f;
+    --ring-0: #2a78d6; --ring-1: #eb6834; --ring-2: #1baf7a; --ring-3: #eda100;
+    --edge: #8a8983; --critical: #d03b3b; --planned: #77766f;
+    --st-critical: #d03b3b; --st-serious: #ec835a; --st-warning: #fab219;
+  }
+  @media (prefers-color-scheme: dark) {
+    :where(.viz-root) {
+      color-scheme: dark;
+      --surface-0: #111110; --surface-1: #1a1a19; --surface-2: #242422; --border: #34342f;
+      --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+      --ring-0: #3987e5; --ring-1: #d95926; --ring-2: #199e70; --ring-3: #c98500;
+      --edge: #9a998f; --critical: #e66767; --planned: #8f8e86;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-0: #111110; --surface-1: #1a1a19; --surface-2: #242422; --border: #34342f;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --ring-0: #3987e5; --ring-1: #d95926; --ring-2: #199e70; --ring-3: #c98500;
+    --edge: #9a998f; --critical: #e66767; --planned: #8f8e86;
+  }
+  :root[data-theme="light"] .viz-root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .viz-root { height: 100%; display: grid; grid-template-rows: auto auto 1fr; background: var(--surface-0); color: var(--text-primary); }
+  header { padding: 16px 20px 4px; }
+  h1 { font-size: 18px; margin: 0 0 2px; font-weight: 600; }
+  .sub { color: var(--text-secondary); margin: 0; }
+  .controls { display: flex; gap: 8px; align-items: center; padding: 10px 20px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+  .controls button, .controls label { font: inherit; color: var(--text-primary); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  .controls label { display: inline-flex; gap: 6px; align-items: center; }
+  .controls button:hover, .controls label:hover { border-color: var(--text-muted); }
+  .controls .sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
+  .legend { display: flex; gap: 14px; margin-left: auto; flex-wrap: wrap; color: var(--text-secondary); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .sw.dash { background: none; border: 2px dashed var(--planned); }
+  .sw.line { height: 0; width: 18px; border-top: 2px dashed var(--critical); border-radius: 0; }
+  main { display: grid; grid-template-columns: 1fr 380px; min-height: 0; }
+  #stage { position: relative; min-height: 0; overflow: hidden; background: var(--surface-1); cursor: grab; }
+  #stage.drag { cursor: grabbing; }
+  svg { width: 100%; height: 100%; display: block; user-select: none; }
+  aside { border-left: 1px solid var(--border); overflow-y: auto; padding: 16px 18px; background: var(--surface-0); }
+  aside h2 { font-size: 16px; margin: 0 0 4px; }
+  aside h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 18px 0 6px; font-weight: 600; }
+  aside p { margin: 4px 0; color: var(--text-secondary); }
+  aside table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  aside td { padding: 3px 4px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  aside td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); white-space: nowrap; }
+  aside code, .tip code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .link { cursor: pointer; text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
+  .link:hover { text-decoration-color: var(--text-secondary); }
+  .tag { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+  .warn { color: var(--text-primary); }
+  .warn::before { content: "⚠ "; color: var(--critical); }
+  .tip { position: absolute; pointer-events: none; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.25); max-width: 340px; display: none; }
+  .tip b { font-weight: 600; }
+  .tip .m { color: var(--text-secondary); }
+  #tableView { display: none; position: absolute; inset: 0; overflow: auto; background: var(--surface-1); padding: 16px 20px; cursor: default; }
+  #tableView table { border-collapse: collapse; font-size: 13px; min-width: 640px; }
+  #tableView th, #tableView td { text-align: left; padding: 4px 10px; border-bottom: 1px solid var(--border); }
+  #tableView th { color: var(--text-muted); font-weight: 600; }
+  #tableView td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ringlabel { font-size: 13px; font-weight: 600; letter-spacing: .03em; fill: var(--text-secondary); }
+  .cell-label { font-size: 15px; font-weight: 600; fill: var(--text-primary); pointer-events: none; }
+  .cell-meta { font-size: 12px; fill: var(--text-secondary); pointer-events: none; }
+  .actor-label { font-size: 13px; fill: var(--text-primary); pointer-events: none; }
+  .actor-meta { font-size: 11px; fill: var(--text-muted); pointer-events: none; }
+  .cell { cursor: pointer; }
+  .cell polygon.body { stroke: var(--surface-1); stroke-width: 2; }
+  .cell.sel polygon.body { stroke: var(--text-primary); stroke-width: 3; }
+  .cell.dim { opacity: .28; }
+  .edge { fill: none; stroke-linecap: round; }
+  .badge text { font-size: 12px; font-weight: 700; fill: #111; pointer-events: none; }
+  .finding { border-left: 3px solid var(--border); padding: 6px 8px; margin: 6px 0; background: var(--surface-2); border-radius: 0 6px 6px 0; cursor: pointer; }
+  .finding:hover, .finding.on { outline: 1px solid var(--text-muted); }
+  .finding .t { color: var(--text-primary); font-weight: 600; }
+  .finding .w { color: var(--text-secondary); font-size: 13px; margin-top: 3px; }
+  .finding .ev { margin-top: 4px; }
+  .finding .ev code { display: block; color: var(--text-secondary); }
+  .sev { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+</style>
+</head>
+<body>
+<div class="viz-root">
+  <header>
+    <h1>reporails cli — hexagonal architecture, from the real import graph</h1>
+    <p class="sub" id="sub"></p>
+  </header>
+  <div class="controls">
+    <button id="zin" title="Zoom in">＋</button>
+    <button id="zout" title="Zoom out">－</button>
+    <button id="zreset">Reset view</button>
+    <span class="sep"></span>
+    <label><input type="checkbox" id="showAll" checked> All imports</label>
+    <label><input type="checkbox" id="showFindings" checked> Mark findings</label>
+    <button id="tableBtn">Table view</button>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--ring-0)"></i>Pure core</span>
+      <span><i class="sw" style="background:var(--ring-1)"></i>Platform infrastructure</span>
+      <span><i class="sw" style="background:var(--ring-2)"></i>Subsystems</span>
+      <span><i class="sw" style="background:var(--ring-3)"></i>Interfaces &amp; formatters</span>
+      <span><i class="sw" style="background:var(--st-critical)"></i>⛔ Breaks a layer rule</span><span><i class="sw" style="background:var(--st-serious)"></i>⚠ Bad practice</span><span><i class="sw" style="background:var(--st-warning)"></i>△ Deviation</span>
+    </div>
+  </div>
+  <main>
+    <div id="stage">
+      <svg id="svg" viewBox="-840 -840 1680 1680" role="img" aria-label="Concentric hexagon rings of the cli layers with import arrows">
+        <defs>
+          <pattern id="hatch" patternUnits="userSpaceOnUse" width="10" height="10" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="10" stroke="var(--planned)" stroke-width="2" opacity=".55"/>
+          </pattern>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>
+          </marker>
+        </defs>
+        <g id="world">
+          <g id="rings"></g>
+          <g id="ports"></g>
+          <g id="edges"></g>
+          <g id="cells"></g>
+        </g>
+      </svg>
+      <div class="tip" id="tip"></div>
+      <div id="tableView"></div>
+    </div>
+    <aside id="panel"></aside>
+  </main>
+</div>
+<script>
+const DATA = /*__DATA__*/null;
+
+const RING_NAMES = ["Pure core", "Platform infrastructure", "Subsystems", "Interfaces & formatters"];
+const RING_VAR = ["--ring-0", "--ring-1", "--ring-2", "--ring-3"];
+const RING_R = [85, 250, 428, 600];          // cell centre radius per ring
+const RING_EDGE = [165, 338, 518, 690];      // outer boundary of each ring band
+const ANGLES = {
+  contract: -90, dto: 30, policy: 150,
+  adapters: -90, runtime: -18, utils: 54, config: 126, observability: 198,
+  pipeline: -90, lint: -50, heal: -10, classify: 30, mapper: 70, cache: 110, discovery: 150, install: 190,
+  cli: -90, mcp: 30, formatters: 150,
+};
+const PLANNED_EDGES = [];
+const ACTORS = [
+  { id: "a-term", label: "You, in a terminal", meta: "ails check / heal / map", angle: -90, r: 790, to: "cli" },
+  { id: "a-agent", label: "Coding agent (MCP host)", meta: "Claude Code, Codex, Copilot, Cursor, Antigravity", angle: 22, r: 790, to: "mcp" },
+  { id: "a-api", label: "reporails api", meta: "diagnose over HTTP", angle: -40, r: 790, to: "adapters" },
+  { id: "a-files", label: "Project instruction files", meta: "CLAUDE.md, AGENTS.md, rules, skills", angle: 158, r: 790, to: "discovery" },
+  { id: "a-bundled", label: "Bundled rules & models", meta: "framework/rules, lexicon, ONNX", angle: 100, r: 790, to: "config" },
+];
+
+const css = (v) => getComputedStyle(document.querySelector(".viz-root")).getPropertyValue(v).trim();
+const NS = "http://www.w3.org/2000/svg";
+const el = (tag, attrs = {}, parent) => {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+};
+const pt = (angle, r) => [r * Math.cos(angle * Math.PI / 180), r * Math.sin(angle * Math.PI / 180)];
+const hexPoints = (cx, cy, r, flat) => Array.from({ length: 6 }, (_, i) => {
+  const a = (60 * i + (flat ? 0 : 30)) * Math.PI / 180;
+  return `${(cx + r * Math.cos(a)).toFixed(1)},${(cy + r * Math.sin(a)).toFixed(1)}`;
+}).join(" ");
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmt = (n) => n.toLocaleString("en-US");
+
+const nodes = [...DATA.nodes];
+const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
+const maxLines = Math.max(...DATA.nodes.map((n) => n.lines));
+for (const n of nodes) {
+  [n.x, n.y] = pt(ANGLES[n.id], RING_R[n.ring]);
+  n.size = n.planned ? 46 : 34 + 30 * Math.sqrt(n.lines / maxLines);
+  n.out = DATA.edges.filter((e) => e.s === n.id);
+  n.in = DATA.edges.filter((e) => e.d === n.id);
+}
+const violations = DATA.edges.filter((e) => e.kind === "violation");
+const totalImports = DATA.edges.reduce((a, e) => a + e.n, 0);
+const totalLines = DATA.nodes.reduce((a, n) => a + n.lines, 0);
+const totalFiles = DATA.nodes.reduce((a, n) => a + n.files, 0);
+document.getElementById("sub").textContent =
+  `${totalFiles} modules · ${fmt(totalLines)} lines · ${totalImports} cross-package imports across ${DATA.edges.length} package pairs · ` +
+  `${(DATA.findings || []).length} findings: ${["critical", "serious", "warning"].map((k) => (DATA.findings || []).filter((f) => f.severity === k).length + " " + k).join(", ")}`;
+
+// Rings
+const rings = document.getElementById("rings");
+for (let i = RING_EDGE.length - 1; i >= 0; i--) {
+  el("polygon", { points: hexPoints(0, 0, RING_EDGE[i], true), fill: css(RING_VAR[i]), "fill-opacity": .07, stroke: css(RING_VAR[i]), "stroke-opacity": .45, "stroke-width": 1.5 }, rings);
+}
+for (let i = 0; i < RING_EDGE.length; i++) {
+  const inner = i ? RING_EDGE[i - 1] : 0;
+  const [x, y] = pt(-120, (RING_EDGE[i] + inner) / 2 + (i ? 0 : 40));
+  const t = el("text", { x, y, class: "ringlabel", "text-anchor": "middle" }, rings);
+  t.textContent = RING_NAMES[i];
+}
+
+// Ports (actors)
+const ports = document.getElementById("ports");
+for (const a of ACTORS) {
+  [a.x, a.y] = pt(a.angle, a.r);
+  a.g = el("g", { "data-planned": a.planned ? "1" : "" }, ports);
+  const t = byId[a.to];
+  el("line", { x1: a.x, y1: a.y, x2: t.x, y2: t.y, stroke: css("--text-muted"), "stroke-width": 1.5, "stroke-dasharray": "2 6", opacity: .7 }, a.g);
+  el("rect", { x: a.x - 105, y: a.y - 24, width: 210, height: 48, rx: 8, fill: css("--surface-2"), stroke: css("--border"), "stroke-dasharray": a.planned ? "6 4" : "" }, a.g);
+  el("text", { x: a.x, y: a.y - 3, class: "actor-label", "text-anchor": "middle" }, a.g).textContent = a.label;
+  el("text", { x: a.x, y: a.y + 14, class: "actor-meta", "text-anchor": "middle" }, a.g).textContent = a.meta;
+}
+
+// Edges
+const edgesG = document.getElementById("edges");
+const edgeEls = [];
+function edgePath(s, d) {
+  const dx = d.x - s.x, dy = d.y - s.y, len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const x1 = s.x + ux * s.size * .8, y1 = s.y + uy * s.size * .8;
+  const x2 = d.x - ux * (d.size * .85 + 4), y2 = d.y - uy * (d.size * .85 + 4);
+  const bend = Math.min(60, len * .14);
+  const cx = (x1 + x2) / 2 - uy * bend, cy = (y1 + y2) / 2 + ux * bend;
+  return `M${x1.toFixed(1)},${y1.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
+}
+function addEdge(e, planned) {
+  const s = byId[e.s], d = byId[e.d];
+  const w = planned ? 1.5 : 1 + Math.log2(e.n + 1) * .9;
+  const p = el("path", { d: edgePath(s, d), class: "edge", "stroke-width": w, "marker-end": "url(#arr)" }, edgesG);
+  // wide invisible hit target for hover
+  const hit = el("path", { d: edgePath(s, d), fill: "none", stroke: "transparent", "stroke-width": Math.max(12, w + 8) }, edgesG);
+  const rec = { e, planned, p, hit };
+  hit.addEventListener("mousemove", (ev) => showTip(ev, edgeTip(rec)));
+  hit.addEventListener("mouseleave", hideTip);
+  hit.addEventListener("click", (ev) => { ev.stopPropagation(); select(e.s); });
+  edgeEls.push(rec);
+}
+DATA.edges.forEach((e) => addEdge(e, false));
+PLANNED_EDGES.forEach(([s, d]) => addEdge({ s, d, n: 0, kind: "planned", note: "", pairs: [] }, true));
+
+// Cells
+const cellsG = document.getElementById("cells");
+for (const n of nodes) {
+  const g = el("g", { class: "cell", tabindex: 0, role: "button", "aria-label": `${n.id}, ${RING_NAMES[n.ring]}` }, cellsG);
+  n.g = g;
+  el("polygon", { class: "body", points: hexPoints(n.x, n.y, n.size, false), fill: n.planned ? "url(#hatch)" : css(RING_VAR[n.ring]), "stroke-dasharray": n.planned ? "7 5" : "" }, g);
+  if (n.planned) g.querySelector("polygon").setAttribute("stroke", css("--planned"));
+  el("text", { x: n.x, y: n.y + n.size + 18, class: "cell-label", "text-anchor": "middle" }, g).textContent = n.id;
+  el("text", { x: n.x, y: n.y + n.size + 34, class: "cell-meta", "text-anchor": "middle" }, g).textContent =
+    n.planned ? "not built" : `${n.files} files · ${fmt(n.lines)} lines`;
+  g.addEventListener("mousemove", (ev) => showTip(ev, cellTip(n)));
+  g.addEventListener("mouseleave", hideTip);
+  g.addEventListener("click", (ev) => { ev.stopPropagation(); select(n.id); });
+  g.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") select(n.id); });
+}
+
+// Tooltip
+const tip = document.getElementById("tip");
+const stage = document.getElementById("stage");
+function showTip(ev, html) {
+  tip.innerHTML = html; tip.style.display = "block";
+  const r = stage.getBoundingClientRect();
+  let x = ev.clientX - r.left + 14, y = ev.clientY - r.top + 14;
+  if (x + tip.offsetWidth > r.width - 8) x = ev.clientX - r.left - tip.offsetWidth - 14;
+  if (y + tip.offsetHeight > r.height - 8) y = ev.clientY - r.top - tip.offsetHeight - 14;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function hideTip() { tip.style.display = "none"; }
+function cellTip(n) {
+  const outN = n.out.reduce((a, e) => a + e.n, 0), inN = n.in.reduce((a, e) => a + e.n, 0);
+  return `<b>${esc(n.id)}</b> <span class="m">· ${RING_NAMES[n.ring]}</span><br>${n.files} files · ${fmt(n.lines)} lines<br>` +
+    `<span class="m">imports ${outN} from ${n.out.length} packages · imported ${inN}× by ${n.in.length}</span>`;
+}
+function edgeTip(r) {
+  const e = r.e;
+  if (r.planned) return `<b>${esc(e.s)} → ${esc(e.d)}</b><br><span class="m">planned dependency of the event bus</span>`;
+  const kind = e.kind === "violation" ? `<span class="warn">breaks a layer rule — ${esc(e.note)}</span>` :
+    e.kind === "lateral" ? `<span class="m">same ring (lateral)</span>` : `<span class="m">points inward</span>`;
+  const fs = FINDINGS.filter((f) => f.edges.some(([a, b]) => a === e.s && b === e.d));
+  return `<b>${esc(e.s)} → ${esc(e.d)}</b> · ${e.n} import${e.n === 1 ? "" : "s"}<br>${kind}${fs.map((f) => `<br>${SEV[f.severity].icon} ${esc(f.title)}`).join("")}`;
+}
+
+
+// Findings: clean-architecture deviations and bad practices
+const SEV = {
+  critical: { var: "--st-critical", icon: "⛔", label: "Breaks a layer rule", rank: 0 },
+  serious:  { var: "--st-serious",  icon: "⚠", label: "Bad practice", rank: 1 },
+  warning:  { var: "--st-warning",  icon: "△", label: "Deviation", rank: 2 },
+};
+const FINDINGS = DATA.findings || [];
+const edgeSev = {};
+const nodeFind = {};
+FINDINGS.forEach((f, i) => {
+  f.i = i;
+  for (const [s, d] of f.edges) {
+    const k = s + "|" + d;
+    if (!edgeSev[k] || SEV[f.severity].rank < SEV[edgeSev[k]].rank) edgeSev[k] = f.severity;
+  }
+  for (const n of f.nodes) (nodeFind[n] ||= []).push(f);
+});
+let selFinding = null;
+const showFindings = () => document.getElementById("showFindings").checked;
+// badges
+for (const n of nodes) {
+  const fs = nodeFind[n.id];
+  if (!fs) continue;
+  const worst = fs.reduce((a, f) => SEV[f.severity].rank < SEV[a].rank ? f.severity : a, "warning");
+  const [bx, by] = [n.x + n.size * .78, n.y - n.size * .78];
+  const b = el("g", { class: "badge" }, n.g);
+  el("circle", { cx: bx, cy: by, r: 13, fill: css(SEV[worst].var), stroke: css("--surface-1"), "stroke-width": 2 }, b);
+  el("text", { x: bx, y: by + 4, "text-anchor": "middle" }, b).textContent = fs.length;
+  n.badge = b;
+}
+function findingHtml(f, open) {
+  const sv = SEV[f.severity];
+  return `<div class="finding ${selFinding === f.i ? "on" : ""}" data-f="${f.i}" style="border-left-color:var(${sv.var})">
+    <div class="sev">${sv.icon} ${sv.label}</div><div class="t">${esc(f.title)}</div>
+    ${open ? `<div class="w">${esc(f.why)}</div>${f.evidence.length ? `<div class="ev">${f.evidence.slice(0, 10).map((e) => `<code>${esc(e)}</code>`).join("")}${f.evidence.length > 10 ? `<code>… ${f.evidence.length - 10} more</code>` : ""}</div>` : ""}` : ""}
+  </div>`;
+}
+function findingsSection(list) {
+  if (!list.length) return `<p>None.</p>`;
+  return list.map((f) => findingHtml(f, selFinding === f.i)).join("");
+}
+
+// Selection + edge styling
+let selected = null;
+function paintEdges() {
+  const showAll = document.getElementById("showAll").checked;
+  const showPlanned = false;
+  for (const r of edgeEls) {
+    const { e, planned, p, hit } = r;
+    const touches = selected && (e.s === selected || e.d === selected);
+    let visible = planned ? showPlanned && selFinding === null : (showAll || touches || (showFindings() && edgeSev[e.s + "|" + e.d]) || (selFinding !== null && FINDINGS[selFinding].edges.some(([a, b]) => a === e.s && b === e.d)));
+    let stroke = css("--edge"), opacity = .16, dash = "";
+    if (planned) { stroke = css("--planned"); dash = "6 5"; opacity = .55; }
+    const sev = showFindings() && !planned ? edgeSev[e.s + "|" + e.d] : null;
+    if (sev) { stroke = css(SEV[sev].var); dash = sev === "critical" ? "" : "7 4"; opacity = .9; }
+    if (selFinding !== null) {
+      const inF = FINDINGS[selFinding].edges.some(([a, b]) => a === e.s && b === e.d);
+      opacity = inF ? 1 : .04;
+      if (inF) { stroke = css(SEV[FINDINGS[selFinding].severity].var); dash = ""; }
+    }
+    if (selected) {
+      if (touches) {
+        opacity = 1;
+        if (e.kind !== "violation" && !planned) stroke = css(RING_VAR[byId[e.s === selected ? e.d : e.s].ring]);
+      } else if (!sev) opacity = .05;
+    }
+    p.setAttribute("stroke", stroke); p.setAttribute("stroke-dasharray", dash);
+    p.setAttribute("opacity", visible ? opacity : 0);
+    hit.style.display = visible ? "" : "none";
+  }
+  document.querySelectorAll("#ports g").forEach((g) => { g.style.display = g.dataset.planned && !showPlanned ? "none" : ""; });
+  for (const n of nodes) if (n.badge) n.badge.style.display = showFindings() ? "" : "none";
+  for (const n of nodes) {
+    if (selFinding !== null) { const on = FINDINGS[selFinding].nodes.includes(n.id); n.g.classList.toggle("dim", !on); n.g.classList.toggle("sel", on); continue; }
+    const linked = !selected || n.id === selected || edgeEls.some(({ e }) => (e.s === selected && e.d === n.id) || (e.d === selected && e.s === n.id));
+    n.g.classList.toggle("dim", !linked);
+    n.g.classList.toggle("sel", n.id === selected);
+  }
+}
+function select(id) { selected = id; selFinding = null; paintEdges(); renderPanel(); }
+function pickFinding(i) { selFinding = selFinding === i ? null : i; selected = null; paintEdges(); renderPanel(); }
+document.getElementById("svg").addEventListener("click", () => { if (!dragMoved) select(null); });
+document.getElementById("showAll").addEventListener("change", paintEdges);
+document.getElementById("showFindings").addEventListener("change", paintEdges);
+
+// Side panel
+const panel = document.getElementById("panel");
+const linkTo = (id) => `<span class="link" data-go="${esc(id)}">${esc(id)}</span>`;
+function edgeRows(list, side) {
+  if (!list.length) return `<p>none</p>`;
+  return `<table>${list.slice().sort((a, b) => b.n - a.n).map((e) =>
+    `<tr><td>${linkTo(e[side])}${e.kind === "violation" ? ` <span class="warn">${esc(e.note)}</span>` : e.kind === "lateral" ? ` <span class="tag">lateral</span>` : ""}</td><td class="num">${e.n}</td></tr>`).join("")}</table>`;
+}
+function renderPanel() {
+  if (selFinding !== null) {
+    const f = FINDINGS[selFinding];
+    panel.innerHTML = `<h2>Finding</h2>${findingHtml(f, true)}<h3>Packages</h3><p>${f.nodes.map(linkTo).join(", ")}</p><p style="margin-top:14px"><span class="link" data-go="">← back to overview</span></p>`;
+    panel.querySelectorAll("[data-go]").forEach((a) => a.addEventListener("click", () => select(a.dataset.go || null)));
+    return;
+  }
+  if (!selected) {
+    const perRing = [0, 1, 2, 3].map((r) => {
+      const ns = DATA.nodes.filter((n) => n.ring === r);
+      return `<tr><td><i class="sw" style="background:var(${RING_VAR[r]})"></i> ${RING_NAMES[r]}</td><td class="num">${ns.reduce((a, n) => a + n.files, 0)} files</td><td class="num">${fmt(ns.reduce((a, n) => a + n.lines, 0))} lines</td></tr>`;
+    }).join("");
+    panel.innerHTML = `<h2>How to read it</h2>
+      <p>Each ring is a layer. Dependencies may only point <b>inward</b>: interfaces and formatters compose subsystems, subsystems consume the platform, and the pure core in the middle imports nothing that is wired.</p>
+      <p>Arrows are real imports between packages in <code>src/reporails_cli/</code>, thicker for more imports. Dashed lines to the boxes outside are the ports where the cli meets the world.</p>
+      <p>Click a cell for its modules and its imports in both directions. Scroll to zoom, drag to pan.</p>
+      <h3>Rings</h3><table>${perRing}</table>
+      <h3>Findings — ${FINDINGS.length}</h3>
+      <p>${["critical", "serious", "warning"].map((k) => `${SEV[k].icon} ${FINDINGS.filter((f) => f.severity === k).length} ${SEV[k].label.toLowerCase()}`).join(" · ")}. Click one to isolate it on the diagram and read why it matters.</p>
+      ${findingsSection(FINDINGS)}
+      <h3>The fences that hold it</h3>
+      <p><code>test_core_purity</code> (contract, dto, policy), <code>test_adapter_boundary</code> (adapters), <code>test_subsystem_outer_imports</code> (subsystems never import interfaces or formatters), plus one-owner, one-reader, env-in-config and one-process-runner floors.</p>`;
+  } else {
+    const n = byId[selected];
+    panel.innerHTML = `<h2>${esc(n.id)}</h2>
+      <p class="tag"><i class="sw ${n.planned ? "dash" : ""}" style="${n.planned ? "" : `background:var(${RING_VAR[n.ring]})`}"></i>${RING_NAMES[n.ring]}${n.planned ? "" : ` · ${n.files} files · ${fmt(n.lines)} lines`}</p>
+      <p>${esc(n.purpose || "")}</p>
+      ${(nodeFind[n.id] || []).length ? `<h3>Findings</h3>${findingsSection(nodeFind[n.id])}` : ""}
+      <h3>Imports from</h3>${edgeRows(n.out, "d")}<h3>Imported by</h3>${edgeRows(n.in, "s")}
+      <h3>Modules, largest first</h3>
+      <table>${n.modules.map((m) => `<tr><td><code>${esc(m.m)}</code></td><td class="num">${m.lines ? fmt(m.lines) : ""}</td></tr>`).join("")}</table>
+      <p style="margin-top:14px"><span class="link" data-go="">← back to overview</span></p>`;
+  }
+  panel.querySelectorAll("[data-f]").forEach((d) => d.addEventListener("click", () => pickFinding(+d.dataset.f)));
+  panel.querySelectorAll("[data-go]").forEach((a) => a.addEventListener("click", () => select(a.dataset.go || null)));
+}
+
+// Table view
+const tableView = document.getElementById("tableView");
+document.getElementById("tableBtn").addEventListener("click", () => {
+  const open = tableView.style.display === "block";
+  tableView.style.display = open ? "none" : "block";
+  document.getElementById("tableBtn").textContent = open ? "Table view" : "Diagram view";
+  if (!open) tableView.innerHTML = `<h3 style="margin-top:0">Packages</h3><table><tr><th>Package</th><th>Ring</th><th>Files</th><th>Lines</th><th>Imports out</th><th>Imported by</th></tr>${
+    DATA.nodes.map((n) => `<tr><td>${esc(n.id)}</td><td>${RING_NAMES[n.ring]}</td><td class="num">${n.files}</td><td class="num">${fmt(n.lines)}</td><td class="num">${n.out.reduce((a, e) => a + e.n, 0)}</td><td class="num">${n.in.reduce((a, e) => a + e.n, 0)}</td></tr>`).join("")}</table>
+    <h3>Imports between packages</h3><table><tr><th>From</th><th>To</th><th>Imports</th><th>Direction</th></tr>${
+    DATA.edges.slice().sort((a, b) => b.n - a.n).map((e) => `<tr><td>${esc(e.s)}</td><td>${esc(e.d)}</td><td class="num">${e.n}</td><td>${e.kind === "violation" ? `<span class="warn">${esc(e.note)}</span>` : e.kind}</td></tr>`).join("")}</table>`;
+});
+
+// Zoom + pan
+const svg = document.getElementById("svg");
+const VB0 = [-840, -840, 1680, 1680];
+let vb = VB0.slice();
+const setVB = () => svg.setAttribute("viewBox", vb.map((v) => v.toFixed(1)).join(" "));
+function zoomAt(f, cx, cy) {
+  const w = Math.min(4000, Math.max(220, vb[2] * f)), k = w / vb[2];
+  vb = [cx - (cx - vb[0]) * k, cy - (cy - vb[1]) * k, w, vb[3] * k]; setVB();
+}
+function svgPoint(ev) {
+  const r = svg.getBoundingClientRect(), s = Math.max(vb[2] / r.width, vb[3] / r.height);
+  const ox = vb[0] + (vb[2] - r.width * s) / 2, oy = vb[1] + (vb[3] - r.height * s) / 2;
+  return [ox + (ev.clientX - r.left) * s, oy + (ev.clientY - r.top) * s, s];
+}
+svg.addEventListener("wheel", (ev) => { ev.preventDefault(); const [x, y] = svgPoint(ev); zoomAt(ev.deltaY > 0 ? 1.12 : 1 / 1.12, x, y); }, { passive: false });
+document.getElementById("zin").onclick = () => zoomAt(1 / 1.25, vb[0] + vb[2] / 2, vb[1] + vb[3] / 2);
+document.getElementById("zout").onclick = () => zoomAt(1.25, vb[0] + vb[2] / 2, vb[1] + vb[3] / 2);
+document.getElementById("zreset").onclick = () => { vb = VB0.slice(); setVB(); };
+let drag = null, dragMoved = false;
+svg.addEventListener("mousedown", (ev) => { drag = [ev.clientX, ev.clientY, vb[0], vb[1], svgPoint(ev)[2]]; dragMoved = false; });
+window.addEventListener("mousemove", (ev) => {
+  if (!drag) return;
+  const dx = ev.clientX - drag[0], dy = ev.clientY - drag[1];
+  if (Math.abs(dx) + Math.abs(dy) > 3) { dragMoved = true; stage.classList.add("drag"); hideTip(); }
+  vb[0] = drag[2] - dx * drag[4]; vb[1] = drag[3] - dy * drag[4]; setVB();
+});
+window.addEventListener("mouseup", () => { drag = null; stage.classList.remove("drag"); setTimeout(() => { dragMoved = false; }, 0); });
+
+paintEdges(); renderPanel();
+</script>
+</body>
+</html>

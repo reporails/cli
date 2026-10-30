@@ -26,3 +26,4 @@
 - Tests: a skipped api-backed scenario leaves no temp directory behind, and the mutation probe's `--timeout` applies to a pytest target too.
 - The map caches live with the mapper and path tagging with discovery, so the cache, discovery, mapper and classify packages no longer import each other in a loop.
 - The unformatted-code check owns which tokens it reports, so the lint package no longer imports heal; the rule-loading and file-property matching helpers other packages call are public.
+- Tests: an architecture floor fails on a platform-layer import outside its layer row, a package cycle among the core packages and a cross-package import of a private name; `poe hexagon` regenerates the import-graph view.

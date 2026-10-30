@@ -176,6 +176,7 @@ lint = "ruff check src/ tests/"
 pylint_struct = "python scripts/pylint_gate.py"
 release_gates = "bash scripts/release-gates.sh"
 lint_imports = "lint-imports"
+hexagon = "python scripts/hexagon/build_hexagon.py"
 arch_data = "python scripts/bundled_data_gate.py"
 arch_no_fix = "python scripts/no_public_fix_gate.py"
 arch = ["lint_imports", "arch_data", "arch_no_fix"]
@@ -295,6 +296,7 @@ forbidden_modules = [
     "reporails_cli.core.install",
     "reporails_cli.core.lint",
     "reporails_cli.core.mapper",
+    "reporails_cli.core.pipeline",
     "reporails_cli.interfaces",
     "reporails_cli.formatters",
 ]
@@ -314,6 +316,7 @@ forbidden_modules = [
     "reporails_cli.core.install",
     "reporails_cli.core.lint",
     "reporails_cli.core.mapper",
+    "reporails_cli.core.pipeline",
     "reporails_cli.interfaces",
     "reporails_cli.formatters",
 ]
