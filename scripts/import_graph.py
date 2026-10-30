@@ -22,7 +22,7 @@ OUTER = ["cli", "mcp", "formatters"]
 # Ring 0 is the pure core, 1 the infrastructure layers, 2 the subsystems, 3 the delivery layers.
 RING = {**dict.fromkeys(PURE, 0), **dict.fromkeys(INFRA, 1), **dict.fromkeys(SUBSYSTEMS, 2), **dict.fromkeys(OUTER, 3)}
 
-# What each platform layer may import (the layer table in `cli_platform.md` § Layers).
+# What each platform layer may import.
 ALLOWED: dict[str, set[str]] = {
     "contract": set(),
     "dto": {"contract"},
