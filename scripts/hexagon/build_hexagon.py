@@ -117,7 +117,7 @@ def analyse(
                 "kind": "layer-rule",
                 "title": f"{e['s']} imports {e['d']}, which its layer may not",
                 "why": (
-                    f"The platform layer table lets {e['s']} import only "
+                    f"The layer table lets {e['s']} import only "
                     f"{', '.join(sorted(ig.ALLOWED.get(e['s'], set()))) or 'nothing inside the project'}. "
                     + (
                         "A test fences this rule, so it should fail the build."

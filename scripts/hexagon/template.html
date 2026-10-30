@@ -143,7 +143,6 @@ const RING_EDGE = [165, 338, 518, 690];      // outer boundary of each ring band
 const ANGLES = {
   contract: -90, dto: 30, policy: 150,
   adapters: -90, runtime: -18, utils: 54, config: 126, observability: 198,
-  pipeline: -90, lint: -50, heal: -10, classify: 30, mapper: 70, cache: 110, discovery: 150, install: 190,
   cli: -90, mcp: 30, formatters: 150,
 };
 const ACTORS = [
@@ -173,6 +172,12 @@ const fmt = (n) => n.toLocaleString("en-US");
 const nodes = [...DATA.nodes];
 const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
 const maxLines = Math.max(...DATA.nodes.map((n) => n.lines));
+// Subsystems sit evenly around their ring: the known order first, any other subsystem after it,
+// so a new subsystem gets a cell instead of vanishing.
+const SUBSYSTEM_ORDER = ["pipeline", "lint", "heal", "classify", "mapper", "cache", "discovery", "install"];
+const subsystems = nodes.filter((n) => n.ring === 2).map((n) => n.id)
+  .sort((a, b) => (SUBSYSTEM_ORDER.indexOf(a) + 1 || 99) - (SUBSYSTEM_ORDER.indexOf(b) + 1 || 99) || a.localeCompare(b));
+subsystems.forEach((id, i) => { ANGLES[id] = -90 + (360 / subsystems.length) * i; });
 for (const n of nodes) {
   [n.x, n.y] = pt(ANGLES[n.id], RING_R[n.ring]);
   n.size = 34 + 30 * Math.sqrt(n.lines / maxLines);
@@ -389,7 +394,7 @@ function renderPanel() {
       <p>${["critical", "serious", "warning"].map((k) => `${SEV[k].icon} ${FINDINGS.filter((f) => f.severity === k).length} ${SEV[k].label.toLowerCase()}`).join(" · ")}. Click one to isolate it on the diagram and read why it matters.</p>
       ${findingsSection(FINDINGS)}
       <h3>The fences that hold it</h3>
-      <p><code>test_layer_rules</code> (each platform layer imports only its row; no subsystem cycle; no cross-package private import), <code>test_subsystem_outer_imports</code> (subsystems never import interfaces or formatters), plus one-owner, one-reader, env-in-config and one-process-runner floors.</p>`;
+      <p><code>test_layer_rules</code> (each platform layer, and each subsystem with a row such as eventbus, imports only its row; no subsystem cycle; no cross-package private import), <code>test_subsystem_outer_imports</code> (subsystems never import interfaces or formatters), plus one-owner, one-reader, env-in-config and one-process-runner floors.</p>`;
   } else {
     const n = byId[selected];
     panel.innerHTML = `<h2>${esc(n.id)}</h2>
