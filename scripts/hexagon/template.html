@@ -389,7 +389,7 @@ function renderPanel() {
       <p>${["critical", "serious", "warning"].map((k) => `${SEV[k].icon} ${FINDINGS.filter((f) => f.severity === k).length} ${SEV[k].label.toLowerCase()}`).join(" · ")}. Click one to isolate it on the diagram and read why it matters.</p>
       ${findingsSection(FINDINGS)}
       <h3>The fences that hold it</h3>
-      <p><code>test_core_purity</code> (contract, dto, policy), <code>test_adapter_boundary</code> (adapters), <code>test_subsystem_outer_imports</code> (subsystems never import interfaces or formatters), plus one-owner, one-reader, env-in-config and one-process-runner floors.</p>`;
+      <p><code>test_layer_rules</code> (each platform layer imports only its row; no subsystem cycle; no cross-package private import), <code>test_subsystem_outer_imports</code> (subsystems never import interfaces or formatters), plus one-owner, one-reader, env-in-config and one-process-runner floors.</p>`;
   } else {
     const n = byId[selected];
     panel.innerHTML = `<h2>${esc(n.id)}</h2>

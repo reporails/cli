@@ -300,8 +300,8 @@ forbidden_modules = [
     "reporails_cli.formatters",
 ]
 
-# Direct-import boundary (matches the AST arch tests' granularity, minus their
-# trailing-dot blind spot). The transitive tails into subsystems run through
+# Direct-import boundary, the same granularity as the layer check in
+# tests/unit/architecture/test_layer_rules.py. The transitive tails into subsystems run through
 # config/runtime impurities those layers own; policing them is a later tighten.
 [[tool.importlinter.contracts]]
 name = "platform adapters import no subsystems or outer layers"

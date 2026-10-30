@@ -27,4 +27,4 @@
 - Internal restructuring of the package boundaries; command output is unchanged.
 - `AILS_STAGE_TIMING=1` also prints the time of heal and of each MCP tool call.
 - The torch import blocker is removed; nothing the cli installs imports torch.
-- Tests: architecture checks guard the package boundaries, and `poe hexagon` renders the package dependency view.
+- Tests: architecture checks guard the package boundaries, replacing two narrower checks they cover, and `poe hexagon` renders the package dependency view.
