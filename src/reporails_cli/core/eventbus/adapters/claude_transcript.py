@@ -22,8 +22,9 @@ the adapter refuses any other shape of a row type it reads:
   `attachment.files[].path` / `.type`, or `attachment.type: "nested_memory"` and `attachment.path`. The
   `InstructionsLoaded` hook does not fire for auto memory or for a subagent's session-start loads (probe on
   Claude Code 2.1.308, 2026-10-30), which is why the transcript is the source.
-- a subagent file: its `sessionId`-carrying first row's `timestamp`, and the `agentType` of
-  `agent-<id>.meta.json`.
+- every row the adapter reads (assistant, system, attachment) carries `sessionId` and `timestamp`; a row
+  without either is refused.
+- a subagent file: its first row's `timestamp`, and the `agentType` of `agent-<id>.meta.json`.
 
 Never read: message content, tool input and output, `description`, `content`, `displayPath`.
 """

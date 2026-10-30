@@ -36,7 +36,7 @@ from reporails_cli.core.pipeline.mapping import (
 )
 from reporails_cli.core.platform.adapters.api_client import AilsClient
 from reporails_cli.core.platform.adapters.notices_seen import visible_notices
-from reporails_cli.core.platform.config.config import get_project_config, is_initialized
+from reporails_cli.core.platform.config.config import get_project_config, get_rules_path, is_initialized
 from reporails_cli.core.platform.dto.diagnostics import FindingItem, FunnelError, LintResponse, LintResult, Notice
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
@@ -63,18 +63,29 @@ RefusalKind = Literal[
 
 
 class Refusal(NamedTuple):
-    """Nothing to check, and why: `kind`, with `message` (the missing path, the unknown agent's name, the
-    model fetch's words or the failure's text), and for an empty project the `target` and what it left out."""
+    """Nothing to check, and why: `kind`, with `message` (a full sentence for the user), for an unknown agent
+    its `agent` name, and for an empty project the `target` and what it left out."""
 
     kind: RefusalKind
-    message: str = ""
+    message: str
     target: Path | None = None
     excluded: Excluded = ((), ())
+    agent: str = ""
 
     @property
     def text(self) -> str:
-        """The words for the refusal: its message, else its kind."""
-        return self.message or self.kind
+        """The words for the refusal: its message."""
+        return self.message
+
+
+def rules_missing_message() -> str:
+    """The sentence for a rules folder with no `core` rules: a broken install or a `framework_path` setting
+    that points at a folder without them."""
+    return (
+        f"The rules folder {get_rules_path()} has no `core` rules. The rules ship with the "
+        "package: reinstall reporails-cli, or, if the config sets `framework_path`, point it "
+        "at a folder that holds them or remove the setting."
+    )
 
 
 class LeftOut(NamedTuple):
@@ -160,7 +171,7 @@ def discover_files(
     config = get_project_config(target)
     normalized_agent = (config.default_agent or "").lower().strip()
     if normalized_agent and normalized_agent not in get_known_agents():
-        return Refusal("unknown_agent", normalized_agent)
+        return Refusal("unknown_agent", f"Unknown agent: {normalized_agent}", agent=normalized_agent)
 
     # A `single_file` target always resolves (its own existence is checked by the caller); only
     # the whole-project scan can legitimately come up with nothing to lint. The whole-project
@@ -176,7 +187,7 @@ def discover_files(
     )
     instruction_files = [safe_resolve(single_file)] if single_file is not None else found.files
     if not instruction_files:
-        return Refusal("empty_project", target=target, excluded=found.excluded)
+        return Refusal("empty_project", f"No instruction files found in {target}", target, found.excluded)
 
     import_extra, file_type_by_path = apply_generic_scan(
         target, instruction_files, found.effective_agent, config.generic_scanning, found.exclusions
@@ -239,7 +250,7 @@ def model_refusal() -> Refusal | None:
     if model_fetch.download_in_progress():
         return Refusal(
             "model_downloading",
-            "The reporails model (~275 MB) is downloading for first use. Call validate again shortly.",
+            "The model files are still downloading; try again shortly.",
         )
     try:
         ensure_models_available()
@@ -257,7 +268,7 @@ def scope_for_path(path: str, named: frozenset[Path] = frozenset()) -> Scope | R
     `empty_project` or a model set that is not ready.
     """
     if not is_initialized():
-        return Refusal("rules_missing")
+        return Refusal("rules_missing", rules_missing_message())
     target = Path(path).resolve()
     if not target.exists():
         return Refusal("path_not_found", f"Path not found: {target}")
@@ -462,4 +473,4 @@ def check_path(path: str, named: frozenset[Path] = frozenset()) -> CheckRun | Re
             return scope
         return check_scope(scope)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
-        return Refusal("failed", str(e))
+        return Refusal("failed", str(e) or f"The check failed ({type(e).__name__}).")

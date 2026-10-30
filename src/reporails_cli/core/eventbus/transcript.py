@@ -76,19 +76,20 @@ def _read_file(
     adapter: TranscriptAdapter, agent: str, session_id: str, path: Path, *, before: FileCursor
 ) -> tuple[list[EventRecord], FileCursor]:
     """The records one file holds past `before`, a reply already recorded dropped, and where the read stopped."""
-    subagent_id = before.subagent_id
     lines, offset = read_appended_lines(path, before.offset)
     rows = _rows(lines)
     records: list[EventRecord] = []
-    try:
-        if subagent_id is not None and before.offset == 0 and rows:
-            records.append(adapter.resolve_subagent(subagent_id, _meta(path), rows[0]))
-    except PayloadRefused as err:
-        records.append(_refusal(agent, session_id, err.reason))
+    run = (
+        None
+        if before.run_settled or before.subagent_id is None
+        else _run_record(adapter, agent, session_id, path, before=before, rows=rows)
+    )
+    if run is not None:
+        records.append(run)
     last_id = before.last_message_id
     for row in rows:
         try:
-            resolved = adapter.resolve_row(row, subagent_id)
+            resolved = adapter.resolve_row(row, before.subagent_id)
         except PayloadRefused as err:
             records.append(_refusal(agent, session_id, err.reason))
             continue
@@ -98,7 +99,24 @@ def _read_file(
                     continue
                 last_id = record.usage.message_id
             records.append(record)
-    return records, FileCursor(subagent_id, offset, last_id)
+    return records, FileCursor(
+        before.subagent_id, offset, last_id, before.run_settled or before.subagent_id is None or run is not None
+    )
+
+
+def _run_record(
+    adapter: TranscriptAdapter, agent: str, session_id: str, path: Path, *, before: FileCursor, rows: list[JsonObject]
+) -> EventRecord | None:
+    """The `subagent_run` record of a subagent file, the refusal the adapter raises for its meta file, or
+    None while the first row or the meta file is not there yet."""
+    first_row = rows[0] if before.offset == 0 and rows else _first_row(path)
+    meta = _meta(path)
+    if first_row is None or meta is None:
+        return None
+    try:
+        return adapter.resolve_subagent(before.subagent_id or "", meta, first_row)
+    except PayloadRefused as err:
+        return _refusal(agent, session_id, err.reason)
 
 
 def _rows(lines: list[bytes]) -> list[JsonObject]:
@@ -109,12 +127,21 @@ def _rows(lines: list[bytes]) -> list[JsonObject]:
     return rows
 
 
-def _meta(path: Path) -> JsonObject:
-    """The subagent's `agent-<id>.meta.json` object, `{}` when it is absent or unreadable."""
+def _first_row(path: Path) -> JsonObject | None:
+    """The first row of a file, None when it cannot be read."""
+    try:
+        with path.open("rb") as handle:
+            return as_object(json.loads(handle.readline()))
+    except (OSError, ValueError):
+        return None
+
+
+def _meta(path: Path) -> JsonObject | None:
+    """The subagent's `agent-<id>.meta.json` object; None while the file is absent or not yet whole JSON."""
     try:
         return as_object(json.loads(path.with_suffix(".meta.json").read_bytes()))
     except (OSError, ValueError):
-        return {}
+        return None
 
 
 def _refusal(agent: str, session_id: str, reason: str) -> EventRecord:

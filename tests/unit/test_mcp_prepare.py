@@ -56,7 +56,7 @@ def test_prepare_builds_no_api_client_and_leaves_the_validate_state_alone(projec
 
 
 def test_prepare_passes_model_downloading_through_without_mapping(project, monkeypatch):
-    reply = {"error": "model_downloading", "message": "downloading"}
+    reply = {"error": "model_downloading", "message": tools._MODEL_DOWNLOADING}
     monkeypatch.setattr(check_one, "model_refusal", lambda: check_one.Refusal("model_downloading", "downloading"))
 
     def refuse(*_a, **_k):

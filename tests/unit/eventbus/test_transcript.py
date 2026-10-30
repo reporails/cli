@@ -63,6 +63,22 @@ def test_subagent_run_carries_agent_type_from_meta(version: str, tmp_path: Path)
     assert run.subagent_id is not None and meta.name == f"agent-{run.subagent_id}.meta.json"
 
 
+def test_subagent_whose_meta_arrives_late_still_gets_its_run_record(tmp_path: Path) -> None:
+    session = _copy("2.1.308", tmp_path)
+    meta = next((session.parent / "session" / "subagents").glob("*.meta.json"))
+    held = meta.read_bytes()
+    meta.unlink()
+    records, cursor = read_transcript("claude", session, TranscriptCursor())
+    assert not _of(records, "subagent_run")
+    assert not [r for r in _of(records, "refusal") if "meta" in (r.refusal or "")]
+    meta.write_bytes(held)
+    later, cursor = read_transcript("claude", session, cursor)
+    (run,) = _of(later, "subagent_run")
+    assert run.subagent_type == json.loads(held)["agentType"]
+    again, _ = read_transcript("claude", session, cursor)
+    assert not _of(again, "subagent_run")
+
+
 def test_turn_end_reported(tmp_path: Path) -> None:
     records, _ = read_transcript("claude", _copy("2.1.301", tmp_path), TranscriptCursor())
     assert len(_of(records, "turn_end")) == 1

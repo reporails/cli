@@ -90,11 +90,13 @@ class InstructionLoad:
 
 @dataclass(frozen=True)
 class FileCursor:
-    """Where a transcript read stopped in one file: the byte offset and the last assistant message id."""
+    """Where a transcript read stopped in one file: the byte offset, the last assistant message id and, for a
+    subagent file, whether its run record is settled (emitted, or refused for its meta file)."""
 
     subagent_id: str | None
     offset: int = 0
     last_message_id: str | None = None
+    run_settled: bool = False
 
 
 @dataclass(frozen=True)

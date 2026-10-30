@@ -8,9 +8,8 @@ health and, on the paid plan, the remediation workflow). `preflight` and `explai
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import get_known_agents
-from reporails_cli.core.pipeline.check_one import CheckRun, Refusal, check_path, model_refusal
+from reporails_cli.core.pipeline.check_one import CheckRun, Refusal, check_path, model_refusal, rules_missing_message
 from reporails_cli.core.platform.adapters.api_key import has_api_key
-from reporails_cli.core.platform.config.config import get_rules_path
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import FunnelError, tiers_unpaid
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
@@ -19,6 +18,8 @@ from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.formatters.host_hooks import host_hooks_field
 from reporails_cli.formatters.text.funnel_cta import plain_cta
+
+_MODEL_DOWNLOADING = "The reporails model (~275 MB) is downloading for first use. Call validate again shortly."
 
 
 def _unknown_agent_error(agent: str) -> JsonObject:
@@ -34,18 +35,9 @@ def _unknown_agent_error(agent: str) -> JsonObject:
 
 
 def _rules_missing_payload() -> JsonObject:
-    """The reply when the rules folder is missing or has no `core` rules: the rules ship inside
-    the package, so this means a broken install or a `framework_path` setting that points at a
-    folder without them."""
+    """The reply when the rules folder is missing or has no `core` rules."""
 
-    return {
-        "needs_install": True,
-        "message": (
-            f"The rules folder {get_rules_path()} has no `core` rules. The rules ship with the "
-            "package: reinstall reporails-cli, or, if the config sets `framework_path`, point it "
-            "at a folder that holds them or remove the setting."
-        ),
-    }
+    return {"needs_install": True, "message": rules_missing_message()}
 
 
 def refusal_payload(refusal: Refusal) -> JsonObject:
@@ -54,10 +46,12 @@ def refusal_payload(refusal: Refusal) -> JsonObject:
         case "rules_missing":
             return _rules_missing_payload()
         case "unknown_agent":
-            return _unknown_agent_error(refusal.message)
+            return _unknown_agent_error(refusal.agent)
         case "empty_project":
             return json_formatter.empty_result_payload(refusal.target, refusal.excluded)
-        case "model_downloading" | "model_unavailable":
+        case "model_downloading":
+            return {"error": refusal.kind, "message": _MODEL_DOWNLOADING}
+        case "model_unavailable":
             return {"error": refusal.kind, "message": refusal.message}
         case "path_not_found" | "failed":
             return {"error": refusal.message}
@@ -156,10 +150,7 @@ def run_pipeline_for_path(
     `file_score` is that single file's own display score (`None` for a directory or an unscored file).
     `named` is read as in `core.pipeline.check_one.scope_for_path`.
     """
-    try:
-        run = check_path(path, named)
-        if isinstance(run, Refusal):
-            return refusal_payload(run), None, None
-        return format_run(run, full=full), run.ruleset_map, run.file_score
-    except (FileNotFoundError, ValueError, RuntimeError) as e:
-        return {"error": str(e)}, None, None
+    run = check_path(path, named)
+    if isinstance(run, Refusal):
+        return refusal_payload(run), None, None
+    return format_run(run, full=full), run.ruleset_map, run.file_score
