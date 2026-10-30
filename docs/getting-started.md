@@ -137,6 +137,16 @@ Only the named files are read and checked, so cross-file rules compare them with
 
 The whole-repo summary also shows a `Top rules (by finding count)` block — a fast triage view of which rule classes contribute the most findings across your project.
 
+## See a Claude Code session's context
+
+```bash
+ails xray                      # the newest Claude Code session started in this folder
+ails xray --session <id>       # one session by its id
+ails xray --no-open            # print the address instead of opening the browser
+```
+
+`ails xray` opens a page on `127.0.0.1` that shows one session's context window turn by turn: how many tokens each turn held, which instruction files loaded and when (`CLAUDE.md`, auto memory, a nested `CLAUDE.md` loaded after a read in its folder), and each subagent's own context and what it started with. The page updates while the session runs. Select an instruction file to check it, or fix it on a Pro account, without leaving the page. It reads the session transcript Claude Code keeps under `~/.claude/projects/` and, with the reporails plugin installed, the session's recorded events; nothing is sent off the machine except the check and fix calls `ails check` makes. A part of the page with no source shows "not known here".
+
 ## Next steps
 
 - [Score Guide](score-guide.md) — what the number means in practice
