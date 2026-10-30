@@ -43,6 +43,10 @@ ALLOWED: dict[str, set[str]] = {
     "config": {"contract", "dto", "utils", "policy", "bundled"},
     "observability": {"contract", "dto", "config", "utils"},
     "utils": {"contract", "dto"},
+    # The event bus stays light: no mapper, lint or pipeline, so the hook command starts fast.
+    "eventbus": {
+        "cache", "discovery", "contract", "dto", "policy", "adapters", "runtime", "config", "observability", "utils",
+    },
 }
 
 LARGE_MODULE = 800
@@ -218,9 +222,9 @@ def build_graph(src: Path = SRC) -> Graph:
     return graph
 
 
-def _in_platform_layer(mod: str) -> bool:
-    parts = mod.split(".")
-    return len(parts) >= 4 and parts[1:3] == ["core", "platform"]
+def _in_constrained_node(mod: str) -> bool:
+    """Whether `mod` sits in a platform layer or a `core/<subsystem>` that has a row."""
+    return mod.split(".")[1:2] == ["core"] and (node_of(mod) or "") in ALLOWED
 
 
 def layer_row_allows(src: str, dst: str) -> bool:
@@ -233,8 +237,7 @@ def layer_violation_imports(graph: Graph) -> list[Import]:
     return [
         imp
         for imp in graph.imports
-        if _in_platform_layer(imp.src_mod)
-        and imp.src_node in ALLOWED
+        if _in_constrained_node(imp.src_mod)
         and not layer_row_allows(imp.src_node, imp.dst_node)
     ]
 

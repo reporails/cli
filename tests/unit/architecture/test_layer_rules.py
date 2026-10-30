@@ -2,7 +2,7 @@
 
 Three rules over the import graph of `src/reporails_cli`:
 
-- a module under `core/platform/<layer>/` imports only the nodes in its layer's row;
+- a module under `core/platform/<layer>/`, or a `core/<subsystem>` with a row, imports only the nodes in its row;
 - the `core/` subsystems form no package cycle over runtime imports;
 - no package imports a `_private` module or name from another package.
 """
@@ -37,6 +37,21 @@ def _report(findings: list[str]) -> str:
 def test_platform_layers_import_only_their_row() -> None:
     found = ig.layer_violations()
     assert not found, f"platform imports outside the layer row:{_report(found)}"
+
+
+def test_subsystem_row_fires_on_a_heavy_import_and_stays_quiet_on_a_listed_one(tmp_path: Path) -> None:
+    src = _plant(
+        tmp_path,
+        {
+            "core/eventbus/x.py": "from reporails_cli.core.mapper import m\n",
+            "core/eventbus/y.py": "from reporails_cli.core.cache import c\n",
+            "core/mapper/m.py": "",
+            "core/cache/c.py": "",
+        },
+    )
+    found = ig.layer_violations(src)
+    assert len(found) == 1
+    assert found[0].startswith("core.eventbus.x → core.mapper")
 
 
 def test_core_subsystems_have_no_package_cycle() -> None:
