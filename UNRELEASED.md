@@ -30,3 +30,4 @@
 - `AILS_STAGE_TIMING=1` also prints the time of heal and of each MCP tool call.
 - The torch import blocker is removed; nothing the cli installs imports torch.
 - Tests: architecture checks guard the package boundaries, replacing two narrower checks they cover, and `poe hexagon` renders the package dependency view.
+- Groundwork for a local session x-ray page: a Claude Code session's transcript is read for its token counts, turn ends, subagent runs and instruction-file loads; no command output changes yet.

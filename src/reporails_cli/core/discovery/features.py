@@ -13,7 +13,7 @@ from pathlib import Path
 from reporails_cli.core.discovery.agent_config import extract_patterns, extract_properties, load_config_file_types
 from reporails_cli.core.discovery.agent_discovery import (
     MEMORY_SURFACES,
-    claude_project_folder_name,
+    claude_project_dir,
     glob_file_type_patterns,
 )
 from reporails_cli.core.discovery.agents import (
@@ -324,7 +324,7 @@ def _agent_nested_instruction_files(target: Path, agent_id: str, scan: _SurfaceS
 
 def _detect_auto_memory(target: Path) -> bool:
     """True when the user-scope auto-memory dir for this project exists."""
-    auto_memory_root = Path.home() / ".claude" / "projects" / claude_project_folder_name(target) / "memory"
+    auto_memory_root = claude_project_dir(target) / "memory"
     if not auto_memory_root.exists():
         return False
     try:

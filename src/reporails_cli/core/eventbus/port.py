@@ -28,6 +28,20 @@ class EventAdapter(Protocol):  # pylint: disable=too-few-public-methods  # a por
         """The records one payload carries; raises `PayloadRefused` on a shape it does not know."""
 
 
+class TranscriptAdapter(Protocol):
+    """What an agent's transcript adapter offers: its name and the records one transcript row carries."""
+
+    agent: str
+
+    def resolve_row(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
+        """The records one row carries (none for a row type it does not read); raises `PayloadRefused`
+        on a row of a known type whose fields do not have the shape it is pinned to."""
+
+    def resolve_subagent(self, subagent_id: str, meta: JsonObject, first_row: JsonObject) -> EventRecord:
+        """The `subagent_run` record of one subagent file, from its meta file and its first row; raises
+        `PayloadRefused` when either lacks a field it is pinned to."""
+
+
 class EventSubscriber(Protocol):  # pylint: disable=too-few-public-methods  # a port of one method
     """A consumer of event records: called once per record."""
 
@@ -36,6 +50,7 @@ class EventSubscriber(Protocol):  # pylint: disable=too-few-public-methods  # a 
 
 
 ADAPTERS: dict[str, EventAdapter] = {}
+TRANSCRIPT_ADAPTERS: dict[str, TranscriptAdapter] = {}
 # The store's `append` is the default subscriber.
 SUBSCRIBERS: list[EventSubscriber] = [append]
 
@@ -48,6 +63,16 @@ def register(adapter: EventAdapter) -> None:
 def get_adapter(agent: str) -> EventAdapter | None:
     """The adapter registered for `agent`, or None."""
     return ADAPTERS.get(agent)
+
+
+def register_transcript(adapter: TranscriptAdapter) -> None:
+    """Make `adapter` the transcript reader for its agent name."""
+    TRANSCRIPT_ADAPTERS[adapter.agent] = adapter
+
+
+def get_transcript_adapter(agent: str) -> TranscriptAdapter | None:
+    """The transcript adapter registered for `agent`, or None."""
+    return TRANSCRIPT_ADAPTERS.get(agent)
 
 
 def subscribe(subscriber: EventSubscriber) -> None:
