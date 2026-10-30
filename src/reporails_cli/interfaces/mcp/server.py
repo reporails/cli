@@ -456,7 +456,7 @@ def _text_result(text: str) -> CallToolResult:
 async def validate(path: str = ".", full: bool = False, targets: list[str] | None = None) -> CallToolResult:
     """Validate instruction files; see the tool description for the response shape."""
     touch_activity()
-    with get_stage_timer().stage("mcp validate"):
+    with get_stage_timer().run("mcp validate"):
         payload = await _run_validate(path, bool(full), targets)
         if not has_text_view(payload, full=bool(full)):
             return _result(payload)
@@ -477,7 +477,7 @@ async def validate(path: str = ".", full: bool = False, targets: list[str] | Non
 async def prepare(path: str = ".", targets: list[str] | None = None) -> CallToolResult:
     """Map the files `validate` would check; see the tool description."""
     touch_activity()
-    with get_stage_timer().stage("mcp prepare"):
+    with get_stage_timer().run("mcp prepare"):
         try:
             return _result(await asyncio.to_thread(prepare_for_path, path, targets))
         except ConfigUnreadableError as exc:
@@ -507,7 +507,7 @@ async def remedy_brief(
 ) -> CallToolResult:
     """Return the rewrite brief for one workflow location; see the tool description."""
     touch_activity()
-    with get_stage_timer().stage("mcp remedy_brief"):
+    with get_stage_timer().run("mcp remedy_brief"):
         return _result(await asyncio.to_thread(_serve_remedy_brief, path, int(location), targets, bool(has_guide)))
 
 
@@ -526,7 +526,7 @@ async def remedy_brief(
 async def heal_apply(path: str = ".", targets: list[str] | None = None) -> CallToolResult:
     """Apply the project's deterministic fixes; see the tool description."""
     touch_activity()
-    with get_stage_timer().stage("mcp heal_apply"):
+    with get_stage_timer().run("mcp heal_apply"):
         return _text_result(await _run_heal_apply(path, targets))
 
 
@@ -546,7 +546,7 @@ async def heal_apply(path: str = ".", targets: list[str] | None = None) -> CallT
 async def preflight(capability: str, agent: str = "") -> CallToolResult:
     """Return workflow-ordered rules for authoring a file of `capability`."""
     touch_activity()
-    with get_stage_timer().stage("mcp preflight"):
+    with get_stage_timer().run("mcp preflight"):
         try:
             return _result(preflight_tool(capability, agent))
         except ConfigUnreadableError as exc:
@@ -569,7 +569,7 @@ async def explain(rule_id: str) -> str:
     Text-only by design: no structured output mirror. The unknown-rule error is a JSON string.
     """
     touch_activity()
-    with get_stage_timer().stage("mcp explain"):
+    with get_stage_timer().run("mcp explain"):
         try:
             result = explain_tool(rule_id)
         except ConfigUnreadableError as exc:

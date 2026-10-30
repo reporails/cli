@@ -190,7 +190,7 @@ def _handle_connection(
         with contextlib.suppress(OSError):
             conn.sendall(compact_json({"type": "progress", "msg": msg}).encode() + b"\n")
 
-    with get_stage_timer().stage(f"daemon {as_str(request.get('cmd', ''))}"):
+    with get_stage_timer().run(f"daemon {as_str(request.get('cmd', ''))}"):
         response = _dispatch(request, models, warmup_done, _send_progress)
     conn.sendall(compact_json(response).encode() + b"\n")
 

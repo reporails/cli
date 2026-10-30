@@ -7,6 +7,7 @@ import sys
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 
+from reporails_cli.core.platform.config.bootstrap import env_flag
 from reporails_cli.core.platform.observability import stage_timer
 
 _PACKAGE_LOGGER = "reporails_cli"
@@ -28,14 +29,12 @@ def configure_logging() -> None:
     """Send the package's log records to stderr as bare messages, once per process.
 
     When the root logger already has a handler, records reach it and no second one is added.
-    Resets the stage timer; when stage timing is on, its records print at INFO.
+    When `AILS_STAGE_TIMING` is on, stage timing records print at INFO.
     """
     package_logger = logging.getLogger(_PACKAGE_LOGGER)
     if not logging.getLogger().handlers and not any(isinstance(h, _StderrHandler) for h in package_logger.handlers):
         package_logger.addHandler(_StderrHandler())
-    timer = stage_timer.get_stage_timer()
-    timer.reset()
-    if timer.enabled:
+    if env_flag("AILS_STAGE_TIMING"):
         logging.getLogger(stage_timer.__name__).setLevel(logging.INFO)
 
 

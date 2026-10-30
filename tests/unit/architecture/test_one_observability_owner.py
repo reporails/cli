@@ -22,6 +22,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit.architecture._module_aliases import module_names
+
 pytestmark = pytest.mark.architecture
 
 ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -41,17 +43,6 @@ class Violation:
     detail: str
 
 
-def _module_names(tree: ast.Module, module: str) -> set[str]:
-    """The local names a module is bound to: `import x`, `import x as y`."""
-    return {
-        alias.asname or module
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-        if alias.name == module
-    }
-
-
 def _outside_owner(sources: list[Path], root: Path) -> list[tuple[str, ast.Module]]:
     out = []
     for py in sources:
@@ -66,7 +57,7 @@ def logging_config_violations(sources: list[Path], root: Path) -> list[Violation
     """O1: logging configured outside the observability folder."""
     out: list[Violation] = []
     for rel, tree in _outside_owner(sources, root):
-        logging_names = _module_names(tree, "logging")
+        logging_names = module_names(tree, "logging")
         called = {id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -97,7 +88,7 @@ def hand_timing_violations(sources: list[Path], root: Path) -> list[Violation]:
     """O2: a wall or CPU clock read outside the observability folder."""
     out: list[Violation] = []
     for rel, tree in _outside_owner(sources, root):
-        time_names = _module_names(tree, "time")
+        time_names = module_names(tree, "time")
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module == "time":
                 out.extend(
@@ -156,6 +147,7 @@ def _plant(tmp_path: Path, files: dict[str, str]) -> list[Path]:
         ("from logging import basicConfig\n", "mod.py:1 imports logging.basicConfig"),
         ("import logging.config\n", "mod.py:1 imports logging.config"),
         ("from logging.config import dictConfig\n", "mod.py:1 imports from logging.config"),
+        ("import logging.handlers\nlogging.basicConfig(level=10)\n", "mod.py:2 uses logging.basicConfig"),
         ("import logging\nlogging.getLogger('x').setLevel(10)\n", "mod.py:2 calls .setLevel("),
         ("def f(log, h):\n    log.addHandler(h)\n", "mod.py:2 calls .addHandler("),
         ("def f(log, h):\n    log.removeHandler(h)\n", "mod.py:2 calls .removeHandler("),
@@ -186,6 +178,7 @@ def test_o1_owner_and_plain_logging_are_quiet(tmp_path: Path, name: str, body: s
         ("import time\nt = time.perf_counter()\n", "mod.py:2 uses time.perf_counter"),
         ("import time as t\nx = t.perf_counter_ns()\n", "mod.py:2 uses time.perf_counter_ns"),
         ("import time\nx = time.process_time()\n", "mod.py:2 uses time.process_time"),
+        ("import time.zone\nx = time.perf_counter()\n", "mod.py:2 uses time.perf_counter"),
         ("from time import perf_counter\n", "mod.py:1 imports time.perf_counter"),
     ],
 )

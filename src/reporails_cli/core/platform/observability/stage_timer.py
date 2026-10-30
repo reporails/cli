@@ -94,6 +94,17 @@ class StageTimer:
             self.records.append(StageRecord(label, ms))
             logger.info("%s %.1f ms", label, ms)
 
+    @contextmanager
+    def run(self, label: str) -> Iterator[None]:
+        """Start a fresh timeline, then time the block like `stage(label)`.
+
+        For long-lived processes: each call drops the previous run's records and
+        measures marks from its own start, not from the idle time before it.
+        """
+        self.reset()
+        with self.stage(label):
+            yield
+
     def as_dict(self) -> list[JsonValue]:
         """Stage records as `[{stage, ms}, ...]` for JSON emission."""
         return [{"stage": r.stage, "ms": round(r.ms, 1)} for r in self.records]

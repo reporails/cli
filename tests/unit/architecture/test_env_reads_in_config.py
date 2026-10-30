@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.unit.architecture._os_aliases import os_names
+from tests.unit.architecture._module_aliases import module_names
 
 pytestmark = pytest.mark.architecture
 
@@ -72,7 +72,7 @@ def env_read_violations(sources: list[Path], root: Path) -> list[Violation]:
             continue
         tree = ast.parse(py.read_text(encoding="utf-8"))
         parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
-        modules = os_names(tree)
+        modules = module_names(tree, "os")
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module == "os":
                 out.extend(

@@ -14,9 +14,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src" / "reporails_cli"
 
+
+def core_subsystems(src: Path = SRC) -> set[str]:
+    """The `core/` subfolders other than `platform/`: the subsystems."""
+    core = src / "core"
+    if not core.is_dir():
+        return set()
+    return {p.name for p in core.iterdir() if p.is_dir() and p.name not in {"platform", "__pycache__"}}
+
+
 PURE = ["contract", "dto", "policy"]
 INFRA = ["adapters", "runtime", "config", "observability", "utils"]
-SUBSYSTEMS = ["pipeline", "lint", "mapper", "classify", "heal", "discovery", "cache", "install"]
+SUBSYSTEMS = sorted(core_subsystems())
 OUTER = ["cli", "mcp", "formatters"]
 
 # Ring 0 is the pure core, 1 the infrastructure layers, 2 the subsystems, 3 the delivery layers.
@@ -79,10 +88,17 @@ def resolve(mod: str, is_pkg: bool, node: ast.ImportFrom, known: set[str]) -> li
     return out
 
 
+def _is_type_checking(test: ast.expr) -> bool:
+    """Whether an `if` test is exactly `TYPE_CHECKING` or `<module>.TYPE_CHECKING`."""
+    if isinstance(test, ast.Name):
+        return test.id == "TYPE_CHECKING"
+    return isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+
+
 def type_checking_lines(tree: ast.Module) -> set[int]:
     lines: set[int] = set()
     for n in ast.walk(tree):
-        if isinstance(n, ast.If) and "TYPE_CHECKING" in ast.unparse(n.test):
+        if isinstance(n, ast.If) and _is_type_checking(n.test):
             for c in n.body:
                 lines.update(range(c.lineno, (c.end_lineno or c.lineno) + 1))
     return lines
@@ -135,6 +151,13 @@ class Import:
     name: str
     dst_node: str
     runtime: bool
+
+    @property
+    def private(self) -> bool:
+        """Whether it reaches a `_private` module or name of another package."""
+        return self.dst_node != self.src_node and (
+            is_private(self.target.split(".")[-1]) or bool(self.name and is_private(self.name))
+        )
 
     @property
     def text(self) -> str:
@@ -200,56 +223,65 @@ def _in_platform_layer(mod: str) -> bool:
     return len(parts) >= 4 and parts[1:3] == ["core", "platform"]
 
 
+def layer_row_allows(src: str, dst: str) -> bool:
+    """Whether platform layer `src` may import node `dst` (a node with no row is unconstrained)."""
+    return src not in ALLOWED or dst == src or dst in ALLOWED[src]
+
+
+def layer_violation_imports(graph: Graph) -> list[Import]:
+    """Platform-layer imports of a node outside their layer's row (type-checking imports count)."""
+    return [
+        imp
+        for imp in graph.imports
+        if _in_platform_layer(imp.src_mod)
+        and imp.src_node in ALLOWED
+        and not layer_row_allows(imp.src_node, imp.dst_node)
+    ]
+
+
 def layer_violations(src: Path = SRC) -> list[str]:
-    """Platform-layer modules importing a node outside their row (type-checking imports count)."""
+    """Platform-layer modules importing a node outside their row, as report lines."""
     return sorted(
-        {
-            f"{imp.text}  [{imp.src_node} may not import {imp.dst_node}]"
-            for imp in build_graph(src).imports
-            if _in_platform_layer(imp.src_mod)
-            and imp.src_node in ALLOWED
-            and imp.dst_node != imp.src_node
-            and imp.dst_node not in ALLOWED[imp.src_node]
-        }
+        {f"{i.text}  [{i.src_node} may not import {i.dst_node}]" for i in layer_violation_imports(build_graph(src))}
     )
 
 
-def cycle_components(graph: Graph, nodes: set[str] | None = None) -> list[list[str]]:
-    """Package cycles over runtime imports (type-checking-only imports excluded)."""
+@dataclass(frozen=True)
+class Cycle:
+    """A package cycle: its nodes and the runtime imports between them."""
+
+    nodes: list[str]
+    imports: list[Import]
+
+
+def cycles(graph: Graph, nodes: set[str] | None = None) -> list[Cycle]:
+    """Package cycles over runtime imports (type-checking-only imports excluded), within `nodes` when given."""
     adj: dict[str, set[str]] = defaultdict(set)
-    for (s, d), imps in graph.edges().items():
+    edges = graph.edges()
+    for (s, d), imps in edges.items():
         if nodes is not None and not (s in nodes and d in nodes):
             continue
         if any(i.runtime for i in imps):
             adj[s].add(d)
-    return sccs(adj)
-
-
-def core_subsystems(src: Path = SRC) -> set[str]:
-    core = src / "core"
-    if not core.is_dir():
-        return set()
-    return {p.name for p in core.iterdir() if p.is_dir() and p.name not in {"platform", "__pycache__"}}
+    return [
+        Cycle(comp, [i for (s, d), imps in sorted(edges.items()) if s in comp and d in comp for i in imps if i.runtime])
+        for comp in sccs(adj)
+    ]
 
 
 def subsystem_cycles(src: Path = SRC) -> list[str]:
     """One message per cycle among `core/` subsystems, listing the runtime imports that close it."""
-    graph = build_graph(src)
-    edges = graph.edges()
-    out = []
-    for comp in cycle_components(graph, core_subsystems(src)):
-        lines = sorted({i.text for (s, d), imps in edges.items() if s in comp and d in comp for i in imps if i.runtime})
-        out.append(" ⇄ ".join(comp) + ": " + "; ".join(lines))
-    return out
+    return [
+        " ⇄ ".join(c.nodes) + ": " + "; ".join(sorted({i.text for i in c.imports}))
+        for c in cycles(build_graph(src), core_subsystems(src))
+    ]
+
+
+def private_imports(graph: Graph) -> list[Import]:
+    """Cross-node imports of a `_private` module or name (same-node private imports are fine)."""
+    return [imp for imp in graph.imports if imp.private]
 
 
 def private_reaches(src: Path = SRC) -> list[str]:
-    """Cross-node imports of a `_private` module or name (same-node private imports are fine)."""
-    return sorted(
-        {
-            imp.text
-            for imp in build_graph(src).imports
-            if imp.dst_node != imp.src_node
-            and (is_private(imp.target.split(".")[-1]) or (imp.name and is_private(imp.name)))
-        }
-    )
+    """`private_imports` as report lines."""
+    return sorted({imp.text for imp in private_imports(build_graph(src))})

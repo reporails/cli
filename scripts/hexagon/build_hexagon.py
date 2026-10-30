@@ -25,9 +25,9 @@ PURPOSE = {
     "dto": "Pure data shapes, framework-agnostic.",
     "policy": "Pure decision functions returning DTOs.",
     "adapters": "Boundary translation between the pure core and wired state: HTTP client, wire payload, rule registry.",
-    "runtime": "Orchestration helpers: the result merger, the torch blocker.",
+    "runtime": "The result merger.",
     "config": "Env loading, path conventions, project and global config, the capability matrix.",
-    "observability": "Structured logging and the per-stage timer.",
+    "observability": "The logging setup every entry point calls, logger levels and run timing.",
     "utils": "Cross-cutting helpers shared across the substrate, including the hook-config walk.",
     "cli": "The `ails` command line: Typer app, commands, the one process runner.",
     "mcp": "The MCP server the coding agents call: tools and their handlers.",
@@ -46,15 +46,12 @@ def docstring_line(path: Path) -> str:
 def main() -> None:
     graph = ig.build_graph()
     private: dict[tuple[str, str], list[str]] = defaultdict(list)
-    for imp in graph.imports:
-        if imp.dst_node != imp.src_node and (
-            ig.is_private(imp.target.split(".")[-1]) or (imp.name and ig.is_private(imp.name))
-        ):
-            private[(imp.src_node, imp.dst_node)].append(imp.text)
+    for imp in ig.private_imports(graph):
+        private[(imp.src_node, imp.dst_node)].append(imp.text)
 
     def verdict(src: str, dst: str) -> tuple[str, str]:
         if src in ig.ALLOWED:
-            if dst in ig.ALLOWED[src]:
+            if ig.layer_row_allows(src, dst):
                 return "ok", ""
             return "violation", "fenced by test_layer_rules"
         if ig.RING[dst] > ig.RING[src]:
@@ -134,15 +131,13 @@ def analyse(
             }
         )
 
-    graph: dict[str, set[str]] = defaultdict(set)
-    for e in edge_list:
-        if any("(type-checking only)" not in p for p in e["pairs"]):
-            graph[e["s"]].add(e["d"])
-    for comp in ig.sccs(graph):
-        cyc = [[s, d] for (s, d) in by_pair if s in comp and d in comp and d in graph[s]]
-        ev = []
-        for s, d in cyc:
-            ev += [f"{s} → {d}: {p}" for p in by_pair[(s, d)]["pairs"][:3]]
+    for cycle in ig.cycles(src_graph):
+        comp = cycle.nodes
+        by_edge: dict[tuple[str, str], list[str]] = defaultdict(list)
+        for imp in cycle.imports:
+            by_edge[(imp.src_node, imp.dst_node)].append(imp.text)
+        cyc = [[s, d] for s, d in sorted(by_edge)]
+        ev = [f"{s} → {d}: {t}" for (s, d), texts in sorted(by_edge.items()) for t in sorted(set(texts))[:3]]
         findings.append(
             {
                 "severity": "serious",

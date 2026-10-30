@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.unit.architecture._os_aliases import os_names
+from tests.unit.architecture._module_aliases import module_names
 
 pytestmark = pytest.mark.architecture
 
@@ -75,7 +75,7 @@ def stray_process_violations(sources: list[Path], root: Path) -> list[Violation]
     for py in sources:
         rel = py.relative_to(root).as_posix()
         tree = ast.parse(py.read_text(encoding="utf-8"))
-        modules = os_names(tree)
+        modules = module_names(tree, "os")
         asyncio_names = _asyncio_names(tree)
         from_os = {
             alias.asname or alias.name: alias.name

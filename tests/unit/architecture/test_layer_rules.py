@@ -114,3 +114,29 @@ def test_private_arm_fires_across_packages_not_within_one(tmp_path: Path) -> Non
     assert any(f.startswith("core.bb.reach") for f in found)
     assert any(f.startswith("core.cc.name") for f in found)
     assert not any(f.startswith("core.aa.same") for f in found)
+
+
+def test_cycle_arm_counts_the_runtime_body_of_a_negated_type_checking_test(tmp_path: Path) -> None:
+    src = _plant(
+        tmp_path,
+        {
+            "core/lint/a.py": (
+                "from typing import TYPE_CHECKING\nif not TYPE_CHECKING:\n    from reporails_cli.core.heal import x\n"
+            ),
+            "core/heal/__init__.py": "from reporails_cli.core.lint import a\n",
+            "core/heal/x.py": "",
+        },
+    )
+    found = ig.subsystem_cycles(src)
+    assert len(found) == 1 and found[0].startswith("heal ⇄ lint")
+
+
+def test_cycle_arm_ignores_an_attribute_type_checking_block(tmp_path: Path) -> None:
+    src = _plant(
+        tmp_path,
+        {
+            "core/aa/m.py": "from reporails_cli.core.bb import n\n",
+            "core/bb/n.py": "import typing\nif typing.TYPE_CHECKING:\n    from reporails_cli.core.aa import m\n",
+        },
+    )
+    assert ig.subsystem_cycles(src) == []

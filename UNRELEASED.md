@@ -24,7 +24,7 @@
 - Tests: the unit tests for the per-source finding counts are removed; the total-equals-sum property covers them.
 - CI runs the behavioral scenarios on every pull request, not only in the release gate.
 - Tests: a skipped api-backed scenario leaves no temp directory behind, and the mutation probe's `--timeout` applies to a pytest target too.
-- The map caches live with the mapper and path tagging with discovery, so the cache, discovery, mapper and classify packages no longer import each other in a loop.
-- The unformatted-code check owns which tokens it reports, so the lint package no longer imports heal; the rule-loading and file-property matching helpers other packages call are public.
-- Tests: an architecture floor fails on a platform-layer import outside its layer row, a package cycle among the core packages and a cross-package import of a private name; `poe hexagon` regenerates the import-graph view.
-- One logging setup and one stage timer serve `ails`, the MCP server and the mapper daemon (`AILS_STAGE_TIMING=1` also times heal, each MCP tool call and each daemon request), and warnings with their tracebacks still print to stderr as before; the torch import blocker is removed.
+- Internal restructuring of the package boundaries; command output is unchanged.
+- `AILS_STAGE_TIMING=1` also prints the time of heal and of each MCP tool call.
+- The torch import blocker is removed; nothing the cli installs imports torch.
+- Tests: architecture checks guard the package boundaries, and `poe hexagon` renders the package dependency view.
