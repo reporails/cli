@@ -6,7 +6,15 @@ Feature: Agent hook events are recorded and read back through the real binary
     When every payload is piped into "ails hook --agent claude" in order
     Then every hook call exited 0 with nothing on stdout
     And "ails events" returns the session's records in order with the right kinds and tool-use ids
-    And "ails events --after 10" returns the last 5 records and "next" is 15
+
+  @e2e
+  Scenario: A resumed read returns only the records appended since the last read
+    Given the recorded Claude Code session payloads
+    When the first 10 payloads are piped into "ails hook --agent claude" in order
+    And "ails events" is run and the "next" it printed is kept
+    And the remaining payloads are piped into "ails hook --agent claude" in order
+    Then "ails events --after" the kept "next" returns only the last 5 records
+    And the "next" it printed is the byte size of the session's log
 
   @e2e
   Scenario: Garbage on stdin never fails the hook and is recorded as a refusal

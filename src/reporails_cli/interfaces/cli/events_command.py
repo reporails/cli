@@ -11,10 +11,10 @@ from reporails_cli.interfaces.cli.typer_app import app
 @app.command("events", hidden=True)
 def events_command(
     session: str = typer.Option(..., "--session", "-s", help="Session id"),
-    after: int = typer.Option(0, "--after", min=0, help="Skip this many records; pass the printed `next` to continue"),
+    after: int = typer.Option(0, "--after", min=0, help="Read from this byte offset; pass the printed `next` to continue"),
     output_format: str = typer.Option("json", "--format", "-f", help="Output format (json)"),
 ) -> None:
-    """Print, as one JSON object, the records of SESSION after the first AFTER, in order."""
+    """Print, as one JSON object, the records of SESSION appended after byte offset AFTER, in order."""
     from reporails_cli.core.eventbus.query import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         read_events,
     )

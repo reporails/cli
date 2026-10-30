@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.eventbus import store
 from reporails_cli.core.eventbus.dispatcher import record_payload
 from reporails_cli.core.eventbus.query import read_events
 
@@ -74,7 +75,7 @@ def test_recording_and_reading_need_no_network(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(socket, "create_connection", refuse)
     record_payload("claude", ROWS[0])
     records, nxt = read_events(SESSION, 0)
-    assert [r.event for r in records] == ["session_start"] and nxt == 1
+    assert [r.event for r in records] == ["session_start"] and nxt == store.events_path(SESSION).stat().st_size
 
 
 def test_stage_timing_names_each_recorded_event_on_stderr_and_stdout_stays_empty(tmp_path: Path) -> None:

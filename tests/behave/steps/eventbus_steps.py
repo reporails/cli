@@ -47,6 +47,10 @@ def _events(context, session: str, *args: str) -> dict:
     return json.loads(result.stdout)
 
 
+def _log_size(context) -> int:
+    return (context.home / ".reporails" / "xray" / f"{context.session}.events.jsonl").stat().st_size
+
+
 @given("the recorded Claude Code session payloads")
 def step_payloads(context):
     context.payloads = FIXTURE.read_text(encoding="utf-8").splitlines()
@@ -85,18 +89,39 @@ def step_events_all(context):
     body = _events(context, context.session)
     sent = [json.loads(line) for line in context.payloads]
     got = body["records"]
-    assert body["next"] == 15 and len(got) == 15, body["next"]
+    assert len(got) == 15 and body["next"] == _log_size(context), body["next"]
     assert [r["event"] for r in got] == [KINDS[p["hook_event_name"]] for p in sent]
     assert [r["tool_use_id"] for r in got] == [p.get("tool_use_id") for p in sent]
     assert all(r["session_id"] == context.session for r in got)
 
 
-@then('"ails events --after 10" returns the last 5 records and "next" is 15')
+@when('the first 10 payloads are piped into "ails hook --agent claude" in order')
+def step_pipe_first(context):
+    context.hook_runs = [_hook(context, line, "--agent", "claude") for line in context.payloads[:10]]
+
+
+@when('"ails events" is run and the "next" it printed is kept')
+def step_keep_next(context):
+    body = _events(context, context.session)
+    assert len(body["records"]) == 10, body["records"]
+    context.kept_next = body["next"]
+
+
+@when('the remaining payloads are piped into "ails hook --agent claude" in order')
+def step_pipe_rest(context):
+    context.hook_runs += [_hook(context, line, "--agent", "claude") for line in context.payloads[10:]]
+
+
+@then('"ails events --after" the kept "next" returns only the last 5 records')
 def step_events_after(context):
-    all_records = _events(context, context.session)["records"]
-    body = _events(context, context.session, "--after", "10")
-    assert body["records"] == all_records[10:] and len(body["records"]) == 5
-    assert body["next"] == 15
+    context.resumed = _events(context, context.session, "--after", str(context.kept_next))
+    sent = [json.loads(line) for line in context.payloads[10:]]
+    assert [r["event"] for r in context.resumed["records"]] == [KINDS[p["hook_event_name"]] for p in sent]
+
+
+@then('the "next" it printed is the byte size of the session\'s log')
+def step_next_is_size(context):
+    assert context.resumed["next"] == _log_size(context), context.resumed["next"]
 
 
 @then('"ails events" for the session "{session}" shows a refusal record')

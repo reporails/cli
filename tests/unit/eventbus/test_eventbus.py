@@ -74,11 +74,13 @@ def test_the_whole_session_reads_back_in_order_and_resumes_from_an_offset() -> N
         record_payload("claude", row)
     records, nxt = read_events(SESSION, 0)
     assert [r.event for r in records] == [e[0] for e in EXPECTED]
-    assert nxt == 15
-    tail, nxt2 = read_events(SESSION, 13)
+    size = store.events_path(SESSION).stat().st_size
+    assert nxt == size
+    thirteenth = sum(len(line) + 1 for line in store.events_path(SESSION).read_bytes().split(b"\n")[:13])
+    tail, nxt2 = read_events(SESSION, thirteenth)
     assert [r.event for r in tail] == ["post_compact", "session_end"]
-    assert nxt2 == 15
-    assert read_events(SESSION, 15) == ([], 15)
+    assert nxt2 == size
+    assert read_events(SESSION, size) == ([], size)
 
 
 def store_record() -> JsonObject:
@@ -91,10 +93,11 @@ def test_a_torn_last_line_is_skipped() -> None:
     with store.events_path(SESSION).open("ab") as fh:
         fh.write(json.dumps(store_record()).encode())
     records, nxt = read_events(SESSION, 0)
-    assert len(records) == 3 and nxt == 3
+    assert len(records) == 3
+    assert nxt == store.events_path(SESSION).read_bytes().rfind(b"\n") + 1
     with store.events_path(SESSION).open("ab") as fh:
         fh.write(b"\n")
-    assert len(read_events(SESSION, 3)[0]) == 1
+    assert len(read_events(SESSION, nxt)[0]) == 1
 
 
 def test_no_content_leaks_into_the_log() -> None:
