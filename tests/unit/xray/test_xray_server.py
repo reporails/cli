@@ -8,6 +8,8 @@ import socket
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from starlette.testclient import TestClient
@@ -15,8 +17,11 @@ from starlette.testclient import TestClient
 from reporails_cli.core.heal.apply import HealOutcome
 from reporails_cli.core.heal.keyed import KeyedResult
 from reporails_cli.core.pipeline.check_one import Refusal
+from reporails_cli.core.pipeline.mapping import map_instruction_files
+from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.interfaces.cli import xray_server
+from tests.unit.test_mcp_heal_apply import DOC, _wire
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 
@@ -164,6 +169,55 @@ def test_heal_replies_with_the_receipt_or_the_reason_nothing_was_written(
     )
     reply = client.post("/heal", json={"path": "CLAUDE.md"}, headers=headers).json()
     assert reply["receipt"] == ["Applying fixes needs a Pro account."]
+
+
+def _real_heal(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Leave `heal_one` and the keyed write real; only the server-backed check returns a fixture run."""
+    path = project / "CLAUDE.md"
+    path.write_text(DOC)
+    m = map_instruction_files(project, [path], spawn_daemon=False)
+    wire = _wire(project, m, ((3, "unbold", "bold"), (7, "code", "format")))
+    reply = SimpleNamespace(workflow=deserialize_workflow({"workflow": wire}), tier="pro")
+    result = SimpleNamespace(reply=reply, offline=False)
+    run = SimpleNamespace(ruleset_map=m, result=result, funnel_error=None, scope=SimpleNamespace(scan_root=project))
+    monkeypatch.setattr("reporails_cli.core.heal.apply.check_path", lambda _path: run)
+
+
+@pytest.mark.requires_model
+def test_heal_button_writes_every_fix_through_the_real_heal(
+    client: TestClient, project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _real_heal(project, monkeypatch)
+    headers = {"X-Xray-Token": TOKEN, "Origin": ORIGIN}
+    reply = client.post("/heal", json={"path": "CLAUDE.md"}, headers=headers).json()
+    assert reply["receipt"] == [
+        "heal_apply: 2 fixed \u00b7 0 left for a decision \u00b7 0 put back",
+        "CLAUDE.md  2 fixed",
+    ]
+    body = (project / "CLAUDE.md").read_text()
+    assert "*linter*" in body and "`build.sh`" in body and body != DOC
+
+
+@pytest.mark.requires_model
+def test_heal_button_puts_back_a_file_that_departs(
+    client: TestClient, project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import reporails_cli.core.heal.keyed as keyed
+
+    original_apply = keyed.apply_edits
+
+    def touching_neighbour(lines: Any, edits: Any) -> Any:
+        body, where = original_apply(lines, edits)
+        body[0] += " extra"
+        return body, where
+
+    monkeypatch.setattr(keyed, "apply_edits", touching_neighbour)
+    _real_heal(project, monkeypatch)
+    headers = {"X-Xray-Token": TOKEN, "Origin": ORIGIN}
+    reply = client.post("/heal", json={"path": "CLAUDE.md"}, headers=headers).json()
+    assert reply["receipt"][0] == "heal_apply: 0 fixed \u00b7 0 left for a decision \u00b7 1 put back"
+    assert "put back: CLAUDE.md (outside  line 1)" in reply["receipt"]
+    assert (project / "CLAUDE.md").read_bytes() == DOC.encode()
 
 
 def test_view_carries_the_contract_keys_and_answers_the_same_version_with_304(client: TestClient) -> None:
