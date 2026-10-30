@@ -360,4 +360,5 @@ markers = [
     "subsys_gates",
     "subsys_cli_ux",
     "subsys_eventbus",
+    "subsys_xray",
 ]

@@ -14,7 +14,7 @@ from reporails_cli.core.platform.dto.events import EventKind, EventRecord, ToolU
 from reporails_cli.core.platform.dto.xray import XrayLoad, XrayView
 from reporails_cli.core.xray.session import XraySession
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "eventbus" / "transcript"
 SESSION = "session"

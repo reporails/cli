@@ -22,7 +22,7 @@
 
 ### Internal
 
-- The session x-ray page's files ship in the package, with the Geist fonts under the SIL Open Font License.
+- The `ails xray` page bundles the Geist and Geist Mono fonts (SIL Open Font License), so it loads no web fonts.
 - Release and CI builds install from the lock file with a fixed `uv` version, a fixed `hatchling` version and commit-pinned GitHub actions.
 - Tests: a property suite runs the real `ails` and the MCP server over a fixture set in text, JSON, `github` and MCP, and checks on every run that a disabled rule appears in no output, the total equals m_probe + client + server, every format carries one finding set, and the exit code matches the findings; the mutation probe accepts an upper-tier killing command.
 - Tests: the unit tests for the per-source finding counts are removed; the total-equals-sum property covers them.
@@ -32,6 +32,4 @@
 - `AILS_STAGE_TIMING=1` also prints the time of heal and of each MCP tool call.
 - The torch import blocker is removed; nothing the cli installs imports torch.
 - Tests: architecture checks guard the package boundaries, replacing two narrower checks they cover, and `poe hexagon` renders the package dependency view.
-- Groundwork for a local session x-ray page: a Claude Code session's transcript is read for its token counts, turn ends, subagent runs and instruction-file loads; no command output changes yet.
 - Checking or fixing one file runs through one shared path for every interface; MCP replies are unchanged, and an architecture check stops one interface importing another.
-- Groundwork for a local session x-ray page: a Claude Code session's transcript is read for its token counts, turn ends, subagent runs and instruction-file loads; no command output changes yet; a session's records are shaped into the loads, turns, subagents and files the page will draw, in fewer, smaller records.

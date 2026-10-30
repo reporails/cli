@@ -18,7 +18,7 @@ from reporails_cli.core.pipeline.check_one import Refusal
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.interfaces.cli import xray_server
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "eventbus" / "transcript" / "2.1.308"
 TOKEN = "launch-token"
