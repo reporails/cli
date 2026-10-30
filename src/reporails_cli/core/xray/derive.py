@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.platform.dto.events import EventRecord, TokenUsage
 from reporails_cli.core.platform.dto.xray import (
     LOAD_KIND_OF_MEMORY_TYPE,
@@ -34,6 +35,22 @@ def epoch(text: str) -> float | None:
 def context_of(usage: TokenUsage) -> int:
     """The context one reply carried: fresh input, cache writes and cache reads."""
     return usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens
+
+
+def shown_path(path: str, root: Path) -> str:
+    """A path as the page shows it: relative to the project root inside it, `~/…` under the home folder."""
+    target = Path(path)
+    for base, prefix in ((root, ""), (Path.home(), "~/")):
+        try:
+            return prefix + target.relative_to(base).as_posix()
+        except ValueError:
+            continue
+    return path
+
+
+def real_path(path: str, root: Path) -> str:
+    """The resolved path a shown or absolute path names, for comparing two names of one file."""
+    return str(safe_resolve(root / Path(path).expanduser()))
 
 
 def count_for(findings: Mapping[str, int], path: str, root: Path) -> int | None:
@@ -72,7 +89,7 @@ def loads_of(records: Sequence[EventRecord], frame: Frame) -> tuple[XrayLoad, ..
     """One load of each `instruction_load` record, sized from the file on disk."""
     return tuple(
         XrayLoad(
-            path=record.load.path,
+            path=shown_path(record.load.path, frame.root),
             kind=LOAD_KIND_OF_MEMORY_TYPE.get(record.load.memory_type or "", "other"),
             t=frame.at(record),
             tokens_est=_tokens_est(record.load.path),
@@ -234,7 +251,7 @@ def build_turns(
                 context=got.contexts[-1] if got.contexts else None,
                 replies=len(got.contexts),
                 loads=loads_of(got.loads, frame),
-                reads=tuple(got.reads) if bus else None,
+                reads=tuple(shown_path(path, frame.root) for path in got.reads) if bus else None,
                 subagents=tuple(got.runs),
                 compaction=_compaction(pre, bus or [], replies, frame.t0) if pre is not None else None,
             )

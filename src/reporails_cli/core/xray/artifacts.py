@@ -9,12 +9,11 @@ from pathlib import Path
 from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES, discover_ungated
 from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.discovery.features import detect_features_filesystem
-from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.pipeline.expected_loads import AGENT, expected_loads
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.contract.json_value import as_list, as_object, as_str
 from reporails_cli.core.platform.dto.xray import ArtifactKind, XrayArtifact, XrayLoad, XrayTurn
-from reporails_cli.core.xray.derive import count_for
+from reporails_cli.core.xray.derive import count_for, real_path, shown_path
 
 SKILL_ENTRY = "SKILL.md"
 
@@ -75,7 +74,7 @@ def _ordered(start: Sequence[XrayLoad], turns: Sequence[XrayTurn]) -> list[tuple
     return groups
 
 
-def in_context_turns(start: Sequence[XrayLoad], turns: Sequence[XrayTurn]) -> dict[str, list[int]]:
+def in_context_turns(start: Sequence[XrayLoad], turns: Sequence[XrayTurn], root: Path) -> dict[str, list[int]]:
     """For each resolved file path, the turn numbers it sat in context (0 = the session start).
 
     A loaded file stays in context until a compaction; after one it counts again only when a load
@@ -88,7 +87,7 @@ def in_context_turns(start: Sequence[XrayLoad], turns: Sequence[XrayTurn]) -> di
             if path is None:
                 present.clear()
                 continue
-            resolved = str(safe_resolve(Path(path)))
+            resolved = real_path(path, root)
             present.add(resolved)
             in_turn.add(resolved)
         for resolved in in_turn:
@@ -106,10 +105,10 @@ def build_artifacts(
     """The artifact list: `loaded` and `in_context` are keyed by resolved path."""
     out: list[XrayArtifact] = []
     for item in files:
-        resolved = str(safe_resolve(Path(item.path)))
+        resolved = real_path(item.path, root)
         out.append(
             XrayArtifact(
-                path=item.path,
+                path=shown_path(item.path, root),
                 kind=item.kind,
                 loaded=resolved in loaded,
                 turns=tuple(in_context.get(resolved, ())),

@@ -95,7 +95,7 @@ function renderArt() {
 
 /* ---------- map, refined ---------- */
 function renderMap() {
-  const n = ROWS.length, rowH = Math.max(9, Math.min(13, Math.floor(600 / n)));
+  const n = ROWS.length, rowH = Math.max(9, Math.min(40, Math.floor(520 / n)));
   const TOP = 46, loadX = 34, cx = 88, maxW = 190, lim = cx + maxW, stopX = lim + 14, LW = 52, lane0 = stopX + 22;
   const y = i => TOP + i * rowH + rowH / 2, H = TOP + n * rowH + 8;
   const wv = c => Math.min(1, (c || 0) / SCALE) * maxW, Rx = c => cx + wv(c);
@@ -114,7 +114,7 @@ function renderMap() {
   [...BR.filter(b => !b.stub), ...BR.filter(b => b.stub)].forEach(b => { let L = lanes.findIndex(l => l.stub === b.stub && fits(l, b.y0, b.y1)); if (L < 0) { L = lanes.length; lanes.push({ iv: [], stub: b.stub }); } lanes[L].iv.push([b.y0, b.y1]); b.L = L; });
   let acc = lane0; const LX = lanes.map(l => { const x = acc; acc += l.stub ? 18 : LW; return x; });
   const labX = acc + 4, W = labX + 262;
-  let s = `<svg class="map" id="map" viewBox="0 0 ${W} ${H}" style="height:${H}px">`;
+  let s = `<svg class="map" id="map" viewBox="0 0 ${W} __MAPH__" style="height:__MAPH__px">`;
   s += `<text class="colhead" x="24" y="13" text-anchor="end">turn</text><text class="colhead" x="${loadX - 2}" y="13">loaded</text><text class="colhead" x="${cx}" y="13">tokens in context</text><text class="colhead" x="${stopX}" y="13" text-anchor="middle">stop${nk('stop') ? '<title>Stop hook blocks: not known here</title>' : ''}</text>${nk('stop') ? `<text class="colhead nkh" x="${stopX}" y="23" text-anchor="middle" style="font-size:8px">n/k</text>` : ''}<text class="colhead" x="${lane0}" y="13">subagents, own window</text>`;
   [0, .25, .5, .75, 1].forEach(f => { const v = f * SCALE, x = Rx(v); s += `<text class="tick" x="${x}" y="33" text-anchor="middle">${v ? k1(v) : '0'}</text>`; if (f > 0 && f < 1) s += `<line class="gridv" x1="${x}" x2="${x}" y1="${TOP - 6}" y2="${H - 4}"/>`; });
   if (V.window) s += `<line class="lim" x1="${lim}" x2="${lim}" y1="${TOP - 6}" y2="${H - 4}"/>`;
@@ -164,7 +164,9 @@ function renderMap() {
     (nk('stop') ? '<span class="nk">Stop hook blocks: not known here</span>' : '') + '</div>';
   const head = `<div class="mh2"><b>Context window, turn by turn</b><span>${esc(V.project)} · ${esc(String(V.started_at || '').slice(0, 10))} · ${V.length_s != null ? dur(V.length_s) + ' · ' : ''}${ROWS.length - 1} turns · ${RUNS.length} subagents</span></div>`;
   const foot = '<div class="mfoot"><span>One row per turn, time runs down. Click a row or a subagent to open it.</span><span class="bm"><i><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 7h8M5 12h14M5 17h10"/></svg></i>reporails <span>x-ray</span></span></div>';
-  return { html: `<section class="card mapcard">${head}${s}${keys}${foot}</section>`, H, rowH, y, W, TOP };
+  const MH = Math.max(H, lastLab + 24);
+  s = s.replace(/__MAPH__/g, String(MH));
+  return { html: `<section class="card mapcard">${head}${s}${keys}${foot}</section>`, H: MH, rowH, y, W, TOP };
 }
 
 /* ---------- focus pane ---------- */
@@ -307,7 +309,7 @@ async function poll() {
   if (document.hidden || inflight) return;
   inflight = true;
   try {
-    const h = ETAG ? { 'If-None-Match': ETAG } : {};
+    const h = ETAG ? { 'X-Xray-Token': TOKEN, 'If-None-Match': ETAG } : { 'X-Xray-Token': TOKEN };
     const r = await fetch('view', { headers: h, cache: 'no-store' });
     if (r.status === 304) return;
     if (!r.ok) throw new Error(String(r.status));

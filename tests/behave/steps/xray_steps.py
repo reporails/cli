@@ -92,6 +92,23 @@ def step_view(context):
     assert len(json.loads(body)["turns"]) > 0
 
 
+@then("headless Chrome rendering the page shows the context window map, not a server error")
+def step_browser(context):
+    chrome = shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("chromium-browser")
+    if chrome is None:
+        context.scenario.skip("SKIPPED LOUDLY: no Chrome or Chromium on PATH, the page was not rendered")
+        return
+    dom = subprocess.run(
+        [chrome, "--headless=new", "--disable-gpu", "--virtual-time-budget=8000", "--dump-dom", context.url],
+        capture_output=True,
+        text=True,
+        timeout=90,
+        check=False,
+    ).stdout
+    assert "did not answer" not in dom, "the page could not read its session view"
+    assert "Context window, turn by turn" in dom, dom[:500]
+
+
 @then("the session view without the token is refused with 403")
 def step_no_token(context):
     assert _get(context.url + "view")[0] == 403

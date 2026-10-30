@@ -222,13 +222,13 @@ def test_artifacts_list_what_could_load_and_the_turns_it_sat_in_context(tmp_path
     by_path = {a.path: a for a in view.artifacts}
     kinds = {(Path(path).name, a.kind) for path, a in by_path.items()}
     assert {("SKILL.md", "skill"), ("helper.md", "agent"), ("settings.json", "hook")} <= kinds
-    main = by_path[str(root / "CLAUDE.md")]
+    main = by_path["CLAUDE.md"]
     # Loaded at the start and in context in turn 2, where the compaction ran, then gone in turn 3.
     assert main.loaded and main.turns == (0, 1, 2) and main.findings == 3
     assert view.start[0].findings == 3
-    skill = by_path[str(root / ".claude" / "skills" / "demo" / "SKILL.md")]
+    skill = by_path[".claude/skills/demo/SKILL.md"]
     assert not skill.loaded and skill.turns == ()
-    assert by_path[str(root / ".claude" / "agents" / "helper.md")].findings is None
+    assert by_path[".claude/agents/helper.md"].findings is None
 
 
 def test_a_loaded_file_stays_in_context_without_a_compaction(tmp_path: Path) -> None:
@@ -236,8 +236,8 @@ def test_a_loaded_file_stays_in_context_without_a_compaction(tmp_path: Path) -> 
     session = _session(tmp_path, "2.1.301", root)
     _append_turn(tmp_path, "2.1.301")
     artifacts = {a.path: a for a in _view(session).artifacts}
-    assert artifacts[str(root / "CLAUDE.md")].turns == (0, 1, 2, 3)
-    nested = artifacts[str(root / "sub" / "CLAUDE.md")]
+    assert artifacts["CLAUDE.md"].turns == (0, 1, 2, 3)
+    nested = artifacts["sub/CLAUDE.md"]
     assert nested.loaded and nested.turns == (1, 2, 3)
 
 
