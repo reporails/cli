@@ -37,7 +37,7 @@ from reporails_cli.core.pipeline.mapping import (
 from reporails_cli.core.platform.adapters.api_client import AilsClient
 from reporails_cli.core.platform.adapters.notices_seen import visible_notices
 from reporails_cli.core.platform.config.config import get_project_config, is_initialized
-from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResponse, LintResult, Notice
+from reporails_cli.core.platform.dto.diagnostics import FindingItem, FunnelError, LintResponse, LintResult, Notice
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path
@@ -70,6 +70,11 @@ class Refusal(NamedTuple):
     message: str = ""
     target: Path | None = None
     excluded: Excluded = ((), ())
+
+    @property
+    def text(self) -> str:
+        """The words for the refusal: its message, else its kind."""
+        return self.message or self.kind
 
 
 class LeftOut(NamedTuple):
@@ -437,6 +442,12 @@ def check_scope(scope: Scope) -> CheckRun:
     )
     file_score = display_score(result, scope.single_file, scope.scan_root) if scope.single_file is not None else None
     return CheckRun(result, funnel_error, ruleset_map, mapper_error, file_score, scope)
+
+
+def file_findings(run: CheckRun, file: Path) -> tuple[FindingItem, ...]:
+    """The findings a run reports for `file`."""
+    key = normalize_finding_path(str(file), run.scope.scan_root)
+    return tuple(f for f in run.result.findings if normalize_finding_path(f.file, run.scope.scan_root) == key)
 
 
 def check_path(path: str, named: frozenset[Path] = frozenset()) -> CheckRun | Refusal:

@@ -18,6 +18,7 @@ from reporails_cli.interfaces.cli import (
     login_command,
     rules_command,
     test_command,
+    xray_command,
 )
 from reporails_cli.interfaces.cli.config_command import config_app
 from reporails_cli.interfaces.cli.daemon_cmd import daemon_app
@@ -36,6 +37,7 @@ COMMAND_MODULES = (
     login_command,
     rules_command,
     test_command,
+    xray_command,
 )
 
 # Force UTF-8 on stdout/stderr so the box-drawing and arrow glyphs in the rich

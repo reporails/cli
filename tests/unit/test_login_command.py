@@ -16,7 +16,7 @@ from reporails_cli.core.platform.config.credentials import credentials_path, rea
 from reporails_cli.core.platform.contract.errors import PlatformRefusedError, PlatformUnavailableError
 from reporails_cli.core.platform.dto.diagnostics import STILL_REACHING_MESSAGE, Notice
 from reporails_cli.core.platform.dto.sign_in import KeyCheck, PollOutcome, SignedIn, SignInGrant
-from reporails_cli.interfaces.cli import login_flow
+from reporails_cli.interfaces.cli import helpers, login_flow
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner(env={"COLUMNS": "200"})  # no line wrapping inside the asserted sentences
@@ -48,7 +48,7 @@ class _Site:
         monkeypatch.setattr(login_flow, "poll_sign_in", self._poll)
         monkeypatch.setattr(login_flow, "revoke_sign_in", self._revoke)
         monkeypatch.setattr(login_flow, "check_api_key", self._check)
-        monkeypatch.setattr(login_flow, "_open_in_browser", self.opened.append)
+        monkeypatch.setattr(login_flow, "open_in_browser", self.opened.append)
 
     def _sleep(self, seconds: float) -> None:
         self.sleeps.append(seconds)
@@ -181,11 +181,11 @@ def test_login_opens_the_browser_only_where_a_screen_can_show_it(
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_login_ignores_a_browser_that_will_not_open(site: _Site, monkeypatch: pytest.MonkeyPatch) -> None:
-    def _fail(url: str) -> None:
+    def _fail(cmd: list[str]) -> None:
         raise OSError("no browser")
 
     _on_platform(monkeypatch)
-    monkeypatch.setattr(login_flow, "_open_in_browser", _fail)
+    monkeypatch.setattr(helpers, "launch_detached", _fail)
     site.polls = [_signed_in()]
     assert runner.invoke(app, ["login"]).exit_code == 0
 
@@ -206,7 +206,7 @@ def test_the_page_opens_in_a_real_child_that_ignores_the_working_directory(
     (cwd / "webbrowser.py").write_text(f"open({shadowed.as_posix()!r}, 'w').write('x')\n", encoding="utf-8")
     monkeypatch.chdir(cwd)
     monkeypatch.setenv("BROWSER", f'"{Path(sys.executable).as_posix()}" "{program.as_posix()}" %s')
-    login_flow._open_in_browser("https://reporails.com/x")
+    helpers.open_in_browser("https://reporails.com/x")
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline and not (marker.exists() or shadowed.exists()):
         time.sleep(0.05)

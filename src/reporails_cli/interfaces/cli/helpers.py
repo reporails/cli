@@ -60,6 +60,17 @@ def launch_detached(cmd: list[str]) -> None:
     )
 
 
+def open_in_browser(url: str) -> None:
+    """Open `url` from a detached child that ignores the working directory and holds none of the caller's
+    streams; a browser that cannot start logs one warning and returns."""
+    if not sys.executable:
+        return
+    try:
+        launch_detached([sys.executable, "-I", "-m", "webbrowser", "-t", url])
+    except OSError as exc:
+        logger.warning("Could not open the browser: %s", exc)
+
+
 def _warn_unresolved_skills(unresolved: list[UnresolvedSkill], project_root: Path) -> None:
     """Print one stderr warning per declared-but-unresolved skill."""
     for skill in unresolved:

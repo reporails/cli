@@ -36,7 +36,7 @@ from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, STILL_RE
 from reporails_cli.core.platform.dto.sign_in import SignedIn, SignInGrant
 from reporails_cli.formatters.text.funnel_cta import OTHER_AGENT_HEAL_TEXT, UNPAID_PITCH_LINE, upgrade_link_line
 from reporails_cli.formatters.text.notices import print_notices
-from reporails_cli.interfaces.cli.helpers import console, launch_detached
+from reporails_cli.interfaces.cli.helpers import console, open_in_browser
 
 logger = logging.getLogger(__name__)
 
@@ -156,13 +156,6 @@ def _can_show_browser() -> bool:
     return bool(env_text("DISPLAY") or env_text("WAYLAND_DISPLAY"))
 
 
-def _open_in_browser(url: str) -> None:
-    """Open `url` from a detached child that ignores the working directory and holds none of the caller's streams."""
-    if not sys.executable:
-        return
-    launch_detached([sys.executable, "-I", "-m", "webbrowser", "-t", url])
-
-
 def _is_the_websites_link(url: str, site: str) -> bool:
     """True for a link on the website's own scheme and host with no control characters."""
     if any(ord(char) < 32 or ord(char) == 127 for char in url):
@@ -180,11 +173,7 @@ def _show_link(site: str, grant: SignInGrant) -> None:
     if not _is_the_websites_link(grant.verification_url, site):
         logger.debug("Not opening a link that is not the website's own")
         return
-    try:
-        _open_in_browser(grant.verification_url)
-    except OSError as exc:
-        # Best effort: the link is already printed, so a missing or misconfigured browser costs nothing.
-        logger.debug("Could not open the browser: %s", exc)
+    open_in_browser(grant.verification_url)
 
 
 def _wait_for_sign_in(site: str, grant: SignInGrant) -> SignedIn:

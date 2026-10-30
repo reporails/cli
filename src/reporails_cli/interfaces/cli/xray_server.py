@@ -1,0 +1,199 @@
+"""The local x-ray page server: serves the bundled page and translates its requests into core calls.
+
+Binds `127.0.0.1` only. Every request is refused before any core call unless its `Host`, `Origin` (a POST),
+launch token and file path pass; the routes only translate between HTTP and the core.
+"""
+
+from __future__ import annotations
+
+import secrets
+import socket
+import threading
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+
+import typer
+import uvicorn
+from starlette.applications import Starlette
+from starlette.concurrency import run_in_threadpool
+from starlette.middleware import Middleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.requests import Request
+from starlette.responses import FileResponse, JSONResponse, Response
+from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
+
+from reporails_cli.bundled import get_xray_path
+from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.heal.apply import heal_one, resolved_within
+from reporails_cli.core.pipeline.check_one import Refusal, check_path, file_findings
+from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.xray.session import XraySession
+from reporails_cli.formatters.mcp_view import render_heal_apply
+from reporails_cli.interfaces.cli.helpers import open_in_browser
+
+HOST = "127.0.0.1"
+TOKEN_HEADER = "x-xray-token"
+TOKEN_PLACEHOLDER = "__XRAY_TOKEN__"
+PAGE_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+        "font-src 'self'; connect-src 'self'; frame-ancestors 'none'"
+    ),
+    "Cache-Control": "no-store",
+}
+
+
+def _refused(status: int, message: str) -> JSONResponse:
+    return JSONResponse({"error": message}, status_code=status)
+
+
+class XrayServer:
+    """One launch: the session being followed, the launch token, and the one-at-a-time lock on slow core calls."""
+
+    def __init__(self, root: Path, session_file: Path, token: str, port: int) -> None:
+        self._root = root
+        self._session = XraySession(root, session_file)
+        self._token = token
+        self._origin = f"http://{HOST}:{port}"
+        self._findings: dict[str, int] = {}
+        self._view_lock = threading.Lock()
+        self._work_lock = threading.Lock()
+
+    def _wrong_token(self, request: Request) -> bool:
+        sent = request.headers.get(TOKEN_HEADER, "")
+        return not secrets.compare_digest(sent.encode(), self._token.encode())
+
+    async def _guard(self, request: Request) -> JSONResponse | None:
+        """The refusal for a request that carries no valid token (or, for a POST, a foreign `Origin`), else None."""
+        if request.method == "POST" and request.headers.get("origin") != self._origin:
+            return _refused(403, "foreign origin")
+        if self._wrong_token(request):
+            return _refused(403, "missing or wrong token")
+        return None
+
+    async def _target(self, request: Request) -> Path | JSONResponse:
+        """The checked file of a POST body `{"path": ...}`, or the refusal."""
+        refusal = await self._guard(request)
+        if refusal is not None:
+            return refusal
+        try:
+            body = await request.json()
+        except ValueError:
+            return _refused(400, "the body is not JSON")
+        if not isinstance(body, dict) or set(body) != {"path"} or not isinstance(body["path"], str):
+            return _refused(400, 'the body is {"path": "<file>"}')
+        target = safe_resolve(self._root / body["path"])
+        if not resolved_within(target, self._root) or not target.is_file():
+            return _refused(400, "the path is not a file inside the project")
+        return target
+
+    async def page(self, _request: Request) -> Response:
+        """The bundled page with the launch token in it."""
+        html = (get_xray_path() / "index.html").read_text(encoding="utf-8").replace(TOKEN_PLACEHOLDER, self._token)
+        return Response(html, media_type="text/html", headers=PAGE_HEADERS)
+
+    async def view(self, request: Request) -> Response:
+        """The session view, `304` when its version is the one the page holds."""
+        refusal = await self._guard(request)
+        if refusal is not None:
+            return refusal
+        payload, version = await run_in_threadpool(self._build_view)
+        etag = f'"{version}"'
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers={"ETag": etag})
+        return JSONResponse(payload, headers={"ETag": etag, "Cache-Control": "no-store"})
+
+    def _build_view(self) -> tuple[JsonObject, int]:
+        with self._view_lock:
+            self._session.refresh()
+            view = self._session.view(self._findings)
+            return view.to_json(), view.version
+
+    async def check(self, request: Request) -> Response:
+        """Check one file and reply with its findings."""
+        target = await self._target(request)
+        if isinstance(target, JSONResponse):
+            return target
+        return await run_in_threadpool(self._check, target)
+
+    def _check(self, target: Path) -> JSONResponse:
+        with self._work_lock:
+            run = check_path(str(target))
+            if isinstance(run, Refusal):
+                return _refused(400, run.text)
+            found = file_findings(run, target)
+            with self._view_lock:
+                self._findings[self._key(target)] = len(found)
+            lines = [{"line": f.line, "rule": f.rule, "message": f.message} for f in found]
+            return JSONResponse({"path": str(target), "findings": len(found), "lines": lines})
+
+    async def heal(self, request: Request) -> Response:
+        """Heal one file and reply with the receipt."""
+        target = await self._target(request)
+        if isinstance(target, JSONResponse):
+            return target
+        return await run_in_threadpool(self._heal, target)
+
+    def _heal(self, target: Path) -> JSONResponse:
+        with self._work_lock:
+            outcome = heal_one(str(target))
+            with self._view_lock:
+                self._findings.pop(self._key(target), None)
+            if outcome.written is None:
+                receipt = [outcome.withheld]
+            else:
+                written = outcome.written
+                text = render_heal_apply(written.fixes, written.decisions, written.put_back, outcome.scan_root)
+                receipt = text.split("\n")
+            return JSONResponse({"path": str(target), "receipt": receipt})
+
+    def _key(self, target: Path) -> str:
+        return target.relative_to(safe_resolve(self._root)).as_posix()
+
+
+def _static(name: str) -> Callable[[Request], Awaitable[Response]]:
+    """The endpoint that serves one file of the bundled page."""
+
+    async def endpoint(_request: Request) -> Response:
+        return FileResponse(get_xray_path() / name)
+
+    return endpoint
+
+
+def build_app(root: Path, session_file: Path, token: str, port: int) -> Starlette:
+    """The page server for one session: the fixed routes behind the host, origin, token and path guards."""
+    server = XrayServer(safe_resolve(root), session_file, token, port)
+    page = get_xray_path()
+    return Starlette(
+        routes=[
+            Route("/", server.page, methods=["GET"]),
+            Route("/view", server.view, methods=["GET"]),
+            Route("/check", server.check, methods=["POST"]),
+            Route("/heal", server.heal, methods=["POST"]),
+            Route("/xray.js", _static("xray.js"), methods=["GET"]),
+            Route("/xray.css", _static("xray.css"), methods=["GET"]),
+            Mount("/fonts", StaticFiles(directory=page / "fonts")),
+        ],
+        middleware=[Middleware(TrustedHostMiddleware, allowed_hosts=[HOST])],
+    )
+
+
+def bound_socket() -> socket.socket:
+    """A listening socket on `127.0.0.1` at a free port, so the port is known before the page address prints."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind((HOST, 0))
+    sock.listen(16)
+    return sock
+
+
+def serve(root: Path, session_file: Path, *, open_page: bool) -> None:
+    """Serve the page for `session_file` until interrupted; print its address and open it unless told not to."""
+    sock = bound_socket()
+    port = sock.getsockname()[1]
+    app = build_app(root, session_file, secrets.token_urlsafe(32), port)
+    url = f"http://{HOST}:{port}/"
+    typer.echo(f"x-ray of session {session_file.stem}: {url}  (Ctrl-C to stop)")
+    if open_page:
+        open_in_browser(url)
+    uvicorn.Server(uvicorn.Config(app, log_level="warning")).run(sockets=[sock])

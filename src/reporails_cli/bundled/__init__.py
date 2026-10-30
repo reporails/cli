@@ -24,3 +24,8 @@ def get_lexicon_path() -> Path:
     package data.
     """
     return get_bundled_path() / "lexicon"
+
+
+def get_xray_path() -> Path:
+    """Get path to the bundled x-ray page folder (`index.html`, `xray.js`, `xray.css`, `fonts/`)."""
+    return get_bundled_path() / "xray"

@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from reporails_cli.core.heal.apply import heal_withheld_for_run, heal_workflow_within
+from reporails_cli.core.heal.apply import heal_server_replied, heal_withheld_for_run, heal_workflow_within
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
@@ -28,7 +28,9 @@ def heal_apply_message(payload: JsonObject, *, mapped: bool = True) -> str:
         return f"heal_apply: {payload.get('message') or payload['error']}"
     funnel = payload.get("funnel")
     funnel = funnel if isinstance(funnel, dict) else {}
-    replied = mapped and not (payload.get("offline") or payload.get("server_error") or funnel)
+    replied = heal_server_replied(
+        mapped=mapped, offline=bool(payload.get("offline")), rejected=bool(payload.get("server_error") or funnel)
+    )
     error, tier, funnel_tier = (
         v if isinstance(v, str) else None for v in (funnel.get("error"), payload.get("tier"), funnel.get("tier"))
     )
