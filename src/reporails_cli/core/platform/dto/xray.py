@@ -124,13 +124,15 @@ class XraySubagent:
 
 @dataclass(frozen=True)
 class XrayArtifact:
-    """A file the session could load, whether it did and the turns it sat in context."""
+    """A file the session could load, whether it did, the turns it sat in context and whether the page may
+    check or fix it (a file of the project that exists)."""
 
     path: str
     kind: ArtifactKind
     loaded: bool
     turns: tuple[int, ...]
     findings: int | None
+    actionable: bool
 
     def to_json(self) -> JsonObject:
         """The artifact as a JSON object."""
@@ -140,6 +142,7 @@ class XrayArtifact:
             "loaded": self.loaded,
             "turns": list(self.turns),
             "findings": self.findings,
+            "actionable": self.actionable,
         }
 
 

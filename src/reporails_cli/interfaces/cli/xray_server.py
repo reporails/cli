@@ -83,10 +83,16 @@ class XrayServer:
             return _refused(400, "the body is not JSON")
         if not isinstance(body, dict) or set(body) != {"path"} or not isinstance(body["path"], str):
             return _refused(400, 'the body is {"path": "<file>"}')
+        if not await run_in_threadpool(self._lists, body["path"]):
+            return _refused(400, "not a file this page lists")
         target = safe_resolve(self._root / body["path"])
         if not resolved_within(target, self._root) or not target.is_file():
             return _refused(400, "the path is not a file inside the project")
         return target
+
+    def _lists(self, path: str) -> bool:
+        with self._view_lock:
+            return self._session.acts_on(path)
 
     async def page(self, _request: Request) -> Response:
         """The bundled page with the launch token in it."""

@@ -8,9 +8,16 @@ from pathlib import Path
 from reporails_cli.core.eventbus.query import read_events
 from reporails_cli.core.eventbus.transcript import read_transcript
 from reporails_cli.core.pipeline.expected_loads import AGENT
+from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
 from reporails_cli.core.platform.dto.xray import XrayView
-from reporails_cli.core.xray.artifacts import ArtifactFile, artifact_files, build_artifacts, in_context_turns
+from reporails_cli.core.xray.artifacts import (
+    ArtifactFile,
+    artifact_files,
+    build_artifacts,
+    in_context_turns,
+    is_actionable,
+)
 from reporails_cli.core.xray.derive import (
     Frame,
     build_subagents,
@@ -52,6 +59,15 @@ class XraySession:
         self._files = None
         self.version += 1
         return True
+
+    def acts_on(self, path: str) -> bool:
+        """True when the page lists `path` (project-relative) as a file it may check or fix."""
+        if self._files is None:
+            self._files = artifact_files(self._root)
+        return any(
+            relative_wire_path(item.path, self._root) == path and is_actionable(item, self._root)
+            for item in self._files
+        )
 
     def view(self, findings: Mapping[str, int]) -> XrayView:
         """The view of the records read so far; `findings` maps a file path to its finding count."""

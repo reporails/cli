@@ -137,6 +137,16 @@ def test_a_path_outside_the_project_or_not_a_file_is_refused_before_the_core(
     assert calls.checked == [] and calls.healed == []
 
 
+@pytest.mark.parametrize("route", ["/check", "/heal"])
+def test_a_project_file_the_page_does_not_list_is_refused_before_the_core(
+    client: TestClient, project: Path, calls: Calls, route: str
+) -> None:
+    (project / "notes.txt").write_text("notes\n")
+    reply = client.post(route, json={"path": "notes.txt"}, headers={"X-Xray-Token": TOKEN, "Origin": ORIGIN})
+    assert reply.status_code == 400 and reply.json() == {"error": "not a file this page lists"}
+    assert calls.checked == [] and calls.healed == []
+
+
 def test_check_reports_a_refusal_as_400_and_a_file_as_its_findings(
     client: TestClient, project: Path, calls: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:

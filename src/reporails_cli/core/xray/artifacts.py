@@ -6,16 +6,18 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from reporails_cli.core.discovery.agent_config import extract_patterns, load_config_file_types
 from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES, discover_ungated
 from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.discovery.features import detect_features_filesystem
+from reporails_cli.core.discovery.plugin_roots import entry_pattern
+from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.pipeline.expected_loads import AGENT, expected_loads
+from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.contract.json_value import as_list, as_object, as_str
 from reporails_cli.core.platform.dto.xray import ArtifactKind, XrayArtifact, XrayLoad, XrayTurn
-from reporails_cli.core.xray.derive import count_for, real_path, shown_path
-
-SKILL_ENTRY = "SKILL.md"
+from reporails_cli.core.xray.derive import count_for, real_path
 
 
 @dataclass(frozen=True)
@@ -52,7 +54,12 @@ def _hook_files(root: Path) -> list[Path]:
 def artifact_files(root: Path) -> tuple[ArtifactFile, ...]:
     """Every file the session could load: the instruction and memory files Claude Code loads for the
     folder, the project's skills and agents, and the files that configure hooks."""
-    files = [ArtifactFile(str(path), "skill") for path in _surface_files(root, "skills") if path.name == SKILL_ENTRY]
+    entries = extract_patterns(as_object(as_object(load_config_file_types(AGENT)).get("skills")), "entry_patterns")
+    files = [
+        ArtifactFile(str(path), "skill")
+        for path in _surface_files(root, "skills")
+        if entry_pattern(path, root, entries) is not None
+    ]
     files.extend(ArtifactFile(str(path), "agent") for path in _surface_files(root, "agents"))
     files.extend(ArtifactFile(str(path), "hook") for path in _hook_files(root))
     files.extend(_instruction_files(root))
@@ -95,6 +102,14 @@ def in_context_turns(start: Sequence[XrayLoad], turns: Sequence[XrayTurn], root:
     return seen
 
 
+def is_actionable(item: ArtifactFile, root: Path) -> bool:
+    """True for a file of the project that exists and is not a hook config: the files the page may check or fix."""
+    if item.kind == "hook":
+        return False
+    path = safe_resolve(root / Path(item.path).expanduser())
+    return Path(item.path).is_relative_to(root) and path.is_file()
+
+
 def build_artifacts(
     files: Sequence[ArtifactFile],
     loaded: set[str],
@@ -108,11 +123,12 @@ def build_artifacts(
         resolved = real_path(item.path, root)
         out.append(
             XrayArtifact(
-                path=shown_path(item.path, root),
+                path=relative_wire_path(item.path, root),
                 kind=item.kind,
                 loaded=resolved in loaded,
                 turns=tuple(in_context.get(resolved, ())),
                 findings=count_for(findings, item.path, root),
+                actionable=is_actionable(item, root),
             )
         )
     return tuple(out)

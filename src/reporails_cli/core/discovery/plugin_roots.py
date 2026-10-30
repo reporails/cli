@@ -157,3 +157,9 @@ def config_pattern_hits(file_path: Path, rel: str, pattern: str, scan_root: Path
 
     plugin_hit = matches_plugin_pattern(file_path, scan_root, pattern, match)
     return match(rel, pattern) if plugin_hit is None else plugin_hit
+
+
+def entry_pattern(path: Path, root: Path, patterns: list[str]) -> str | None:
+    """The first of `patterns` that `path` matches, anchored the way file-type `patterns` are; None when none does."""
+    rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
+    return next((p for p in patterns if config_pattern_hits(path, rel, p, root)), None)

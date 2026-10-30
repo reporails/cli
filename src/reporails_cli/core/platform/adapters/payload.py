@@ -119,9 +119,9 @@ def _project_atom(a: Atom, file_idx: dict[str, int]) -> WireObject:
     return d
 
 
-def _relativize(path: str, root: Path) -> str:
-    """`path` as it rides the wire, relative to `root` — the checked project's root, never
-    a root guessed from the mapped files themselves (that guess collapses to the wrong
+def relative_wire_path(path: str, root: Path) -> str:
+    """`path` relative to the project or the home folder, as it rides the wire. `root` is the checked
+    project's root, never a root guessed from the mapped files themselves (that guess collapses to the wrong
     directory whenever the mapped set doesn't happen to span down from the real root —
     a single mapped file, or a `.claude/rules/`-only project).
 
@@ -151,15 +151,15 @@ def _project_files(ruleset_map: RulesetMap, root: Path) -> list[WireObject]:
     out: list[WireObject] = []
     for f in ruleset_map.files:
         fd: WireObject = {
-            "path": _relativize(f.path, root),
+            "path": relative_wire_path(f.path, root),
             **file_record_scalars(f),
         }
         if f.skill:
-            fd["skill"] = _relativize(f.skill, root)
+            fd["skill"] = relative_wire_path(f.skill, root)
         if f.activation:
             fd["act"] = f.activation
         if f.reach:
-            fd["reach"] = [_relativize(r, root) for r in f.reach]
+            fd["reach"] = [relative_wire_path(r, root) for r in f.reach]
         if f.globs:
             fd["globs"] = [*f.globs[:MAX_FILE_GLOBS]]
         if f.description_embedding:
@@ -243,7 +243,7 @@ def _within_bound(local: Sequence[LocalEntry]) -> list[LocalEntry]:
 def project_local(local: Sequence[LocalEntry], mapped: list[str], root: Path) -> WireObject:
     """The request's `local` entries, and the `local_files` they name beyond the mapped files with
     each one's type in `local_types`. `local_files` rides `root`-relative too, via the exact same
-    `_relativize` rule `mapped` was built from — a local entry's absolute file matches a mapped
+    `relative_wire_path` rule `mapped` was built from — a local entry's absolute file matches a mapped
     file by exact string equality on that shared wire form, never by a path-suffix guess (a
     suffix match attributes `tests/CLAUDE.md` to a mapped root `CLAUDE.md`, since `tests/CLAUDE.md`
     ends with `/CLAUDE.md` too).
@@ -260,7 +260,7 @@ def project_local(local: Sequence[LocalEntry], mapped: list[str], root: Path) ->
     for e in local:
         key = _path_key(e.file)
         if key not in resolved:
-            wire = _relativize(e.file, root)
+            wire = relative_wire_path(e.file, root)
             i = mapped_index.get(wire)
             if i is not None:
                 resolved[key] = i

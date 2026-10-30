@@ -9,9 +9,11 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.eventbus import store
+from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object
 from reporails_cli.core.platform.dto.events import EventKind, EventRecord, ToolUse
 from reporails_cli.core.platform.dto.xray import XrayLoad, XrayView
+from reporails_cli.core.xray.artifacts import ArtifactFile, artifact_files, build_artifacts
 from reporails_cli.core.xray.session import XraySession
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
@@ -251,7 +253,14 @@ def test_the_view_holds_numbers_names_and_paths_only(tmp_path: Path) -> None:
     assert set(as_object(as_list(data["turns"])[0])) == turn_keys
     assert set(as_object(as_list(data["subagents"])[0])) == {"id", "type", "turn", "start", "end", "series", "loads"}
     assert set(as_object(as_list(data["start"])[0])) == {"path", "kind", "t", "tokens_est", "findings"}
-    assert set(as_object(as_list(data["artifacts"])[0])) == {"path", "kind", "loaded", "turns", "findings"}
+    assert set(as_object(as_list(data["artifacts"])[0])) == {
+        "path",
+        "kind",
+        "loaded",
+        "turns",
+        "findings",
+        "actionable",
+    }
 
 
 def test_a_session_with_no_records_is_an_empty_view(tmp_path: Path) -> None:
@@ -264,3 +273,45 @@ def test_a_session_with_no_records_is_an_empty_view(tmp_path: Path) -> None:
 def test_the_json_is_plain_data(tmp_path: Path) -> None:
     data: JsonObject = _view(_session(tmp_path, "2.1.301", _project(tmp_path))).to_json()
     assert json.loads(json.dumps(data)) == data
+
+
+def test_only_a_project_file_that_exists_is_actionable(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    memory = tmp_path / "home" / ".claude" / "projects" / "p" / "memory" / "MEMORY.md"
+    memory.parent.mkdir(parents=True)
+    memory.write_text("# memory\n")
+    files = (
+        ArtifactFile(str(root / "CLAUDE.md"), "instructions"),
+        ArtifactFile(str(root / "missing" / "CLAUDE.md"), "instructions"),
+        ArtifactFile(str(root / ".claude" / "settings.json"), "hook"),
+        ArtifactFile(str(memory), "memory"),
+    )
+    got = [a.actionable for a in build_artifacts(files, set(), {}, {}, root)]
+    assert got == [True, False, False, False]
+
+
+def test_a_session_acts_on_only_the_files_its_view_lists(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    (root / "notes.txt").write_text("notes\n")
+    session = _session(tmp_path, "2.1.301", root)
+    assert session.acts_on("CLAUDE.md") is True
+    assert session.acts_on("notes.txt") is False
+    assert session.acts_on(".claude/settings.json") is False
+    assert session.acts_on("../proj/CLAUDE.md") is False
+
+
+def test_a_skill_lists_its_entry_file_only(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    folder = root / ".claude" / "skills" / "demo"
+    (folder / "ref.md").write_text("# ref\n")
+    (folder / "deeper").mkdir()
+    (folder / "deeper" / "SKILL.md").write_text("# nested\n")
+    skills = [Path(f.path).relative_to(root).as_posix() for f in artifact_files(root) if f.kind == "skill"]
+    assert skills == [".claude/skills/demo/SKILL.md"]
+
+
+def test_a_path_shows_relative_to_the_project_or_the_home_folder(tmp_path: Path) -> None:
+    home = Path.home()
+    assert relative_wire_path(str(tmp_path / "a" / "b.md"), tmp_path) == "a/b.md"
+    assert relative_wire_path(str(home / ".claude" / "x.md"), tmp_path) == "~/.claude/x.md"
+    assert relative_wire_path("/elsewhere/x.md", tmp_path) == "/elsewhere/x.md"

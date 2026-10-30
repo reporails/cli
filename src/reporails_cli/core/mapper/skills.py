@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from reporails_cli.core.discovery.agent_config import extract_patterns
-from reporails_cli.core.discovery.plugin_roots import config_pattern_hits
+from reporails_cli.core.discovery.plugin_roots import entry_pattern
 from reporails_cli.core.discovery.walk import list_dir, safe_resolve
 from reporails_cli.core.mapper.inspect import load_registry
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
@@ -44,12 +44,6 @@ def _entry_patterns(registry: dict[str, JsonObject], agent: str) -> list[str]:
     """The `entry_patterns` globs of `agent`'s `skills` file type: where a skill's `SKILL.md` may sit."""
     ft = as_object(as_object(registry.get(agent)).get("file_types")).get("skills")
     return extract_patterns(ft, "entry_patterns") if isinstance(ft, dict) else []
-
-
-def entry_pattern(path: Path, root: Path, patterns: list[str]) -> str | None:
-    """The first of `patterns` that `path` matches, anchored the way file-type `patterns` are; None when none does."""
-    rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
-    return next((p for p in patterns if config_pattern_hits(path, rel, p, root)), None)
 
 
 def skill_entry_folder(cf: ClassifiedFile) -> Path | None:

@@ -53,7 +53,7 @@ function build(view) {
     const set = new Set(a.turns || []);
     const pres = ROWS.map((r, i) => set.has(r.n) ? (i > 0 && set.has(ROWS[i - 1].n) ? 'in' : 'arr') : 'not');
     const K = KINDS.find(x => x.src === a.kind);
-    return { key: a.kind + ':' + a.path, kind: K ? K.k : 'instr', label: a.path, path: a.path, canAct: a.kind !== 'hook', loaded: !!a.loaded, listed: !a.loaded, pres, fcount: a.findings, tok: tokOf(a.path) };
+    return { key: a.kind + ':' + a.path, kind: K ? K.k : 'instr', label: a.path, path: a.path, canAct: !!a.actionable, loaded: !!a.loaded, listed: !a.loaded, pres, fcount: a.findings, tok: tokOf(a.path) };
   });
   if (F.kind === 'turn' && !ROWS.some(r => r.n === F.n)) F = defaultFocus();
   if (F.kind === 'agent' && !RUNS.some(r => r.id === F.id)) F = defaultFocus();
@@ -211,6 +211,7 @@ function artDetail(a) {
   if (a.fcount != null) h += `<div class="sec"><h3>reporails findings, from the last check<span>${a.fcount}</span></h3></div>`;
   else if (a.canAct) h += '<div class="sec"><h3>reporails findings</h3><div class="nk">not checked yet</div></div>';
   if (a.canAct) h += actHtml(a);
+  else if (a.kind !== 'hook') h += '<div class="sec"><div class="nk">outside this project; run <code>ails check</code> on it</div></div>';
   return h;
 }
 function renderFocus() {
