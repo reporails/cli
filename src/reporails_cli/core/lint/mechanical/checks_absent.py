@@ -17,7 +17,7 @@ from reporails_cli.core.lint.mechanical.checks import (
 from reporails_cli.core.platform.contract.glob_pattern import GLOB_CHARS
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
-from reporails_cli.core.platform.policy.matching import _prop_matches
+from reporails_cli.core.platform.policy.matching import prop_matches
 
 
 def _scope_dir_from_glob(glob_pattern: str) -> str:
@@ -56,7 +56,7 @@ def _resolve_scope_dir(match_type: str | list[str], classified_files: list[Class
     types = sorted(match_type) if isinstance(match_type, list) else [match_type]
     for one_type in types:
         for cf in classified_files:
-            if _prop_matches(one_type, cf.file_type):
+            if prop_matches(one_type, cf.file_type):
                 rel = str(cf.path.parent)
                 # Extract the non-glob prefix from the relative path
                 return _scope_dir_from_glob(rel)

@@ -16,8 +16,8 @@ import re
 from dataclasses import dataclass
 from typing import NamedTuple
 
-from reporails_cli.core.mapper.annotate import backticked_words, is_unbacked_library_name
-from reporails_cli.core.mapper.imports import IMPORT_REF_RE
+from reporails_cli.core.lint.client_checks import unformatted_token_is_reportable, wrap_site
+from reporails_cli.core.mapper.annotate import backticked_words
 from reporails_cli.core.mapper.markers import strip_markdown_inline
 from reporails_cli.core.mapper.md_parser import EmphasisRun, emphasis_runs, has_bold_label, replace_spans
 from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark, sentence_spans
@@ -40,119 +40,10 @@ class MechanicalFix:
 # Fix 1: Unformatted code → backticks
 # ──────────────────────────────────────────────────────────────────
 
-_PATH_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./-")
-# A bare URL (scheme://rest, no whitespace) — a token that sits inside one is left
-# unwrapped entirely. The leftward path-run extension stops at the first character
-# outside `_PATH_CHARS` (a `:` in a port number, the scheme's own `:`), so wrapping
-# only the remainder after that point would backtick a fragment of the URL and leave
-# the rest bare, splitting it instead of formatting it.
-_URL_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://\S+")
-# A small set of well-known technology/product names that read as plain prose in
-# running text (not a file, command or identifier this project defines) even though
-# their mixed-case spelling matches the code-shape heuristics upstream.
-_PROSE_NAMES = frozenset({"javascript", "devtools", "pypi", "git"})
-
 
 def _spans_at(spans: list[LineSpans], idx: int) -> LineSpans:
     """The code and link columns of line `idx`; none for a line the parse has no entry for."""
     return spans[idx] if 0 <= idx < len(spans) else LineSpans()
-
-
-def _is_inside_code(text: str, token: str, spans: LineSpans) -> bool:
-    """Check if every occurrence of token in text is inside a code span or an inline HTML tag."""
-    return all(
-        in_any_span(m.start(), (*spans.code, *spans.html)) for m in re.finditer("(?=" + re.escape(token) + ")", text)
-    )
-
-
-def _without_emphasis_closer(text: str, token: str) -> str:
-    """The token without a trailing `_` (and the punctuation before it) that closes an
-    underscore emphasis run of `text` ending where the token ends, so the closer stays outside
-    the code span."""
-    if not token.endswith("_"):
-        return token
-    trimmed = token.rstrip("_").rstrip(".!?,;:")
-    if not trimmed or trimmed == token:
-        return token
-    at = text.find(token)
-    if at < 0 or not any(run.marker.startswith("_") and run.end == at + len(token) for run in emphasis_runs(text)):
-        return token
-    return trimmed
-
-
-def _wrap_site(text: str, token: str, spans: LineSpans) -> tuple[int, int] | None:
-    """The `[start, end)` of `text` to backtick-wrap for the first occurrence of token outside code
-    spans, inline HTML tags, markdown link labels/targets (`spans` holds them, as the parse places
-    them in `text`), a bare URL, or an `@import` reference; None when there is no such occurrence.
-
-    Extends the wrap leftward over any contiguous relative-path run (letters,
-    digits, `_.-/`) immediately preceding the token, so a basename detected inside
-    a longer path — `tests/unit/test_parser.py` — backticks the full path instead
-    of only the basename. A leading `~` (home-dir shorthand, e.g. `~/.claude/`)
-    is absorbed into the same wrap, so `~/.claude/settings.json` wraps whole
-    instead of leaving the `~` stranded outside the backticks. An occurrence inside
-    a bare URL is left unwrapped entirely instead — wrapping only part of it (the
-    leftward run stops at a port's `:` or the scheme's own `:`) would split the URL,
-    leaving one part bare and the other backticked. An occurrence inside an `@import`
-    reference is left unwrapped too: wrapping it would read the reference as inline
-    code and drop it from import resolution, hiding a broken or a live import alike.
-    """
-    token = _without_emphasis_closer(text, token)
-    url_spans = [m.span() for m in _URL_RE.finditer(text)]
-    import_spans = [m.span() for m in IMPORT_REF_RE.finditer(text)]
-    pattern = re.compile(r"(?<!`)(?<![`\w])" + re.escape(token) + r"(?![`\w])(?!`)")
-    for m in pattern.finditer(text):
-        if any(m.start() < e and s < m.end() for s, e in (*spans.links, *spans.code, *spans.html)):
-            continue
-        if in_any_span(m.start(), url_spans) or in_any_span(m.start(), import_spans):
-            continue
-        start, end = m.start(), m.end()
-        while start > 0 and text[start - 1] in _PATH_CHARS and not in_any_span(start - 1, spans.links):
-            start -= 1
-        if start > 0 and text[start - 1] == "~" and not in_any_span(start - 1, spans.links):
-            start -= 1
-        if start > 0 and text[start - 1] == "`":
-            start = m.start()  # the run reaches a code span's closing backtick: wrap the token alone
-        return start, end
-    # No word-boundaried occurrence outside a link, code span or HTML tag: nothing safe to wrap. A plain
-    # substring fallback would wrap the token mid-word (e.g. `npm` inside `npmrc`),
-    # corrupting the line, so there is no site.
-    return None
-
-
-def unformatted_token_is_reportable(
-    atom: Atom,
-    token: str,
-    backticked: frozenset[str],
-    source_line: str | None = None,
-    source_spans: LineSpans | None = None,
-) -> bool:
-    """False when `token` is not a formatting defect on this atom's line.
-
-    `source_line` is the line as written in the file and `source_spans` the columns of it the
-    markdown parse reads as code or links: the atom's text has its link syntax removed,
-    so a token that is link text can only be told apart on the written line.
-
-    A well-known prose name and a token inside a markdown link, a bare URL or an `@import`
-    reference are not code to wrap, so they are not reported. A library or web-API name
-    (`FastAPI`, `WebSocket`) is reported only when the file writes the same name in backticks
-    somewhere (`backticked`). A token in a table row is a real defect: heal leaves the row
-    alone (wrapping breaks its column padding), the finding stays.
-    """
-    if token.lower() in _PROSE_NAMES:
-        return False
-    if is_unbacked_library_name(token, backticked):
-        return False
-    written = source_line if source_line is not None and token in source_line else None
-    text = written if written is not None else atom.text
-    spans = source_spans if written is not None and source_spans is not None else LineSpans.of_fragment(text)
-    if token not in text:
-        return True
-    if _is_inside_code(text, token, spans):
-        return False
-    if atom.format == "table":
-        return True
-    return _wrap_site(text, token, spans) is not None
 
 
 def fix_unformatted_code(atoms: list[Atom], lines: list[str]) -> list[MechanicalFix]:
@@ -160,7 +51,7 @@ def fix_unformatted_code(atoms: list[Atom], lines: list[str]) -> list[Mechanical
 
     Skips a table row entirely — backtick-wrapping a cell changes its length and
     breaks the row's column padding — and skips a token that is a well-known
-    prose name rather than a file, command or identifier (`_PROSE_NAMES`). A library or
+    prose name rather than a file, command or identifier. A library or
     web-API name is wrapped only when the file writes it in backticks somewhere.
     """
     fixes: list[MechanicalFix] = []
@@ -176,7 +67,7 @@ def fix_unformatted_code(atoms: list[Atom], lines: list[str]) -> list[Mechanical
         for token in atom.unformatted_code:
             if not unformatted_token_is_reportable(atom, token, backticked):
                 continue
-            site = _wrap_site(lines[idx], token, _spans_at(spans, idx))
+            site = wrap_site(lines[idx], token, _spans_at(spans, idx))
             if site is not None:
                 begin, end = site
                 lines[idx] = f"{lines[idx][:begin]}`{lines[idx][begin:end]}`{lines[idx][end:]}"

@@ -163,7 +163,7 @@ def test_diamond_acyclic_graph_logs_no_cycle(caplog):
     assert "Circular" not in caplog.text
 
 
-# --- L103: _load_from_path skips _deferred rules [or -> and] ---
+# --- L103: load_rules_from_path skips _deferred rules [or -> and] ---
 
 
 @pytest.mark.unit
@@ -176,7 +176,7 @@ def test_deferred_rule_is_not_loaded(tmp_path):
     """
     reg._read_rules.cache_clear()
     _write_rule_md(tmp_path, "_deferred/myrule", "CORE:S:0099")
-    result = reg._load_from_path(tmp_path)
+    result = reg.load_rules_from_path(tmp_path)
     assert "CORE:S:0099" not in result
     assert result == {}
 
@@ -186,7 +186,7 @@ def test_deferred_rule_is_not_loaded(tmp_path):
 def test_normal_rule_is_loaded(tmp_path):
     reg._read_rules.cache_clear()
     _write_rule_md(tmp_path, "active/myrule", "CORE:S:0098")
-    result = reg._load_from_path(tmp_path)
+    result = reg.load_rules_from_path(tmp_path)
     assert "CORE:S:0098" in result
 
 
@@ -201,7 +201,7 @@ def test_normal_rule_is_loaded(tmp_path):
 )
 def test_unreadable_rule_md_is_skipped_with_warning(tmp_path, caplog):
     """`ails explain` / `ails rules list` / `ails check` all load rules through `load_rules` ->
-    `_load_from_path`, which used to read every `rule.md` unguarded — an unreadable file (e.g.
+    `load_rules_from_path`, which used to read every `rule.md` unguarded — an unreadable file (e.g.
     permission-denied) raised `PermissionError` straight through `load_rules`, crashing every
     command that loads the pack it lives in with a Rich traceback and exit 1, even though the
     CLI's own post-load `explain` guard (`interfaces/cli/main.py`) suggested this case was
@@ -214,7 +214,7 @@ def test_unreadable_rule_md_is_skipped_with_warning(tmp_path, caplog):
     os.chmod(bad_md, 0o000)
     try:
         with caplog.at_level("WARNING"):
-            result = reg._load_from_path(tmp_path)
+            result = reg.load_rules_from_path(tmp_path)
     finally:
         os.chmod(bad_md, 0o644)
 
@@ -252,7 +252,7 @@ def test_inline_checks_win_over_checks_yml(tmp_path):
         "    pattern-regex: z\n",
         encoding="utf-8",
     )
-    result = reg._load_from_path(tmp_path)
+    result = reg.load_rules_from_path(tmp_path)
     rule = result["CORE:S:0097"]
     assert [c.id for c in rule.checks] == ["CORE.S.0097.inline"]
 

@@ -10,11 +10,11 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.heal.mechanical_fixers import (
-    _wrap_site,
     fix_bold_on_constraints,
     fix_italic_constraints,
     fix_unformatted_code,
 )
+from reporails_cli.core.lint.client_checks import wrap_site
 from reporails_cli.core.mapper.annotate import check_specificity
 from reporails_cli.core.mapper.structure import LineSpans
 from reporails_cli.core.platform.dto.ruleset import Atom
@@ -46,7 +46,7 @@ def _atom(
 
 
 # ──────────────────────────────────────────────────────────────────
-# _wrap_site link-span bounds  (L55 <=, >=)
+# wrap_site link-span bounds  (L55 <=, >=)
 # ──────────────────────────────────────────────────────────────────
 
 
@@ -54,14 +54,14 @@ def _atom(
 @pytest.mark.subsys_lint
 def test_wrap_token_immediately_before_link() -> None:
     # Token ends exactly where the link starts (m.end() == span start): must still wrap.
-    assert _wrap_site("npm[a](b)", "npm", LineSpans.of_fragment("npm[a](b)")) == (0, 3)  # kills L55 <=→<
+    assert wrap_site("npm[a](b)", "npm", LineSpans.of_fragment("npm[a](b)")) == (0, 3)  # kills L55 <=→<
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_wrap_token_immediately_after_link() -> None:
     # Token starts exactly where the link ends (m.start() == span end): must still wrap.
-    assert _wrap_site("[a](b)npm", "npm", LineSpans.of_fragment("[a](b)npm")) == (6, 9)  # kills L55 >=→>
+    assert wrap_site("[a](b)npm", "npm", LineSpans.of_fragment("[a](b)npm")) == (6, 9)  # kills L55 >=→>
 
 
 # ──────────────────────────────────────────────────────────────────

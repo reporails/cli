@@ -25,3 +25,4 @@
 - CI runs the behavioral scenarios on every pull request, not only in the release gate.
 - Tests: a skipped api-backed scenario leaves no temp directory behind, and the mutation probe's `--timeout` applies to a pytest target too.
 - The map caches live with the mapper and path tagging with discovery, so the cache, discovery, mapper and classify packages no longer import each other in a loop.
+- The unformatted-code check owns which tokens it reports, so the lint package no longer imports heal; the rule-loading and file-property matching helpers other packages call are public.

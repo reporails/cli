@@ -46,7 +46,7 @@ from reporails_cli.core.lint.rule_scaffold import (
     _scaffold_scoped_rule_file,
 )
 from reporails_cli.core.mapper.pipeline import map_ruleset
-from reporails_cli.core.platform.adapters.registry import RuleReadError, _load_from_path, read_checks_document
+from reporails_cli.core.platform.adapters.registry import RuleReadError, load_rules_from_path, read_checks_document
 from reporails_cli.core.platform.adapters.rule_builder import load_checks
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object
 from reporails_cli.core.platform.dto.checks import CheckResult
@@ -152,7 +152,7 @@ def _build_platform_rule(rule: RuleInfo) -> Rule | None:
     text, and match targeting come from the identical construction path
     instead of a harness-only rebuild.
     """
-    rules = _load_from_path(rule.rule_dir)
+    rules = load_rules_from_path(rule.rule_dir)
     return rules.get(rule.rule_id)
 
 

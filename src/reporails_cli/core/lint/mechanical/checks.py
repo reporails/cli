@@ -11,7 +11,7 @@ from reporails_cli.core.mapper.skills import skill_entry_paths
 from reporails_cli.core.platform.contract.json_value import JsonValue, str_list
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
-from reporails_cli.core.platform.policy.matching import _prop_matches
+from reporails_cli.core.platform.policy.matching import prop_matches
 from reporails_cli.core.platform.utils.utils import read_frontmatter_file
 
 # What a check reads: the check's own arguments (parsed `checks.yml` values), upstream annotations
@@ -136,7 +136,7 @@ def _select_targets(
         # `match.type` may be a list (`{type: [config, hooks]}`) — compare through
         # the shared matching predicate, never `==`, or a list-valued type matches
         # nothing and the check reports "No matching files found" on a file it owns.
-        matched = [cf.path for cf in classified_files if _prop_matches(match_type, cf.file_type)]
+        matched = [cf.path for cf in classified_files if prop_matches(match_type, cf.file_type)]
         if matched:
             return matched
         # No files of this type — return empty, don't fall back to all files.

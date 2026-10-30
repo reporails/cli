@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from reporails_cli.core.platform.adapters.registry import _load_from_path, apply_agent_excludes, get_rules_dir
+from reporails_cli.core.platform.adapters.registry import apply_agent_excludes, get_rules_dir, load_rules_from_path
 from reporails_cli.core.platform.config.config import get_agent_config
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 from reporails_cli.core.platform.dto.models import SEVERITY_ORDER, Category, Rule, Severity
@@ -38,9 +38,9 @@ def load_all_rules(agents: list[str] | None = None) -> list[Rule]:
         return []
     agent_ids = agents if agents is not None else list_known_agents()
     by_id: dict[str, Rule] = {}
-    by_id.update(_load_from_path(root / "core"))
+    by_id.update(load_rules_from_path(root / "core"))
     for agent in agent_ids:
-        by_id.update(apply_agent_excludes(_load_from_path(root / agent), get_agent_config(agent)))
+        by_id.update(apply_agent_excludes(load_rules_from_path(root / agent), get_agent_config(agent)))
     return sorted(by_id.values(), key=lambda r: r.id)
 
 

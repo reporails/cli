@@ -10,7 +10,7 @@ from __future__ import annotations
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch
 
 
-def _prop_matches(match_val: list[str] | str | None, actual: list[str] | str | None) -> bool:
+def prop_matches(match_val: list[str] | str | None, actual: list[str] | str | None) -> bool:
     """Check a property match criterion against an actual property value.
 
     Both sides can be scalar or list:
@@ -71,9 +71,9 @@ def is_wildcard_match(match: FileMatch) -> bool:
 
 def file_matches(cf: ClassifiedFile, match: FileMatch) -> bool:
     """Check if a classified file matches the given criteria."""
-    if not _prop_matches(match.type, cf.file_type):
+    if not prop_matches(match.type, cf.file_type):
         return False
-    return all(_prop_matches(getattr(match, prop), cf.properties.get(prop)) for prop in MATCH_PROPERTIES)
+    return all(prop_matches(getattr(match, prop), cf.properties.get(prop)) for prop in MATCH_PROPERTIES)
 
 
 def match_files(

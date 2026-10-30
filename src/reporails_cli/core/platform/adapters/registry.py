@@ -112,7 +112,7 @@ def get_rules_dir() -> Path:
     return get_rules_path()
 
 
-def _load_from_path(path: Path) -> dict[str, Rule]:
+def load_rules_from_path(path: Path) -> dict[str, Rule]:
     """Load the bundled framework rules of a single directory, returning {id: Rule}. Cached per path."""
     if not path.exists():
         return {}
@@ -327,15 +327,15 @@ def load_rules(
     scan_config = _load_project_config(scan_root) if scan_root and scan_root != project_root else ProjectConfig()
 
     # 1. Load framework rules from primary path (core + selected agent)
-    rules.update(_load_from_path(primary / "core"))
+    rules.update(load_rules_from_path(primary / "core"))
 
     if agent:
-        rules.update(_load_from_path(primary / agent))
+        rules.update(load_rules_from_path(primary / agent))
 
     # 2. Load additional rule sources
     for extra in extra_paths:
         if extra.exists():
-            rules.update(_load_from_path(extra))
+            rules.update(load_rules_from_path(extra))
 
     # 2b. Load the project's rule packages after the framework rules: a package rule
     # reusing a bundled rule's ID (or another package's) stops the run.
