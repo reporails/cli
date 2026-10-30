@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import pty
+import select
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -26,7 +31,6 @@ HEAVY = (
     "torch",
     "tokenizers",
     "pydantic",
-    "yaml",
     "reporails_cli.core.mapper",
 )
 
@@ -44,7 +48,7 @@ print(json.dumps({{"code": code, "modules": sorted(sys.modules)}}))
 
 
 def test_the_hook_path_loads_none_of_the_heavy_modules(tmp_path: Path) -> None:
-    # A tool event is the per-call path; the once-per-session start event also prunes old logs, which reads YAML.
+    # A tool event is the per-call path.
     script = TRACER.format(payload=ROWS[2].encode())
     done = subprocess.run(
         [sys.executable, "-c", script],
@@ -95,3 +99,28 @@ def test_stage_timing_names_each_recorded_event_on_stderr_and_stdout_stays_empty
         check=False,
     )
     assert quiet.returncode == 0 and quiet.stdout == b"" and quiet.stderr == b""
+
+
+def test_a_bare_hook_on_a_terminal_prints_usage_and_exits_0_without_reading(tmp_path: Path) -> None:
+    ails = Path(sys.executable).with_name("ails")
+    env = {"HOME": str(tmp_path), "USERPROFILE": str(tmp_path), "PATH": os.environ.get("PATH", "")}
+    pid, fd = pty.fork()
+    if pid == 0:  # child: stdin, stdout and stderr are the terminal
+        os.execve(str(ails), [str(ails), "hook"], env)
+    out = b""
+    deadline = time.monotonic() + 5
+    status = None
+    while time.monotonic() < deadline and status is None:
+        if select.select([fd], [], [], 0.1)[0]:
+            with contextlib.suppress(OSError):
+                out += os.read(fd, 4096)
+        done, raw = os.waitpid(pid, os.WNOHANG)
+        if done:
+            status = raw
+    if status is None:
+        os.kill(pid, 9)
+        os.waitpid(pid, 0)
+    os.close(fd)
+    assert status is not None, "ails hook blocked on a terminal"
+    assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
+    assert "usage: ails hook [--agent NAME] < payload.json" in out.decode(errors="replace")

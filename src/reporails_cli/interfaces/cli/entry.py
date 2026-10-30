@@ -18,8 +18,14 @@ def _hook_agent(args: list[str]) -> str:
     return DEFAULT_HOOK_AGENT
 
 
+HOOK_USAGE = "usage: ails hook [--agent NAME] < payload.json — records one agent hook payload from stdin"
+
+
 def _run_hook(args: list[str]) -> None:
     """Record the payload on stdin as event records. Exits 0 on every path, prints nothing."""
+    if sys.stdin.isatty():
+        sys.stderr.write(HOOK_USAGE + "\n")
+        sys.exit(0)
     try:
         # pylint: disable-next=import-outside-toplevel  # startup: the hook path must not load the CLI
         from reporails_cli.core.eventbus.dispatcher import record_payload

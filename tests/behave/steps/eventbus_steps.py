@@ -104,3 +104,16 @@ def step_refusal(context, session):
     records = _events(context, session)["records"]
     assert [r["event"] for r in records] == ["refusal"], records
     assert records[0]["refusal"]
+
+
+@when('"ails events --after -1" is run for the session')
+def step_negative_after(context):
+    context.negative = run_ails(
+        context.tmpdir, "events", "--session", context.session, "--after", "-1", "-f", "json", home=context.home
+    )
+
+
+@then("the command exited 2 with no JSON on stdout")
+def step_exit_two(context):
+    assert context.negative.returncode == 2, (context.negative.returncode, context.negative.stderr)
+    assert context.negative.stdout.strip() == "", context.negative.stdout

@@ -2,7 +2,7 @@
 
 ### Added
 
-- With the reporails plugin installed, a Claude Code session's start and end, prompts, file reads and edits, stops and compactions are recorded locally as event records (which file, which tool, when; never prompt or file text) in a private per-session file under `~/.reporails/xray/`, pruned by age and size. `ails events --session <id> --after <n> -f json` prints a session's records in order. Recording never prints into or blocks the session, and nothing is sent anywhere.
+- With the reporails plugin installed, a Claude Code session's start and end, prompts, file reads and edits, stops and compactions are recorded locally as event records (which file, which tool, when; never prompt or file text) in a private per-session file under `~/.reporails/xray/`, pruned by age and size. `ails events --session <id> --after <n> -f json` prints a session's records in the order they were recorded. Recording never prints into or blocks the session, and nothing is sent anywhere.
 
 ### Changed
 

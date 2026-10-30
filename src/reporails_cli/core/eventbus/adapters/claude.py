@@ -18,7 +18,7 @@ Never read: `prompt`, the rest of `tool_input`, `tool_response`, `last_assistant
 from __future__ import annotations
 
 from reporails_cli.core.eventbus.port import PayloadRefused, utc_now
-from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, opt_str
 from reporails_cli.core.platform.dto.events import EventKind, EventRecord
 from reporails_cli.core.platform.policy.host_hooks import HEAL_TOOLS
 
@@ -35,11 +35,6 @@ _KINDS: dict[str, EventKind] = {
 }
 
 
-def _text(payload: JsonObject, key: str) -> str | None:
-    value = payload.get(key)
-    return value if isinstance(value, str) and value else None
-
-
 class ClaudeAdapter:  # pylint: disable=too-few-public-methods  # an adapter is one `resolve`
     """Resolves a Claude Code hook payload."""
 
@@ -51,22 +46,26 @@ class ClaudeAdapter:  # pylint: disable=too-few-public-methods  # an adapter is 
         kind = _KINDS.get(name) if isinstance(name, str) else None
         if kind is None:
             raise PayloadRefused(f"unknown event: {name!r}")
-        session_id = _text(payload, "session_id")
+        session_id = opt_str(payload.get("session_id")) or None
         if session_id is None:
             raise PayloadRefused("payload has no session_id")
-        tool_name = _text(payload, "tool_name")
-        path = _text(as_object(payload.get("tool_input")), "file_path") if tool_name in HEAL_TOOLS else None
+        tool_name = opt_str(payload.get("tool_name")) or None
+        path = (
+            (opt_str(as_object(payload.get("tool_input")).get("file_path")) or None)
+            if tool_name in HEAL_TOOLS
+            else None
+        )
         return [
             EventRecord(
                 agent=self.agent,
                 event=kind,
                 session_id=session_id,
                 time=utc_now(),
-                subagent_id=_text(payload, "agent_id"),
-                cwd=_text(payload, "cwd"),
-                source=_text(payload, "source") or _text(payload, "trigger"),
+                subagent_id=opt_str(payload.get("agent_id")) or None,
+                cwd=opt_str(payload.get("cwd")) or None,
+                source=opt_str(payload.get("source")) or opt_str(payload.get("trigger")) or None,
                 tool_name=tool_name,
-                tool_use_id=_text(payload, "tool_use_id"),
+                tool_use_id=opt_str(payload.get("tool_use_id")) or None,
                 paths=(path,) if path else (),
             )
         ]

@@ -21,3 +21,9 @@ Feature: Agent hook events are recorded and read back through the real binary
     And the event store location is a regular file
     When every payload is piped into "ails hook --agent claude" in order
     Then every hook call exited 0 with nothing on stdout
+
+  @e2e
+  Scenario: A negative offset is refused
+    Given the recorded Claude Code session payloads
+    When "ails events --after -1" is run for the session
+    Then the command exited 2 with no JSON on stdout

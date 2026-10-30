@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, TypeGuard, get_args
 
-from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_str, str_list
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_str, opt_str, str_list
 
 EventKind = Literal[
     "session_start",
@@ -78,15 +78,11 @@ class EventRecord:
             event=event,
             session_id=session_id,
             time=time,
-            subagent_id=_opt(obj.get("subagent_id")),
-            cwd=_opt(obj.get("cwd")),
-            source=_opt(obj.get("source")),
-            tool_name=_opt(obj.get("tool_name")),
-            tool_use_id=_opt(obj.get("tool_use_id")),
+            subagent_id=opt_str(obj.get("subagent_id")),
+            cwd=opt_str(obj.get("cwd")),
+            source=opt_str(obj.get("source")),
+            tool_name=opt_str(obj.get("tool_name")),
+            tool_use_id=opt_str(obj.get("tool_use_id")),
             paths=tuple(str_list(obj.get("paths"))),
-            refusal=_opt(obj.get("refusal")),
+            refusal=opt_str(obj.get("refusal")),
         )
-
-
-def _opt(value: JsonValue | None) -> str | None:
-    return value if isinstance(value, str) else None

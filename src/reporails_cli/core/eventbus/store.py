@@ -9,7 +9,9 @@ import re
 import time
 from pathlib import Path
 
+from reporails_cli.core.cache.sweep import sweep
 from reporails_cli.core.platform.config.bootstrap import get_xray_log_dir
+from reporails_cli.core.platform.config.claude_settings import claude_cleanup_period_days
 from reporails_cli.core.platform.dto.events import EventRecord
 
 LOG_RETENTION_DAYS = 30
@@ -40,12 +42,6 @@ def prune(root: Path | None) -> None:
     sessions removed after 30 days (sooner under Claude Code's `cleanupPeriodDays`), then oldest
     sessions until the folder is under 100 MB. Best-effort: a folder or file that cannot be
     read or changed is left alone and never changes the answer."""
-    # pylint: disable-next=import-outside-toplevel  # the per-event path stays light
-    from reporails_cli.core.cache.sweep import sweep
-
-    # pylint: disable-next=import-outside-toplevel  # the per-event path stays light
-    from reporails_cli.core.platform.config.claude_settings import claude_cleanup_period_days
-
     # Best-effort housekeeping: an OSError here must not fail the command.
     with contextlib.suppress(OSError):
         folder = get_xray_log_dir()
