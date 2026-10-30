@@ -9,10 +9,10 @@ import pytest
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.pipeline.mapping import agent_file_pairs, discover_scope
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
-from reporails_cli.interfaces.mcp import tools
 
 RULE = "---\npaths:\n  - 'src/**'\n---\n\n# A\n\nUse type hints on every function.\n"
 SKILL = "---\nname: foo\ndescription: Does foo.\n---\n\nRun foo.\n"
@@ -102,9 +102,9 @@ def test_single_file_in_a_config_left_out_folder_lands_in_rule_files(tmp_path: P
 def test_mcp_single_file_in_a_left_out_folder_lands_in_rule_files(tmp_path: Path) -> None:
     project = _project(tmp_path, "exclude_dirs: [rules]\n")
     rule = project / ".claude" / "rules" / "a.md"
-    result = tools._discover_files(project, single_file=rule)
-    assert not isinstance(result, dict)
-    filter_agents, _agent, files, *_ = result
+    result = check_one.discover_files(project, single_file=rule)
+    assert isinstance(result, check_one.Discovered)
+    filter_agents, files = result.filter_agents, result.instruction_files
     assert safe_resolve(rule) in _rule_files(filter_agents)
     assert files == [safe_resolve(rule)]
     assert _owner_of(filter_agents, project, safe_resolve(rule)) == "claude"

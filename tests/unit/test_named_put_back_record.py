@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
+from reporails_cli.core.pipeline import check_one
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
-from reporails_cli.interfaces.mcp import tools
 
 
 def _project(tmp_path: Path) -> Path:
@@ -88,9 +88,9 @@ def test_whole_project_run_with_a_named_file_keeps_the_left_out_folder_in_the_re
     (project / "CLAUDE.md").write_text("# Root\n\nAlways run the tests.\n", encoding="utf-8")
     clear_agent_cache()
     named = frozenset({project / "packages" / "x" / "CLAUDE.md"})
-    discovered = tools._discover_files(project, named=named)
-    assert isinstance(discovered, tuple)
-    files = {f.relative_to(project).as_posix() for f in discovered[2]}
+    discovered = check_one.discover_files(project, named=named)
+    assert isinstance(discovered, check_one.Discovered)
+    files = {f.relative_to(project).as_posix() for f in discovered.instruction_files}
     assert "packages/x/CLAUDE.md" in files
     assert "packages/y/CLAUDE.md" not in files
-    assert discovered[4] == (("packages",), ())
+    assert discovered.left_out.record == (("packages",), ())

@@ -16,6 +16,7 @@ import pytest
 from typer.testing import CliRunner
 
 from reporails_cli.core.discovery.project_root import resolve_project_root_for_file
+from reporails_cli.core.pipeline import check_one
 from reporails_cli.interfaces.cli import check_orchestration as orch
 from reporails_cli.interfaces.cli.main import app
 from reporails_cli.interfaces.mcp import tools
@@ -115,7 +116,7 @@ def test_a_user_level_agent_folder_is_its_own_project_root(scratch_home: Path) -
 def test_a_user_level_file_roots_the_same_when_checked_from_the_home_directory(scratch_home: Path) -> None:
     main, _ = _write_user_level(scratch_home)
     assert orch._scan_root(main, main, scratch_home) == (None, scratch_home / ".claude")
-    assert tools._resolve_scan_target(main) == (scratch_home / ".claude", main)
+    assert check_one.resolve_scan_target(main) == (scratch_home / ".claude", main)
 
 
 @pytest.mark.integration
@@ -228,7 +229,7 @@ def test_a_misspelled_hook_event_is_reported_in_a_project_with_no_git_checked_fr
 
     assert resolve_project_root_for_file(settings) == project
     assert orch._scan_root(settings, settings, elsewhere) == (None, project)
-    assert tools._resolve_scan_target(settings) == (project, settings)
+    assert check_one.resolve_scan_target(settings) == (project, settings)
 
     cli = _check(elsewhere, settings)
     assert list(cli["files"]) == [".claude/settings.json"]

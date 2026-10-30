@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.interfaces.mcp import tools, validate_targets
 
@@ -35,7 +36,7 @@ def test_run_local_checks_threads_scoped_into_m_probes(monkeypatch, scoped):
         lambda *_a, **kw: captured.update(kw) or [],
     )
 
-    tools._checks_over_pairs(Path("/proj"), [("claude", [Path("/proj/CLAUDE.md")])], None, scoped)
+    check_one._checks_over_pairs(Path("/proj"), [("claude", [Path("/proj/CLAUDE.md")])], None, scoped)
 
     assert captured.get("scoped") is scoped
 
@@ -50,18 +51,20 @@ def test_run_pipeline_for_path_scopes_a_single_file_target(monkeypatch, tmp_path
     single_file.write_text("# Claude\n", encoding="utf-8")
 
     monkeypatch.setattr(
-        "reporails_cli.interfaces.mcp.tools._discover_files",
-        lambda _target, single_file=None, named=frozenset(): ([], "claude", [single_file], {}, ((), ()), None),
+        "reporails_cli.core.pipeline.check_one.discover_files",
+        lambda _target, single_file=None, named=frozenset(): check_one.Discovered(
+            [], "claude", [single_file], {}, check_one.LeftOut()
+        ),
     )
-    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.is_initialized", lambda: True)
-    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.model_not_ready_error", lambda: None)
-    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.build_map", lambda *_a, **_k: (None, None))
+    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.is_initialized", lambda: True)
+    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.model_refusal", lambda: None)
+    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.build_map", lambda *_a, **_k: (None, None))
     monkeypatch.setattr(
         "reporails_cli.core.lint.rule_runner.run_m_probes",
         lambda *_a, **kw: captured.update(kw) or [],
     )
     monkeypatch.setattr(
-        "reporails_cli.interfaces.mcp.tools._assemble_mcp_result",
+        "reporails_cli.core.pipeline.check_one._assemble",
         lambda *_a, **_k: (CombinedResult(), None),
     )
     monkeypatch.setattr("reporails_cli.formatters.json.format_combined_result", lambda *_a, **_k: {"files": {}})
@@ -79,18 +82,20 @@ def test_run_pipeline_for_path_does_not_scope_a_directory_target(monkeypatch, tm
     claude_md.write_text("# Claude\n", encoding="utf-8")
 
     monkeypatch.setattr(
-        "reporails_cli.interfaces.mcp.tools._discover_files",
-        lambda _target, single_file=None, named=frozenset(): ([], "claude", [claude_md], {}, ((), ()), None),
+        "reporails_cli.core.pipeline.check_one.discover_files",
+        lambda _target, single_file=None, named=frozenset(): check_one.Discovered(
+            [], "claude", [claude_md], {}, check_one.LeftOut()
+        ),
     )
-    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.is_initialized", lambda: True)
-    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.model_not_ready_error", lambda: None)
-    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.build_map", lambda *_a, **_k: (None, None))
+    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.is_initialized", lambda: True)
+    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.model_refusal", lambda: None)
+    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.build_map", lambda *_a, **_k: (None, None))
     monkeypatch.setattr(
         "reporails_cli.core.lint.rule_runner.run_m_probes",
         lambda *_a, **kw: captured.update(kw) or [],
     )
     monkeypatch.setattr(
-        "reporails_cli.interfaces.mcp.tools._assemble_mcp_result",
+        "reporails_cli.core.pipeline.check_one._assemble",
         lambda *_a, **_k: (CombinedResult(), None),
     )
     monkeypatch.setattr("reporails_cli.formatters.json.format_combined_result", lambda *_a, **_k: {"files": {}})
@@ -115,7 +120,7 @@ def test_resolve_scan_target_roots_a_nested_file_at_the_project_root(tmp_path):
     target = rules_dir / "style.md"
     target.write_text("# Style\n", encoding="utf-8")
 
-    scan_root, single_file = tools._resolve_scan_target(target)
+    scan_root, single_file = check_one.resolve_scan_target(target)
 
     assert scan_root == tmp_path
     assert single_file == target
@@ -126,7 +131,7 @@ def test_resolve_scan_target_roots_a_nested_file_at_the_project_root(tmp_path):
 def test_resolve_scan_target_directory_still_roots_at_itself(tmp_path):
     """A directory target keeps CLI parity via `resolve_project_root` — unaffected by
     the file-target fix above."""
-    scan_root, single_file = tools._resolve_scan_target(tmp_path)
+    scan_root, single_file = check_one.resolve_scan_target(tmp_path)
 
     assert scan_root == tmp_path
     assert single_file is None
@@ -242,11 +247,13 @@ def test_assemble_mcp_result_surfaces_the_funnel_error(monkeypatch, tmp_path):
 
     err = FunnelError(error="project_limit_reached", tier="pro")
     monkeypatch.setattr(
-        "reporails_cli.interfaces.mcp.tools._server_lint",
+        "reporails_cli.core.pipeline.check_one._server_lint",
         lambda *_a, **_k: LintResponse(result=None, funnel_error=err),
     )
 
-    _result, funnel_error = tools._assemble_mcp_result(tmp_path, "claude", [], ruleset_map=None, local=([], [], []))
+    _result, funnel_error = check_one._assemble(
+        tmp_path, "claude", [], None, ([], [], []), rule_agents=(), not_evaluated=(), exclusions=None
+    )
 
     assert funnel_error is err
 
@@ -265,7 +272,7 @@ def test_discover_files_folds_generic_scanned_imports(monkeypatch, tmp_path):
     arch = tmp_path / "docs" / "arch.md"
 
     monkeypatch.setattr(
-        "reporails_cli.interfaces.mcp.tools.get_project_config",
+        "reporails_cli.core.pipeline.check_one.get_project_config",
         lambda _t: SimpleNamespace(default_agent="", exclude_dirs=[], exclude_files=[], generic_scanning=True),
     )
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.detect_agents", lambda _t: [])
@@ -278,14 +285,14 @@ def test_discover_files_folds_generic_scanned_imports(monkeypatch, tmp_path):
         lambda _t, agents=None: [claude_md],
     )
     monkeypatch.setattr(
-        "reporails_cli.interfaces.mcp.tools.apply_generic_scan",
+        "reporails_cli.core.pipeline.check_one.apply_generic_scan",
         lambda *_a, **_k: ([arch], {"docs/arch.md": "generic"}),
     )
 
-    result = tools._discover_files(tmp_path)
+    result = check_one.discover_files(tmp_path)
 
-    assert not isinstance(result, dict), result
-    _filter_agents, _agent, files, file_type_by_path, _excluded, _exclusions = result
+    assert isinstance(result, check_one.Discovered), result
+    files, file_type_by_path = result.instruction_files, result.file_type_by_path
     assert claude_md in files
     assert arch in files
     assert file_type_by_path == {"docs/arch.md": "generic"}
@@ -298,7 +305,7 @@ def test_discover_files_skips_generic_scan_fold_when_disabled(monkeypatch, tmp_p
     claude_md.write_text("# Claude\n", encoding="utf-8")
 
     monkeypatch.setattr(
-        "reporails_cli.interfaces.mcp.tools.get_project_config",
+        "reporails_cli.core.pipeline.check_one.get_project_config",
         lambda _t: SimpleNamespace(default_agent="", exclude_dirs=[], exclude_files=[], generic_scanning=False),
     )
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.detect_agents", lambda _t: [])
@@ -311,10 +318,10 @@ def test_discover_files_skips_generic_scan_fold_when_disabled(monkeypatch, tmp_p
         lambda _t, agents=None: [claude_md],
     )
 
-    result = tools._discover_files(tmp_path)
+    result = check_one.discover_files(tmp_path)
 
-    assert not isinstance(result, dict), result
-    _filter_agents, _agent, files, file_type_by_path, _excluded, _exclusions = result
+    assert isinstance(result, check_one.Discovered), result
+    files, file_type_by_path = result.instruction_files, result.file_type_by_path
     assert files == [claude_md]
     assert file_type_by_path == {}
 

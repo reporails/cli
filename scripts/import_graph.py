@@ -23,10 +23,18 @@ def core_subsystems(src: Path = SRC) -> set[str]:
     return {p.name for p in core.iterdir() if p.is_dir() and p.name not in {"platform", "__pycache__"}}
 
 
+def interface_nodes(src: Path = SRC) -> set[str]:
+    """The `interfaces/` subfolders: one delivery layer per interface."""
+    interfaces = src / "interfaces"
+    if not interfaces.is_dir():
+        return set()
+    return {p.name for p in interfaces.iterdir() if p.is_dir() and p.name != "__pycache__"}
+
+
 PURE = ["contract", "dto", "policy"]
 INFRA = ["adapters", "runtime", "config", "observability", "utils"]
 SUBSYSTEMS = sorted(core_subsystems())
-OUTER = ["cli", "mcp", "formatters"]
+OUTER = [*sorted(interface_nodes()), "formatters"]
 
 # Ring 0 is the pure core, 1 the infrastructure layers, 2 the subsystems, 3 the delivery layers.
 RING = {**dict.fromkeys(PURE, 0), **dict.fromkeys(INFRA, 1), **dict.fromkeys(SUBSYSTEMS, 2), **dict.fromkeys(OUTER, 3)}
@@ -45,7 +53,16 @@ ALLOWED: dict[str, set[str]] = {
     "utils": {"contract", "dto"},
     # The event bus stays light: no mapper, lint or pipeline, so the hook command starts fast.
     "eventbus": {
-        "cache", "discovery", "contract", "dto", "policy", "adapters", "runtime", "config", "observability", "utils",
+        "cache",
+        "discovery",
+        "contract",
+        "dto",
+        "policy",
+        "adapters",
+        "runtime",
+        "config",
+        "observability",
+        "utils",
     },
 }
 
@@ -237,8 +254,7 @@ def layer_violation_imports(graph: Graph) -> list[Import]:
     return [
         imp
         for imp in graph.imports
-        if _in_constrained_node(imp.src_mod)
-        and not layer_row_allows(imp.src_node, imp.dst_node)
+        if _in_constrained_node(imp.src_mod) and not layer_row_allows(imp.src_node, imp.dst_node)
     ]
 
 
@@ -288,3 +304,25 @@ def private_imports(graph: Graph) -> list[Import]:
 def private_reaches(src: Path = SRC) -> list[str]:
     """`private_imports` as report lines."""
     return sorted({imp.text for imp in private_imports(build_graph(src))})
+
+
+def interface_cross_imports(graph: Graph, src: Path = SRC) -> list[Import]:
+    """Imports of one `interfaces/<a>/` module from another `interfaces/<b>/` (type-checking imports count).
+
+    Each interface composes the core on its own; what two interfaces share belongs in `core/` or `formatters/`.
+    """
+    interfaces = interface_nodes(src)
+    return [
+        imp
+        for imp in graph.imports
+        if imp.src_mod.split(".")[1:2] == ["interfaces"]
+        and imp.target.split(".")[1:2] == ["interfaces"]
+        and imp.src_node in interfaces
+        and imp.dst_node in interfaces
+        and imp.dst_node != imp.src_node
+    ]
+
+
+def interface_cross_reaches(src: Path = SRC) -> list[str]:
+    """`interface_cross_imports` as report lines."""
+    return sorted({imp.text for imp in interface_cross_imports(build_graph(src), src)})

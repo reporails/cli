@@ -6,13 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from reporails_cli.core.heal.apply import (
-    apply_keyed_heal,
-    heal_bound,
-    heal_withheld_for_run,
-    resolved_within,
-    suppressed_by_path,
-)
+from reporails_cli.core.heal.apply import heal_withheld_for_run, heal_workflow_within
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
@@ -45,16 +39,7 @@ def heal_apply_message(payload: JsonObject, *, mapped: bool = True) -> str:
 def heal_apply_write(ruleset_map: RulesetMap, workflow: JsonObject, target: Path, scan_root: Path) -> str:
     """Write the workflow's keyed fixes within `target`'s scope; the text view of what was done."""
 
-    files = sorted({Path(a.file_path) for a in ruleset_map.atoms})
-    files = [f for f in files if resolved_within(f, heal_bound(target, scan_root))]
-    result = apply_keyed_heal(
-        ruleset_map,
-        scan_root,
-        deserialize_workflow({"workflow": workflow}),
-        dry_run=False,
-        allowed_files=files,
-        suppressed=suppressed_by_path(files, scan_root),
-    )
+    result = heal_workflow_within(ruleset_map, deserialize_workflow({"workflow": workflow}), target, scan_root)
     return render_heal_apply(result.fixes, result.decisions, result.put_back, scan_root)
 
 

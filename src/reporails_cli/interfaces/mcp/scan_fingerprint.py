@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
+from reporails_cli.core.pipeline.check_one import Refusal, discover_files
 from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.config.bootstrap import (
     get_global_config_path,
@@ -18,7 +19,6 @@ from reporails_cli.core.platform.config.credentials import credentials_path
 from reporails_cli.core.platform.config.endpoints import server_url
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.interfaces.mcp.tools import _discover_files
 
 
 def scan_inputs_base(scan_root: Path) -> str:
@@ -35,8 +35,8 @@ def scan_inputs_base(scan_root: Path) -> str:
     # removed (or an exclusion changed) would go unseen: detect afresh, and the run that
     # follows reuses this fresh list.
     clear_agent_cache()
-    discovery = _discover_files(scan_root)
-    scanned: list[Path] = [Path(f) for f in discovery[2]] if isinstance(discovery, tuple) else []
+    discovery = discover_files(scan_root)
+    scanned: list[Path] = [] if isinstance(discovery, Refusal) else [Path(f) for f in discovery.instruction_files]
     if not scanned:
         return ""
     config_files = [

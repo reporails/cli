@@ -15,6 +15,7 @@ from pathlib import Path
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from reporails_cli.core.mapper.model_manifest import ModelFetchError
+from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
@@ -38,7 +39,6 @@ from reporails_cli.interfaces.mcp.scan_fingerprint import (
 )
 from reporails_cli.interfaces.mcp.strict_tool_args import StrictArgsMCPServer
 from reporails_cli.interfaces.mcp.tools import (
-    _resolve_scan_target,
     is_retryable_reply,
     model_not_ready_error,
     run_pipeline_for_path,
@@ -306,7 +306,7 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None = Non
     # The mtime hash walks the scan root the pipeline discovers from: a FILE target's root is its
     # enclosing project, never the bare file path (which reads as an empty directory and would
     # keep a same-content repeat validate from ever hitting the cached reply).
-    scan_root = _resolve_scan_target(target)[0]
+    scan_root = resolve_scan_target(target)[0]
 
     tokens = target_tokens(targets)
     state, unchanged, base_hash = await _begin_validate_call(path, tokens, full, target, scan_root)
@@ -372,7 +372,7 @@ async def _heal_apply_reply(path: str, targets: list[str] | None = None) -> str:
     model_error = await asyncio.to_thread(model_not_ready_error)
     if model_error is not None or not target.exists():
         return heal_apply_message(model_error or {"error": f"Path not found: {target}"})
-    scan_root = _resolve_scan_target(target)[0]
+    scan_root = resolve_scan_target(target)[0]
     result = await _fresh_validate_payload(path, target_tokens(targets), scan_root, _CircuitState())
     if isinstance(result, dict):
         return heal_apply_message(result)

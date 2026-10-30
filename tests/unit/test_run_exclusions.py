@@ -11,9 +11,9 @@ from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.classify.link_walker import walk_markdown_links
 from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.discovery.exclusions import DEFAULT_EXCLUDE_DIRS, RunExclusions, load_run_exclusions
+from reporails_cli.core.pipeline import check_one
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
-from reporails_cli.interfaces.mcp import tools
 
 
 def _write_config(project: Path, body: str) -> None:
@@ -205,14 +205,16 @@ def test_cli_scope_fold_never_checks_a_left_out_file(tmp_path, case, config, fla
 def test_mcp_discover_files_fold_never_checks_a_left_out_file(tmp_path, case, config) -> None:
     project = _gs_project(tmp_path, config)
     clear_agent_cache()
-    discovered = tools._discover_files(project)
-    assert isinstance(discovered, tuple)
-    names = _fold_names(discovered[2])
+    discovered = check_one.discover_files(project)
+    assert isinstance(discovered, check_one.Discovered)
+    names = _fold_names(discovered.instruction_files)
     assert "CLAUDE.md" in names
     assert not names & {"notes.md", "ref.md", "a.md"}
-    assert "docs/b.md" in discovered[3]
-    assert not any("ext" in k.split("/") for k in discovered[3])
-    assert discovered[5].dirs or discovered[5].files
+    assert "docs/b.md" in discovered.file_type_by_path
+    assert not any("ext" in k.split("/") for k in discovered.file_type_by_path)
+    exclusions = discovered.left_out.exclusions
+    assert exclusions is not None
+    assert exclusions.dirs or exclusions.files
 
 
 # ─── The Excluded record on a narrowed run ──────────────────────────────

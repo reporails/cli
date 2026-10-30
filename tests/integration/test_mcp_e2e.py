@@ -281,7 +281,7 @@ class TestValidateTool:
         """When the rules folder holds no `core` rules, validate returns a structured
         `needs_install` payload that names the folder and says to reinstall the package or fix
         `framework_path`, and does not point at a rules download."""
-        with patch("reporails_cli.interfaces.mcp.tools.is_initialized", return_value=False):
+        with patch("reporails_cli.core.pipeline.check_one.is_initialized", return_value=False):
             text = _call_tool("validate", {"path": "."})
         data = json.loads(text)
         assert data.get("needs_install") is True
@@ -296,9 +296,9 @@ class TestValidateTool:
     def test_runtime_error_returns_error_json(self, level2_project: Path) -> None:
         """RuntimeError from scope_for_path must return JSON error, not crash."""
         with (
-            patch("reporails_cli.interfaces.mcp.tools.is_initialized", return_value=True),
+            patch("reporails_cli.core.pipeline.check_one.is_initialized", return_value=True),
             patch(
-                "reporails_cli.interfaces.mcp.tools.scope_for_path",
+                "reporails_cli.core.pipeline.check_one.scope_for_path",
                 side_effect=RuntimeError("Unsupported operating system"),
             ),
         ):
@@ -994,7 +994,7 @@ class TestPreflightToolHelper:
 
 
 class TestDisplayScoreHelper:
-    """`_display_score` must pick the `per_file_analysis` entry whose normalized path IS
+    """`display_score` must pick the `per_file_analysis` entry whose normalized path IS
     the target file, never entry 0 blindly — `generic_scanning` can join `@`-imported files
     into the scored set ahead of the target."""
 
@@ -1007,7 +1007,7 @@ class TestDisplayScoreHelper:
     @pytest.mark.e2e
     @pytest.mark.subsys_server
     def test_picks_the_target_s_own_entry_even_when_an_imported_file_is_listed_first(self, tmp_path: Path) -> None:
-        from reporails_cli.interfaces.mcp.tools import _display_score
+        from reporails_cli.core.pipeline.check_one import display_score
 
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Project\n")
@@ -1019,12 +1019,12 @@ class TestDisplayScoreHelper:
             quality=None,
         )
 
-        assert _display_score(result, target, tmp_path) == 4.2
+        assert display_score(result, target, tmp_path) == 4.2
 
     @pytest.mark.e2e
     @pytest.mark.subsys_server
     def test_falls_back_to_quality_only_when_the_target_has_no_entry(self, tmp_path: Path) -> None:
-        from reporails_cli.interfaces.mcp.tools import _display_score
+        from reporails_cli.core.pipeline.check_one import display_score
 
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Project\n")
@@ -1035,7 +1035,7 @@ class TestDisplayScoreHelper:
             quality=SimpleNamespace(display_score=6.5),
         )
 
-        assert _display_score(result, target, tmp_path) == 6.5
+        assert display_score(result, target, tmp_path) == 6.5
 
 
 # ---------------------------------------------------------------------------

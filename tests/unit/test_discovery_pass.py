@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
+from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.pipeline.mapping import discover_scope
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
@@ -92,9 +93,9 @@ def test_check_scope_discovery_reads_each_directory_once(tmp_path: Path, walker_
 def test_mcp_discovery_reads_each_directory_once(tmp_path: Path, walker_scans: list[str]) -> None:
     project = _project(tmp_path)
     clear_agent_cache()
-    discovered = tools._discover_files(project)
-    assert isinstance(discovered, tuple)
-    assert {p.name for p in discovered[2]} >= {"CLAUDE.md", "SKILL.md"}
+    discovered = check_one.discover_files(project)
+    assert isinstance(discovered, check_one.Discovered)
+    assert {p.name for p in discovered.instruction_files} >= {"CLAUDE.md", "SKILL.md"}
     assert walker_scans
     assert len(walker_scans) == len(set(walker_scans))
 
@@ -118,9 +119,9 @@ def test_a_single_file_pass_records_no_exclusions(tmp_path: Path) -> None:
     (project / ".ails" / "config.yml").write_text("exclude_dirs: [vendor]\n", encoding="utf-8")
     clear_agent_cache()
     assert discover_scope(project, "", ["docs"], ["a.md"], scan_files=False).excluded == ((), ())
-    found = tools._discover_files(project, single_file=project / "CLAUDE.md")
-    assert isinstance(found, tuple)
-    assert found[4] == ((), ())
+    found = check_one.discover_files(project, single_file=project / "CLAUDE.md")
+    assert isinstance(found, check_one.Discovered)
+    assert found.left_out.record == ((), ())
 
 
 @pytest.mark.unit
@@ -132,8 +133,10 @@ def test_mcp_discovery_that_excludes_everything_still_names_the_exclusions(tmp_p
         "exclude_dirs: [pkg, .claude]\nexclude_files: [CLAUDE.md, AGENTS.md]\n", encoding="utf-8"
     )
     clear_agent_cache()
-    payload = tools._discover_files(project)
-    assert isinstance(payload, dict)
+    refusal = check_one.discover_files(project)
+    assert isinstance(refusal, check_one.Refusal)
+    assert refusal.kind == "empty_project"
+    payload = tools.refusal_payload(refusal)
     assert payload["excluded"] == {
         "dirs": [".claude", "pkg"],
         "files": ["AGENTS.md", "CLAUDE.md"],

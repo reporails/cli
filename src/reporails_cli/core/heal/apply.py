@@ -119,3 +119,23 @@ def apply_keyed_heal(
         suppressed=suppressed,
         remap=remap,
     )
+
+
+def heal_workflow_within(
+    ruleset_map: RulesetMap, workflow: RemediationWorkflow | None, target: Path, scan_root: Path
+) -> KeyedResult:
+    """Write the workflow's keyed fixes to the mapped files inside `target`'s scope (`heal_bound`).
+
+    A file `heal_exclude` matches is never written and a line annotated with `ails-disable-line` is left
+    alone; a written file is re-mapped and checked against its plan, and one that departs is put back.
+    """
+    files = sorted({Path(a.file_path) for a in ruleset_map.atoms})
+    files = [f for f in files if resolved_within(f, heal_bound(target, scan_root))]
+    return apply_keyed_heal(
+        ruleset_map,
+        scan_root,
+        workflow,
+        dry_run=False,
+        allowed_files=files,
+        suppressed=suppressed_by_path(files, scan_root),
+    )
