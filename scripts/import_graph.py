@@ -64,6 +64,12 @@ ALLOWED: dict[str, set[str]] = {
         "observability",
         "utils",
     },
+    # The session view reads the event bus, the expected-loads listing and discovery; it holds no mapper,
+    # lint or heal import of its own.
+    "xray": {
+        "eventbus", "pipeline", "discovery", "cache", "contract", "dto", "policy", "adapters", "runtime", "config",
+        "observability", "utils",
+    },
 }
 
 LARGE_MODULE = 800

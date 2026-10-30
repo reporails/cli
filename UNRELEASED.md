@@ -33,3 +33,4 @@
 - Tests: architecture checks guard the package boundaries, replacing two narrower checks they cover, and `poe hexagon` renders the package dependency view.
 - Groundwork for a local session x-ray page: a Claude Code session's transcript is read for its token counts, turn ends, subagent runs and instruction-file loads; no command output changes yet.
 - Checking or fixing one file runs through one shared path for every interface; MCP replies are unchanged, and an architecture check stops one interface importing another.
+- Groundwork for a local session x-ray page: a Claude Code session's transcript is read for its token counts, turn ends, subagent runs and instruction-file loads; no command output changes yet; a session's records are shaped into the loads, turns, subagents and files the page will draw.
