@@ -17,7 +17,7 @@ from reporails_cli.core.eventbus.query import read_events
 from reporails_cli.core.pipeline import expected_loads
 from reporails_cli.core.platform.config.bootstrap import get_xray_log_dir
 from reporails_cli.core.platform.contract.json_value import JsonObject
-from reporails_cli.core.platform.dto.events import EventRecord
+from reporails_cli.core.platform.dto.events import EventRecord, ToolUse
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_eventbus]
 
@@ -55,7 +55,9 @@ def test_each_row_resolves_correctly(row: str, expected: tuple[object, ...]) -> 
     record_payload("claude", row)
     (record,), _ = read_events(SESSION, 0)
     kind, tool, use_id, paths, sub, source = expected
-    assert (record.event, record.tool_name, record.tool_use_id, record.paths, record.subagent_id, record.source) == (
+    used = record.tool or ToolUse()
+    got_paths = (used.path,) if used.path else ()
+    assert (record.event, used.name, used.use_id, got_paths, record.subagent_id, record.source) == (
         kind,
         tool,
         use_id,
@@ -130,7 +132,7 @@ def test_a_non_path_tool_gets_no_path() -> None:
     }
     record_payload("claude", json.dumps(payload))
     (record,), _ = read_events(SESSION, 0)
-    assert record.tool_name == "NotebookEdit" and record.paths == ()
+    assert record.tool == ToolUse("NotebookEdit", "toolu_1", None)
 
 
 @pytest.mark.parametrize(
@@ -148,7 +150,7 @@ def test_refusals_are_recorded_never_raised(agent: str, raw: bytes | str, sessio
     (record,), _ = read_events(session, 0)
     assert record.event == "refusal" and record.agent == agent
     assert record.refusal is not None and reason in record.refusal
-    assert record.tool_name is None and record.paths == ()
+    assert record.tool is None
 
 
 def test_an_unwritable_store_never_raises() -> None:
@@ -164,7 +166,9 @@ class _OtherAdapter:
     agent = "other"
 
     def resolve(self, payload: JsonObject) -> list[EventRecord]:
-        return [EventRecord(agent="other", event="pre_tool", session_id=str(payload["sid"]), time="t", tool_name="X")]
+        return [
+            EventRecord(agent="other", event="pre_tool", session_id=str(payload["sid"]), time="t", tool=ToolUse("X"))
+        ]
 
 
 def test_a_second_adapter_needs_no_dispatcher_change(monkeypatch: pytest.MonkeyPatch) -> None:

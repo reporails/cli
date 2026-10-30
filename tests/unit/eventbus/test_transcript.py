@@ -37,14 +37,14 @@ def _of(records: list[EventRecord], event: str) -> list[EventRecord]:
 def test_one_usage_record_per_response_per_agent(version: str, tmp_path: Path) -> None:
     records, _ = read_transcript("claude", _copy(version, tmp_path), TranscriptCursor())
     usage = _of(records, "assistant_usage")
-    main_ids = [r.message_id for r in usage if r.subagent_id is None]
-    sub_ids = [r.message_id for r in usage if r.subagent_id is not None]
+    main_ids = [r.usage.message_id for r in usage if r.subagent_id is None and r.usage]
+    sub_ids = [r.usage.message_id for r in usage if r.subagent_id is not None and r.usage]
     assert len(main_ids) == len(set(main_ids)) >= 2
     assert len(sub_ids) == len(set(sub_ids)) >= 1
     multi_id, counts = MULTI_ROW[version]
     assert main_ids.count(multi_id) == 1
     if counts is not None:
-        (hit,) = [r for r in usage if r.message_id == multi_id]
+        (hit,) = [r for r in usage if r.usage and r.usage.message_id == multi_id]
         assert hit.usage is not None
         assert (
             hit.usage.input_tokens,
@@ -76,8 +76,8 @@ def test_instruction_loads_per_agent_in_2_1_308(tmp_path: Path) -> None:
         ("/home/user/.claude/projects/-work-proj/memory/MEMORY.md", "AutoMem"),
         ("/work/proj/sub/CLAUDE.md", "nested"),
     ]
-    main = [(r.paths[0], r.memory_type) for r in loads if r.subagent_id is None]
-    sub = [(r.paths[0], r.memory_type) for r in loads if r.subagent_id == SUB_2_1_308]
+    main = [(r.load.path, r.load.memory_type) for r in loads if r.subagent_id is None and r.load]
+    sub = [(r.load.path, r.load.memory_type) for r in loads if r.subagent_id == SUB_2_1_308 and r.load]
     assert main == expected
     assert sub == expected
 
@@ -95,7 +95,7 @@ def test_resumed_read_emits_nothing_twice_and_picks_up_appended_rows(tmp_path: P
     with session.open("a", encoding="utf-8") as handle:
         handle.write("".join(json.dumps(row) + "\n" for row in (last, new)))
     appended, _ = read_transcript("claude", session, cursor)
-    assert [(r.message_id, r.usage.input_tokens if r.usage else None) for r in appended] == [("msg_NEW", 9)]
+    assert [(r.usage.message_id, r.usage.input_tokens) for r in appended] == [("msg_NEW", 9)]
 
 
 def test_torn_last_line_waits(tmp_path: Path) -> None:

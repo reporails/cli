@@ -8,7 +8,13 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.agent_discovery import claude_project_dir
 from reporails_cli.core.eventbus.adapters.claude_transcript import ClaudeTranscriptAdapter
-from reporails_cli.core.eventbus.port import PayloadRefused, get_transcript_adapter, register_transcript, utc_now
+from reporails_cli.core.eventbus.port import (
+    PayloadRefused,
+    TranscriptAdapter,
+    get_transcript_adapter,
+    register_transcript,
+    utc_now,
+)
 from reporails_cli.core.eventbus.tail import read_appended_lines
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
 from reporails_cli.core.platform.dto.events import EventRecord, FileCursor, TranscriptCursor
@@ -43,12 +49,19 @@ def read_transcript(
     session_id = session_file.stem
     adapter = get_transcript_adapter(agent)
     if adapter is None:
-        refusal = EventRecord(
-            agent=agent, event="refusal", session_id=session_id, time=utc_now(), refusal=f"unknown agent: {agent}"
-        )
-        return [refusal], offsets
+        return [_refusal(agent, session_id, f"unknown agent: {agent}")], offsets
     records: list[EventRecord] = []
     cursor = offsets
+    for subagent_id, path in _files(session_file):
+        before = cursor.of(subagent_id) or FileCursor(subagent_id)
+        fresh, after = _read_file(adapter, agent, session_id, path, before=before)
+        records.extend(fresh)
+        cursor = cursor.with_file(after)
+    return records, cursor
+
+
+def _files(session_file: Path) -> list[tuple[str | None, Path]]:
+    """The main transcript (`None`) and each subagent file below it, with the subagent's id."""
     files: list[tuple[str | None, Path]] = [(None, session_file)]
     subagents = session_file.with_suffix("") / "subagents"
     with contextlib.suppress(OSError):
@@ -56,31 +69,36 @@ def read_transcript(
             (path.stem.removeprefix(_SUBAGENT_PREFIX), path)
             for path in sorted(subagents.glob(f"{_SUBAGENT_PREFIX}*.jsonl"))
         )
-    for subagent_id, path in files:
-        before = cursor.of(subagent_id) or FileCursor(subagent_id)
-        lines, offset = read_appended_lines(path, before.offset)
-        last_id = before.last_message_id
-        rows = _rows(lines)
+    return files
+
+
+def _read_file(
+    adapter: TranscriptAdapter, agent: str, session_id: str, path: Path, *, before: FileCursor
+) -> tuple[list[EventRecord], FileCursor]:
+    """The records one file holds past `before`, a reply already recorded dropped, and where the read stopped."""
+    subagent_id = before.subagent_id
+    lines, offset = read_appended_lines(path, before.offset)
+    rows = _rows(lines)
+    records: list[EventRecord] = []
+    try:
+        if subagent_id is not None and before.offset == 0 and rows:
+            records.append(adapter.resolve_subagent(subagent_id, _meta(path), rows[0]))
+    except PayloadRefused as err:
+        records.append(_refusal(agent, session_id, err.reason))
+    last_id = before.last_message_id
+    for row in rows:
         try:
-            if subagent_id is not None and before.offset == 0 and rows:
-                meta = _meta(path)
-                records.append(adapter.resolve_subagent(subagent_id, meta, rows[0]))
+            resolved = adapter.resolve_row(row, subagent_id)
         except PayloadRefused as err:
             records.append(_refusal(agent, session_id, err.reason))
-        for row in rows:
-            try:
-                resolved = adapter.resolve_row(row, subagent_id)
-            except PayloadRefused as err:
-                records.append(_refusal(agent, session_id, err.reason))
-                continue
-            for record in resolved:
-                if record.event == "assistant_usage":
-                    if record.message_id == last_id:
-                        continue
-                    last_id = record.message_id
-                records.append(record)
-        cursor = cursor.with_file(FileCursor(subagent_id, offset, last_id))
-    return records, cursor
+            continue
+        for record in resolved:
+            if record.usage is not None:
+                if record.usage.message_id == last_id:
+                    continue
+                last_id = record.usage.message_id
+            records.append(record)
+    return records, FileCursor(subagent_id, offset, last_id)
 
 
 def _rows(lines: list[bytes]) -> list[JsonObject]:

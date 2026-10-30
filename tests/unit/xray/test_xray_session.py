@@ -10,7 +10,7 @@ import pytest
 
 from reporails_cli.core.eventbus import store
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object
-from reporails_cli.core.platform.dto.events import EventKind, EventRecord
+from reporails_cli.core.platform.dto.events import EventKind, EventRecord, ToolUse
 from reporails_cli.core.platform.dto.xray import XrayLoad, XrayView
 from reporails_cli.core.xray.session import XraySession
 
@@ -91,7 +91,12 @@ def _bus(event: EventKind, time: str, source: str | None = None, paths: tuple[st
     tool = "Read" if event == "pre_tool" else None
     store.append(
         EventRecord(
-            agent="claude", event=event, session_id=SESSION, time=time, source=source, tool_name=tool, paths=paths
+            agent="claude",
+            event=event,
+            session_id=SESSION,
+            time=time,
+            source=source,
+            tool=ToolUse(tool, None, paths[0] if paths else None) if tool else None,
         )
     )
 

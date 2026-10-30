@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from reporails_cli.core.eventbus.port import PayloadRefused, utc_now
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, opt_str
-from reporails_cli.core.platform.dto.events import EventKind, EventRecord
+from reporails_cli.core.platform.dto.events import EventKind, EventRecord, ToolUse
 from reporails_cli.core.platform.policy.host_hooks import HEAL_TOOLS
 
 _KINDS: dict[str, EventKind] = {
@@ -55,6 +55,8 @@ class ClaudeAdapter:  # pylint: disable=too-few-public-methods  # an adapter is 
             if tool_name in HEAL_TOOLS
             else None
         )
+        tool_use = ToolUse(tool_name, opt_str(payload.get("tool_use_id")) or None, path)
+        tool = None if tool_use == ToolUse() else tool_use
         return [
             EventRecord(
                 agent=self.agent,
@@ -64,8 +66,6 @@ class ClaudeAdapter:  # pylint: disable=too-few-public-methods  # an adapter is 
                 subagent_id=opt_str(payload.get("agent_id")) or None,
                 cwd=opt_str(payload.get("cwd")) or None,
                 source=opt_str(payload.get("source")) or opt_str(payload.get("trigger")) or None,
-                tool_name=tool_name,
-                tool_use_id=opt_str(payload.get("tool_use_id")) or None,
-                paths=(path,) if path else (),
+                tool=tool,
             )
         ]

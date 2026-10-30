@@ -34,7 +34,7 @@ from dataclasses import replace
 
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object, opt_str
-from reporails_cli.core.platform.dto.events import EventKind, EventRecord, TokenUsage
+from reporails_cli.core.platform.dto.events import EventKind, EventRecord, InstructionLoad, TokenUsage
 
 NESTED_MARKER = "nested"
 
@@ -82,14 +82,10 @@ class ClaudeTranscriptAdapter:
     def _usage(self, row: JsonObject, subagent_id: str | None) -> EventRecord:
         message = as_object(row.get("message"))
         message_id = _text(message, "id", "assistant message")
-        usage = TokenUsage.from_json(as_object(message.get("usage")))
+        usage = TokenUsage.from_json(message_id, as_object(message.get("usage")))
         if usage is None:
             raise PayloadRefused("assistant usage counts are not whole numbers")
-        return replace(
-            self._record(row, "assistant_usage", subagent_id),
-            message_id=message_id,
-            usage=usage,
-        )
+        return replace(self._record(row, "assistant_usage", subagent_id), usage=usage)
 
     def _instructions(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         attachment = as_object(row.get("attachment"))
@@ -106,4 +102,4 @@ class ClaudeTranscriptAdapter:
         return loads
 
     def _load(self, row: JsonObject, path: str, memory_type: str | None, subagent_id: str | None) -> EventRecord:
-        return replace(self._record(row, "instruction_load", subagent_id), paths=(path,), memory_type=memory_type)
+        return replace(self._record(row, "instruction_load", subagent_id), load=InstructionLoad(path, memory_type))

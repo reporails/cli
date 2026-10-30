@@ -69,18 +69,17 @@ def _tokens_est(path: str) -> int | None:
 
 
 def loads_of(records: Sequence[EventRecord], frame: Frame) -> tuple[XrayLoad, ...]:
-    """One load per file path of each `instruction_load` record, sized from the file on disk."""
+    """One load of each `instruction_load` record, sized from the file on disk."""
     return tuple(
         XrayLoad(
-            path=path,
-            kind=LOAD_KIND_OF_MEMORY_TYPE.get(record.memory_type or "", "other"),
+            path=record.load.path,
+            kind=LOAD_KIND_OF_MEMORY_TYPE.get(record.load.memory_type or "", "other"),
             t=frame.at(record),
-            tokens_est=_tokens_est(path),
-            findings=count_for(frame.findings, path, frame.root),
+            tokens_est=_tokens_est(record.load.path),
+            findings=count_for(frame.findings, record.load.path, frame.root),
         )
         for record in records
-        if record.event == "instruction_load"
-        for path in record.paths
+        if record.event == "instruction_load" and record.load is not None
     )
 
 
@@ -201,10 +200,10 @@ def _gather_bus(buckets: dict[int, _Bucket], bus: Sequence[EventRecord], ends: S
     for record in bus:
         if record.subagent_id is not None:
             continue
-        if record.event == "pre_tool" and record.tool_name == "Read":
+        if record.event == "pre_tool" and record.tool is not None and record.tool.name == "Read":
             target = _bucket_of(buckets, record, ends)
-            if target is not None:
-                target.reads.extend(record.paths)
+            if target is not None and record.tool.path:
+                target.reads.append(record.tool.path)
         elif record.event == "pre_compact":
             target = _bucket_of(buckets, record, ends)
             if target is not None and target.compaction is None:
