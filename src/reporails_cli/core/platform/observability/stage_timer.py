@@ -1,4 +1,4 @@
-"""Per-stage wall-clock timer for `ails check` — dev-only, zero-overhead when off.
+"""Per-stage wall-clock timer for `ails check`, heal, MCP tool calls and daemon requests; dev-only.
 
 Records sequential per-stage durations so a perf fix can be ordered by real
 seconds rather than cProfile-inflated ones. Disabled by default: every `mark()`

@@ -13,12 +13,12 @@ _PACKAGE_LOGGER = "reporails_cli"
 
 
 class _StderrHandler(logging.Handler):
-    """Writes bare messages to whatever `sys.stderr` is at emit time."""
+    """Writes each record as its message, plus any traceback, to whatever `sys.stderr` is at emit time."""
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Write the record's message and a newline to the current stderr."""
+        """Write the formatted record and a newline to the current stderr."""
         try:
-            sys.stderr.write(f"{record.getMessage()}\n")
+            sys.stderr.write(f"{self.format(record)}\n")
             sys.stderr.flush()
         except (OSError, ValueError):
             self.handleError(record)
@@ -27,10 +27,11 @@ class _StderrHandler(logging.Handler):
 def configure_logging() -> None:
     """Send the package's log records to stderr as bare messages, once per process.
 
+    When the root logger already has a handler, records reach it and no second one is added.
     Resets the stage timer; when stage timing is on, its records print at INFO.
     """
     package_logger = logging.getLogger(_PACKAGE_LOGGER)
-    if not any(isinstance(h, _StderrHandler) for h in package_logger.handlers):
+    if not logging.getLogger().handlers and not any(isinstance(h, _StderrHandler) for h in package_logger.handlers):
         package_logger.addHandler(_StderrHandler())
     timer = stage_timer.get_stage_timer()
     timer.reset()
