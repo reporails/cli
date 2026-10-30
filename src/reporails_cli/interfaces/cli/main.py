@@ -12,6 +12,7 @@ import sys
 from reporails_cli.interfaces.cli import (
     check_command,
     commands,
+    events_command,
     expected_loads_command,
     install,
     login_command,
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 COMMAND_MODULES = (
     check_command,
     commands,
+    events_command,
     expected_loads_command,
     install,
     login_command,

@@ -22,6 +22,7 @@ from dataclasses import dataclass
 
 from reporails_cli.core.platform.config.bootstrap import env_flag
 from reporails_cli.core.platform.contract.json_value import JsonValue
+from reporails_cli.core.platform.dto.events import EventRecord
 
 logger = logging.getLogger(__name__)
 
@@ -120,3 +121,12 @@ _TIMER = StageTimer()
 def get_stage_timer() -> StageTimer:
     """Return the process-wide stage timer singleton."""
     return _TIMER
+
+
+def mark_event(record: EventRecord) -> None:
+    """Event subscriber: when timing is on, mark the time since the last mark under the record's event and log it."""
+    timer = get_stage_timer()
+    timer.mark(f"event {record.event}")
+    if timer.enabled:
+        last = timer.records[-1]
+        logger.info("%s %.1f ms", last.stage, last.ms)
