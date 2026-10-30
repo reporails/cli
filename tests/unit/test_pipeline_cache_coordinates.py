@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.cache.map_cache import MapCache
 from reporails_cli.core.mapper import pipeline as pl
+from reporails_cli.core.mapper.map_cache import MapCache
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord
 
 _AGENTS = "# Agents\n\nRun the tests.\n\nUse small commits.\n\nNever push to `main` directly.\n"

@@ -24,11 +24,11 @@ def _rules_dir(tmp_path: Path) -> Path:
 @pytest.mark.subsys_map
 def test_registry_skips_empty_and_non_mapping_configs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(inspect_module, "get_rules_path", lambda: _rules_dir(tmp_path))
-    assert inspect_module._load_registry() == {"alpha": {"agent": "alpha", "file_types": {}}}
+    assert inspect_module.load_registry() == {"alpha": {"agent": "alpha", "file_types": {}}}
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_registry_is_empty_without_a_rules_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(inspect_module, "get_rules_path", lambda: tmp_path / "missing")
-    assert inspect_module._load_registry() == {}
+    assert inspect_module.load_registry() == {}

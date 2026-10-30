@@ -31,7 +31,7 @@ def _rec(path: Path, type_: str = "skills") -> SimpleNamespace:
 
 def _record(root: Path, rels: list[str], registry: dict[str, dict[str, Any]]) -> dict[str, SimpleNamespace]:
     recs = {rel: _rec(root / rel) for rel in rels}
-    with patch.object(skills_module, "_load_registry", return_value=registry):
+    with patch.object(skills_module, "load_registry", return_value=registry):
         record_skills(SimpleNamespace(files=list(recs.values())), ["claude"], root)
     return recs
 
@@ -87,13 +87,13 @@ def test_user_level_skill_is_recorded_from_its_full_path(tmp_path: Path, monkeyp
 
 
 def _resolver(root: Path, skill: Path) -> Any:
-    from reporails_cli.core.mapper.inspect import _load_registry
+    from reporails_cli.core.mapper.inspect import load_registry
     from reporails_cli.core.pipeline.assemble import _local_finding_type_resolver
 
     rec = _rec(skill / "SKILL.md")
     rec.skill = skill.as_posix()
     inp = SimpleNamespace(ruleset_map=SimpleNamespace(files=[rec]), scan_root=root)
-    return _local_finding_type_resolver(inp, _load_registry())  # type: ignore[arg-type]
+    return _local_finding_type_resolver(inp, load_registry())  # type: ignore[arg-type]
 
 
 @pytest.mark.unit
@@ -167,9 +167,9 @@ def test_category_folder_under_an_any_depth_root_is_not_flagged(tmp_path: Path) 
 def test_user_level_skill_file_is_typed_skills_from_inside_the_user_folder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from reporails_cli.core.mapper.inspect import _load_registry, file_type_of
+    from reporails_cli.core.mapper.inspect import file_type_of, load_registry
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Path.home() reads USERPROFILE on Windows
     root = tmp_path / ".claude"
-    assert file_type_of(root / "skills/s/SKILL.md", root, _load_registry()) == "skills"
+    assert file_type_of(root / "skills/s/SKILL.md", root, load_registry()) == "skills"

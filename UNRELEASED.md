@@ -24,3 +24,4 @@
 - Tests: the unit tests for the per-source finding counts are removed; the total-equals-sum property covers them.
 - CI runs the behavioral scenarios on every pull request, not only in the release gate.
 - Tests: a skipped api-backed scenario leaves no temp directory behind, and the mutation probe's `--timeout` applies to a pytest target too.
+- The map caches live with the mapper and path tagging with discovery, so the cache, discovery, mapper and classify packages no longer import each other in a loop.

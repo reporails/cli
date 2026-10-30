@@ -16,7 +16,7 @@ from pathlib import Path
 from reporails_cli.core.discovery.agent_config import extract_patterns
 from reporails_cli.core.discovery.plugin_roots import config_pattern_hits
 from reporails_cli.core.discovery.walk import list_dir, safe_resolve
-from reporails_cli.core.mapper.inspect import _load_registry
+from reporails_cli.core.mapper.inspect import load_registry
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap
@@ -91,7 +91,7 @@ def record_skills(
     """
     if not ruleset_map.files:
         return
-    folders = _SkillFolders.of(ruleset_map.files, agents, root, _load_registry())
+    folders = _SkillFolders.of(ruleset_map.files, agents, root, load_registry())
     for rec in ruleset_map.files:
         rec.skill = ""
         if rec.type not in ("skills", "generic"):
@@ -184,7 +184,7 @@ def skill_slot_folders(ruleset_map: RulesetMap, root: Path) -> set[Path]:
     """Direct subfolders of a one-level skills root that are not a recorded skill folder: the slots
     a skill should fill but does not. A root is the parent of a recorded skill folder whose entry file matches an
     entry pattern of its agent or the core agent that names no `**` below the skills folder."""
-    reg = _load_registry()
+    reg = load_registry()
     core = [a for a, cfg in reg.items() if cfg.get("core")]
     entries = [
         (Path(rec.path), [p for a in (rec.agent, *core) for p in _entry_patterns(reg, a)])

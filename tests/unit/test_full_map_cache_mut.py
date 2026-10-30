@@ -1,4 +1,4 @@
-"""Mutation-killing behavioral tests for core/cache/full_map_cache.py survivors.
+"""Mutation-killing behavioral tests for core/mapper/full_map_cache.py survivors.
 
 Only the `put` mkdir flags carry an observable contract. The other survivors are
 equivalent mutants and are documented rather than decorated:
@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.cache.full_map_cache import FullMapCache
+from reporails_cli.core.mapper.full_map_cache import FullMapCache
 
 
 def _make_map():

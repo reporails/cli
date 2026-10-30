@@ -91,7 +91,7 @@ _ATOM_FIELD_NAMES = frozenset(Atom.model_fields)
 
 # Bump when the cached atom shape or the way atoms are read changes: every entry
 # stored under an older version then misses and is rebuilt on the next run.
-_CACHE_VERSION = 41
+CACHE_VERSION = 41
 _MAX_CACHE_ENTRIES = 5000  # global cache serves all projects
 _STALE_IDENTITY_DAYS = 30  # a sibling configuration's folder unused this long is removed
 
@@ -185,7 +185,7 @@ class MapCache:
         self._segmentation: str = segmentation
         # Content-hash fingerprint of the bundled classification model files.
         self._charge: str = charge
-        self._digest = _identity_digest(_CACHE_VERSION, self._model, self._schema, self._segmentation, self._charge)
+        self._digest = _identity_digest(CACHE_VERSION, self._model, self._schema, self._segmentation, self._charge)
         self._shard_dir = cache_dir / "map-atoms" / self._digest
         # In-memory read-cache of shards touched this run; NOT a load-all.
         self._entries: dict[str, CachedFileEntry] = {}
@@ -225,7 +225,7 @@ class MapCache:
         """One-shot migration off the old whole-corpus `map-cache.json`.
 
         Storage-format change only (orthogonal to atom shape, so no
-        `_CACHE_VERSION` bump). If the monolith's identity matches this cache's,
+        `CACHE_VERSION` bump). If the monolith's identity matches this cache's,
         split each entry into a shard so the warm cache survives the upgrade;
         otherwise it would invalidate anyway. Either way the monolith is removed.
         """
@@ -239,7 +239,7 @@ class MapCache:
             return
         raw = as_object(parsed)
         identity_ok = (
-            raw.get("version") == _CACHE_VERSION
+            raw.get("version") == CACHE_VERSION
             and raw.get("model") == self._model
             and raw.get("schema") == self._schema
             and raw.get("segmentation", "legacy") == self._segmentation

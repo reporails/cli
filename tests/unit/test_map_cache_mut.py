@@ -1,4 +1,4 @@
-"""Behavioral tests for core/cache/map_cache.py — the per-content-hash shard store.
+"""Behavioral tests for core/mapper/map_cache.py — the per-content-hash shard store.
 
 The cache stores one small JSON file per content hash under a per-identity subdir
 (`<cache_dir>/map-atoms/<identity-digest>/<hash>.json`), so a run reads only the
@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.cache.map_cache import (
-    _CACHE_VERSION,
+from reporails_cli.core.mapper.map_cache import (
+    CACHE_VERSION,
     CachedFileEntry,
     MapCache,
 )
@@ -98,7 +98,7 @@ def test_put_creates_missing_parent_dirs(tmp_path: Path) -> None:
 def _write_monolith(cache_dir: Path, *, entries: dict, model: str = EMBEDDING_MODEL) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
     data = {
-        "version": _CACHE_VERSION,
+        "version": CACHE_VERSION,
         "model": model,
         "schema": SCHEMA_VERSION,
         "segmentation": "legacy",
@@ -171,7 +171,7 @@ def test_identity_change_lands_in_a_fresh_digest_dir(tmp_path: Path) -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_caching
 def test_enforce_cap_at_exact_cap_evicts_nothing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr("reporails_cli.core.cache.map_cache._MAX_CACHE_ENTRIES", 2)
+    monkeypatch.setattr("reporails_cli.core.mapper.map_cache._MAX_CACHE_ENTRIES", 2)
     cache = MapCache(tmp_path)
     cache.put("a", CachedFileEntry())
     cache.put("b", CachedFileEntry())
@@ -183,7 +183,7 @@ def test_enforce_cap_at_exact_cap_evicts_nothing(monkeypatch: pytest.MonkeyPatch
 @pytest.mark.unit
 @pytest.mark.subsys_caching
 def test_enforce_cap_evicts_oldest_by_mtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr("reporails_cli.core.cache.map_cache._MAX_CACHE_ENTRIES", 2)
+    monkeypatch.setattr("reporails_cli.core.mapper.map_cache._MAX_CACHE_ENTRIES", 2)
     cache = MapCache(tmp_path)
     for h in ("a", "b", "c", "d"):
         cache.put(h, CachedFileEntry())

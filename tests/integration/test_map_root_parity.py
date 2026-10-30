@@ -153,7 +153,7 @@ def test_whole_map_cache_entry_is_not_shared_across_project_roots(
     The same `.cursor/rules/*.mdc` file is a cursor rule from the project root and an
     unmatched generic file from inside `.cursor/rules/`; one cache entry cannot be both.
     """
-    from reporails_cli.core.cache.full_map_cache import FullMapCache, compute_identity
+    from reporails_cli.core.mapper.full_map_cache import FullMapCache, compute_identity
     from reporails_cli.core.platform.dto.ruleset import (
         EMBEDDING_MODEL,
         SCHEMA_VERSION,

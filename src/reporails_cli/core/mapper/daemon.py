@@ -22,7 +22,7 @@ import sys
 import time
 from pathlib import Path
 
-from reporails_cli.core.cache.map_cache import _CACHE_VERSION
+from reporails_cli.core.mapper.map_cache import CACHE_VERSION
 from reporails_cli.core.platform.config.bootstrap import get_daemon_dir
 from reporails_cli.core.platform.utils.version import installed_version
 
@@ -257,4 +257,4 @@ def _fork_daemon() -> int:
 def code_identity() -> str:
     """The code this process maps with: the installed package version and the map-cache
     version, which changes whenever the mapper's output does."""
-    return f"{installed_version()}+map{_CACHE_VERSION}"
+    return f"{installed_version()}+map{CACHE_VERSION}"

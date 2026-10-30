@@ -283,7 +283,7 @@ def test_daemon_ping_reports_the_code_it_maps_with() -> None:
     pong = _dispatch({"cmd": "ping"}, None, threading.Event())
     assert pong["code"] == code_identity()
     assert code_identity().endswith(
-        f"+map{__import__('reporails_cli.core.cache.map_cache', fromlist=['x'])._CACHE_VERSION}"
+        f"+map{__import__('reporails_cli.core.mapper.map_cache', fromlist=['x']).CACHE_VERSION}"
     )
 
 

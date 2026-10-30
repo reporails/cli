@@ -85,7 +85,7 @@ def path_filter_key(path: Path, root: Path) -> str | None:
     """The frontmatter key the file's registry file type declares as its `path_key` (`globs` when it declares
     none); None for a file no file type claims."""
     rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
-    match = _find_best_registry_match(rel.lower(), _load_registry(), path, root)
+    match = _find_best_registry_match(rel.lower(), load_registry(), path, root)
     return str(match[2].get("path_key", "globs")) if match else None
 
 
@@ -94,7 +94,7 @@ def _frontmatter_flag(path: Path, key: str) -> bool:
     return _frontmatter_data(path, lenient=True).get(key) is True
 
 
-def _load_registry() -> dict[str, JsonObject]:
+def load_registry() -> dict[str, JsonObject]:
     """Load all agent registry configs. Returns {agent: config_dict}."""
     registry_dir = get_rules_path()
     if not registry_dir.is_dir():

@@ -12,8 +12,8 @@ from collections.abc import Callable, Iterable
 from pathlib import Path, PurePosixPath
 from typing import NamedTuple
 
-from reporails_cli.core.classify.file_tags import classify_file
 from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME, MEMORY_SURFACES
+from reporails_cli.core.discovery.file_tags import classify_file
 from reporails_cli.core.lint.suppression import SHORT_TOKEN
 from reporails_cli.core.mapper.skills import skill_membership
 from reporails_cli.core.platform.dto.diagnostics import BOLD_CHECK, CLIENT_CHECK_KINDS, FORMAT_CHECK, FindingItem

@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from reporails_cli.core.mapper import pipeline as pl
-from reporails_cli.core.mapper.inspect import _load_registry
+from reporails_cli.core.mapper.inspect import load_registry
 from reporails_cli.core.mapper.skills import record_skills
 
 # --- L121/L123/L125: _validate_and_log severity routing ---
@@ -241,7 +241,7 @@ def test_a_skills_supporting_file_takes_the_skill_s_type(monkeypatch, tmp_path):
     monkeypatch.setattr(pl, "_parse_frontmatter_description", lambda path: "")
 
     records, _atoms, _embed = pl._classify_all_files(
-        [skill_md, intake, nested, other], tmp_path, None, _load_registry(), segmentation="legacy"
+        [skill_md, intake, nested, other], tmp_path, None, load_registry(), segmentation="legacy"
     )
     assert {r.path: r.type for r in records}[intake.as_posix()] == "generic"  # mapped as the file type says
     record_skills(SimpleNamespace(files=records), ["claude"], tmp_path)
@@ -278,7 +278,7 @@ def test_a_retyped_skill_supporting_file_inherits_the_skill_s_loading_and_scope(
     monkeypatch.setattr(pl, "_parse_frontmatter_description", lambda path: "")
 
     records, _atoms, _embed = pl._classify_all_files(
-        [skill_md, reference, other], tmp_path, None, _load_registry(), segmentation="legacy"
+        [skill_md, reference, other], tmp_path, None, load_registry(), segmentation="legacy"
     )
     record_skills(SimpleNamespace(files=records), ["claude"], tmp_path)
 
@@ -328,7 +328,7 @@ def test_map_ruleset_arg_plumbing(monkeypatch):
     monkeypatch.setattr(pl, "_get_stage_timer", lambda: SimpleNamespace(mark=lambda *a, **k: None))
     monkeypatch.setattr(pl, "get_models", lambda: other_models)
     monkeypatch.setattr(pl, "_open_map_cache", lambda *a, **k: None)
-    monkeypatch.setattr(pl, "_load_registry", lambda: {})
+    monkeypatch.setattr(pl, "load_registry", lambda: {})
     monkeypatch.setattr(pl, "_classify_all_files", _fake_classify)
     monkeypatch.setattr(pl, "_embed_and_audit_fresh", lambda *a, **k: None)
     monkeypatch.setattr(pl, "_fill_missing_embeddings", lambda *a, **k: None)
@@ -383,7 +383,7 @@ def _record(path, description="Does one thing well.", embedding=None):
 
 
 def _seed_entry(cache, path):
-    from reporails_cli.core.cache.map_cache import CachedFileEntry, cache_key_for_path
+    from reporails_cli.core.mapper.map_cache import CachedFileEntry, cache_key_for_path
 
     key = cache_key_for_path(path)
     cache.put(key, CachedFileEntry([{"text": "x"}]))
@@ -393,7 +393,7 @@ def _seed_entry(cache, path):
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_description_embedding_is_encoded_once_and_served_from_the_cache_entry(tmp_path):
-    from reporails_cli.core.cache.map_cache import MapCache
+    from reporails_cli.core.mapper.map_cache import MapCache
 
     path = _skill_file(tmp_path)
     cache = MapCache(tmp_path / "cache", charge="m")
@@ -419,7 +419,7 @@ def test_description_embedding_is_encoded_once_and_served_from_the_cache_entry(t
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_an_edited_description_is_encoded_again(tmp_path):
-    from reporails_cli.core.cache.map_cache import MapCache
+    from reporails_cli.core.mapper.map_cache import MapCache
 
     path = _skill_file(tmp_path)
     cache = MapCache(tmp_path / "cache", charge="m")
@@ -439,7 +439,7 @@ def test_an_edited_description_is_encoded_again(tmp_path):
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_description_embedding_does_not_cross_a_charge_model_change(tmp_path):
-    from reporails_cli.core.cache.map_cache import MapCache
+    from reporails_cli.core.mapper.map_cache import MapCache
 
     path = _skill_file(tmp_path)
     cache = MapCache(tmp_path / "cache", charge="model-a")

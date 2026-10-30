@@ -7,8 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.classify import file_tags
-from reporails_cli.core.discovery import agent_config, project_root
+from reporails_cli.core.discovery import agent_config, file_tags, project_root
 from reporails_cli.core.mapper import inspect as mapper_inspect
 from reporails_cli.core.platform.config import config as platform_config
 from reporails_cli.core.platform.contract.errors import BundledConfigMissingError

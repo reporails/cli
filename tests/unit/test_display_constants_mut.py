@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from reporails_cli.core.classify.file_tags import classify_file
+from reporails_cli.core.discovery.file_tags import classify_file
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.formatters.text.display_constants import (
     friendly_name,

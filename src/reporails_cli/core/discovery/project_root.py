@@ -98,7 +98,7 @@ def resolve_project_root_for_file(target: Path) -> Path:
     nested file: `.claude/rules/style.md` resolved at `.claude/rules` instead of the
     project root, which misclassifies the file's `loading`/`scope`
     (`core/mapper/inspect.py::_resolve_activation`) and computes a cache identity
-    (`core/cache/full_map_cache.py::compute_identity`) that never matches the CLI's
+    (`core/mapper/full_map_cache.py::compute_identity`) that never matches the CLI's
     same-file run, so the two surfaces never share a whole-map cache entry.
 
     Walks up from the file looking for a project marker — `.ails/backbone.yml`,

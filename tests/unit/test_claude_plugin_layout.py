@@ -29,7 +29,7 @@ from reporails_cli.core.discovery.plugin_roots import (
     plugin_relative_path,
     split_plugin_pattern,
 )
-from reporails_cli.core.mapper.inspect import _detect_file_activation, _load_registry
+from reporails_cli.core.mapper.inspect import _detect_file_activation, load_registry
 
 MANIFEST = ".claude-plugin/plugin.json"
 SKILL = "---\nname: fmt\ndescription: Formats Python files\n---\n\nRun `ruff format` on each changed file.\n"
@@ -143,7 +143,7 @@ def test_plugin_components_classify_as_claude_types(tmp_path: Path) -> None:
 def test_the_mapper_types_plugin_components_as_claude_types(tmp_path: Path) -> None:
     project = tmp_path / "market"
     _plugin(project / "plugins" / "demo")
-    registry = _load_registry()
+    registry = load_registry()
     skill = _detect_file_activation(project / "plugins/demo/skills/fmt/SKILL.md", project, registry)[:5]
     agent = _detect_file_activation(project / "plugins/demo/agents/reviewer.md", project, registry)[:5]
     assert (skill[0], skill[3], skill[4]) == ("on_invocation", "claude", "skills")
@@ -160,7 +160,7 @@ def test_a_top_level_skills_folder_without_a_manifest_is_not_claudes(tmp_path: P
     agent = _write(project / "agents" / "reviewer.md", AGENT)
     assert _scope(project) == {"CLAUDE.md"}
     assert classify_files(project, [skill, agent], load_file_types("claude")) == []
-    registry = _load_registry()
+    registry = load_registry()
     assert _detect_file_activation(skill, project, registry)[:5][3:] == ("generic", "generic")
 
 

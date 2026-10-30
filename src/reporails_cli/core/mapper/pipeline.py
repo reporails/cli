@@ -11,16 +11,7 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
-from reporails_cli.core.cache.map_cache import (
-    CachedFileEntry,
-    MapCache,
-    atoms_to_dicts,
-    cache_key_for_path,
-    content_hash,
-    dicts_to_atoms,
-    file_cache_key,
-)
-from reporails_cli.core.classify.file_tags import classify_file
+from reporails_cli.core.discovery.file_tags import classify_file
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.assemble import build_ruleset_map
 from reporails_cli.core.mapper.bio_graphs import multislot_available, multislot_fingerprint
@@ -30,8 +21,17 @@ from reporails_cli.core.mapper.granularity import audit_over_merged
 from reporails_cli.core.mapper.imports import expand_imports_with_origins
 from reporails_cli.core.mapper.inspect import (
     _detect_file_activation,
-    _load_registry,
     _parse_frontmatter_description,
+    load_registry,
+)
+from reporails_cli.core.mapper.map_cache import (
+    CachedFileEntry,
+    MapCache,
+    atoms_to_dicts,
+    cache_key_for_path,
+    content_hash,
+    dicts_to_atoms,
+    file_cache_key,
 )
 from reporails_cli.core.mapper.models import Models, get_models
 from reporails_cli.core.mapper.parse import tokenize
@@ -80,7 +80,7 @@ def _atoms_from_cache(cached: CachedFileEntry, path: Path) -> list[Atom]:
 
     Lines were already translated to source coordinates the first time this
     content was tokenized (`_tokenize_and_cache`); the cache identity
-    (`map_cache._CACHE_VERSION`) folds that shape, so a pre-translation entry
+    (`map_cache.CACHE_VERSION`) folds that shape, so a pre-translation entry
     never reaches here. Entries only ever land in the persistent cache via
     `_update_cache_after_embedding` (post charge + embed), so a hit here is
     always a fully-charged, embedded atom set — never a same-run duplicate's
@@ -463,7 +463,7 @@ def _classify_charge_embed_dispatch(
         paths,
         root,
         map_cache,
-        _load_registry(),
+        load_registry(),
         segmentation=segmentation,
         progress=progress,
     )

@@ -31,7 +31,7 @@ from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from reporails_cli.core.classify.file_tags import classify_file
+from reporails_cli.core.discovery.file_tags import classify_file
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.imports import expand_imports_with_origins
 from reporails_cli.core.platform.adapters.rules_query import rule_slug

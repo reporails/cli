@@ -13,7 +13,7 @@ from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_excl
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.discovery.read_gates import SkippedFile, claude_agents_md_reads, gated_file_types
 from reporails_cli.core.discovery.walk import safe_resolve, shared_dir_listings
-from reporails_cli.core.mapper.inspect import _load_registry, file_read_by
+from reporails_cli.core.mapper.inspect import file_read_by, load_registry
 from reporails_cli.core.platform.config.bootstrap import get_xray_log_dir
 from reporails_cli.core.platform.config.claude_settings import (
     LAUNCH_INSTRUCTION_FILE_TYPES,
@@ -65,7 +65,7 @@ def expected_loads(target: Path) -> JsonObject:
     _prune_event_logs(root)
     exclusions = load_run_exclusions(root, None, None)
     project_config = get_project_config(root)
-    registry = _load_registry()
+    registry = load_registry()
     mode = claude_instruction_files_mode(root)
     with shared_dir_listings():
         files, read_instructions, switched_off = _loaded_files(exclusions, project_config, root, registry, mode)

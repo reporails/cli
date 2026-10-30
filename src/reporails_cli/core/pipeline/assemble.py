@@ -31,7 +31,7 @@ from reporails_cli.core.lint.suppression import (
     apply_surface_mutations,
     resolve_finding_path,
 )
-from reporails_cli.core.mapper.inspect import _load_registry, file_type_of
+from reporails_cli.core.mapper.inspect import file_type_of, load_registry
 from reporails_cli.core.mapper.parse import holds_position
 from reporails_cli.core.mapper.skills import skill_membership, skill_slot_folders, skill_type
 from reporails_cli.core.platform.adapters.payload import local_entries
@@ -349,7 +349,7 @@ def lint_request_local(inp: AssembleInputs) -> tuple[list[LocalEntry], int]:
 
     agents = _rule_agents(inp)
     structural_ids = _structural_ids(inp)
-    registry = _load_registry()
+    registry = load_registry()
 
     def _absolute(rel: str) -> str:
         path = resolve_finding_path(rel, inp.scan_root)

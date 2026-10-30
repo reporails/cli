@@ -279,7 +279,7 @@ class TestSurfaceMutations:
         # the classifier does not cover.
         import yaml
 
-        from reporails_cli.core.classify.file_tags import _SCHEMA_VALIDATED
+        from reporails_cli.core.discovery.file_tags import _SCHEMA_VALIDATED
         from reporails_cli.core.platform.config.bundled import get_bundled_rules_path
 
         rules_dir = get_bundled_rules_path()

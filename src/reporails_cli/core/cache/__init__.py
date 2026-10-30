@@ -1,1 +1,1 @@
-"""Caches and content hashes: map and full-map caches, plus the hashing helpers."""
+"""File hashes used as cache keys and the cache-folder sweep."""

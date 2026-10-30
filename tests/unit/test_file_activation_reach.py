@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.mapper.inspect import _detect_file_activation, _load_registry
+from reporails_cli.core.mapper.inspect import _detect_file_activation, load_registry
 from reporails_cli.core.mapper.reach import MAX_REACH, record_reach
 from reporails_cli.core.platform.adapters.payload import project_payload
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap, RulesetSummary
@@ -17,7 +17,7 @@ def _activation(root: Path, rel: str, frontmatter: str = "", registry=None) -> s
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"---\n{frontmatter}---\n\nBody.\n" if frontmatter else "Body.\n", encoding="utf-8")
-    return _detect_file_activation(path, root, registry or _load_registry())[5]
+    return _detect_file_activation(path, root, registry or load_registry())[5]
 
 
 @pytest.mark.unit
@@ -47,7 +47,7 @@ def test_activation(tmp_path: Path, rel: str, frontmatter: str, expected: str) -
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_codex_nested_agents_md_loads_only_when_a_run_starts_in_its_folder(tmp_path: Path) -> None:
-    registry = {"codex": _load_registry()["codex"]}
+    registry = {"codex": load_registry()["codex"]}
     assert _activation(tmp_path, "AGENTS.md", registry=registry) == "always"
     assert _activation(tmp_path, "pkg/AGENTS.md", registry=registry) == "launch_subtree"
 
@@ -55,7 +55,7 @@ def test_codex_nested_agents_md_loads_only_when_a_run_starts_in_its_folder(tmp_p
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_claude_nested_agents_md_is_subtree(tmp_path: Path) -> None:
-    registry = {"claude": _load_registry()["claude"]}
+    registry = {"claude": load_registry()["claude"]}
     assert _activation(tmp_path, "pkg/AGENTS.md", registry=registry) == "subtree"
 
 
@@ -70,7 +70,7 @@ def test_memory_topic_file_is_manual(monkeypatch, tmp_path: Path) -> None:
     note = home / ".claude" / "projects" / "proj-slug" / "memory" / "notes.md"
     note.parent.mkdir(parents=True)
     note.write_text("# Notes\n", encoding="utf-8")
-    result = _detect_file_activation(note, root, _load_registry())
+    result = _detect_file_activation(note, root, load_registry())
     assert result[4] == "memory"
     assert result[5] == "manual"
 

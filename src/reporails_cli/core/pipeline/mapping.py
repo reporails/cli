@@ -17,7 +17,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
-from reporails_cli.core.cache.full_map_cache import FullMapCache, compute_identity
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.discovery.agent_config import categorize_file_type
 from reporails_cli.core.discovery.agents import (
@@ -42,6 +41,7 @@ from reporails_cli.core.mapper.daemon_client import (
     runs_older_code,
     serves_this_code,
 )
+from reporails_cli.core.mapper.full_map_cache import FullMapCache, compute_identity
 from reporails_cli.core.mapper.reach import record_reach
 from reporails_cli.core.mapper.skills import record_skills
 from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir

@@ -23,10 +23,10 @@ import json
 import logging
 from pathlib import Path
 
-from reporails_cli.core.cache.map_cache import _CACHE_VERSION, content_hash
 from reporails_cli.core.cache.sweep import sweep
 from reporails_cli.core.mapper.bio_graphs import multislot_fingerprint
 from reporails_cli.core.mapper.imports import expand_imports
+from reporails_cli.core.mapper.map_cache import CACHE_VERSION, content_hash
 from reporails_cli.core.mapper.serialize import load_ruleset_map, save_ruleset_map
 from reporails_cli.core.platform.config.config import get_rules_path
 from reporails_cli.core.platform.dto.ruleset import (
@@ -94,7 +94,7 @@ def compute_identity(
     parts = [
         f"model={EMBEDDING_MODEL}",
         f"schema={SCHEMA_VERSION}",
-        f"atoms={_CACHE_VERSION}",
+        f"atoms={CACHE_VERSION}",
         f"segmentation={segmentation}",
         f"root={root}",
         # The registry that decides each file's loading/scope/globs/agent — a rules update

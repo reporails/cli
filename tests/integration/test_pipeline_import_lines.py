@@ -1,7 +1,7 @@
 """Integration coverage for import line mapping through the real `map_ruleset` entry point.
 
 A cold run tokenizes the importing file fresh and translates `atom.line` back
-to source coordinates before the per-file cache `put` (`map_cache._CACHE_VERSION`
+to source coordinates before the per-file cache `put` (`map_cache.CACHE_VERSION`
 folds this shape change so a pre-fix cache entry never serves stale lines). A
 warm run must read the SAME lines back off the cache. Uses the real bundled
 ONNX model (embedding is unrelated to the bug, but `map_ruleset` needs it to
