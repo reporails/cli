@@ -17,7 +17,6 @@
 - An `@import` that resolves outside the current project is left as a literal reference instead of pulling that file's content into the check.
 - `--heal` on a single file no longer writes through a symlink whose real path points outside the project.
 - A stored API key is sent only to the default server or a local (loopback) address, never to any other `AILS_SERVER_URL` the cli is pointed at.
-- A check refused for a misconfigured `default_agent` says `Unknown agent: <name>`, and every other refusal reads as a sentence, never a bare word.
 
 ### Removed
 
