@@ -21,6 +21,7 @@
 
 ### Internal
 
+- The session x-ray page's files ship in the package, with the Geist fonts under the SIL Open Font License.
 - Release and CI builds install from the lock file with a fixed `uv` version, a fixed `hatchling` version and commit-pinned GitHub actions.
 - Tests: a property suite runs the real `ails` and the MCP server over a fixture set in text, JSON, `github` and MCP, and checks on every run that a disabled rule appears in no output, the total equals m_probe + client + server, every format carries one finding set, and the exit code matches the findings; the mutation probe accepts an upper-tier killing command.
 - Tests: the unit tests for the per-source finding counts are removed; the total-equals-sum property covers them.
