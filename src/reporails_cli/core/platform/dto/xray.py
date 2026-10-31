@@ -15,7 +15,7 @@ from reporails_cli.core.platform.dto.events import HarnessKind, NoteKind
 LoadKind = Literal["project", "memory", "user", "local", "managed", "nested", "other"]
 CompactionTrigger = Literal["manual", "auto"]
 ArtifactKind = Literal["instructions", "rule", "memory", "skill", "agent", "command", "hook"]
-ArtifactScope = Literal["project", "user", "managed", "local", "plugin", "auto"]
+ArtifactScope = Literal["project", "user", "managed", "local", "plugin", "auto", "synced"]
 
 # The kind of artifact a config file type is shown as; a file type not listed is an instruction file.
 ARTIFACT_KIND_OF_FILE_TYPE: dict[str, ArtifactKind] = {
@@ -30,6 +30,18 @@ ARTIFACT_KIND_OF_FILE_TYPE: dict[str, ArtifactKind] = {
 
 # The kinds a session invokes: each such artifact is the one `invocable` entry of its file, never a loaded file.
 INVOCABLE_ARTIFACT_KINDS: frozenset[ArtifactKind] = frozenset({"skill", "agent", "command", "hook"})
+
+# The kinds a person or the agent runs by name: a run of one is the file loading into context.
+RUNNABLE_ARTIFACT_KINDS: frozenset[ArtifactKind] = frozenset({"skill", "command"})
+
+# Which scope wins when two listed files share a label, highest first. The skills page ranks managed over user over
+# project, the sub-agents page managed over project over user; a plugin's file carries its plugin's name in its
+# label and never competes.
+SCOPE_PRECEDENCE: dict[ArtifactKind, tuple[ArtifactScope, ...]] = {
+    "skill": ("managed", "user", "project"),
+    "command": ("managed", "user", "project"),
+    "agent": ("managed", "project", "user"),
+}
 
 # The kind of an instruction-file load as the transcript names it, to the view's load kind.
 LOAD_KIND_OF_MEMORY_TYPE: dict[str, LoadKind] = {
@@ -124,6 +136,28 @@ class XrayNote:
 
 
 @dataclass(frozen=True)
+class XrayRun:
+    """One skill or command run: its name, when, whether it ran in a subagent of its own, and for a listed file its
+    project-relative path and size; a run whose name matches no listed file has neither."""
+
+    name: str
+    t: float
+    forked: bool
+    path: str | None
+    tokens_est: int | None
+
+    def to_json(self) -> JsonObject:
+        """The run as a JSON object."""
+        return {
+            "name": self.name,
+            "t": self.t,
+            "forked": self.forked,
+            "path": self.path,
+            "tokens_est": self.tokens_est,
+        }
+
+
+@dataclass(frozen=True)
 class XrayTurn:
     """The replies between two turn ends, the last turn open while the session runs."""
 
@@ -131,7 +165,6 @@ class XrayTurn:
     t: float
     context_start: int | None
     context: int | None
-    replies: int
     loads: tuple[XrayLoad, ...]
     reads: tuple[str, ...] | None
     subagents: tuple[str, ...]
@@ -139,6 +172,7 @@ class XrayTurn:
     series: tuple[tuple[float, int], ...]
     prompts: tuple[XrayPrompt, ...]
     notes: tuple[XrayNote, ...]
+    skill_runs: tuple[XrayRun, ...]
 
     def to_json(self) -> JsonObject:
         """The turn as a JSON object."""
@@ -149,7 +183,7 @@ class XrayTurn:
             "t": self.t,
             "context_start": self.context_start,
             "context": self.context,
-            "replies": self.replies,
+            "replies": len(self.series),
             "loads": _objects([load.to_json() for load in self.loads]),
             "reads": reads,
             "subagents": list(self.subagents),
@@ -157,6 +191,7 @@ class XrayTurn:
             "series": series,
             "prompts": _objects([prompt.to_json() for prompt in self.prompts]),
             "notes": _objects([note.to_json() for note in self.notes]),
+            "skill_runs": _objects([run.to_json() for run in self.skill_runs]),
         }
 
 
@@ -171,6 +206,7 @@ class XraySubagent:
     end: float | None
     series: tuple[tuple[float, int], ...]
     loads: tuple[XrayLoad, ...]
+    skill_runs: tuple[XrayRun, ...]
 
     def to_json(self) -> JsonObject:
         """The subagent as a JSON object."""
@@ -183,6 +219,7 @@ class XraySubagent:
             "end": self.end,
             "series": series,
             "loads": _objects([load.to_json() for load in self.loads]),
+            "skill_runs": _objects([run.to_json() for run in self.skill_runs]),
         }
 
 

@@ -12,10 +12,10 @@ from reporails_cli.core.eventbus import store
 from reporails_cli.core.eventbus.transcript import read_transcript
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object
-from reporails_cli.core.platform.dto.events import EventKind, EventRecord, ToolUse, TranscriptCursor
+from reporails_cli.core.platform.dto.events import EventKind, EventRecord, HarnessEntry, ToolUse, TranscriptCursor
 from reporails_cli.core.platform.dto.xray import ArtifactFile, XrayLoad, XrayView
 from reporails_cli.core.xray.artifacts import PEEK_LIMIT, artifact_files, build_artifacts
-from reporails_cli.core.xray.derive import BYTES_PER_TOKEN
+from reporails_cli.core.xray.derive import BYTES_PER_TOKEN, Replies, build_harness
 from reporails_cli.core.xray.session import XraySession
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
@@ -154,7 +154,7 @@ def test_turn_context_is_the_three_counts_of_its_last_reply(tmp_path: Path, vers
 
 def test_a_turn_spans_the_replies_between_two_turn_ends(tmp_path: Path) -> None:
     view = _view(_session(tmp_path, "2.1.301", _project(tmp_path)))
-    assert [(turn.n, turn.replies) for turn in view.turns] == [(1, 1), (2, 1)]
+    assert [(turn.n, len(turn.series)) for turn in view.turns] == [(1, 1), (2, 1)]
     assert view.turns[0].t < view.turns[1].t
 
 
@@ -293,10 +293,19 @@ def test_the_view_holds_numbers_names_and_paths_only(tmp_path: Path) -> None:
     assert as_list(data["refusals"]) == []
     turn_keys = {
         "n", "t", "context_start", "context", "replies", "loads", "reads", "subagents", "compaction", "series",
-        "prompts", "notes",
+        "prompts", "notes", "skill_runs",
     }  # fmt: skip
     assert set(as_object(as_list(data["turns"])[0])) == turn_keys
-    assert set(as_object(as_list(data["subagents"])[0])) == {"id", "type", "turn", "start", "end", "series", "loads"}
+    assert set(as_object(as_list(data["subagents"])[0])) == {
+        "id",
+        "type",
+        "turn",
+        "start",
+        "end",
+        "series",
+        "loads",
+        "skill_runs",
+    }
     assert set(as_object(as_list(data["start"])[0])) == {"path", "kind", "t", "tokens_est", "findings"}
     assert set(as_object(as_list(data["artifacts"])[0])) == {
         "path",
@@ -404,7 +413,7 @@ def test_a_turn_series_is_the_context_of_each_of_its_replies_in_order(tmp_path: 
     (turn,) = view.turns
     assert [context for _, context in turn.series] == [2 + 500 + 1000, 2 + 700 + 1000, 2 + 900 + 1000]
     assert [t for t, _ in turn.series] == sorted(t for t, _ in turn.series)
-    assert (turn.context_start, turn.context, turn.replies) == (1502, 1902, 3)
+    assert (turn.context_start, turn.context, len(turn.series)) == (1502, 1902, 3)
     assert turn.to_json()["series"] == [[t, c] for t, c in turn.series]
 
 
@@ -613,3 +622,206 @@ def test_a_file_whose_config_scope_is_no_artifact_scope_is_refused(
     monkeypatch.setattr("reporails_cli.core.xray.artifacts.expected_loads", lambda root, plugins: listing)
     with pytest.raises(ValueError, match="enterprise"):
         artifact_files(tmp_path, [])
+
+
+def _append_rows(tmp_path: Path, *rows: JsonObject) -> None:
+    with (tmp_path / "2.1.301" / "session.jsonl").open("a") as handle:
+        for row in rows:
+            handle.write(json.dumps(row) + "\n")
+
+
+def _skill_run_row(name: str, time: str) -> JsonObject:
+    return {
+        "type": "user",
+        "uuid": "u-skill",
+        "sessionId": "s",
+        "timestamp": time,
+        "message": {"role": "user", "content": [{"type": "tool_result", "content": "Launching skill"}]},
+        "toolUseResult": {"success": True, "commandName": name},
+    }
+
+
+def test_a_skill_that_ran_is_loaded_from_its_turn_and_a_compaction_brings_it_back(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    session = _session(tmp_path, "2.1.301", root)
+    _append_turn(tmp_path, "2.1.301")
+    _append_rows(tmp_path, _skill_run_row("demo", "2026-10-17T16:55:15.000Z"))
+    _append_rows(tmp_path, *_end_and_reply("2026-10-17T16:55:20.000Z", "2026-10-17T16:55:30.000Z"))
+    view = _view(session)
+    skill = next(a for a in view.artifacts if a.path == ".claude/skills/demo/SKILL.md")
+    assert skill.loaded and skill.turns == (3, 4)
+    (run,) = view.turns[2].skill_runs
+    assert run.name == "demo" and run.path == skill.path and run.tokens_est == skill.tokens_est
+    _append_compaction(tmp_path, "2.1.301", "2026-10-17T16:56:30.000Z", "auto")
+    _append_rows(tmp_path, *_end_and_reply("2026-10-17T16:56:40.000Z", "2026-10-17T16:56:50.000Z"))
+    again = next(a for a in _view(session).artifacts if a.path == skill.path)
+    assert again.loaded and again.turns == (3, 4, 5)
+
+
+def test_a_run_matching_no_listed_file_still_shows_in_its_turn_by_name(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    session = _session(tmp_path, "2.1.301", root)
+    _append_turn(tmp_path, "2.1.301")
+    _append_rows(tmp_path, _skill_run_row("not-listed", "2026-10-17T16:55:15.000Z"))
+    view = _view(session)
+    (run,) = view.turns[-1].skill_runs
+    assert (run.name, run.path, run.tokens_est) == ("not-listed", None, None)
+    assert not any(a.label == "not-listed" for a in view.artifacts)
+
+
+def test_a_subagent_of_a_listed_agent_type_marks_that_agent_loaded_in_its_turn(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    (root / ".claude" / "agents" / "writer.md").write_text("---\nname: writer\ndescription: Writes.\n---\n\n# Writer\n")
+    session = _session(tmp_path, "2.1.308", root)
+    meta = next((tmp_path / "2.1.308" / "session" / "subagents").glob("*.meta.json"))
+    meta.write_text(json.dumps({**json.loads(meta.read_text()), "agentType": "writer"}))
+    view = _view(session)
+    by_path = {a.path: a for a in view.artifacts}
+    (sub,) = view.subagents
+    assert sub.type == "writer" and sub.turn is not None
+    assert by_path[".claude/agents/writer.md"].loaded and by_path[".claude/agents/writer.md"].turns == (sub.turn,)
+    assert not by_path[".claude/agents/helper.md"].loaded
+
+
+def test_a_built_in_subagent_type_changes_no_agent_artifact(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    session = _session(tmp_path, "2.1.308", root)
+    meta = next((tmp_path / "2.1.308" / "session" / "subagents").glob("*.meta.json"))
+    meta.write_text(json.dumps({**json.loads(meta.read_text()), "agentType": "Explore"}))
+    agents = [a for a in _view(session).artifacts if a.kind == "agent"]
+    assert agents and not any(a.loaded or a.turns for a in agents)
+
+
+def _end_and_reply(time_end: str, time_reply: str) -> tuple[JsonObject, JsonObject]:
+    """A turn end at `time_end` and a main reply at `time_reply`, which opens the next turn."""
+    message = {**as_object(NEW_TURN[1]["message"]), "id": f"msg_{time_reply}"}
+    return (
+        {"type": "system", "timestamp": time_end, "sessionId": "s", "subtype": "turn_duration"},
+        {**NEW_TURN[1], "timestamp": time_reply, "message": message},
+    )
+
+
+def _add_skill(root: Path, name: str, size: int, *, scope_root: Path | None = None) -> None:
+    folder = (scope_root or root) / ".claude" / "skills" / name
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(f"---\nname: {name}\ndescription: Skill.\n---\n" + "x" * size)
+
+
+def _runs_then_compaction(tmp_path: Path, names: list[str]) -> XrayView:
+    """Each of `names` run in turn 3, a compaction in turn 5, then one more turn."""
+    root = _project(tmp_path)
+    for name in [n for n in names if n != "demo"]:
+        _add_skill(root, name, 100_000 if name == "big" else 20_000)
+    session = _session(tmp_path, "2.1.301", root)
+    _append_turn(tmp_path, "2.1.301")
+    _append_rows(tmp_path, *(_skill_run_row(n, f"2026-10-17T16:55:{10 + i:02d}.000Z") for i, n in enumerate(names)))
+    _append_rows(tmp_path, *_end_and_reply("2026-10-17T16:55:30.000Z", "2026-10-17T16:55:40.000Z"))
+    _append_rows(tmp_path, *_end_and_reply("2026-10-17T16:55:45.000Z", "2026-10-17T16:55:50.000Z"))
+    _append_compaction(tmp_path, "2.1.301", "2026-10-17T16:55:55.000Z", "auto")
+    _append_rows(tmp_path, *_end_and_reply("2026-10-17T16:56:00.000Z", "2026-10-17T16:56:10.000Z"))
+    return _view(session)
+
+
+def _turns_of(view: XrayView, name: str) -> tuple[int, ...]:
+    return next(a.turns for a in view.artifacts if a.label == name)
+
+
+def test_a_compaction_brings_back_the_latest_runs_until_the_shared_budget_is_spent(tmp_path: Path) -> None:
+    names = [f"skill-{n}" for n in range(1, 7)]
+    view = _runs_then_compaction(tmp_path, names)
+    # Six runs of 5,000 tokens each: the budget of 25,000 keeps the five latest, and the oldest is not brought back.
+    assert _turns_of(view, "skill-1") == (3, 4, 5)
+    assert all(_turns_of(view, name) == (3, 4, 5, 6) for name in names[1:])
+
+
+def test_a_run_is_brought_back_at_no_more_than_five_thousand_tokens(tmp_path: Path) -> None:
+    view = _runs_then_compaction(tmp_path, ["demo", "big"])
+    # `big` is 25,000 tokens on disk but counts 5,000 against the budget, so the older `demo` fits beside it.
+    assert _turns_of(view, "big") == (3, 4, 5, 6) and _turns_of(view, "demo") == (3, 4, 5, 6)
+
+
+def test_a_forked_skill_run_is_not_in_the_main_context(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    session = _session(tmp_path, "2.1.301", root)
+    _append_turn(tmp_path, "2.1.301")
+    row = _skill_run_row("demo", "2026-10-17T16:55:15.000Z")
+    row["toolUseResult"] = {"success": True, "commandName": "demo", "status": "forked", "agentId": "a1"}
+    _append_rows(tmp_path, row)
+    view = _view(session)
+    skill = next(a for a in view.artifacts if a.label == "demo")
+    assert not skill.loaded and skill.turns == ()
+    (run,) = view.turns[-1].skill_runs
+    assert run.forked and run.path == skill.path
+
+
+def test_a_re_added_tool_keeps_its_size_and_is_not_counted_twice() -> None:
+    def row(time: str, entry: HarnessEntry) -> EventRecord:
+        return EventRecord("claude", "harness", "s", time, item=entry)
+
+    kind = "deferred_tools"
+    first = row("2026-10-31T10:00:00Z", HarnessEntry(kind, "deferred tools", 1, 400, added=(("tool_b", 400),)))
+    added = row("2026-10-31T10:00:01Z", HarnessEntry(kind, "deferred tools", 1, 500, added=(("tool_a", 500),)))
+    readded = row("2026-10-31T10:00:02Z", HarnessEntry(kind, "deferred tools", 1, 0, readded=("tool_a",)))
+    removed = row("2026-10-31T10:00:03Z", HarnessEntry(kind, "deferred tools", -1, 0, removed=("tool_a",)))
+
+    def summed(*records: EventRecord) -> tuple[int | None, int | None]:
+        (item,) = build_harness(list(records), Replies(())) or ()
+        return item.count, item.tokens_est
+
+    assert summed(first) == (1, 100)
+    assert summed(first, added) == (2, 225)
+    assert summed(first, added, readded) == (2, 225)
+    assert summed(first, added, readded, removed) == summed(first)
+
+
+def test_a_skill_of_the_user_folder_wins_over_the_project_skill_of_the_same_name(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _add_skill(root, "deploy", 10)
+    _add_skill(root, "deploy", 10, scope_root=Path.home())
+    session = _session(tmp_path, "2.1.301", root)
+    _append_turn(tmp_path, "2.1.301")
+    _append_rows(tmp_path, _skill_run_row("deploy", "2026-10-17T16:55:15.000Z"))
+    by_path = {a.path: a for a in _view(session).artifacts}
+    assert by_path["~/.claude/skills/deploy/SKILL.md"].loaded
+    assert not by_path[".claude/skills/deploy/SKILL.md"].loaded
+
+
+def _set_agent_type(tmp_path: Path, agent_type: str) -> None:
+    meta = next((tmp_path / "2.1.308" / "session" / "subagents").glob("*.meta.json"))
+    meta.write_text(json.dumps({**json.loads(meta.read_text()), "agentType": agent_type}))
+
+
+def test_an_agent_of_the_project_wins_over_the_user_agent_of_the_same_name(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    user_agents = Path.home() / ".claude" / "agents"
+    user_agents.mkdir(parents=True)
+    (user_agents / "helper.md").write_text("---\nname: helper\ndescription: Helps.\n---\n\n# Mine\n")
+    session = _session(tmp_path, "2.1.308", root)
+    _set_agent_type(tmp_path, "helper")
+    by_path = {a.path: a for a in _view(session).artifacts}
+    assert by_path[".claude/agents/helper.md"].loaded
+    assert not by_path["~/.claude/agents/helper.md"].loaded
+
+
+def test_an_agent_is_known_by_its_frontmatter_name_not_its_file_name(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    (root / ".claude" / "agents" / "reviewer.md").write_text("---\nname: code-reviewer\ndescription: Reviews.\n---\n")
+    session = _session(tmp_path, "2.1.308", root)
+    _set_agent_type(tmp_path, "code-reviewer")
+    reviewer = next(a for a in _view(session).artifacts if a.path == ".claude/agents/reviewer.md")
+    assert reviewer.label == "code-reviewer" and reviewer.loaded
+
+
+def test_a_skill_a_subagent_ran_is_loaded_in_the_turn_the_subagent_ran(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    session = _session(tmp_path, "2.1.308", root)
+    sub_file = next((tmp_path / "2.1.308" / "session" / "subagents").glob("agent-*.jsonl"))
+    last = json.loads(sub_file.read_text().splitlines()[-1])
+    row = {**_skill_run_row("demo", last["timestamp"]), "sessionId": last["sessionId"], "isSidechain": True}
+    with sub_file.open("a") as handle:
+        handle.write(json.dumps(row) + "\n")
+    view = _view(session)
+    (sub,) = view.subagents
+    skill = next(a for a in view.artifacts if a.label == "demo")
+    assert [run.name for run in sub.skill_runs] == ["demo"]
+    assert skill.loaded and skill.turns == (sub.turn,)

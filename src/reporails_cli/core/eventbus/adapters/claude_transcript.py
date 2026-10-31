@@ -28,7 +28,10 @@ the adapter refuses any other shape of a row type it reads:
   strings), `mcp_instructions_delta` (`addedNames` and `addedBlocks`, lists of strings), `deferred_tools_delta`
   (`addedNames` and `addedLines`, lists of strings, or in a subagent file `content`, a string),
   `session_context` (`context`, an object of strings). The three delta rows may also carry `removedTypes` or
-  `removedNames`, lists of strings, counted off their item count; each added item's size is kept under its
+  `removedNames`, lists of strings, counted off their item count; a deferred-tools delta row whose
+  added items list is empty names tools re-added by name: `readdedNames`, a list of strings, must name every
+  added name, and each counts with size 0 and is recorded as re-added; any other row whose added names and
+  items differ in length, empty items included, is refused; each added item's size is kept under its
   name (never its text) and each removed name is kept, so a later removal takes its size off too.
 - a hook note: `type: "attachment"` with `hookEvent` and `hookName` strings and one of `attachment.type`
   `hook_additional_context` (`content`, a list of strings), `hook_success` (`content`, a string, read only when
@@ -42,6 +45,11 @@ the adapter refuses any other shape of a row type it reads:
   with `uuid` and `attachment.type: "queued_command"`, `commandMode: "prompt"`, `origin.kind: "human"` and
   `prompt`, a string or a list of blocks as a user row's content. Every other user row yields nothing. The
   prompt's text is read for its size and by `resolve_prompt` for the route that shows it, never stored.
+- a skill run: a `user` row whose `toolUseResult` is an object with `commandName`, a string, and `success`, a
+  boolean (the skill's name as the session shows it, `cloudflare:agents-sdk` for a plugin's), and optionally
+  `status`, a string, which is `forked` when the skill ran in a subagent of its own (`context: fork`); no other
+  key of the object is read. A `success: false` run, and a `toolUseResult` that is not an object or has no
+  `commandName`, yield nothing.
 - a compaction: `type: "system"` with `subtype: "compact_boundary"` and `compactMetadata.trigger`.
 - a subagent brief: the first row of a subagent file, `type: "user"` with `message.content` a string or a
   list of blocks whose `type: "text"` blocks hold `text`.
@@ -74,6 +82,7 @@ from reporails_cli.core.platform.dto.events import (
     HarnessKind,
     InstructionLoad,
     PromptEntry,
+    SkillRun,
     TokenUsage,
 )
 
@@ -98,8 +107,18 @@ class _Harness:
     removed_key: str | None = None
 
 
-def _sized_by_name(names: list[str], items: list[str], what: str) -> tuple[tuple[str, int], ...]:
-    """Each added item's size under its name; the names and the items must pair up one to one."""
+def _sized_by_name(
+    names: list[str], items: list[str], readded: tuple[str, ...], what: str
+) -> tuple[tuple[str, int], ...]:
+    """Each added item's size under its name; the names and the items must pair up one to one. With no items every
+    name must be one the row re-added, and none is sized."""
+    if not items:
+        stray = [name for name in names if name not in readded]
+        if stray:
+            raise PayloadRefused(
+                f"{what} lists names with no items that readdedNames does not name: {', '.join(stray)}"
+            )
+        return ()
     if len(names) != len(items):
         raise PayloadRefused(f"{what} lists {len(names)} names for {len(items)} items")
     return tuple((name, len(item)) for name, item in zip(names, items, strict=True))
@@ -158,7 +177,7 @@ class ClaudeTranscriptAdapter:
         if kind == "attachment":
             return self._attachment(row, subagent_id)
         if kind == "user":
-            return self._prompt(row, subagent_id)
+            return [*self._prompt(row, subagent_id), *self._skill_run(row, subagent_id)]
         return []
 
     def resolve_brief(self, first_row: JsonObject) -> str:
@@ -220,6 +239,23 @@ class ClaudeTranscriptAdapter:
         if texts is None:
             raise PayloadRefused("queued_command attachment prompt is neither text nor a list of blocks")
         return "".join(texts)
+
+    def _skill_run(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
+        result = row.get("toolUseResult")
+        if not isinstance(result, dict) or "commandName" not in result:
+            return []
+        what = "toolUseResult"
+        name, success = result.get("commandName"), result.get("success")
+        if not isinstance(name, str) or not name:
+            raise PayloadRefused(f"{what} commandName is not a string")
+        if not isinstance(success, bool):
+            raise PayloadRefused(f"{what} success is not a boolean")
+        status = result.get("status")
+        if status is not None and not isinstance(status, str):
+            raise PayloadRefused(f"{what} status is not a string")
+        if not success:
+            return []
+        return [replace(self._record(row, "skill_run", subagent_id), item=SkillRun(name, status == "forked"))]
 
     def _prompt(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         text = self._typed_text(row)
@@ -296,7 +332,7 @@ class ClaudeTranscriptAdapter:
             items = _strings(text, spec.chars_key, what)
             chars = sum(len(item) for item in items)
             if spec.removed_key is not None:
-                added = _sized_by_name(names, items, what)
+                added = _sized_by_name(names, items, (), what)
         removed = self._removed_names(attachment, spec.removed_key, what)
         return HarnessEntry(spec.kind, spec.label, count - len(removed), chars, added=added, removed=removed)
 
@@ -316,13 +352,16 @@ class ClaudeTranscriptAdapter:
         names = _strings(attachment.get("addedNames"), "addedNames", what)
         lines = _strings(attachment.get("addedLines"), "addedLines", what)
         removed = self._removed_names(attachment, "removedNames", what)
+        readded = self._removed_names(attachment, "readdedNames", what)
+        added = _sized_by_name(names, lines, readded, what)
         return HarnessEntry(
             "deferred_tools",
             "deferred tools",
             len(names) - len(removed),
             sum(len(item) for item in lines),
-            added=_sized_by_name(names, lines, what),
+            added=added,
             removed=removed,
+            readded=() if added else tuple(names),
         )
 
     def _session_context(self, attachment: JsonObject) -> HarnessEntry:

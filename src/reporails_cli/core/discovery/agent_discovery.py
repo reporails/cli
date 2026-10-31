@@ -10,7 +10,7 @@ import os
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from reporails_cli.core.discovery.agent_config import (
@@ -22,6 +22,7 @@ from reporails_cli.core.discovery.agent_config import (
     load_config_file_types,
 )
 from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
+from reporails_cli.core.discovery.external_patterns import OwnAccountOnly, external_anchor, resolve_external_pattern
 from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.project_root import resolve_project_root, user_level_agent_dir
 from reporails_cli.core.discovery.read_gates import apply_read_gate
@@ -38,7 +39,6 @@ from reporails_cli.core.discovery.walk import (
     walk_glob_matches,
     walk_markdown,
 )
-from reporails_cli.core.platform.contract.glob_pattern import escape_glob, literal_segment
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.utils.utils import config_pattern_matches, is_rooted_pattern, matches_any_glob
 
@@ -296,29 +296,15 @@ def glob_file_type_patterns(
     return found
 
 
-def _external_anchor(pattern: str, target: Path) -> tuple[Path, str]:
-    """Split an external pattern into the folder it is anchored at (the home folder, the filesystem root
-    or a drive, then each leading segment that names a plain folder) and the glob left under it."""
-    pattern = pattern.replace("/projects/*/", f"/projects/{escape_glob(claude_project_folder_name(target))}/")
-    parts = PurePosixPath(pattern).parts
-    head = parts[0]
-    anchor = Path(head).expanduser() if head.startswith("~") else Path(head + ("/" if head.endswith(":") else ""))
-    used = 1
-    for segment in parts[1:-1]:
-        folder = literal_segment(segment)
-        if folder is None:
-            break
-        anchor /= folder
-        used += 1
-    return anchor, "/".join(parts[used:])
-
-
 def _glob_external(pattern: str, target: Path, found: list[Path], exclusions: RunExclusions) -> None:
     """Resolve an external path pattern (~/... or /absolute/...), walking only below its literal folders
     and skipping the run's excluded folders."""
-    anchor, glob_below = _external_anchor(pattern, target)
+    resolved = resolve_external_pattern(pattern, claude_project_folder_name(target))
+    if resolved is None:
+        return
+    anchor, glob_below = external_anchor(resolved)
     if glob_below:
-        found.extend(walk_glob_matches(anchor, glob_below, exclusions))
+        found.extend(walk_glob_matches(anchor, glob_below, OwnAccountOnly(exclusions)))
 
 
 def _glob_directory_entries(
@@ -341,10 +327,10 @@ def _glob_directory_entries(
     """
     dir_pattern = pattern.rstrip("/")
     if is_rooted_pattern(dir_pattern):
-        expanded_str = Path(dir_pattern).expanduser().as_posix()
-        if "/projects/*/" in expanded_str:
-            expanded_str = expanded_str.replace("/projects/*/", f"/projects/{claude_project_folder_name(target)}/")
-        for d in glob.glob(expanded_str):
+        resolved = resolve_external_pattern(dir_pattern, claude_project_folder_name(target))
+        if resolved is None:
+            return
+        for d in glob.glob(Path(resolved).expanduser().as_posix()):
             base = Path(d)
             if base.is_dir():
                 found.extend(walk_markdown(base, exclusions))

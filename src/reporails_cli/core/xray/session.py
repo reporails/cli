@@ -15,11 +15,15 @@ from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadab
 from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
 from reporails_cli.core.platform.dto.xray import ArtifactFile, XraySpan, XrayView
 from reporails_cli.core.xray.artifacts import (
+    agent_run_turns,
     artifact_files,
     build_artifacts,
     in_context_turns,
     is_actionable,
+    merged_turns,
     peek_text,
+    run_paths,
+    runnable_paths,
 )
 from reporails_cli.core.xray.derive import (
     Frame,
@@ -118,11 +122,15 @@ class XraySession:
         files = self._listing()
         records = [record for record in self._transcript if record.event != "refusal"]
         timed = sorted((moment, record.time) for record in records if (moment := epoch(record.time)) is not None)
-        frame = Frame(timed[0][0] if timed else 0.0, self._root, self._findings)
+        frame = Frame(timed[0][0] if timed else 0.0, self._root, self._findings, runnable_paths(files))
         replies = main_replies(records)
         start = loads_of(start_loads(records, replies), frame)
         turns = build_turns(records, self._bus or None, frame)
+        subagents = build_subagents(records, turn_end_times(records), frame)
+        agent_turns = agent_run_turns(subagents, files, self._root)
+        in_context = merged_turns(in_context_turns(start, turns, self._root), agent_turns)
         loaded = {real_path(load.path, self._root) for load in loads_of(records, frame)}
+        loaded |= run_paths(turns, self._root) | set(agent_turns)
         return XrayView(
             version=self.version,
             session=self._file.stem,
@@ -131,10 +139,8 @@ class XraySession:
             first_context=replies.points[0][1] if replies.points else None,
             start=start,
             turns=turns,
-            subagents=build_subagents(records, turn_end_times(records), frame),
-            artifacts=build_artifacts(
-                files, loaded, in_context_turns(start, turns, self._root), self._findings, self._root
-            ),
+            subagents=subagents,
+            artifacts=build_artifacts(files, loaded, in_context, self._findings, self._root),
             refusals=tuple(
                 dict.fromkeys(
                     [r.refusal for r in self._transcript if r.event == "refusal" and r.refusal]

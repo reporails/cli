@@ -27,6 +27,7 @@ from reporails_cli.core.platform.dto.xray import (
     XrayLoad,
     XrayNote,
     XrayPrompt,
+    XrayRun,
     XraySubagent,
     XrayTurn,
 )
@@ -66,11 +67,14 @@ def count_for(findings: Mapping[str, int], path: str, root: Path) -> int | None:
 
 @dataclass(frozen=True)
 class Frame:
-    """What a derivation reads beside the records: the session's first time, the project and its findings."""
+    """What a derivation reads beside the records: the session's first time, the project, its findings and the
+    files a run name can stand for."""
 
     t0: float
     root: Path
     findings: Mapping[str, int]
+    # Absolute path of the skill or command file each run name stands for.
+    runnable: Mapping[str, str]
 
     def at(self, record: EventRecord) -> float | None:
         """Seconds from the session's first transcript record to `record`, None for an unparsable time."""
@@ -110,6 +114,7 @@ class _Bucket:
     loads: list[EventRecord] = field(default_factory=list)
     reads: list[str] = field(default_factory=list)
     runs: list[str] = field(default_factory=list)
+    skill_runs: list[XrayRun] = field(default_factory=list)
     prompts: list[XrayPrompt] = field(default_factory=list)
     notes: list[XrayNote] = field(default_factory=list)
     compaction: EventRecord | None = None
@@ -198,25 +203,35 @@ def start_notes(records: Sequence[EventRecord], replies: Replies) -> list[EventR
 
 @dataclass
 class _Slot:
-    """One harness item as it is summed: its count and size, and the size of each item a delta row added."""
+    """One harness item as it is summed: its count and size, the size of each item present that a delta row
+    added, and the size each name last had."""
 
     kind: HarnessKind
     label: str
     count: int | None
     chars: int
     sizes: dict[str, int] = field(default_factory=dict)
+    known: dict[str, int] = field(default_factory=dict)
 
     @classmethod
     def of(cls, entry: HarnessEntry) -> _Slot:
         """The slot a kind's first record opens."""
-        return cls(entry.kind, entry.label, entry.count, entry.chars, dict(entry.added))
+        sizes = {**dict(entry.added), **dict.fromkeys(entry.readded, 0)}
+        return cls(entry.kind, entry.label, entry.count, entry.chars, sizes, dict(sizes))
 
     def add(self, entry: HarnessEntry) -> None:
-        """Fold in a later delta row of the same kind: the size of each name it removed leaves, then its own
-        added items arrive."""
-        self.count = None if self.count is None and entry.count is None else (self.count or 0) + (entry.count or 0)
+        """Fold in a later delta row of the same kind: the size of each name it removed leaves, its own added items
+        arrive, and a name it re-added keeps the size it has, or takes the size it last had when it had left."""
+        present = sum(1 for name in entry.readded if name in self.sizes)
+        revived = [name for name in entry.readded if name not in self.sizes]
+        delta = (entry.count or 0) - present
+        self.count = None if self.count is None and entry.count is None else (self.count or 0) + delta
         self.chars += entry.chars - sum(self.sizes.pop(name, 0) for name in entry.removed)
         self.sizes.update(entry.added)
+        self.known.update(entry.added)
+        for name in revived:
+            self.sizes[name] = self.known.get(name, 0)
+            self.chars += self.sizes[name]
 
 
 def build_harness(records: Sequence[EventRecord], replies: Replies) -> tuple[XrayHarnessItem, ...] | None:
@@ -287,11 +302,24 @@ def _file_in_turn(target: _Bucket, record: EventRecord, frame: Frame) -> None:
         target.loads.append(record)
     elif record.event == "subagent_run" and record.subagent_id is not None:
         target.runs.append(record.subagent_id)
+    elif record.event == "skill_run" and record.skill is not None:
+        target.skill_runs.append(_skill_run(record, frame))
+
+
+def _skill_run(record: EventRecord, frame: Frame) -> XrayRun:
+    skill = record.skill
+    if skill is None:
+        raise ValueError("record names no skill run")
+    moment = frame.at(record) or 0.0
+    path = frame.runnable.get(skill.name)
+    if path is None:
+        return XrayRun(skill.name, moment, skill.forked, None, None)
+    return XrayRun(skill.name, moment, skill.forked, relative_wire_path(path, frame.root), file_tokens_est(path))
 
 
 def _bears_turn(record: EventRecord) -> bool:
-    """Whether a record is something a turn holds (a reply, load, prompt, hook note, subagent run or
-    compaction); a turn end or a harness listing row opens no turn."""
+    """Whether a record is something a turn holds (a reply, load, prompt, hook note, subagent run,
+    skill run or compaction); a turn end or a harness listing row opens no turn."""
     if record.event == "harness":
         entry = record.harness
         return entry is not None and is_note_kind(entry.kind) and entry.event is not None
@@ -301,6 +329,8 @@ def _bears_turn(record: EventRecord) -> bool:
         return record.usage is not None
     if record.event == "subagent_run":
         return record.subagent_id is not None
+    if record.event == "skill_run":
+        return record.skill is not None
     return record.event in TURN_HELD_KINDS
 
 
@@ -344,7 +374,6 @@ def build_turns(
                 t=moment - frame.t0,
                 context_start=got.replies[0][1] if got.replies else None,
                 context=got.replies[-1][1] if got.replies else None,
-                replies=len(got.replies),
                 loads=loads_of(got.loads, frame),
                 reads=tuple(relative_wire_path(path, frame.root) for path in got.reads) if bus else None,
                 subagents=tuple(got.runs),
@@ -352,6 +381,7 @@ def build_turns(
                 series=tuple(got.replies),
                 prompts=tuple(got.prompts),
                 notes=tuple(got.notes),
+                skill_runs=tuple(got.skill_runs),
             )
         )
     return tuple(turns)
@@ -383,4 +413,7 @@ def _subagent(sid: str, group: Sequence[EventRecord], ends: Sequence[float], fra
         end=times[-1] if times else None,
         series=tuple(series),
         loads=loads_of(group, frame),
+        skill_runs=tuple(
+            _skill_run(record, frame) for record in group if record.event == "skill_run" and record.skill is not None
+        ),
     )

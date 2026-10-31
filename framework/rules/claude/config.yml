@@ -181,6 +181,13 @@ file_types:
         precedence: managed
         vcs: external
         maintainer: system
+      synced:
+        # https://code.claude.com/docs/en/skills: "Claude Code uses `~/.claude/skills/synced/` for skills downloaded from claude.ai". The folder per account below it is observed, not documented; only the signed-in account's folder is read.
+        patterns: ["~/.claude/skills/synced/*/**/*.md"]
+        entry_patterns: ["~/.claude/skills/synced/*/*/SKILL.md"]
+        precedence: synced
+        vcs: external
+        maintainer: system
       plugin:
         # A Claude Code plugin's own skills, relative to the plugin root: a directory
         # holding .claude-plugin/plugin.json (code.claude.com/docs/en/plugins/manifest-reference#standard-layout).

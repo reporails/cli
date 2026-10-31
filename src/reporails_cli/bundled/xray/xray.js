@@ -236,6 +236,8 @@ function agentDetail(r) {
   let h = `<div class="detail"><div class="dm">${r.turn != null ? `started in turn ${r.turn}` : 'start turn not known'}${r.start != null ? ` at ${clock(r.start)}` : ''}${r.start != null && r.end != null ? `, ran ${dur(r.end - r.start)}` : ''}</div>`;
   h += `<h4>Started with<span>${first.length ? first.length : 'nothing'}</span></h4>` + (first.length ? first.map(l => `<div class="dl"><span style="color:var(--green)">+</span><span class="p">${esc(nameOf(l.path))}</span><span class="w">${tk(l.tokens_est, true)}</span></div>`).join('') : '<div class="dl"><span style="color:var(--red)">✕</span><span class="p">CLAUDE.md</span><span class="w" style="color:var(--red)">not given</span></div>');
   if (later.length) h += `<h4>Loaded during its run<span>${later.length}</span></h4>` + later.map(l => `<div class="dl"><span style="color:var(--green)">+</span><span class="p">${esc(nameOf(l.path))}</span><span class="w">${l.t != null ? 'at ' + clock(l.t) + ' · ' : ''}${tk(l.tokens_est, true)}</span></div>`).join('');
+  const ran = r.sb.skill_runs || [];
+  if (ran.length) h += `<h4>Skills it ran<span>${ran.length}</span></h4>` + ran.map(x => `<div class="dl"><span style="color:var(--green)">+</span><span class="p">${esc(x.name)}</span><span class="w">${x.t != null ? 'at ' + clock(x.t) + ' · ' : ''}${x.forked ? 'in its own subagent' : tk(x.tokens_est, true)}</span></div>`).join('');
   const ser = r.pts;
   if (ser.length > 1) { const mx = Math.max(1, ...ser.map(p => p[1])); h += `<h4>Its context<span>${k1(ser[0][1])} → ${k1(ser[ser.length - 1][1])}, peak ${k1(mx)}</span></h4><svg class="spk" viewBox="0 0 300 46" preserveAspectRatio="none"><path class="a" d="M0 46 ${ser.map((p, i) => `L${(i / (ser.length - 1) * 300).toFixed(1)} ${(46 - p[1] / mx * 42).toFixed(1)}`).join(' ')} L300 46Z"/></svg>`; }
   h += `<h4>Its brief</h4>${textBlock('b:' + r.id, 'brief?subagent=' + encodeURIComponent(r.id))}`;
@@ -254,6 +256,10 @@ function loadRow(l, t) {
   const a = artByPath(l.path);
   return orow(l.t != null ? l.t : t, 'g', `<span class="p">${esc(nameOf(l.path))}</span>`, KIND_WORD[l.kind] || l.kind, l.tokens_est, { attr: a ? `data-file="${esc(a.key)}"` : '', title: l.path });
 }
+function runRow(r, t) {
+  const a = r.path ? artByPath(r.path) : null;
+  return orow(r.t != null ? r.t : t, 'g', `<span class="p">${esc(r.name)}</span>`, r.forked ? 'ran in a subagent' : 'ran', r.forked ? 0 : r.tokens_est, { attr: a ? `data-file="${esc(a.key)}"` : '', title: r.path || r.name });
+}
 function turnRows(t, i) {
   let h = '<div class="tb">';
   const t0 = turnStart(t, i);
@@ -263,6 +269,7 @@ function turnRows(t, i) {
     if (on) h += `<div class="detail">${textBlock('t:' + p.id, 'prompt?id=' + encodeURIComponent(p.id))}</div>`;
   });
   (t.loads || []).forEach(l => { h += loadRow(l, t0); });
+  (t.skill_runs || []).forEach(r => { h += runRow(r, t0); });
   groupNotes((t.notes || []).filter(n => n.kind === 'hook_note')).forEach(n => { h += orow(n.t, 'm', `${esc(n.label)} hook note${n.count > 1 ? ' ×' + n.count : ''}`, `added by your ${n.event} hook`, n.tokens_est); });
   groupNotes((t.notes || []).filter(n => n.kind === 'stop_block')).forEach(n => { h += orow(n.t, 'a', `Stop hook sent the reply back${n.count > 1 ? ' ×' + n.count : ''}`, 'its message is added each time', n.tokens_est, { whyCls: 'warn', barCls: 's' }); });
   (t.subagents || []).forEach(id => {
@@ -272,7 +279,7 @@ function turnRows(t, i) {
     if (on) h += agentDetail(r);
   });
   if (t.compaction) { const c = t.compaction; h += orow(c.t, 'a', `/compact${c.trigger ? ' (' + esc(c.trigger) + ')' : ''}`, c.before != null && c.after != null ? `context ${k1(c.before)} → ${k1(c.after)}` : '', 0, { whyCls: 'warn' }); }
-  if (!(t.loads || []).length && !(t.notes || []).length && !(t.subagents || []).length && !t.compaction && !(t.prompts || []).length) h += '<div class="or mute"><span class="tm"></span><span class="dt"></span><span class="nm" style="color:var(--ink-3)">nothing new loaded in this turn</span><span></span><span></span></div>';
+  if (!(t.loads || []).length && !(t.skill_runs || []).length && !(t.notes || []).length && !(t.subagents || []).length && !t.compaction && !(t.prompts || []).length) h += '<div class="or mute"><span class="tm"></span><span class="dt"></span><span class="nm" style="color:var(--ink-3)">nothing new loaded in this turn</span><span></span><span></span></div>';
   return h + '</div>';
 }
 function startRows() {

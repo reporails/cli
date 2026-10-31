@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from reporails_cli.core.pipeline.expected_loads import expected_loads
@@ -11,15 +12,23 @@ from reporails_cli.core.platform.contract.json_value import JsonObject, as_list,
 from reporails_cli.core.platform.dto.xray import (
     ARTIFACT_KIND_OF_FILE_TYPE,
     INVOCABLE_ARTIFACT_KINDS,
+    RUNNABLE_ARTIFACT_KINDS,
+    SCOPE_PRECEDENCE,
     ArtifactFile,
     ArtifactKind,
     ArtifactScope,
     XrayArtifact,
     XrayLoad,
+    XraySubagent,
     XrayTurn,
     is_artifact_scope,
 )
 from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path
+
+# What Claude Code re-attaches after a compaction: the first tokens of each skill's latest run, and the most all
+# re-attached skills share (https://code.claude.com/docs/en/skills, "Auto-compaction carries invoked skills forward").
+SKILL_REATTACH_TOKENS = 5_000
+SKILL_REATTACH_BUDGET = 25_000
 
 # The most characters of a file the page may ask for.
 PEEK_LIMIT = 200_000
@@ -74,37 +83,123 @@ def artifact_files(root: Path, plugins: Sequence[tuple[str, Path]]) -> tuple[Art
     return tuple(first.values())
 
 
-def _ordered(start: Sequence[XrayLoad], turns: Sequence[XrayTurn]) -> list[tuple[int, list[tuple[float, str | None]]]]:
-    """Per turn number (0 = the session start), its loads and compactions in time order; a compaction is
-    `(t, None)`."""
-    groups: list[tuple[int, list[tuple[float, str | None]]]] = [(0, [(load.t or 0.0, load.path) for load in start])]
+def _winners(files: Sequence[ArtifactFile], kinds: frozenset[ArtifactKind]) -> dict[str, ArtifactFile]:
+    """The file each label stands for among the listed files of `kinds`: the one of the scope that wins, the first
+    listed when two share a scope."""
+
+    def rank(item: ArtifactFile) -> int:
+        order = SCOPE_PRECEDENCE[item.kind]
+        return order.index(item.scope) if item.scope in order else len(order)
+
+    found: dict[str, ArtifactFile] = {}
+    for item in files:
+        held = found.get(item.label)
+        if item.kind in kinds and (held is None or rank(item) < rank(held)):
+            found[item.label] = item
+    return found
+
+
+def runnable_paths(files: Sequence[ArtifactFile]) -> dict[str, str]:
+    """The absolute path of the skill or command file each label stands for."""
+    return {label: item.path for label, item in _winners(files, RUNNABLE_ARTIFACT_KINDS).items()}
+
+
+@dataclass(frozen=True)
+class _Step:
+    """One thing that put a file in context at a time: a load, a run, or (no path) a compaction."""
+
+    t: float
+    path: str | None
+    run_tokens: int | None = None
+
+
+def _ordered(start: Sequence[XrayLoad], turns: Sequence[XrayTurn]) -> list[tuple[int, list[_Step]]]:
+    """Per turn number (0 = the session start), its loads, the runs of listed skill and command files that ran in
+    the main session and its compactions in time order."""
+    groups: list[tuple[int, list[_Step]]] = [(0, [_Step(load.t or 0.0, load.path) for load in start])]
     for turn in turns:
-        steps: list[tuple[float, str | None]] = [(load.t or 0.0, load.path) for load in turn.loads]
+        steps = [_Step(load.t or 0.0, load.path) for load in turn.loads]
+        steps.extend(
+            _Step(run.t, run.path, run.tokens_est or 0)
+            for run in turn.skill_runs
+            if run.path is not None and not run.forked
+        )
         if turn.compaction is not None:
-            steps.append((turn.compaction.t, None))
-        groups.append((turn.n, sorted(steps, key=lambda step: step[0])))
+            steps.append(_Step(turn.compaction.t, None))
+        groups.append((turn.n, sorted(steps, key=lambda step: step.t)))
     return groups
+
+
+def _reattached(ran: dict[str, int]) -> set[str]:
+    """The skills a compaction brings back: the latest run of each, most recent first, until the combined budget is
+    spent; `ran` maps a path to its re-attached size in tokens, oldest run first."""
+    kept: set[str] = set()
+    spent = 0
+    for path, tokens in reversed(ran.items()):
+        if spent + tokens > SKILL_REATTACH_BUDGET:
+            break
+        kept.add(path)
+        spent += tokens
+    return kept
 
 
 def in_context_turns(start: Sequence[XrayLoad], turns: Sequence[XrayTurn], root: Path) -> dict[str, list[int]]:
     """For each resolved file path, the turn numbers it sat in context (0 = the session start).
 
-    A loaded file stays in context until a compaction; after one it counts again only when a load
-    names it again."""
+    A loaded file stays in context until a compaction; after one it counts again only when a load names it again.
+    A skill or command that ran also stays until a compaction, which brings back the latest run of each within
+    the re-attach budget."""
     present: set[str] = set()
+    ran: dict[str, int] = {}
     seen: dict[str, list[int]] = {}
     for number, steps in _ordered(start, turns):
         in_turn = set(present)
-        for _, path in steps:
-            if path is None:
-                present.clear()
+        for step in steps:
+            if step.path is None:
+                present = _reattached(ran)
                 continue
-            resolved = real_path(path, root)
+            resolved = real_path(step.path, root)
             present.add(resolved)
             in_turn.add(resolved)
+            if step.run_tokens is not None:
+                ran.pop(resolved, None)
+                ran[resolved] = min(step.run_tokens, SKILL_REATTACH_TOKENS)
         for resolved in in_turn:
             seen.setdefault(resolved, []).append(number)
     return seen
+
+
+def run_paths(turns: Sequence[XrayTurn], root: Path) -> set[str]:
+    """The resolved paths of the listed skill and command files that ran in the main session."""
+    return {
+        real_path(run.path, root)
+        for turn in turns
+        for run in turn.skill_runs
+        if run.path is not None and not run.forked
+    }
+
+
+def agent_run_turns(
+    subagents: Sequence[XraySubagent], files: Sequence[ArtifactFile], root: Path
+) -> dict[str, list[int]]:
+    """For each resolved path, the turns a subagent put its file in context in: an agent file in the turn a subagent
+    of its type ran, a skill or command file in the turn a subagent ran it. A built-in type matches no file; a run
+    that itself ran in a subagent counts for neither."""
+    agents = {label: real_path(item.path, root) for label, item in _winners(files, frozenset({"agent"})).items()}
+    found: dict[str, list[int]] = {}
+    for run in subagents:
+        if run.turn is None:
+            continue
+        paths = [agents[run.type]] if run.type in agents else []
+        paths += [real_path(item.path, root) for item in run.skill_runs if item.path is not None and not item.forked]
+        for path in paths:
+            found.setdefault(path, []).append(run.turn)
+    return {path: sorted(set(turns)) for path, turns in found.items()}
+
+
+def merged_turns(first: Mapping[str, list[int]], second: Mapping[str, list[int]]) -> dict[str, list[int]]:
+    """The turns of two per-path maps, each path's turns together in order."""
+    return {path: sorted({*first.get(path, []), *second.get(path, [])}) for path in {*first, *second}}
 
 
 def is_actionable(item: ArtifactFile, root: Path) -> bool:

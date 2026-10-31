@@ -725,3 +725,62 @@ def test_project_claude_md_linking_to_the_user_claude_md_stays_the_project_main_
     out = expected_loads(root)
     files = _by_name(out["files"], root.resolve())
     assert (files["CLAUDE.md"]["file_type"], files["CLAUDE.md"]["precedence"]) == ("main", "project")
+
+
+_ACCOUNT = "o_a"
+
+
+def _synced(name: str, account: str) -> None:
+    _write(
+        Path.home() / ".claude" / "skills" / "synced" / account / name / "SKILL.md",
+        f"---\nname: {name}\ndescription: Synced.\n---\n\n# {name}\n",
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_synced_skills_of_the_signed_in_account_only_are_listed_with_their_label(tmp_path: Path) -> None:
+    _write(
+        Path.home() / ".claude.json",
+        json.dumps({"oauthAccount": {"organizationUuid": "o", "accountUuid": "a"}}),
+    )
+    _synced("docx", _ACCOUNT)
+    _synced("pdf", _ACCOUNT)
+    _synced("chrome-browser", "x_y")
+    _write(_project(tmp_path) / "CLAUDE.md")
+    items = expected_loads(_project(tmp_path), [])["invocable"]
+    synced = {i["label"]: i for i in items if "/skills/synced/" in i["path"]}
+    assert set(synced) == {"anthropic-skills:docx", "anthropic-skills:pdf"}
+    assert {i["precedence"] for i in synced.values()} == {"synced"}
+    assert all(f"/{_ACCOUNT}/" in i["path"] for i in synced.values())
+    listed = expected_loads(_project(tmp_path), [])["files"]
+    assert not [i for i in listed if "/synced/x_y/" in i["path"]]
+    assert [i for i in listed if f"/synced/{_ACCOUNT}/" in i["path"]]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_no_signed_in_account_lists_no_synced_skill(tmp_path: Path) -> None:
+    _synced("docx", _ACCOUNT)
+    _write(_project(tmp_path) / "CLAUDE.md")
+    items = expected_loads(_project(tmp_path), [])["invocable"]
+    assert not [i for i in items if "/skills/synced/" in i["path"]]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_the_signed_in_account_is_read_again_only_when_the_file_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    path = Path.home() / ".claude.json"
+    _write(path, json.dumps({"oauthAccount": {"organizationUuid": "o", "accountUuid": "a"}}))
+    reads: list[Path] = []
+    real = claude_settings._read_json
+
+    def counting(target: Path) -> dict:
+        reads.append(target)
+        return real(target)
+
+    monkeypatch.setattr(claude_settings, "_read_json", counting)
+    assert [claude_settings.claude_synced_account_folder() for _ in range(3)] == ["o_a"] * 3
+    assert len([r for r in reads if r == path]) == 1
+    _write(path, json.dumps({"oauthAccount": {"organizationUuid": "o", "accountUuid": "second"}}))
+    assert claude_settings.claude_synced_account_folder() == "o_second"

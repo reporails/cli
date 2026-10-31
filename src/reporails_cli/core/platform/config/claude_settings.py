@@ -51,13 +51,18 @@ MODES_WITHOUT_LAUNCH_INSTRUCTIONS = frozenset({MODE_MANAGED_ONLY})
 LAUNCH_INSTRUCTION_FILE_TYPES = frozenset({"main", "override", "rules"})
 
 
-def _settings_patterns() -> dict[str, list[str]]:
-    """Scope name -> settings-file patterns, from Claude's `config` file type."""
+def _scope_patterns(file_type: str) -> dict[str, list[str]]:
+    """Scope name -> file patterns, from Claude's `file_type` file type."""
     data = read_agent_config(get_agent_config_path("claude"))
     if data is None:
         return {}
-    scopes = as_object(as_object(as_object(data.get("file_types")).get("config")).get("scopes"))
+    scopes = as_object(as_object(as_object(data.get("file_types")).get(file_type)).get("scopes"))
     return {str(name): pattern_list(as_object(spec).get("patterns")) for name, spec in scopes.items()}
+
+
+def _settings_patterns() -> dict[str, list[str]]:
+    """Scope name -> settings-file patterns, from Claude's `config` file type."""
+    return _scope_patterns("config")
 
 
 def _expand(patterns: list[str], project_root: Path | None) -> list[Path]:
@@ -194,3 +199,39 @@ def claude_cleanup_period_days(project_root: Path | None = None) -> int | None:
     user's, then the project's shared and local ones, then managed settings, the last to set it
     winning. It is Claude Code's setting, so an invalid value reads as unset."""
     return _last_set(_precedence_files(_settings_patterns(), project_root), _cleanup_days_value)
+
+
+def claude_synced_account_folder() -> str | None:
+    """The name of the folder under `~/.claude/skills/synced/` that holds the skills synced from the signed-in
+    claude.ai account, `<organizationUuid>_<accountUuid>`; None when `~/.claude.json` names no signed-in account.
+
+    https://code.claude.com/docs/en/skills documents `~/.claude/skills/synced/` for skills downloaded from
+    claude.ai. The per-account folder below it and its name are not documented: observed on Claude Code 2.1.308,
+    2026-10-31, where the folder of the account `~/.claude.json` names under `oauthAccount` is the one whose skills
+    the session lists.
+    """
+    for path in _expand(_scope_patterns("mcp").get("user", []), None):
+        folder = _account_folder(path)
+        if folder is not None:
+            return folder
+    return None
+
+
+# The account folder each `~/.claude.json` named when last read, with the file's modification time and size then.
+_account_folders: dict[str, tuple[tuple[int, int], str | None]] = {}
+
+
+def _account_folder(path: Path) -> str | None:
+    """The account folder the file at `path` names; the file is parsed again only when its modification time or
+    size changed."""
+    stat = path.stat()
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    cached = _account_folders.get(str(path))
+    if cached is not None and cached[0] == stamp:
+        return cached[1]
+    account = as_object(_read_json(path).get("oauthAccount"))
+    organization, uuid = account.get("organizationUuid"), account.get("accountUuid")
+    named = isinstance(organization, str) and isinstance(uuid, str) and organization and uuid
+    folder = f"{organization}_{uuid}" if named else None
+    _account_folders[str(path)] = (stamp, folder)
+    return folder

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.eventbus.adapters.claude_transcript import ClaudeTranscriptAdapter
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.eventbus.transcript import prompt_text, read_transcript, subagent_brief
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
@@ -383,3 +384,100 @@ def test_a_delta_row_counts_its_added_items_less_its_removed_ones(tmp_path: Path
 def test_a_compact_boundary_row_is_a_post_compact_record_with_its_trigger(tmp_path: Path) -> None:
     records, _ = read_transcript("claude", _copy(COMPACTION, tmp_path), TranscriptCursor())
     assert [r.source for r in _of(records, "post_compact")] == ["manual"]
+
+
+def _tool_result(result: object) -> JsonObject:
+    return {
+        "type": "user",
+        "uuid": "u1",
+        "sessionId": "s",
+        "timestamp": "2026-10-31T10:00:00.000Z",
+        "message": {"role": "user", "content": [{"type": "tool_result", "content": "Launching skill"}]},
+        "toolUseResult": result,
+    }
+
+
+@pytest.mark.parametrize(
+    ("result", "name"),
+    [
+        ({"success": True, "commandName": "orient"}, "orient"),
+        (
+            {"success": True, "commandName": "code-review", "status": "forked", "background": True, "agentId": "a1"},
+            "code-review",
+        ),
+    ],
+)
+def test_a_skill_run_is_a_record_named_by_its_command(result: JsonObject, name: str) -> None:
+    (record,) = ClaudeTranscriptAdapter().resolve_row(_tool_result(result), None)
+    assert record.event == "skill_run" and record.skill is not None and record.skill.name == name
+    assert record.skill.forked == (result.get("status") == "forked")
+
+
+@pytest.mark.parametrize(
+    "result",
+    [{"success": False, "commandName": "orient"}, {"stdout": "ok"}, "plain text result"],
+    ids=["failed run", "no command name", "text result"],
+)
+def test_a_failed_skill_run_and_a_tool_result_without_a_command_yield_nothing(result: object) -> None:
+    assert ClaudeTranscriptAdapter().resolve_row(_tool_result(result), None) == []
+
+
+@pytest.mark.parametrize(
+    ("result", "field"),
+    [
+        ({"success": True, "commandName": 7}, "commandName"),
+        ({"success": "yes", "commandName": "orient"}, "success"),
+    ],
+)
+def test_a_malformed_skill_run_is_refused_naming_the_field(result: JsonObject, field: str) -> None:
+    with pytest.raises(PayloadRefused, match=field):
+        ClaudeTranscriptAdapter().resolve_row(_tool_result(result), None)
+
+
+def _deferred_row(**fields: list[str]) -> JsonObject:
+    return {
+        "type": "attachment",
+        "sessionId": "s",
+        "timestamp": "2026-10-31T10:00:00.000Z",
+        "attachment": {"type": "deferred_tools_delta", **fields},
+    }
+
+
+def test_tools_re_added_by_name_count_with_size_zero_and_are_not_refused() -> None:
+    names = [f"tool_{n}" for n in range(9)]
+    (record,) = ClaudeTranscriptAdapter().resolve_row(
+        _deferred_row(addedNames=names, addedLines=[], readdedNames=names), None
+    )
+    entry = record.harness
+    assert entry is not None and entry.count == 9 and entry.chars == 0
+    assert entry.added == () and entry.readded == tuple(names)
+
+
+def test_a_delta_row_with_unequal_non_empty_name_and_line_lists_is_refused() -> None:
+    with pytest.raises(PayloadRefused, match="names for"):
+        ClaudeTranscriptAdapter().resolve_row(_deferred_row(addedNames=["a", "b", "c"], addedLines=["x", "y"]), None)
+
+
+def test_a_skill_run_status_that_is_not_a_string_is_refused() -> None:
+    result = {"success": True, "commandName": "orient", "status": 3}
+    with pytest.raises(PayloadRefused, match="status"):
+        ClaudeTranscriptAdapter().resolve_row(_tool_result(result), None)
+
+
+def test_a_listing_delta_with_names_and_no_items_is_refused() -> None:
+    row = {
+        "type": "attachment",
+        "sessionId": "s",
+        "timestamp": "2026-10-31T10:00:00.000Z",
+        "attachment": {"type": "agent_listing_delta", "addedTypes": ["writer"], "addedLines": []},
+    }
+    with pytest.raises(PayloadRefused, match="readdedNames"):
+        ClaudeTranscriptAdapter().resolve_row(row, None)
+
+
+def test_deferred_tools_with_no_items_are_refused_unless_every_name_is_re_added() -> None:
+    names = ["a", "b", "c"]
+    with pytest.raises(PayloadRefused, match="readdedNames"):
+        ClaudeTranscriptAdapter().resolve_row(
+            _deferred_row(addedNames=names, addedLines=[], readdedNames=["a", "b"]), None
+        )

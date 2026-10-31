@@ -32,6 +32,7 @@ EventKind = Literal[
     "assistant_usage",
     "turn_end",
     "subagent_run",
+    "skill_run",
     "instruction_load",
     "harness",
 ]
@@ -116,6 +117,15 @@ class InstructionLoad:
 
 
 @dataclass(frozen=True)
+class SkillRun:
+    """One skill or command the agent ran: its name as the session shows it and whether it ran in a subagent of
+    its own (`context: fork`); never its output."""
+
+    name: str
+    forked: bool
+
+
+@dataclass(frozen=True)
 class HarnessEntry:
     """One piece of what the harness put into a session's context: its kind, a label, how many items it holds
     (None when it is not a list) and its size in characters."""
@@ -129,6 +139,8 @@ class HarnessEntry:
     # A list row's added items with their sizes in characters, and the names it removed; names only, no text.
     added: tuple[tuple[str, int], ...] = ()
     removed: tuple[str, ...] = ()
+    # Names a row re-added whose text was sent before.
+    readded: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -187,9 +199,9 @@ class EventRecord:
     usage: TokenUsage | None = None
     # The agent type of a `subagent_run` record.
     subagent_type: str | None = None
-    # The file of an `instruction_load` record, the piece of the harness's context a `harness` record names, or
-    # the prompt a transcript's `prompt_submit` record sizes.
-    item: InstructionLoad | HarnessEntry | PromptEntry | None = None
+    # The file of an `instruction_load` record, the piece of the harness's context a `harness` record names, the
+    # prompt a transcript's `prompt_submit` record sizes, or the skill a `skill_run` record names.
+    item: InstructionLoad | HarnessEntry | PromptEntry | SkillRun | None = None
 
     @property
     def load(self) -> InstructionLoad | None:
@@ -205,6 +217,11 @@ class EventRecord:
     def prompt(self) -> PromptEntry | None:
         """The typed prompt a transcript's `prompt_submit` record names."""
         return self.item if isinstance(self.item, PromptEntry) else None
+
+    @property
+    def skill(self) -> SkillRun | None:
+        """The skill or command a `skill_run` record names."""
+        return self.item if isinstance(self.item, SkillRun) else None
 
     def to_json(self) -> JsonObject:
         """The record as a JSON object."""

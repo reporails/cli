@@ -6,8 +6,14 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from reporails_cli.core.discovery.agent_config import extract_patterns, load_config_file_types
-from reporails_cli.core.discovery.agent_discovery import discover_from_config, discover_ungated, is_memory_recall_entry
+from reporails_cli.core.discovery.agent_discovery import (
+    claude_project_folder_name,
+    discover_from_config,
+    discover_ungated,
+    is_memory_recall_entry,
+)
 from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
+from reporails_cli.core.discovery.external_patterns import resolve_external_pattern
 from reporails_cli.core.discovery.plugin_roots import entry_pattern, installed_plugin_roots
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.discovery.read_gates import AliasFile, SkippedFile, claude_agents_md_reads, gated_file_types
@@ -137,6 +143,14 @@ def _loaded_entry(path: Path, root: Path, read: FileRead) -> JsonObject:
     return entry
 
 
+def _skill_entry_patterns(root: Path) -> list[str]:
+    """The skill entry patterns of Claude's config, those of the synced skills narrowed to the signed-in account's
+    folder (none when no account is signed in)."""
+    declared = extract_patterns(as_object(as_object(load_config_file_types(AGENT)).get("skills")), "entry_patterns")
+    resolved = (resolve_external_pattern(pattern, claude_project_folder_name(root)) for pattern in declared)
+    return [pattern for pattern in resolved if pattern is not None]
+
+
 def _invocable_files(
     exclusions: RunExclusions,
     project_config: ProjectConfig,
@@ -148,7 +162,7 @@ def _invocable_files(
     the user, the managed settings folder and every installed, enabled plugin, each with its precedence, plugin
     id and label."""
     roots = [plugin_root for _, plugin_root in plugins]
-    entries = extract_patterns(as_object(as_object(load_config_file_types(AGENT)).get("skills")), "entry_patterns")
+    entries = _skill_entry_patterns(root)
     found: dict[Path, JsonValue] = {}
     for file_type in SESSION_INVOCABLE_TYPES:
         paths = discover_ungated(
@@ -177,7 +191,7 @@ def _invocable_files(
                 "file_type": file_type,
                 "precedence": read.precedence,
                 "plugin": plugin,
-                "label": file_label(file_type, path, wire, plugin=plugin),
+                "label": file_label(file_type, path, wire, plugin=plugin, scope=read.precedence),
             }
     return [found[path] for path in sorted(found)]
 
