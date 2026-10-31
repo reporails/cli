@@ -15,6 +15,7 @@ from reporails_cli.core.platform.dto.xray import (
     LOAD_KIND_OF_MEMORY_TYPE,
     CompactionTrigger,
     XrayCompaction,
+    XrayHarnessItem,
     XrayLoad,
     XraySubagent,
     XrayTurn,
@@ -94,7 +95,7 @@ def loads_of(records: Sequence[EventRecord], frame: Frame) -> tuple[XrayLoad, ..
 class _Bucket:
     """What one turn gathered."""
 
-    contexts: list[int] = field(default_factory=list)
+    replies: list[tuple[float, int]] = field(default_factory=list)
     loads: list[EventRecord] = field(default_factory=list)
     reads: list[str] = field(default_factory=list)
     runs: list[str] = field(default_factory=list)
@@ -177,6 +178,29 @@ def start_loads(records: Sequence[EventRecord], replies: Replies) -> list[EventR
     ]
 
 
+def build_harness(records: Sequence[EventRecord], replies: Replies, frame: Frame) -> tuple[XrayHarnessItem, ...] | None:
+    """The harness's own context in the main session: the first record of each kind and every session-start hook
+    note timed before the first reply; None when the records hold no harness record."""
+    first = replies.points[0][0] if replies.points else float("inf")
+    seen: set[str] = set()
+    items: list[XrayHarnessItem] = []
+    for record in records:
+        entry = record.harness
+        if record.event != "harness" or entry is None or record.subagent_id is not None:
+            continue
+        if entry.kind == "hook_note":
+            moment = epoch(record.time)
+            if moment is None or moment >= first:
+                continue
+        elif entry.kind in seen:
+            continue
+        seen.add(entry.kind)
+        items.append(
+            XrayHarnessItem(entry.kind, entry.label, entry.count, entry.chars // BYTES_PER_TOKEN, frame.at(record))
+        )
+    return tuple(items) if items else None
+
+
 def _bucket_of(buckets: dict[int, _Bucket], record: EventRecord, ends: Sequence[float]) -> _Bucket | None:
     moment = epoch(record.time)
     if moment is None:
@@ -187,16 +211,18 @@ def _bucket_of(buckets: dict[int, _Bucket], record: EventRecord, ends: Sequence[
 
 
 def _gather_transcript(
-    buckets: dict[int, _Bucket], records: Sequence[EventRecord], ends: Sequence[float], skip: set[int]
+    buckets: dict[int, _Bucket], records: Sequence[EventRecord], ends: Sequence[float], skip: set[int], frame: Frame
 ) -> None:
     for record in records:
-        if id(record) in skip or (record.subagent_id is not None and record.event != "subagent_run"):
+        if id(record) in skip or record.event == "harness":
+            continue
+        if record.subagent_id is not None and record.event != "subagent_run":
             continue
         target = _bucket_of(buckets, record, ends)
         if target is None:
             continue
         if record.event == "assistant_usage" and record.usage is not None:
-            target.contexts.append(context_of(record.usage))
+            target.replies.append((frame.at(record) or 0.0, context_of(record.usage)))
         elif record.event == "instruction_load":
             target.loads.append(record)
         elif record.event == "subagent_run" and record.subagent_id is not None:
@@ -225,7 +251,7 @@ def build_turns(
     ends = turn_end_times(records)
     skip = {id(record) for record in start_loads(records, replies)}
     buckets: dict[int, _Bucket] = {}
-    _gather_transcript(buckets, records, ends, skip)
+    _gather_transcript(buckets, records, ends, skip, frame)
     _gather_bus(buckets, bus or [], ends)
     count = len(ends) + (1 if len(ends) in buckets else 0)
     turns: list[XrayTurn] = []
@@ -237,13 +263,14 @@ def build_turns(
             XrayTurn(
                 n=index + 1,
                 t=moment - frame.t0,
-                context_start=got.contexts[0] if got.contexts else None,
-                context=got.contexts[-1] if got.contexts else None,
-                replies=len(got.contexts),
+                context_start=got.replies[0][1] if got.replies else None,
+                context=got.replies[-1][1] if got.replies else None,
+                replies=len(got.replies),
                 loads=loads_of(got.loads, frame),
                 reads=tuple(relative_wire_path(path, frame.root) for path in got.reads) if bus else None,
                 subagents=tuple(got.runs),
                 compaction=_compaction(pre, bus or [], replies, frame.t0) if pre is not None else None,
+                series=tuple(got.replies),
             )
         )
     return tuple(turns)

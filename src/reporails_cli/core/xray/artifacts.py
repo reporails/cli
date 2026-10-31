@@ -19,6 +19,9 @@ from reporails_cli.core.platform.contract.json_value import as_list, as_object, 
 from reporails_cli.core.platform.dto.xray import ArtifactKind, XrayArtifact, XrayLoad, XrayTurn
 from reporails_cli.core.xray.derive import count_for, real_path
 
+# The most characters of a file the page may ask for.
+PEEK_LIMIT = 200_000
+
 
 @dataclass(frozen=True)
 class ArtifactFile:
@@ -132,3 +135,17 @@ def build_artifacts(
             )
         )
     return tuple(out)
+
+
+def peek_text(item: ArtifactFile, root: Path) -> tuple[str, bool] | None:
+    """The text of a listed file, cut at `PEEK_LIMIT` characters, and whether it was cut; None when the path is
+    not a readable file."""
+    path = safe_resolve(root / Path(item.path).expanduser())
+    try:
+        if not path.is_file():
+            return None
+        with path.open(encoding="utf-8", errors="replace") as handle:
+            text = handle.read(PEEK_LIMIT + 1)
+    except OSError:
+        return None
+    return text[:PEEK_LIMIT], len(text) > PEEK_LIMIT

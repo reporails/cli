@@ -60,16 +60,31 @@ def read_transcript(
     return records, cursor
 
 
+def _subagent_dir(session_file: Path) -> Path:
+    return session_file.with_suffix("") / "subagents"
+
+
 def _files(session_file: Path) -> list[tuple[str | None, Path]]:
     """The main transcript (`None`) and each subagent file below it, with the subagent's id."""
     files: list[tuple[str | None, Path]] = [(None, session_file)]
-    subagents = session_file.with_suffix("") / "subagents"
     with contextlib.suppress(OSError):
         files.extend(
             (path.stem.removeprefix(_SUBAGENT_PREFIX), path)
-            for path in sorted(subagents.glob(f"{_SUBAGENT_PREFIX}*.jsonl"))
+            for path in sorted(_subagent_dir(session_file).glob(f"{_SUBAGENT_PREFIX}*.jsonl"))
         )
     return files
+
+
+def subagent_brief(agent: str, session_file: Path, subagent_id: str) -> str | None:
+    """The brief one subagent was given, or None when the session has no such subagent file.
+
+    Raises `PayloadRefused` when the agent is unknown or the file's first row is not the shape the
+    adapter is pinned to. The text is returned, never stored."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        raise PayloadRefused(f"unknown agent: {agent}")
+    first_row = _first_row(_subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl")
+    return None if first_row is None else adapter.resolve_brief(first_row)
 
 
 def _read_file(

@@ -25,6 +25,7 @@ from starlette.staticfiles import StaticFiles
 
 from reporails_cli.bundled import get_xray_path
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.heal.apply import heal_one, resolved_within
 from reporails_cli.core.pipeline.check_one import Refusal, check_path, file_findings
 from reporails_cli.core.platform.contract.json_value import JsonObject
@@ -42,6 +43,7 @@ PAGE_HEADERS = {
     ),
     "Cache-Control": "no-store",
 }
+NO_STORE = {"Cache-Control": "no-store"}
 
 
 def _refused(status: int, message: str) -> JSONResponse:
@@ -108,13 +110,51 @@ class XrayServer:
         etag = f'"{version}"'
         if request.headers.get("if-none-match") == etag:
             return Response(status_code=304, headers={"ETag": etag})
-        return JSONResponse(payload, headers={"ETag": etag, "Cache-Control": "no-store"})
+        return JSONResponse(payload, headers={"ETag": etag, **NO_STORE})
 
     def _build_view(self) -> tuple[JsonObject, int]:
         with self._view_lock:
             self._session.refresh()
             view = self._session.view(self._findings)
             return view.to_json(), view.version
+
+    async def peek(self, request: Request) -> Response:
+        """The text of one listed file."""
+        refusal = await self._guard(request)
+        if refusal is not None:
+            return refusal
+        path = request.query_params.get("path")
+        if path is None:
+            return _refused(400, "the query is ?path=<file>")
+        found = await run_in_threadpool(self._peek, path)
+        if found is None:
+            return _refused(400, "not a file this page lists")
+        text, truncated = found
+        return JSONResponse({"path": path, "text": text, "truncated": truncated}, headers=NO_STORE)
+
+    def _peek(self, path: str) -> tuple[str, bool] | None:
+        with self._view_lock:
+            return self._session.peek(path)
+
+    async def brief(self, request: Request) -> Response:
+        """The brief one listed subagent was given."""
+        refusal = await self._guard(request)
+        if refusal is not None:
+            return refusal
+        subagent = request.query_params.get("subagent")
+        if subagent is None:
+            return _refused(400, "the query is ?subagent=<id>")
+        try:
+            text = await run_in_threadpool(self._brief, subagent)
+        except PayloadRefused as err:
+            return _refused(400, err.reason)
+        if text is None:
+            return _refused(400, "not a subagent this page lists")
+        return JSONResponse({"id": subagent, "text": text}, headers=NO_STORE)
+
+    def _brief(self, subagent: str) -> str | None:
+        with self._view_lock:
+            return self._session.brief(subagent)
 
     async def check(self, request: Request) -> Response:
         """Check one file and reply with its findings."""
@@ -175,6 +215,8 @@ def build_app(root: Path, session_file: Path, token: str, port: int) -> Starlett
         routes=[
             Route("/", server.page, methods=["GET"]),
             Route("/view", server.view, methods=["GET"]),
+            Route("/peek", server.peek, methods=["GET"]),
+            Route("/brief", server.brief, methods=["GET"]),
             Route("/check", server.check, methods=["POST"]),
             Route("/heal", server.heal, methods=["POST"]),
             Route("/xray.js", _static("xray.js"), methods=["GET"]),

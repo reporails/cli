@@ -33,6 +33,17 @@ EventKind = Literal[
     "turn_end",
     "subagent_run",
     "instruction_load",
+    "harness",
+]
+
+HarnessKind = Literal[
+    "system_prompt",
+    "skill_list",
+    "agent_list",
+    "mcp_instructions",
+    "deferred_tools",
+    "session_context",
+    "hook_note",
 ]
 
 
@@ -89,6 +100,17 @@ class InstructionLoad:
 
 
 @dataclass(frozen=True)
+class HarnessEntry:
+    """One piece of what the harness put into a session's context: its kind, a label, how many items it holds
+    (None when it is not a list) and its size in characters."""
+
+    kind: HarnessKind
+    label: str
+    count: int | None
+    chars: int
+
+
+@dataclass(frozen=True)
 class FileCursor:
     """Where a transcript read stopped in one file: the byte offset, the last assistant message id and, for a
     subagent file, whether its run record is settled (emitted, or refused for its meta file)."""
@@ -134,8 +156,18 @@ class EventRecord:
     usage: TokenUsage | None = None
     # The agent type of a `subagent_run` record.
     subagent_type: str | None = None
-    # The file of an `instruction_load` record.
-    load: InstructionLoad | None = None
+    # The file of an `instruction_load` record, or the piece of the harness's context a `harness` record names.
+    item: InstructionLoad | HarnessEntry | None = None
+
+    @property
+    def load(self) -> InstructionLoad | None:
+        """The file an `instruction_load` record names."""
+        return self.item if isinstance(self.item, InstructionLoad) else None
+
+    @property
+    def harness(self) -> HarnessEntry | None:
+        """The piece of the harness's context a `harness` record names."""
+        return self.item if isinstance(self.item, HarnessEntry) else None
 
     def to_json(self) -> JsonObject:
         """The record as a JSON object."""
@@ -189,5 +221,5 @@ class EventRecord:
             refusal=opt_str(obj.get("refusal")),
             usage=TokenUsage.from_json(opt_str(obj.get("message_id")), as_object(obj.get("usage"))),
             subagent_type=opt_str(obj.get("subagent_type")),
-            load=InstructionLoad(path, opt_str(obj.get("memory_type"))) if is_load and path else None,
+            item=InstructionLoad(path, opt_str(obj.get("memory_type"))) if is_load and path else None,
         )

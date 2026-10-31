@@ -52,7 +52,7 @@ button{font:inherit;color:inherit}
 .sd{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}
 .sd.in{background:var(--green)} .sd.arr{background:var(--green);box-shadow:0 0 0 2.5px var(--green-soft),0 0 0 3.5px var(--green)} .sd.back{border:2px solid var(--blue)} .sd.unk{background:var(--ink-3);opacity:.45} .sd.not{border:1.5px solid var(--ink-3);opacity:.6} .sd.listed{border:1.5px dashed var(--ink-3)} .sd.ran{background:var(--violet)} .sd.miss{background:var(--red)} .sd.warn{background:var(--amber)}
 /* H2 columns */
-.cols{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border-top:1px solid var(--line-2)}
+.cols{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border-top:1px solid var(--line-2)}
 .col{padding:10px 12px 12px;border-right:1px solid var(--line-2);min-width:0}
 .col:last-child{border-right:0}
 .col h4{margin:0 0 2px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px}
@@ -65,11 +65,11 @@ button{font:inherit;color:inherit}
 .col .more{font-size:12px;color:var(--ink-3);padding:3px 0 0}
 
 /* main: map + focus */
-.main{display:grid;grid-template-columns:var(--mapw,330px) minmax(0,1fr);gap:16px;align-items:start}
+.main{display:grid;grid-template-columns:minmax(0,1fr) 430px;gap:16px;align-items:start}
 .mapcard{padding:12px 12px 10px;position:sticky;top:12px}
 .mh{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--ink-3);padding:0 4px 6px}
 .mh b{color:var(--ink);font-size:13.5px;font-weight:600}
-svg.map{width:100%;display:block;cursor:pointer;user-select:none}
+svg.map{width:100%;height:auto;display:block;cursor:pointer;user-select:none}
 .map .river{fill:color-mix(in srgb,var(--blue) 22%,transparent);stroke:color-mix(in srgb,var(--blue) 70%,transparent);stroke-width:1}
 .map .lim{stroke:var(--red);stroke-dasharray:2 3;opacity:.45}
 .map .tick{fill:var(--ink-3);font:10px 'Geist Mono',monospace}
@@ -139,7 +139,7 @@ details.reads div{font:12px 'Geist Mono',monospace;color:var(--ink-3);padding:1p
 .map .river.f{stroke:none}
 .map .edge{fill:none;stroke:color-mix(in srgb,var(--blue) 75%,transparent);stroke-width:1.2;stroke-linejoin:round}
 .map .colhead{fill:var(--ink-2);font:500 10px 'Geist Mono',monospace}
-.map .tick.cmp{fill:var(--amber);font-weight:600}
+.map .tick.cmp,.map .rlab.cmp{fill:var(--amber);font-weight:600}
 .map .cmpt{fill:var(--amber);font:600 10.5px Geist,sans-serif;paint-order:stroke;stroke:var(--card);stroke-width:3px;stroke-linejoin:round}
 .map .cmpt2{fill:var(--ink);font:500 10px 'Geist Mono',monospace;paint-order:stroke;stroke:var(--card);stroke-width:3px;stroke-linejoin:round}
 .map .note{fill:var(--ink-2);font:500 9.5px 'Geist Mono',monospace;paint-order:stroke;stroke:var(--card);stroke-width:2.5px;stroke-linejoin:round}
@@ -169,3 +169,10 @@ details.reads div{font:12px 'Geist Mono',monospace;color:var(--ink-3);padding:1p
 .res .err{color:var(--red);font-size:12.5px;padding:4px 0}
 .res .rc{font:12px 'Geist Mono',monospace;color:var(--ink-2);padding:2px 0;white-space:pre-wrap}
 .colhead.nkh{fill:var(--ink-3)}
+.map .rlab{fill:var(--ink-3);font:9px 'Geist Mono',monospace}
+.map .rp{fill:var(--blue);opacity:.55;pointer-events:none}
+.col .its{max-height:168px;overflow-y:auto;overflow-x:hidden}
+.it.ro{cursor:default} .it.ro:hover{background:none}
+.it .hn{font:11px 'Geist Mono',monospace;color:var(--ink-3);white-space:nowrap}
+pre.peek{margin:4px 0 2px;padding:8px 10px;max-height:260px;overflow:auto;font:11.5px/1.45 'Geist Mono',monospace;background:var(--hov);border-radius:6px;white-space:pre-wrap;word-break:break-word}
+.err{font-size:12px;color:var(--red)}

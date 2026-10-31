@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 from starlette.testclient import TestClient
 
+from reporails_cli.core.discovery.agent_discovery import claude_project_dir
 from reporails_cli.core.heal.apply import HealOutcome
 from reporails_cli.core.heal.keyed import KeyedResult
 from reporails_cli.core.pipeline.check_one import Refusal
@@ -31,7 +32,7 @@ PORT = 8765
 ORIGIN = f"http://127.0.0.1:{PORT}"
 TOP_KEYS = {
     "version", "session", "project", "started_at", "length_s", "window", "first_context",
-    "start", "turns", "subagents", "artifacts", "refusals", "not_known",
+    "start", "turns", "subagents", "artifacts", "refusals", "not_known", "harness",
 }  # fmt: skip
 HEAVY = ("starlette", "uvicorn", "reporails_cli.core.mapper", "onnxruntime", "tokenizers", "numpy")
 
@@ -285,3 +286,77 @@ def test_xray_help_loads_no_server_or_ml_runtime(tmp_path: Path) -> None:
     loaded = set(json.loads(done.stdout.splitlines()[-1]))
     present = [m for m in HEAVY if m in loaded or any(name.startswith(m + ".") for name in loaded)]
     assert present == [], present
+
+
+SUB_ID = "a27081343121455fb"
+
+
+def _get(client: TestClient, route: str, query: dict[str, str], token: str | None = TOKEN) -> Any:
+    headers = {} if token is None else {"X-Xray-Token": token}
+    return client.get(route, params=query, headers=headers)
+
+
+def test_peek_replies_with_the_text_of_a_listed_file(client: TestClient, project: Path) -> None:
+    reply = _get(client, "/peek", {"path": "CLAUDE.md"})
+    assert reply.status_code == 200 and reply.headers["Cache-Control"] == "no-store"
+    assert reply.json() == {"path": "CLAUDE.md", "text": (project / "CLAUDE.md").read_text(), "truncated": False}
+
+
+def test_peek_reads_a_listed_memory_file_by_its_home_path(
+    client: TestClient, project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    memory = claude_project_dir(project) / "memory" / "MEMORY.md"
+    memory.parent.mkdir(parents=True)
+    memory.write_text("# Memory\n")
+    shown = [a["path"] for a in client.get("/view", headers={"X-Xray-Token": TOKEN}).json()["artifacts"]]
+    path = next(item for item in shown if item.endswith("MEMORY.md"))
+    assert path.startswith("~/")
+    assert _get(client, "/peek", {"path": path}).json()["text"] == "# Memory\n"
+
+
+def test_peek_refuses_an_unlisted_path_a_hook_config_and_a_missing_query(client: TestClient, project: Path) -> None:
+    (project / "notes.txt").write_text("notes\n")
+    (project / ".claude").mkdir()
+    (project / ".claude" / "settings.json").write_text('{"hooks": {"Stop": []}}')
+    for path in ["notes.txt", ".claude/settings.json", "../outside.md", "/etc/passwd"]:
+        reply = _get(client, "/peek", {"path": path})
+        assert reply.status_code == 400 and reply.json() == {"error": "not a file this page lists"}
+    assert _get(client, "/peek", {}).status_code == 400
+
+
+def test_peek_and_brief_without_the_launch_token_are_refused(client: TestClient) -> None:
+    assert _get(client, "/peek", {"path": "CLAUDE.md"}, token=None).status_code == 403
+    assert _get(client, "/peek", {"path": "CLAUDE.md"}, token="wrong").status_code == 403
+    assert _get(client, "/brief", {"subagent": SUB_ID}, token=None).status_code == 403
+
+
+def test_brief_replies_with_the_text_a_listed_subagent_was_given(client: TestClient) -> None:
+    client.get("/view", headers={"X-Xray-Token": TOKEN})
+    reply = _get(client, "/brief", {"subagent": SUB_ID})
+    assert reply.status_code == 200 and reply.headers["Cache-Control"] == "no-store"
+    assert reply.json() == {"id": SUB_ID, "text": "PLACEHOLDER_PROMPT_TEXT"}
+
+
+def test_brief_refuses_an_unknown_subagent_and_a_missing_query(client: TestClient) -> None:
+    reply = _get(client, "/brief", {"subagent": "nosuchagent"})
+    assert reply.status_code == 400 and reply.json() == {"error": "not a subagent this page lists"}
+    assert _get(client, "/brief", {}).status_code == 400
+
+
+def test_view_still_carries_no_text(client: TestClient) -> None:
+    body = client.get("/view", headers={"X-Xray-Token": TOKEN}).text
+    assert "PLACEHOLDER" not in body
+
+
+def test_brief_replies_with_the_refusal_when_the_subagent_file_opens_with_no_user_row(
+    client: TestClient, tmp_path: Path
+) -> None:
+    file = tmp_path / "session" / "session" / "subagents" / f"agent-{SUB_ID}.jsonl"
+    rows = [json.loads(line) for line in file.read_text().splitlines()]
+    rows[0]["type"] = "assistant"
+    file.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    client.get("/view", headers={"X-Xray-Token": TOKEN})
+    reply = _get(client, "/brief", {"subagent": SUB_ID})
+    assert reply.status_code == 400 and "user row" in reply.json()["error"]

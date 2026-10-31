@@ -41,6 +41,10 @@ class TranscriptAdapter(Protocol):
         """The `subagent_run` record of one subagent file, from its meta file and its first row; raises
         `PayloadRefused` when either lacks a field it is pinned to."""
 
+    def resolve_brief(self, first_row: JsonObject) -> str:
+        """The brief a subagent was given, from the first row of its file; raises `PayloadRefused` when that
+        row is not the pinned shape."""
+
 
 class EventSubscriber(Protocol):  # pylint: disable=too-few-public-methods  # a port of one method
     """A consumer of event records: called once per record."""

@@ -10,6 +10,7 @@ import subprocess
 import threading
 import urllib.error
 import urllib.request
+from itertools import pairwise
 from pathlib import Path
 
 from behave import given, then, when  # type: ignore[import-untyped]
@@ -92,21 +93,71 @@ def step_view(context):
     assert len(json.loads(body)["turns"]) > 0
 
 
-@then("headless Chrome rendering the page shows the context window map, not a server error")
-def step_browser(context):
+def _rendered_dom(context) -> str | None:
     chrome = shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("chromium-browser")
     if chrome is None:
         context.scenario.skip("SKIPPED LOUDLY: no Chrome or Chromium on PATH, the page was not rendered")
-        return
-    dom = subprocess.run(
+        return None
+    return subprocess.run(
         [chrome, "--headless=new", "--disable-gpu", "--virtual-time-budget=8000", "--dump-dom", context.url],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=90,
         check=False,
     ).stdout
+
+
+@then("headless Chrome rendering the page shows the context window map, not a server error")
+def step_browser(context):
+    dom = _rendered_dom(context)
+    if dom is None:
+        return
     assert "did not answer" not in dom, "the page could not read its session view"
     assert "Context window, turn by turn" in dom, dom[:500]
+
+
+@then("the drawn reply points of each turn equal that turn's reply contexts in the view")
+def step_reply_points(context):
+    dom = _rendered_dom(context)
+    if dom is None:
+        return
+    page = _get(context.url)[1]
+    token = re.search(r'name="xray-token" content="([^"]+)"', page).group(1)
+    turns = json.loads(_get(context.url + "view", token)[1])["turns"]
+    drawn: dict[int, list[int]] = {}
+    for turn, ctx in re.findall(r'<circle class="rp" data-turn="(\d+)" data-ctx="(\d+)"', dom):
+        drawn.setdefault(int(turn), []).append(int(ctx))
+    for turn in turns:
+        expected = [point[1] for point in turn["series"]]
+        assert drawn.get(turn["n"], []) == expected, (turn["n"], drawn.get(turn["n"]), expected)
+    context.view_turns = turns
+    context.dom = dom
+
+
+@then('each turn row is labelled "turn N · M replies"')
+def step_row_labels(context):
+    if not getattr(context, "dom", None):
+        return
+    labels = re.findall(r'<text class="rlab[^"]*"[^>]*>([^<]*)</text>', context.dom)
+    for turn in context.view_turns:
+        word = "reply" if turn["replies"] == 1 else "replies"
+        assert f"turn {turn['n']} \u00b7 {turn['replies']} {word}" in labels, (turn["n"], labels[:5])
+
+
+@then("the turn labels sit left of the river spine and no two are closer than their font size")
+def step_label_layout(context):
+    if not getattr(context, "dom", None):
+        return
+    css = _get(context.url + "xray.css")[1]
+    size = float(re.search(r"\.map \.rlab\{[^}]*font:([\d.]+)px", css).group(1))
+    spine = float(re.search(r'<line class="spine" x1="([\d.]+)"', context.dom).group(1))
+    labels = re.findall(r'<text class="rlab[^"]*" x="([\d.]+)" y="([\d.]+)"', context.dom)
+    assert len(labels) >= len(context.view_turns), len(labels)
+    assert all(float(x) < spine for x, _ in labels), (spine, labels[:3])
+    ys = [float(y) for _, y in labels]
+    gaps = [b - a for a, b in pairwise(ys)]
+    assert all(gap >= size + 2 for gap in gaps), (size, min(gaps))
 
 
 @then("the session view without the token is refused with 403")

@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.eventbus.transcript import read_transcript
+from reporails_cli.core.eventbus.port import PayloadRefused
+from reporails_cli.core.eventbus.transcript import read_transcript, subagent_brief
 from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_eventbus]
@@ -154,3 +155,101 @@ def test_no_record_holds_transcript_text(version: str, tmp_path: Path) -> None:
     dumped = json.dumps([record.to_json() for record in records])
     assert records
     assert "PLACEHOLDER" not in dumped
+
+
+HARNESS = "2.1.308-harness"
+BRIEF_SUB = "abrief0000000001"
+
+
+def _text_size(*numbers: int) -> int:
+    """The characters of the placeholder texts the harness fixture numbers."""
+    return sum(len(f"PLACEHOLDER-TEXT-{number}") for number in numbers)
+
+
+def test_each_harness_kind_resolves_to_its_count_and_character_size(tmp_path: Path) -> None:
+    records, _ = read_transcript("claude", _copy(HARNESS, tmp_path), TranscriptCursor())
+    got = [(r.harness.kind, r.harness.label, r.harness.count, r.harness.chars) for r in records if r.harness]
+    assert got == [
+        ("hook_note", "SessionStart", None, _text_size(2)),
+        ("session_context", "session context", None, _text_size(4, 5)),
+        ("system_prompt", "system prompt", 3, _text_size(6, 7, 8)),
+        ("deferred_tools", "deferred tools", 2, _text_size(10, 11)),
+        ("agent_list", "agents", 3, _text_size(12, 13, 14)),
+        ("mcp_instructions", "MCP server instructions", 1, _text_size(15)),
+        ("skill_list", "skills", 7, _text_size(16)),
+    ]
+    assert not _of(records, "refusal")
+
+
+def test_a_hook_note_of_another_event_yields_nothing(tmp_path: Path) -> None:
+    records, _ = read_transcript("claude", _copy(HARNESS, tmp_path), TranscriptCursor())
+    assert "UserPromptSubmit" not in [r.harness.label for r in records if r.harness]
+
+
+@pytest.mark.parametrize(
+    ("attachment", "field"),
+    [
+        ("prompt_snapshot", "systemPrompt"),
+        ("skill_listing", "skillCount"),
+        ("skill_listing", "content"),
+        ("agent_listing_delta", "addedTypes"),
+        ("mcp_instructions_delta", "addedBlocks"),
+        ("deferred_tools_delta", "addedLines"),
+        ("session_context", "context"),
+        ("hook_additional_context", "hookName"),
+        ("hook_additional_context", "content"),
+    ],
+)
+def test_a_harness_field_of_the_wrong_type_is_refused_naming_the_row_and_field(
+    attachment: str, field: str, tmp_path: Path
+) -> None:
+    session = _copy(HARNESS, tmp_path)
+    rows = [json.loads(line) for line in session.read_text().splitlines()]
+    hit = next(
+        row
+        for row in rows
+        if row["type"] == "attachment"
+        and row["attachment"]["type"] == attachment
+        and row["attachment"].get("hookEvent", "SessionStart") == "SessionStart"
+    )
+    hit["attachment"][field] = 12.5
+    session.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    records, _ = read_transcript("claude", session, TranscriptCursor())
+    reasons = [r.refusal or "" for r in _of(records, "refusal")]
+    assert len(reasons) == 1 and attachment in reasons[0] and field in reasons[0]
+
+
+def test_a_subagent_brief_is_the_text_of_its_first_user_row(tmp_path: Path) -> None:
+    session = _copy(HARNESS, tmp_path)
+    assert subagent_brief("claude", session, BRIEF_SUB) == "PLACEHOLDER-TEXT-19"
+    assert subagent_brief("claude", session, "nosuchagent") is None
+
+
+def test_a_subagent_brief_joins_text_blocks_and_refuses_a_first_row_that_is_not_a_user_row(tmp_path: Path) -> None:
+    session = _copy(HARNESS, tmp_path)
+    file = session.parent / "session" / "subagents" / f"agent-{BRIEF_SUB}.jsonl"
+    rows = [json.loads(line) for line in file.read_text().splitlines()]
+    rows[0]["message"]["content"] = [
+        {"type": "text", "text": "ONE"},
+        {"type": "image", "source": {}},
+        {"type": "text", "text": "TWO"},
+    ]
+    file.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    assert subagent_brief("claude", session, BRIEF_SUB) == "ONE\n\nTWO"
+    rows[0]["type"] = "assistant"
+    file.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    with pytest.raises(PayloadRefused):
+        subagent_brief("claude", session, BRIEF_SUB)
+
+
+def test_a_subagent_deferred_tools_row_with_text_content_is_sized_without_a_count(tmp_path: Path) -> None:
+    records, _ = read_transcript("claude", _copy("2.1.308", tmp_path), TranscriptCursor())
+    assert not _of(records, "refusal")
+    hits = [
+        r
+        for r in _of(records, "harness")
+        if r.subagent_id == SUB_2_1_308 and getattr(r.item, "kind", None) == "deferred_tools"
+    ]
+    assert len(hits) == 1
+    assert getattr(hits[0].item, "count", 0) is None
+    assert getattr(hits[0].item, "chars", 0) == len("PLACEHOLDER_ATTACHMENT_TEXT")

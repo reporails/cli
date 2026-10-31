@@ -9,11 +9,12 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.eventbus import store
+from reporails_cli.core.eventbus.transcript import read_transcript
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object
-from reporails_cli.core.platform.dto.events import EventKind, EventRecord, ToolUse
+from reporails_cli.core.platform.dto.events import EventKind, EventRecord, ToolUse, TranscriptCursor
 from reporails_cli.core.platform.dto.xray import XrayLoad, XrayView
-from reporails_cli.core.xray.artifacts import ArtifactFile, artifact_files, build_artifacts
+from reporails_cli.core.xray.artifacts import PEEK_LIMIT, ArtifactFile, artifact_files, build_artifacts
 from reporails_cli.core.xray.session import XraySession
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
@@ -34,6 +35,7 @@ TOP_KEYS = {
     "artifacts",
     "refusals",
     "not_known",
+    "harness",
 }
 SUB_308 = "a27081343121455fb"
 NEW_TURN = (
@@ -249,7 +251,9 @@ def test_the_view_holds_numbers_names_and_paths_only(tmp_path: Path) -> None:
     assert "PLACEHOLDER" not in json.dumps(data)
     assert data["project"] == "proj" and data["window"] is None and data["session"] == SESSION
     assert as_list(data["refusals"]) == []
-    turn_keys = {"n", "t", "context_start", "context", "replies", "loads", "reads", "subagents", "compaction"}
+    turn_keys = {
+        "n", "t", "context_start", "context", "replies", "loads", "reads", "subagents", "compaction", "series",
+    }  # fmt: skip
     assert set(as_object(as_list(data["turns"])[0])) == turn_keys
     assert set(as_object(as_list(data["subagents"])[0])) == {"id", "type", "turn", "start", "end", "series", "loads"}
     assert set(as_object(as_list(data["start"])[0])) == {"path", "kind", "t", "tokens_est", "findings"}
@@ -267,7 +271,7 @@ def test_a_session_with_no_records_is_an_empty_view(tmp_path: Path) -> None:
     session = XraySession(_project(tmp_path), tmp_path / "missing.jsonl")
     assert session.refresh() is False
     view = session.view({})
-    assert (view.turns, view.start, view.subagents, view.first_context, view.length_s) == ((), (), (), None, None)
+    assert (view.turns, view.start, view.subagents, view.first_context, view.span.length_s) == ((), (), (), None, None)
 
 
 def test_the_json_is_plain_data(tmp_path: Path) -> None:
@@ -315,3 +319,91 @@ def test_a_path_shows_relative_to_the_project_or_the_home_folder(tmp_path: Path)
     assert relative_wire_path(str(tmp_path / "a" / "b.md"), tmp_path) == "a/b.md"
     assert relative_wire_path(str(home / ".claude" / "x.md"), tmp_path) == "~/.claude/x.md"
     assert relative_wire_path("/elsewhere/x.md", tmp_path) == "/elsewhere/x.md"
+
+
+def _text_size(*numbers: int) -> int:
+    return sum(len(f"PLACEHOLDER-TEXT-{number}") for number in numbers)
+
+
+def test_a_turn_series_is_the_context_of_each_of_its_replies_in_order(tmp_path: Path) -> None:
+    view = _view(_session(tmp_path, "2.1.308-harness", _project(tmp_path)))
+    (turn,) = view.turns
+    assert [context for _, context in turn.series] == [2 + 500 + 1000, 2 + 700 + 1000, 2 + 900 + 1000]
+    assert [t for t, _ in turn.series] == sorted(t for t, _ in turn.series)
+    assert (turn.context_start, turn.context, turn.replies) == (1502, 1902, 3)
+    assert turn.to_json()["series"] == [[t, c] for t, c in turn.series]
+
+
+def test_the_harness_lists_the_first_of_each_kind_and_the_session_start_notes(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    session = _session(tmp_path, "2.1.308-harness", root)
+    late = {
+        "type": "attachment",
+        "timestamp": "2026-10-30T20:03:30.000Z",
+        "sessionId": "s",
+        "attachment": {
+            "type": "hook_additional_context",
+            "content": ["PLACEHOLDER-TEXT-90"],
+            "hookName": "SessionStart",
+            "toolUseID": "SessionStart",
+            "hookEvent": "SessionStart",
+        },
+    }
+    again = {**late, "attachment": {"type": "skill_listing", "content": "x", "skillCount": 1}}
+    with (tmp_path / "2.1.308-harness" / "session.jsonl").open("a") as handle:
+        handle.write(json.dumps(late) + "\n" + json.dumps(again) + "\n")
+    items = _view(session).harness
+    assert items is not None
+    got = [(item.kind, item.label, item.count, item.tokens_est) for item in items]
+    assert got == [
+        ("hook_note", "SessionStart", None, _text_size(2) // 4),
+        ("session_context", "session context", None, _text_size(4, 5) // 4),
+        ("system_prompt", "system prompt", 3, _text_size(6, 7, 8) // 4),
+        ("deferred_tools", "deferred tools", 2, _text_size(10, 11) // 4),
+        ("agent_list", "agents", 3, _text_size(12, 13, 14) // 4),
+        ("mcp_instructions", "MCP server instructions", 1, _text_size(15) // 4),
+        ("skill_list", "skills", 7, _text_size(16) // 4),
+    ]
+    assert all(item.t is not None and item.t >= 0 for item in items)
+
+
+def test_a_session_with_no_harness_row_has_a_null_harness(tmp_path: Path) -> None:
+    view = _view(_session(tmp_path, "2.1.301", _project(tmp_path)))
+    assert view.harness is None and view.to_json()["harness"] is None
+
+
+def test_no_view_or_record_holds_transcript_text(tmp_path: Path) -> None:
+    session = _session(tmp_path, "2.1.308-harness", _project(tmp_path))
+    view = _view(session)
+    assert view.harness
+    assert "PLACEHOLDER-TEXT" not in json.dumps(view.to_json())
+    records, _ = read_transcript("claude", tmp_path / "2.1.308-harness" / "session.jsonl", TranscriptCursor())
+    assert records and all("PLACEHOLDER-TEXT" not in repr(record) for record in records)
+
+
+def test_a_session_peeks_only_a_listed_file_that_is_not_a_hook_config(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    (root / "notes.txt").write_text("notes\n")
+    session = _session(tmp_path, "2.1.301", root)
+    session.refresh()
+    assert session.peek("CLAUDE.md") == ((root / "CLAUDE.md").read_text(), False)
+    assert session.peek(".claude/skills/demo/SKILL.md") is not None
+    assert session.peek("notes.txt") is None
+    assert session.peek(".claude/settings.json") is None
+    assert session.peek("../proj/CLAUDE.md") is None
+
+
+def test_a_peek_is_cut_at_the_character_limit(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    (root / "CLAUDE.md").write_text("a" * (PEEK_LIMIT + 5))
+    session = _session(tmp_path, "2.1.301", root)
+    text, truncated = session.peek("CLAUDE.md") or ("", False)
+    assert len(text) == PEEK_LIMIT and truncated is True
+
+
+def test_a_brief_is_given_only_for_a_subagent_the_records_name(tmp_path: Path) -> None:
+    session = _session(tmp_path, "2.1.308-harness", _project(tmp_path))
+    session.refresh()
+    assert session.brief("abrief0000000001") == "PLACEHOLDER-TEXT-19"
+    assert session.brief("nosuchagent") is None
+    assert session.brief("../../../etc/passwd") is None

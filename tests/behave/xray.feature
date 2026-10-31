@@ -15,6 +15,15 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Then the printed address is on 127.0.0.1
     And headless Chrome rendering the page shows the context window map, not a server error
 
+  @e2e @browser
+  Scenario: The page draws one river point per reply and labels each turn row
+    Given a project with a recorded Claude Code session
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the drawn reply points of each turn equal that turn's reply contexts in the view
+    And each turn row is labelled "turn N · M replies"
+    And the turn labels sit left of the river spine and no two are closer than their font size
+
   @e2e
   Scenario: A project with no recorded session is refused
     Given a project with no recorded Claude Code session
