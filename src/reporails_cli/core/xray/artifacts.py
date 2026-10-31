@@ -11,7 +11,6 @@ from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES, discov
 from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.discovery.features import detect_features_filesystem
 from reporails_cli.core.discovery.plugin_roots import entry_pattern
-from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.pipeline.expected_loads import AGENT, expected_loads
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.config.config import get_project_config
@@ -109,8 +108,7 @@ def is_actionable(item: ArtifactFile, root: Path) -> bool:
     """True for a file of the project that exists and is not a hook config: the files the page may check or fix."""
     if item.kind == "hook":
         return False
-    path = safe_resolve(root / Path(item.path).expanduser())
-    return Path(item.path).is_relative_to(root) and path.is_file()
+    return Path(item.path).is_relative_to(root) and Path(real_path(item.path, root)).is_file()
 
 
 def build_artifacts(
@@ -140,7 +138,7 @@ def build_artifacts(
 def peek_text(item: ArtifactFile, root: Path) -> tuple[str, bool] | None:
     """The text of a listed file, cut at `PEEK_LIMIT` characters, and whether it was cut; None when the path is
     not a readable file."""
-    path = safe_resolve(root / Path(item.path).expanduser())
+    path = Path(real_path(item.path, root))
     try:
         if not path.is_file():
             return None

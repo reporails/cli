@@ -219,6 +219,17 @@ def test_a_harness_field_of_the_wrong_type_is_refused_naming_the_row_and_field(
     assert len(reasons) == 1 and attachment in reasons[0] and field in reasons[0]
 
 
+def test_a_session_context_value_that_is_not_a_string_is_refused_naming_the_row_and_field(tmp_path: Path) -> None:
+    session = _copy(HARNESS, tmp_path)
+    rows = [json.loads(line) for line in session.read_text().splitlines()]
+    hit = next(row for row in rows if row["type"] == "attachment" and row["attachment"]["type"] == "session_context")
+    hit["attachment"]["context"] = {"a": "xx", "b": 12.5}
+    session.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    records, _ = read_transcript("claude", session, TranscriptCursor())
+    reasons = [r.refusal or "" for r in _of(records, "refusal")]
+    assert len(reasons) == 1 and "session_context" in reasons[0] and "context" in reasons[0]
+
+
 def test_a_subagent_brief_is_the_text_of_its_first_user_row(tmp_path: Path) -> None:
     session = _copy(HARNESS, tmp_path)
     assert subagent_brief("claude", session, BRIEF_SUB) == "PLACEHOLDER-TEXT-19"

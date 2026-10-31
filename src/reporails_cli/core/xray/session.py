@@ -114,5 +114,5 @@ class XraySession:
             ),
             refusals=tuple(dict.fromkeys(r.refusal for r in self._transcript if r.event == "refusal" and r.refusal)),
             not_known=_NOT_KNOWN if self._bus else (*_NOT_KNOWN, _NO_BUS),
-            harness=build_harness(records, replies, frame),
+            harness=build_harness(records, replies),
         )

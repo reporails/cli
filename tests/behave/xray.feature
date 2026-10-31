@@ -24,6 +24,14 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And each turn row is labelled "turn N · M replies"
     And the turn labels sit left of the river spine and no two are closer than their font size
 
+  @e2e @browser
+  Scenario: A file's text shown on the page follows the file when the session moves on
+    Given a project with a recorded Claude Code session
+    And the project's instruction file reads "first text"
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the page shows "first text" for the file, then "second text" once the file and the session change
+
   @e2e
   Scenario: A project with no recorded session is refused
     Given a project with no recorded Claude Code session

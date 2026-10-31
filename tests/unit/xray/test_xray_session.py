@@ -364,7 +364,6 @@ def test_the_harness_lists_the_first_of_each_kind_and_the_session_start_notes(tm
         ("mcp_instructions", "MCP server instructions", 1, _text_size(15) // 4),
         ("skill_list", "skills", 7, _text_size(16) // 4),
     ]
-    assert all(item.t is not None and item.t >= 0 for item in items)
 
 
 def test_a_session_with_no_harness_row_has_a_null_harness(tmp_path: Path) -> None:

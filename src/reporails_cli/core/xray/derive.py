@@ -178,7 +178,7 @@ def start_loads(records: Sequence[EventRecord], replies: Replies) -> list[EventR
     ]
 
 
-def build_harness(records: Sequence[EventRecord], replies: Replies, frame: Frame) -> tuple[XrayHarnessItem, ...] | None:
+def build_harness(records: Sequence[EventRecord], replies: Replies) -> tuple[XrayHarnessItem, ...] | None:
     """The harness's own context in the main session: the first record of each kind and every session-start hook
     note timed before the first reply; None when the records hold no harness record."""
     first = replies.points[0][0] if replies.points else float("inf")
@@ -195,9 +195,7 @@ def build_harness(records: Sequence[EventRecord], replies: Replies, frame: Frame
         elif entry.kind in seen:
             continue
         seen.add(entry.kind)
-        items.append(
-            XrayHarnessItem(entry.kind, entry.label, entry.count, entry.chars // BYTES_PER_TOKEN, frame.at(record))
-        )
+        items.append(XrayHarnessItem(entry.kind, entry.label, entry.count, entry.chars // BYTES_PER_TOKEN))
     return tuple(items) if items else None
 
 

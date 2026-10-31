@@ -166,7 +166,7 @@ details.reads div{font:12px 'Geist Mono',monospace;color:var(--ink-3);padding:1p
 .act button:hover{border-color:var(--ink-3)}
 .act button:disabled{opacity:.45;cursor:default}
 .res .fl{grid-template-columns:64px 140px minmax(0,1fr)}
-.res .err{color:var(--red);font-size:12.5px;padding:4px 0}
+.res .err{font-size:12.5px;padding:4px 0}
 .res .rc{font:12px 'Geist Mono',monospace;color:var(--ink-2);padding:2px 0;white-space:pre-wrap}
 .colhead.nkh{fill:var(--ink-3)}
 .map .rlab{fill:var(--ink-3);font:9px 'Geist Mono',monospace}

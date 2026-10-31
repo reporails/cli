@@ -173,7 +173,7 @@ function renderMap() {
   s += `<rect class="hovband" id="hov" x="2" y="-50" width="${stopX + 8}" height="${hs[0]}" rx="3"/><text class="hovtxt" id="hovtxt" x="${W - 2}" y="13" text-anchor="end"></text></svg>`;
   const gl = (w, inner) => `<svg class="gl" width="${w}" height="10" viewBox="0 0 ${w} 10">${inner}</svg>`;
   const keys = '<div class="keys k8">' +
-    `<span>${gl(14, '<rect x="0" y="1" width="14" height="8" rx="1" fill="color-mix(in srgb,var(--blue) 22%,transparent)" stroke="color-mix(in srgb,var(--blue) 75%,transparent)"/>')}tokens in context after each turn${V.window ? '' : ', scaled to the session’s peak'}</span>` +
+    `<span>${gl(14, '<rect x="0" y="1" width="14" height="8" rx="1" fill="color-mix(in srgb,var(--blue) 22%,transparent)" stroke="color-mix(in srgb,var(--blue) 75%,transparent)"/>')}tokens in context after each reply${V.window ? '' : ', scaled to the session’s peak'}</span>` +
     (V.window ? `<span>${gl(10, '<line x1="5" x2="5" y1="0" y2="10" stroke="var(--red)" stroke-dasharray="2 2" opacity=".6"/>')}${k1(V.window)} window limit</span>` : '') +
     `<span>${gl(14, '<line x1="0" x2="14" y1="5" y2="5" stroke="var(--amber)" stroke-width="2"/>')}/compact</span>` +
     `<span>${gl(8, '<circle cx="4" cy="5" r="3" fill="var(--green)"/>')}instruction file loaded</span>` +
@@ -182,7 +182,7 @@ function renderMap() {
     (F.kind === 'art' ? `<span>${gl(4, '<rect x="0" y="0" width="3" height="10" fill="var(--blue)"/>')}selected artifact in context</span>` : '') +
     (nk('stop') ? '<span class="nk">Stop hook blocks: not known here</span>' : '') + '</div>';
   const head = `<div class="mh2"><b>Context window, turn by turn</b><span>${esc(V.project)} · ${esc(String(V.started_at || '').slice(0, 10))} · ${V.length_s != null ? dur(V.length_s) + ' · ' : ''}${ROWS.length - 1} turns · ${RUNS.length} subagents</span></div>`;
-  const foot = '<div class="mfoot"><span>One row per turn, time runs down. Click a row or a subagent to open it.</span><span class="bm"><i><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 7h8M5 12h14M5 17h10"/></svg></i>reporails <span>x-ray</span></span></div>';
+  const foot = '<div class="mfoot"><span>A row per turn, taller for more replies; time runs down. Click a row or a subagent to open it.</span><span class="bm"><i><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 7h8M5 12h14M5 17h10"/></svg></i>reporails <span>x-ray</span></span></div>';
   const MH = Math.max(H, lastLab + 24);
   s = s.replace(/__MAPH__/g, String(MH));
   return { html: `<section class="card mapcard">${head}${s}${keys}${foot}</section>`, H: MH, tops, hs, rowAt, W, TOP };
@@ -193,17 +193,26 @@ const row = (ic, cls, name, why, tok, whyCls, attr) => `<div class="row${attr ? 
 const loadRow = l => { const a = artByPath(l.path); return row('+', 'file', `<span class="p">${esc(shortPath(l.path))}</span>${l.findings != null ? ' ' + fc(l.findings) : ''}`, KIND_WORD[l.kind] || l.kind, tk(l.tokens_est, true), '', a ? `data-art="${esc(a.key)}"` : ''); };
 const nkLine = () => (V.not_known || []).length ? `<div class="nk" style="padding:6px 0 2px">Not known here: ${esc(V.not_known.join(', '))}</div>` : '';
 
-/* fetched file text and briefs, kept for the page's lifetime */
+/* one request to the x-ray server: the status and the parsed body (null when it is not JSON), or null when unanswered */
+async function xrayFetch(url, init) {
+  try {
+    const r = await fetch(url, { cache: 'no-store', ...init, headers: { 'X-Xray-Token': TOKEN, ...(init && init.headers) } });
+    let j = null; try { j = await r.json(); } catch (_) { j = null; }
+    return { ok: r.ok, status: r.status, j };
+  } catch (_) { return null; }
+}
+/* fetched file text and briefs, kept until the view changes or a fix finishes */
 const FETCHED = new Map();
+function forgetFetched() { FETCHED.clear(); }
 function want(key, url) {
   if (FETCHED.has(key)) return FETCHED.get(key);
   const e = { loading: true };
   FETCHED.set(key, e);
-  fetch(url, { headers: { 'X-Xray-Token': TOKEN }, cache: 'no-store' }).then(async r => {
-    let j = null; try { j = await r.json(); } catch (_) { j = null; }
-    if (r.ok && j && typeof j.text === 'string') FETCHED.set(key, { text: j.text, truncated: !!j.truncated });
-    else FETCHED.set(key, { error: (j && j.error) || `request refused (${r.status})` });
-  }).catch(() => FETCHED.set(key, { error: 'The x-ray server did not answer.' })).then(() => render());
+  xrayFetch(url).then(res => {
+    if (!res) FETCHED.set(key, { error: 'The x-ray server did not answer.' });
+    else if (res.ok && res.j && typeof res.j.text === 'string') FETCHED.set(key, { text: res.j.text, truncated: !!res.j.truncated });
+    else FETCHED.set(key, { error: (res.j && res.j.error) || `request refused (${res.status})` });
+  }).then(() => render());
   return e;
 }
 const textBlock = (key, url) => {
@@ -334,12 +343,12 @@ const resLines = j => {
 async function runAct(kind, path) {
   if (busy || !path) return;
   busy = true; RES = { path, html: '<div class="nk">Running…</div>' }; render();
+  const res = await xrayFetch(kind === 'check' ? 'check' : 'heal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) });
   let html;
-  try {
-    const r = await fetch(kind === 'check' ? 'check' : 'heal', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Xray-Token': TOKEN }, body: JSON.stringify({ path }) });
-    let j = null; try { j = await r.json(); } catch (_) { j = null; }
-    html = j ? resLines(!r.ok && !j.error ? { error: `request refused (${r.status})` } : j) : `<div class="err">request failed (${r.status})</div>`;
-  } catch (_) { html = '<div class="err">The x-ray server did not answer.</div>'; }
+  if (!res) html = '<div class="err">The x-ray server did not answer.</div>';
+  else if (res.j) html = resLines(!res.ok && !res.j.error ? { error: `request refused (${res.status})` } : res.j);
+  else html = `<div class="err">request failed (${res.status})</div>`;
+  if (kind === 'heal') forgetFetched();
   busy = false; RES = { path, html }; render();
 }
 
@@ -355,7 +364,7 @@ async function poll() {
     if (!r.ok) throw new Error(String(r.status));
     const j = await r.json();
     if (j.version === VERSION) return;
-    ETAG = r.headers.get('ETag') || String(j.version); VERSION = j.version;
+    ETAG = r.headers.get('ETag') || String(j.version); VERSION = j.version; forgetFetched();
     const first = !V; build(j); if (first) F = defaultFocus(); render();
   } catch (_) {
     if (!V) $('#main').innerHTML = '<section class="card mapcard"><div class="mh"><span>The x-ray server did not answer; retrying.</span></div></section>';

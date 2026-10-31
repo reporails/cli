@@ -51,6 +51,11 @@ def step_project_with_session(context):
     (folder / "session.jsonl").write_text(text, encoding="utf-8")
 
 
+@given('the project\'s instruction file reads "{text}"')
+def step_instruction_text(context, text):
+    (context.project / "CLAUDE.md").write_text(text + "\n", encoding="utf-8")
+
+
 @given("a project with no recorded Claude Code session")
 def step_project_without_session(context):
     context.project = build_project(context.tmpdir / "proj").resolve()
@@ -158,6 +163,36 @@ def step_label_layout(context):
     ys = [float(y) for _, y in labels]
     gaps = [b - a for a, b in pairwise(ys)]
     assert all(gap >= size + 2 for gap in gaps), (size, min(gaps))
+
+
+@then('the page shows "{first}" for the file, then "{second}" once the file and the session change')
+def step_pane_follows_file(context, first, second):
+    node, chrome = shutil.which("node"), shutil.which("google-chrome") or shutil.which("chromium")
+    if node is None or chrome is None:
+        context.scenario.skip("SKIPPED LOUDLY: no node or Chrome on PATH, the page was not driven")
+        return
+    script = Path(__file__).resolve().parents[1] / "xray_pane.mjs"
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with  # stopped by the scenario cleanup
+        [node, str(script), context.url, "CLAUDE.md"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+        env={**os.environ, "CHROME_BIN": chrome},
+    )
+    context.add_cleanup(proc.kill)
+    shown = proc.stdout.readline()
+    assert first in shown, shown
+    (context.project / "CLAUDE.md").write_text(second + "\n", encoding="utf-8")
+    session = next((context.home / ".claude" / "projects").rglob("session.jsonl"))
+    rows = session.read_text(encoding="utf-8").splitlines()
+    later = json.loads(rows[-1])
+    later["message"]["id"] = "msg_later"
+    later["timestamp"] = "2026-10-30T20:11:39.626Z"
+    session.write_text("\n".join([*rows, json.dumps(later)]) + "\n", encoding="utf-8")
+    proc.stdin.write("go\n")
+    proc.stdin.flush()
+    after = proc.stdout.readline()
+    assert second in after, after
 
 
 @then("the session view without the token is refused with 403")

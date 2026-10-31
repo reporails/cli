@@ -52,6 +52,7 @@ from reporails_cli.core.platform.contract.json_value import (
     as_object,
     opt_int,
     opt_str,
+    strict_str_list,
 )
 from reporails_cli.core.platform.dto.events import (
     EventKind,
@@ -90,9 +91,10 @@ _HARNESS: dict[str, _Harness] = {
 
 
 def _strings(value: JsonValue, field: str, what: str) -> list[str]:
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+    items = strict_str_list(value)
+    if items is None:
         raise PayloadRefused(f"{what} {field} is not a list of strings")
-    return [item for item in value if isinstance(item, str)]
+    return items
 
 
 def _text(row: JsonObject, key: str, what: str) -> str:
@@ -227,7 +229,10 @@ class ClaudeTranscriptAdapter:
         context = attachment.get("context")
         if not isinstance(context, dict):
             raise PayloadRefused("session_context attachment context is not an object")
-        chars = sum(len(value) for value in context.values() if isinstance(value, str))
+        values = strict_str_list(list(context.values()))
+        if values is None:
+            raise PayloadRefused("session_context attachment context is not an object of strings")
+        chars = sum(len(value) for value in values)
         return HarnessEntry("session_context", "session context", None, chars)
 
     def _hook_note(self, row: JsonObject, attachment: JsonObject, subagent_id: str | None) -> list[EventRecord]:

@@ -158,7 +158,6 @@ class XrayHarnessItem:
     label: str
     count: int | None
     tokens_est: int | None
-    t: float | None
 
     def to_json(self) -> JsonObject:
         """The item as a JSON object."""
@@ -167,7 +166,6 @@ class XrayHarnessItem:
             "label": self.label,
             "count": self.count,
             "tokens_est": self.tokens_est,
-            "t": self.t,
         }
 
 

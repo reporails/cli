@@ -54,6 +54,14 @@ def str_list(value: JsonValue) -> list[str]:
     return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
 
 
+def strict_str_list(value: JsonValue) -> list[str] | None:
+    """The items of a list of strings an optional field of a parsed document holds, `None` when it is not one."""
+    if not isinstance(value, list):
+        return None
+    items = [item for item in value if isinstance(item, str)]
+    return items if len(items) == len(value) else None
+
+
 def pattern_list(value: JsonValue) -> list[str]:
     """The patterns a file type or scope declares under one key: a single pattern as a list, a list's text items."""
     return [value] if isinstance(value, str) else str_list(value)
