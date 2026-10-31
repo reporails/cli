@@ -36,20 +36,32 @@ EventKind = Literal[
     "harness",
 ]
 
-HarnessKind = Literal[
-    "system_prompt",
-    "skill_list",
-    "agent_list",
-    "mcp_instructions",
-    "deferred_tools",
-    "session_context",
-    "hook_note",
-]
+NoteKind = Literal["hook_note", "stop_block"]
+
+HarnessKind = (
+    Literal[
+        "system_prompt",
+        "skill_list",
+        "agent_list",
+        "mcp_instructions",
+        "deferred_tools",
+        "session_context",
+    ]
+    | NoteKind
+)
+
+# The harness kinds whose records are changes to a list, so a session's total is their sum.
+DELTA_KINDS: frozenset[HarnessKind] = frozenset({"skill_list", "agent_list", "mcp_instructions", "deferred_tools"})
 
 
 def is_event_kind(value: str) -> TypeGuard[EventKind]:
     """Whether `value` is one of the event kinds."""
     return value in get_args(EventKind)
+
+
+def is_note_kind(kind: HarnessKind) -> TypeGuard[NoteKind]:
+    """Whether a harness kind is a hook's note rather than a piece of the session's own context."""
+    return kind in get_args(NoteKind)
 
 
 _USAGE_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
@@ -108,6 +120,18 @@ class HarnessEntry:
     label: str
     count: int | None
     chars: int
+    # The hook event a note came from; None for a piece of the session's own context.
+    event: str | None = None
+
+
+@dataclass(frozen=True)
+class PromptEntry:
+    """One prompt a person typed: the id of its transcript row, its size in characters and whether it was
+    queued while the agent worked."""
+
+    id: str
+    chars: int
+    queued: bool
 
 
 @dataclass(frozen=True)
@@ -156,8 +180,9 @@ class EventRecord:
     usage: TokenUsage | None = None
     # The agent type of a `subagent_run` record.
     subagent_type: str | None = None
-    # The file of an `instruction_load` record, or the piece of the harness's context a `harness` record names.
-    item: InstructionLoad | HarnessEntry | None = None
+    # The file of an `instruction_load` record, the piece of the harness's context a `harness` record names, or
+    # the prompt a transcript's `prompt_submit` record sizes.
+    item: InstructionLoad | HarnessEntry | PromptEntry | None = None
 
     @property
     def load(self) -> InstructionLoad | None:
@@ -168,6 +193,11 @@ class EventRecord:
     def harness(self) -> HarnessEntry | None:
         """The piece of the harness's context a `harness` record names."""
         return self.item if isinstance(self.item, HarnessEntry) else None
+
+    @property
+    def prompt(self) -> PromptEntry | None:
+        """The typed prompt a transcript's `prompt_submit` record names."""
+        return self.item if isinstance(self.item, PromptEntry) else None
 
     def to_json(self) -> JsonObject:
         """The record as a JSON object."""

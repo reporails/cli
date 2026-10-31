@@ -3,68 +3,71 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 
-from reporails_cli.core.discovery.agent_config import extract_patterns, load_config_file_types
-from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES, discover_ungated
-from reporails_cli.core.discovery.exclusions import load_run_exclusions
-from reporails_cli.core.discovery.features import detect_features_filesystem
-from reporails_cli.core.discovery.plugin_roots import entry_pattern
-from reporails_cli.core.pipeline.expected_loads import AGENT, expected_loads
+from reporails_cli.core.pipeline.expected_loads import expected_loads
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
-from reporails_cli.core.platform.config.config import get_project_config
-from reporails_cli.core.platform.contract.json_value import as_list, as_object, as_str
-from reporails_cli.core.platform.dto.xray import ArtifactKind, XrayArtifact, XrayLoad, XrayTurn
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object, as_str
+from reporails_cli.core.platform.dto.xray import (
+    ARTIFACT_KIND_OF_FILE_TYPE,
+    INVOCABLE_ARTIFACT_KINDS,
+    ArtifactFile,
+    ArtifactKind,
+    ArtifactScope,
+    XrayArtifact,
+    XrayLoad,
+    XrayTurn,
+    is_artifact_scope,
+)
 from reporails_cli.core.xray.derive import count_for, real_path
 
 # The most characters of a file the page may ask for.
 PEEK_LIMIT = 200_000
 
 
-@dataclass(frozen=True)
-class ArtifactFile:
-    """One file the session could load: its absolute path and what kind of file it is."""
-
-    path: str
-    kind: ArtifactKind
-
-
-def _instruction_files(root: Path) -> list[ArtifactFile]:
-    files = as_list(expected_loads(root).get("files"))
-    found: list[ArtifactFile] = []
-    for entry in files:
-        item = as_object(entry)
-        path = as_str(item.get("path"))
-        if path:
-            kind: ArtifactKind = "memory" if as_str(item.get("file_type")) in MEMORY_SURFACES else "instructions"
-            found.append(ArtifactFile(path, kind))
-    return found
+def _scope_of(item: JsonObject) -> ArtifactScope:
+    precedence = as_str(item.get("precedence"))
+    if not is_artifact_scope(precedence):
+        raise ValueError(f"{as_str(item.get('path'))}: no artifact scope for precedence {precedence!r}")
+    return precedence
 
 
-def _surface_files(root: Path, surface: str) -> list[Path]:
-    return discover_ungated(
-        root, AGENT, (surface,), load_run_exclusions(root, None, None), project_config=get_project_config(root)
+def _loaded_file(item: JsonObject, kind: ArtifactKind) -> ArtifactFile:
+    linked = item.get("linked")
+    return ArtifactFile(
+        as_str(item.get("path")),
+        kind,
+        _scope_of(item),
+        None,
+        as_str(item.get("label")),
+        as_str(item.get("memory_type")) or None,
+        linked if isinstance(linked, bool) else None,
     )
 
 
-def _hook_files(root: Path) -> list[Path]:
-    labels = {entry.file for entry in detect_features_filesystem(root).hooks if entry.agent == AGENT}
-    return [Path(label).expanduser() if label.startswith("~") else root / label for label in sorted(labels)]
+def _invocable_file(item: JsonObject) -> ArtifactFile:
+    return ArtifactFile(
+        as_str(item.get("path")),
+        ARTIFACT_KIND_OF_FILE_TYPE[as_str(item.get("file_type"))],
+        _scope_of(item),
+        as_str(item.get("plugin")) or None,
+        as_str(item.get("label")),
+        None,
+        None,
+    )
 
 
 def artifact_files(root: Path) -> tuple[ArtifactFile, ...]:
-    """Every file the session could load: the instruction and memory files Claude Code loads for the
-    folder, the project's skills and agents, and the files that configure hooks."""
-    entries = extract_patterns(as_object(as_object(load_config_file_types(AGENT)).get("skills")), "entry_patterns")
-    files = [
-        ArtifactFile(str(path), "skill")
-        for path in _surface_files(root, "skills")
-        if entry_pattern(path, root, entries) is not None
-    ]
-    files.extend(ArtifactFile(str(path), "agent") for path in _surface_files(root, "agents"))
-    files.extend(ArtifactFile(str(path), "hook") for path in _hook_files(root))
-    files.extend(_instruction_files(root))
+    """Every file the session could load, as `expected_loads` lists them: the instruction, rule and memory files
+    Claude Code loads for the folder, and the skills, agents, commands and hook configs a session can invoke
+    from every scope and installed plugin; a skill's supporting file is no artifact of its own."""
+    loads = expected_loads(root)
+    files = [_invocable_file(as_object(item)) for item in as_list(loads.get("invocable"))]
+    for entry in as_list(loads.get("files")):
+        loaded = as_object(entry)
+        kind = ARTIFACT_KIND_OF_FILE_TYPE.get(as_str(loaded.get("file_type")), "instructions")
+        if kind not in INVOCABLE_ARTIFACT_KINDS:
+            files.append(_loaded_file(loaded, kind))
     first: dict[str, ArtifactFile] = {}
     for item in files:
         first.setdefault(item.path, item)
@@ -126,6 +129,11 @@ def build_artifacts(
             XrayArtifact(
                 path=relative_wire_path(item.path, root),
                 kind=item.kind,
+                scope=item.scope,
+                plugin=item.plugin,
+                label=item.label,
+                memory_type=item.memory_type,
+                linked=item.linked,
                 loaded=resolved in loaded,
                 turns=tuple(in_context.get(resolved, ())),
                 findings=count_for(findings, item.path, root),

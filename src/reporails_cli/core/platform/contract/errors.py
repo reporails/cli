@@ -36,5 +36,9 @@ class ConfigUnreadableError(PlatformError):
     """
 
 
+class InstalledPluginsUnreadableError(PlatformError):
+    """Claude Code's `installed_plugins.json` exists but is not valid JSON or not the documented shape."""
+
+
 class BundledConfigMissingError(PlatformError):
     """The agent configs that ship with the package are missing or unreadable: a broken install."""

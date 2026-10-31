@@ -11,189 +11,51 @@ const tk = (n, est) => n == null ? '' : (est ? '~' : '') + k1(n);
 const clock = t => { if (t == null) return ''; t = Math.max(0, Math.round(t)); const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60; return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`; };
 const dur = s => { s = Math.round(s || 0); return s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`; };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const shortPath = p => String(p).replace(/^~\/\.claude\/projects\/[^/]+\/memory\//, 'memory/');
-const niceCeil = v => { if (!(v > 0)) return 1000; const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 2, 4, 8, 10]) if (m * p >= v) return m * p; return 10 * p; };
+const niceCeil = v => { if (!(v > 0)) return 1000; const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p; return 10 * p; };
+const plural = (n, w, ws) => `${n} ${n === 1 ? w : (ws || w + 's')}`;
 
-const STATE_WORD = { arr: 'arrived', in: 'in context', not: 'not loaded', listed: 'on disk, not loaded' };
 const KIND_WORD = { project: 'project instructions', memory: 'auto memory', user: 'your user instructions', local: 'local instructions', managed: 'managed instructions', nested: 'loaded because a file in that folder was read' };
-const KINDS = [{ k: 'instr', src: 'instructions', label: 'Instruction files' }, { k: 'mem', src: 'memory', label: 'Memory' }, { k: 'skill', src: 'skill', label: 'Skills' }, { k: 'agent', src: 'agent', label: 'Agents' }, { k: 'hook', src: 'hook', label: 'Hooks' }];
-const ROW_MIN = 14, ROW_PER_REPLY = 3, ROW_CAP = 96;
-const KIND_TAG = { instr: 'instruction file', mem: 'memory', skill: 'skill', agent: 'agent', hook: 'hook' };
+const CHIPS = [
+  { k: 'instructions', label: 'Instruction files' }, { k: 'rule', label: 'Rules' }, { k: 'memory', label: 'Memory' },
+  { k: 'skill', label: 'Skills' }, { k: 'agent', label: 'Agents' }, { k: 'command', label: 'Commands' }, { k: 'hook', label: 'Hooks' },
+];
+const HARNESS_KIND = {
+  system_prompt: ['System prompt', 'Claude Code’s own instructions, sent every turn.'], deferred_tools: ['Deferred tools', 'Tool names listed; their schemas load on demand.'],
+  agent_list: ['Agent listing', 'The subagent types Claude Code listed to the model.'], mcp_instructions: ['MCP instructions', 'Instructions the connected MCP servers added.'],
+  skill_list: ['Skill listing', 'The skills Claude Code listed to the model: names and descriptions, not bodies.'], session_context: ['Session context', 'Account and environment facts added at session start.'],
+  hook_note: ['Session-start hook notes', 'Text your SessionStart hooks added.'],
+};
+const LISTING_OF = { skill: 'skill_list', agent: 'agent_list' };
+const GROUPS = [['instructions', 'Instruction files'], ['rule', 'Rules'], ['memory', 'Memory'], ['skill', 'Skills'], ['agent', 'Agents'], ['command', 'Commands'], ['hook', 'Hooks'], ['harness', 'Harness']];
 
 let V = null, VERSION = null, ETAG = null;
-let ROWS = [], RUNS = [], ART = [], SCALE = 1000, PEAK = 0, F = { kind: 'turn', n: 0 };
-let busy = false, RES = null;
+let TURNS = [], ART = [], RUNS = [], PEAK = 0, TOK_MAX = 1;
+let chipOpen = null, sel = null, openTurns = new Set(), selTurn = null, busy = false, RES = null;
+let startOpen = true, groupsOpen = new Set(['instructions']), promptNo = new Map();
 
-const nk = s => ((V && V.not_known) || []).some(x => String(x).toLowerCase().includes(s));
-const rowOfTime = t => { let r = 0; ROWS.forEach((x, i) => { if (x.t != null && t != null && x.t <= t) r = i; }); return r; };
-const rowOfN = n => Math.max(0, ROWS.findIndex(r => r.n === n));
-const compRow = () => ROWS.findIndex(r => r.compaction);
-const defaultFocus = () => { const c = ROWS.find(r => r.compaction); return { kind: 'turn', n: c ? c.n : (ROWS[ROWS.length - 1] || { n: 0 }).n }; };
-const fc = n => n == null ? '' : `<span class="fc ${n === 0 ? 'zero' : n >= 10 ? 'hi' : ''}">${n}</span>`;
-const dotsOf = (a, i) => a.pres[i] === 'not' && a.listed ? 'listed' : a.pres[i];
-const inCtx = p => p === 'in' || p === 'arr';
-const isEvent = r => r.n && (r.compaction || (r.loads || []).length || (r.subagents || []).length);
 
-/* ---------- build the page's arrays from the view ---------- */
+/* ---------- build ---------- */
 function build(view) {
   V = view;
-  const turns = view.turns || [];
-  ROWS = [{ n: 0, t: 0, start: true, context: view.first_context, context_start: null, replies: 0, loads: view.start || [], reads: null, subagents: [], compaction: null }].concat(turns);
-  PEAK = Math.max(0, ...turns.map(t => t.context || 0), view.first_context || 0);
-  SCALE = view.window || niceCeil(PEAK);
-  RUNS = (view.subagents || []).map((s, i) => {
+  TURNS = view.turns || [];
+  RUNS = (view.subagents || []).map(s => {
     const pts = (s.series || []).filter(p => p && p[0] != null);
-    const st = s.start != null ? s.start : (pts.length ? pts[0][0] : null);
-    const en = s.end != null ? s.end : (pts.length ? pts[pts.length - 1][0] : st);
-    const r0 = st == null && s.turn != null ? rowOfN(s.turn) : rowOfTime(st);
-    return { id: String(s.id), type: s.type || 'subagent', turn: s.turn, sb: s, pts, start: st, end: en, r0, miss: !(s.loads || []).some(l => l.kind === 'project'), i };
+    return { id: String(s.id), type: s.type || 'subagent', turn: s.turn, sb: s, pts, start: s.start, end: s.end, miss: !(s.loads || []).some(l => l.kind === 'project') };
   });
-  const allLoads = [].concat(view.start || [], ...turns.map(t => t.loads || []), ...(view.subagents || []).map(s => s.loads || []));
-  const tokOf = path => { const l = allLoads.find(x => x.path === path && x.tokens_est != null); return l ? l.tokens_est : null; };
-  ART = (view.artifacts || []).map(a => {
-    const set = new Set(a.turns || []);
-    const pres = ROWS.map((r, i) => set.has(r.n) ? (i > 0 && set.has(ROWS[i - 1].n) ? 'in' : 'arr') : 'not');
-    const K = KINDS.find(x => x.src === a.kind);
-    return { key: a.kind + ':' + a.path, kind: K ? K.k : 'instr', label: a.path, path: a.path, canAct: !!a.actionable, loaded: !!a.loaded, listed: !a.loaded, pres, fcount: a.findings, tok: tokOf(a.path) };
-  });
-  if (F.kind === 'turn' && !ROWS.some(r => r.n === F.n)) F = defaultFocus();
-  if (F.kind === 'agent' && !RUNS.some(r => r.id === F.id)) F = defaultFocus();
-  if (F.kind === 'art' && !ART.some(a => a.key === F.key)) F = defaultFocus();
+  const comp = TURNS.find(t => t.compaction);
+  PEAK = Math.max(0, view.first_context || 0, ...TURNS.map(t => t.context || 0), ...TURNS.flatMap(t => (t.series || []).map(p => p[1])), comp && comp.compaction.before || 0);
+  ART = (view.artifacts || []).map(a => ({ ...a, key: a.kind + ':' + a.path }));
+  const toks = [];
+  TURNS.forEach(t => { (t.loads || []).forEach(l => toks.push(l.tokens_est || 0)); (t.notes || []).forEach(n => toks.push(n.tokens_est || 0)); });
+  TOK_MAX = Math.max(1, ...toks, ...(view.harness || []).map(h => h.tokens_est || 0));
 }
-const focusRow = () => F.kind === 'turn' ? rowOfN(F.n) : F.kind === 'agent' ? (RUNS.find(r => r.id === F.id) || { r0: 0 }).r0 : ROWS.length - 1;
-const artByPath = p => ART.find(a => a.path === p && a.kind !== 'hook');
+const artByPath = p => ART.find(a => a.path === p);
+const nameOf = p => { const a = artByPath(p); return a ? a.label : p; };
+const turnStart = (t, i) => (t.prompts && t.prompts.length) ? t.prompts[0].t : (t.series && t.series.length ? t.series[0][0] : (i ? TURNS[i - 1].t : 0));
+const compTurn = () => TURNS.find(t => t.compaction);
+const stopBlocks = () => TURNS.flatMap(t => (t.notes || []).filter(n => n.kind === 'stop_block').map(n => ({ ...n, turn: t.n })));
 
-/* ---------- artifacts area: kind columns ---------- */
-function harnessCol() {
-  const hv = V.harness;
-  let h = `<div class="col"><h4>Harness</h4><div class="tot">${hv == null ? '' : `${hv.length} at session start`}</div>`;
-  if (hv == null) return h + '<div class="nk">not known here</div></div>';
-  h += '<div class="its">' + hv.map(x => `<div class="it ro" title="${esc(x.kind)}"><span class="p">${esc(x.label)}</span>${x.count != null ? `<span class="hn">${esc(x.count)}</span>` : ''}<span class="hn">${tk(x.tokens_est, true)}</span></div>`).join('') + '</div>';
-  return h + '</div>';
-}
-function renderArt() {
-  const row = focusRow();
-  const rowLab = F.kind === 'art' ? 'the end of the session' : row === 0 ? 'session start' : 'turn ' + ROWS[row].n;
-  const checked = ART.filter(a => a.fcount != null);
-  const total = checked.reduce((s, a) => s + a.fcount, 0);
-  let h = `<div class="ah"><b>Artifacts</b><span class="sub">dots show ${esc(rowLab)}; numbers are reporails findings</span><span class="rp">${checked.length ? `${total} findings in ${checked.length} checked files` : 'no file checked yet'}</span></div><div class="cols">`;
-  KINDS.forEach(K => {
-    const items = ART.filter(a => a.kind === K.k);
-    const runs = K.k === 'agent' ? RUNS : [];
-    const inNow = items.filter(a => inCtx(a.pres[row]));
-    const shown = K.k === 'hook' || K.k === 'mem' ? items : items.filter(a => !a.listed);
-    const more = items.length - shown.length;
-    const fsum = items.reduce((s, a) => s + (a.fcount || 0), 0);
-    const tsum = inNow.reduce((s, a) => s + (a.tok || 0), 0);
-    const tot = K.k === 'agent' ? `${runs.length} ran, ${items.length} on disk` : K.k === 'hook' ? `${items.length} configured` : `${inNow.length}/${items.length} in context${tsum ? ', ~' + k1(tsum) : ''}`;
-    h += `<div class="col"><h4>${K.label}${fsum ? fc(fsum) : ''}</h4><div class="tot">${esc(tot)}</div>`;
-    if ((K.k === 'skill' && nk('skill')) || (K.k === 'hook' && nk('hook'))) h += `<div class="nk">${K.k === 'skill' ? 'skill loads' : 'hook notes'}: not known here</div>`;
-    h += '<div class="its">' + runs.map(r => `<div class="it${F.kind === 'agent' && F.id === r.id ? ' on' : ''}" data-run="${esc(r.id)}" title="subagent"><span class="sd ${r.miss ? 'miss' : 'ran'}"></span><span class="p">${esc(r.type)}${r.turn != null ? ` <span style="color:var(--ink-3)">T${r.turn}</span>` : ''}</span></div>`).join('');
-    h += shown.map(a => {
-      const s = dotsOf(a, row);
-      return `<div class="it${F.kind === 'art' && F.key === a.key ? ' on' : ''}" data-art="${esc(a.key)}" title="${esc(STATE_WORD[s] || '')}"><span class="sd ${s}"></span><span class="p">${esc(shortPath(a.label))}</span>${fc(a.fcount)}</div>`;
-    }).join('');
-    h += '</div>';
-    if (more > 0) h += `<div class="more">+${more} on disk, not loaded</div>`;
-    h += '</div>';
-  });
-  h += harnessCol();
-  $('#art').innerHTML = h + '</div>';
-}
-
-/* ---------- map, refined ---------- */
-function renderMap() {
-  const n = ROWS.length;
-  const TOP = 46, labR = 116, loadX = labR + 10, cx = loadX + 5 * 7 + 22, maxW = 190, lim = cx + maxW, stopX = lim + 14, LW = 52, lane0 = stopX + 22;
-  const hs = ROWS.map(r => Math.max(ROW_MIN, Math.min(ROW_CAP, ROW_PER_REPLY * (r.replies || 0))));
-  const tops = hs.map((_, i) => TOP + hs.slice(0, i).reduce((a, b) => a + b, 0));
-  const y = i => tops[i] + hs[i] / 2, H = TOP + hs.reduce((a, b) => a + b, 0) + 8;
-  const sers = ROWS.map(r => (r.series || []).filter(p => p && p[0] != null && p[1] != null));
-  const ptY = (i, j) => tops[i] + (j + .5) / sers[i].length * hs[i];
-  const anchors = ROWS.map((r, i) => {
-    const t0 = r.t || 0, nx = ROWS[i + 1] && ROWS[i + 1].t != null ? ROWS[i + 1].t : (sers[i].length ? sers[i][sers[i].length - 1][0] : t0) + 1;
-    return [[t0, tops[i]]].concat(sers[i].map((p, j) => [p[0], ptY(i, j)]), [[nx, tops[i] + hs[i]]]);
-  });
-  const rowAt = yy => { for (let i = 0; i < n; i++) if (yy < tops[i] + hs[i]) return i; return n - 1; };
-  const wv = c => Math.min(1, (c || 0) / SCALE) * maxW, Rx = c => cx + wv(c);
-  const pct = c => Math.round((c || 0) / SCALE * 100) + '%';
-  const yT = t => { const A = anchors[rowOfTime(t)]; let j = 0; while (j < A.length - 2 && A[j + 1][0] <= t) j++; const [ta, ya] = A[j], [tb, yb2] = A[j + 1]; return ya + (tb > ta ? Math.min(1, Math.max(0, (t - ta) / (tb - ta))) : 0) * (yb2 - ya); };
-  const ci = compRow(), yb = ci > 0 ? tops[ci] : 0, P = [];
-  let prevC = 0;
-  ROWS.forEach((t, i) => {
-    const c = t.context != null ? t.context : prevC;
-    if (i === ci && t.compaction.before != null && t.compaction.after != null) P.push([yb, t.compaction.before], [yb, t.compaction.after]);
-    if (sers[i].length) sers[i].forEach((p, j) => { P.push([ptY(i, j), p[1]]); prevC = p[1]; });
-    else { P.push([y(i), c]); prevC = c; }
-  });
-  const riverX = v => { for (let j = 1; j < P.length; j++) { const [a, ca] = P[j - 1], [b, cb] = P[j]; if (v >= a && v <= b) return Rx(b === a ? Math.max(ca, cb) : ca + (cb - ca) * (v - a) / (b - a)); } return Rx(P[P.length - 1][1]); };
-  const BR = RUNS.map(r => { const pts = r.pts.map(p => [yT(p[0]), p[1]]); const y0 = pts.length ? pts[0][0] : tops[r.r0], y1 = pts.length ? pts[pts.length - 1][0] : y0 + 7; return { r, pts, y0, y1, stub: !pts.length, peak: pts.length ? Math.max(...pts.map(p => p[1])) : null }; });
-  const lanes = [], fits = (l, a, b) => l.iv.every(([p, q]) => b + 3 < p || a > q + 3);
-  [...BR.filter(b => !b.stub), ...BR.filter(b => b.stub)].forEach(b => { let L = lanes.findIndex(l => l.stub === b.stub && fits(l, b.y0, b.y1)); if (L < 0) { L = lanes.length; lanes.push({ iv: [], stub: b.stub }); } lanes[L].iv.push([b.y0, b.y1]); b.L = L; });
-  let acc = lane0; const LX = lanes.map(l => { const x = acc; acc += l.stub ? 18 : LW; return x; });
-  const labX = acc + 4, W = labX + 262;
-  let s = `<svg class="map" id="map" viewBox="0 0 ${W} __MAPH__">`;
-  s += `<text class="colhead" x="${labR}" y="13" text-anchor="end">turn</text><text class="colhead" x="${loadX - 2}" y="13">loaded</text><text class="colhead" x="${cx}" y="13">tokens in context</text><text class="colhead" x="${stopX}" y="13" text-anchor="middle">stop${nk('stop') ? '<title>Stop hook blocks: not known here</title>' : ''}</text>${nk('stop') ? `<text class="colhead nkh" x="${stopX}" y="23" text-anchor="middle" style="font-size:8px">n/k</text>` : ''}<text class="colhead" x="${lane0}" y="13">subagents, own window</text>`;
-  [0, .25, .5, .75, 1].forEach(f => { const v = f * SCALE, x = Rx(v); s += `<text class="tick" x="${x}" y="33" text-anchor="middle">${v ? k1(v) : '0'}</text>`; if (f > 0 && f < 1) s += `<line class="gridv" x1="${x}" x2="${x}" y1="${TOP - 6}" y2="${H - 4}"/>`; });
-  if (V.window) s += `<line class="lim" x1="${lim}" x2="${lim}" y1="${TOP - 6}" y2="${H - 4}"/>`;
-  s += `<line class="spine" x1="${cx}" x2="${cx}" y1="${TOP - 6}" y2="${H - 4}"/>`;
-  const fr = focusRow();
-  if (F.kind === 'turn') s += `<rect class="selband" x="2" y="${tops[fr]}" width="${stopX + 8}" height="${hs[fr]}" rx="3"/>`;
-  if (F.kind === 'art') { const a = ART.find(x => x.key === F.key); if (a) a.pres.forEach((p, i) => { if (inCtx(p)) s += `<rect class="artline" x="${lim + 4}" y="${tops[i] + 1}" width="3" height="${hs[i] - 2}" opacity="${p === 'in' ? .55 : 1}"/>`; }); }
-  s += `<polygon class="river f" points="${cx},${P[0][0]} ${P.map(([yy, c]) => `${Rx(c)},${yy}`).join(' ')} ${cx},${P[P.length - 1][0]}"/><polyline class="edge" points="${P.map(([yy, c]) => `${Rx(c)},${yy}`).join(' ')}"/>`;
-  ROWS.forEach((t, i) => {
-    const yy = y(i);
-    s += `<text class="rlab${i === ci ? ' cmp' : ''}" x="${labR}" y="${yy + 3}" text-anchor="end">${t.start ? 'session start' : `turn ${t.n} · ${t.replies} ${t.replies === 1 ? 'reply' : 'replies'}`}</text>`;
-    sers[i].forEach((p, j) => { s += `<circle class="rp" data-turn="${t.n}" data-ctx="${p[1]}" cx="${Rx(p[1])}" cy="${ptY(i, j)}" r="1.6"/>`; });
-    const g = t.loads || [];
-    g.slice(0, 5).forEach((x, j) => { const gx = loadX + 2 + j * 7; s += `<circle class="g-file" cx="${gx}" cy="${yy}" r="3"><title>loaded: ${esc(shortPath(x.path))}</title></circle>`; });
-    if (g.length > 5) s += `<text class="more" x="${loadX + 2 + 5 * 7 - 2}" y="${yy + 3}">+${g.length - 5}<title>${esc(g.slice(5).map(x => shortPath(x.path)).join(', '))}</title></text>`;
-  });
-  if (ci > 0) {
-    const c = ROWS[ci].compaction, hasB = c.before != null;
-    s += `<line class="cmpl" x1="${loadX - 4}" x2="${stopX + 6}" y1="${yb}" y2="${yb}"/>`;
-    s += `<text class="cmpt" x="${cx + 62}" y="${yb - 3}">/compact${hasB ? (V.window ? ` at ${pct(c.before)} full` : ` at ${k1(c.before)}`) : ''}${c.trigger ? ` (${esc(c.trigger)})` : ''}</text>`;
-    if (hasB && c.after != null) s += `<text class="cmpt2" x="${cx + 62}" y="${yb + 9.5}">${k1(c.before)} → ${k1(c.after)}</text>`;
-  }
-  ROWS.forEach((t, i) => { if (i && i !== ci && t.context != null && ROWS[i - 1].context != null && t.context - ROWS[i - 1].context >= SCALE * .2) s += `<text class="note" x="${Rx(t.context) - 5}" y="${y(i) + 3.5}" text-anchor="end">+${k1(t.context - ROWS[i - 1].context)}</text>`; });
-  const last = ROWS[n - 1];
-  if (last.context != null) s += `<text class="note" x="${Rx(last.context) - 5}" y="${y(n - 1) + 3.5}" text-anchor="end">ends at ${k1(last.context)}${V.window ? ', ' + pct(last.context) : ''}</text>`;
-  let lastLab = -99;
-  BR.slice().sort((a, b) => a.y0 - b.y0).forEach(({ r, pts, y0, y1, L, peak, stub }) => {
-    const on = F.kind === 'agent' && F.id === r.id, x0 = LX[L], id = esc(r.id);
-    s += `<path class="stemh" d="M${riverX(y0)} ${y0} H${x0}"/>`;
-    if (pts.length) s += `<polygon class="branch${r.miss ? ' miss' : ''}${on ? ' on' : ''}" data-run="${id}" points="${pts.map(([yy]) => `${x0},${yy}`).join(' ')} ${pts.map(([yy, c]) => `${x0 + wv(c)},${yy}`).reverse().join(' ')}"><title>${esc(r.type)}</title></polygon>`;
-    else s += `<circle class="nostub" data-run="${id}" cx="${x0 + 3.5}" cy="${y0}" r="3.5"><title>${esc(r.type)} (no context series)</title></circle>`;
-    s += `<rect data-run="${id}" x="${x0 - 2}" y="${y0 - 4}" width="${stub ? 12 : LW - 4}" height="${Math.max(10, y1 - y0 + 8)}" fill="transparent" style="cursor:pointer"><title>${esc(r.type)}</title></rect>`;
-    const ly = Math.max(y0, lastLab + 26); lastLab = ly;
-    s += `<path class="labline" d="M${stub ? x0 + 9 : x0 + wv(pts[0][1]) + 3} ${y0} L${labX - 4} ${ly}"/>`;
-    s += `<text class="brlab${on ? ' on' : ''}" data-run="${id}" x="${labX}" y="${ly + 3}">${esc(r.type)}</text>`;
-    s += `<text class="brlab3" data-run="${id}" x="${labX}" y="${ly + 15}">${r.turn != null ? `turn ${r.turn}` : 'subagent'}${peak ? ` · peak ${k1(peak)}` : ''}${r.miss ? ' · <tspan class="bad">no CLAUDE.md</tspan>' : ''}</text>`;
-  });
-  s += `<rect class="hovband" id="hov" x="2" y="-50" width="${stopX + 8}" height="${hs[0]}" rx="3"/><text class="hovtxt" id="hovtxt" x="${W - 2}" y="13" text-anchor="end"></text></svg>`;
-  const gl = (w, inner) => `<svg class="gl" width="${w}" height="10" viewBox="0 0 ${w} 10">${inner}</svg>`;
-  const keys = '<div class="keys k8">' +
-    `<span>${gl(14, '<rect x="0" y="1" width="14" height="8" rx="1" fill="color-mix(in srgb,var(--blue) 22%,transparent)" stroke="color-mix(in srgb,var(--blue) 75%,transparent)"/>')}tokens in context after each reply${V.window ? '' : ', scaled to the session’s peak'}</span>` +
-    (V.window ? `<span>${gl(10, '<line x1="5" x2="5" y1="0" y2="10" stroke="var(--red)" stroke-dasharray="2 2" opacity=".6"/>')}${k1(V.window)} window limit</span>` : '') +
-    `<span>${gl(14, '<line x1="0" x2="14" y1="5" y2="5" stroke="var(--amber)" stroke-width="2"/>')}/compact</span>` +
-    `<span>${gl(8, '<circle cx="4" cy="5" r="3" fill="var(--green)"/>')}instruction file loaded</span>` +
-    `<span>${gl(14, '<rect x="0" y="1" width="14" height="8" rx="1" fill="color-mix(in srgb,var(--violet) 22%,transparent)" stroke="color-mix(in srgb,var(--violet) 70%,transparent)"/>')}subagent, same scale</span>` +
-    `<span>${gl(14, '<rect x="0" y="1" width="14" height="8" rx="1" fill="color-mix(in srgb,var(--red) 18%,transparent)" stroke="var(--red)"/>')}subagent started without CLAUDE.md</span>` +
-    (F.kind === 'art' ? `<span>${gl(4, '<rect x="0" y="0" width="3" height="10" fill="var(--blue)"/>')}selected artifact in context</span>` : '') +
-    (nk('stop') ? '<span class="nk">Stop hook blocks: not known here</span>' : '') + '</div>';
-  const head = `<div class="mh2"><b>Context window, turn by turn</b><span>${esc(V.project)} · ${esc(String(V.started_at || '').slice(0, 10))} · ${V.length_s != null ? dur(V.length_s) + ' · ' : ''}${ROWS.length - 1} turns · ${RUNS.length} subagents</span></div>`;
-  const foot = '<div class="mfoot"><span>A row per turn, taller for more replies; time runs down. Click a row or a subagent to open it.</span><span class="bm"><i><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 7h8M5 12h14M5 17h10"/></svg></i>reporails <span>x-ray</span></span></div>';
-  const MH = Math.max(H, lastLab + 24);
-  s = s.replace(/__MAPH__/g, String(MH));
-  return { html: `<section class="card mapcard">${head}${s}${keys}${foot}</section>`, H: MH, tops, hs, rowAt, W, TOP };
-}
-
-/* ---------- focus pane ---------- */
-const row = (ic, cls, name, why, tok, whyCls, attr) => `<div class="row${attr ? ' link' : ''}" ${attr || ''}><span class="ic ${cls}">${ic}</span><span class="nm">${name}</span><span class="why ${whyCls || ''}">${esc(why)}</span><span class="tk">${tok || ''}</span></div>`;
-const loadRow = l => { const a = artByPath(l.path); return row('+', 'file', `<span class="p">${esc(shortPath(l.path))}</span>${l.findings != null ? ' ' + fc(l.findings) : ''}`, KIND_WORD[l.kind] || l.kind, tk(l.tokens_est, true), '', a ? `data-art="${esc(a.key)}"` : ''); };
-const nkLine = () => (V.not_known || []).length ? `<div class="nk" style="padding:6px 0 2px">Not known here: ${esc(V.not_known.join(', '))}</div>` : '';
-
-/* one request to the x-ray server: the status and the parsed body (null when it is not JSON), or null when unanswered */
+/* ---------- fetch ---------- */
 async function xrayFetch(url, init) {
   try {
     const r = await fetch(url, { cache: 'no-store', ...init, headers: { 'X-Xray-Token': TOKEN, ...(init && init.headers) } });
@@ -201,7 +63,6 @@ async function xrayFetch(url, init) {
     return { ok: r.ok, status: r.status, j };
   } catch (_) { return null; }
 }
-/* fetched file text and briefs, kept until the view changes or a fix finishes */
 const FETCHED = new Map();
 function forgetFetched() { FETCHED.clear(); }
 function want(key, url) {
@@ -221,69 +82,223 @@ const textBlock = (key, url) => {
   if (e.error) return `<div class="err">${esc(e.error)}</div>`;
   return `<pre class="peek" data-pk="${esc(key)}"></pre>${e.truncated ? '<div class="nk">text truncated</div>' : ''}`;
 };
-function turnDetail(t) {
-  let h = '<div class="det">';
-  (t.loads || []).forEach(l => { h += loadRow(l); });
-  if (t.compaction) { const c = t.compaction; h += row('⟲', 'cmp', '/compact', c.before != null && c.after != null ? `context ${k1(c.before)} → ${k1(c.after)}` : (c.trigger || ''), '', 'warn'); }
-  (t.subagents || []).forEach(id => { const r = RUNS.find(x => x.id === String(id)); if (r) h += row('⇣', r.miss ? 'miss' : 'agent', `${esc(r.type)} subagent`, r.miss ? 'started without CLAUDE.md' : 'started with project instructions', r.pts.length ? tk(Math.max(...r.pts.map(p => p[1]))) : '', r.miss ? 'red' : '', `data-run="${esc(r.id)}"`); });
-  if (!(t.loads || []).length && !t.compaction && !(t.subagents || []).length) h += '<div class="row mute"><span class="ic mute">·</span><span class="nm">nothing new loaded in this turn</span></div>';
-  if (!t.start) {
-    if (t.reads == null) h += '<div class="nk" style="padding:4px 0 2px 32px">files read: not known here</div>';
-    else if (t.reads.length) h += `<details class="reads"><summary>Read ${t.reads.length} file${t.reads.length > 1 ? 's' : ''} ›</summary>${t.reads.map(p => `<div>${esc(p)}</div>`).join('')}</details>`;
+
+/* ---------- chart ---------- */
+function chartModel(W) {
+  const H = 214, L = 40, R = 10, T = 26, Bm = 22, pw = W - L - R, ph = H - T - Bm;
+  const total = Math.max(V.length_s || 0, ...TURNS.map(t => t.t || 0), 1);
+  const SCALE = V.window || niceCeil(PEAK);
+  const x = t => L + Math.min(1, Math.max(0, t / total)) * pw, y = c => T + ph - Math.min(1, (c || 0) / SCALE) * ph;
+  return { H, L, R, T, Bm, pw, ph, total, SCALE, x, y, W };
+}
+function mainPoints() {
+  const pts = [];
+  if (V.first_context != null) pts.push([0, V.first_context]);
+  TURNS.forEach(t => (t.series || []).forEach(p => pts.push([p[0], p[1]])));
+  pts.sort((a, b) => a[0] - b[0]);
+  const c = compTurn();
+  if (c && c.compaction.before != null && c.compaction.after != null) {
+    const tc = c.compaction.t; let i = pts.findIndex(p => p[0] > tc); if (i < 0) i = pts.length;
+    pts.splice(i, 0, [tc, c.compaction.before], [tc, c.compaction.after]);
   }
-  return h + nkLine() + '</div>';
+  return pts;
 }
-function agentDetail(r) {
-  const loads = r.sb.loads || [];
-  const first = loads.filter(l => l.kind !== 'nested'), later = loads.filter(l => l.kind === 'nested');
-  let h = `<div class="sec"><h3>Started with<span>${first.length ? '' : 'nothing'}</span></h3>${first.length ? first.map(loadRow).join('') : '<div class="row"><span class="ic miss">✕</span><span class="nm"><span class="p">CLAUDE.md</span></span><span class="why red">not given</span><span class="tk"></span></div>'}</div>`;
-  if (later.length) h += `<div class="sec"><h3>Loaded during its run<span>${later.length}</span></h3>${later.map(l => row('+', 'file', `<span class="p">${esc(shortPath(l.path))}</span>`, (l.t != null ? `at ${clock(l.t)}, ` : '') + 'because it read a file in that folder', tk(l.tokens_est, true))).join('')}</div>`;
-  const ser = r.pts;
-  if (ser.length > 1) { const mx = Math.max(1, ...ser.map(p => p[1])); h += `<div class="sec"><h3>Its context<span>${k1(ser[0][1])} → ${k1(ser[ser.length - 1][1])}, peak ${k1(mx)}</span></h3><svg class="spk" viewBox="0 0 300 44" preserveAspectRatio="none"><path d="M0 44 ${ser.map((p, i) => `L${i / (ser.length - 1) * 300} ${44 - p[1] / mx * 40}`).join(' ')} L300 44Z"/></svg></div>`; }
-  else h += '<div class="sec"><h3>Its context</h3><div class="nk">no context series recorded for this run</div></div>';
-  return h + `<div class="sec"><h3>Its brief</h3>${textBlock('b:' + r.id, 'brief?subagent=' + encodeURIComponent(r.id))}</div>`;
+function renderChart() {
+  const card = $('#chartcard');
+  const W = Math.max(320, Math.round(card.clientWidth - 28));
+  const m = chartModel(W), { x, y, H, L, T, ph, pw, W: _w } = m;
+  const pts = mainPoints(), c = compTurn();
+  let s = `<svg class="chart" id="chart" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
+  // y grid
+  [0, .25, .5, .75, 1].forEach(f => { const v = f * m.SCALE, yy = y(v); s += `<line class="grid" x1="${L}" x2="${W - m.R}" y1="${yy}" y2="${yy}"/>`; s += `<text class="ax" x="${L - 5}" y="${yy + 3}" text-anchor="end">${v ? k1(v) : '0'}</text>`; });
+  // x ticks
+  const steps = [30, 60, 120, 300, 600, 900, 1800, 3600], st = steps.find(q => m.total / q <= pw / 62) || 3600;
+  for (let t = 0; t <= m.total; t += st) s += `<line class="grid" x1="${x(t)}" x2="${x(t)}" y1="${T + ph}" y2="${T + ph + 4}"/><text class="ax" x="${x(t)}" y="${H - 5}" text-anchor="${t === 0 ? 'start' : 'middle'}">${clock(t)}</text>`;
+  // compaction band
+  if (c) s += `<rect class="band" x="${x(c.compaction.t)}" y="${T}" width="${W - m.R - x(c.compaction.t)}" height="${ph}"/>`;
+  // selected turn band
+  if (selTurn != null) { const i = TURNS.findIndex(t => t.n === selTurn); if (i >= 0) { const a = x(turnStart(TURNS[i], i)), b = x(TURNS[i].t); s += `<rect class="selband" x="${a}" y="${T}" width="${Math.max(2, b - a)}" height="${ph}"/>`; } }
+  // river
+  if (pts.length) {
+    s += `<polygon class="river" points="${x(pts[0][0])},${y(0)} ${pts.map(p => `${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ')} ${x(pts[pts.length - 1][0])},${y(0)}"/>`;
+    s += `<polyline class="edge" points="${pts.map(p => `${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ')}"/>`;
+  }
+  TURNS.forEach(t => (t.series || []).forEach(p => { s += `<circle class="rp" data-turn="${t.n}" data-ctx="${p[1]}" cx="${x(p[0]).toFixed(1)}" cy="${y(p[1]).toFixed(1)}" r="1.2"/>`; }));
+  // subagents
+  RUNS.forEach(r => { if (r.pts.length > 1) s += `<polyline class="sub${sel && sel.run === r.id ? ' on' : ''}" data-run="${esc(r.id)}" style="${r.miss ? 'stroke:var(--red)' : ''}" points="${r.pts.map(p => `${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ')}"><title>${esc(r.type)} · peak ${k1(Math.max(...r.pts.map(p => p[1])))}</title></polyline>`; });
+  if (c) s += `<line class="cmpl" x1="${x(c.compaction.t)}" x2="${x(c.compaction.t)}" y1="${T}" y2="${T + ph}"/>`;
+  // stop ticks along the bottom axis
+  stopBlocks().forEach(b => { s += `<line class="stop" x1="${x(b.t)}" x2="${x(b.t)}" y1="${T + ph - 7}" y2="${T + ph}"><title>Stop hook sent the reply back · turn ${b.turn}</title></line>`; });
+  // turn markers and thinned labels
+  const marks = TURNS.map((t, i) => ({ t, i, x: x(turnStart(t, i)) }));
+  marks.forEach(mk => { s += `<line class="tm${mk.t.n === selTurn ? ' on' : ''}" x1="${mk.x}" x2="${mk.x}" y1="${T - 4}" y2="${T + ph}"/>`; });
+  const placed = [];
+  const prio = [...marks].sort((a, b) => (b.t.n === selTurn) - (a.t.n === selTurn) || !!b.t.compaction - !!a.t.compaction || (b.t.replies - a.t.replies));
+  prio.forEach(mk => {
+    const w = String(mk.t.n).length * 6.4 + 19, lo = Math.max(2, Math.min(W - w - 2, mk.x - w / 2)), hi = lo + w;
+    if (placed.some(p => lo < p[1] + 3 && hi > p[0] - 3)) return;
+    placed.push([lo, hi]);
+    s += `<g class="tl${mk.t.n === selTurn ? ' on' : ''}" data-turn="${mk.t.n}"><rect x="${lo}" y="1" width="${w}" height="16" rx="4"/><text x="${lo + w / 2}" y="12.5" text-anchor="middle">T${mk.t.n}</text></g>`;
+  });
+  // peak + compaction labels
+  const pk = pts.reduce((b, p) => p[1] > b[1] ? p : b, [0, 0]);
+  if (pk[1]) { const flip = x(pk[0]) < L + 110; s += `<text class="lab" x="${x(pk[0]) + (flip ? 6 : -6)}" y="${y(pk[1]) + 11}" text-anchor="${flip ? 'start' : 'end'}">peak ${k1(pk[1])}</text>`; }
+  if (c) s += `<text class="lab cmp" x="${W - m.R - 4}" y="${y(pk[1]) + 28}" text-anchor="end">/compact ${esc(c.compaction.trigger || '')} · ${k1(c.compaction.before)} → ${k1(c.compaction.after)}</text>`;
+  const sr = RUNS.find(r => sel && sel.run === r.id);
+  if (sr && sr.pts.length) { const mp = sr.pts.reduce((b, p) => p[1] > b[1] ? p : b, [0, 0]); s += `<text class="lab" x="${x(mp[0])}" y="${y(mp[1]) - 5}" text-anchor="middle" style="fill:var(--violet)">${esc(sr.type)} · ${k1(mp[1])}</text>`; }
+  s += `<line class="hov" id="hovl" x1="0" x2="0" y1="${T}" y2="${T + ph}" style="display:none"/>`;
+  s += '</svg>';
+  const gl = (w, inner) => `<svg width="${w}" height="10" viewBox="0 0 ${w} 10" style="overflow:visible;margin-right:5px;vertical-align:-1px">${inner}</svg>`;
+  const keys = `<div class="keys"><span>${gl(14, '<rect x="0" y="1" width="14" height="8" rx="1" fill="color-mix(in srgb,var(--blue) 22%,transparent)" stroke="var(--blue)"/>')}main session, context after each reply</span><span>${gl(14, '<rect x="0" y="0" width="12" height="9" rx="3" fill="var(--yellow-soft)" stroke="var(--yellow)"/>')}turn start</span><span>${gl(14, '<line x1="0" x2="14" y1="5" y2="5" stroke="var(--violet)" stroke-width="1.6"/>')}subagent</span><span>${gl(8, '<line x1="4" x2="4" y1="0" y2="10" stroke="var(--amber)" stroke-width="1.6"/>')}Stop hook sent the reply back</span><span>${gl(14, '<rect x="0" y="0" width="14" height="9" fill="var(--amber-soft)"/>')}after /compact</span></div>`;
+  card.innerHTML = `<div class="ch"><b>Context window</b><span>tokens in context after each reply · ${TURNS.length} turns · ${RUNS.length} subagents</span><span class="scale">${V.window ? k1(V.window) + ' window' : 'scaled to the peak; the window is not known here'}</span></div>${s}${keys}<div class="tip" id="tip" hidden></div>`;
+  card.style.position = 'relative';
+  const svg = $('#chart'), hov = $('#hovl'), tip = $('#tip');
+  const tAt = ev => { const r = svg.getBoundingClientRect(), px = ev.clientX - r.left; return Math.max(0, Math.min(1, (px - L) / pw)) * m.total; };
+  const turnAt = t => { let n = TURNS.findIndex((q, i) => t <= q.t); return TURNS[n < 0 ? TURNS.length - 1 : n]; };
+  svg.onmousemove = ev => { const r = svg.getBoundingClientRect(), px = ev.clientX - r.left, tt = tAt(ev), tn = turnAt(tt); hov.style.display = ''; hov.setAttribute('x1', px); hov.setAttribute('x2', px); tip.hidden = false; tip.textContent = `${clock(tt)} · turn ${tn.n}`; tip.style.left = Math.min(px + 24, W - 110) + 'px'; tip.style.top = '40px'; };
+  svg.onmouseleave = () => { hov.style.display = 'none'; tip.hidden = true; };
+  svg.onclick = ev => { const run = ev.target.closest('[data-run]'); if (run) return selectRun(run.dataset.run); const tl = ev.target.closest('[data-turn]'); selectTurn(tl ? +tl.dataset.turn : turnAt(tAt(ev)).n, true); };
 }
+
+
+/* ---------- left: the artifact list ---------- */
+function kindStats(k) {
+  const items = ART.filter(a => a.kind === k);
+  const loaded = items.filter(a => a.loaded).length;
+  const nl = k === 'memory' ? items.filter(a => a.linked === false).length : 0;
+  const listed = LISTING_OF[k] ? ((V.harness || []).find(x => x.kind === LISTING_OF[k]) || {}).count : null;
+  return { items, loaded, nl, listed };
+}
+const tagsOf = a => {
+  let t = '';
+  if (a.scope === 'plugin') t += `<span class="tag">${esc(a.plugin || a.scope)}</span>`;
+  else if (a.scope !== 'project' && a.scope !== 'auto') t += `<span class="tag">${esc(a.scope)}</span>`;
+  if (a.linked === false) t += '<span class="tag warn">not linked</span>';
+  return t;
+};
+function fileRow(a) {
+  const on = sel && sel.file === a.key;
+  return `<div class="fr${on ? ' on' : ''}" data-file="${esc(a.key)}" title="${esc(a.path)}"><span class="sd ${a.loaded ? 'in' : 'not'}"></span><span class="p path">${esc(a.label)}</span>${tagsOf(a)}<span class="sp"></span>${a.findings != null ? `<span class="fc${a.findings ? '' : ' zero'}">${a.findings}</span>` : ''}<span class="tk">${tk(a.tokens_est, true)}</span></div>`;
+}
+function renderArt() {
+  let h = '<div class="ah"><b>Artifacts</b></div><div class="alist" id="alist">';
+  GROUPS.forEach(([k, label]) => {
+    const open = groupsOpen.has(k);
+    if (k === 'harness') {
+      const hv = V.harness || [];
+      h += `<div class="gh" data-group="${k}"><span class="cv">${open ? '▾' : '▸'}</span><span class="gt">${label}</span><span class="gc">${hv.length} at session start</span></div>`;
+      if (open) h += hv.length ? hv.map((x, i) => `<div class="fr${sel && sel.harness === i ? ' on' : ''}" data-harness="${i}"><span class="sd hv"></span><span class="p" style="font-family:Geist,sans-serif">${esc(x.label)}${x.count != null ? ' · ' + x.count : ''}</span><span class="sp"></span><span class="tk">${tk(x.tokens_est, true)}</span></div>`).join('') : '<div class="nk" style="padding:4px 10px">not known here</div>';
+      return;
+    }
+    const s = kindStats(k);
+    h += `<div class="gh" data-group="${k}"><span class="cv">${open ? '▾' : '▸'}</span><span class="gt">${label}</span><span class="gc">${s.items.length} · ${s.loaded} loaded${s.nl ? ` · <b class="warn">${s.nl} not linked</b>` : ''}${s.listed != null ? ` · ${s.listed} listed` : ''}</span></div>`;
+    if (!open) return;
+    const loaded = s.items.filter(a => a.loaded).sort((a, b) => a.path.localeCompare(b.path));
+    const rest = s.items.filter(a => !a.loaded).sort((a, b) => (b.linked === false) - (a.linked === false) || a.scope.localeCompare(b.scope) || a.label.localeCompare(b.label));
+    h += loaded.map(fileRow).join('');
+    if (rest.length) h += `<div class="ondisk">+${rest.length} on disk, not loaded</div>` + rest.map(fileRow).join('');
+    if (!s.items.length) h += '<div class="nk" style="padding:4px 10px">none found on disk</div>';
+  });
+  $('#art').innerHTML = h + '</div>';
+}
+
+/* ---------- right: file, agent and prompt detail ---------- */
 function actHtml(a) {
-  let h = `<div class="sec"><h3>reporails</h3><div class="act"><button data-act="check" data-path="${esc(a.path)}"${busy ? ' disabled' : ''}>Check this file</button><button data-act="heal" data-path="${esc(a.path)}"${busy ? ' disabled' : ''}>Fix this file</button></div>`;
-  if (RES && RES.path === a.path) h += `<div class="res">${RES.html}</div>`;
-  return h + '</div>';
-}
-function artDetail(a) {
-  const fr = focusRow(), inN = a.pres.filter(inCtx).length;
-  let h = `<div class="sec"><h3>In context, turn by turn<span>${inN} of ${ROWS.length}</span></h3><div class="strip2">${a.pres.map((p, i) => `<i class="${p === 'not' ? '' : p}${i === fr ? ' f' : ''}" data-row="${i}" title="${i === 0 ? 'session start' : 'turn ' + ROWS[i].n}: ${STATE_WORD[p] || ''}"></i>`).join('')}</div></div>`;
-  const arr = ROWS.map((r, i) => ({ r, i })).filter(x => a.pres[x.i] === 'arr');
-  if (arr.length) h += `<div class="sec"><h3>When it arrived</h3>${arr.map(x => { const l = (x.r.loads || []).find(y => y.path === a.path); return row('+', 'file', x.i === 0 ? 'session start' : `turn ${x.r.n}`, l ? KIND_WORD[l.kind] || '' : '', clock(x.r.t), '', `data-row="${x.i}"`); }).join('')}</div>`;
-  const used = RUNS.filter(r => (r.sb.loads || []).some(l => l.path === a.path));
-  if (used.length) h += `<div class="sec"><h3>Subagents that got it<span>${used.length}</span></h3>${used.map(r => row('⇣', 'agent', esc(r.type), (r.sb.loads || []).some(l => l.path === a.path && l.kind !== 'nested') ? 'at its start' : 'came with a read', r.turn != null ? `T${r.turn}` : '', '', `data-run="${esc(r.id)}"`)).join('')}</div>`;
-  if (a.fcount != null) h += `<div class="sec"><h3>reporails findings, from the last check<span>${a.fcount}</span></h3></div>`;
-  else if (a.canAct) h += '<div class="sec"><h3>reporails findings</h3><div class="nk">not checked yet</div></div>';
-  if (a.canAct) h += actHtml(a);
-  else if (a.kind !== 'hook') h += '<div class="sec"><div class="nk">outside this project; run <code>ails check</code> on it</div></div>';
-  if (a.kind !== 'hook') h += `<div class="sec"><h3>Its text</h3>${textBlock('p:' + a.path, 'peek?path=' + encodeURIComponent(a.path))}</div>`;
+  let h = `<h4>reporails</h4><div class="act"><button data-act="check" data-path="${esc(a.path)}"${busy ? ' disabled' : ''}>Check this file</button><button data-act="heal" data-path="${esc(a.path)}"${busy ? ' disabled' : ''}>Fix this file</button></div>`;
+  if (RES && RES.path === a.path) h += `<div>${RES.html}</div>`;
   return h;
 }
-function renderFocus() {
-  let head = '', body = '';
-  if (F.kind === 'turn') {
-    const t = ROWS[rowOfN(F.n)], ev = ROWS.filter(isEvent);
-    const prevEv = [...ev].reverse().find(x => x.n < F.n), nextEv = ev.find(x => x.n > F.n);
-    head = `<div class="fh"><span class="tg ${t.compaction ? 'cmp' : ''}">${t.start ? 'session start' : 'turn ' + t.n}</span><h2>${t.start ? 'Session start' : t.compaction ? '/compact' : 'turn ' + t.n}</h2><div class="nav"><button data-go="pe"${prevEv ? '' : ' disabled'}>‹ change</button><button data-go="pv">↑</button><button data-go="nx">↓</button><button data-go="ne"${nextEv ? '' : ' disabled'}>change ›</button></div></div>`;
-    head += `<div class="fsub">${t.start ? (t.context != null ? `${k1(t.context)} at the first reply` : 'context at the first reply not known') : `${clock(t.t)}, ${t.replies} ${t.replies === 1 ? 'reply' : 'replies'}${t.context != null ? `, context ${t.context_start != null ? k1(t.context_start) + ' → ' : ''}${k1(t.context)}` : ''}`}</div>`;
-    body = turnDetail(t);
-  } else if (F.kind === 'agent') {
-    const r = RUNS.find(x => x.id === F.id);
-    head = `<div class="fh"><span class="tg agent">subagent</span><h2>${esc(r.type)}</h2><div class="nav"><button data-go="back">‹ main session</button></div></div><div class="fsub">${r.turn != null ? `started in turn ${r.turn}` : 'start turn not known'}${r.start != null ? ` at ${clock(r.start)}` : ''}${r.start != null && r.end != null ? `, ran ${dur(r.end - r.start)}` : ''}</div>`;
-    body = agentDetail(r);
-  } else {
-    const a = ART.find(x => x.key === F.key);
-    head = `<div class="fh"><span class="tg art">${KIND_TAG[a.kind]}</span><h2 class="mono">${esc(shortPath(a.label))}</h2><div class="nav"><button data-go="back">‹ turn</button></div></div><div class="fsub">${a.loaded ? 'loaded in this session' : 'on disk, not loaded this session'}${a.tok ? `, ${tk(a.tok, true)} tokens` : ''} <span class="rid">${esc(a.path)}</span></div>`;
-    body = artDetail(a);
-  }
-  return `<section class="card focus">${head}${body}<div class="hint">↑ ↓ step through turns; click a turn on the map, an agent, or an artifact</div></section>`;
+const ranges = ns => { const out = []; let i = 0; while (i < ns.length) { let j = i; while (j + 1 < ns.length && ns[j + 1] === ns[j] + 1) j++; out.push(ns[i] === ns[j] ? lab(ns[i]) : `${lab(ns[i])}–${ns[j]}`); i = j + 1; } return out.join(', '); };
+const lab = n => n === 0 ? 'start' : String(n);
+function whereLoaded(a) {
+  if (!a.loaded) return 'On disk, not loaded this session.';
+  const ns = a.turns || [];
+  const arrived = [V.start || [], ...TURNS.map(t => t.loads || [])].map((l, i) => l.some(x => x.path === a.path) ? (i === 0 ? 0 : TURNS[i - 1].n) : null).filter(x => x != null);
+  const subs = RUNS.filter(r => (r.sb.loads || []).some(l => l.path === a.path));
+  return `Arrived ${arrived.length ? (arrived[0] === 0 ? 'at session start' : 'in turn ' + arrived.join(', ')) : 'by a skill call'}; in context in ${ns.length ? 'turns ' + ranges(ns) : 'no turn recorded'}.${subs.length ? ` ${plural(subs.length, 'subagent')} got it too.` : ''}`;
 }
-function step(d) {
-  const i = F.kind === 'turn' ? rowOfN(F.n) : focusRow();
-  F = { kind: 'turn', n: ROWS[Math.max(0, Math.min(ROWS.length - 1, i + d))].n }; render();
+function filePane(a) {
+  let h = `<div class="oh"><button class="back" data-back>‹ Load order</button><b class="mono fn">${esc(a.label)}</b>${tagsOf(a)}</div><div class="pane">`;
+  h += `<div class="dm">${esc(whereLoaded(a))}${a.tokens_est ? ` · ${tk(a.tokens_est, true)} tokens` : ''}<br><span class="rid">${esc(a.path)}</span></div>`;
+  if (a.findings != null) h += `<h4>reporails findings, from the last check<span>${a.findings}</span></h4>`;
+  if (a.actionable && a.kind !== 'hook') h += actHtml(a);
+  else if (a.kind !== 'hook') h += '<div class="nk" style="margin:2px 0 4px">outside this project; run <code>ails check</code> on it</div>';
+  if (a.kind !== 'hook') h += `<h4>Its text</h4>${textBlock('p:' + a.path, 'peek?path=' + encodeURIComponent(a.path))}`;
+  else h += '<div class="nk">a hook configuration; its text is not shown</div>';
+  return h + '</div>';
+}
+function harnessPane(x) {
+  const d = HARNESS_KIND[x.kind] || [x.label, ''];
+  return `<div class="oh"><button class="back" data-back>‹ Load order</button><b class="fn">${esc(x.label)}</b></div><div class="pane"><div class="dm">${esc(d[1])}<br>${x.count != null ? x.count + ' · ' : ''}${tk(x.tokens_est, true)} tokens${x.t != null ? ' · arrived at ' + clock(x.t) : ''}</div><div class="nk">Harness text is not stored in this view.</div></div>`;
+}
+function agentDetail(r) {
+  const loads = r.sb.loads || [], first = loads.filter(l => l.kind !== 'nested'), later = loads.filter(l => l.kind === 'nested');
+  let h = `<div class="detail"><div class="dm">${r.turn != null ? `started in turn ${r.turn}` : 'start turn not known'}${r.start != null ? ` at ${clock(r.start)}` : ''}${r.start != null && r.end != null ? `, ran ${dur(r.end - r.start)}` : ''}</div>`;
+  h += `<h4>Started with<span>${first.length ? first.length : 'nothing'}</span></h4>` + (first.length ? first.map(l => `<div class="dl"><span style="color:var(--green)">+</span><span class="p">${esc(nameOf(l.path))}</span><span class="w">${tk(l.tokens_est, true)}</span></div>`).join('') : '<div class="dl"><span style="color:var(--red)">✕</span><span class="p">CLAUDE.md</span><span class="w" style="color:var(--red)">not given</span></div>');
+  if (later.length) h += `<h4>Loaded during its run<span>${later.length}</span></h4>` + later.map(l => `<div class="dl"><span style="color:var(--green)">+</span><span class="p">${esc(nameOf(l.path))}</span><span class="w">${l.t != null ? 'at ' + clock(l.t) + ' · ' : ''}${tk(l.tokens_est, true)}</span></div>`).join('');
+  const ser = r.pts;
+  if (ser.length > 1) { const mx = Math.max(1, ...ser.map(p => p[1])); h += `<h4>Its context<span>${k1(ser[0][1])} → ${k1(ser[ser.length - 1][1])}, peak ${k1(mx)}</span></h4><svg class="spk" viewBox="0 0 300 46" preserveAspectRatio="none"><path class="a" d="M0 46 ${ser.map((p, i) => `L${(i / (ser.length - 1) * 300).toFixed(1)} ${(46 - p[1] / mx * 42).toFixed(1)}`).join(' ')} L300 46Z"/></svg>`; }
+  h += `<h4>Its brief</h4>${textBlock('b:' + r.id, 'brief?subagent=' + encodeURIComponent(r.id))}`;
+  return h + '</div>';
+}
+
+/* ---------- right: load order ---------- */
+const bar = (tok, cls) => `<span class="tc"><span class="num">${tok ? k1(tok) : ''}</span><span class="trk"><i class="${cls || ''}" style="width:${tok ? Math.max(3, Math.round(Math.min(1, tok / TOK_MAX) * 100)) : 0}%"></i></span></span>`;
+const orow = (t, dotCls, name, why, tok, opts = {}) => `<div class="or${opts.attr ? ' link' : ''}${opts.on ? ' on' : ''}" ${opts.attr || ''}><span class="tm">${t == null ? '' : clock(t)}</span><span class="dt ${dotCls}"></span><span class="nm" title="${esc(opts.title || '')}">${name}</span><span class="why ${opts.whyCls || ''}" title="${esc(why)}">${esc(why)}</span>${bar(tok, opts.barCls)}</div>`;
+function groupNotes(notes) {
+  const g = new Map();
+  notes.forEach(n => { const k = n.kind + '|' + n.label; const e = g.get(k) || { ...n, count: 0, tokens_est: 0 }; e.count++; e.tokens_est += n.tokens_est || 0; g.set(k, e); });
+  return [...g.values()];
+}
+function loadRow(l, t) {
+  const a = artByPath(l.path);
+  return orow(l.t != null ? l.t : t, 'g', `<span class="p">${esc(nameOf(l.path))}</span>`, KIND_WORD[l.kind] || l.kind, l.tokens_est, { attr: a ? `data-file="${esc(a.key)}"` : '', title: l.path });
+}
+function turnRows(t, i) {
+  let h = '<div class="tb">';
+  const t0 = turnStart(t, i);
+  (t.prompts || []).forEach(p => {
+    const on = sel && sel.prompt === p.id, no = promptNo.get(p.id);
+    h += `<div class="pr${on ? ' on' : ''}" data-prompt="${esc(p.id)}"><span class="tm">${clock(p.t)}</span><span class="pn">${no}</span><span class="pt">${p.queued ? 'queued prompt' : 'your prompt'} · ${p.chars.toLocaleString('en')} chars</span><span class="open">${on ? 'close' : 'open'} ›</span></div>`;
+    if (on) h += `<div class="detail">${textBlock('t:' + p.id, 'prompt?id=' + encodeURIComponent(p.id))}</div>`;
+  });
+  (t.loads || []).forEach(l => { h += loadRow(l, t0); });
+  groupNotes((t.notes || []).filter(n => n.kind === 'hook_note')).forEach(n => { h += orow(n.t, 'm', `${esc(n.label)} hook note${n.count > 1 ? ' ×' + n.count : ''}`, `added by your ${n.event} hook`, n.tokens_est); });
+  groupNotes((t.notes || []).filter(n => n.kind === 'stop_block')).forEach(n => { h += orow(n.t, 'a', `Stop hook sent the reply back${n.count > 1 ? ' ×' + n.count : ''}`, 'its message is added each time', n.tokens_est, { whyCls: 'warn', barCls: 's' }); });
+  (t.subagents || []).forEach(id => {
+    const r = RUNS.find(x => x.id === String(id)); if (!r) return;
+    const on = sel && sel.run === r.id;
+    h += orow(r.start, r.miss ? 'r' : 'v', `${esc(r.type)} subagent <a class="open">${on ? 'close' : 'open'} ›</a>`, r.miss ? 'started without CLAUDE.md' : 'its own context' + (r.start != null && r.end != null ? `, ran ${dur(r.end - r.start)}` : ''), r.pts.length ? Math.max(...r.pts.map(p => p[1])) : 0, { attr: `data-run="${esc(r.id)}"`, barCls: 'a', whyCls: r.miss ? 'red' : '', on });
+    if (on) h += agentDetail(r);
+  });
+  if (t.compaction) { const c = t.compaction; h += orow(c.t, 'a', `/compact${c.trigger ? ' (' + esc(c.trigger) + ')' : ''}`, c.before != null && c.after != null ? `context ${k1(c.before)} → ${k1(c.after)}` : '', 0, { whyCls: 'warn' }); }
+  if (!(t.loads || []).length && !(t.notes || []).length && !(t.subagents || []).length && !t.compaction && !(t.prompts || []).length) h += '<div class="or mute"><span class="tm"></span><span class="dt"></span><span class="nm" style="color:var(--ink-3)">nothing new loaded in this turn</span><span></span><span></span></div>';
+  return h + '</div>';
+}
+function startRows() {
+  let h = '<div class="tb">';
+  (V.start || []).forEach(l => { h += loadRow(l, 0); });
+  (V.harness || []).forEach(x => { h += orow(x.t != null ? x.t : 0, x.kind === 'hook_note' ? 'm' : 'g', esc(x.label) + (x.kind === 'hook_note' ? ' hook note' : '') + (x.count != null ? ` · ${x.count}` : ''), x.kind === 'hook_note' ? 'added by your hook' : 'Claude Code', x.tokens_est); });
+  return h + '</div>';
+}
+function renderInfo() {
+  if (sel && sel.file) { const a = ART.find(x => x.key === sel.file); if (a) return $('#info').innerHTML = filePane(a); }
+  if (sel && sel.harness != null && (V.harness || [])[sel.harness]) return $('#info').innerHTML = harnessPane(V.harness[sel.harness]);
+  let n = 0; TURNS.forEach(t => (t.prompts || []).forEach(p => promptNo.set(p.id, ++n)));
+  let h = `<div class="oh"><b>Load order</b><span class="sub">what arrived, why, tokens</span><button data-expand>${openTurns.size ? 'Collapse all' : 'Expand all'}</button></div>`;
+  h += `<div class="th${startOpen ? ' on' : ''}" data-startt><span class="cv">${startOpen ? '▾' : '▸'}</span><span class="tg quiet">turn 0</span><span class="tm0">0:00</span><span class="lbl">session start, before any prompt</span><span class="ln"></span><span class="rt">${V.first_context != null ? k1(V.first_context) + ' at the first reply' : ''}</span></div>`;
+  if (startOpen) h += startRows();
+  let prevCtx = V.first_context;
+  TURNS.forEach((t, i) => {
+    const open = openTurns.has(t.n), delta = t.context != null && prevCtx != null ? t.context - prevCtx : null;
+    if (t.context != null) prevCtx = t.context;
+    const stops = (t.notes || []).filter(x => x.kind === 'stop_block').length, np = (t.prompts || []).length;
+    const lbl = np ? (np > 1 ? `your prompts ${promptNo.get(t.prompts[0].id)}–${promptNo.get(t.prompts[np - 1].id)}` : `your prompt ${promptNo.get(t.prompts[0].id)}`) : 'no prompt of yours';
+    h += `<div class="th${open ? ' on' : ''}${selTurn === t.n ? ' selt' : ''}" data-turnh="${t.n}" id="turn-${t.n}"><span class="cv">${open ? '▾' : '▸'}</span><span class="tg${t.compaction ? ' cmp' : ''}">turn ${t.n}</span><span class="tm0">${clock(turnStart(t, i))}</span><span class="lbl">${lbl}</span><span class="ln"></span><span class="rt">${stops ? `<em class="st">${stops} Stop</em>` : ''}${t.compaction ? '<em class="st">/compact</em>' : ''}${plural(t.replies, 'reply', 'replies')}${delta != null ? ` · ${delta >= 0 ? '+' : '−'}${k1(Math.abs(delta))}` : ''}</span></div>`;
+    if (open) h += turnRows(t, i);
+  });
+  if ((V.not_known || []).length) h += `<div class="nk" style="padding:10px 16px">Not known here: ${esc(V.not_known.join(', '))}</div>`;
+  $('#info').innerHTML = h;
 }
 
 /* ---------- render ---------- */
@@ -291,48 +306,42 @@ function render() {
   if (!V) return;
   const b = $('#banner');
   if ((V.refusals || []).length) { b.hidden = false; b.textContent = 'Claude Code wrote rows this reporails version does not read; parts of this page may be missing.'; b.title = V.refusals.join('\n'); } else b.hidden = true;
-  renderArt();
-  const m = renderMap();
-  $('#main').innerHTML = m.html + `<div class="rcol">${renderFocus()}</div>`;
-  document.querySelectorAll('pre.peek[data-pk]').forEach(el => { el.textContent = FETCHED.get(el.dataset.pk).text; });
-  const map = $('#map'), pick = ev => { const r = map.getBoundingClientRect(), yy = (ev.clientY - r.top) * (m.H / r.height); return m.rowAt(yy); };
-  map.onmousemove = ev => { if (ev.target.dataset && ev.target.dataset.run) return; const i = pick(ev), c = ROWS[i].context; $('#hov').setAttribute('y', m.tops[i]); $('#hov').setAttribute('height', m.hs[i]); $('#hovtxt').textContent = `${i === 0 ? 'start' : 'turn ' + ROWS[i].n} · ${k1(c)}${V.window && c != null ? ' · ' + Math.round(c / SCALE * 100) + '%' : ''}`; };
-  map.onmouseleave = () => { $('#hovtxt').textContent = ''; };
-  map.onclick = ev => { const run = ev.target.closest('[data-run]'); if (run) { F = { kind: 'agent', id: run.dataset.run }; render(); return; } F = { kind: 'turn', n: ROWS[pick(ev)].n }; render(); };
+  const keepL = $('#alist') ? $('#alist').scrollTop : 0, keepR = $('#info').scrollTop;
+  renderChart(); renderArt(); renderInfo();
+  if ($('#alist')) $('#alist').scrollTop = keepL;
+  document.querySelectorAll('pre.peek[data-pk]').forEach(el => { el.textContent = (FETCHED.get(el.dataset.pk) || {}).text || ''; });
   const d = V.started_at ? new Date(V.started_at) : null;
   const when = d && !isNaN(d) ? d.toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '';
-  $('#sess').innerHTML = `<span><b>${esc(V.project)}</b></span>${when ? `<span>${esc(when)}</span>` : ''}<span>${V.length_s != null ? dur(V.length_s) + ', ' : ''}${ROWS.length - 1} turns, ${RUNS.length} subagents, peak ${k1(PEAK)}</span>`;
-  $('#src').textContent = `Session ${V.session}. Numbers come from the session transcript and the event log; ~ marks an estimate.`;
+  $('#sess').innerHTML = `<span><b>${esc(V.project)}</b></span>${when ? `<span>${esc(when)}</span>` : ''}<span>${V.length_s != null ? dur(V.length_s) + ', ' : ''}${TURNS.length} turns, ${RUNS.length} subagents, peak ${k1(PEAK)}</span>`;
+  $('#src').textContent = `Session ${V.session}. Numbers come from the session transcript and files on disk; ~ marks an estimate.`;
 }
 
-/* clicks outside the map */
+/* ---------- selection ---------- */
+function scrollToIn(el) { const box = $('#info'); if (!el || !box) return; box.scrollTop = el.offsetTop - box.offsetTop - 8; }
+function selectTurn(n, scroll) {
+  selTurn = n; openTurns.add(n); if (sel && (sel.file || sel.harness != null)) sel = null; render();
+  if (scroll) scrollToIn(document.getElementById('turn-' + n));
+}
+function selectRun(id) {
+  const r = RUNS.find(x => x.id === id); if (!r) return;
+  if (r.turn != null) { openTurns.add(r.turn); selTurn = r.turn; }
+  sel = { run: r.id }; render();
+  scrollToIn(document.getElementById('turn-' + r.turn));
+}
 document.addEventListener('click', e => {
-  if (!V || e.target.closest('#map')) return;
-  const g = e.target.closest('[data-go]');
-  if (g) {
-    const k = g.dataset.go, ev = ROWS.filter(isEvent);
-    if (k === 'pv') return step(-1);
-    if (k === 'nx') return step(1);
-    if (k === 'pe') { const p = [...ev].reverse().find(x => x.n < F.n); if (p) { F = { kind: 'turn', n: p.n }; render(); } return; }
-    if (k === 'ne') { const p = ev.find(x => x.n > F.n); if (p) { F = { kind: 'turn', n: p.n }; render(); } return; }
-    if (k === 'back') { if (F.kind === 'agent') { const r = RUNS.find(x => x.id === F.id); F = r && r.turn != null && ROWS.some(x => x.n === r.turn) ? { kind: 'turn', n: r.turn } : defaultFocus(); } else F = defaultFocus(); render(); }
-    return;
-  }
-  const act = e.target.closest('[data-act]');
-  if (act) return runAct(act.dataset.act, act.dataset.path);
-  const run = e.target.closest('[data-run]');
-  if (run) { F = { kind: 'agent', id: run.dataset.run }; render(); return; }
-  const art = e.target.closest('[data-art]');
-  if (art) { if (ART.some(a => a.key === art.dataset.art)) { F = { kind: 'art', key: art.dataset.art }; render(); } return; }
-  const rw = e.target.closest('[data-row]');
-  if (rw) { F = { kind: 'turn', n: ROWS[+rw.dataset.row].n }; render(); }
+  if (!V || e.target.closest('#chart')) return;
+  if (e.target.closest('pre.peek,.detail')) { const act = e.target.closest('[data-act]'); if (act) runAct(act.dataset.act, act.dataset.path); return; }
+  const act = e.target.closest('[data-act]'); if (act) return runAct(act.dataset.act, act.dataset.path);
+  if (e.target.closest('[data-back]')) { sel = null; return render(); }
+  const gr = e.target.closest('[data-group]'); if (gr) { const k = gr.dataset.group; groupsOpen.has(k) ? groupsOpen.delete(k) : groupsOpen.add(k); return render(); }
+  const hv = e.target.closest('[data-harness]'); if (hv) { sel = { harness: +hv.dataset.harness }; return render(); }
+  if (e.target.closest('[data-expand]')) { if (openTurns.size) { openTurns.clear(); selTurn = null; } else TURNS.forEach(t => openTurns.add(t.n)); return render(); }
+  if (e.target.closest('[data-startt]')) { startOpen = !startOpen; return render(); }
+  const th = e.target.closest('[data-turnh]'); if (th) { const n = +th.dataset.turnh; if (openTurns.has(n)) { openTurns.delete(n); if (selTurn === n) selTurn = null; } else { openTurns.add(n); selTurn = n; } return render(); }
+  const pr = e.target.closest('[data-prompt]'); if (pr) { sel = sel && sel.prompt === pr.dataset.prompt ? null : { prompt: pr.dataset.prompt }; return render(); }
+  const run = e.target.closest('[data-run]'); if (run) { sel = sel && sel.run === run.dataset.run ? null : { run: run.dataset.run }; return render(); }
+  const fl = e.target.closest('[data-file]'); if (fl) { sel = sel && sel.file === fl.dataset.file ? null : { file: fl.dataset.file }; return render(); }
 });
-document.addEventListener('keydown', e => {
-  if (!V || e.target.closest('input,textarea')) return;
-  if (e.key === 'ArrowDown') { e.preventDefault(); step(1); }
-  if (e.key === 'ArrowUp') { e.preventDefault(); step(-1); }
-});
-
 /* check / fix */
 const resLines = j => {
   if (j.error) return `<div class="err">${esc(j.error)}</div>`;
@@ -365,9 +374,9 @@ async function poll() {
     const j = await r.json();
     if (j.version === VERSION) return;
     ETAG = r.headers.get('ETag') || String(j.version); VERSION = j.version; forgetFetched();
-    const first = !V; build(j); if (first) F = defaultFocus(); render();
+    build(j); render();
   } catch (_) {
-    if (!V) $('#main').innerHTML = '<section class="card mapcard"><div class="mh"><span>The x-ray server did not answer; retrying.</span></div></section>';
+    if (!V) $('#info').innerHTML = '<div class="nk" style="padding:14px">The x-ray server did not answer; retrying.</div>';
   } finally { inflight = false; }
 }
 function setTheme(t) { document.documentElement.dataset.theme = t; $('#lightBtn').setAttribute('aria-pressed', t === 'light'); $('#darkBtn').setAttribute('aria-pressed', t === 'dark'); }
@@ -375,5 +384,6 @@ $('#lightBtn').addEventListener('click', () => setTheme('light'));
 $('#darkBtn').addEventListener('click', () => setTheme('dark'));
 setTheme(new URLSearchParams(location.search).get('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+let rz = null; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => V && renderChart(), 120); });
 poll();
 setInterval(poll, 2000);

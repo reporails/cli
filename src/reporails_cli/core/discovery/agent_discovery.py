@@ -8,7 +8,7 @@ from __future__ import annotations
 import glob
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -302,7 +302,7 @@ def _glob_external(pattern: str, target: Path, found: list[Path]) -> None:
         expanded_str = expanded.as_posix()
         if "/projects/*/" in expanded_str:
             expanded_str = expanded_str.replace("/projects/*/", f"/projects/{claude_project_folder_name(target)}/")
-        found.extend(Path(p) for p in glob.glob(expanded_str) if Path(p).is_file())
+        found.extend(Path(p) for p in glob.glob(expanded_str, recursive=True) if Path(p).is_file())
     elif expanded.is_file():
         found.append(expanded)
 
@@ -394,6 +394,7 @@ class _AgentScope:
     user_dir: Path | None
     exclude_globs: list[str]
     plugin_roots: dict[str, list[Path]] = field(default_factory=dict)
+    installed_plugins: Sequence[Path] = ()
 
 
 def _discover_surface(
@@ -404,7 +405,7 @@ def _discover_surface(
     target = scope.target
     patterns = _repo_scoped_patterns(extract_patterns(spec), ft_name, scope.repo_scoped, scope.user_dir)
     # A plugin component pattern resolves against each plugin root found here.
-    patterns = expand_plugin_patterns(patterns, target, scope.exclusions, scope.plugin_roots)
+    patterns = expand_plugin_patterns(patterns, target, scope.exclusions, scope.plugin_roots, scope.installed_plugins)
     if not patterns:
         return None
     properties = extract_properties(spec)
@@ -434,6 +435,7 @@ def _agent_scope(
     *,
     project_config: ProjectConfig | None,
     repo_scoped: bool,
+    installed_plugins: Sequence[Path] = (),
 ) -> _AgentScope:
     """The scope one agent's discovery run shares across its file types."""
     # Union of every per-surface exclude declared for this agent. Some agents
@@ -452,6 +454,7 @@ def _agent_scope(
         exclude_globs=[
             g for ft_name in file_types for g in surface_exclude_patterns(agent_id, ft_name, project_config)
         ],
+        installed_plugins=installed_plugins,
     )
 
 
@@ -462,12 +465,23 @@ def discover_ungated(
     exclusions: RunExclusions,
     *,
     project_config: ProjectConfig | None,
+    repo_scoped: bool = True,
+    installed_plugins: Sequence[Path] = (),
 ) -> list[Path]:
-    """The files the named file types of `agent_id` match under `target` in a repo-scoped run,
-    found as discovery finds them but before the agent's read gate narrows them. Every path is
-    kept under its own name, whatever it links to."""
+    """The files the named file types of `agent_id` match under `target`, found as discovery finds them
+    but before the agent's read gate narrows them. Every path is kept under its own name, whatever it
+    links to. A repo-scoped run drops the user and managed patterns; with `repo_scoped` false they stay,
+    and each plugin component pattern also resolves against the `installed_plugins` roots."""
     file_types = load_config_file_types(agent_id) or {}
-    scope = _agent_scope(target, agent_id, file_types, exclusions, project_config=project_config, repo_scoped=True)
+    scope = _agent_scope(
+        target,
+        agent_id,
+        file_types,
+        exclusions,
+        project_config=project_config,
+        repo_scoped=repo_scoped,
+        installed_plugins=installed_plugins,
+    )
     found: set[Path] = set()
     for name in file_type_names:
         spec = file_types.get(name)

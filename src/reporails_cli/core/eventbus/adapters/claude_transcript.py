@@ -27,17 +27,26 @@ the adapter refuses any other shape of a row type it reads:
   a whole number, and `content`, a string), `agent_listing_delta` (`addedTypes` and `addedLines`, lists of
   strings), `mcp_instructions_delta` (`addedNames` and `addedBlocks`, lists of strings), `deferred_tools_delta`
   (`addedNames` and `addedLines`, lists of strings, or in a subagent file `content`, a string),
-  `session_context` (`context`, an object of strings) and
-  `hook_additional_context` (`hookEvent`, `hookName` and `content`, a list of strings), read only when
-  `hookEvent` is `SessionStart`.
+  `session_context` (`context`, an object of strings). The three delta rows may also carry `removedTypes` or
+  `removedNames`, lists of strings, counted off their item count.
+- a hook note: `type: "attachment"` with `hookEvent` and `hookName` strings and one of `attachment.type`
+  `hook_additional_context` (`content`, a list of strings), `hook_success` (`content`, a string, read only when
+  it is not empty) or `hook_blocking_error` (`blockingError`, an object whose `blockingError` is a string; a
+  Stop block), each sized by character count and then dropped.
+- a typed prompt: a `user` row with `uuid`, `promptSource: "typed"`, `origin.kind: "human"` and
+  `message.content` a string or a list of blocks whose `type: "text"` blocks hold `text`; or an attachment row
+  with `uuid` and `attachment.type: "queued_command"`, `commandMode: "prompt"`, `origin.kind: "human"` and
+  `prompt`, a string or a list of blocks as a user row's content. Every other user row yields nothing. The
+  prompt's text is read for its size and by `resolve_prompt` for the route that shows it, never stored.
+- a compaction: `type: "system"` with `subtype: "compact_boundary"` and `compactMetadata.trigger`.
 - a subagent brief: the first row of a subagent file, `type: "user"` with `message.content` a string or a
   list of blocks whose `type: "text"` blocks hold `text`.
 - every row the adapter reads (assistant, system, attachment) carries `sessionId` and `timestamp`; a row
   without either is refused.
 - a subagent file: its first row's `timestamp`, and the `agentType` of `agent-<id>.meta.json`.
 
-Never read, except for the sizes and the brief above: message content, tool input and output, `description`,
-`content`, `displayPath`.
+Never read, except for the sizes, the brief and the prompts above: message content, tool input and output,
+`description`, `content`, `displayPath`.
 """
 
 from __future__ import annotations
@@ -60,11 +69,13 @@ from reporails_cli.core.platform.dto.events import (
     HarnessEntry,
     HarnessKind,
     InstructionLoad,
+    PromptEntry,
     TokenUsage,
 )
 
 NESTED_MARKER = "nested"
 BRIEF_BLOCK_SEPARATOR = "\n\n"
+HOOK_NOTE_ATTACHMENTS = ("hook_additional_context", "hook_success", "hook_blocking_error")
 
 
 @dataclass(frozen=True)
@@ -78,14 +89,15 @@ class _Harness:
     count_is_number: bool
     chars_key: str
     chars_is_text: bool
+    removed_key: str | None = None
 
 
 _HARNESS: dict[str, _Harness] = {
     "prompt_snapshot": _Harness("system_prompt", "system prompt", "systemPrompt", False, "systemPrompt", False),
     "skill_listing": _Harness("skill_list", "skills", "skillCount", True, "content", True),
-    "agent_listing_delta": _Harness("agent_list", "agents", "addedTypes", False, "addedLines", False),
+    "agent_listing_delta": _Harness("agent_list", "agents", "addedTypes", False, "addedLines", False, "removedTypes"),
     "mcp_instructions_delta": _Harness(
-        "mcp_instructions", "MCP server instructions", "addedNames", False, "addedBlocks", False
+        "mcp_instructions", "MCP server instructions", "addedNames", False, "addedBlocks", False, "removedNames"
     ),
 }
 
@@ -104,6 +116,25 @@ def _text(row: JsonObject, key: str, what: str) -> str:
     return value
 
 
+def _removed(attachment: JsonObject, key: str | None, what: str) -> int:
+    """How many items a delta row removed; none when the row does not carry the list."""
+    if key is None or key not in attachment:
+        return 0
+    return len(_strings(attachment.get(key), key, what))
+
+
+def _blocks_text(content: JsonValue, what: str) -> list[str] | None:
+    """The texts of a message's content: the string itself, or each `text` block's; None when it is neither."""
+    if isinstance(content, str):
+        return [content]
+    if not isinstance(content, list):
+        return None
+    texts = [as_object(block).get("text") for block in content if as_object(block).get("type") == "text"]
+    if not all(isinstance(text, str) for text in texts):
+        raise PayloadRefused(f"{what} has a text block with no text")
+    return [text for text in texts if isinstance(text, str)]
+
+
 class ClaudeTranscriptAdapter:
     """Resolves the rows of a Claude Code session transcript."""
 
@@ -116,8 +147,12 @@ class ClaudeTranscriptAdapter:
             return [self._usage(row, subagent_id)]
         if kind == "system" and row.get("subtype") == "turn_duration":
             return [self._record(row, "turn_end", subagent_id)]
+        if kind == "system" and row.get("subtype") == "compact_boundary":
+            return [self._compaction(row, subagent_id)]
         if kind == "attachment":
             return self._attachment(row, subagent_id)
+        if kind == "user":
+            return self._prompt(row, subagent_id)
         return []
 
     def resolve_brief(self, first_row: JsonObject) -> str:
@@ -128,11 +163,17 @@ class ClaudeTranscriptAdapter:
         content = as_object(first_row.get("message")).get("content")
         if isinstance(content, str):
             return content
-        blocks = [as_object(block) for block in as_list(content)]
-        texts = [block.get("text") for block in blocks if block.get("type") == "text"]
-        if not texts or not all(isinstance(text, str) for text in texts):
+        texts = _blocks_text(content, "subagent first row")
+        if not texts:
             raise PayloadRefused("subagent first row holds no text content")
-        return BRIEF_BLOCK_SEPARATOR.join(text for text in texts if isinstance(text, str))
+        return BRIEF_BLOCK_SEPARATOR.join(texts)
+
+    def resolve_prompt(self, row: JsonObject) -> str:
+        """The text of a typed prompt row, for the route that shows it; refuses a row that is not one."""
+        text = self._typed_text(row)
+        if text is None:
+            raise PayloadRefused("row is not a typed prompt")
+        return text
 
     def resolve_subagent(self, subagent_id: str, meta: JsonObject, first_row: JsonObject) -> EventRecord:
         """The `subagent_run` record of a subagent file; refuses a meta file without `agentType`."""
@@ -151,6 +192,36 @@ class ClaudeTranscriptAdapter:
             subagent_id=subagent_id,
         )
 
+    def _compaction(self, row: JsonObject, subagent_id: str | None) -> EventRecord:
+        trigger = opt_str(as_object(row.get("compactMetadata")).get("trigger"))
+        return replace(self._record(row, "post_compact", subagent_id), source=trigger)
+
+    def _typed_text(self, row: JsonObject) -> str | None:
+        """The text of a row a person typed, None for any other row."""
+        if row.get("type") == "user":
+            if row.get("promptSource") != "typed" or as_object(row.get("origin")).get("kind") != "human":
+                return None
+            texts = _blocks_text(as_object(row.get("message")).get("content"), "user row")
+            if texts is None:
+                raise PayloadRefused("user row message content is neither text nor a list of blocks")
+            return "".join(texts)
+        attachment = as_object(row.get("attachment"))
+        if attachment.get("type") != "queued_command" or attachment.get("commandMode") != "prompt":
+            return None
+        if as_object(attachment.get("origin")).get("kind") != "human":
+            return None
+        texts = _blocks_text(attachment.get("prompt"), "queued_command attachment prompt")
+        if texts is None:
+            raise PayloadRefused("queued_command attachment prompt is neither text nor a list of blocks")
+        return "".join(texts)
+
+    def _prompt(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
+        text = self._typed_text(row)
+        if text is None:
+            return []
+        entry = PromptEntry(_text(row, "uuid", f"{row.get('type')} row"), len(text), row.get("type") == "attachment")
+        return [replace(self._record(row, "prompt_submit", subagent_id), item=entry)]
+
     def _usage(self, row: JsonObject, subagent_id: str | None) -> EventRecord:
         message = as_object(row.get("message"))
         message_id = _text(message, "id", "assistant message")
@@ -166,8 +237,10 @@ class ClaudeTranscriptAdapter:
             return [self._load(row, _text(attachment, "path", "nested_memory attachment"), NESTED_MARKER, subagent_id)]
         if kind == "instructions":
             return self._instructions(row, attachment, subagent_id)
-        if kind == "hook_additional_context":
+        if kind in HOOK_NOTE_ATTACHMENTS:
             return self._hook_note(row, attachment, subagent_id)
+        if kind == "queued_command":
+            return self._prompt(row, subagent_id)
         entry = self._harness_entry(attachment, kind)
         if entry is None:
             return []
@@ -212,7 +285,7 @@ class ClaudeTranscriptAdapter:
             chars = len(text)
         else:
             chars = sum(len(item) for item in _strings(text, spec.chars_key, what))
-        return HarnessEntry(spec.kind, spec.label, count, chars)
+        return HarnessEntry(spec.kind, spec.label, count - _removed(attachment, spec.removed_key, what), chars)
 
     def _deferred_tools(self, attachment: JsonObject) -> HarnessEntry:
         what = "deferred_tools_delta attachment"
@@ -223,7 +296,8 @@ class ClaudeTranscriptAdapter:
             return HarnessEntry("deferred_tools", "deferred tools", None, len(content))
         names = _strings(attachment.get("addedNames"), "addedNames", what)
         lines = _strings(attachment.get("addedLines"), "addedLines", what)
-        return HarnessEntry("deferred_tools", "deferred tools", len(names), sum(len(item) for item in lines))
+        count = len(names) - _removed(attachment, "removedNames", what)
+        return HarnessEntry("deferred_tools", "deferred tools", count, sum(len(item) for item in lines))
 
     def _session_context(self, attachment: JsonObject) -> HarnessEntry:
         context = attachment.get("context")
@@ -236,9 +310,21 @@ class ClaudeTranscriptAdapter:
         return HarnessEntry("session_context", "session context", None, chars)
 
     def _hook_note(self, row: JsonObject, attachment: JsonObject, subagent_id: str | None) -> list[EventRecord]:
-        if attachment.get("hookEvent") != "SessionStart":
-            return []
-        what = "hook_additional_context attachment"
+        kind = attachment.get("type")
+        what = f"{kind} attachment"
         label = _text(attachment, "hookName", what)
+        event = _text(attachment, "hookEvent", what)
+        if kind == "hook_blocking_error":
+            blocked = as_object(attachment.get("blockingError")).get("blockingError")
+            if not isinstance(blocked, str):
+                raise PayloadRefused(f"{what} blockingError is not an object holding a string")
+            return [self._harness(row, HarnessEntry("stop_block", label, None, len(blocked), event), subagent_id)]
+        if kind == "hook_success":
+            content = attachment.get("content")
+            if content is None or content == "":
+                return []
+            if not isinstance(content, str):
+                raise PayloadRefused(f"{what} content is not a string")
+            return [self._harness(row, HarnessEntry("hook_note", label, None, len(content), event), subagent_id)]
         chars = sum(len(item) for item in _strings(attachment.get("content"), "content", what))
-        return [self._harness(row, HarnessEntry("hook_note", label, None, chars), subagent_id)]
+        return [self._harness(row, HarnessEntry("hook_note", label, None, chars, event), subagent_id)]

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from reporails_cli.core.eventbus.port import PayloadRefused
-from reporails_cli.core.eventbus.transcript import read_transcript, subagent_brief
+from reporails_cli.core.eventbus.transcript import prompt_text, read_transcript, subagent_brief
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
 from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_eventbus]
@@ -171,6 +173,7 @@ def test_each_harness_kind_resolves_to_its_count_and_character_size(tmp_path: Pa
     got = [(r.harness.kind, r.harness.label, r.harness.count, r.harness.chars) for r in records if r.harness]
     assert got == [
         ("hook_note", "SessionStart", None, _text_size(2)),
+        ("hook_note", "UserPromptSubmit", None, _text_size(3)),
         ("session_context", "session context", None, _text_size(4, 5)),
         ("system_prompt", "system prompt", 3, _text_size(6, 7, 8)),
         ("deferred_tools", "deferred tools", 2, _text_size(10, 11)),
@@ -181,9 +184,10 @@ def test_each_harness_kind_resolves_to_its_count_and_character_size(tmp_path: Pa
     assert not _of(records, "refusal")
 
 
-def test_a_hook_note_of_another_event_yields_nothing(tmp_path: Path) -> None:
+def test_a_hook_note_of_every_event_is_a_note_carrying_its_event(tmp_path: Path) -> None:
     records, _ = read_transcript("claude", _copy(HARNESS, tmp_path), TranscriptCursor())
-    assert "UserPromptSubmit" not in [r.harness.label for r in records if r.harness]
+    notes = [(r.harness.label, r.harness.event) for r in records if r.harness and r.harness.kind == "hook_note"]
+    assert notes == [("SessionStart", "SessionStart"), ("UserPromptSubmit", "UserPromptSubmit")]
 
 
 @pytest.mark.parametrize(
@@ -264,3 +268,93 @@ def test_a_subagent_deferred_tools_row_with_text_content_is_sized_without_a_coun
     assert len(hits) == 1
     assert getattr(hits[0].item, "count", 0) is None
     assert getattr(hits[0].item, "chars", 0) == len("PLACEHOLDER_ATTACHMENT_TEXT")
+
+
+TURNS = "2.1.309-turns"
+COMPACTION = "2.1.309-compaction"
+
+
+def test_a_typed_prompt_is_one_prompt_submit_record_with_its_id_and_size_never_its_text(tmp_path: Path) -> None:
+    records, _ = read_transcript("claude", _copy(TURNS, tmp_path), TranscriptCursor())
+    got = [(r.prompt.id, r.prompt.chars, r.prompt.queued) for r in _of(records, "prompt_submit") if r.prompt]
+    size = len("PLACEHOLDER-TEXT-3")
+    assert got == [("p-one", size, False), ("p-two", 2 * (size + 1), False), ("q-one", size + 1, True)]
+    assert not _of(records, "refusal")
+    assert "PLACEHOLDER" not in json.dumps([r.to_json() for r in records])
+
+
+def test_a_tool_result_a_meta_row_a_peer_a_task_notification_and_a_queued_non_prompt_yield_no_prompt(
+    tmp_path: Path,
+) -> None:
+    records, _ = read_transcript("claude", _copy(TURNS, tmp_path), TranscriptCursor())
+    ids = {r.prompt.id for r in _of(records, "prompt_submit") if r.prompt}
+    assert ids.isdisjoint({"t-result", "m-meta", "peer", "task", "q-peer", "q-task"})
+
+
+def test_hook_success_with_text_and_a_stop_block_are_notes_with_their_event_and_size(tmp_path: Path) -> None:
+    records, _ = read_transcript("claude", _copy(TURNS, tmp_path), TranscriptCursor())
+    entries = [r.harness for r in _of(records, "harness") if r.harness]
+    assert [(e.kind, e.label, e.event) for e in entries] == [
+        ("hook_note", "SessionStart:startup", "SessionStart"),
+        ("hook_note", "SessionStart", "SessionStart"),
+        ("hook_note", "UserPromptSubmit", "UserPromptSubmit"),
+        ("hook_note", "PreToolUse:Read", "PreToolUse"),
+        ("stop_block", "Stop", "Stop"),
+        ("hook_note", "PostToolUse:Edit", "PostToolUse"),
+    ]
+    assert entries[4].chars == len("PLACEHOLDER-TEXT-12")
+
+
+def test_a_prompt_text_is_read_again_by_its_row_id_and_joins_text_blocks(tmp_path: Path) -> None:
+    session = _copy(TURNS, tmp_path)
+    assert prompt_text("claude", session, "p-one") == "PLACEHOLDER-TEXT-3"
+    assert prompt_text("claude", session, "p-two") == "PLACEHOLDER-TEXT-13PLACEHOLDER-TEXT-14"
+    assert prompt_text("claude", session, "q-one") == "PLACEHOLDER-TEXT-15"
+    assert prompt_text("claude", session, "nosuchrow") is None
+    with pytest.raises(PayloadRefused):
+        prompt_text("claude", session, "t-result")
+
+
+def _edit_row(session: Path, match: Callable[[JsonObject], bool], edit: Callable[[JsonObject], None]) -> None:
+    rows = [json.loads(line) for line in session.read_text().splitlines()]
+    edit(next(row for row in rows if match(row)))
+    session.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+
+
+def test_a_queued_prompt_of_another_shape_is_refused_naming_the_row_and_field(tmp_path: Path) -> None:
+    session = _copy(TURNS, tmp_path)
+    _edit_row(session, lambda r: r.get("uuid") == "q-one", lambda r: as_object(r["attachment"]).update(prompt=12.5))
+    records, _ = read_transcript("claude", session, TranscriptCursor())
+    reasons = [r.refusal or "" for r in _of(records, "refusal")]
+    assert len(reasons) == 1 and "queued_command" in reasons[0] and "prompt" in reasons[0]
+
+
+def test_a_typed_row_whose_content_is_not_text_is_refused_naming_the_row(tmp_path: Path) -> None:
+    session = _copy(TURNS, tmp_path)
+    _edit_row(session, lambda r: r.get("uuid") == "p-one", lambda r: as_object(r["message"]).update(content=12.5))
+    records, _ = read_transcript("claude", session, TranscriptCursor())
+    reasons = [r.refusal or "" for r in _of(records, "refusal")]
+    assert len(reasons) == 1 and "user row" in reasons[0] and "content" in reasons[0]
+
+
+def test_a_stop_block_whose_error_is_not_an_object_holding_a_string_is_refused(tmp_path: Path) -> None:
+    session = _copy(TURNS, tmp_path)
+    _edit_row(
+        session,
+        lambda r: as_object(r.get("attachment")).get("type") == "hook_blocking_error",
+        lambda r: as_object(r["attachment"]).update(blockingError="text"),
+    )
+    records, _ = read_transcript("claude", session, TranscriptCursor())
+    reasons = [r.refusal or "" for r in _of(records, "refusal")]
+    assert len(reasons) == 1 and "blockingError" in reasons[0]
+
+
+def test_a_delta_row_counts_its_added_items_less_its_removed_ones(tmp_path: Path) -> None:
+    records, _ = read_transcript("claude", _copy(COMPACTION, tmp_path), TranscriptCursor())
+    deferred = [r.harness.count for r in _of(records, "harness") if r.harness and r.harness.kind == "deferred_tools"]
+    assert deferred == [38, 12, 50, 4, -4]
+
+
+def test_a_compact_boundary_row_is_a_post_compact_record_with_its_trigger(tmp_path: Path) -> None:
+    records, _ = read_transcript("claude", _copy(COMPACTION, tmp_path), TranscriptCursor())
+    assert [r.source for r in _of(records, "post_compact")] == ["manual"]

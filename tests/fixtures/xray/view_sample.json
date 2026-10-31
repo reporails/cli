@@ -740,6 +740,11 @@
   {
    "path": "CLAUDE.md",
    "kind": "instructions",
+   "scope": "project",
+   "plugin": null,
+   "label": "CLAUDE.md",
+   "memory_type": null,
+   "linked": null,
    "loaded": true,
    "turns": [
     0,
@@ -789,6 +794,11 @@
   {
    "path": "docs/CLAUDE.md",
    "kind": "instructions",
+   "scope": "project",
+   "plugin": null,
+   "label": "docs/CLAUDE.md",
+   "memory_type": null,
+   "linked": null,
    "loaded": true,
    "turns": [
     0,
@@ -822,6 +832,11 @@
   {
    "path": "api/CLAUDE.md",
    "kind": "instructions",
+   "scope": "project",
+   "plugin": null,
+   "label": "api/CLAUDE.md",
+   "memory_type": null,
+   "linked": null,
    "loaded": true,
    "turns": [
     4,
@@ -857,6 +872,11 @@
   {
    "path": "web/CLAUDE.md",
    "kind": "instructions",
+   "scope": "project",
+   "plugin": null,
+   "label": "web/CLAUDE.md",
+   "memory_type": null,
+   "linked": null,
    "loaded": true,
    "turns": [
     9,
@@ -881,6 +901,11 @@
   {
    "path": "api/handlers/CLAUDE.md",
    "kind": "instructions",
+   "scope": "project",
+   "plugin": null,
+   "label": "api/handlers/CLAUDE.md",
+   "memory_type": null,
+   "linked": null,
    "loaded": true,
    "turns": [
     14,
@@ -900,6 +925,11 @@
   {
    "path": "web/ui/CLAUDE.md",
    "kind": "instructions",
+   "scope": "project",
+   "plugin": null,
+   "label": "web/ui/CLAUDE.md",
+   "memory_type": null,
+   "linked": null,
    "loaded": true,
    "turns": [
     31,
@@ -918,6 +948,11 @@
   {
    "path": "tools/CLAUDE.md",
    "kind": "instructions",
+   "scope": "project",
+   "plugin": null,
+   "label": "tools/CLAUDE.md",
+   "memory_type": null,
+   "linked": null,
    "loaded": false,
    "turns": [],
    "findings": null
@@ -925,6 +960,11 @@
   {
    "path": "~/.claude/CLAUDE.md",
    "kind": "instructions",
+   "scope": "user",
+   "plugin": null,
+   "label": "~/.claude/CLAUDE.md",
+   "memory_type": null,
+   "linked": null,
    "loaded": true,
    "turns": [
     0,
@@ -974,6 +1014,11 @@
   {
    "path": "~/.claude/projects/-work-demo/memory/MEMORY.md",
    "kind": "memory",
+   "scope": "auto",
+   "plugin": null,
+   "label": "MEMORY.md",
+   "memory_type": null,
+   "linked": null,
    "loaded": true,
    "turns": [
     0,
@@ -1007,6 +1052,11 @@
   {
    "path": ".claude/skills/release/SKILL.md",
    "kind": "skill",
+   "scope": "project",
+   "plugin": null,
+   "label": "release",
+   "memory_type": null,
+   "linked": null,
    "loaded": false,
    "turns": [],
    "findings": 4
@@ -1014,6 +1064,11 @@
   {
    "path": ".claude/skills/review/SKILL.md",
    "kind": "skill",
+   "scope": "project",
+   "plugin": null,
+   "label": "review",
+   "memory_type": null,
+   "linked": null,
    "loaded": false,
    "turns": [],
    "findings": 0
@@ -1021,6 +1076,11 @@
   {
    "path": ".claude/agents/code-reviewer.md",
    "kind": "agent",
+   "scope": "project",
+   "plugin": null,
+   "label": "code-reviewer",
+   "memory_type": null,
+   "linked": null,
    "loaded": true,
    "turns": [
     19,
@@ -1032,6 +1092,11 @@
   {
    "path": ".claude/agents/planner.md",
    "kind": "agent",
+   "scope": "project",
+   "plugin": null,
+   "label": "planner",
+   "memory_type": null,
+   "linked": null,
    "loaded": false,
    "turns": [],
    "findings": null
@@ -1039,6 +1104,11 @@
   {
    "path": ".claude/settings.json#SessionStart",
    "kind": "hook",
+   "scope": "project",
+   "plugin": null,
+   "label": ".claude/settings.json#SessionStart",
+   "memory_type": null,
+   "linked": null,
    "loaded": true,
    "turns": [
     0
@@ -1048,6 +1118,11 @@
   {
    "path": ".claude/settings.json#PreToolUse",
    "kind": "hook",
+   "scope": "project",
+   "plugin": null,
+   "label": ".claude/settings.json#PreToolUse",
+   "memory_type": null,
+   "linked": null,
    "loaded": true,
    "turns": [],
    "findings": null
@@ -1055,6 +1130,11 @@
   {
    "path": ".claude/settings.json#Stop",
    "kind": "hook",
+   "scope": "project",
+   "plugin": null,
+   "label": ".claude/settings.json#Stop",
+   "memory_type": null,
+   "linked": null,
    "loaded": false,
    "turns": [],
    "findings": null

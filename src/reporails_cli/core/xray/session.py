@@ -6,13 +6,12 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from reporails_cli.core.eventbus.query import read_events
-from reporails_cli.core.eventbus.transcript import read_transcript, subagent_brief
+from reporails_cli.core.eventbus.transcript import prompt_text, read_transcript, subagent_brief
 from reporails_cli.core.pipeline.expected_loads import AGENT
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
-from reporails_cli.core.platform.dto.xray import XraySpan, XrayView
+from reporails_cli.core.platform.dto.xray import ArtifactFile, XraySpan, XrayView
 from reporails_cli.core.xray.artifacts import (
-    ArtifactFile,
     artifact_files,
     build_artifacts,
     in_context_turns,
@@ -32,8 +31,8 @@ from reporails_cli.core.xray.derive import (
     turn_end_times,
 )
 
-_NOT_KNOWN = ("stop hook blocks", "hook notes", "prompts", "context window")
-_NO_BUS = "reads and compactions"
+_NOT_KNOWN = ("context window",)
+_NO_BUS = "reads"
 
 
 class XraySession:
@@ -85,6 +84,16 @@ class XraySession:
         if not any(record.subagent_id == subagent_id for record in self._transcript):
             return None
         return subagent_brief(AGENT, self._file, subagent_id)
+
+    def prompt(self, prompt_id: str) -> str | None:
+        """The text of a typed prompt the records name; None for any other id. Raises `PayloadRefused` when the
+        row is not the shape the adapter is pinned to. The text is not kept."""
+        if not any(
+            record.subagent_id is None and record.prompt is not None and record.prompt.id == prompt_id
+            for record in self._transcript
+        ):
+            return None
+        return prompt_text(AGENT, self._file, prompt_id)
 
     def view(self, findings: Mapping[str, int]) -> XrayView:
         """The view of the records read so far; `findings` maps a file path to its finding count."""

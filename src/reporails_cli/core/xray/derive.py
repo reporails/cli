@@ -10,13 +10,21 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
-from reporails_cli.core.platform.dto.events import EventRecord, TokenUsage
+from reporails_cli.core.platform.dto.events import (
+    DELTA_KINDS,
+    EventRecord,
+    HarnessEntry,
+    TokenUsage,
+    is_note_kind,
+)
 from reporails_cli.core.platform.dto.xray import (
     LOAD_KIND_OF_MEMORY_TYPE,
     CompactionTrigger,
     XrayCompaction,
     XrayHarnessItem,
     XrayLoad,
+    XrayNote,
+    XrayPrompt,
     XraySubagent,
     XrayTurn,
 )
@@ -99,6 +107,8 @@ class _Bucket:
     loads: list[EventRecord] = field(default_factory=list)
     reads: list[str] = field(default_factory=list)
     runs: list[str] = field(default_factory=list)
+    prompts: list[XrayPrompt] = field(default_factory=list)
+    notes: list[XrayNote] = field(default_factory=list)
     compaction: EventRecord | None = None
     last_time: float = 0.0
 
@@ -130,25 +140,15 @@ def main_replies(records: Sequence[EventRecord]) -> Replies:
     return Replies(tuple(sorted(points)))
 
 
-def _compaction(pre: EventRecord, bus: Sequence[EventRecord], replies: Replies, t0: float) -> XrayCompaction | None:
-    moment = epoch(pre.time)
+def _compaction(post: EventRecord, replies: Replies, t0: float) -> XrayCompaction | None:
+    moment = epoch(post.time)
     if moment is None:
         return None
-    after_at = next(
-        (
-            when
-            for record in bus
-            if record.event == "post_compact" and (when := epoch(record.time)) is not None and when >= moment
-        ),
-        None,
+    trigger: CompactionTrigger | None = (
+        "manual" if post.source == "manual" else "auto" if post.source == "auto" else None
     )
-    trigger: CompactionTrigger | None = "manual" if pre.source == "manual" else "auto" if pre.source == "auto" else None
-    return XrayCompaction(
-        t=moment - t0,
-        trigger=trigger,
-        before=replies.before(moment),
-        after=None if after_at is None else replies.after(after_at),
-    )
+    before, after = replies.before(moment), replies.after(moment)
+    return XrayCompaction(t=moment - t0, trigger=trigger, before=before, after=after)
 
 
 def turn_end_times(records: Sequence[EventRecord]) -> list[float]:
@@ -178,24 +178,63 @@ def start_loads(records: Sequence[EventRecord], replies: Replies) -> list[EventR
     ]
 
 
-def build_harness(records: Sequence[EventRecord], replies: Replies) -> tuple[XrayHarnessItem, ...] | None:
-    """The harness's own context in the main session: the first record of each kind and every session-start hook
-    note timed before the first reply; None when the records hold no harness record."""
+def start_notes(records: Sequence[EventRecord], replies: Replies) -> list[EventRecord]:
+    """The main session's session-start hook notes timed before its first reply."""
     first = replies.points[0][0] if replies.points else float("inf")
-    seen: set[str] = set()
-    items: list[XrayHarnessItem] = []
+    return [
+        record
+        for record in records
+        if record.harness is not None
+        and record.harness.kind == "hook_note"
+        and record.harness.event == "SessionStart"
+        and record.subagent_id is None
+        and (moment := epoch(record.time)) is not None
+        and moment < first
+    ]
+
+
+@dataclass
+class _Slot:
+    """One harness item as it is summed."""
+
+    entry: HarnessEntry
+
+    def add(self, entry: HarnessEntry) -> None:
+        """Fold in a later delta row of the same kind."""
+        count = (
+            None if self.entry.count is None and entry.count is None else (self.entry.count or 0) + (entry.count or 0)
+        )
+        self.entry = HarnessEntry(self.entry.kind, self.entry.label, count, self.entry.chars + entry.chars)
+
+
+def build_harness(records: Sequence[EventRecord], replies: Replies) -> tuple[XrayHarnessItem, ...] | None:
+    """The harness's own context in the main session: the first record of each kind, a list kind's delta rows
+    summed up to the first compaction, and every session-start hook note timed before the first reply; None
+    when the records hold no harness record."""
+    started = {id(record) for record in start_notes(records, replies)}
+    slots: list[_Slot] = []
+    by_kind: dict[str, _Slot] = {}
+    compacted = False
     for record in records:
+        if record.subagent_id is not None:
+            continue
         entry = record.harness
-        if record.event != "harness" or entry is None or record.subagent_id is not None:
+        if record.event == "post_compact":
+            compacted = True
+        elif record.event != "harness" or entry is None:
             continue
-        if entry.kind == "hook_note":
-            moment = epoch(record.time)
-            if moment is None or moment >= first:
-                continue
-        elif entry.kind in seen:
-            continue
-        seen.add(entry.kind)
-        items.append(XrayHarnessItem(entry.kind, entry.label, entry.count, entry.chars // BYTES_PER_TOKEN))
+        elif is_note_kind(entry.kind):
+            if id(record) in started:
+                slots.append(_Slot(entry))
+        elif entry.kind not in by_kind:
+            by_kind[entry.kind] = _Slot(entry)
+            slots.append(by_kind[entry.kind])
+        elif entry.kind in DELTA_KINDS and not compacted:
+            by_kind[entry.kind].add(entry)
+    items = [
+        XrayHarnessItem(slot.entry.kind, slot.entry.label, slot.entry.count, slot.entry.chars // BYTES_PER_TOKEN)
+        for slot in slots
+    ]
     return tuple(items) if items else None
 
 
@@ -212,19 +251,35 @@ def _gather_transcript(
     buckets: dict[int, _Bucket], records: Sequence[EventRecord], ends: Sequence[float], skip: set[int], frame: Frame
 ) -> None:
     for record in records:
-        if id(record) in skip or record.event == "harness":
+        if id(record) in skip:
             continue
         if record.subagent_id is not None and record.event != "subagent_run":
             continue
         target = _bucket_of(buckets, record, ends)
         if target is None:
             continue
-        if record.event == "assistant_usage" and record.usage is not None:
+        if record.event == "post_compact":
+            if target.compaction is None:
+                target.compaction = record
+        elif record.event == "harness":
+            _gather_note(target, record, frame)
+        elif record.event == "prompt_submit" and record.prompt is not None:
+            prompt = record.prompt
+            target.prompts.append(XrayPrompt(prompt.id, frame.at(record) or 0.0, prompt.chars, prompt.queued))
+        elif record.event == "assistant_usage" and record.usage is not None:
             target.replies.append((frame.at(record) or 0.0, context_of(record.usage)))
         elif record.event == "instruction_load":
             target.loads.append(record)
         elif record.event == "subagent_run" and record.subagent_id is not None:
             target.runs.append(record.subagent_id)
+
+
+def _gather_note(target: _Bucket, record: EventRecord, frame: Frame) -> None:
+    entry = record.harness
+    if entry is None or not is_note_kind(entry.kind) or entry.event is None:
+        return
+    note = XrayNote(entry.kind, entry.event, entry.label, frame.at(record) or 0.0, entry.chars // BYTES_PER_TOKEN)
+    target.notes.append(note)
 
 
 def _gather_bus(buckets: dict[int, _Bucket], bus: Sequence[EventRecord], ends: Sequence[float]) -> None:
@@ -235,10 +290,6 @@ def _gather_bus(buckets: dict[int, _Bucket], bus: Sequence[EventRecord], ends: S
             target = _bucket_of(buckets, record, ends)
             if target is not None and record.tool.path:
                 target.reads.append(record.tool.path)
-        elif record.event == "pre_compact":
-            target = _bucket_of(buckets, record, ends)
-            if target is not None and target.compaction is None:
-                target.compaction = record
 
 
 def build_turns(
@@ -247,7 +298,7 @@ def build_turns(
     """The main session's turns, the open last one included; `bus` is None when the bus holds no record."""
     replies = main_replies(records)
     ends = turn_end_times(records)
-    skip = {id(record) for record in start_loads(records, replies)}
+    skip = {id(record) for record in (*start_loads(records, replies), *start_notes(records, replies))}
     buckets: dict[int, _Bucket] = {}
     _gather_transcript(buckets, records, ends, skip, frame)
     _gather_bus(buckets, bus or [], ends)
@@ -267,8 +318,10 @@ def build_turns(
                 loads=loads_of(got.loads, frame),
                 reads=tuple(relative_wire_path(path, frame.root) for path in got.reads) if bus else None,
                 subagents=tuple(got.runs),
-                compaction=_compaction(pre, bus or [], replies, frame.t0) if pre is not None else None,
+                compaction=_compaction(pre, replies, frame.t0) if pre is not None else None,
                 series=tuple(got.replies),
+                prompts=tuple(got.prompts),
+                notes=tuple(got.notes),
             )
         )
     return tuple(turns)

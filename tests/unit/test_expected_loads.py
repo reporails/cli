@@ -151,11 +151,11 @@ def test_command_prints_one_json_object(tmp_path: Path) -> None:
     result = runner.invoke(app, ["expected-loads", str(root), "--agent", "claude"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert list(data) == ["version", "agent", "root", "event_log_dir", "files", "skipped", "aliases"]
+    assert list(data) == ["version", "agent", "root", "event_log_dir", "files", "invocable", "skipped", "aliases"]
     assert data["version"] == 1
     assert data["agent"] == "claude"
     assert data["event_log_dir"] == str(Path.home() / ".reporails" / "xray")
-    assert set(data["files"][0]) == {"path", "file_type", "loading", "precedence"}
+    assert set(data["files"][0]) == {"path", "file_type", "loading", "precedence", "label"}
 
 
 @pytest.mark.unit

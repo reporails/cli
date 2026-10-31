@@ -360,3 +360,35 @@ def test_brief_replies_with_the_refusal_when_the_subagent_file_opens_with_no_use
     client.get("/view", headers={"X-Xray-Token": TOKEN})
     reply = _get(client, "/brief", {"subagent": SUB_ID})
     assert reply.status_code == 400 and "user row" in reply.json()["error"]
+
+
+@pytest.fixture
+def prompt_client(project: Path, tmp_path: Path) -> TestClient:
+    copy = tmp_path / "prompts"
+    shutil.copytree(FIXTURES.parent / "2.1.309-turns", copy)
+    app = xray_server.build_app(project, copy / "session.jsonl", TOKEN, PORT)
+    return TestClient(app, base_url=ORIGIN)
+
+
+def test_prompt_replies_with_the_text_of_a_prompt_the_view_lists_and_is_never_cached(
+    prompt_client: TestClient,
+) -> None:
+    view = prompt_client.get("/view", headers={"X-Xray-Token": TOKEN}).json()
+    ids = [prompt["id"] for turn in view["turns"] for prompt in turn["prompts"]]
+    assert ids == ["p-one", "p-two", "q-one"]
+    reply = _get(prompt_client, "/prompt", {"id": "p-one"})
+    assert reply.status_code == 200 and reply.headers["Cache-Control"] == "no-store"
+    assert reply.json() == {"id": "p-one", "text": "PLACEHOLDER-TEXT-3"}
+
+
+@pytest.mark.parametrize("prompt_id", ["t-result", "m-meta", "peer", "nosuchrow", "../x"])
+def test_prompt_refuses_an_id_that_is_not_a_listed_prompt(prompt_client: TestClient, prompt_id: str) -> None:
+    prompt_client.get("/view", headers={"X-Xray-Token": TOKEN})
+    reply = _get(prompt_client, "/prompt", {"id": prompt_id})
+    assert reply.status_code == 400 and reply.json() == {"error": "not a prompt this page lists"}
+    assert _get(prompt_client, "/prompt", {}).status_code == 400
+
+
+def test_prompt_without_the_launch_token_is_refused(prompt_client: TestClient) -> None:
+    assert _get(prompt_client, "/prompt", {"id": "p-one"}, token=None).status_code == 403
+    assert _get(prompt_client, "/prompt", {"id": "p-one"}, token="wrong").status_code == 403

@@ -156,6 +156,26 @@ class XrayServer:
         with self._view_lock:
             return self._session.brief(subagent)
 
+    async def prompt(self, request: Request) -> Response:
+        """The text of one typed prompt of the session."""
+        refusal = await self._guard(request)
+        if refusal is not None:
+            return refusal
+        prompt_id = request.query_params.get("id")
+        if prompt_id is None:
+            return _refused(400, "the query is ?id=<prompt id>")
+        try:
+            text = await run_in_threadpool(self._prompt, prompt_id)
+        except PayloadRefused as err:
+            return _refused(400, err.reason)
+        if text is None:
+            return _refused(400, "not a prompt this page lists")
+        return JSONResponse({"id": prompt_id, "text": text}, headers=NO_STORE)
+
+    def _prompt(self, prompt_id: str) -> str | None:
+        with self._view_lock:
+            return self._session.prompt(prompt_id)
+
     async def check(self, request: Request) -> Response:
         """Check one file and reply with its findings."""
         target = await self._target(request)
@@ -217,6 +237,7 @@ def build_app(root: Path, session_file: Path, token: str, port: int) -> Starlett
             Route("/view", server.view, methods=["GET"]),
             Route("/peek", server.peek, methods=["GET"]),
             Route("/brief", server.brief, methods=["GET"]),
+            Route("/prompt", server.prompt, methods=["GET"]),
             Route("/check", server.check, methods=["POST"]),
             Route("/heal", server.heal, methods=["POST"]),
             Route("/xray.js", _static("xray.js"), methods=["GET"]),

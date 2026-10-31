@@ -12,12 +12,16 @@ manifest is never read as a plugin's skills.
 
 from __future__ import annotations
 
+import json
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from reporails_cli.core.discovery.walk import ListedEntry, Pruner, child_real, list_dir
-from reporails_cli.core.platform.contract.json_value import JsonObject, pattern_list
+from reporails_cli.core.platform.config.bootstrap import claude_plugins_dir
+from reporails_cli.core.platform.config.claude_settings import enabled_plugins
+from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, pattern_list
 from reporails_cli.core.platform.utils.utils import config_pattern_matches
 
 PLUGIN_SCOPE = "plugin"
@@ -95,10 +99,12 @@ def expand_plugin_patterns(
     target: Path,
     skip: Pruner,
     roots_by_marker: dict[str, list[Path]] | None = None,
+    installed: Sequence[Path] = (),
 ) -> list[str]:
-    """Replace each `<marker>/pattern` with one root-relative pattern per plugin root found
-    under `target`; other patterns pass through unchanged. No plugin root, no pattern.
-    `roots_by_marker` carries the roots already found across calls for one scan."""
+    """Replace each `<marker>/pattern` with one pattern per plugin root: a root-relative one for each
+    root found under `target`, an absolute one for each `installed` root outside it; other patterns
+    pass through unchanged. No plugin root, no pattern. `roots_by_marker` carries the roots already
+    found across calls for one scan."""
     root = target if target.is_dir() else target.parent
     if roots_by_marker is None:
         roots_by_marker = {}
@@ -111,15 +117,22 @@ def expand_plugin_patterns(
         marker, rest = split
         if marker not in roots_by_marker:
             roots_by_marker[marker] = find_plugin_roots(root, marker, skip)
-        for plugin_root in roots_by_marker[marker]:
+        for plugin_root in [*roots_by_marker[marker], *(r for r in installed if r not in roots_by_marker[marker])]:
+            if not plugin_root.is_relative_to(root):
+                out.append(f"{plugin_root.as_posix()}/{rest}")
+                continue
             prefix = plugin_root.relative_to(root).as_posix()
             out.append(rest if prefix == "." else f"{prefix}/{rest}")
     return out
 
 
-def plugin_relative_path(path: Path, scan_root: Path, marker: str) -> str | None:
-    """`path` relative to the nearest directory holding `marker`, searched from the file's
-    own directory up to `scan_root`; None when no such directory sits in between."""
+def plugin_relative_path(path: Path, scan_root: Path, marker: str, installed: Sequence[Path] = ()) -> str | None:
+    """`path` relative to the `installed` plugin root it sits in, else to the nearest directory holding
+    `marker`, searched from the file's own directory up to `scan_root`; None when no such directory
+    sits in between."""
+    held = next((root for root in installed if path.is_relative_to(root)), None)
+    if held is not None:
+        return path.relative_to(held).as_posix()
     try:
         path.relative_to(scan_root)
     except ValueError:
@@ -133,10 +146,12 @@ def plugin_relative_path(path: Path, scan_root: Path, marker: str) -> str | None
         directory = directory.parent
 
 
-def matches_plugin_pattern(path: Path, scan_root: Path, pattern: str, match: Callable[[str, str], bool]) -> bool | None:
-    """For a `<marker>/pattern`: whether `path` sits under a plugin root and its path from
-    that root satisfies `match(relative_path, pattern)`. None for any other pattern, so
-    the caller falls back to its own matching."""
+def matches_plugin_pattern(
+    path: Path, scan_root: Path, pattern: str, match: Callable[[str, str], bool], installed: Sequence[Path] = ()
+) -> bool | None:
+    """For a `<marker>/pattern`: whether `path` sits under a plugin root (one found from `scan_root` or an
+    `installed` one) and its path from that root satisfies `match(relative_path, pattern)`. None for any
+    other pattern, so the caller falls back to its own matching."""
     split = split_plugin_pattern(pattern)
     if split is None:
         return None
@@ -144,22 +159,82 @@ def matches_plugin_pattern(path: Path, scan_root: Path, pattern: str, match: Cal
     first = rest.split("/", 1)[0]
     if "*" not in first and first.lower() not in path.as_posix().lower():
         return False
-    relative = plugin_relative_path(path, scan_root, marker)
+    relative = plugin_relative_path(path, scan_root, marker, installed)
     return relative is not None and bool(match(relative, rest))
 
 
-def config_pattern_hits(file_path: Path, rel: str, pattern: str, scan_root: Path) -> bool:
+def config_pattern_hits(
+    file_path: Path, rel: str, pattern: str, scan_root: Path, installed: Sequence[Path] = ()
+) -> bool:
     """Whether a declared config pattern matches the file at `rel`; a plugin component pattern
     instead matches the file's path from the plugin root it sits under."""
 
     def match(subject: str, pat: str) -> bool:
         return config_pattern_matches(subject, pat, full_path=file_path.as_posix())
 
-    plugin_hit = matches_plugin_pattern(file_path, scan_root, pattern, match)
+    plugin_hit = matches_plugin_pattern(file_path, scan_root, pattern, match, installed)
     return match(rel, pattern) if plugin_hit is None else plugin_hit
 
 
-def entry_pattern(path: Path, root: Path, patterns: list[str]) -> str | None:
+def entry_pattern(path: Path, root: Path, patterns: list[str], installed: Sequence[Path] = ()) -> str | None:
     """The first of `patterns` that `path` matches, anchored the way file-type `patterns` are; None when none does."""
     rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
-    return next((p for p in patterns if config_pattern_hits(path, rel, p, root)), None)
+    return next((p for p in patterns if config_pattern_hits(path, rel, p, root, installed)), None)
+
+
+def _install_records(registry: Path) -> dict[str, list[JsonObject]]:
+    """Each plugin id's install records in Claude Code's `installed_plugins.json`; empty when the file is absent."""
+    if not registry.is_file():
+        return {}
+    try:
+        data = as_object(json.loads(registry.read_text(encoding="utf-8")))
+    except (OSError, ValueError) as exc:
+        raise InstalledPluginsUnreadableError(f"{registry}: cannot be read as JSON ({exc})") from exc
+    plugins = data.get("plugins")
+    if not isinstance(plugins, dict):
+        raise InstalledPluginsUnreadableError(f"{registry}: no `plugins` object")
+    records: dict[str, list[JsonObject]] = {}
+    for plugin_id, installs in plugins.items():
+        if not isinstance(installs, list) or not all(
+            isinstance(i, dict) and isinstance(i.get("scope"), str) and isinstance(i.get("installPath"), str)
+            for i in installs
+        ):
+            raise InstalledPluginsUnreadableError(
+                f"{registry}: `{plugin_id}` is not a list of installs with a `scope` and an `installPath`"
+            )
+        records[plugin_id] = [as_object(i) for i in installs]
+    return records
+
+
+def _applies_to(install: JsonObject, root: Path) -> bool:
+    """Whether an install reaches a session in `root`: one that names the project it was made in (`projectPath`)
+    only for that project, any other always."""
+    project = install.get("projectPath")
+    return project is None or (isinstance(project, str) and Path(project) == root)
+
+
+def _enabled_by_default(plugin_root: Path) -> bool:
+    """A plugin's manifest `defaultEnabled` (true when the manifest is absent, unreadable or silent)."""
+    try:
+        manifest = as_object(json.loads((plugin_root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return True
+    return manifest.get("defaultEnabled") is not False
+
+
+def installed_plugin_roots(root: Path) -> list[tuple[str, Path]]:
+    """`(plugin id, plugin root)` for each plugin installed for a session in `root` and enabled there, from
+    Claude Code's `installed_plugins.json`; an install whose folder is gone is left out. A plugin no settings
+    file names follows its manifest's `defaultEnabled`. A record that cannot be read raises
+    `InstalledPluginsUnreadableError`."""
+    records = _install_records(claude_plugins_dir() / "installed_plugins.json")
+    switches = enabled_plugins(root)
+    found: list[tuple[str, Path]] = []
+    for plugin_id, installs in sorted(records.items()):
+        install = next((i for i in installs if _applies_to(i, root)), None)
+        if install is None:
+            continue
+        plugin_root = Path(str(install["installPath"]))
+        if plugin_root.is_dir() and switches.get(plugin_id, _enabled_by_default(plugin_root)):
+            found.append((plugin_id, plugin_root))
+    return found

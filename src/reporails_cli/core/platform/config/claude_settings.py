@@ -167,16 +167,30 @@ def _cleanup_days_value(data: JsonObject) -> int | None:
     return value
 
 
-def claude_cleanup_period_days(project_root: Path | None = None) -> int | None:
-    """Days Claude Code keeps a session, from its `cleanupPeriodDays` setting, or None when no
-    settings file sets a positive whole number. Files are read in Claude Code's precedence: the
-    user's, then the project's shared and local ones, then managed settings, the last to set it
-    winning. It is Claude Code's setting, so an invalid value reads as unset."""
-    scopes = _settings_patterns()
-    files = (
+def _precedence_files(scopes: dict[str, list[str]], project_root: Path | None) -> list[Path]:
+    """Claude Code's settings files from lowest to highest precedence: user, project, local, managed."""
+    return (
         _expand(scopes.get("user", []), None)
         + _expand(scopes.get("project", []), project_root)
         + _expand(scopes.get("local", []), project_root)
         + _managed_files(scopes)
     )
-    return _last_set(files, _cleanup_days_value)
+
+
+def enabled_plugins(project_root: Path | None = None) -> dict[str, bool]:
+    """Each plugin id the settings files turn on or off, merged key by key: the highest source that names
+    an id decides it. An id no file names is absent (the plugin's own `defaultEnabled` applies)."""
+    merged: dict[str, bool] = {}
+    for path in _precedence_files(_settings_patterns(), project_root):
+        enabled = _read_json(path).get("enabledPlugins")
+        if isinstance(enabled, dict):
+            merged.update({str(plugin): value for plugin, value in enabled.items() if isinstance(value, bool)})
+    return merged
+
+
+def claude_cleanup_period_days(project_root: Path | None = None) -> int | None:
+    """Days Claude Code keeps a session, from its `cleanupPeriodDays` setting, or None when no
+    settings file sets a positive whole number. Files are read in Claude Code's precedence: the
+    user's, then the project's shared and local ones, then managed settings, the last to set it
+    winning. It is Claude Code's setting, so an invalid value reads as unset."""
+    return _last_set(_precedence_files(_settings_patterns(), project_root), _cleanup_days_value)

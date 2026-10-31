@@ -10,7 +10,6 @@ import subprocess
 import threading
 import urllib.error
 import urllib.request
-from itertools import pairwise
 from pathlib import Path
 
 from behave import given, then, when  # type: ignore[import-untyped]
@@ -54,6 +53,26 @@ def step_project_with_session(context):
 @given('the project\'s instruction file reads "{text}"')
 def step_instruction_text(context, text):
     (context.project / "CLAUDE.md").write_text(text + "\n", encoding="utf-8")
+
+
+@given('the project\'s memory folder holds an unlinked topic file reading "{text}"')
+def step_unlinked_memory(context, text):
+    memory = context.home / ".claude" / "projects" / claude_project_folder_name(context.project) / "memory"
+    memory.mkdir()
+    (memory / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+    (memory / "feedback_orphan.md").write_text(f"---\ntype: feedback\n---\n{text}\n", encoding="utf-8")
+
+
+@given('the session\'s first prompt was typed and reads "{text}"')
+def step_typed_prompt(context, text):
+    session = next((context.home / ".claude" / "projects").rglob("session.jsonl"))
+    rows = [json.loads(row) for row in session.read_text(encoding="utf-8").splitlines()]
+    first = rows[0]
+    first["uuid"] = "typed-prompt-1"
+    first["promptSource"] = "typed"
+    first["origin"] = {"kind": "human"}
+    first["message"]["content"] = text
+    session.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
 
 
 @given("a project with no recorded Claude Code session")
@@ -113,23 +132,27 @@ def _rendered_dom(context) -> str | None:
     ).stdout
 
 
-@then("headless Chrome rendering the page shows the context window map, not a server error")
+@then("headless Chrome rendering the page shows the context window chart, not a server error")
 def step_browser(context):
     dom = _rendered_dom(context)
     if dom is None:
         return
     assert "did not answer" not in dom, "the page could not read its session view"
-    assert "Context window, turn by turn" in dom, dom[:500]
+    assert '<svg class="chart"' in dom, dom[:500]
 
 
-@then("the drawn reply points of each turn equal that turn's reply contexts in the view")
+def _view_turns(context) -> list[dict]:
+    page = _get(context.url)[1]
+    token = re.search(r'name="xray-token" content="([^"]+)"', page).group(1)
+    return json.loads(_get(context.url + "view", token)[1])["turns"]
+
+
+@then("the drawn main-session points of each turn equal that turn's series in the view")
 def step_reply_points(context):
     dom = _rendered_dom(context)
     if dom is None:
         return
-    page = _get(context.url)[1]
-    token = re.search(r'name="xray-token" content="([^"]+)"', page).group(1)
-    turns = json.loads(_get(context.url + "view", token)[1])["turns"]
+    turns = _view_turns(context)
     drawn: dict[int, list[int]] = {}
     for turn, ctx in re.findall(r'<circle class="rp" data-turn="(\d+)" data-ctx="(\d+)"', dom):
         drawn.setdefault(int(turn), []).append(int(ctx))
@@ -140,29 +163,81 @@ def step_reply_points(context):
     context.dom = dom
 
 
-@then('each turn row is labelled "turn N · M replies"')
+@then("each turn is labelled with its number and its reply count")
 def step_row_labels(context):
     if not getattr(context, "dom", None):
         return
-    labels = re.findall(r'<text class="rlab[^"]*"[^>]*>([^<]*)</text>', context.dom)
+    headers = dict(re.findall(r'data-turnh="(\d+)"[^>]*>(.*?)</div>', context.dom))
     for turn in context.view_turns:
         word = "reply" if turn["replies"] == 1 else "replies"
-        assert f"turn {turn['n']} \u00b7 {turn['replies']} {word}" in labels, (turn["n"], labels[:5])
+        header = re.sub(r"<[^>]+>", " ", headers[str(turn["n"])])
+        assert f"turn {turn['n']}" in header and f"{turn['replies']} {word}" in header, (turn["n"], header)
 
 
-@then("the turn labels sit left of the river spine and no two are closer than their font size")
-def step_label_layout(context):
-    if not getattr(context, "dom", None):
+def _layout_script(context, mode: str, *args: str) -> dict | None:
+    node, chrome = shutil.which("node"), shutil.which("google-chrome") or shutil.which("chromium")
+    if node is None or chrome is None:
+        context.scenario.skip("SKIPPED LOUDLY: no node or Chrome on PATH, the page was not driven")
+        return None
+    script = Path(__file__).resolve().parents[1] / "xray_layout.mjs"
+    done = subprocess.run(
+        [node, str(script), context.url, mode, *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+        env={**os.environ, "CHROME_BIN": chrome},
+    )
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout.strip().splitlines()[-1])
+
+
+@then("no two chart labels overlap at 925 and at 1440 pixels")
+def step_no_overlap(context):
+    for width in ("925", "1440"):
+        seen = _layout_script(context, "layout", width)
+        if seen is None:
+            return
+        assert seen["ready"], f"the page did not draw at {width} px"
+        assert seen["labels"] > 0 and seen["overlaps"] == 0, (width, seen)
+
+
+@then(
+    "at 925 pixels the chart ends inside the first 1000 pixels and the artifact list is left of the information display"
+)
+def step_first_screen(context):
+    seen = _layout_script(context, "layout", "925")
+    if seen is None:
         return
-    css = _get(context.url + "xray.css")[1]
-    size = float(re.search(r"\.map \.rlab\{[^}]*font:([\d.]+)px", css).group(1))
-    spine = float(re.search(r'<line class="spine" x1="([\d.]+)"', context.dom).group(1))
-    labels = re.findall(r'<text class="rlab[^"]*" x="([\d.]+)" y="([\d.]+)"', context.dom)
-    assert len(labels) >= len(context.view_turns), len(labels)
-    assert all(float(x) < spine for x, _ in labels), (spine, labels[:3])
-    ys = [float(y) for _, y in labels]
-    gaps = [b - a for a, b in pairwise(ys)]
-    assert all(gap >= size + 2 for gap in gaps), (size, min(gaps))
+    assert seen["ready"], "the page did not draw"
+    assert seen["chartBottom"] is not None and seen["chartBottom"] <= 1000, seen
+    assert seen["artRight"] is not None and seen["infoLeft"] is not None, seen
+    assert seen["artRight"] <= seen["infoLeft"] and abs(seen["artTop"] - seen["infoTop"]) < 2, seen
+
+
+@then('selecting the not-loaded memory file shows "{text}"')
+def step_memory_selected(context, text):
+    seen = _layout_script(context, "memory")
+    if seen is None:
+        return
+    assert seen["ready"], "the page did not draw"
+    assert seen["row"] == "orphan", seen
+    assert text in seen["text"], seen
+
+
+@then("the prompt line shows no text and asks for none until it is clicked, then shows what the prompt route returns")
+def step_prompt_on_click(context):
+    seen = _layout_script(context, "prompt")
+    if seen is None:
+        return
+    assert seen["ready"], "the page did not draw"
+    assert seen["before"] == "0 0", seen
+    page = _get(context.url)[1]
+    token = re.search(r'name="xray-token" content="([^"]+)"', page).group(1)
+    status, body = _get(context.url + "prompt?id=" + seen["id"], token)
+    assert status == 200, status
+    assert seen["text"] == json.loads(body)["text"] == "typed prompt text", (seen, body)
 
 
 @then('the page shows "{first}" for the file, then "{second}" once the file and the session change')

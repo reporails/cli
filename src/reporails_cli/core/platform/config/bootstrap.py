@@ -81,6 +81,12 @@ def get_xray_log_dir() -> Path:
     return REPORAILS_HOME / "xray"
 
 
+def claude_plugins_dir() -> Path:
+    """Claude Code's plugins folder: `CLAUDE_CODE_PLUGIN_CACHE_DIR` when set, else `~/.claude/plugins/`."""
+    override = env_text("CLAUDE_CODE_PLUGIN_CACHE_DIR")
+    return Path(override).expanduser() if override else Path.home() / ".claude" / "plugins"
+
+
 def get_global_cache_dir() -> Path:
     """Get ~/.reporails/cache/ — shared map-cache location."""
     return REPORAILS_HOME / "cache"

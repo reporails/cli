@@ -45,6 +45,9 @@ class TranscriptAdapter(Protocol):
         """The brief a subagent was given, from the first row of its file; raises `PayloadRefused` when that
         row is not the pinned shape."""
 
+    def resolve_prompt(self, row: JsonObject) -> str:
+        """The text of a typed prompt, from its row; raises `PayloadRefused` when the row is not one."""
+
 
 class EventSubscriber(Protocol):  # pylint: disable=too-few-public-methods  # a port of one method
     """A consumer of event records: called once per record."""

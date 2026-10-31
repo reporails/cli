@@ -13,16 +13,39 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Given a project with a recorded Claude Code session
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
-    And headless Chrome rendering the page shows the context window map, not a server error
+    And headless Chrome rendering the page shows the context window chart, not a server error
 
   @e2e @browser
-  Scenario: The page draws one river point per reply and labels each turn row
+  Scenario: The page draws each turn's replies as chart points and labels each turn
     Given a project with a recorded Claude Code session
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
-    And the drawn reply points of each turn equal that turn's reply contexts in the view
-    And each turn row is labelled "turn N · M replies"
-    And the turn labels sit left of the river spine and no two are closer than their font size
+    And the drawn main-session points of each turn equal that turn's series in the view
+    And each turn is labelled with its number and its reply count
+    And no two chart labels overlap at 925 and at 1440 pixels
+
+  @e2e @browser
+  Scenario: At 925 pixels the chart fits the first screen and the artifact list sits beside the information display
+    Given a project with a recorded Claude Code session
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And at 925 pixels the chart ends inside the first 1000 pixels and the artifact list is left of the information display
+
+  @e2e @browser
+  Scenario: A memory file that was not loaded can be selected and its text shows
+    Given a project with a recorded Claude Code session
+    And the project's memory folder holds an unlinked topic file reading "unlinked memory text"
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And selecting the not-loaded memory file shows "unlinked memory text"
+
+  @e2e @browser
+  Scenario: A prompt line shows no text until it is clicked
+    Given a project with a recorded Claude Code session
+    And the session's first prompt was typed and reads "typed prompt text"
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the prompt line shows no text and asks for none until it is clicked, then shows what the prompt route returns
 
   @e2e @browser
   Scenario: A file's text shown on the page follows the file when the session moves on

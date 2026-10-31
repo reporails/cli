@@ -4,13 +4,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reporails_cli.core.discovery.agent_discovery import discover_from_config, discover_ungated
+from reporails_cli.core.discovery.agent_config import extract_patterns, load_config_file_types
+from reporails_cli.core.discovery.agent_discovery import discover_from_config, discover_ungated, is_memory_recall_entry
 from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
+from reporails_cli.core.discovery.plugin_roots import entry_pattern, installed_plugin_roots
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.discovery.read_gates import SkippedFile, claude_agents_md_reads, gated_file_types
 from reporails_cli.core.discovery.walk import safe_resolve, shared_dir_listings
 from reporails_cli.core.eventbus.store import prune
-from reporails_cli.core.mapper.inspect import file_read_by, load_registry
+from reporails_cli.core.mapper.inspect import SESSION_INVOCABLE_TYPES, FileRead, file_read_by, load_registry
+from reporails_cli.core.mapper.labels import file_label
+from reporails_cli.core.mapper.memory_index import is_linked, memory_type
+from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.config.bootstrap import get_xray_log_dir
 from reporails_cli.core.platform.config.claude_settings import (
     LAUNCH_INSTRUCTION_FILE_TYPES,
@@ -18,8 +23,9 @@ from reporails_cli.core.platform.config.claude_settings import (
     claude_instruction_files_mode,
 )
 from reporails_cli.core.platform.config.config import get_project_config
-from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object
 from reporails_cli.core.platform.dto.results import ProjectConfig
+from reporails_cli.core.platform.utils.hook_config import hook_sites, read_hook_config
 from reporails_cli.core.platform.utils.utils import strip_frontmatter
 
 AGENT = "claude"
@@ -27,7 +33,9 @@ AGENT = "claude"
 
 def expected_loads(target: Path) -> JsonObject:
     """The files Claude Code loads for a session in `target` (instruction and rule files, no config
-    surfaces) with their file type, loading mode and precedence, and the AGENTS.md files it skips."""
+    surfaces) with their file type, loading mode, precedence and display label (a memory topic file also
+    its type and whether the memory index links it), the files a session can invoke (skills, agents,
+    commands and hook configs, from every scope and every installed plugin), and the AGENTS.md files it skips."""
     root = resolve_project_root(target)
     prune(root)
     exclusions = load_run_exclusions(root, None, None)
@@ -43,6 +51,7 @@ def expected_loads(target: Path) -> JsonObject:
             exclusions,
             project_config=project_config,
         )
+        invocable = _invocable_files(exclusions, project_config, root, registry)
     skipped = [SkippedFile(path, "setting_off", None) for path in switched_off]
     reads = claude_agents_md_reads([p for p in candidates if not exclusions.leaves_out(p)], root, read_instructions)
     skipped.extend(reads.skipped)
@@ -66,6 +75,7 @@ def expected_loads(target: Path) -> JsonObject:
         "root": str(safe_resolve(root)),
         "event_log_dir": str(get_xray_log_dir()),
         "files": files,
+        "invocable": invocable,
         "skipped": skipped_out,
         "aliases": aliases,
     }
@@ -96,10 +106,74 @@ def _loaded_files(
             continue
         if path in instruction:
             read_instructions[path] = read.loading
-        files.append(
-            {"path": str(path), "file_type": read.file_type, "loading": read.loading, "precedence": read.precedence}
-        )
+        files.append(_loaded_entry(path, root, read))
     return files, read_instructions, switched_off
+
+
+def _loaded_entry(path: Path, root: Path, read: FileRead) -> JsonObject:
+    """One loaded file: its type, loading, precedence and label; a memory topic file also carries
+    its type and whether `MEMORY.md` links it."""
+    topic = is_memory_recall_entry(read.file_type, path.name)
+    declared = memory_type(path) if topic else None
+    entry: JsonObject = {
+        "path": str(path),
+        "file_type": read.file_type,
+        "loading": read.loading,
+        "precedence": read.precedence,
+        "label": file_label(read.file_type, path, relative_wire_path(str(path), root), memory_type=declared),
+    }
+    if topic:
+        entry["memory_type"] = declared
+        entry["linked"] = is_linked(path)
+    return entry
+
+
+def _invocable_files(
+    exclusions: RunExclusions, project_config: ProjectConfig, root: Path, registry: dict[str, JsonObject]
+) -> list[JsonValue]:
+    """The skill entry files, agents, commands and hook configs a session in `root` can invoke, from the project,
+    the user, the managed settings folder and every installed, enabled plugin, each with its precedence, plugin
+    id and label."""
+    plugins = installed_plugin_roots(root)
+    roots = [plugin_root for _, plugin_root in plugins]
+    entries = extract_patterns(as_object(as_object(load_config_file_types(AGENT)).get("skills")), "entry_patterns")
+    found: dict[Path, JsonValue] = {}
+    for file_type in SESSION_INVOCABLE_TYPES:
+        paths = discover_ungated(
+            root,
+            AGENT,
+            (file_type,),
+            exclusions,
+            project_config=project_config,
+            repo_scoped=False,
+            installed_plugins=roots,
+        )
+        for path in paths:
+            if path in found or exclusions.leaves_out(path):
+                continue
+            if file_type == "skills" and entry_pattern(path, root, entries, roots) is None:
+                continue
+            if file_type == "hooks" and not any(hook_sites(_hook_data(path))):
+                continue
+            read = file_read_by(AGENT, path, root, registry, roots)
+            if read is None:
+                continue
+            plugin = next((plugin_id for plugin_id, plugin_root in plugins if path.is_relative_to(plugin_root)), None)
+            wire = relative_wire_path(str(path), root)
+            found[path] = {
+                "path": str(path),
+                "file_type": file_type,
+                "precedence": read.precedence,
+                "plugin": plugin,
+                "label": file_label(file_type, path, wire, plugin=plugin),
+            }
+    return [found[path] for path in sorted(found)]
+
+
+def _hook_data(path: Path) -> JsonValue:
+    """The parsed hook config at `path` (nothing when it cannot be read)."""
+    config = read_hook_config(path)
+    return config.data if config is not None else None
 
 
 def _is_blank(path: Path) -> bool:

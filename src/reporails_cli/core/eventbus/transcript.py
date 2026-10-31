@@ -87,6 +87,19 @@ def subagent_brief(agent: str, session_file: Path, subagent_id: str) -> str | No
     return None if first_row is None else adapter.resolve_brief(first_row)
 
 
+def prompt_text(agent: str, session_file: Path, prompt_id: str) -> str | None:
+    """The text of the typed prompt written as row `prompt_id` of the main transcript, or None when the file
+    holds no such row.
+
+    Raises `PayloadRefused` when the agent is unknown or the row is not a typed prompt of the pinned shape.
+    The text is returned, never stored."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        raise PayloadRefused(f"unknown agent: {agent}")
+    row = _row_with_uuid(session_file, prompt_id)
+    return None if row is None else adapter.resolve_prompt(row)
+
+
 def _read_file(
     adapter: TranscriptAdapter, agent: str, session_id: str, path: Path, *, before: FileCursor
 ) -> tuple[list[EventRecord], FileCursor]:
@@ -149,6 +162,23 @@ def _first_row(path: Path) -> JsonObject | None:
             return as_object(json.loads(handle.readline()))
     except (OSError, ValueError):
         return None
+
+
+def _row_with_uuid(path: Path, uuid: str) -> JsonObject | None:
+    """The row of a file whose own `uuid` is `uuid`; None when none is or the file cannot be read."""
+    needle = uuid.encode()
+    try:
+        with path.open("rb") as handle:
+            for line in handle:
+                if needle not in line:
+                    continue
+                with contextlib.suppress(ValueError):
+                    row = as_object(json.loads(line))
+                    if row.get("uuid") == uuid:
+                        return row
+    except OSError:
+        return None
+    return None
 
 
 def _meta(path: Path) -> JsonObject | None:

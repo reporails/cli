@@ -7,14 +7,29 @@ A view never holds prompt, tool or file text. A value with no source is `None`, 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeGuard, get_args
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
-from reporails_cli.core.platform.dto.events import HarnessKind
+from reporails_cli.core.platform.dto.events import HarnessKind, NoteKind
 
 LoadKind = Literal["project", "memory", "user", "local", "managed", "nested", "other"]
 CompactionTrigger = Literal["manual", "auto"]
-ArtifactKind = Literal["instructions", "memory", "skill", "agent", "hook"]
+ArtifactKind = Literal["instructions", "rule", "memory", "skill", "agent", "command", "hook"]
+ArtifactScope = Literal["project", "user", "managed", "local", "plugin", "auto"]
+
+# The kind of artifact a config file type is shown as; a file type not listed is an instruction file.
+ARTIFACT_KIND_OF_FILE_TYPE: dict[str, ArtifactKind] = {
+    "memory": "memory",
+    "subagent_memory": "memory",
+    "rules": "rule",
+    "skills": "skill",
+    "agents": "agent",
+    "commands": "command",
+    "hooks": "hook",
+}
+
+# The kinds a session invokes: each such artifact is the one `invocable` entry of its file, never a loaded file.
+INVOCABLE_ARTIFACT_KINDS: frozenset[ArtifactKind] = frozenset({"skill", "agent", "command", "hook"})
 
 # The kind of an instruction-file load as the transcript names it, to the view's load kind.
 LOAD_KIND_OF_MEMORY_TYPE: dict[str, LoadKind] = {
@@ -25,6 +40,11 @@ LOAD_KIND_OF_MEMORY_TYPE: dict[str, LoadKind] = {
     "Managed": "managed",
     "nested": "nested",
 }
+
+
+def is_artifact_scope(precedence: str) -> TypeGuard[ArtifactScope]:
+    """Whether a config scope's precedence is one of the scopes the view shows."""
+    return precedence in get_args(ArtifactScope)
 
 
 def _objects(items: list[JsonObject]) -> JsonValue:
@@ -68,6 +88,42 @@ class XrayCompaction:
 
 
 @dataclass(frozen=True)
+class XrayPrompt:
+    """One prompt a person typed in a turn: the id the page asks the text by, when, its size and whether it was
+    queued while the agent worked. Never the text."""
+
+    id: str
+    t: float
+    chars: int
+    queued: bool
+
+    def to_json(self) -> JsonObject:
+        """The prompt as a JSON object."""
+        return {"id": self.id, "t": self.t, "chars": self.chars, "queued": self.queued}
+
+
+@dataclass(frozen=True)
+class XrayNote:
+    """One note a hook put into a turn: a hook's added context or a Stop block, sized by an estimate."""
+
+    kind: NoteKind
+    event: str
+    label: str
+    t: float
+    tokens_est: int
+
+    def to_json(self) -> JsonObject:
+        """The note as a JSON object."""
+        return {
+            "kind": self.kind,
+            "event": self.event,
+            "label": self.label,
+            "t": self.t,
+            "tokens_est": self.tokens_est,
+        }
+
+
+@dataclass(frozen=True)
 class XrayTurn:
     """The replies between two turn ends, the last turn open while the session runs."""
 
@@ -81,6 +137,8 @@ class XrayTurn:
     subagents: tuple[str, ...]
     compaction: XrayCompaction | None
     series: tuple[tuple[float, int], ...]
+    prompts: tuple[XrayPrompt, ...]
+    notes: tuple[XrayNote, ...]
 
     def to_json(self) -> JsonObject:
         """The turn as a JSON object."""
@@ -97,6 +155,8 @@ class XrayTurn:
             "subagents": list(self.subagents),
             "compaction": None if self.compaction is None else self.compaction.to_json(),
             "series": series,
+            "prompts": _objects([prompt.to_json() for prompt in self.prompts]),
+            "notes": _objects([note.to_json() for note in self.notes]),
         }
 
 
@@ -127,12 +187,25 @@ class XraySubagent:
 
 
 @dataclass(frozen=True)
-class XrayArtifact:
-    """A file the session could load, whether it did, the turns it sat in context and whether the page may
-    check or fix it (a file of the project that exists)."""
+class ArtifactFile:
+    """One file the session could load: its absolute path, what kind of file it is, where it comes from
+    (`scope`, and `plugin` for an installed plugin's file) and its display `label`; a memory topic file
+    also carries its type and whether the memory index links it."""
 
     path: str
     kind: ArtifactKind
+    scope: ArtifactScope
+    plugin: str | None
+    label: str
+    memory_type: str | None
+    linked: bool | None
+
+
+@dataclass(frozen=True)
+class XrayArtifact(ArtifactFile):
+    """A file the session could load, whether it did, the turns it sat in context and whether the page may
+    check or fix it (a file of the project that exists)."""
+
     loaded: bool
     turns: tuple[int, ...]
     findings: int | None
@@ -143,6 +216,11 @@ class XrayArtifact:
         return {
             "path": self.path,
             "kind": self.kind,
+            "scope": self.scope,
+            "plugin": self.plugin,
+            "label": self.label,
+            "memory_type": self.memory_type,
+            "linked": self.linked,
             "loaded": self.loaded,
             "turns": list(self.turns),
             "findings": self.findings,
