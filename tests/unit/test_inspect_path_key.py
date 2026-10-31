@@ -189,7 +189,8 @@ def test_nested_instruction_files_load_on_demand(tmp_path, rel, expected):
 @pytest.mark.subsys_map
 def test_every_agent_declares_where_a_skills_entry_file_sits():
     """Each agent's `skills` scopes name the entry file's place: one level below the skills
-    folder, except Cursor, which walks its skills folders recursively."""
+    folder, except Cursor, which walks its skills folders recursively. Claude's claude.ai-synced
+    skills sit one level below the signed-in account's folder inside `skills/synced/`."""
     from reporails_cli.core.discovery.agent_config import extract_patterns
 
     for agent, config in load_registry().items():
@@ -200,7 +201,8 @@ def test_every_agent_declares_where_a_skills_entry_file_sits():
             entry = extract_patterns({"scopes": {scope: spec}}, "entry_patterns")
             assert entry, f"{agent}/{scope} declares no entry_patterns"
             wanted = "*/**/SKILL.md" if agent == "cursor" else "*/SKILL.md"
-            assert all(p.endswith("/skills/" + wanted) or p == "skills/" + wanted for p in entry), (agent, entry)
+            root = "/skills/synced/*/" if (agent, scope) == ("claude", "synced") else "/skills/"
+            assert all(p.endswith(root + wanted) or p == "skills/" + wanted for p in entry), (agent, entry)
 
 
 @pytest.mark.unit
