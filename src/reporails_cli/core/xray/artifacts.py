@@ -19,7 +19,7 @@ from reporails_cli.core.platform.dto.xray import (
     XrayTurn,
     is_artifact_scope,
 )
-from reporails_cli.core.xray.derive import count_for, real_path
+from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path
 
 # The most characters of a file the page may ask for.
 PEEK_LIMIT = 200_000
@@ -57,11 +57,11 @@ def _invocable_file(item: JsonObject) -> ArtifactFile:
     )
 
 
-def artifact_files(root: Path) -> tuple[ArtifactFile, ...]:
+def artifact_files(root: Path, plugins: Sequence[tuple[str, Path]]) -> tuple[ArtifactFile, ...]:
     """Every file the session could load, as `expected_loads` lists them: the instruction, rule and memory files
     Claude Code loads for the folder, and the skills, agents, commands and hook configs a session can invoke
-    from every scope and installed plugin; a skill's supporting file is no artifact of its own."""
-    loads = expected_loads(root)
+    from every scope and each of `plugins`; a skill's supporting file is no artifact of its own."""
+    loads = expected_loads(root, plugins)
     files = [_invocable_file(as_object(item)) for item in as_list(loads.get("invocable"))]
     for entry in as_list(loads.get("files")):
         loaded = as_object(entry)
@@ -138,6 +138,7 @@ def build_artifacts(
                 turns=tuple(in_context.get(resolved, ())),
                 findings=count_for(findings, item.path, root),
                 actionable=is_actionable(item, root),
+                tokens_est=file_tokens_est(resolved),
             )
         )
     return tuple(out)

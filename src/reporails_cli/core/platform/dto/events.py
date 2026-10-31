@@ -54,6 +54,10 @@ HarnessKind = (
 DELTA_KINDS: frozenset[HarnessKind] = frozenset({"skill_list", "agent_list", "mcp_instructions", "deferred_tools"})
 
 
+# The event kinds a main-session turn holds whatever else the record carries: a loaded file and a compaction.
+TURN_HELD_KINDS: frozenset[EventKind] = frozenset({"post_compact", "instruction_load"})
+
+
 def is_event_kind(value: str) -> TypeGuard[EventKind]:
     """Whether `value` is one of the event kinds."""
     return value in get_args(EventKind)
@@ -122,6 +126,9 @@ class HarnessEntry:
     chars: int
     # The hook event a note came from; None for a piece of the session's own context.
     event: str | None = None
+    # A list row's added items with their sizes in characters, and the names it removed; names only, no text.
+    added: tuple[tuple[str, int], ...] = ()
+    removed: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

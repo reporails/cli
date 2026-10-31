@@ -5,10 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
+from reporails_cli.core.discovery.plugin_roots import installed_plugin_roots
+from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.eventbus.query import read_events
 from reporails_cli.core.eventbus.transcript import prompt_text, read_transcript, subagent_brief
 from reporails_cli.core.pipeline.expected_loads import AGENT
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
+from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
 from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
 from reporails_cli.core.platform.dto.xray import ArtifactFile, XraySpan, XrayView
 from reporails_cli.core.xray.artifacts import (
@@ -46,6 +49,7 @@ class XraySession:
         self._transcript: list[EventRecord] = []
         self._bus: list[EventRecord] = []
         self._files: tuple[ArtifactFile, ...] | None = None
+        self._plugin_problem: str | None = None
         self._findings: dict[str, int] = {}
         self.version = 0
 
@@ -61,11 +65,22 @@ class XraySession:
         self.version += 1
         return True
 
+    def _listing(self) -> tuple[ArtifactFile, ...]:
+        """The files the page lists; with the installed plugins' record unreadable, none of their files, and the
+        problem kept for the refusals."""
+        if self._files is None:
+            try:
+                plugins = installed_plugin_roots(resolve_project_root(self._root))
+                self._plugin_problem = None
+            except InstalledPluginsUnreadableError as exc:
+                plugins = []
+                self._plugin_problem = str(exc)
+            self._files = artifact_files(self._root, plugins)
+        return self._files
+
     def _listed(self, path: str) -> ArtifactFile | None:
         """The listed file the page shows as `path`, or None when the page lists none."""
-        if self._files is None:
-            self._files = artifact_files(self._root)
-        return next((item for item in self._files if relative_wire_path(item.path, self._root) == path), None)
+        return next((item for item in self._listing() if relative_wire_path(item.path, self._root) == path), None)
 
     def acts_on(self, path: str) -> bool:
         """True when the page lists `path` (project-relative) as a file it may check or fix."""
@@ -100,8 +115,7 @@ class XraySession:
         if dict(findings) != self._findings:
             self._findings = dict(findings)
             self.version += 1
-        if self._files is None:
-            self._files = artifact_files(self._root)
+        files = self._listing()
         records = [record for record in self._transcript if record.event != "refusal"]
         timed = sorted((moment, record.time) for record in records if (moment := epoch(record.time)) is not None)
         frame = Frame(timed[0][0] if timed else 0.0, self._root, self._findings)
@@ -119,9 +133,14 @@ class XraySession:
             turns=turns,
             subagents=build_subagents(records, turn_end_times(records), frame),
             artifacts=build_artifacts(
-                self._files, loaded, in_context_turns(start, turns, self._root), self._findings, self._root
+                files, loaded, in_context_turns(start, turns, self._root), self._findings, self._root
             ),
-            refusals=tuple(dict.fromkeys(r.refusal for r in self._transcript if r.event == "refusal" and r.refusal)),
+            refusals=tuple(
+                dict.fromkeys(
+                    [r.refusal for r in self._transcript if r.event == "refusal" and r.refusal]
+                    + ([self._plugin_problem] if self._plugin_problem else [])
+                )
+            ),
             not_known=_NOT_KNOWN if self._bus else (*_NOT_KNOWN, _NO_BUS),
             harness=build_harness(records, replies),
         )

@@ -15,6 +15,7 @@ from reporails_cli.core.platform.contract.json_value import JsonObject, as_list,
 from reporails_cli.core.platform.dto.events import EventKind, EventRecord, ToolUse, TranscriptCursor
 from reporails_cli.core.platform.dto.xray import ArtifactFile, XrayLoad, XrayView
 from reporails_cli.core.xray.artifacts import PEEK_LIMIT, artifact_files, build_artifacts
+from reporails_cli.core.xray.derive import BYTES_PER_TOKEN
 from reporails_cli.core.xray.session import XraySession
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
@@ -259,6 +260,7 @@ def test_artifacts_list_what_could_load_and_the_turns_it_sat_in_context(tmp_path
     # Loaded at the start and in context in turn 2, where the compaction ran, then gone in turn 3.
     assert main.loaded and main.turns == (0, 1, 2) and main.findings == 3
     assert view.start[0].findings == 3
+    assert main.tokens_est == (root / "CLAUDE.md").stat().st_size // BYTES_PER_TOKEN > 0
     skill = by_path[".claude/skills/demo/SKILL.md"]
     assert not skill.loaded and skill.turns == ()
     assert by_path[".claude/agents/helper.md"].findings is None
@@ -267,7 +269,7 @@ def test_artifacts_list_what_could_load_and_the_turns_it_sat_in_context(tmp_path
 def test_a_skills_supporting_file_is_no_artifact_of_its_own(tmp_path: Path) -> None:
     root = _project(tmp_path)
     (root / ".claude" / "skills" / "demo" / "reference.md").write_text("# Reference\n\nDetails the demo skill cites.\n")
-    kinds = {(Path(a.path).name, a.kind) for a in artifact_files(root)}
+    kinds = {(Path(a.path).name, a.kind) for a in artifact_files(root, [])}
     assert ("SKILL.md", "skill") in kinds
     assert not any(name == "reference.md" for name, _ in kinds)
     assert [kind for name, kind in kinds if name == "SKILL.md"] == ["skill"]
@@ -308,6 +310,7 @@ def test_the_view_holds_numbers_names_and_paths_only(tmp_path: Path) -> None:
         "turns",
         "findings",
         "actionable",
+        "tokens_est",
     }
 
 
@@ -358,7 +361,7 @@ def test_a_skill_lists_its_entry_file_only(tmp_path: Path) -> None:
     (folder / "ref.md").write_text("# ref\n")
     (folder / "deeper").mkdir()
     (folder / "deeper" / "SKILL.md").write_text("# nested\n")
-    skills = [Path(f.path).relative_to(root).as_posix() for f in artifact_files(root) if f.kind == "skill"]
+    skills = [Path(f.path).relative_to(root).as_posix() for f in artifact_files(root, []) if f.kind == "skill"]
     assert skills == [".claude/skills/demo/SKILL.md"]
 
 
@@ -448,11 +451,10 @@ def test_a_turn_lists_the_prompts_typed_in_it_and_the_hook_notes_after_the_first
     assert [(p.id, p.queued) for p in second.prompts] == [("p-two", False), ("q-one", True)]
     assert [(n.kind, n.event, n.label) for n in first.notes] == [
         ("hook_note", "UserPromptSubmit", "UserPromptSubmit"),
-        ("hook_note", "PreToolUse", "PreToolUse:Read"),
         ("stop_block", "Stop", "Stop"),
     ]
     assert [(n.kind, n.event) for n in second.notes] == [("hook_note", "PostToolUse")]
-    assert [n.tokens_est for n in first.notes] == [2 * len("PLACEHOLDER-TEXT-4") // 4, 4, 4]
+    assert [n.tokens_est for n in first.notes] == [2 * len("PLACEHOLDER-TEXT-4") // 4, 4]
     assert first.prompts[0].t < first.notes[0].t < first.notes[-1].t <= first.t
 
 
@@ -516,6 +518,42 @@ def test_the_deltas_before_the_first_compaction_sum_to_what_the_listing_after_it
     assert items["deferred_tools"].tokens_est == sum(len(x) for a in before for x in a["addedLines"]) // 4
 
 
+def _append_delta(tmp_path: Path, version: str, time: str, **fields: list[str]) -> None:
+    attachment = {"type": "deferred_tools_delta", "addedNames": [], "addedLines": [], **fields}
+    row = {"type": "attachment", "timestamp": time, "sessionId": "s", "attachment": attachment}
+    with (tmp_path / version / "session.jsonl").open("a") as handle:
+        handle.write(json.dumps(row) + "\n")
+
+
+def test_a_harness_row_after_the_last_turn_end_opens_no_empty_turn(tmp_path: Path) -> None:
+    session = _session(tmp_path, "2.1.301", _project(tmp_path))
+    end = {"type": "system", "timestamp": "2098-12-31T00:00:00.000Z", "sessionId": "s", "subtype": "turn_duration"}
+    with (tmp_path / "2.1.301" / "session.jsonl").open("a") as handle:
+        handle.write(json.dumps({**end, "durationMs": 10}) + "\n")
+    before = len(_view(session).turns)
+    _append_delta(tmp_path, "2.1.301", "2099-01-01T00:00:00.000Z", addedNames=["T"], addedLines=["a tool line"])
+    assert len(_view(session).turns) == before
+
+
+def test_a_tool_the_harness_retracts_takes_its_size_off_with_it(tmp_path: Path) -> None:
+    session = _session(tmp_path, "2.1.308-harness", _project(tmp_path))
+
+    def deferred(view: XrayView) -> tuple[int | None, int | None]:
+        item = next(i for i in view.harness or () if i.kind == "deferred_tools")
+        return item.count, item.tokens_est
+
+    first = deferred(_view(session))
+    names = ["ToolA", "ToolB", "ToolC", "ToolD"]
+    lines = [f"{name}: " + "x" * 40 for name in names]
+    _append_delta(tmp_path, "2.1.308-harness", "2099-01-01T00:00:00.000Z", addedNames=names, addedLines=lines)
+    session.refresh()
+    grown = deferred(session.view({}))
+    assert grown[0] == (first[0] or 0) + 4 and (grown[1] or 0) > (first[1] or 0)
+    _append_delta(tmp_path, "2.1.308-harness", "2099-01-01T00:00:01.000Z", removedNames=names)
+    session.refresh()
+    assert deferred(session.view({})) == first
+
+
 def test_a_session_with_no_harness_row_has_a_null_harness(tmp_path: Path) -> None:
     view = _view(_session(tmp_path, "2.1.301", _project(tmp_path)))
     assert view.harness is None and view.to_json()["harness"] is None
@@ -572,6 +610,6 @@ def test_a_file_whose_config_scope_is_no_artifact_scope_is_refused(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     listing = {"invocable": [{"path": "a/SKILL.md", "file_type": "skills", "precedence": "enterprise", "label": "a"}]}
-    monkeypatch.setattr("reporails_cli.core.xray.artifacts.expected_loads", lambda root: listing)
+    monkeypatch.setattr("reporails_cli.core.xray.artifacts.expected_loads", lambda root, plugins: listing)
     with pytest.raises(ValueError, match="enterprise"):
-        artifact_files(tmp_path)
+        artifact_files(tmp_path, [])

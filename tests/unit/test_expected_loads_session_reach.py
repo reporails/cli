@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 from reporails_cli.core.discovery.agent_discovery import claude_project_dir
 from reporails_cli.core.discovery.plugin_roots import installed_plugin_roots
@@ -17,6 +18,9 @@ from reporails_cli.core.platform.config.bootstrap import claude_plugins_dir
 from reporails_cli.core.platform.config.claude_settings import enabled_plugins
 from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
 from reporails_cli.core.platform.contract.json_value import as_list, as_object, as_str
+from reporails_cli.interfaces.cli.main import app
+
+pytestmark = [pytest.mark.unit, pytest.mark.subsys_classify, pytest.mark.subsys_xray]
 
 SKILL = "---\nname: {name}\ndescription: Does {name}.\n---\n\n# {name}\n\nRun the checks.\n"
 
@@ -99,6 +103,15 @@ def test_a_malformed_install_record_is_refused_by_name(tmp_path: Path) -> None:
         installed_plugin_roots(root)
 
 
+def test_the_command_ends_with_the_message_and_exit_2_for_a_malformed_install_record(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(tmp_path / "plugins" / "installed_plugins.json", "{not json")
+    result = CliRunner().invoke(app, ["expected-loads", str(root)])
+    assert result.exit_code == 2
+    assert "installed_plugins.json" in result.output and "Traceback" not in result.output
+    assert not isinstance(result.exception, InstalledPluginsUnreadableError)
+
+
 def test_a_plugin_installed_for_another_project_does_not_apply(tmp_path: Path) -> None:
     root = _project(tmp_path)
     _plugin(tmp_path, "mine@m", "mine", scope="project", project=root)
@@ -115,7 +128,7 @@ def test_a_user_skill_and_an_enabled_plugin_skill_appear_and_a_disabled_one_does
     found = _invocable(root)
     user = found[("skills", "x")]
     assert user["precedence"] == "user" and user["plugin"] is None
-    plugin = found[("skills", "y")]
+    plugin = found[("skills", "on:y")]
     assert plugin["precedence"] == "plugin" and plugin["plugin"] == "on@m"
     assert plugin["path"] == str(on / "skills" / "y" / "SKILL.md")
     assert found[("agents", "on:helper")]["plugin"] == "on@m"
@@ -123,6 +136,23 @@ def test_a_user_skill_and_an_enabled_plugin_skill_appear_and_a_disabled_one_does
     paths = [str(i["path"]) for i in found.values()]
     assert not any(p.startswith(str(off)) for p in paths)
     assert not any(p.endswith("ref.md") for p in paths)
+
+
+def test_a_plugin_root_with_brackets_in_its_path_lists_its_skill(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    base = _plugin(tmp_path, "odd@m", "[wip]")
+    assert base.name == "[wip]"
+    assert _invocable(root)[("skills", "odd:y")]["plugin"] == "odd@m"
+
+
+def test_a_user_skills_folder_is_walked_without_entering_a_pruned_folder(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(Path.home() / ".claude" / "skills" / "x" / "SKILL.md", SKILL.format(name="x"))
+    _write(Path.home() / ".claude" / "skills" / "x" / "ref.md", "# ref\n")
+    _write(Path.home() / ".claude" / "skills" / "x" / "node_modules" / "dep" / "vendored.md", "# vendored\n")
+    names = {Path(as_str(as_object(f)["path"])).name for f in as_list(expected_loads(root)["files"])}
+    assert "ref.md" in names
+    assert "vendored.md" not in names
 
 
 def test_a_project_skill_is_project_scope(tmp_path: Path) -> None:
@@ -170,5 +200,6 @@ def test_the_memory_type_reads_from_frontmatter_type_or_metadata_type(tmp_path: 
 def test_labels_follow_the_kind_of_file(tmp_path: Path) -> None:
     assert file_label("skills", tmp_path / "skills" / "demo" / "SKILL.md", "w") == "demo"
     assert file_label("agents", tmp_path / "helper.md", "w") == "helper"
+    assert file_label("skills", tmp_path / "skills" / "demo" / "SKILL.md", "w", plugin="p@m") == "p:demo"
     assert file_label("agents", tmp_path / "helper.md", "w", plugin="p@m") == "p:helper"
     assert file_label("main", tmp_path / "CLAUDE.md", "CLAUDE.md") == "CLAUDE.md"

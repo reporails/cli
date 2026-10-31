@@ -12,8 +12,10 @@ from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.dto.events import (
     DELTA_KINDS,
+    TURN_HELD_KINDS,
     EventRecord,
     HarnessEntry,
+    HarnessKind,
     TokenUsage,
     is_note_kind,
 )
@@ -76,7 +78,8 @@ class Frame:
         return None if moment is None else moment - self.t0
 
 
-def _tokens_est(path: str) -> int | None:
+def file_tokens_est(path: str) -> int | None:
+    """The file's size in tokens, estimated from its bytes; None when it is not a readable file."""
     try:
         target = Path(path)
         return target.stat().st_size // BYTES_PER_TOKEN if target.is_file() else None
@@ -91,7 +94,7 @@ def loads_of(records: Sequence[EventRecord], frame: Frame) -> tuple[XrayLoad, ..
             path=relative_wire_path(record.load.path, frame.root),
             kind=LOAD_KIND_OF_MEMORY_TYPE.get(record.load.memory_type or "", "other"),
             t=frame.at(record),
-            tokens_est=_tokens_est(record.load.path),
+            tokens_est=file_tokens_est(record.load.path),
             findings=count_for(frame.findings, record.load.path, frame.root),
         )
         for record in records
@@ -195,16 +198,25 @@ def start_notes(records: Sequence[EventRecord], replies: Replies) -> list[EventR
 
 @dataclass
 class _Slot:
-    """One harness item as it is summed."""
+    """One harness item as it is summed: its count and size, and the size of each item a delta row added."""
 
-    entry: HarnessEntry
+    kind: HarnessKind
+    label: str
+    count: int | None
+    chars: int
+    sizes: dict[str, int] = field(default_factory=dict)
+
+    @classmethod
+    def of(cls, entry: HarnessEntry) -> _Slot:
+        """The slot a kind's first record opens."""
+        return cls(entry.kind, entry.label, entry.count, entry.chars, dict(entry.added))
 
     def add(self, entry: HarnessEntry) -> None:
-        """Fold in a later delta row of the same kind."""
-        count = (
-            None if self.entry.count is None and entry.count is None else (self.entry.count or 0) + (entry.count or 0)
-        )
-        self.entry = HarnessEntry(self.entry.kind, self.entry.label, count, self.entry.chars + entry.chars)
+        """Fold in a later delta row of the same kind: the size of each name it removed leaves, then its own
+        added items arrive."""
+        self.count = None if self.count is None and entry.count is None else (self.count or 0) + (entry.count or 0)
+        self.chars += entry.chars - sum(self.sizes.pop(name, 0) for name in entry.removed)
+        self.sizes.update(entry.added)
 
 
 def build_harness(records: Sequence[EventRecord], replies: Replies) -> tuple[XrayHarnessItem, ...] | None:
@@ -225,16 +237,13 @@ def build_harness(records: Sequence[EventRecord], replies: Replies) -> tuple[Xra
             continue
         elif is_note_kind(entry.kind):
             if id(record) in started:
-                slots.append(_Slot(entry))
+                slots.append(_Slot.of(entry))
         elif entry.kind not in by_kind:
-            by_kind[entry.kind] = _Slot(entry)
+            by_kind[entry.kind] = _Slot.of(entry)
             slots.append(by_kind[entry.kind])
         elif entry.kind in DELTA_KINDS and not compacted:
             by_kind[entry.kind].add(entry)
-    items = [
-        XrayHarnessItem(slot.entry.kind, slot.entry.label, slot.entry.count, slot.entry.chars // BYTES_PER_TOKEN)
-        for slot in slots
-    ]
+    items = [XrayHarnessItem(slot.kind, slot.label, slot.count, slot.chars // BYTES_PER_TOKEN) for slot in slots]
     return tuple(items) if items else None
 
 
@@ -255,23 +264,44 @@ def _gather_transcript(
             continue
         if record.subagent_id is not None and record.event != "subagent_run":
             continue
-        target = _bucket_of(buckets, record, ends)
-        if target is None:
+        if not _bears_turn(record):
             continue
-        if record.event == "post_compact":
-            if target.compaction is None:
-                target.compaction = record
-        elif record.event == "harness":
-            _gather_note(target, record, frame)
-        elif record.event == "prompt_submit" and record.prompt is not None:
-            prompt = record.prompt
-            target.prompts.append(XrayPrompt(prompt.id, frame.at(record) or 0.0, prompt.chars, prompt.queued))
-        elif record.event == "assistant_usage" and record.usage is not None:
-            target.replies.append((frame.at(record) or 0.0, context_of(record.usage)))
-        elif record.event == "instruction_load":
-            target.loads.append(record)
-        elif record.event == "subagent_run" and record.subagent_id is not None:
-            target.runs.append(record.subagent_id)
+        target = _bucket_of(buckets, record, ends)
+        if target is not None:
+            _file_in_turn(target, record, frame)
+
+
+def _file_in_turn(target: _Bucket, record: EventRecord, frame: Frame) -> None:
+    """Put a turn-bearing record where its kind belongs in the turn."""
+    if record.event == "post_compact":
+        if target.compaction is None:
+            target.compaction = record
+    elif record.event == "harness":
+        _gather_note(target, record, frame)
+    elif record.event == "prompt_submit" and record.prompt is not None:
+        prompt = record.prompt
+        target.prompts.append(XrayPrompt(prompt.id, frame.at(record) or 0.0, prompt.chars, prompt.queued))
+    elif record.event == "assistant_usage" and record.usage is not None:
+        target.replies.append((frame.at(record) or 0.0, context_of(record.usage)))
+    elif record.event == "instruction_load":
+        target.loads.append(record)
+    elif record.event == "subagent_run" and record.subagent_id is not None:
+        target.runs.append(record.subagent_id)
+
+
+def _bears_turn(record: EventRecord) -> bool:
+    """Whether a record is something a turn holds (a reply, load, prompt, hook note, subagent run or
+    compaction); a turn end or a harness listing row opens no turn."""
+    if record.event == "harness":
+        entry = record.harness
+        return entry is not None and is_note_kind(entry.kind) and entry.event is not None
+    if record.event == "prompt_submit":
+        return record.prompt is not None
+    if record.event == "assistant_usage":
+        return record.usage is not None
+    if record.event == "subagent_run":
+        return record.subagent_id is not None
+    return record.event in TURN_HELD_KINDS
 
 
 def _gather_note(target: _Bucket, record: EventRecord, frame: Frame) -> None:

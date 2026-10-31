@@ -238,6 +238,19 @@ def test_view_carries_the_contract_keys_and_answers_the_same_version_with_304(cl
     assert again.status_code == 304
 
 
+def test_view_lists_no_plugin_file_and_shows_the_refusal_when_the_install_record_is_malformed(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLAUDE_CODE_PLUGIN_CACHE_DIR", str(tmp_path / "plugins"))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text("{not json")
+    reply = client.get("/view", headers={"X-Xray-Token": TOKEN})
+    body = reply.json()
+    assert reply.status_code == 200
+    assert any("installed_plugins.json" in refusal for refusal in body["refusals"])
+    assert [a["path"] for a in body["artifacts"]] == ["CLAUDE.md"]
+
+
 def test_the_page_carries_the_policy_and_the_token(client: TestClient) -> None:
     reply = client.get("/")
     assert "default-src 'self'" in reply.headers["Content-Security-Policy"]

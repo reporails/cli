@@ -28,11 +28,15 @@ the adapter refuses any other shape of a row type it reads:
   strings), `mcp_instructions_delta` (`addedNames` and `addedBlocks`, lists of strings), `deferred_tools_delta`
   (`addedNames` and `addedLines`, lists of strings, or in a subagent file `content`, a string),
   `session_context` (`context`, an object of strings). The three delta rows may also carry `removedTypes` or
-  `removedNames`, lists of strings, counted off their item count.
+  `removedNames`, lists of strings, counted off their item count; each added item's size is kept under its
+  name (never its text) and each removed name is kept, so a later removal takes its size off too.
 - a hook note: `type: "attachment"` with `hookEvent` and `hookName` strings and one of `attachment.type`
   `hook_additional_context` (`content`, a list of strings), `hook_success` (`content`, a string, read only when
-  it is not empty) or `hook_blocking_error` (`blockingError`, an object whose `blockingError` is a string; a
-  Stop block), each sized by character count and then dropped.
+  it is not empty and its `hookEvent` is one of `UserPromptSubmit`, `UserPromptExpansion`, `SessionStart` or
+  `PostModelSwitch`: https://code.claude.com/docs/en/hooks says Claude Code writes a hook's stdout to the
+  debug log for every other event and adds it to the context only for those four) or `hook_blocking_error`
+  (`blockingError`, an object whose `blockingError` is a string; a Stop block), each sized by character count
+  and then dropped.
 - a typed prompt: a `user` row with `uuid`, `promptSource: "typed"`, `origin.kind: "human"` and
   `message.content` a string or a list of blocks whose `type: "text"` blocks hold `text`; or an attachment row
   with `uuid` and `attachment.type: "queued_command"`, `commandMode: "prompt"`, `origin.kind: "human"` and
@@ -76,6 +80,8 @@ from reporails_cli.core.platform.dto.events import (
 NESTED_MARKER = "nested"
 BRIEF_BLOCK_SEPARATOR = "\n\n"
 HOOK_NOTE_ATTACHMENTS = ("hook_additional_context", "hook_success", "hook_blocking_error")
+# The hook events whose plain-text stdout Claude Code adds to the context.
+HOOK_STDOUT_CONTEXT_EVENTS = ("UserPromptSubmit", "UserPromptExpansion", "SessionStart", "PostModelSwitch")
 
 
 @dataclass(frozen=True)
@@ -90,6 +96,13 @@ class _Harness:
     chars_key: str
     chars_is_text: bool
     removed_key: str | None = None
+
+
+def _sized_by_name(names: list[str], items: list[str], what: str) -> tuple[tuple[str, int], ...]:
+    """Each added item's size under its name; the names and the items must pair up one to one."""
+    if len(names) != len(items):
+        raise PayloadRefused(f"{what} lists {len(names)} names for {len(items)} items")
+    return tuple((name, len(item)) for name, item in zip(names, items, strict=True))
 
 
 _HARNESS: dict[str, _Harness] = {
@@ -114,13 +127,6 @@ def _text(row: JsonObject, key: str, what: str) -> str:
     if not value:
         raise PayloadRefused(f"{what} has no {key}")
     return value
-
-
-def _removed(attachment: JsonObject, key: str | None, what: str) -> int:
-    """How many items a delta row removed; none when the row does not carry the list."""
-    if key is None or key not in attachment:
-        return 0
-    return len(_strings(attachment.get(key), key, what))
 
 
 def _blocks_text(content: JsonValue, what: str) -> list[str] | None:
@@ -276,16 +282,29 @@ class ClaudeTranscriptAdapter:
             count = opt_int(attachment.get(spec.count_key))
             if count is None:
                 raise PayloadRefused(f"{what} {spec.count_key} is not a whole number")
+            names: list[str] = []
         else:
-            count = len(_strings(attachment.get(spec.count_key), spec.count_key, what))
+            names = _strings(attachment.get(spec.count_key), spec.count_key, what)
+            count = len(names)
         text = attachment.get(spec.chars_key)
+        added: tuple[tuple[str, int], ...] = ()
         if spec.chars_is_text:
             if not isinstance(text, str):
                 raise PayloadRefused(f"{what} {spec.chars_key} is not a string")
             chars = len(text)
         else:
-            chars = sum(len(item) for item in _strings(text, spec.chars_key, what))
-        return HarnessEntry(spec.kind, spec.label, count - _removed(attachment, spec.removed_key, what), chars)
+            items = _strings(text, spec.chars_key, what)
+            chars = sum(len(item) for item in items)
+            if spec.removed_key is not None:
+                added = _sized_by_name(names, items, what)
+        removed = self._removed_names(attachment, spec.removed_key, what)
+        return HarnessEntry(spec.kind, spec.label, count - len(removed), chars, added=added, removed=removed)
+
+    def _removed_names(self, attachment: JsonObject, key: str | None, what: str) -> tuple[str, ...]:
+        """The names a delta row removed; none when the row does not carry the list."""
+        if key is None or key not in attachment:
+            return ()
+        return tuple(_strings(attachment.get(key), key, what))
 
     def _deferred_tools(self, attachment: JsonObject) -> HarnessEntry:
         what = "deferred_tools_delta attachment"
@@ -296,8 +315,15 @@ class ClaudeTranscriptAdapter:
             return HarnessEntry("deferred_tools", "deferred tools", None, len(content))
         names = _strings(attachment.get("addedNames"), "addedNames", what)
         lines = _strings(attachment.get("addedLines"), "addedLines", what)
-        count = len(names) - _removed(attachment, "removedNames", what)
-        return HarnessEntry("deferred_tools", "deferred tools", count, sum(len(item) for item in lines))
+        removed = self._removed_names(attachment, "removedNames", what)
+        return HarnessEntry(
+            "deferred_tools",
+            "deferred tools",
+            len(names) - len(removed),
+            sum(len(item) for item in lines),
+            added=_sized_by_name(names, lines, what),
+            removed=removed,
+        )
 
     def _session_context(self, attachment: JsonObject) -> HarnessEntry:
         context = attachment.get("context")
@@ -321,7 +347,7 @@ class ClaudeTranscriptAdapter:
             return [self._harness(row, HarnessEntry("stop_block", label, None, len(blocked), event), subagent_id)]
         if kind == "hook_success":
             content = attachment.get("content")
-            if content is None or content == "":
+            if content is None or content == "" or event not in HOOK_STDOUT_CONTEXT_EVENTS:
                 return []
             if not isinstance(content, str):
                 raise PayloadRefused(f"{what} content is not a string")

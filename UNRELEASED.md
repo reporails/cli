@@ -20,6 +20,10 @@
 - The hook event-type check for Antigravity, Codex and Copilot now accepts each agent's current hook events — Antigravity's `SessionStart` and Codex's `PreModelRequest` / `PostModelRequest` among them — instead of reporting them as unrecognized.
 - An `@import` that resolves outside the current project is left as a literal reference instead of pulling that file's content into the check.
 - `--heal` on a single file no longer writes through a symlink whose real path points outside the project.
+- The `ails xray` file list shows each file's size again, lists a plugin skill as `<plugin>:<skill>` as Claude Code names it, and counts a hook's output as context only for the events whose output Claude Code adds to the context (`UserPromptSubmit`, `UserPromptExpansion`, `SessionStart`, `PostModelSwitch`).
+- On the `ails xray` page, a tool or agent Claude Code retracts takes its size off the session-start list with it, and a listing the harness sends after the last turn no longer draws an empty turn.
+- A malformed `installed_plugins.json` no longer ends `ails expected-loads` in a traceback or makes the `ails xray` page fail: the command prints the error and exits 2, and the page lists no plugin files and shows the error as a banner.
+- Files from your home folder and from installed plugins are found by walking only below their own folder, skipping `node_modules` and the other left-out folders, and a plugin folder with `[` or `*` in its path is read as written.
 - A stored API key is sent only to the default server or a local (loopback) address, never to any other `AILS_SERVER_URL` the cli is pointed at.
 
 ### Removed

@@ -789,7 +789,8 @@
     39,
     40
    ],
-   "findings": 6
+   "findings": 6,
+   "tokens_est": 360
   },
   {
    "path": "docs/CLAUDE.md",
@@ -827,7 +828,8 @@
     23,
     24
    ],
-   "findings": 0
+   "findings": 0,
+   "tokens_est": 560
   },
   {
    "path": "api/CLAUDE.md",
@@ -867,7 +869,8 @@
     39,
     40
    ],
-   "findings": 3
+   "findings": 3,
+   "tokens_est": 520
   },
   {
    "path": "web/CLAUDE.md",
@@ -896,7 +899,8 @@
     23,
     24
    ],
-   "findings": null
+   "findings": null,
+   "tokens_est": 520
   },
   {
    "path": "api/handlers/CLAUDE.md",
@@ -920,7 +924,8 @@
     23,
     24
    ],
-   "findings": 0
+   "findings": 0,
+   "tokens_est": 880
   },
   {
    "path": "web/ui/CLAUDE.md",
@@ -943,7 +948,8 @@
     39,
     40
    ],
-   "findings": 1
+   "findings": 1,
+   "tokens_est": 640
   },
   {
    "path": "tools/CLAUDE.md",
@@ -955,7 +961,8 @@
    "linked": null,
    "loaded": false,
    "turns": [],
-   "findings": null
+   "findings": null,
+   "tokens_est": 600
   },
   {
    "path": "~/.claude/CLAUDE.md",
@@ -1009,7 +1016,8 @@
     39,
     40
    ],
-   "findings": null
+   "findings": null,
+   "tokens_est": 760
   },
   {
    "path": "~/.claude/projects/-work-demo/memory/MEMORY.md",
@@ -1047,7 +1055,8 @@
     23,
     24
    ],
-   "findings": 2
+   "findings": 2,
+   "tokens_est": 360
   },
   {
    "path": ".claude/skills/release/SKILL.md",
@@ -1059,7 +1068,8 @@
    "linked": null,
    "loaded": false,
    "turns": [],
-   "findings": 4
+   "findings": 4,
+   "tokens_est": 280
   },
   {
    "path": ".claude/skills/review/SKILL.md",
@@ -1071,7 +1081,8 @@
    "linked": null,
    "loaded": false,
    "turns": [],
-   "findings": 0
+   "findings": 0,
+   "tokens_est": 240
   },
   {
    "path": ".claude/agents/code-reviewer.md",
@@ -1087,7 +1098,8 @@
     20,
     21
    ],
-   "findings": 2
+   "findings": 2,
+   "tokens_est": 520
   },
   {
    "path": ".claude/agents/planner.md",
@@ -1099,7 +1111,8 @@
    "linked": null,
    "loaded": false,
    "turns": [],
-   "findings": null
+   "findings": null,
+   "tokens_est": 280
   },
   {
    "path": ".claude/settings.json#SessionStart",
@@ -1113,7 +1126,8 @@
    "turns": [
     0
    ],
-   "findings": null
+   "findings": null,
+   "tokens_est": 1360
   },
   {
    "path": ".claude/settings.json#PreToolUse",
@@ -1125,7 +1139,8 @@
    "linked": null,
    "loaded": true,
    "turns": [],
-   "findings": null
+   "findings": null,
+   "tokens_est": 1280
   },
   {
    "path": ".claude/settings.json#Stop",
@@ -1137,7 +1152,8 @@
    "linked": null,
    "loaded": false,
    "turns": [],
-   "findings": null
+   "findings": null,
+   "tokens_est": 1040
   }
  ],
  "refusals": [],

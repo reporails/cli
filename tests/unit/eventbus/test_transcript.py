@@ -298,11 +298,36 @@ def test_hook_success_with_text_and_a_stop_block_are_notes_with_their_event_and_
         ("hook_note", "SessionStart:startup", "SessionStart"),
         ("hook_note", "SessionStart", "SessionStart"),
         ("hook_note", "UserPromptSubmit", "UserPromptSubmit"),
-        ("hook_note", "PreToolUse:Read", "PreToolUse"),
         ("stop_block", "Stop", "Stop"),
         ("hook_note", "PostToolUse:Edit", "PostToolUse"),
     ]
-    assert entries[4].chars == len("PLACEHOLDER-TEXT-12")
+    assert entries[3].chars == len("PLACEHOLDER-TEXT-12")
+
+
+@pytest.mark.parametrize(
+    ("event", "is_note"),
+    [
+        ("PreToolUse", False),
+        ("PostToolUse", False),
+        ("Stop", False),
+        ("UserPromptSubmit", True),
+        ("UserPromptExpansion", True),
+        ("SessionStart", True),
+        ("PostModelSwitch", True),
+    ],
+)
+def test_a_hook_success_is_context_only_for_the_events_whose_stdout_claude_code_adds(
+    tmp_path: Path, event: str, is_note: bool
+) -> None:
+    session = _copy(TURNS, tmp_path)
+    _edit_row(
+        session,
+        lambda r: as_object(r.get("attachment")).get("hookName") == "PreToolUse:Read",
+        lambda r: as_object(r["attachment"]).update(hookEvent=event, hookName="probe"),
+    )
+    records, _ = read_transcript("claude", session, TranscriptCursor())
+    probes = [r.harness for r in _of(records, "harness") if r.harness and r.harness.label == "probe"]
+    assert [(p.kind, p.event) for p in probes] == ([("hook_note", event)] if is_note else [])
 
 
 def test_a_prompt_text_is_read_again_by_its_row_id_and_joins_text_blocks(tmp_path: Path) -> None:

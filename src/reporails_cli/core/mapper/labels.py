@@ -14,8 +14,9 @@ def skill_name(folder: str | Path) -> str:
     return Path(folder).name
 
 
-def _stem_label(path: Path, plugin: str | None) -> str:
-    return f"{plugin.split('@', 1)[0]}:{path.stem}" if plugin else path.stem
+def _plugin_scoped(name: str, plugin: str | None) -> str:
+    """`name` as Claude Code names a plugin's component: `<plugin name>:<name>`."""
+    return f"{plugin.split('@', 1)[0]}:{name}" if plugin else name
 
 
 def file_label(
@@ -26,9 +27,9 @@ def file_label(
     file of plugin `plugin`, an `name@marketplace` id) and a memory topic file its name without a leading
     `<memory_type>_`."""
     if file_type == "skills":
-        return skill_name(path.parent)
+        return _plugin_scoped(skill_name(path.parent), plugin)
     if file_type in STEM_LABELLED_TYPES:
-        return _stem_label(path, plugin)
+        return _plugin_scoped(path.stem, plugin)
     if file_type in MEMORY_SURFACES:
         if path.name == MEMORY_INDEX_FILENAME:
             return path.name

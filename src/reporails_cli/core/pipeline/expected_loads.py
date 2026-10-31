@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from reporails_cli.core.discovery.agent_config import extract_patterns, load_config_file_types
@@ -9,7 +10,7 @@ from reporails_cli.core.discovery.agent_discovery import discover_from_config, d
 from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
 from reporails_cli.core.discovery.plugin_roots import entry_pattern, installed_plugin_roots
 from reporails_cli.core.discovery.project_root import resolve_project_root
-from reporails_cli.core.discovery.read_gates import SkippedFile, claude_agents_md_reads, gated_file_types
+from reporails_cli.core.discovery.read_gates import AliasFile, SkippedFile, claude_agents_md_reads, gated_file_types
 from reporails_cli.core.discovery.walk import safe_resolve, shared_dir_listings
 from reporails_cli.core.eventbus.store import prune
 from reporails_cli.core.mapper.inspect import SESSION_INVOCABLE_TYPES, FileRead, file_read_by, load_registry
@@ -31,11 +32,13 @@ from reporails_cli.core.platform.utils.utils import strip_frontmatter
 AGENT = "claude"
 
 
-def expected_loads(target: Path) -> JsonObject:
+def expected_loads(target: Path, plugins: Sequence[tuple[str, Path]] | None = None) -> JsonObject:
     """The files Claude Code loads for a session in `target` (instruction and rule files, no config
     surfaces) with their file type, loading mode, precedence and display label (a memory topic file also
     its type and whether the memory index links it), the files a session can invoke (skills, agents,
-    commands and hook configs, from every scope and every installed plugin), and the AGENTS.md files it skips."""
+    commands and hook configs, from every scope and every installed plugin), and the AGENTS.md files it skips.
+    `plugins` are the installed plugin roots to list (`installed_plugin_roots`, whose error for a malformed
+    record propagates); without them the installed plugins are read here."""
     root = resolve_project_root(target)
     prune(root)
     exclusions = load_run_exclusions(root, None, None)
@@ -51,7 +54,9 @@ def expected_loads(target: Path) -> JsonObject:
             exclusions,
             project_config=project_config,
         )
-        invocable = _invocable_files(exclusions, project_config, root, registry)
+        invocable = _invocable_files(
+            exclusions, project_config, root, registry, installed_plugin_roots(root) if plugins is None else plugins
+        )
     skipped = [SkippedFile(path, "setting_off", None) for path in switched_off]
     reads = claude_agents_md_reads([p for p in candidates if not exclusions.leaves_out(p)], root, read_instructions)
     skipped.extend(reads.skipped)
@@ -65,10 +70,6 @@ def expected_loads(target: Path) -> JsonObject:
         }
         for item in sorted(skipped, key=lambda s: s.path)
     ]
-    aliases: list[JsonValue] = [
-        {"path": str(item.path), "same_as": str(item.same_as), "how": item.how}
-        for item in sorted(reads.aliases, key=lambda a: a.path)
-    ]
     return {
         "version": 1,
         "agent": AGENT,
@@ -77,8 +78,16 @@ def expected_loads(target: Path) -> JsonObject:
         "files": files,
         "invocable": invocable,
         "skipped": skipped_out,
-        "aliases": aliases,
+        "aliases": _alias_rows(reads.aliases),
     }
+
+
+def _alias_rows(aliases: Sequence[AliasFile]) -> list[JsonValue]:
+    """The `AGENTS.md` files whose text reaches Claude through a `CLAUDE.md` it reads, in path order."""
+    return [
+        {"path": str(item.path), "same_as": str(item.same_as), "how": item.how}
+        for item in sorted(aliases, key=lambda a: a.path)
+    ]
 
 
 def _loaded_files(
@@ -129,12 +138,15 @@ def _loaded_entry(path: Path, root: Path, read: FileRead) -> JsonObject:
 
 
 def _invocable_files(
-    exclusions: RunExclusions, project_config: ProjectConfig, root: Path, registry: dict[str, JsonObject]
+    exclusions: RunExclusions,
+    project_config: ProjectConfig,
+    root: Path,
+    registry: dict[str, JsonObject],
+    plugins: Sequence[tuple[str, Path]],
 ) -> list[JsonValue]:
     """The skill entry files, agents, commands and hook configs a session in `root` can invoke, from the project,
     the user, the managed settings folder and every installed, enabled plugin, each with its precedence, plugin
     id and label."""
-    plugins = installed_plugin_roots(root)
     roots = [plugin_root for _, plugin_root in plugins]
     entries = extract_patterns(as_object(as_object(load_config_file_types(AGENT)).get("skills")), "entry_patterns")
     found: dict[Path, JsonValue] = {}

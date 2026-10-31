@@ -21,6 +21,7 @@ from reporails_cli.core.discovery.walk import ListedEntry, Pruner, child_real, l
 from reporails_cli.core.platform.config.bootstrap import claude_plugins_dir
 from reporails_cli.core.platform.config.claude_settings import enabled_plugins
 from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
+from reporails_cli.core.platform.contract.glob_pattern import escape_glob
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, pattern_list
 from reporails_cli.core.platform.utils.utils import config_pattern_matches
 
@@ -119,7 +120,7 @@ def expand_plugin_patterns(
             roots_by_marker[marker] = find_plugin_roots(root, marker, skip)
         for plugin_root in [*roots_by_marker[marker], *(r for r in installed if r not in roots_by_marker[marker])]:
             if not plugin_root.is_relative_to(root):
-                out.append(f"{plugin_root.as_posix()}/{rest}")
+                out.append(f"{escape_glob(plugin_root.as_posix())}/{rest}")
                 continue
             prefix = plugin_root.relative_to(root).as_posix()
             out.append(rest if prefix == "." else f"{prefix}/{rest}")

@@ -210,6 +210,7 @@ class XrayArtifact(ArtifactFile):
     turns: tuple[int, ...]
     findings: int | None
     actionable: bool
+    tokens_est: int | None
 
     def to_json(self) -> JsonObject:
         """The artifact as a JSON object."""
@@ -225,6 +226,7 @@ class XrayArtifact(ArtifactFile):
             "turns": list(self.turns),
             "findings": self.findings,
             "actionable": self.actionable,
+            "tokens_est": self.tokens_est,
         }
 
 
