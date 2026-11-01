@@ -9,12 +9,8 @@ from pathlib import Path
 
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.dto.events import EventRecord, is_note_kind
-from reporails_cli.core.platform.dto.xray import (
-    SOURCE_KIND_OF_ARTIFACT,
-    FindingTally,
-    SourceKind,
-    XrayArtifact,
-)
+from reporails_cli.core.platform.dto.xray import SOURCE_KIND_OF_ARTIFACT, SourceEntry, XrayArtifact
+from reporails_cli.core.platform.dto.xray_graph import SourceKind
 from reporails_cli.core.xray.derive import BYTES_PER_TOKEN, Frame, count_for, file_tokens_est, real_path
 
 # The memory type an auto-memory file is loaded as.
@@ -29,21 +25,6 @@ def mcp_id(server: str) -> str:
 def hook_id(label: str) -> str:
     """The source id of a hook note label."""
     return f"hook:{label}"
-
-
-@dataclass(frozen=True)
-class SourceEntry:
-    """One source before any node's context is known: what it is and how big, without who had it."""
-
-    id: str
-    kind: SourceKind
-    name: str
-    path: str | None
-    tokens_est: int | None
-    findings: FindingTally | None
-    actionable: bool
-    advertised: bool | None
-    linked: bool | None
 
 
 @dataclass(frozen=True)

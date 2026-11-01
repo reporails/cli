@@ -13,7 +13,7 @@ from reporails_cli.core.eventbus.adapters.claude_transcript import ClaudeTranscr
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.eventbus.transcript import call_text, prompt_text, read_transcript, subagent_brief
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
-from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
+from reporails_cli.core.platform.dto.events import EventRecord, ReplyText, TranscriptCursor
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_eventbus]
 
@@ -115,7 +115,7 @@ def test_resumed_read_emits_nothing_twice_and_picks_up_appended_rows(tmp_path: P
     with session.open("a", encoding="utf-8") as handle:
         handle.write("".join(json.dumps(row) + "\n" for row in (last, new)))
     appended, _ = read_transcript("claude", session, cursor)
-    assert [(r.usage.message_id, r.usage.input_tokens) for r in appended] == [("msg_NEW", 9)]
+    assert [(r.usage.message_id, r.usage.input_tokens) for r in appended if r.usage] == [("msg_NEW", 9)]
 
 
 def test_torn_last_line_waits(tmp_path: Path) -> None:
@@ -544,14 +544,14 @@ def test_the_handoffs_session_reads_into_the_expected_records_with_no_refusal(tm
     counts: dict[str, int] = {}
     for record in records:
         counts[record.event] = counts.get(record.event, 0) + 1
-    assert counts["tool_call"] == 19 and counts["tool_result"] == 18 and counts["subagent_run"] == 6
+    assert counts["tool_call"] == 21 and counts["tool_result"] == 18 and counts["subagent_run"] == 6
     assert counts["instruction_load"] == 8 and counts["post_compact"] == 1 and counts["skill_run"] == 1
     assert "refusal" not in counts
     categories: dict[str, int] = {}
     for record in _of(records, "tool_call"):
         assert record.tool is not None and record.tool.category is not None
         categories[record.tool.category] = categories.get(record.tool.category, 0) + 1
-    assert categories == {"agent": 6, "mcp": 4, "run": 5, "read": 1, "edit": 1, "other": 1, "handback": 1}
+    assert categories == {"agent": 6, "mcp": 4, "run": 5, "read": 1, "edit": 1, "other": 3, "handback": 1}
 
 
 def test_a_nested_subagent_carries_its_parent_and_depth_and_no_launching_call(tmp_path: Path) -> None:
@@ -757,3 +757,41 @@ def test_a_meta_file_without_the_optional_fields_reads_as_a_foreground_launch_of
     assert launch is not None and launch.brief_chars == 5
     assert (launch.description, launch.parent_id, launch.tool_use_id, launch.depth) == (None, None, None, None)
     assert (launch.stopped, launch.background) == (False, False)
+
+
+def _text_row(*blocks: JsonObject) -> JsonObject:
+    return _assistant_row(content=list(blocks))
+
+
+def test_an_assistant_row_with_text_yields_the_size_of_its_text_and_never_the_text() -> None:
+    row = _text_row(
+        {"type": "text", "text": "hello"}, {"type": "thinking", "thinking": "zzz"}, {"type": "text", "text": "!!"}
+    )
+    records = ClaudeTranscriptAdapter().resolve_row(row, "sub")
+    assert [r.event for r in records] == ["assistant_usage", "assistant_text"]
+    assert records[1].subagent_id == "sub" and records[1].reply is not None and records[1].reply.chars == 7
+    assert "hello" not in json.dumps(records[1].to_json())
+
+
+def test_an_assistant_row_with_only_a_call_or_no_content_yields_no_text_record() -> None:
+    adapter = ClaudeTranscriptAdapter()
+    call_row = _call_row("Bash", {"command": "ls"})
+    assert [r.event for r in adapter.resolve_row(call_row, None)] == ["assistant_usage", "tool_call"]
+    assert [r.event for r in adapter.resolve_row(_assistant_row(), None)] == ["assistant_usage"]
+
+
+def test_a_text_block_without_text_is_refused() -> None:
+    with pytest.raises(PayloadRefused, match="text block has no text"):
+        ClaudeTranscriptAdapter().resolve_row(_text_row({"type": "text", "text": 7}), None)
+
+
+def test_the_handoffs_subagent_that_ends_on_a_reply_ends_on_its_text_record_and_the_one_that_ends_on_a_call_does_not(
+    tmp_path: Path,
+) -> None:
+    records = _handoff_records(tmp_path)
+    last = {
+        sub: [r for r in records if r.subagent_id == sub and r.event in ("assistant_text", "tool_call")][-1]
+        for sub in (SUB_C, "afff0000000000006")
+    }
+    assert last[SUB_C].event == "assistant_text" and last[SUB_C].reply == ReplyText(len("PLACEHOLDER-TEXT-30"))
+    assert last["afff0000000000006"].event == "tool_call"

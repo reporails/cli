@@ -14,6 +14,7 @@ import socket
 import threading
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 import typer
@@ -152,22 +153,20 @@ class XrayServer:
         with self._view_lock:
             return self._session.peek(path)
 
-    async def _text_route(
-        self, request: Request, query: str, hint: str, lookup: Callable[[str], str | None], unknown: str
-    ) -> Response:
-        """Guard the request, read `?<query>=` and reply `{"id", "text"}` with what `lookup` finds for it."""
+    async def _text_route(self, request: Request, route: _TextRoute) -> Response:
+        """Guard the request, read `?<query>=` and reply `{"id", "text"}` with what the route's lookup finds."""
         refusal = await self._guard(request)
         if refusal is not None:
             return refusal
-        key = request.query_params.get(query)
+        key = request.query_params.get(route.query)
         if key is None:
-            return _refused(400, hint)
+            return _refused(400, route.hint)
         try:
-            text = await run_in_threadpool(self._locked, lookup, key)
+            text = await run_in_threadpool(self._locked, route.lookup, key)
         except PayloadRefused as err:
             return _refused(400, err.reason)
         if text is None:
-            return _refused(400, unknown)
+            return _refused(400, route.unknown)
         return JSONResponse({"id": key, "text": text}, headers=NO_STORE)
 
     def _locked(self, lookup: Callable[[str], str | None], key: str) -> str | None:
@@ -177,19 +176,23 @@ class XrayServer:
     async def brief(self, request: Request) -> Response:
         """The brief one listed subagent was given."""
         return await self._text_route(
-            request, "subagent", "the query is ?subagent=<id>", self._session.brief, "not a subagent this page lists"
+            request,
+            _TextRoute(
+                "subagent", "the query is ?subagent=<id>", self._session.brief, "not a subagent this page lists"
+            ),
         )
 
     async def prompt(self, request: Request) -> Response:
         """The text of one typed prompt of the session."""
         return await self._text_route(
-            request, "id", "the query is ?id=<prompt id>", self._session.prompt, "not a prompt this page lists"
+            request,
+            _TextRoute("id", "the query is ?id=<prompt id>", self._session.prompt, "not a prompt this page lists"),
         )
 
     async def call(self, request: Request) -> Response:
         """The command of one shell call of the session."""
         return await self._text_route(
-            request, "id", "the query is ?id=<call id>", self._session.call, "not a call this page lists"
+            request, _TextRoute("id", "the query is ?id=<call id>", self._session.call, "not a call this page lists")
         )
 
     async def check(self, request: Request) -> Response:
@@ -258,6 +261,17 @@ class XrayServer:
 
     def _key(self, target: Path) -> str:
         return target.relative_to(safe_resolve(self._root)).as_posix()
+
+
+@dataclass(frozen=True)
+class _TextRoute:
+    """A route that replies with a text found by id: the query key it reads, the refusal for a missing key, what finds
+    the text and the refusal for an id it does not know."""
+
+    query: str
+    hint: str
+    lookup: Callable[[str], str | None]
+    unknown: str
 
 
 def _line(finding: FindingItem) -> JsonObject:

@@ -7,9 +7,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
-from reporails_cli.core.platform.dto.events import EventRecord, SubagentMeta, is_note_kind
-from reporails_cli.core.platform.dto.xray import (
+from reporails_cli.core.platform.dto.events import ASSISTANT_ROW_KINDS, EventRecord, SubagentMeta, is_note_kind
+from reporails_cli.core.platform.dto.xray_graph import (
     AgentOutcome,
+    LoadEvent,
     LoadTrigger,
     NodeKind,
     XrayAgentDetail,
@@ -31,10 +32,11 @@ from reporails_cli.core.xray.derive import (
     start_loads,
 )
 from reporails_cli.core.xray.graph.port import (
+    NodeProducer,
     Produced,
     ProducedCall,
-    ProducedLoad,
     ProducedNode,
+    ProducedSpine,
     ProducerContext,
     register,
 )
@@ -42,6 +44,8 @@ from reporails_cli.core.xray.graph.sources import SourceTable, hook_id, mcp_id
 
 # The id of the main agent's node.
 MAIN_ID = "main"
+
+_KIND: NodeKind = "agent"
 
 # A subagent whose last record is this close to the session's last record is taken to still be running.
 RUNNING_WINDOW_S = 120.0
@@ -57,6 +61,14 @@ class _Result:
 
 
 @dataclass(frozen=True)
+class _Reply:
+    """The text an agent ended on: when it came and how long it was."""
+
+    t: float
+    chars: int
+
+
+@dataclass(frozen=True)
 class _Own:
     """What one agent's own records hold."""
 
@@ -65,9 +77,10 @@ class _Own:
     replies: Replies
     results: dict[str, _Result]
     calls: tuple[ProducedCall, ...]
-    loads: tuple[ProducedLoad, ...]
+    loads: tuple[LoadEvent, ...]
     compactions: tuple[XrayCompaction, ...]
     times: tuple[float, ...]
+    reply: _Reply | None
 
     @property
     def start(self) -> float:
@@ -143,13 +156,13 @@ class _Reading:
         return moment is not None and moment < self.first
 
 
-def _source_load(sid: str | None, t: float | None, reading: _Reading) -> list[ProducedLoad]:
+def _source_load(sid: str | None, t: float | None, reading: _Reading) -> list[LoadEvent]:
     """A load by the agent's own doing (a run, a read) of the source `sid`; none when `sid` is no source."""
     entry = reading.sources.get(sid) if sid else None
-    return [] if entry is None else [ProducedLoad(entry.id, t, entry.tokens_est, "agent", None, True)]
+    return [] if entry is None else [LoadEvent(entry.id, t, entry.tokens_est, "agent", None, True)]
 
 
-def _harness_loads(record: EventRecord, reading: _Reading) -> list[ProducedLoad]:
+def _harness_loads(record: EventRecord, reading: _Reading) -> list[LoadEvent]:
     """The MCP servers and the hook a harness record puts into the agent's context."""
     entry = record.harness
     if entry is None:
@@ -158,14 +171,14 @@ def _harness_loads(record: EventRecord, reading: _Reading) -> list[ProducedLoad]
     if entry.kind == "mcp_instructions":
         trigger: LoadTrigger = "session_start" if reading.is_main else "inherited"
         return [
-            ProducedLoad(mcp_id(name), t, chars // BYTES_PER_TOKEN, trigger, None, True) for name, chars in entry.added
+            LoadEvent(mcp_id(name), t, chars // BYTES_PER_TOKEN, trigger, None, True) for name, chars in entry.added
         ]
     if is_note_kind(entry.kind) and entry.event is not None:
-        return [ProducedLoad(hook_id(entry.label), t, entry.chars // BYTES_PER_TOKEN, "hook", entry.event, True)]
+        return [LoadEvent(hook_id(entry.label), t, entry.chars // BYTES_PER_TOKEN, "hook", entry.event, True)]
     return []
 
 
-def _record_loads(record: EventRecord, reading: _Reading) -> list[ProducedLoad]:
+def _record_loads(record: EventRecord, reading: _Reading) -> list[LoadEvent]:
     """The sources one record puts into the agent's context."""
     if record.event == "instruction_load":
         return _instruction_load(record, reading)
@@ -179,7 +192,7 @@ def _record_loads(record: EventRecord, reading: _Reading) -> list[ProducedLoad]:
     return []
 
 
-def _instruction_load(record: EventRecord, reading: _Reading) -> list[ProducedLoad]:
+def _instruction_load(record: EventRecord, reading: _Reading) -> list[LoadEvent]:
     load = record.load
     if load is None:
         return []
@@ -189,10 +202,22 @@ def _instruction_load(record: EventRecord, reading: _Reading) -> list[ProducedLo
         return []
     t = reading.frame.at(record)
     if load.memory_type == "nested":
-        return [ProducedLoad(entry.id, t, entry.tokens_est, "path_match", None, True)]
+        return [LoadEvent(entry.id, t, entry.tokens_est, "path_match", None, True)]
     early = reading.at_start(record)
     trigger: LoadTrigger = "session_start" if reading.is_main else "inherited" if early else "agent"
-    return [ProducedLoad(entry.id, t, entry.tokens_est, trigger, None, not (early and entry.kind == "instructions"))]
+    return [LoadEvent(entry.id, t, entry.tokens_est, trigger, None, not (early and entry.kind == "instructions"))]
+
+
+def _final_reply(group: Sequence[EventRecord], frame: Frame) -> _Reply | None:
+    """The text the agent's last assistant record carries; None when that record is a tool call or the agent never
+    replied."""
+    last = next(
+        (record for record in reversed(group) if record.event in ASSISTANT_ROW_KINDS),
+        None,
+    )
+    if last is None or last.reply is None:
+        return None
+    return _Reply(frame.at(last) or 0.0, last.reply.chars)
 
 
 def _own(key: str, group: list[EventRecord], frame: Frame, sources: SourceTable) -> _Own:
@@ -208,6 +233,7 @@ def _own(key: str, group: list[EventRecord], frame: Frame, sources: SourceTable)
         loads=tuple(load for record in group for load in _record_loads(record, reading)),
         compactions=build_compactions(group, replies, frame),
         times=tuple(sorted(moment for record in group if (moment := frame.at(record)) is not None)),
+        reply=_final_reply(group, frame),
     )
 
 
@@ -271,6 +297,12 @@ def _parent_of(key: str, metas: dict[str, SubagentMeta | None]) -> str:
     return parent if parent is not None and parent in metas else MAIN_ID
 
 
+def _answered(meta: SubagentMeta | None, result: _Result | None) -> bool:
+    """Whether the parent's call for the subagent came back without an error and without the launch of a background
+    run."""
+    return result is not None and not result.error and not (meta is not None and meta.background)
+
+
 def _outcome(meta: SubagentMeta | None, own: _Own, result: _Result | None, running: bool) -> AgentOutcome:
     if own.handback is not None:
         return "returned"
@@ -278,9 +310,24 @@ def _outcome(meta: SubagentMeta | None, own: _Own, result: _Result | None, runni
         return "stopped"
     if result is not None and result.error:
         return "failed"
-    if result is not None and not (meta is not None and meta.background):
+    if _answered(meta, result) or (own.reply is not None and not running):
         return "returned"
     return "running" if running else "no_handback"
+
+
+def _back(
+    meta: SubagentMeta | None, own: _Own, result: _Result | None, outcome: AgentOutcome
+) -> tuple[int | None, float | None]:
+    """The size in tokens of what came back to the parent and when: its hand-back, else the parent's result, else the
+    text the subagent ended on."""
+    handback = own.handback
+    if handback is not None:
+        return handback.back_tokens_est, handback.t
+    if outcome == "returned" and own.reply is not None and not _answered(meta, result):
+        return _tokens(own.reply.chars), own.reply.t
+    if result is not None:
+        return _tokens(result.chars), result.t
+    return None, None
 
 
 def main_records(records: Sequence[EventRecord]) -> list[EventRecord]:
@@ -288,100 +335,111 @@ def main_records(records: Sequence[EventRecord]) -> list[EventRecord]:
     return [record for record in records if record.subagent_id is None]
 
 
-class AgentProducer:
-    """Makes the main agent's node and one node per subagent run."""
+@dataclass(frozen=True)
+class _World:
+    """What every agent is read against: the frame, the sources with the vocabulary, and the session's last time."""
 
-    kind: NodeKind = "agent"
-
-    def produce(self, records: Sequence[EventRecord], frame: Frame, context: ProducerContext) -> Produced:
-        """The agent nodes of `records`, the main agent first and the subagents in launch order, and one edge from
-        each subagent's parent to it."""
-        groups: dict[str, list[EventRecord]] = {MAIN_ID: main_records(records)}
-        for record in records:
-            if record.subagent_id is not None:
-                groups.setdefault(record.subagent_id, []).append(record)
-        owns = {key: _own(key, group, frame, context.sources) for key, group in groups.items()}
-        times = sorted(moment for record in records if (moment := frame.at(record)) is not None)
-        session_end = times[-1] if times else 0.0
-        metas = {key: _launch(group) for key, group in groups.items() if key != MAIN_ID}
-        order = sorted(metas, key=lambda key: (owns[key].start, key))
-        nodes = [self._main(owns[MAIN_ID], frame, context, session_end)]
-        edges: list[XrayEdge] = []
-        for key in order:
-            parent = _parent_of(key, metas)
-            node, edge = self._sub(owns[key], owns[parent], metas[key], (frame, context), session_end)
-            nodes.append(node)
-            edges.append(edge)
-        return Produced(tuple(nodes), tuple(edges))
-
-    def _main(self, own: _Own, frame: Frame, context: ProducerContext, session_end: float) -> ProducedNode:
-        harness, loaded = _given(own, context.sources)
-        given = [*harness, *loaded]
-        down = XrayDown(None, sum(item.tokens_est or 0 for item in given))
-        detail = _detail(own, given, (down, None, None), frame)
-        return ProducedNode(
-            id=MAIN_ID,
-            kind=self.kind,
-            parent=None,
-            name=context.vocabulary.root.name,
-            type=context.vocabulary.root.type,
-            start=0.0,
-            end=session_end,
-            detail=detail,
-            series=detail.series,
-            loads=own.loads,
-            calls=own.calls,
-            compactions=own.compactions,
-            activity=own.times,
-        )
-
-    def _sub(
-        self,
-        own: _Own,
-        parent: _Own,
-        meta: SubagentMeta | None,
-        world: tuple[Frame, ProducerContext],
-        session_end: float,
-    ) -> tuple[ProducedNode, XrayEdge]:
-        frame, context = world
-        harness, loaded = _given(own, context.sources)
-        task = None if meta is None else meta.brief_chars // BYTES_PER_TOKEN
-        given = [*([] if task is None else [XrayGiven("task prompt", task, None)]), *loaded, *harness]
-        down = XrayDown(task, sum(item.tokens_est or 0 for item in (*loaded, *harness)))
-        use_id = None if meta is None else meta.tool_use_id
-        result = parent.results.get(use_id) if use_id is not None else None
-        launch = next((call for call in parent.calls if call.use_id == use_id), None) if use_id is not None else None
-        outcome = _outcome(meta, own, result, own.end >= session_end - RUNNING_WINDOW_S)
-        handback = own.handback
-        back_t = handback.t if handback is not None else None if result is None else result.t
-        back = handback.back_tokens_est if handback is not None else None if result is None else _tokens(result.chars)
-        detail = _detail(own, given, (down, back, outcome), frame)
-        run_type = next((r.subagent_type for r in own.records if r.event == "subagent_run"), None)
-        node = ProducedNode(
-            id=own.key,
-            kind=self.kind,
-            parent=parent.key,
-            name=((None if meta is None else meta.description) or run_type or own.key),
-            type=run_type,
-            start=own.start,
-            end=own.end,
-            detail=detail,
-            series=detail.series,
-            loads=own.loads,
-            calls=own.calls,
-            compactions=own.compactions,
-            activity=own.times,
-        )
-        edge = XrayEdge(
-            parent.key,
-            own.key,
-            (task or 0) + down.inherited_tokens_est,
-            back,
-            own.start if launch is None else launch.t,
-            back_t,
-            outcome,
-        )
-        return node, edge
+    frame: Frame
+    context: ProducerContext
+    session_end: float
 
 
-register(AgentProducer())
+@dataclass(frozen=True)
+class _Handoff:
+    """What went down to a subagent and how it ended: the sizes, the launching call's time and the outcome."""
+
+    down: XrayDown
+    back: int | None
+    out_t: float
+    back_t: float | None
+    outcome: AgentOutcome
+
+
+def _spine(own: _Own, detail: XrayAgentDetail) -> ProducedSpine:
+    return ProducedSpine(detail.series, own.loads, own.calls, own.compactions, own.times)
+
+
+def _main_node(own: _Own, world: _World) -> ProducedNode:
+    harness, loaded = _given(own, world.context.sources)
+    given = [*harness, *loaded]
+    down = XrayDown(None, sum(item.tokens_est or 0 for item in given))
+    detail = _detail(own, given, (down, None, None), world.frame)
+    return ProducedNode(
+        id=MAIN_ID,
+        kind=_KIND,
+        parent=None,
+        name=world.context.vocabulary.root.name,
+        type=world.context.vocabulary.root.type,
+        start=0.0,
+        end=world.session_end,
+        detail=detail,
+        spine=_spine(own, detail),
+    )
+
+
+def _handoff(own: _Own, parent: _Own, meta: SubagentMeta | None, down: XrayDown, session_end: float) -> _Handoff:
+    use_id = None if meta is None else meta.tool_use_id
+    result = parent.results.get(use_id) if use_id is not None else None
+    launch = next((call for call in parent.calls if call.use_id == use_id), None) if use_id is not None else None
+    outcome = _outcome(meta, own, result, own.end >= session_end - RUNNING_WINDOW_S)
+    back, back_t = _back(meta, own, result, outcome)
+    return _Handoff(down, back, own.start if launch is None else launch.t, back_t, outcome)
+
+
+def _sub_node(own: _Own, parent: _Own, meta: SubagentMeta | None, world: _World) -> tuple[ProducedNode, XrayEdge]:
+    harness, loaded = _given(own, world.context.sources)
+    task = None if meta is None else meta.brief_chars // BYTES_PER_TOKEN
+    given = [*([] if task is None else [XrayGiven("task prompt", task, None)]), *loaded, *harness]
+    down = XrayDown(task, sum(item.tokens_est or 0 for item in (*loaded, *harness)))
+    handoff = _handoff(own, parent, meta, down, world.session_end)
+    detail = _detail(own, given, (down, handoff.back, handoff.outcome), world.frame)
+    run_type = next((r.subagent_type for r in own.records if r.event == "subagent_run"), None)
+    node = ProducedNode(
+        id=own.key,
+        kind=_KIND,
+        parent=parent.key,
+        name=(None if meta is None else meta.description) or run_type or own.key,
+        type=run_type,
+        start=own.start,
+        end=own.end,
+        detail=detail,
+        spine=_spine(own, detail),
+    )
+    edge = XrayEdge(
+        parent.key,
+        own.key,
+        (task or 0) + down.inherited_tokens_est,
+        handoff.back,
+        handoff.out_t,
+        handoff.back_t,
+        handoff.outcome,
+    )
+    return node, edge
+
+
+def _groups(records: Sequence[EventRecord]) -> dict[str, list[EventRecord]]:
+    """The records of each agent by its key: the main agent's, then each subagent's."""
+    groups: dict[str, list[EventRecord]] = {MAIN_ID: main_records(records)}
+    for record in records:
+        if record.subagent_id is not None:
+            groups.setdefault(record.subagent_id, []).append(record)
+    return groups
+
+
+def produce_agents(records: Sequence[EventRecord], frame: Frame, context: ProducerContext) -> Produced:
+    """The agent nodes of `records`, the main agent first and the subagents in launch order, and one edge from each
+    subagent's parent to it."""
+    owns = {key: _own(key, group, frame, context.sources) for key, group in _groups(records).items()}
+    times = sorted(moment for record in records if (moment := frame.at(record)) is not None)
+    world = _World(frame, context, times[-1] if times else 0.0)
+    metas = {key: _launch(own.records) for key, own in owns.items() if key != MAIN_ID}
+    nodes = [_main_node(owns[MAIN_ID], world)]
+    edges: list[XrayEdge] = []
+    for key in sorted(metas, key=lambda item: (owns[item].start, item)):
+        node, edge = _sub_node(owns[key], owns[_parent_of(key, metas)], metas[key], world)
+        nodes.append(node)
+        edges.append(edge)
+    return Produced(tuple(nodes), tuple(edges))
+
+
+register(NodeProducer(_KIND, produce_agents))

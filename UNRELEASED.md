@@ -48,3 +48,4 @@
 - The torch import blocker is removed; nothing the cli installs imports torch.
 - Tests: architecture checks guard the package boundaries, replacing two narrower checks they cover, and `poe hexagon` renders the package dependency view.
 - Checking or fixing one file runs through one shared path for every interface; MCP replies are unchanged, and an architecture check stops one interface importing another; a test shows the page's fix button writing every fix and putting back a file that departs.
+- On the `ails xray` page, a subagent that ends on a final text reply is shown as returned, with the size of that reply, instead of as having no hand-back; one whose last step is a tool call still shows no hand-back. `ails xray --help` describes the hand-off page, and the page no longer reports the event log as unread.

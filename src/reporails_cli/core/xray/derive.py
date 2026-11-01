@@ -16,7 +16,8 @@ from reporails_cli.core.platform.dto.events import (
     TokenUsage,
     is_note_kind,
 )
-from reporails_cli.core.platform.dto.xray import FindingTally, XrayCompaction, XrayHarnessItem, XrayWindow
+from reporails_cli.core.platform.dto.xray import FindingTally, XrayHarnessItem, XrayWindow
+from reporails_cli.core.platform.dto.xray_graph import XrayCompaction
 
 # How many bytes of file text one token stands for in a size estimate.
 BYTES_PER_TOKEN = 4

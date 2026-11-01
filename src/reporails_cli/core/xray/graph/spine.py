@@ -6,8 +6,8 @@ from collections.abc import Sequence
 from itertools import pairwise
 
 from reporails_cli.core.platform.dto.events import ToolCategory
-from reporails_cli.core.platform.dto.xray import (
-    AdapterVocabulary,
+from reporails_cli.core.platform.dto.xray import AdapterVocabulary
+from reporails_cli.core.platform.dto.xray_graph import (
     SourceKind,
     XrayBreak,
     XrayCall,
@@ -34,8 +34,8 @@ BREAK_S = 1800.0
 def had_sources(node: ProducedNode) -> list[str]:
     """The ids of the sources that entered the node's context, in the order they first did: its loads, and the MCP
     servers whose results it took in."""
-    ids = [load.source for load in node.loads]
-    ids.extend(call.mcp_source for call in node.calls if call.mcp_source is not None)
+    ids = [load.source for load in node.spine.loads]
+    ids.extend(call.mcp_source for call in node.spine.calls if call.mcp_source is not None)
     return list(dict.fromkeys(ids))
 
 
@@ -53,7 +53,9 @@ def slots(had: Sequence[str], sources: SourceTable, vocabulary: AdapterVocabular
 
 def tool_counts(node: ProducedNode, vocabulary: AdapterVocabulary) -> dict[ToolCategory, int]:
     """For each tool category of the vocabulary, how many calls the node made."""
-    return {info.key: sum(1 for call in node.calls if call.category == info.key) for info in vocabulary.categories}
+    return {
+        info.key: sum(1 for call in node.spine.calls if call.category == info.key) for info in vocabulary.categories
+    }
 
 
 def track_calls(node: ProducedNode, vocabulary: AdapterVocabulary) -> tuple[XrayCall, ...]:
@@ -61,7 +63,7 @@ def track_calls(node: ProducedNode, vocabulary: AdapterVocabulary) -> tuple[Xray
     tracked = {info.key for info in vocabulary.categories if info.track}
     return tuple(
         XrayCall(call.t, call.category, call.label, call.source, call.failed, call.use_id)
-        for call in sorted(node.calls, key=lambda item: item.t)
+        for call in sorted(node.spine.calls, key=lambda item: item.t)
         if call.category in tracked
     )
 
@@ -70,7 +72,7 @@ def mcp_clusters(node: ProducedNode) -> tuple[XrayMcpCluster, ...]:
     """The node's MCP calls per server, merged into clusters of calls close together in time."""
     limit = CLUSTER_GAP_SHARE * (node.end - node.start)
     groups: dict[str, list[list[ProducedCall]]] = {}
-    for call in sorted(node.calls, key=lambda item: item.t):
+    for call in sorted(node.spine.calls, key=lambda item: item.t):
         if call.mcp_source is None:
             continue
         runs = groups.setdefault(call.mcp_source, [])
@@ -103,7 +105,7 @@ def failure_runs(node: ProducedNode) -> tuple[XrayFailureRun, ...]:
             found.append(XrayFailureRun(run[0].t, run[-1].t, len(run), run[0].use_id))
         run.clear()
 
-    for call in sorted(node.calls, key=lambda item: item.t):
+    for call in sorted(node.spine.calls, key=lambda item: item.t):
         if call.category != "run":
             continue
         if not call.failed or call.fingerprint is None:
@@ -119,16 +121,16 @@ def failure_runs(node: ProducedNode) -> tuple[XrayFailureRun, ...]:
 
 def breaks(node: ProducedNode) -> tuple[XrayBreak, ...]:
     """The stretches of at least `BREAK_S` seconds in which the node held no record."""
-    times = sorted(node.activity)
+    times = sorted(node.spine.activity)
     return tuple(XrayBreak(before, after) for before, after in pairwise(times) if after - before >= BREAK_S)
 
 
 def withheld(parent: ProducedNode, child: ProducedNode, out_t: float, sources: SourceTable) -> XrayWithheld:
     """What the parent had at the launch of `child` that the child never had, and the parent's context then."""
     child_had = set(had_sources(child))
-    at_launch = [load.source for load in parent.loads if load.t is None or load.t <= out_t]
+    at_launch = [load.source for load in parent.spine.loads if load.t is None or load.t <= out_t]
     missing = [source for source in dict.fromkeys(at_launch) if source not in child_had]
-    context = [tokens for t, tokens in parent.series if t <= out_t]
+    context = [tokens for t, tokens in parent.spine.series if t <= out_t]
     return XrayWithheld(
         tuple(
             XrayWithheldSource(source, None if (entry := sources.get(source)) is None else entry.tokens_est)

@@ -7,9 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.dto.xray import FindingTally, XrayFact, XraySource, XrayTarget
+from reporails_cli.core.platform.dto.xray import FindingTally, SourceEntry, XrayFact, XraySource, XrayTarget
 from reporails_cli.core.xray.facts import build_facts
-from reporails_cli.core.xray.graph.sources import SourceEntry
 from tests.unit.xray.test_xray_session import _project, _session, _tally, _view
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]

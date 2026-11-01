@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from reporails_cli.core.platform.dto.xray import SourceKind, XrayFunnelRow, XraySource
-from reporails_cli.core.xray.graph.sources import SourceEntry
+from reporails_cli.core.platform.dto.xray import SourceEntry, XrayFunnelRow, XraySource
+from reporails_cli.core.platform.dto.xray_graph import SourceKind
 
 
 def _used(kind: SourceKind, items: Sequence[SourceEntry], had: set[str], ran: set[str]) -> int | None:

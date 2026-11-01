@@ -63,6 +63,9 @@ the adapter refuses any other shape of a row type it reads:
   server's tool. From `input` only these are read: the path (`file_path`, else `notebook_path`, else `path`, a
   string) of a read or edit tool, a hand-back's `message` (a string, for its size), a Bash or PowerShell call's
   `command` (a string, for its hash; its text only through `resolve_call`).
+- an assistant reply's text: an `assistant` row whose `message.content` is a list holding `{"type": "text",
+  "text"}` blocks, `text` a string; only the characters of the text blocks are kept. A subagent that ends on such a row
+  returns that text to its parent.
 - a hand-back: a tool call named `SubagentHandback`, with `input.message`.
 - a tool result: a `user` row whose `message.content` is a list holding `{"type": "tool_result", "tool_use_id",
   "content", "is_error"?}` blocks, `tool_use_id` a string, `is_error` a boolean when present and `content` a string
@@ -73,9 +76,9 @@ the adapter refuses any other shape of a row type it reads:
 - a request blob: `type: "api-request-blob"` repeats request content; the row is not read, and tool calls come from
   `assistant` rows only.
 
-Never read, except for the sizes, the brief and the prompts above: message content, tool output, `content`,
-`displayPath`. Tool input is read only for the path, the MCP server, a hand-back message's size and a command's
-hash, and a command's text on request. The meta `description` is read.
+Never read, except for the sizes (a reply's text included), the brief and the prompts above: message content,
+tool output, `content`, `displayPath`. Tool input is read only for the path, the MCP server, a hand-back message's
+size and a command's hash, and a command's text on request. The meta `description` is read.
 """
 
 from __future__ import annotations
@@ -94,12 +97,14 @@ from reporails_cli.core.platform.contract.json_value import (
     strict_str_list,
 )
 from reporails_cli.core.platform.dto.events import (
+    TARGETS_FILE,
     EventKind,
     EventRecord,
     HarnessEntry,
     HarnessKind,
     InstructionLoad,
     PromptEntry,
+    ReplyText,
     SkillRun,
     SubagentMeta,
     TokenUsage,
@@ -175,7 +180,7 @@ def _tool_call(block: JsonObject) -> ToolUse:
     if not isinstance(tool_input, dict):
         raise PayloadRefused(f"{name} call input is not an object")
     category = tool_category(name)
-    path = _call_path(tool_input) if category in ("read", "edit") else None
+    path = _call_path(tool_input) if TARGETS_FILE[category] else None
     chars: int | None = None
     fingerprint: str | None = None
     if category == "handback":
@@ -287,7 +292,11 @@ class ClaudeTranscriptAdapter:
         """The records one row carries; refuses a known row type whose fields are not the pinned shape."""
         kind = row.get("type")
         if kind == "assistant":
-            return [self._usage(row, subagent_id), *self._tool_calls(row, subagent_id)]
+            return [
+                self._usage(row, subagent_id),
+                *self._reply_text(row, subagent_id),
+                *self._tool_calls(row, subagent_id),
+            ]
         if kind == "system" and row.get("subtype") == "turn_duration":
             return [self._record(row, "turn_end", subagent_id)]
         if kind == "system" and row.get("subtype") == "compact_boundary":
@@ -351,6 +360,17 @@ class ClaudeTranscriptAdapter:
             replace(self._record(row, "tool_call", subagent_id), tool=_tool_call(block))
             for block in _content_blocks(row, "tool_use")
         ]
+
+    def _reply_text(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
+        """One record sizing the text blocks of an assistant row; none when the row holds no text block."""
+        blocks = _content_blocks(row, "text")
+        if not blocks:
+            return []
+        texts = [block.get("text") for block in blocks]
+        if not all(isinstance(text, str) for text in texts):
+            raise PayloadRefused("assistant text block has no text")
+        chars = sum(len(text) for text in texts if isinstance(text, str))
+        return [replace(self._record(row, "assistant_text", subagent_id), item=ReplyText(chars))]
 
     def _tool_results(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         return [

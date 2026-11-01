@@ -5,14 +5,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from reporails_cli.core.platform.dto.xray import (
-    SourceKind,
-    XrayCompaction,
+    SourceEntry,
     XrayFact,
     XrayFunnelRow,
     XraySource,
     XrayTarget,
 )
-from reporails_cli.core.xray.graph.sources import SourceEntry
+from reporails_cli.core.platform.dto.xray_graph import SourceKind, XrayCompaction
 
 
 def _count(source: XraySource) -> int:

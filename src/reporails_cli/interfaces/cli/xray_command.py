@@ -14,8 +14,9 @@ def xray_command(
     session: str | None = typer.Option(None, "--session", "-s", help="Session id (default: the newest session)"),
     no_open: bool = typer.Option(False, "--no-open", help="Print the address without opening a browser"),
 ) -> None:
-    """Open a local page showing a Claude Code session turn by turn: what each turn held, which instruction
-    files loaded and when, and each subagent's own context. Serves on 127.0.0.1 until Ctrl-C."""
+    """Open a local page showing how a Claude Code session handed work between agents: each agent on a timeline,
+    what it was handed, what came back, and which instruction files, MCP servers and hooks reached its context.
+    Serves on 127.0.0.1 until Ctrl-C."""
     from reporails_cli.core.eventbus.transcript import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         newest_session,
         session_transcript,

@@ -19,6 +19,7 @@ from reporails_cli.core.platform.dto.events import (
     HarnessEntry,
     HarnessKind,
     InstructionLoad,
+    ReplyText,
     SkillRun,
     SubagentMeta,
     TokenUsage,
@@ -30,29 +31,34 @@ from reporails_cli.core.platform.dto.xray import (
     ArtifactFile,
     ArtifactKind,
     FindingTally,
-    NodeKind,
-    XrayAgentDetail,
+    Graph,
     XrayCheck,
-    XrayCompaction,
-    XrayDown,
-    XrayEdge,
     XrayGaps,
-    XrayNode,
     XrayNodeKindInfo,
     XraySessionInfo,
     XrayVerdict,
     XrayView,
 )
+from reporails_cli.core.platform.dto.xray_graph import (
+    LoadEvent,
+    NodeKind,
+    XrayAgentDetail,
+    XrayCompaction,
+    XrayDown,
+    XrayEdge,
+    XrayNode,
+)
 from reporails_cli.core.xray.artifacts import build_artifacts
 from reporails_cli.core.xray.derive import Frame, epoch
 from reporails_cli.core.xray.funnel import build_funnel
 from reporails_cli.core.xray.graph.agents import MAIN_ID
-from reporails_cli.core.xray.graph.build import Graph, build_graph
+from reporails_cli.core.xray.graph.build import build_graph
 from reporails_cli.core.xray.graph.port import (
     PRODUCERS,
+    NodeProducer,
     Produced,
-    ProducedLoad,
     ProducedNode,
+    ProducedSpine,
     ProducerContext,
     register,
 )
@@ -189,23 +195,23 @@ def _tree_records() -> list[EventRecord]:
 def test_the_agents_form_a_tree_by_the_launching_subagent_and_a_stranger_hangs_under_main(tmp_path: Path) -> None:
     graph = _graph(tmp_path, _tree_records())
     assert [node.id for node in graph.nodes] == ["main", "A", "B", "C", "D"]
-    assert {node.id: (node.parent, node.depth) for node in graph.nodes} == {
+    assert {node.id: (node.tree.parent, node.tree.depth) for node in graph.nodes} == {
         "main": (None, 0),
         "A": ("main", 1),
         "B": ("A", 2),
         "C": ("B", 3),
         "D": ("main", 1),
     }
-    assert {node.id: node.descendants for node in graph.nodes} == {"main": 4, "A": 2, "B": 1, "C": 0, "D": 0}
+    assert {node.id: node.tree.descendants for node in graph.nodes} == {"main": 4, "A": 2, "B": 1, "C": 0, "D": 0}
     # Children follow launch order, not the order the records were read in.
-    assert _node(graph, "main").children == ("A", "D")
-    assert _node(graph, "A").children == ("B",)
+    assert _node(graph, "main").tree.children == ("A", "D")
+    assert _node(graph, "A").tree.children == ("B",)
     assert [(edge.parent, edge.child) for edge in graph.edges] == [("main", "A"), ("A", "B"), ("B", "C"), ("main", "D")]
 
 
 def test_launchers_that_lead_back_to_each_other_hang_under_main(tmp_path: Path) -> None:
     graph = _graph(tmp_path, [reply(1), launch(5, "A", "B", "t1"), launch(6, "B", "A", "t2")])
-    assert {node.id: (node.parent, node.depth) for node in graph.nodes} == {
+    assert {node.id: (node.tree.parent, node.tree.depth) for node in graph.nodes} == {
         "main": (None, 0),
         "A": ("main", 1),
         "B": ("main", 1),
@@ -219,7 +225,7 @@ def test_a_node_is_named_by_its_description_else_its_type_and_a_subagent_with_no
     graph = _graph(tmp_path, records)
     assert _node(graph, "A").name == "general-purpose"
     stray = _node(graph, "ghost")
-    assert (stray.name, stray.type, stray.parent) == ("ghost", None, "main")
+    assert (stray.name, stray.type, stray.tree.parent) == ("ghost", None, "main")
     assert _agent(stray).down.task_tokens_est is None
     assert _node(graph, "main").name == "main agent"
 
@@ -296,6 +302,53 @@ def test_a_subagent_ends_returned_failed_stopped_running_or_with_no_handback(
     assert _agent(_node(graph, "X")).outcome == expected
     assert _edge(graph, "X").outcome == expected
     assert _agent(_node(graph, "main")).outcome is None
+
+
+def _text(seconds: float, sub: str, chars: int) -> EventRecord:
+    """The text an assistant row of `sub` carries."""
+    return rec("assistant_text", seconds, sub, item=ReplyText(chars))
+
+
+@pytest.mark.parametrize(
+    ("meta", "tail", "end", "expected", "back", "back_t"),
+    [
+        # A final text reply is what the subagent returns to its parent.
+        ({}, [_text(250, "X", 90)], 250, "returned", 22, 250.0),
+        # The reply counts as the last one, not the first text.
+        ({}, [_text(200, "X", 400), _text(250, "X", 90)], 250, "returned", 22, 250.0),
+        # A last assistant row that is a tool call is no reply.
+        ({}, [_text(200, "X", 400), call(250, "t1", "other", "X")], 250, "no_handback", None, None),
+        # Text before a call in the same moment still ends on the call.
+        ({}, [_text(250, "X", 400), call(250, "t1", "other", "X")], 250, "no_handback", None, None),
+        ({"stopped": True}, [_text(250, "X", 90)], 250, "stopped", None, None),
+        # Still within the running window of the session's last record.
+        ({}, [_text(950, "X", 90)], 950, "running", None, None),
+        # A background launch's acknowledgement is not what came back; the reply is.
+        ({"background": True}, [result(6, "tuX", chars=10), _text(250, "X", 90)], 250, "returned", 22, 250.0),
+        # A foreground result is what the parent got, whatever the subagent's last text was.
+        ({}, [result(260, "tuX", chars=80), _text(250, "X", 400)], 250, "returned", 20, 260.0),
+    ],
+)
+def test_a_subagent_that_ends_on_a_text_reply_returns_it_and_one_that_ends_on_a_call_does_not(
+    tmp_path: Path,
+    meta: dict[str, bool],
+    tail: list[EventRecord],
+    end: float,
+    expected: str,
+    back: int | None,
+    back_t: float | None,
+) -> None:
+    records = [
+        reply(1),
+        call(5, "tuX", "agent"),
+        launch(6, "X", None, "tuX", stopped=meta.get("stopped", False), background=meta.get("background", False)),
+        reply(7, "X"),
+        reply(end, "X"),
+        reply(1000),
+        *tail,
+    ]
+    edge = _edge(_graph(tmp_path, records), "X")
+    assert (edge.outcome, edge.back, edge.back_t) == (expected, back, back_t)
 
 
 def test_close_calls_to_one_mcp_server_make_one_pill_and_a_far_call_another(tmp_path: Path) -> None:
@@ -519,29 +572,31 @@ class _Widget:
     def __init__(self, parent: str, source: str | None = None) -> None:
         self.parent = parent
         self.source = source
+        self.producer = NodeProducer(self.kind, self.produce)
 
     def produce(self, records: Sequence[EventRecord], frame: Frame, context: ProducerContext) -> Produced:
         detail = XrayAgentDetail(None, None, (), XrayDown(None, 0), None, None, (), (), False)
-        loads = () if self.source is None else (ProducedLoad(self.source, 1.0, None, "agent", None, True),)
-        node = ProducedNode("w1", self.kind, self.parent, "a widget", None, 1.0, 2.0, detail, (), loads, (), (), (1.0,))
+        loads = () if self.source is None else (LoadEvent(self.source, 1.0, None, "agent", None, True),)
+        spine = ProducedSpine((), loads, (), (), (1.0,))
+        node = ProducedNode("w1", self.kind, self.parent, "a widget", None, 1.0, 2.0, detail, spine)
         return Produced((node,), (XrayEdge(self.parent, "w1", 0, None, 1.0, None, None),))
 
 
 @pytest.fixture(name="widget")
 def _widget() -> Iterator[_Widget]:
     stub = _Widget("A")
-    register(stub)
+    register(stub.producer)
     yield stub
-    PRODUCERS.remove(stub)
+    PRODUCERS.remove(stub.producer)
 
 
 def test_a_second_node_kind_hangs_under_an_agent_with_no_change_to_the_builder(tmp_path: Path, widget: _Widget) -> None:
     records = [reply(1), call(5, "tuA", "agent"), launch(6, "A", None, "tuA"), reply(7, "A"), reply(20)]
     graph = _graph(tmp_path, records)
     stub = _node(graph, "w1")
-    assert (stub.kind, stub.parent, stub.depth) == ("widget", "A", 2)
-    assert _node(graph, "A").children == ("w1",)
-    assert _node(graph, "A").descendants == 1 and _node(graph, MAIN_ID).descendants == 2
+    assert (stub.kind, stub.tree.parent, stub.tree.depth) == ("widget", "A", 2)
+    assert _node(graph, "A").tree.children == ("w1",)
+    assert _node(graph, "A").tree.descendants == 1 and _node(graph, MAIN_ID).tree.descendants == 2
     # A kind the vocabulary gives no spine gets no station or track.
     assert "w1" not in {item.node for item in graph.stations} | {item.node for item in graph.tracks}
     assert [edge.child for edge in graph.edges] == ["A", "w1"]
@@ -563,8 +618,8 @@ def test_a_second_node_kind_with_a_spine_gets_a_station_and_a_track(tmp_path: Pa
 
 def test_a_producer_of_a_kind_already_registered_is_refused(widget: _Widget) -> None:
     with pytest.raises(ValueError, match="widget"):
-        register(_Widget("A"))
-    assert widget in PRODUCERS
+        register(_Widget("A").producer)
+    assert widget.producer in PRODUCERS
 
 
 def _shape(value: JsonValue) -> JsonValue:
@@ -606,18 +661,18 @@ def test_the_built_views_key_structure_matches_the_sample_the_page_is_built_agai
     ]
     graph = _graph(tmp_path, records, [claude])
     view = XrayView(
-        1,
-        XraySessionInfo("s", "p", at(0), 20.0),
-        None,
-        None,
-        vocabulary_for("claude", []),
-        graph.nodes,
-        graph.edges,
-        graph.sources,
-        graph.stations,
-        graph.tracks,
-        XrayGaps((), ()),
-        XrayVerdict((), (), XrayCheck("done", None)),
+        nodes=graph.nodes,
+        edges=graph.edges,
+        sources=graph.sources,
+        stations=graph.stations,
+        tracks=graph.tracks,
+        version=1,
+        info=XraySessionInfo("s", "p", at(0), 20.0),
+        model=None,
+        window=None,
+        adapter=vocabulary_for("claude", []),
+        gaps=XrayGaps((), ()),
+        verdict=XrayVerdict((), (), XrayCheck("done", None)),
     )
     built = view.to_json()
     assert as_list(built["nodes"])

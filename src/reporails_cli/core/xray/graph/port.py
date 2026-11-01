@@ -3,14 +3,13 @@ registered producers return."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Protocol
 
 from reporails_cli.core.platform.dto.events import EventRecord, ToolCategory
-from reporails_cli.core.platform.dto.xray import (
-    AdapterVocabulary,
-    LoadTrigger,
+from reporails_cli.core.platform.dto.xray import AdapterVocabulary
+from reporails_cli.core.platform.dto.xray_graph import (
+    LoadEvent,
     NodeKind,
     XrayCompaction,
     XrayDetail,
@@ -18,18 +17,6 @@ from reporails_cli.core.platform.dto.xray import (
 )
 from reporails_cli.core.xray.derive import Frame
 from reporails_cli.core.xray.graph.sources import SourceTable
-
-
-@dataclass(frozen=True)
-class ProducedLoad:
-    """A source entering a node's context at a time, before the builder marks it small."""
-
-    source: str
-    t: float | None
-    tokens_est: int | None
-    trigger: LoadTrigger
-    event: str | None
-    on_spine: bool
 
 
 @dataclass(frozen=True)
@@ -49,9 +36,20 @@ class ProducedCall:
 
 
 @dataclass(frozen=True)
+class ProducedSpine:
+    """What the builder derives a node's generic facts from: its context line, loads, calls, compactions and every
+    time it held a record."""
+
+    series: tuple[tuple[float, int], ...]
+    loads: tuple[LoadEvent, ...]
+    calls: tuple[ProducedCall, ...]
+    compactions: tuple[XrayCompaction, ...]
+    activity: tuple[float, ...]
+
+
+@dataclass(frozen=True)
 class ProducedNode:
-    """A node a producer makes: its place by parent id, its time span, its kind's own detail, and what the builder
-    derives the generic facts from (its loads, calls, compactions, context line and every time it held a record)."""
+    """A node a producer makes: its place by parent id, its time span, its kind's own detail and its spine."""
 
     id: str
     kind: NodeKind
@@ -61,11 +59,7 @@ class ProducedNode:
     start: float
     end: float
     detail: XrayDetail
-    series: tuple[tuple[float, int], ...]
-    loads: tuple[ProducedLoad, ...]
-    calls: tuple[ProducedCall, ...]
-    compactions: tuple[XrayCompaction, ...]
-    activity: tuple[float, ...]
+    spine: ProducedSpine
 
 
 @dataclass(frozen=True)
@@ -84,13 +78,12 @@ class ProducerContext:
     vocabulary: AdapterVocabulary
 
 
-class NodeProducer(Protocol):
-    """Makes the nodes of one kind from a session's records."""
+@dataclass(frozen=True)
+class NodeProducer:
+    """Makes the nodes of one kind: `produce` turns a session's records into that kind's nodes and edges."""
 
     kind: NodeKind
-
-    def produce(self, records: Sequence[EventRecord], frame: Frame, context: ProducerContext) -> Produced:
-        """The nodes and edges of this kind in `records`."""
+    produce: Callable[[Sequence[EventRecord], Frame, ProducerContext], Produced]
 
 
 # The registered producers, in the order their nodes are listed.

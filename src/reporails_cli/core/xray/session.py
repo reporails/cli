@@ -7,7 +7,6 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.plugin_roots import installed_plugin_roots
 from reporails_cli.core.discovery.project_root import resolve_project_root
-from reporails_cli.core.eventbus.query import read_events
 from reporails_cli.core.eventbus.transcript import call_text, prompt_text, read_transcript, subagent_brief
 from reporails_cli.core.pipeline.expected_loads import AGENT
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
@@ -17,6 +16,7 @@ from reporails_cli.core.platform.dto.xray import (
     AdapterVocabulary,
     ArtifactFile,
     FindingTally,
+    Graph,
     XrayCheck,
     XrayGaps,
     XraySessionInfo,
@@ -36,12 +36,11 @@ from reporails_cli.core.xray.derive import Frame, epoch, latest_model, replies_o
 from reporails_cli.core.xray.facts import build_facts
 from reporails_cli.core.xray.funnel import build_funnel
 from reporails_cli.core.xray.graph.agents import main_records
-from reporails_cli.core.xray.graph.build import Graph, build_graph
+from reporails_cli.core.xray.graph.build import build_graph
 from reporails_cli.core.xray.graph.sources import SourceTable, build_sources, ran_sources
 from reporails_cli.core.xray.vocabulary import vocabulary_for
 
 _NO_WINDOW = "context window"
-_NO_BUS = "reads"
 
 
 class XraySession:
@@ -51,9 +50,7 @@ class XraySession:
         self._root = project_root
         self._file = session_file
         self._cursor = TranscriptCursor()
-        self._offset = 0
         self._transcript: list[EventRecord] = []
-        self._bus: list[EventRecord] = []
         self._files: tuple[ArtifactFile, ...] | None = None
         self._plugin_problem: str | None = None
         self._findings: dict[str, FindingTally] = {}
@@ -61,13 +58,11 @@ class XraySession:
         self.version = 0
 
     def refresh(self) -> bool:
-        """Read what the transcript and the event log gained since the last read; True when anything new arrived."""
+        """Read what the transcript gained since the last read; True when anything new arrived."""
         records, self._cursor = read_transcript(AGENT, self._file, self._cursor)
-        events, self._offset = read_events(self._file.stem, self._offset)
-        if not (records or events):
+        if not records:
             return False
         self._transcript.extend(records)
-        self._bus.extend(events)
         self._files = None
         self.version += 1
         return True
@@ -194,7 +189,7 @@ class XraySession:
             refusals.append(self._plugin_problem)
         return XrayGaps(
             refusals=tuple(dict.fromkeys(refusals)),
-            not_known=(*((_NO_WINDOW,) if window is None else ()), *(() if self._bus else (_NO_BUS,))),
+            not_known=(_NO_WINDOW,) if window is None else (),
         )
 
 

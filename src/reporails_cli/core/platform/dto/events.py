@@ -37,11 +37,23 @@ EventKind = Literal[
     "harness",
     "tool_call",
     "tool_result",
+    "assistant_text",
 ]
 
 # What a tool call does, as the side track and the inspector group it; `handback` is a subagent handing its result
 # back to the agent that launched it.
 ToolCategory = Literal["read", "edit", "run", "mcp", "agent", "handback", "other"]
+
+# Whether the calls of each category target a file.
+TARGETS_FILE: dict[ToolCategory, bool] = {
+    "read": True,
+    "edit": True,
+    "run": False,
+    "mcp": False,
+    "agent": False,
+    "handback": False,
+    "other": False,
+}
 
 NoteKind = Literal["hook_note", "stop_block"]
 
@@ -60,6 +72,9 @@ HarnessKind = (
 # The harness kinds whose records are changes to a list, so a session's total is their sum.
 DELTA_KINDS: frozenset[HarnessKind] = frozenset({"skill_list", "agent_list", "mcp_instructions", "deferred_tools"})
 
+
+# The records an assistant row yields besides its usage: its text and its tool calls.
+ASSISTANT_ROW_KINDS: frozenset[EventKind] = frozenset({"assistant_text", "tool_call"})
 
 # The event kinds a main-session turn holds whatever else the record carries: a loaded file and a compaction.
 TURN_HELD_KINDS: frozenset[EventKind] = frozenset({"post_compact", "instruction_load"})
@@ -161,6 +176,13 @@ class SubagentMeta:
 
 
 @dataclass(frozen=True)
+class ReplyText:
+    """The text an assistant row carries: its size in characters; never the text."""
+
+    chars: int
+
+
+@dataclass(frozen=True)
 class HarnessEntry:
     """One piece of what the harness put into a session's context: its kind, a label, how many items it holds
     (None when it is not a list) and its size in characters."""
@@ -238,8 +260,8 @@ class EventRecord:
     subagent_type: str | None = None
     # The file of an `instruction_load` record, the piece of the harness's context a `harness` record names, the
     # prompt a transcript's `prompt_submit` record sizes, the skill a `skill_run` record names, or the launch a
-    # `subagent_run` record describes.
-    item: InstructionLoad | HarnessEntry | PromptEntry | SkillRun | SubagentMeta | None = None
+    # `subagent_run` record describes, or the size of the text an `assistant_text` record carries.
+    item: InstructionLoad | HarnessEntry | PromptEntry | SkillRun | SubagentMeta | ReplyText | None = None
 
     @property
     def load(self) -> InstructionLoad | None:
@@ -265,6 +287,11 @@ class EventRecord:
     def launch(self) -> SubagentMeta | None:
         """The launch a `subagent_run` record describes."""
         return self.item if isinstance(self.item, SubagentMeta) else None
+
+    @property
+    def reply(self) -> ReplyText | None:
+        """The text size an `assistant_text` record carries."""
+        return self.item if isinstance(self.item, ReplyText) else None
 
     def to_json(self) -> JsonObject:
         """The record as a JSON object."""

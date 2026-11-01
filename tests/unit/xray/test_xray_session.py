@@ -93,7 +93,10 @@ def _handoffs(tmp_path: Path) -> XrayView:
 def test_the_handoffs_session_reads_as_a_tree_of_agents_with_how_each_ended(tmp_path: Path) -> None:
     view = _handoffs(tmp_path)
     nodes = {node.id[:5]: node for node in view.nodes}
-    assert {key: (node.parent and node.parent[:5], node.depth, node.descendants) for key, node in nodes.items()} == {
+    assert {
+        key: (node.tree.parent and node.tree.parent[:5], node.tree.depth, node.tree.descendants)
+        for key, node in nodes.items()
+    } == {
         "main": (None, 0, 6),
         "aaaa0": ("main", 1, 2),
         "abbb0": ("aaaa0", 2, 1),
@@ -105,12 +108,16 @@ def test_the_handoffs_session_reads_as_a_tree_of_agents_with_how_each_ended(tmp_
     assert {edge.child[:5]: edge.outcome for edge in view.edges} == {
         "aaaa0": "returned",
         "abbb0": "no_handback",
-        "accc0": "no_handback",
+        "accc0": "returned",
         "addd0": "returned",
         "aeee0": "stopped",
         "afff0": "no_handback",
     }
-    assert nodes["addd0"].type == "Explore" and nodes["main"].children[0].startswith("aaaa0")
+    # C ended on a final text reply, which is what it returned; B ended on a tool call and returned nothing.
+    edges = {edge.child[:5]: edge for edge in view.edges}
+    assert (edges["accc0"].back, edges["accc0"].back_t) == (len("PLACEHOLDER-TEXT-30") // 4, nodes["accc0"].end)
+    assert (edges["abbb0"].back, edges["abbb0"].back_t) == (None, None)
+    assert nodes["addd0"].type == "Explore" and nodes["main"].tree.children[0].startswith("aaaa0")
 
 
 def test_the_handoffs_session_shows_what_the_main_agent_did_on_its_station_and_track(tmp_path: Path) -> None:
@@ -204,7 +211,7 @@ def test_a_session_with_no_records_is_an_empty_view(tmp_path: Path) -> None:
     view = session.view({}, RUNNING)
     assert view.info.length_s is None and view.edges == ()
     (main,) = view.nodes
-    assert (main.id, main.end, main.children, main.detail.series) == ("main", 0.0, (), ())
+    assert (main.id, main.end, main.tree.children, main.detail.series) == ("main", 0.0, (), ())
 
 
 def test_the_json_is_plain_data(tmp_path: Path) -> None:
@@ -322,7 +329,7 @@ def test_the_model_is_the_latest_main_reply_that_names_one_and_the_window_shows_
     # The last main reply names no model, so the one before it stands; the subagent's model is not the session's.
     assert data["model"] == "claude-opus-5[1m]"
     assert data["window"] == {"size": 1_000_000, "basis": "observed"}
-    assert "context window" not in as_list(data["not_known"])
+    assert as_list(data["not_known"]) == []
 
 
 def test_a_session_below_200k_has_no_window_and_no_model_when_no_row_names_one(tmp_path: Path) -> None:
