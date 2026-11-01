@@ -31,6 +31,7 @@
 
 ### Internal
 
+- The `ails xray` transcript reader records each tool call (its category, MCP server, target path and a shell command's hash), each tool result's size and error state, and each subagent's description, parent, depth and brief size; `GET /call?id=` shows a shell call's command.
 - File names, prompts and file text on the `ails xray` page always show as plain text; markup in them never runs.
 
 - The `ails xray` page bundles the Geist and Geist Mono fonts (SIL Open Font License), so it loads no web fonts.

@@ -541,3 +541,34 @@ def test_file_level_is_the_whole_file_sentinel_line_zero_never_line_one() -> Non
     zero = FindingItem(file="CLAUDE.md", line=0, severity="info", rule="CORE:C:0053", message="m", check_id="x")
     assert xray_server._line(one)["file_level"] is False
     assert xray_server._line(zero)["file_level"] is True
+
+
+@pytest.fixture
+def handoff_client(project: Path, tmp_path: Path) -> TestClient:
+    copy = tmp_path / "handoffs"
+    shutil.copytree(FIXTURES.parent / "2.1.309-handoffs", copy)
+    app = xray_server.build_app(project, copy / "session.jsonl", TOKEN, PORT)
+    client = TestClient(app, base_url=ORIGIN)
+    client.get("/view", headers={"X-Xray-Token": TOKEN})
+    return client
+
+
+def test_call_replies_with_the_command_of_a_main_and_a_subagent_shell_call_and_is_never_cached(
+    handoff_client: TestClient,
+) -> None:
+    reply = _get(handoff_client, "/call", {"id": "toolu_bash1"})
+    assert reply.status_code == 200 and reply.headers["Cache-Control"] == "no-store"
+    assert reply.json() == {"id": "toolu_bash1", "text": "PLACEHOLDER-COMMAND --flag"}
+    assert _get(handoff_client, "/call", {"id": "toolu_bashD"}).json()["text"] == "PLACEHOLDER-SUB-COMMAND"
+
+
+@pytest.mark.parametrize("call_id", ["toolu_read1", "toolu_edit1", "toolu_agentA", "toolu_nosuch", "../x"])
+def test_call_refuses_an_id_that_is_not_a_shell_call_of_the_session(handoff_client: TestClient, call_id: str) -> None:
+    reply = _get(handoff_client, "/call", {"id": call_id})
+    assert reply.status_code == 400 and reply.json() == {"error": "not a call this page lists"}
+    assert _get(handoff_client, "/call", {}).status_code == 400
+
+
+def test_call_without_the_launch_token_is_refused(handoff_client: TestClient) -> None:
+    assert _get(handoff_client, "/call", {"id": "toolu_bash1"}, token=None).status_code == 403
+    assert _get(handoff_client, "/call", {"id": "toolu_bash1"}, token="wrong").status_code == 403

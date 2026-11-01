@@ -58,14 +58,29 @@ the adapter refuses any other shape of a row type it reads:
   list of blocks whose `type: "text"` blocks hold `text`.
 - every row the adapter reads (assistant, system, attachment) carries `sessionId` and `timestamp`; a row
   without either is refused.
-- a subagent file: its first row's `timestamp`, and the `agentType` of `agent-<id>.meta.json`.
+- a tool call: an `assistant` row whose `message.content` is a list holding `{"type": "tool_use", "id", "name",
+  "input"}` blocks, `id` and `name` strings and `input` an object. `name` is `mcp__<server>__<tool>` for an MCP
+  server's tool. From `input` only these are read: the path (`file_path`, else `notebook_path`, else `path`, a
+  string) of a read or edit tool, a hand-back's `message` (a string, for its size), a Bash or PowerShell call's
+  `command` (a string, for its hash; its text only through `resolve_call`).
+- a hand-back: a tool call named `SubagentHandback`, with `input.message`.
+- a tool result: a `user` row whose `message.content` is a list holding `{"type": "tool_result", "tool_use_id",
+  "content", "is_error"?}` blocks, `tool_use_id` a string, `is_error` a boolean when present and `content` a string
+  or a list of blocks, sized by the characters of its text; a block of any other type counts nothing.
+- a subagent file: its first row's `timestamp`, the `agentType` of `agent-<id>.meta.json` and, when present, the
+  meta fields `description`, `parentAgentId`, `toolUseId`, `requestShape` (strings; `background` marks a background
+  run), `spawnDepth` (a whole number) and `stoppedByUser` (a boolean).
+- a request blob: `type: "api-request-blob"` repeats request content; the row is not read, and tool calls come from
+  `assistant` rows only.
 
-Never read, except for the sizes, the brief and the prompts above: message content, tool input and output,
-`description`, `content`, `displayPath`.
+Never read, except for the sizes, the brief and the prompts above: message content, tool output, `content`,
+`displayPath`. Tool input is read only for the path, the MCP server, a hand-back message's size and a command's
+hash, and a command's text on request. The meta `description` is read.
 """
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, replace
 
 from reporails_cli.core.eventbus.port import PayloadRefused
@@ -86,7 +101,10 @@ from reporails_cli.core.platform.dto.events import (
     InstructionLoad,
     PromptEntry,
     SkillRun,
+    SubagentMeta,
     TokenUsage,
+    ToolCategory,
+    ToolUse,
 )
 
 # The `message.model` Claude Code writes on a reply it made itself, for an API error or an interrupt.
@@ -96,6 +114,101 @@ BRIEF_BLOCK_SEPARATOR = "\n\n"
 HOOK_NOTE_ATTACHMENTS = ("hook_additional_context", "hook_success", "hook_blocking_error")
 # The hook events whose plain-text stdout Claude Code adds to the context.
 HOOK_STDOUT_CONTEXT_EVENTS = ("UserPromptSubmit", "UserPromptExpansion", "SessionStart", "PostModelSwitch")
+MCP_PREFIX = "mcp__"
+MCP_SEPARATOR = "__"
+FINGERPRINT_CHARS = 16
+BACKGROUND_SHAPE = "background"
+# The tool names of each category the side track and the inspector group by; an MCP tool is told by its prefix.
+TOOL_CATEGORY: dict[str, ToolCategory] = {
+    **dict.fromkeys(("Read", "Grep", "Glob", "LS", "NotebookRead", "WebFetch", "WebSearch"), "read"),
+    **dict.fromkeys(("Edit", "MultiEdit", "Write", "NotebookEdit"), "edit"),
+    **dict.fromkeys(("Bash", "PowerShell"), "run"),
+    **dict.fromkeys(("Agent", "Task"), "agent"),
+    "SubagentHandback": "handback",
+}
+PATH_KEYS = ("file_path", "notebook_path", "path")
+
+
+def mcp_server(name: str) -> str | None:
+    """The server of an `mcp__<server>__<tool>` tool name; None for any other name."""
+    if not name.startswith(MCP_PREFIX):
+        return None
+    server = name.removeprefix(MCP_PREFIX).split(MCP_SEPARATOR, 1)[0]
+    return server or None
+
+
+def tool_category(name: str) -> ToolCategory:
+    """The category a tool name falls in."""
+    if mcp_server(name) is not None:
+        return "mcp"
+    return TOOL_CATEGORY.get(name, "other")
+
+
+def _content_blocks(row: JsonObject, block_type: str) -> list[JsonObject]:
+    """The blocks of the given type in a row's `message.content`; none when the content is not a list."""
+    content = as_object(row.get("message")).get("content")
+    if not isinstance(content, list):
+        return []
+    return [block for block in map(as_object, content) if block.get("type") == block_type]
+
+
+def _command(tool_input: JsonObject, name: str) -> str:
+    command = tool_input.get("command")
+    if not isinstance(command, str):
+        raise PayloadRefused(f"{name} call has no string command")
+    return command
+
+
+def _call_path(tool_input: JsonObject) -> str | None:
+    for key in PATH_KEYS:
+        value = tool_input.get(key)
+        if isinstance(value, str):
+            return value
+    return None
+
+
+def _tool_call(block: JsonObject) -> ToolUse:
+    """The call one `tool_use` block makes; refuses a block without string `id` and `name` or an object `input`."""
+    use_id, name, tool_input = block.get("id"), block.get("name"), block.get("input")
+    if not isinstance(use_id, str) or not isinstance(name, str):
+        raise PayloadRefused("tool_use block has no string id and name")
+    if not isinstance(tool_input, dict):
+        raise PayloadRefused(f"{name} call input is not an object")
+    category = tool_category(name)
+    path = _call_path(tool_input) if category in ("read", "edit") else None
+    chars: int | None = None
+    fingerprint: str | None = None
+    if category == "handback":
+        message = tool_input.get("message")
+        if not isinstance(message, str):
+            raise PayloadRefused("SubagentHandback call has no string message")
+        chars = len(message)
+    elif category == "run":
+        fingerprint = hashlib.sha256(_command(tool_input, name).encode()).hexdigest()[:FINGERPRINT_CHARS]
+    return ToolUse(name, use_id, path, server=mcp_server(name), category=category, chars=chars, fingerprint=fingerprint)
+
+
+def _tool_result(block: JsonObject) -> ToolUse:
+    """The result one `tool_result` block reports: its call id, the size of its content and whether it failed."""
+    use_id, failed = block.get("tool_use_id"), block.get("is_error")
+    if not isinstance(use_id, str):
+        raise PayloadRefused("tool_result block has no string tool_use_id")
+    if failed is not None and not isinstance(failed, bool):
+        raise PayloadRefused("tool_result is_error is not a boolean")
+    texts = _blocks_text(block.get("content"), "tool_result")
+    if texts is None:
+        raise PayloadRefused("tool_result content is neither text nor a list of blocks")
+    return ToolUse(use_id=use_id, chars=sum(len(text) for text in texts), error=bool(failed))
+
+
+def _meta_field[Field: (str, int, bool)](meta: JsonObject, key: str, kind: type[Field]) -> Field | None:
+    """A meta field that must be of type `kind` when present; None when absent."""
+    value = meta.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, kind) or (kind is int and isinstance(value, bool)):
+        raise PayloadRefused(f"subagent meta {key} is not a {kind.__name__}")
+    return value
 
 
 @dataclass(frozen=True)
@@ -174,7 +287,7 @@ class ClaudeTranscriptAdapter:
         """The records one row carries; refuses a known row type whose fields are not the pinned shape."""
         kind = row.get("type")
         if kind == "assistant":
-            return [self._usage(row, subagent_id)]
+            return [self._usage(row, subagent_id), *self._tool_calls(row, subagent_id)]
         if kind == "system" and row.get("subtype") == "turn_duration":
             return [self._record(row, "turn_end", subagent_id)]
         if kind == "system" and row.get("subtype") == "compact_boundary":
@@ -182,8 +295,20 @@ class ClaudeTranscriptAdapter:
         if kind == "attachment":
             return self._attachment(row, subagent_id)
         if kind == "user":
-            return [*self._prompt(row, subagent_id), *self._skill_run(row, subagent_id)]
+            return [
+                *self._prompt(row, subagent_id),
+                *self._skill_run(row, subagent_id),
+                *self._tool_results(row, subagent_id),
+            ]
         return []
+
+    def resolve_call(self, row: JsonObject, use_id: str) -> str:
+        """The command of the tool call `use_id` in an assistant row, for the route that shows it; refuses a row
+        with no such call or a call with no string command."""
+        for block in _content_blocks(row, "tool_use"):
+            if block.get("id") == use_id:
+                return _command(as_object(block.get("input")), str(block.get("name")))
+        raise PayloadRefused(f"row holds no tool call {use_id}")
 
     def resolve_brief(self, first_row: JsonObject) -> str:
         """The brief a subagent was given, the text of its first row; refuses a first row that is not a user
@@ -210,7 +335,28 @@ class ClaudeTranscriptAdapter:
         agent_type = opt_str(meta.get("agentType"))
         if not agent_type:
             raise PayloadRefused(f"subagent {subagent_id} meta has no agentType")
-        return replace(self._record(first_row, "subagent_run", subagent_id), subagent_type=agent_type)
+        launch = SubagentMeta(
+            description=_meta_field(meta, "description", str),
+            parent_id=_meta_field(meta, "parentAgentId", str),
+            tool_use_id=_meta_field(meta, "toolUseId", str),
+            depth=_meta_field(meta, "spawnDepth", int),
+            brief_chars=len(self.resolve_brief(first_row)),
+            stopped=_meta_field(meta, "stoppedByUser", bool) is True,
+            background=_meta_field(meta, "requestShape", str) == BACKGROUND_SHAPE,
+        )
+        return replace(self._record(first_row, "subagent_run", subagent_id), subagent_type=agent_type, item=launch)
+
+    def _tool_calls(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
+        return [
+            replace(self._record(row, "tool_call", subagent_id), tool=_tool_call(block))
+            for block in _content_blocks(row, "tool_use")
+        ]
+
+    def _tool_results(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
+        return [
+            replace(self._record(row, "tool_result", subagent_id), tool=_tool_result(block))
+            for block in _content_blocks(row, "tool_result")
+        ]
 
     def _record(self, row: JsonObject, event: EventKind, subagent_id: str | None) -> EventRecord:
         what = f"{row.get('type')} row"

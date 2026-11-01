@@ -48,6 +48,10 @@ class TranscriptAdapter(Protocol):
     def resolve_prompt(self, row: JsonObject) -> str:
         """The text of a typed prompt, from its row; raises `PayloadRefused` when the row is not one."""
 
+    def resolve_call(self, row: JsonObject, use_id: str) -> str:
+        """The shell command of the tool call `use_id`, from its row; raises `PayloadRefused` when the row holds
+        no such call or the call has no command."""
+
 
 class EventSubscriber(Protocol):  # pylint: disable=too-few-public-methods  # a port of one method
     """A consumer of event records: called once per record."""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 from reporails_cli.core.discovery.agent_discovery import claude_project_dir
@@ -96,8 +97,29 @@ def prompt_text(agent: str, session_file: Path, prompt_id: str) -> str | None:
     adapter = get_transcript_adapter(agent)
     if adapter is None:
         raise PayloadRefused(f"unknown agent: {agent}")
-    row = _row_with_uuid(session_file, prompt_id)
+    row = _find_row(session_file, prompt_id, lambda row: row.get("uuid") == prompt_id)
     return None if row is None else adapter.resolve_prompt(row)
+
+
+def call_text(agent: str, session_file: Path, subagent_id: str | None, use_id: str) -> str | None:
+    """The shell command of tool call `use_id`, written in the main transcript (`subagent_id` None) or in that
+    subagent's file; None when the file holds no assistant row with such a call.
+
+    Raises `PayloadRefused` when the agent is unknown or the call is not the pinned shape. The text is
+    returned, never stored."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        raise PayloadRefused(f"unknown agent: {agent}")
+    path = (
+        session_file if subagent_id is None else _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
+    )
+    row = _find_row(path, use_id, lambda row: row.get("type") == "assistant" and _holds_call(row, use_id))
+    return None if row is None else adapter.resolve_call(row, use_id)
+
+
+def _holds_call(row: JsonObject, use_id: str) -> bool:
+    content = as_object(row.get("message")).get("content")
+    return isinstance(content, list) and any(as_object(block).get("id") == use_id for block in content)
 
 
 def _read_file(
@@ -164,17 +186,18 @@ def _first_row(path: Path) -> JsonObject | None:
         return None
 
 
-def _row_with_uuid(path: Path, uuid: str) -> JsonObject | None:
-    """The row of a file whose own `uuid` is `uuid`; None when none is or the file cannot be read."""
-    needle = uuid.encode()
+def _find_row(path: Path, needle: str, matches: Callable[[JsonObject], bool]) -> JsonObject | None:
+    """The first row of a file that holds `needle` and that `matches` accepts; None when none does or the file
+    cannot be read."""
+    raw = needle.encode()
     try:
         with path.open("rb") as handle:
             for line in handle:
-                if needle not in line:
+                if raw not in line:
                     continue
                 with contextlib.suppress(ValueError):
                     row = as_object(json.loads(line))
-                    if row.get("uuid") == uuid:
+                    if matches(row):
                         return row
     except OSError:
         return None

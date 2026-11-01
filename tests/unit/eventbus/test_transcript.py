@@ -11,7 +11,7 @@ import pytest
 
 from reporails_cli.core.eventbus.adapters.claude_transcript import ClaudeTranscriptAdapter
 from reporails_cli.core.eventbus.port import PayloadRefused
-from reporails_cli.core.eventbus.transcript import prompt_text, read_transcript, subagent_brief
+from reporails_cli.core.eventbus.transcript import call_text, prompt_text, read_transcript, subagent_brief
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
 from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
 
@@ -392,7 +392,10 @@ def _tool_result(result: object) -> JsonObject:
         "uuid": "u1",
         "sessionId": "s",
         "timestamp": "2026-10-31T10:00:00.000Z",
-        "message": {"role": "user", "content": [{"type": "tool_result", "content": "Launching skill"}]},
+        "message": {
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "Launching skill"}],
+        },
         "toolUseResult": result,
     }
 
@@ -408,7 +411,7 @@ def _tool_result(result: object) -> JsonObject:
     ],
 )
 def test_a_skill_run_is_a_record_named_by_its_command(result: JsonObject, name: str) -> None:
-    (record,) = ClaudeTranscriptAdapter().resolve_row(_tool_result(result), None)
+    (record,) = _of(ClaudeTranscriptAdapter().resolve_row(_tool_result(result), None), "skill_run")
     assert record.event == "skill_run" and record.skill is not None and record.skill.name == name
     assert record.skill.forked == (result.get("status") == "forked")
 
@@ -419,7 +422,7 @@ def test_a_skill_run_is_a_record_named_by_its_command(result: JsonObject, name: 
     ids=["failed run", "no command name", "text result"],
 )
 def test_a_failed_skill_run_and_a_tool_result_without_a_command_yield_nothing(result: object) -> None:
-    assert ClaudeTranscriptAdapter().resolve_row(_tool_result(result), None) == []
+    assert _of(ClaudeTranscriptAdapter().resolve_row(_tool_result(result), None), "skill_run") == []
 
 
 @pytest.mark.parametrize(
@@ -519,3 +522,238 @@ def test_a_skill_listing_row_names_its_skills_only_when_the_row_carries_them() -
     assert bare.harness is not None and bare.harness.names is None
     with pytest.raises(PayloadRefused, match="names"):
         ClaudeTranscriptAdapter().resolve_row(_listing_row(names="a"), None)
+
+
+HANDOFFS = "2.1.309-handoffs"
+SUB_A, SUB_B, SUB_C, SUB_D, SUB_E = (
+    "aaaa0000000000001",
+    "abbb0000000000002",
+    "accc0000000000003",
+    "addd0000000000004",
+    "aeee0000000000005",
+)
+
+
+def _handoff_records(tmp_path: Path) -> list[EventRecord]:
+    records, _ = read_transcript("claude", _copy(HANDOFFS, tmp_path), TranscriptCursor())
+    return records
+
+
+def test_the_handoffs_session_reads_into_the_expected_records_with_no_refusal(tmp_path: Path) -> None:
+    records = _handoff_records(tmp_path)
+    counts: dict[str, int] = {}
+    for record in records:
+        counts[record.event] = counts.get(record.event, 0) + 1
+    assert counts["tool_call"] == 19 and counts["tool_result"] == 18 and counts["subagent_run"] == 6
+    assert counts["instruction_load"] == 8 and counts["post_compact"] == 1 and counts["skill_run"] == 1
+    assert "refusal" not in counts
+    categories: dict[str, int] = {}
+    for record in _of(records, "tool_call"):
+        assert record.tool is not None and record.tool.category is not None
+        categories[record.tool.category] = categories.get(record.tool.category, 0) + 1
+    assert categories == {"agent": 6, "mcp": 4, "run": 5, "read": 1, "edit": 1, "other": 1, "handback": 1}
+
+
+def test_a_nested_subagent_carries_its_parent_and_depth_and_no_launching_call(tmp_path: Path) -> None:
+    launches = {r.subagent_id: r.launch for r in _of(_handoff_records(tmp_path), "subagent_run")}
+    nested, deeper, foreground, stopped = launches[SUB_B], launches[SUB_C], launches[SUB_D], launches[SUB_E]
+    assert nested is not None and deeper is not None and foreground is not None and stopped is not None
+    assert (nested.parent_id, nested.tool_use_id, nested.depth, nested.background) == (SUB_A, None, 2, True)
+    assert (deeper.parent_id, deeper.tool_use_id, deeper.depth) == (SUB_B, None, 3)
+    assert (foreground.tool_use_id, foreground.background, foreground.stopped) == ("toolu_agentD", False, False)
+    assert stopped.stopped is True and stopped.description == "PLACEHOLDER-DESC-E"
+    assert nested.brief_chars == len(subagent_brief("claude", _copy_session(tmp_path), SUB_B) or "")
+
+
+def _copy_session(tmp_path: Path) -> Path:
+    return _copy(HANDOFFS, tmp_path) if not (tmp_path / HANDOFFS).exists() else tmp_path / HANDOFFS / "session.jsonl"
+
+
+def test_a_handback_call_carries_its_message_size_and_is_the_only_call_with_chars(tmp_path: Path) -> None:
+    calls = [r.tool for r in _of(_handoff_records(tmp_path), "tool_call") if r.tool is not None]
+    (handback,) = [tool for tool in calls if tool.category == "handback"]
+    assert handback.chars == 480 and handback.name == "SubagentHandback"
+    assert all(tool.chars is None for tool in calls if tool.category != "handback")
+
+
+def test_the_three_failing_runs_of_one_command_share_a_fingerprint_with_the_success_after_them(
+    tmp_path: Path,
+) -> None:
+    records = _handoff_records(tmp_path)
+    runs = [r.tool for r in _of(records, "tool_call") if r.tool and r.tool.category == "run" and not r.subagent_id]
+    errors = {r.tool.use_id: r.tool.error for r in _of(records, "tool_result") if r.tool}
+    assert len({tool.fingerprint for tool in runs}) == 1 and runs[0].fingerprint is not None
+    assert len(runs[0].fingerprint) == 16
+    assert [errors[tool.use_id or ""] for tool in runs] == [True, True, True, False]
+
+
+def test_mcp_calls_name_their_server_and_read_calls_their_path(tmp_path: Path) -> None:
+    calls = [r.tool for r in _of(_handoff_records(tmp_path), "tool_call") if r.tool is not None]
+    assert {tool.server for tool in calls if tool.category == "mcp"} == {"plugin_docs_server"}
+    assert {tool.path for tool in calls if tool.category in ("read", "edit")} == {
+        "/work/proj/CLAUDE.md",
+        "/work/proj/src/mod.py",
+    }
+    assert all(tool.path is None for tool in calls if tool.category not in ("read", "edit"))
+
+
+def test_a_tool_result_sizes_a_text_list_by_its_text_blocks_only(tmp_path: Path) -> None:
+    results = {r.tool.use_id: r.tool for r in _of(_handoff_records(tmp_path), "tool_result") if r.tool}
+    assert results["toolu_mcp1"].chars == len("PLACEHOLDER-MCP-RESULT") and results["toolu_mcp1"].error is False
+    assert results["toolu_bash1"].error is True and results["toolu_bash4"].error is False
+
+
+def test_the_text_of_a_main_and_a_subagent_command_is_read_back_by_call_id(tmp_path: Path) -> None:
+    session = _copy_session(tmp_path)
+    assert call_text("claude", session, None, "toolu_bash2") == "PLACEHOLDER-COMMAND --flag"
+    assert call_text("claude", session, SUB_D, "toolu_bashD") == "PLACEHOLDER-SUB-COMMAND"
+    assert call_text("claude", session, None, "toolu_bashD") is None
+    assert call_text("claude", session, SUB_D, "toolu_nosuch") is None
+    with pytest.raises(PayloadRefused, match="unknown agent"):
+        call_text("nosuch", session, None, "toolu_bash2")
+
+
+def test_a_call_with_no_command_has_no_text_to_read_back(tmp_path: Path) -> None:
+    session = _copy_session(tmp_path)
+    with pytest.raises(PayloadRefused, match="no string command"):
+        call_text("claude", session, None, "toolu_edit1")
+
+
+def _call_row(name: str, tool_input: object, use_id: str = "toolu_1") -> JsonObject:
+    row = _assistant_row(content=[{"type": "tool_use", "id": use_id, "name": name, "input": tool_input}])
+    return row
+
+
+def test_the_assistant_row_of_a_call_yields_its_usage_and_the_call() -> None:
+    records = ClaudeTranscriptAdapter().resolve_row(_call_row("Bash", {"command": "ls"}), "sub")
+    assert [r.event for r in records] == ["assistant_usage", "tool_call"]
+    assert records[1].subagent_id == "sub" and records[1].tool is not None and records[1].tool.use_id == "toolu_1"
+
+
+@pytest.mark.parametrize(
+    ("name", "tool_input", "reason"),
+    [
+        ("Bash", [], "input is not an object"),
+        ("Bash", {"command": 7}, "no string command"),
+        ("SubagentHandback", {"message": None}, "no string message"),
+        ("Bash", {"cmd": "ls"}, "no string command"),
+    ],
+)
+def test_a_tool_call_of_an_unknown_shape_is_refused(name: str, tool_input: object, reason: str) -> None:
+    with pytest.raises(PayloadRefused, match=reason):
+        ClaudeTranscriptAdapter().resolve_row(_call_row(name, tool_input), None)
+
+
+@pytest.mark.parametrize(
+    "block", [{"type": "tool_use", "name": "Read", "input": {}}, {"type": "tool_use", "id": "t", "input": {}}]
+)
+def test_a_tool_use_block_without_a_string_id_and_name_is_refused(block: JsonObject) -> None:
+    with pytest.raises(PayloadRefused, match="string id and name"):
+        ClaudeTranscriptAdapter().resolve_row(_assistant_row(content=[block]), None)
+
+
+def _result_row(block: JsonObject) -> JsonObject:
+    return {
+        "type": "user",
+        "sessionId": "s",
+        "timestamp": "2026-10-31T10:00:00.000Z",
+        "message": {"role": "user", "content": [{"type": "tool_result", **block}]},
+    }
+
+
+@pytest.mark.parametrize(
+    ("block", "reason"),
+    [
+        ({"content": "x"}, "tool_use_id"),
+        ({"tool_use_id": "t", "content": "x", "is_error": "yes"}, "is_error"),
+        ({"tool_use_id": "t", "content": 5}, "neither text nor a list"),
+        ({"tool_use_id": "t"}, "neither text nor a list"),
+    ],
+)
+def test_a_tool_result_of_an_unknown_shape_is_refused(block: JsonObject, reason: str) -> None:
+    with pytest.raises(PayloadRefused, match=reason):
+        ClaudeTranscriptAdapter().resolve_row(_result_row(block), None)
+
+
+def test_a_tool_result_without_is_error_reads_as_no_error() -> None:
+    (record,) = ClaudeTranscriptAdapter().resolve_row(_result_row({"tool_use_id": "t", "content": "abc"}), None)
+    assert record.tool is not None and (record.tool.chars, record.tool.error) == (3, False)
+
+
+@pytest.mark.parametrize(
+    ("name", "category", "server"),
+    [
+        ("Grep", "read", None),
+        ("MultiEdit", "edit", None),
+        ("PowerShell", "run", None),
+        ("Task", "agent", None),
+        ("mcp__claude_ai_Notion__notion-search", "mcp", "claude_ai_Notion"),
+        ("mcp__reporails-dev__validate", "mcp", "reporails-dev"),
+        ("EnterWorktree", "other", None),
+    ],
+)
+def test_a_tool_name_falls_in_its_category_and_an_mcp_name_names_its_server(
+    name: str, category: str, server: str | None
+) -> None:
+    tool_input: JsonObject = {"command": "x"} if category == "run" else {}
+    (_, record) = ClaudeTranscriptAdapter().resolve_row(_call_row(name, tool_input), None)
+    assert record.tool is not None and (record.tool.category, record.tool.server) == (category, server)
+
+
+def test_a_notebook_path_or_a_plain_path_names_the_target_when_no_file_path_does() -> None:
+    adapter = ClaudeTranscriptAdapter()
+    (_, notebook) = adapter.resolve_row(_call_row("NotebookEdit", {"notebook_path": "/n.ipynb"}), None)
+    (_, grep) = adapter.resolve_row(_call_row("Grep", {"path": "/src", "pattern": "x"}), None)
+    assert notebook.tool is not None and notebook.tool.path == "/n.ipynb"
+    assert grep.tool is not None and grep.tool.path == "/src"
+
+
+def test_a_request_blob_row_is_not_read() -> None:
+    row = {
+        "type": "api-request-blob",
+        "sessionId": "s",
+        "hash": "h",
+        "message": {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "id": "t", "name": "Bash", "input": {"command": "ls"}}],
+        },
+    }
+    assert ClaudeTranscriptAdapter().resolve_row(row, None) == []
+
+
+def test_resolve_call_refuses_a_row_without_the_call() -> None:
+    adapter = ClaudeTranscriptAdapter()
+    assert adapter.resolve_call(_call_row("Bash", {"command": "ls -la"}), "toolu_1") == "ls -la"
+    with pytest.raises(PayloadRefused, match="no tool call toolu_2"):
+        adapter.resolve_call(_call_row("Bash", {"command": "ls"}), "toolu_2")
+
+
+def _meta(**fields: object) -> JsonObject:
+    return {"agentType": "general-purpose", **fields}  # type: ignore[dict-item]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("description", 3),
+        ("parentAgentId", 3),
+        ("toolUseId", 3),
+        ("requestShape", 3),
+        ("spawnDepth", "2"),
+        ("spawnDepth", True),
+        ("stoppedByUser", "yes"),
+    ],
+)
+def test_a_meta_field_of_the_wrong_type_is_refused_naming_it(field: str, value: object) -> None:
+    first = {"type": "user", "sessionId": "s", "timestamp": "2026-10-31T10:00:00.000Z", "message": {"content": "hi"}}
+    with pytest.raises(PayloadRefused, match=field):
+        ClaudeTranscriptAdapter().resolve_subagent("a1", _meta(**{field: value}), first)
+
+
+def test_a_meta_file_without_the_optional_fields_reads_as_a_foreground_launch_of_nothing_known() -> None:
+    first = {"type": "user", "sessionId": "s", "timestamp": "2026-10-31T10:00:00.000Z", "message": {"content": "hello"}}
+    record = ClaudeTranscriptAdapter().resolve_subagent("a1", _meta(), first)
+    launch = record.launch
+    assert launch is not None and launch.brief_chars == 5
+    assert (launch.description, launch.parent_id, launch.tool_use_id, launch.depth) == (None, None, None, None)
+    assert (launch.stopped, launch.background) == (False, False)

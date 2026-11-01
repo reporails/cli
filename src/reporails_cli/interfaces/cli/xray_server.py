@@ -12,7 +12,7 @@ import secrets
 import shlex
 import socket
 import threading
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -152,45 +152,45 @@ class XrayServer:
         with self._view_lock:
             return self._session.peek(path)
 
-    async def brief(self, request: Request) -> Response:
-        """The brief one listed subagent was given."""
+    async def _text_route(
+        self, request: Request, query: str, hint: str, lookup: Callable[[str], str | None], unknown: str
+    ) -> Response:
+        """Guard the request, read `?<query>=` and reply `{"id", "text"}` with what `lookup` finds for it."""
         refusal = await self._guard(request)
         if refusal is not None:
             return refusal
-        subagent = request.query_params.get("subagent")
-        if subagent is None:
-            return _refused(400, "the query is ?subagent=<id>")
+        key = request.query_params.get(query)
+        if key is None:
+            return _refused(400, hint)
         try:
-            text = await run_in_threadpool(self._brief, subagent)
+            text = await run_in_threadpool(self._locked, lookup, key)
         except PayloadRefused as err:
             return _refused(400, err.reason)
         if text is None:
-            return _refused(400, "not a subagent this page lists")
-        return JSONResponse({"id": subagent, "text": text}, headers=NO_STORE)
+            return _refused(400, unknown)
+        return JSONResponse({"id": key, "text": text}, headers=NO_STORE)
 
-    def _brief(self, subagent: str) -> str | None:
+    def _locked(self, lookup: Callable[[str], str | None], key: str) -> str | None:
         with self._view_lock:
-            return self._session.brief(subagent)
+            return lookup(key)
+
+    async def brief(self, request: Request) -> Response:
+        """The brief one listed subagent was given."""
+        return await self._text_route(
+            request, "subagent", "the query is ?subagent=<id>", self._session.brief, "not a subagent this page lists"
+        )
 
     async def prompt(self, request: Request) -> Response:
         """The text of one typed prompt of the session."""
-        refusal = await self._guard(request)
-        if refusal is not None:
-            return refusal
-        prompt_id = request.query_params.get("id")
-        if prompt_id is None:
-            return _refused(400, "the query is ?id=<prompt id>")
-        try:
-            text = await run_in_threadpool(self._prompt, prompt_id)
-        except PayloadRefused as err:
-            return _refused(400, err.reason)
-        if text is None:
-            return _refused(400, "not a prompt this page lists")
-        return JSONResponse({"id": prompt_id, "text": text}, headers=NO_STORE)
+        return await self._text_route(
+            request, "id", "the query is ?id=<prompt id>", self._session.prompt, "not a prompt this page lists"
+        )
 
-    def _prompt(self, prompt_id: str) -> str | None:
-        with self._view_lock:
-            return self._session.prompt(prompt_id)
+    async def call(self, request: Request) -> Response:
+        """The command of one shell call of the session."""
+        return await self._text_route(
+            request, "id", "the query is ?id=<call id>", self._session.call, "not a call this page lists"
+        )
 
     async def check(self, request: Request) -> Response:
         """Check one file and reply with its findings."""
@@ -292,6 +292,7 @@ def build_app(root: Path, session_file: Path, token: str, port: int) -> Starlett
             Route("/peek", server.peek, methods=["GET"]),
             Route("/brief", server.brief, methods=["GET"]),
             Route("/prompt", server.prompt, methods=["GET"]),
+            Route("/call", server.call, methods=["GET"]),
             Route("/check", server.check, methods=["POST"]),
             Route("/heal", server.heal, methods=["POST"]),
             Mount("/static", StaticFiles(directory=page)),
