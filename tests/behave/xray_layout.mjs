@@ -1,4 +1,4 @@
-// usage: node xray_layout.mjs <page-url> <layout|memory|prompt> [width]
+// usage: node xray_layout.mjs <page-url> <layout|memory|prompt|markup> [width]
 // Drives the page in headless Chrome and prints one JSON object describing what it drew.
 import { openPage } from './xray_cdp.mjs';
 
@@ -40,6 +40,27 @@ if (mode === 'prompt' && ready) {
   out.id = await page.ev(`document.querySelector('[data-prompt]').dataset.prompt`);
   await page.ev(`document.querySelector('[data-prompt]').click(); 0`);
   out.text = (await page.until(`(document.querySelector('pre.peek')||{}).textContent`)) || '';
+}
+
+if (mode === 'markup' && ready) {
+  await page.ev(`document.querySelector('[data-group="memory"]').click(); 0`);
+  out.row = await page.ev(`(() => {
+    const row = [...document.querySelectorAll('#alist .fr[data-file^="memory:"]')].find(r => r.dataset.file.includes('onerror'));
+    if (!row) return null;
+    const label = row.querySelector('.p').textContent; row.click(); return label;
+  })()`);
+  out.text = out.row ? (await page.until(`(document.querySelector('pre.peek')||{}).textContent`)) || '' : '';
+  await page.ev(`document.querySelector('[data-back]').click(); 0`);
+  await page.ev(`document.querySelector('[data-turnh]').click(); 0`);
+  await page.until(`!!document.querySelector('[data-prompt]')`);
+  await page.ev(`document.querySelector('[data-prompt]').click(); 0`);
+  out.promptText = (await page.until(`(document.querySelector('pre.peek')||{}).textContent`)) || '';
+  out.dom = await page.ev(`({
+    pwned: window.__pwned === undefined ? null : window.__pwned,
+    imgs: document.querySelectorAll('img').length,
+    inPeek: document.querySelectorAll('pre.peek *').length,
+    rowChildren: [...document.querySelectorAll('#alist .fr *')].filter(e => e.tagName !== 'SPAN').length,
+  })`);
 }
 
 console.log(JSON.stringify(out));

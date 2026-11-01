@@ -55,6 +55,16 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Then the printed address is on 127.0.0.1
     And the page shows "first text" for the file, then "second text" once the file and the session change
 
+  @e2e @browser
+  Scenario: Markup in a file name and in a prompt shows as text and builds no element
+    Given a project with a recorded Claude Code session
+    And the project's memory folder holds an unlinked note named "<img src=x onerror=window.__pwned=1>.md" reading "<b>bold</b>"
+    And the session's first prompt was typed and reads "<b>bold</b> <img src=x onerror=window.__pwned=1>"
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the markup in the file name, the file and the prompt shows literally and no element or handler was injected
+    And the page's scripts write to no HTML sink
+
   @e2e
   Scenario: A project with no recorded session is refused
     Given a project with no recorded Claude Code session

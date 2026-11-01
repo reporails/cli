@@ -15,6 +15,7 @@ from pathlib import Path
 from behave import given, then, when  # type: ignore[import-untyped]
 from support import AILS_BIN, build_project, run_ails  # behave puts features/ on sys.path
 
+from reporails_cli.bundled import get_xray_path
 from reporails_cli.core.discovery.agent_discovery import claude_project_folder_name
 from tests.suite_env import suite_env
 
@@ -61,6 +62,14 @@ def step_unlinked_memory(context, text):
     memory.mkdir()
     (memory / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
     (memory / "feedback_orphan.md").write_text(f"---\ntype: feedback\n---\n{text}\n", encoding="utf-8")
+
+
+@given('the project\'s memory folder holds an unlinked note named "{name}" reading "{text}"')
+def step_unlinked_named_memory(context, name, text):
+    memory = context.home / ".claude" / "projects" / claude_project_folder_name(context.project) / "memory"
+    memory.mkdir()
+    (memory / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+    (memory / name).write_text(f"---\ntype: feedback\n---\n{text}\n", encoding="utf-8")
 
 
 @given('the session\'s first prompt was typed and reads "{text}"')
@@ -238,6 +247,29 @@ def step_prompt_on_click(context):
     status, body = _get(context.url + "prompt?id=" + seen["id"], token)
     assert status == 200, status
     assert seen["text"] == json.loads(body)["text"] == "typed prompt text", (seen, body)
+
+
+@then("the markup in the file name, the file and the prompt shows literally and no element or handler was injected")
+def step_markup_is_text(context):
+    seen = _layout_script(context, "markup")
+    if seen is None:
+        return
+    assert seen["ready"], "the page did not draw"
+    assert seen["row"] == "<img src=x onerror=window.__pwned=1>", seen
+    assert seen["text"].strip().endswith("<b>bold</b>"), seen
+    assert seen["promptText"] == "<b>bold</b> <img src=x onerror=window.__pwned=1>", seen
+    assert seen["dom"] == {"pwned": None, "imgs": 0, "inPeek": 0, "rowChildren": 0}, seen
+
+
+@then("the page's scripts write to no HTML sink")
+def step_no_html_sink(context):
+    scripts = sorted(get_xray_path().rglob("*.js"))
+    assert scripts, "the page has no scripts"
+    sinks = re.compile(r"innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment|DOMParser")
+    found = [
+        f"{path.name}: {hit.group(0)}" for path in scripts for hit in sinks.finditer(path.read_text(encoding="utf-8"))
+    ]
+    assert not found, found
 
 
 @then('the page shows "{first}" for the file, then "{second}" once the file and the session change')

@@ -6,11 +6,12 @@ launch token and file path pass; the routes only translate between HTTP and the 
 
 from __future__ import annotations
 
+import mimetypes
 import secrets
 import shlex
 import socket
 import threading
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -21,7 +22,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware import Middleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, Response
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -52,6 +53,9 @@ PAGE_HEADERS = {
     "Cache-Control": "no-store",
 }
 NO_STORE = {"Cache-Control": "no-store"}
+
+# Browsers refuse a module script served under another type, and some platforms map `.js` to one.
+mimetypes.add_type("text/javascript", ".js")
 
 
 def _refused(status: int, message: str) -> JSONResponse:
@@ -262,15 +266,6 @@ def _line(finding: FindingItem) -> JsonObject:
     }
 
 
-def _static(name: str) -> Callable[[Request], Awaitable[Response]]:
-    """The endpoint that serves one file of the bundled page."""
-
-    async def endpoint(_request: Request) -> Response:
-        return FileResponse(get_xray_path() / name)
-
-    return endpoint
-
-
 def build_app(root: Path, session_file: Path, token: str, port: int) -> Starlette:
     """The page server for one session: the fixed routes behind the host, origin, token and path guards."""
     server = XrayServer(safe_resolve(root), session_file, token, port)
@@ -291,9 +286,7 @@ def build_app(root: Path, session_file: Path, token: str, port: int) -> Starlett
             Route("/prompt", server.prompt, methods=["GET"]),
             Route("/check", server.check, methods=["POST"]),
             Route("/heal", server.heal, methods=["POST"]),
-            Route("/xray.js", _static("xray.js"), methods=["GET"]),
-            Route("/xray.css", _static("xray.css"), methods=["GET"]),
-            Mount("/fonts", StaticFiles(directory=page / "fonts")),
+            Mount("/static", StaticFiles(directory=page)),
         ],
         middleware=[Middleware(TrustedHostMiddleware, allowed_hosts=[HOST])],
     )

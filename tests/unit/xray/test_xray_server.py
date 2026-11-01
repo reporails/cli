@@ -321,6 +321,20 @@ def test_the_page_carries_the_policy_and_the_token(client: TestClient) -> None:
     assert "__XRAY_TOKEN__" not in reply.text and f'content="{TOKEN}"' in reply.text
 
 
+def test_module_scripts_are_served_as_javascript_from_the_one_static_mount(client: TestClient) -> None:
+    reply = client.get("/static/js/components/chart.js")
+    assert reply.status_code == 200
+    assert reply.headers["content-type"].split(";")[0] == "text/javascript"
+    page = client.get("/").text
+    assert '<script type="module" src="/static/js/main.js"></script>' in page
+    assert "/static/xray.css" in page
+
+
+def test_the_per_file_page_routes_are_gone(client: TestClient) -> None:
+    for path in ["/xray.js", "/xray.css", "/fonts/Geist-Variable.woff2", "/static/xray.js"]:
+        assert client.get(path).status_code == 404
+
+
 def test_the_page_and_its_data_load_with_the_network_blocked(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -329,7 +343,14 @@ def test_the_page_and_its_data_load_with_the_network_blocked(
 
     monkeypatch.setattr(socket.socket, "connect", refuse)
     monkeypatch.setattr(socket, "create_connection", refuse)
-    paths = ["/", "/view", "/xray.js", "/xray.css", "/fonts/Geist-Variable.woff2", "/fonts/GeistMono-Variable.woff2"]
+    paths = [
+        "/",
+        "/view",
+        "/static/js/main.js",
+        "/static/xray.css",
+        "/static/fonts/Geist-Variable.woff2",
+        "/static/fonts/GeistMono-Variable.woff2",
+    ]
     codes = [client.get(path, headers={"X-Xray-Token": TOKEN}).status_code for path in paths]
     assert codes == [200] * len(paths)
 

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="xray-token" content="__XRAY_TOKEN__">
 <title>Session x-ray</title>
-<link rel="stylesheet" href="xray.css">
+<link rel="stylesheet" href="/static/xray.css">
 </head>
 <body>
 <div class="wrap">
@@ -27,6 +27,39 @@
   </div>
   <footer class="foot"><span id="src"></span></footer>
 </div>
-<script src="xray.js"></script>
+<script type="module" src="/static/js/main.js"></script>
+<template id="t-chart">
+<div class="ch"><b>Context window</b><span data-slot="counts"></span><span class="scale" data-slot="scale"></span></div>
+<div data-slot="plot"></div>
+<div class="keys">
+<span><svg width="14" height="10" viewBox="0 0 14 10" style="overflow:visible;margin-right:5px;vertical-align:-1px"><rect x="0" y="1" width="14" height="8" rx="1" fill="color-mix(in srgb,var(--blue) 22%,transparent)" stroke="var(--blue)"/></svg>main session, context after each reply</span>
+<span><svg width="14" height="10" viewBox="0 0 14 10" style="overflow:visible;margin-right:5px;vertical-align:-1px"><rect x="0" y="0" width="12" height="9" rx="3" fill="var(--yellow-soft)" stroke="var(--yellow)"/></svg>turn start</span>
+<span><svg width="14" height="10" viewBox="0 0 14 10" style="overflow:visible;margin-right:5px;vertical-align:-1px"><line x1="0" x2="14" y1="5" y2="5" stroke="var(--violet)" stroke-width="1.6"/></svg>subagent</span>
+<span><svg width="8" height="10" viewBox="0 0 8 10" style="overflow:visible;margin-right:5px;vertical-align:-1px"><line x1="4" x2="4" y1="0" y2="10" stroke="var(--amber)" stroke-width="1.6"/></svg>Stop hook sent the reply back</span>
+<span><svg width="14" height="10" viewBox="0 0 14 10" style="overflow:visible;margin-right:5px;vertical-align:-1px"><rect x="0" y="0" width="14" height="9" fill="var(--amber-soft)"/></svg>after /compact</span>
+</div>
+<div class="tip" id="tip" hidden></div>
+</template>
+<template id="t-artifacts"><div class="ah"><b>Artifacts</b></div><div class="alist" id="alist"></div></template>
+<template id="t-group"><div class="gh"><span class="cv"></span><span class="gt"></span><span class="gc"></span></div></template>
+<template id="t-file"><div class="fr"><span class="sd"></span><span class="p path" data-slot="label"></span><span class="sp" data-slot="sp"></span><span class="tk" data-slot="tk"></span></div></template>
+<template id="t-harness-row"><div class="fr"><span class="sd hv"></span><span class="p" style="font-family:Geist,sans-serif" data-slot="label"></span><span class="sp"></span><span class="tk" data-slot="tk"></span></div></template>
+<template id="t-order">
+<div class="oh"><b>Load order</b><span class="sub">what arrived, why, tokens</span><button data-expand data-slot="expand"></button></div>
+<div class="th" data-startt data-slot="start"><span class="cv"></span><span class="tg quiet">turn 0</span><span class="tm0">0:00</span><span class="lbl">session start, before any prompt</span><span class="ln"></span><span class="rt" data-slot="first"></span></div>
+</template>
+<template id="t-turn"><div class="th"><span class="cv"></span><span class="tg" data-slot="tag"></span><span class="tm0" data-slot="start"></span><span class="lbl" data-slot="label"></span><span class="ln"></span><span class="rt" data-slot="rt"></span></div></template>
+<template id="t-or"><div class="or"><span class="tm" data-slot="time"></span><span class="dt" data-slot="dot"></span><span class="nm" data-slot="name"></span><span class="why" data-slot="why"></span><span class="tc"><span class="num" data-slot="num"></span><span class="trk"><i data-slot="bar"></i></span></span></div></template>
+<template id="t-or-mute"><div class="or mute"><span class="tm"></span><span class="dt"></span><span class="nm" style="color:var(--ink-3)">nothing new loaded in this turn</span><span></span><span></span></div></template>
+<template id="t-prompt"><div class="pr"><span class="tm" data-slot="time"></span><span class="pn" data-slot="no"></span><span class="pt" data-slot="what"></span><span class="open" data-slot="open"></span></div></template>
+<template id="t-dl"><div class="dl"><span data-slot="mark"></span><span class="p" data-slot="name"></span><span class="w" data-slot="what"></span></div></template>
+<template id="t-file-pane">
+<div class="oh"><button class="back" data-back>‹ Load order</button><b class="mono fn" data-slot="name"></b></div>
+<div class="pane" data-slot="pane"><div class="dm" data-slot="detail"><br><span class="rid" data-slot="path"></span></div></div>
+</template>
+<template id="t-harness-pane">
+<div class="oh"><button class="back" data-back>‹ Load order</button><b class="fn" data-slot="name"></b></div>
+<div class="pane"><div class="dm" data-slot="detail"></div><div class="nk">Harness text is not stored in this view.</div></div>
+</template>
 </body>
 </html>
