@@ -5418,15 +5418,6 @@
     "kind": "path",
     "value": "CLAUDE.md"
    }
-  },
-  {
-   "kind": "kind_absent",
-   "artifact_kind": "skill",
-   "numbers": {},
-   "target": {
-    "kind": "kind",
-    "value": "skill"
-   }
   }
  ],
  "check": {

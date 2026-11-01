@@ -5456,15 +5456,6 @@
     "kind": "path",
     "value": "CLAUDE.md"
    }
-  },
-  {
-   "kind": "kind_absent",
-   "artifact_kind": "command",
-   "numbers": {},
-   "target": {
-    "kind": "kind",
-    "value": "command"
-   }
   }
  ],
  "check": {
