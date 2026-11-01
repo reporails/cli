@@ -32,8 +32,11 @@ TOP_KEYS = {
     "model",
     "funnel",
     "first_context",
+    "peak",
+    "preload_tokens_est",
     "start",
     "turns",
+    "compactions",
     "subagents",
     "artifacts",
     "refusals",
@@ -214,7 +217,8 @@ def test_the_version_follows_the_findings_it_is_given(tmp_path: Path) -> None:
 
 def test_without_bus_records_reads_and_compactions_are_not_known(tmp_path: Path) -> None:
     view = _view(_session(tmp_path, "2.1.301", _project(tmp_path)))
-    assert all(turn.reads is None and turn.compaction is None for turn in view.turns)
+    assert all(turn.reads is None for turn in view.turns)
+    assert view.compactions == ()
     assert "reads" in view.not_known
 
 
@@ -222,17 +226,16 @@ def test_a_compact_boundary_row_is_the_turns_compaction_with_no_bus(tmp_path: Pa
     session = _session(tmp_path, "2.1.301", _project(tmp_path))
     _append_compaction(tmp_path, "2.1.301", "2026-10-17T16:54:30.000Z", "manual")
     view = _view(session)
-    compaction = view.turns[1].compaction
-    assert compaction is not None
+    (compaction,) = view.compactions
+    assert compaction.turn == 2
     assert (compaction.trigger, compaction.before, compaction.after) == ("manual", 25172, 26009)
-    assert view.turns[0].compaction is None
     assert "reads" in view.not_known
 
 
 def test_a_bus_compact_record_alone_draws_no_compaction(tmp_path: Path) -> None:
     _bus("pre_compact", "2026-10-17T16:54:30.000Z", source="manual")
     view = _view(_session(tmp_path, "2.1.301", _project(tmp_path)))
-    assert all(turn.compaction is None for turn in view.turns)
+    assert view.compactions == ()
 
 
 def test_bus_reads_land_in_the_turn_they_were_timed_in_and_a_row_compacts_it(tmp_path: Path) -> None:
@@ -241,10 +244,10 @@ def test_bus_reads_land_in_the_turn_they_were_timed_in_and_a_row_compacts_it(tmp
     _append_compaction(tmp_path, "2.1.301", "2026-10-17T16:54:30.000Z", "manual")
     view = _view(session)
     first, second = view.turns
-    assert first.reads == () and first.compaction is None
+    assert first.reads == ()
     assert second.reads == ("/p/notes.md",)
-    compaction = second.compaction
-    assert compaction is not None
+    (compaction,) = view.compactions
+    assert compaction.turn == 2
     assert (compaction.trigger, compaction.before, compaction.after) == ("manual", 25172, 26009)
     assert "reads" not in view.not_known
 
@@ -294,8 +297,8 @@ def test_the_view_holds_numbers_names_and_paths_only(tmp_path: Path) -> None:
     assert data["project"] == "proj" and data["window"] is None and data["session"] == SESSION
     assert as_list(data["refusals"]) == []
     turn_keys = {
-        "n", "t", "context_start", "context", "replies", "loads", "reads", "subagents", "compaction", "series",
-        "prompts", "notes", "skill_runs",
+        "n", "start", "opened_by", "stop_blocks", "delta", "t", "context_start", "context", "replies", "loads",
+        "reads", "subagents", "series", "prompts", "notes", "skill_runs",
     }  # fmt: skip
     assert set(as_object(as_list(data["turns"])[0])) == turn_keys
     assert set(as_object(as_list(data["subagents"])[0])) == {
@@ -898,3 +901,73 @@ def test_a_file_counts_the_main_context_and_each_subagent_that_put_it_in_its_own
     helper = by_path[".claude/agents/helper.md"]
     assert helper.contexts == 1
     assert by_path[".claude/skills/demo/SKILL.md"].contexts == 0
+
+
+def test_every_compaction_is_kept_each_band_ends_at_the_next_and_the_last_at_the_session_end(tmp_path: Path) -> None:
+    view = _view(_session(tmp_path, "2.1.309-compactions", _project(tmp_path)))
+    first, second = view.compactions
+    assert (first.turn, first.trigger, second.turn, second.trigger) == (2, "manual", 3, "auto")
+    assert first.band_end == second.t
+    assert view.span.length_s is not None and second.band_end == view.span.length_s
+    assert first.t < second.t < second.band_end
+
+
+def test_a_file_loaded_only_before_the_first_compaction_is_out_of_context_after_it(tmp_path: Path) -> None:
+    view = _view(_session(tmp_path, "2.1.309-compactions", _project(tmp_path)))
+    by_path = {a.path: a for a in view.artifacts}
+    # Loaded in turn 1 and in context in turn 2, where the first compaction ran, then gone in turn 3.
+    assert by_path["sub/CLAUDE.md"].turns == (1, 2)
+
+
+def test_the_peak_is_the_highest_context_a_reply_or_a_compaction_before_reached(tmp_path: Path) -> None:
+    view = _view(_session(tmp_path, "2.1.309-compactions", _project(tmp_path)))
+    first, second = view.compactions
+    assert first.before == 200096 and second.before == 61843 and second.after == 30102
+    assert view.peak == first.before
+
+
+def test_the_preload_is_the_harness_items_plus_the_start_loads(tmp_path: Path) -> None:
+    view = _view(_session(tmp_path, "2.1.301", _project(tmp_path)))
+    harness = sum(item.tokens_est or 0 for item in view.harness or ())
+    assert view.preload_tokens_est == harness + sum(load.tokens_est or 0 for load in view.start) > 0
+
+
+def test_a_turn_with_a_prompt_is_opened_by_it_and_prompts_are_numbered_through_the_session(tmp_path: Path) -> None:
+    view = _view(_turns_session(tmp_path))
+    first, second = view.turns
+    assert (first.opened_by, second.opened_by) == ("prompt", "prompt")
+    assert [p.no for turn in view.turns for p in turn.prompts] == [1, 2, 3]
+    assert first.start == first.prompts[0].t and second.start == second.prompts[0].t
+    assert (first.stop_blocks, second.stop_blocks) == (1, 0)
+
+
+def test_a_turn_delta_is_its_context_less_the_last_known_context_before_it(tmp_path: Path) -> None:
+    view = _view(_turns_session(tmp_path))
+    first, second = view.turns
+    contexts = _fixture_turn_contexts("2.1.309-turns")
+    assert first.delta == 0 and view.first_context == contexts[0]
+    assert second.delta == contexts[1] - contexts[0]
+
+
+def _without_rows(tmp_path: Path, drop: set[int]) -> XraySession:
+    """The turns fixture with the rows at the `drop` indexes removed."""
+    session = _turns_session(tmp_path)
+    path = tmp_path / "2.1.309-turns" / "session.jsonl"
+    lines = path.read_text().splitlines()
+    path.write_text("".join(line + "\n" for index, line in enumerate(lines) if index not in drop))
+    return session
+
+
+def test_a_turn_with_no_prompt_after_a_stop_block_was_opened_by_the_stop_hook(tmp_path: Path) -> None:
+    view = _view(_without_rows(tmp_path, {13, 14, 15, 16}))
+    first, second = view.turns
+    assert second.prompts == () and second.opened_by == "stop_hook"
+    assert first.opened_by == "prompt"
+    assert second.start == second.series[0][0]
+    assert second.delta is not None
+
+
+def test_a_first_turn_with_no_prompt_is_opened_by_the_session_start(tmp_path: Path) -> None:
+    view = _view(_without_rows(tmp_path, {3}))
+    assert view.turns[0].prompts == () and view.turns[0].opened_by == "session_start"
+    assert view.turns[1].opened_by == "prompt"

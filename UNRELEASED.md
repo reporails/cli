@@ -25,6 +25,8 @@
 - Files from your home folder and from installed plugins are found by walking only below their own folder, skipping `node_modules` and the other left-out folders, and a plugin folder with `[` or `*` in its path is read as written.
 - A stored API key is sent only to the default server or a local (loopback) address, never to any other `AILS_SERVER_URL` the cli is pointed at.
 
+- The `ails xray` page counts every compaction of a session, each one shaded only until the next, and a file loaded before a later compaction no longer counts as in context after it.
+
 ### Removed
 
 ### Internal

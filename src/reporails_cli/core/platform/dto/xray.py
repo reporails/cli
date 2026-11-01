@@ -14,6 +14,7 @@ from reporails_cli.core.platform.dto.events import HarnessKind, NoteKind
 
 LoadKind = Literal["project", "memory", "user", "local", "managed", "nested", "other"]
 CompactionTrigger = Literal["manual", "auto"]
+TurnOpener = Literal["prompt", "stop_hook", "session_start"]
 ArtifactKind = Literal["instructions", "rule", "memory", "skill", "agent", "command", "hook"]
 ArtifactScope = Literal["project", "user", "managed", "local", "plugin", "auto", "synced"]
 
@@ -87,23 +88,34 @@ class XrayLoad:
 
 @dataclass(frozen=True)
 class XrayCompaction:
-    """One compaction: when, what started it and the context before and after."""
+    """One compaction: the turn it ran in, when, what started it, the context before and after, and when the band
+    it opens ends (the next compaction, else the session's end)."""
 
+    turn: int
     t: float
     trigger: CompactionTrigger | None
     before: int | None
     after: int | None
+    band_end: float
 
     def to_json(self) -> JsonObject:
         """The compaction as a JSON object."""
-        return {"t": self.t, "trigger": self.trigger, "before": self.before, "after": self.after}
+        return {
+            "turn": self.turn,
+            "t": self.t,
+            "trigger": self.trigger,
+            "before": self.before,
+            "after": self.after,
+            "band_end": self.band_end,
+        }
 
 
 @dataclass(frozen=True)
 class XrayPrompt:
-    """One prompt a person typed in a turn: the id the page asks the text by, when, its size and whether it was
-    queued while the agent worked. Never the text."""
+    """One prompt a person typed in a turn: its number in the session, the id the page asks the text by, when, its
+    size and whether it was queued while the agent worked. Never the text."""
 
+    no: int
     id: str
     t: float
     chars: int
@@ -111,7 +123,7 @@ class XrayPrompt:
 
     def to_json(self) -> JsonObject:
         """The prompt as a JSON object."""
-        return {"id": self.id, "t": self.t, "chars": self.chars, "queued": self.queued}
+        return {"no": self.no, "id": self.id, "t": self.t, "chars": self.chars, "queued": self.queued}
 
 
 @dataclass(frozen=True)
@@ -159,16 +171,20 @@ class XrayRun:
 
 @dataclass(frozen=True)
 class XrayTurn:
-    """The replies between two turn ends, the last turn open while the session runs."""
+    """The replies between two turn ends, the last turn open while the session runs: when it began, what opened it,
+    how many Stop blocks it held and how far its context moved from the last one known."""
 
     n: int
+    start: float
+    opened_by: TurnOpener | None
+    stop_blocks: int
+    delta: int | None
     t: float
     context_start: int | None
     context: int | None
     loads: tuple[XrayLoad, ...]
     reads: tuple[str, ...] | None
     subagents: tuple[str, ...]
-    compaction: XrayCompaction | None
     series: tuple[tuple[float, int], ...]
     prompts: tuple[XrayPrompt, ...]
     notes: tuple[XrayNote, ...]
@@ -180,6 +196,10 @@ class XrayTurn:
         series: list[JsonValue] = [[t, context] for t, context in self.series]
         return {
             "n": self.n,
+            "start": self.start,
+            "opened_by": self.opened_by,
+            "stop_blocks": self.stop_blocks,
+            "delta": self.delta,
             "t": self.t,
             "context_start": self.context_start,
             "context": self.context,
@@ -187,7 +207,6 @@ class XrayTurn:
             "loads": _objects([load.to_json() for load in self.loads]),
             "reads": reads,
             "subagents": list(self.subagents),
-            "compaction": None if self.compaction is None else self.compaction.to_json(),
             "series": series,
             "prompts": _objects([prompt.to_json() for prompt in self.prompts]),
             "notes": _objects([note.to_json() for note in self.notes]),
@@ -349,8 +368,11 @@ class XrayView:
     project: str
     span: XraySpan
     first_context: int | None
+    peak: int | None
+    preload_tokens_est: int | None
     start: tuple[XrayLoad, ...]
     turns: tuple[XrayTurn, ...]
+    compactions: tuple[XrayCompaction, ...]
     subagents: tuple[XraySubagent, ...]
     artifacts: tuple[XrayArtifact, ...]
     refusals: tuple[str, ...]
@@ -372,8 +394,11 @@ class XrayView:
             "window": None if self.window is None else self.window.to_json(),
             "funnel": _objects([row.to_json() for row in self.funnel]),
             "first_context": self.first_context,
+            "peak": self.peak,
+            "preload_tokens_est": self.preload_tokens_est,
             "start": _objects([load.to_json() for load in self.start]),
             "turns": _objects([turn.to_json() for turn in self.turns]),
+            "compactions": _objects([compaction.to_json() for compaction in self.compactions]),
             "subagents": _objects([sub.to_json() for sub in self.subagents]),
             "artifacts": _objects([artifact.to_json() for artifact in self.artifacts]),
             "refusals": list(self.refusals),

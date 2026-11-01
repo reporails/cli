@@ -29,6 +29,7 @@ from reporails_cli.core.xray.artifacts import (
 )
 from reporails_cli.core.xray.derive import (
     Frame,
+    build_compactions,
     build_harness,
     build_subagents,
     build_turns,
@@ -36,6 +37,8 @@ from reporails_cli.core.xray.derive import (
     latest_model,
     loads_of,
     main_replies,
+    peak_context,
+    preload_tokens,
     real_path,
     start_loads,
     turn_end_times,
@@ -131,9 +134,12 @@ class XraySession:
         replies = main_replies(records)
         start = loads_of(start_loads(records, replies), frame)
         turns = build_turns(records, self._bus or None, frame)
+        length = timed[-1][0] - timed[0][0] if timed else None
+        compactions = build_compactions(records, replies, turn_end_times(records), frame, length)
+        harness = build_harness(records, replies)
         subagents = build_subagents(records, turn_end_times(records), frame)
         agent_turns = agent_run_turns(subagents, files, self._root)
-        main_context = in_context_turns(start, turns, self._root)
+        main_context = in_context_turns(start, turns, compactions, self._root)
         in_context = merged_turns(main_context, agent_turns)
         loaded = {real_path(load.path, self._root) for load in loads_of(records, frame)}
         loaded |= run_paths(turns, self._root) | set(agent_turns)
@@ -151,10 +157,13 @@ class XraySession:
             version=self.version,
             session=self._file.stem,
             project=self._root.name,
-            span=XraySpan(timed[0][1], timed[-1][0] - timed[0][0]) if timed else XraySpan(None, None),
+            span=XraySpan(timed[0][1], length) if timed else XraySpan(None, None),
             first_context=replies.points[0][1] if replies.points else None,
+            peak=peak_context(replies, compactions),
+            preload_tokens_est=preload_tokens(harness, start),
             start=start,
             turns=turns,
+            compactions=compactions,
             subagents=subagents,
             artifacts=artifacts,
             refusals=tuple(
@@ -164,7 +173,7 @@ class XraySession:
                 )
             ),
             not_known=(*((_NO_WINDOW,) if window is None else ()), *(() if self._bus else (_NO_BUS,))),
-            harness=build_harness(records, replies),
+            harness=harness,
             model=latest_model(records),
             window=window,
             funnel=build_funnel(artifacts, turns, subagents),

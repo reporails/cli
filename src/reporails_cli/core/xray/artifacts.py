@@ -19,6 +19,7 @@ from reporails_cli.core.platform.dto.xray import (
     ArtifactKind,
     ArtifactScope,
     XrayArtifact,
+    XrayCompaction,
     XrayLoad,
     XraySubagent,
     XrayTurn,
@@ -114,9 +115,11 @@ class _Step:
     run_tokens: int | None = None
 
 
-def _ordered(start: Sequence[XrayLoad], turns: Sequence[XrayTurn]) -> list[tuple[int, list[_Step]]]:
+def _ordered(
+    start: Sequence[XrayLoad], turns: Sequence[XrayTurn], compactions: Sequence[XrayCompaction]
+) -> list[tuple[int, list[_Step]]]:
     """Per turn number (0 = the session start), its loads, the runs of listed skill and command files that ran in
-    the main session and its compactions in time order."""
+    the main session and every compaction that ran in it, in time order."""
     groups: list[tuple[int, list[_Step]]] = [(0, [_Step(load.t or 0.0, load.path) for load in start])]
     for turn in turns:
         steps = [_Step(load.t or 0.0, load.path) for load in turn.loads]
@@ -125,8 +128,7 @@ def _ordered(start: Sequence[XrayLoad], turns: Sequence[XrayTurn]) -> list[tuple
             for run in turn.skill_runs
             if run.path is not None and not run.forked
         )
-        if turn.compaction is not None:
-            steps.append(_Step(turn.compaction.t, None))
+        steps.extend(_Step(compaction.t, None) for compaction in compactions if compaction.turn == turn.n)
         groups.append((turn.n, sorted(steps, key=lambda step: step.t)))
     return groups
 
@@ -144,7 +146,9 @@ def _reattached(ran: dict[str, int]) -> set[str]:
     return kept
 
 
-def in_context_turns(start: Sequence[XrayLoad], turns: Sequence[XrayTurn], root: Path) -> dict[str, list[int]]:
+def in_context_turns(
+    start: Sequence[XrayLoad], turns: Sequence[XrayTurn], compactions: Sequence[XrayCompaction], root: Path
+) -> dict[str, list[int]]:
     """For each resolved file path, the turn numbers it sat in context (0 = the session start).
 
     A loaded file stays in context until a compaction; after one it counts again only when a load names it again.
@@ -153,7 +157,7 @@ def in_context_turns(start: Sequence[XrayLoad], turns: Sequence[XrayTurn], root:
     present: set[str] = set()
     ran: dict[str, int] = {}
     seen: dict[str, list[int]] = {}
-    for number, steps in _ordered(start, turns):
+    for number, steps in _ordered(start, turns, compactions):
         in_turn = set(present)
         for step in steps:
             if step.path is None:

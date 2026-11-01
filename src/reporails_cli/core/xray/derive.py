@@ -21,7 +21,7 @@ from reporails_cli.core.platform.dto.events import (
 )
 from reporails_cli.core.platform.dto.xray import (
     LOAD_KIND_OF_MEMORY_TYPE,
-    CompactionTrigger,
+    TurnOpener,
     XrayCompaction,
     XrayHarnessItem,
     XrayLoad,
@@ -120,9 +120,8 @@ class _Bucket:
     reads: list[str] = field(default_factory=list)
     runs: list[str] = field(default_factory=list)
     skill_runs: list[XrayRun] = field(default_factory=list)
-    prompts: list[XrayPrompt] = field(default_factory=list)
+    prompts: list[EventRecord] = field(default_factory=list)
     notes: list[XrayNote] = field(default_factory=list)
-    compaction: EventRecord | None = None
     last_time: float = 0.0
 
 
@@ -174,15 +173,43 @@ def window_of(replies: Replies) -> XrayWindow | None:
     return None
 
 
-def _compaction(post: EventRecord, replies: Replies, t0: float) -> XrayCompaction | None:
-    moment = epoch(post.time)
-    if moment is None:
-        return None
-    trigger: CompactionTrigger | None = (
-        "manual" if post.source == "manual" else "auto" if post.source == "auto" else None
+def build_compactions(
+    records: Sequence[EventRecord], replies: Replies, ends: Sequence[float], frame: Frame, length_s: float | None
+) -> tuple[XrayCompaction, ...]:
+    """Every compaction of the main session in time order, each with the turn it ran in and where its band ends:
+    at the next compaction, else at the session's end (`length_s`), else at its own time."""
+    found = sorted(
+        (moment, record)
+        for record in records
+        if record.event == "post_compact" and record.subagent_id is None
+        if (moment := epoch(record.time)) is not None
     )
-    before, after = replies.before(moment), replies.after(moment)
-    return XrayCompaction(t=moment - t0, trigger=trigger, before=before, after=after)
+    times = [moment - frame.t0 for moment, _ in found]
+    return tuple(
+        XrayCompaction(
+            turn=turn_index(moment, ends) + 1,
+            t=at,
+            trigger="manual" if record.source == "manual" else "auto" if record.source == "auto" else None,
+            before=replies.before(moment),
+            after=replies.after(moment),
+            band_end=times[number + 1] if number + 1 < len(times) else at if length_s is None else length_s,
+        )
+        for number, ((moment, record), at) in enumerate(zip(found, times, strict=True))
+    )
+
+
+def peak_context(replies: Replies, compactions: Sequence[XrayCompaction]) -> int | None:
+    """The highest context the session reached: a main reply, or the context just before a compaction."""
+    seen = [context for _, context in replies.points]
+    seen.extend(compaction.before for compaction in compactions if compaction.before is not None)
+    return max(seen, default=None)
+
+
+def preload_tokens(harness: Sequence[XrayHarnessItem] | None, start: Sequence[XrayLoad]) -> int | None:
+    """The tokens the session holds before its first reply: the harness items and the start loads; None when it
+    holds neither."""
+    sizes = [item.tokens_est or 0 for item in harness or ()] + [load.tokens_est or 0 for load in start]
+    return sum(sizes) if sizes else None
 
 
 def turn_end_times(records: Sequence[EventRecord]) -> list[float]:
@@ -314,14 +341,10 @@ def _gather_transcript(
 
 def _file_in_turn(target: _Bucket, record: EventRecord, frame: Frame) -> None:
     """Put a turn-bearing record where its kind belongs in the turn."""
-    if record.event == "post_compact":
-        if target.compaction is None:
-            target.compaction = record
-    elif record.event == "harness":
+    if record.event == "harness":
         _gather_note(target, record, frame)
     elif record.event == "prompt_submit" and record.prompt is not None:
-        prompt = record.prompt
-        target.prompts.append(XrayPrompt(prompt.id, frame.at(record) or 0.0, prompt.chars, prompt.queued))
+        target.prompts.append(record)
     elif record.event == "assistant_usage" and record.usage is not None:
         target.replies.append((frame.at(record) or 0.0, context_of(record.usage)))
     elif record.event == "instruction_load":
@@ -390,27 +413,69 @@ def build_turns(
     _gather_bus(buckets, bus or [], ends)
     count = len(ends) + (1 if len(ends) in buckets else 0)
     turns: list[XrayTurn] = []
+    known = replies.points[0][1] if replies.points else None
+    number = 0
     for index in range(count):
         got = buckets.get(index, _Bucket())
         moment = ends[index] if index < len(ends) else got.last_time
-        pre = got.compaction
+        prompts = []
+        for record in sorted(got.prompts, key=lambda item: epoch(item.time) or 0.0):
+            if record.prompt is None:
+                raise ValueError("prompt record holds no prompt")
+            number += 1
+            prompts.append(
+                XrayPrompt(number, record.prompt.id, frame.at(record) or 0.0, record.prompt.chars, record.prompt.queued)
+            )
+        previous = turns[-1] if turns else None
+        context = got.replies[-1][1] if got.replies else None
         turns.append(
             XrayTurn(
                 n=index + 1,
+                start=_turn_start(prompts, got.replies, previous),
+                opened_by=_opened_by(prompts, got, previous),
+                stop_blocks=sum(1 for note in got.notes if note.kind == "stop_block"),
+                delta=None if context is None or known is None else context - known,
                 t=moment - frame.t0,
                 context_start=got.replies[0][1] if got.replies else None,
-                context=got.replies[-1][1] if got.replies else None,
+                context=context,
                 loads=loads_of(got.loads, frame),
                 reads=tuple(relative_wire_path(path, frame.root) for path in got.reads) if bus else None,
                 subagents=tuple(got.runs),
-                compaction=_compaction(pre, replies, frame.t0) if pre is not None else None,
                 series=tuple(got.replies),
-                prompts=tuple(got.prompts),
+                prompts=tuple(prompts),
                 notes=tuple(got.notes),
                 skill_runs=tuple(got.skill_runs),
             )
         )
+        known = context if context is not None else known
     return tuple(turns)
+
+
+def _turn_start(
+    prompts: Sequence[XrayPrompt], replies: Sequence[tuple[float, int]], previous: XrayTurn | None
+) -> float:
+    """When a turn began: its first prompt, else its first reply, else the end of the turn before, else 0."""
+    if prompts:
+        return prompts[0].t
+    if replies:
+        return replies[0][0]
+    return previous.t if previous is not None else 0.0
+
+
+def _opened_by(prompts: Sequence[XrayPrompt], got: _Bucket, previous: XrayTurn | None) -> TurnOpener | None:
+    """What opened a turn: a prompt it holds; else a Stop hook that sent the reply back, which shows as a stop
+    block that closed the turn before or that came before this turn's first reply; else, for the first turn, the
+    session start."""
+    if prompts:
+        return "prompt"
+    if previous is None:
+        return "session_start"
+    first = got.notes[0] if got.notes else None
+    blocked_before = (
+        first is not None and first.kind == "stop_block" and (not got.replies or first.t < got.replies[0][0])
+    )
+    ended_blocked = bool(previous.notes) and previous.notes[-1].kind == "stop_block"
+    return "stop_hook" if blocked_before or ended_blocked else None
 
 
 def build_subagents(records: Sequence[EventRecord], ends: Sequence[float], frame: Frame) -> tuple[XraySubagent, ...]:
