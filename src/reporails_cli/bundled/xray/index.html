@@ -24,13 +24,13 @@
       <section class="panel filecard" id="view-file" hidden></section>
     </main>
   </div>
-  <footer class="foot"><span id="src"></span></footer>
+  <footer class="foot"><span id="src"></span> <span id="unknown"></span></footer>
 </div>
 <script type="module" src="/static/js/main.js"></script>
 <template id="t-header"><div class="hdr">
   <div class="brand"><span class="mark" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 7h8M5 12h14M5 17h10"/></svg></span><span>reporails</span><span>x-ray</span></div>
   <nav class="crumbs" aria-label="Agent path" data-slot="crumbs"></nav>
-  <div class="hmeta"><span data-slot="session"></span><span class="achip" data-slot="adapter"></span></div>
+  <div class="hmeta"><span data-slot="session"></span><span data-slot="model"></span><span class="achip" data-slot="adapter"></span></div>
 </div></template>
 <template id="t-parentstrip">
   <a class="up" data-slot="up" href="#">↑ parent</a>

@@ -146,7 +146,7 @@ function cameBack(node, env) {
   const parent = env.ix.nodes.get(node.parent);
   const where = edge && edge.back_t != null ? ` · landed at ${clock(edge.back_t)}${parent ? ' in ' + parent.name : ''}` : '';
   step.append(el('p', 'line', d.back_tokens_est == null ? `Handed back${where}` : `${tk(d.back_tokens_est, true)} tokens${where}`));
-  if (d.back_tokens_est) step.append(el('p', 'line muted', `${Math.round(d.peak / d.back_tokens_est)}:1 from peak context to what came back`));
+  if (d.back_ratio != null) step.append(el('p', 'line muted', `${d.back_ratio}:1 from peak context to what came back`));
   return step;
 }
 

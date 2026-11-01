@@ -15,11 +15,13 @@ export const viewHeaders = etag => (etag ? { 'X-Xray-Token': token, 'If-None-Mat
 const fetched = new Map();
 let redraw = () => {};
 export const onTextArrived = fn => { redraw = fn; };
-export const forgetTexts = () => fetched.clear();
+const kept = new Set();
+export const forgetTexts = () => { for (const k of [...fetched.keys()]) if (!kept.has(k)) fetched.delete(k); };
 
-// The text behind a key: {loading}, {error} or {text, truncated}; the page draws again when it arrives.
-export function text(key, url) {
+// The text behind a key (`keep`: fetched once per page life, e.g. a recorded call that never changes): {loading}, {error} or {text, truncated}; the page draws again when it arrives.
+export function text(key, url, keep = false) {
   if (fetched.has(key)) return fetched.get(key);
+  if (keep) kept.add(key);
   const e = { loading: true };
   fetched.set(key, e);
   xrayFetch(url).then(res => {
@@ -31,6 +33,7 @@ export function text(key, url) {
 }
 
 export const callUrl = id => 'call?id=' + encodeURIComponent(id);
+export const callText = id => text('call:' + id, callUrl(id), true);
 export const briefUrl = id => 'brief?subagent=' + encodeURIComponent(id);
 export const promptUrl = id => 'prompt?id=' + encodeURIComponent(id);
 export const peekUrl = path => 'peek?path=' + encodeURIComponent(path);

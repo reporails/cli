@@ -1,6 +1,6 @@
 // The header: logo, breadcrumb of the agent path, the session's date and length, and the adapter chip.
 import { el, tpl, slot } from '../dom.js';
-import { dur } from '../format.js';
+import { dur, k1 } from '../format.js';
 import { hashFor } from '../state.js';
 
 const MAX_SHOWN = 3;
@@ -36,6 +36,8 @@ export function render(box, env) {
   const when = d && !isNaN(d) ? d.toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '';
   slot(box, 'crumbs').replaceChildren(...crumbs(ix, state.path));
   slot(box, 'session').textContent = [v.project, when, v.length_s != null ? dur(v.length_s) : ''].filter(Boolean).join(' · ');
+  const win = v.window && v.window.size ? `${k1(v.window.size)} window${v.window.basis === 'observed' ? '' : ' (' + v.window.basis + ')'}` : '';
+  slot(box, 'model').textContent = [v.model, win].filter(Boolean).join(' · ');
   const n = v.adapter.nesting;
   slot(box, 'adapter').textContent = `adapter: ${v.adapter.tool} · nesting ${n.enabled ? 'on' : 'off'}`;
 }

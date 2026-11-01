@@ -8,10 +8,12 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import ClassVar
 from urllib.parse import parse_qs, urlparse
 
 from behave import given, then, when  # type: ignore[import-untyped]
@@ -303,6 +305,9 @@ class _FixtureHandler(BaseHTTPRequestHandler):
     """The routes the page calls: its own files from the bundle, a fixture `/view`, and canned text routes."""
 
     view_text = ""
+    bump_version = False
+    requests: ClassVar[list[str]] = []
+    views_served = 0
 
     def log_message(self, *_args) -> None:  # silence the per-request log
         return
@@ -333,8 +338,13 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             return self._send(200, STUB_NODE.read_bytes(), "text/javascript")
         if self.headers.get("X-Xray-Token") != TOKEN:
             return self._json(403, {"error": "token"})
+        type(self).requests.append(self.path)
         if url.path == "/view":
-            return self._send(200, self.view_text.encode(), "application/json")
+            type(self).views_served += 1
+            body = self.view_text
+            if self.bump_version:  # a session that keeps growing: every poll carries a new version
+                body = json.dumps({**json.loads(body), "version": 1000 + self.views_served})
+            return self._send(200, body.encode(), "application/json")
         key = query.get("id", query.get("subagent", query.get("path", [""])))[0]
         texts = {
             "/call": CALLS.get(key, ""),
@@ -347,7 +357,9 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         return self._json(404, {"error": "no such route"})
 
     def do_POST(self) -> None:  # http.server's name
-        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        posted = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+        type(self).requests.append(f"POST {self.path} {posted.get('path', '')}")
+        time.sleep(1.2)  # a check takes a moment, so a second file can be opened while it runs
         lines = [
             {
                 "line": 3,
@@ -366,7 +378,12 @@ class _FixtureHandler(BaseHTTPRequestHandler):
 @given('the bundled page is served over the "{name}" fixture view')
 def step_serve_fixture(context, name):
     text = (FIXTURES / f"{name}.json").read_text(encoding="utf-8")
-    handler = type("Handler", (_FixtureHandler,), {"view_text": text})
+    handler = type(
+        "Handler",
+        (_FixtureHandler,),
+        {"view_text": text, "requests": [], "bump_version": getattr(context, "bump_version", False)},
+    )
+    context.handler = handler
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     context.add_cleanup(server.shutdown)
@@ -496,3 +513,63 @@ def step_stub_kind(context):
     assert seen["after"] == "STUB Stub worker", seen
     assert seen["inspector"] == "stub inspector for stub1", seen
     assert seen["agentCard"] == 1, seen  # the agent kind still draws its own top node
+
+
+@given("the served view carries a new version on every poll")
+def step_bump_version(context):
+    context.bump_version = True
+
+
+@then("the page shows the view's own model, window, unknown facts, trigger words, notes, ratio and subagent counts")
+def step_view_words(context):
+    seen = _page(context, "words")
+    if seen is None:
+        return
+    view = context.fixture
+    assert view["model"] in seen["header"] and "1M window" in seen["header"], seen["header"]
+    assert seen["unknown"] == "Not known: " + ", ".join(view["not_known"]) + ".", seen["unknown"]
+    label = {t["key"]: t["label"] for t in view["adapter"]["triggers"]}
+    assert any(label["session_start"] in title for title in seen["titles"]), seen["titles"]
+    assert not any(
+        old in title
+        for title in seen["titles"]
+        for old in ("at session start", "loaded by a path match", "inherited from its parent")
+    ), seen["titles"]
+    returned = next(n for n in view["nodes"] if n["id"] == "a1")["detail"]
+    assert f"{returned['back_ratio']}:1 from peak" in seen["returned"], seen["returned"]
+    assert ":1 from peak" not in seen["stopped"], seen["stopped"]
+    main = next(n for n in view["nodes"] if n["id"] == "main")
+    count = main["child_sources"]["mcp:docs-server"]
+    assert f"{count} of {len(main['children'])} subagents here did" in seen["banner"], seen["banner"]
+    assert "in 13 contexts" in seen["claudeRow"], seen["claudeRow"]
+
+
+@then("a kind the view reports absent says so from its fact, and an untyped node adds no filter button but still shows")
+def step_absent_and_untyped(context):
+    seen = _page(context, "absent")
+    if seen is None:
+        return
+    assert seen["absent"] == ["No skills configured"], seen
+    assert "null" not in seen["typeButtons"], seen
+    assert seen["untypedCard"] is True, seen
+
+
+@then("a file opened while another file's check runs is checked once that check ends")
+def step_autocheck_queue(context):
+    seen = _page(context, "autocheck")
+    if seen is None:
+        return
+    assert seen["second"] and "fixture finding" in seen["second"], seen
+    posts = [line.split(" ", 2)[2] for line in context.handler.requests if line.startswith("POST")]
+    assert posts == ["CLAUDE.md", ".claude/rules/rules-engine.md"], posts
+
+
+@then("each failing command's text is fetched once however many times the view changes")
+def step_call_fetched_once(context):
+    seen = _page(context, "calls")
+    if seen is None:
+        return
+    assert seen["bracket"].startswith("npm test"), seen
+    assert context.handler.views_served >= 3, context.handler.views_served
+    calls = [r for r in context.handler.requests if r.startswith("/call")]
+    assert calls and len(calls) == len(set(calls)), calls

@@ -99,6 +99,27 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Then a findings pill opens the file's findings at its hash and a source row links to its file
 
   @page @browser
+  Scenario: The page prints the view's own words and numbers
+    Given the bundled page is served over the "view_sample" fixture view
+    Then the page shows the view's own model, window, unknown facts, trigger words, notes, ratio and subagent counts
+
+  @page @browser
+  Scenario: A kind reported absent and an untyped node
+    Given the bundled page is served over the "view_stub_adapter" fixture view
+    Then a kind the view reports absent says so from its fact, and an untyped node adds no filter button but still shows
+
+  @page @browser
+  Scenario: A file opened during another file's check is still checked
+    Given the bundled page is served over the "view_sample" fixture view
+    Then a file opened while another file's check runs is checked once that check ends
+
+  @page @browser
+  Scenario: A failing command's text is fetched once as the view keeps changing
+    Given the served view carries a new version on every poll
+    And the bundled page is served over the "view_sample" fixture view
+    Then each failing command's text is fetched once however many times the view changes
+
+  @page @browser
   Scenario: A node of a second kind is drawn by its own renderer with no canvas change
     Given the bundled page is served over the "view_stub_kind" fixture view
     Then the stub kind's cards are drawn by a stub renderer only the test serves, with no change to the canvas

@@ -2,7 +2,7 @@
 // the side track of everyday calls. Card placement, scale, arches and ticks are geometry; every fact comes from the view.
 import { el, svg } from '../dom.js';
 import { clock, k1, tk } from '../format.js';
-import { text, callUrl } from '../api.js';
+import { callText } from '../api.js';
 import {
   BOT_H, BOT_W, CH, CW, SPX, TOP_W, TRACK_STEP, TRACK_X0, W, Y0,
   contextAt, lengthFor, placeCards, runningMarkers, spreadStations, tickTimes, timeScale,
@@ -11,10 +11,6 @@ import { childrenOf, kindOfSource, typeOf } from '../views.js';
 import { rendererFor } from './nodes/index.js';
 
 const VIOLET = '#A594FF', BLUE = '#6EA8FF', WHITE = '#ECECEC', FIND = '#F0883E', NEUTRAL_EDGE = 'rgba(236,236,236,0.20)';
-const TRIGGER = {
-  session_start: 'at session start', path_match: 'loaded by a path match', agent: 'loaded by the agent',
-  inherited: 'inherited from its parent', hook: 'a hook',
-};
 
 const abs = (cls, left, top, tag = 'div') => {
   const e = el(tag, cls);
@@ -32,7 +28,7 @@ function banner(env, cur, kids) {
   box.append(el('b', null, f.name), ' ');
   if (!f.had_by.length) box.append('Never loaded by any agent in this session.');
   else {
-    const n = kids.filter(c => f.had_by.includes(c.id)).length;
+    const n = (cur.child_sources || {})[f.id] || 0;
     const parts = [f.had_by.includes(cur.id) ? 'This agent had it' : 'This agent didn’t have it'];
     if (kids.length) parts.push(`${n} of ${kids.length} subagents here did`);
     if (f.tokens_est) parts.push(`${k1(f.tokens_est)} each`);
@@ -171,7 +167,7 @@ function stationItems(env, cur, scale) {
       type: 'load', source: l.source, y: scale.y(l.t ?? cur.start), small: l.small, letter: k ? k.letter : '?',
       tokens: l.tokens_est, find: !!(s && s.findings && s.findings.count > 0),
       title: `${k ? k.label : 'Source'} · ${s ? s.name : l.source} · ${l.tokens_est == null ? 'size unknown' : k1(l.tokens_est) + ' loaded'}` +
-        ` · ${l.t == null ? 'time unknown, shown at the start' : 'at ' + clock(l.t)} · ${TRIGGER[l.trigger] || l.trigger}${l.event ? ' ' + l.event : ''}` +
+        ` · ${l.t == null ? 'time unknown, shown at the start' : 'at ' + clock(l.t)} · ${ix.triggers.get(l.trigger) || l.trigger}${l.event ? ' ' + l.event : ''}` +
         `${s && s.findings && s.findings.count ? ' · has findings' : ''}`,
       gap: l.small ? 12 : 22,
     });
@@ -217,7 +213,7 @@ function stations(env, cur, scale) {
 }
 
 function failureLabel(run) {
-  const e = text(run.call_id, callUrl(run.call_id));
+  const e = callText(run.call_id);
   const cmd = e.text ? e.text.split('\n')[0].slice(0, 44) : '';
   return `${cmd ? cmd + ' ' : ''}×${run.count} · failed every time${e.error ? ' (command text unavailable)' : ''}`;
 }

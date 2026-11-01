@@ -13,7 +13,8 @@ export function index(view) {
   const types = new Map(ad.agent_types.map(t => [t.key, t]));
   const nodeKinds = new Map(ad.node_kinds.map(k => [k.key, k]));
   const peak = Math.max(1, ...view.nodes.map(n => (n.detail && n.detail.peak) || 0));
-  return { view, nodes, sources, edges, stations, track, kinds, types, nodeKinds, peak };
+  const triggers = new Map((ad.triggers || []).map(t => [t.key, t.label]));
+  return { view, triggers, nodes, sources, edges, stations, track, kinds, types, nodeKinds, peak };
 }
 
 // The type's colour, icon and short label; a type the adapter does not list is grey with its raw name.

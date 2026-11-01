@@ -9,7 +9,6 @@ import * as sources from './components/sources.js';
 import * as canvas from './components/canvas.js';
 import * as inspector from './components/inspector.js';
 import * as filepane from './components/filepane.js';
-import { render as renderFindings } from './components/findings.js';
 import { onRegister } from './components/nodes/index.js';
 
 const $ = s => document.querySelector(s);
@@ -30,6 +29,7 @@ function renderNotices() {
   chk.hidden = !c || c.state === 'done';
   chk.textContent = !c ? '' : c.state === 'running' ? 'checking the project…' : (c.message || 'The project check was refused.');
   $('#src').textContent = `Session ${v.session}. Numbers come from the session transcript and files on disk; ~ marks an estimate.`;
+  $('#unknown').textContent = v.not_known.length ? `Not known: ${v.not_known.join(', ')}.` : '';
 }
 
 function render() {
@@ -64,7 +64,7 @@ function renderFocus() {
 
 function autoCheck() {
   const s = ix.view.sources.find(x => x.path === state.file);
-  if (!s || !s.actionable || run.autoChecked.has(s.path)) return;
+  if (!s || !s.actionable || run.autoChecked.has(s.path) || run.busy) return;
   run.autoChecked.add(s.path);
   runAct('check', s.path);
 }

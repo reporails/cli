@@ -1,16 +1,15 @@
 // The Sources panel: one section per source kind the adapter declares and the layers show.
 import { el, tpl, slot } from '../dom.js';
-import { k1 } from '../format.js';
+import { fill, k1 } from '../format.js';
 import { hashFor } from '../state.js';
 
-const MORE = { memory_unlinked: n => `${n.count} not linked`, repeated_instructions: n => `in ${n.contexts} contexts` };
 
 // Facts that annotate a row: by path target; the kind-level ones are read by `kindCount`.
-function rowNotes(facts) {
+function rowNotes(facts, templates) {
   const notes = new Map();
   for (const f of facts) {
-    if (!f.target || f.target.kind !== 'path' || !MORE[f.kind]) continue;
-    notes.set(f.target.value, [...(notes.get(f.target.value) || []), MORE[f.kind](f.numbers)]);
+    if (!f.target || f.target.kind !== 'path' || !templates[f.kind]) continue;
+    notes.set(f.target.value, [...(notes.get(f.target.value) || []), fill(templates[f.kind], f.numbers)]);
   }
   return notes;
 }
@@ -62,7 +61,8 @@ function row(env, s, notes) {
 export function render(box, env) {
   const { ix, state } = env;
   const facts = ix.view.facts;
-  const notes = rowNotes(facts);
+  const templates = ix.view.adapter.fact_notes || {};
+  const notes = rowNotes(facts, templates);
   box.replaceChildren();
   for (const k of ix.view.adapter.source_kinds) {
     if (!state.layers[k.key]) continue;
@@ -74,7 +74,8 @@ export function render(box, env) {
     const list = ix.view.sources.filter(s => s.kind === k.key);
     slot(head, 'count').textContent = kindCount(ix, k.key, list);
     const body = slot(head, 'rows');
-    if (!list.length) body.append(el('div', 'nk', `No ${k.label.toLowerCase()} configured`));
+    const absent = facts.find(f => f.kind === 'kind_absent' && f.target && f.target.value === k.key);
+    if (absent && templates.kind_absent) body.append(el('div', 'nk', fill(templates.kind_absent, { ...absent.numbers, label: k.label.toLowerCase() })));
     for (const s of list) body.append(row(env, s, notes));
     box.append(head);
   }

@@ -116,5 +116,36 @@ if (mode === 'stub' && ready) {
   out.agentCard = await page.ev(`document.querySelectorAll('.card[data-node="a1"] .nc, .card.top .nc').length`);
 }
 
+if (mode === 'words' && ready) {
+  out.header = await page.ev(`document.querySelector('.hmeta').textContent`);
+  out.unknown = await page.ev(`document.querySelector('#unknown').textContent`);
+  out.titles = await page.ev(`[...document.querySelectorAll('[title]')].map(e => e.title)`);
+  out.claudeRow = await page.ev(`document.querySelector('#sources .sr[data-source="CLAUDE.md"] .sw').textContent`);
+  await click('.card[data-node="a1"]');
+  out.returned = await page.ev(`document.querySelector('#inspector').textContent`);
+  await click('.card[data-node="a6"]');
+  out.stopped = await page.ev(`document.querySelector('#inspector').textContent`);
+  await click('#sources .sr[data-source="mcp:docs-server"]');
+  out.banner = await page.ev(`document.querySelector('.fbanner').textContent`);
+}
+
+if (mode === 'absent' && ready) {
+  out.absent = await page.ev(`[...document.querySelectorAll('#sources .nk')].map(e => e.textContent)`);
+  out.typeButtons = await page.ev(`[...document.querySelectorAll('[data-type]')].map(e => e.dataset.type)`);
+  out.untypedCard = await page.ev(`!!document.querySelector('.card[data-node="a9"]')`);
+}
+
+if (mode === 'autocheck' && ready) {
+  await go('#/file/CLAUDE.md');
+  await page.until(`document.querySelector('#view-file').textContent.includes('Running')`);
+  await go('#/file/.claude/rules/rules-engine.md');
+  out.second = await page.until(`document.querySelector('#view-file').textContent.includes('fixture finding') && document.querySelector('#view-file').textContent`, 40);
+}
+
+if (mode === 'calls' && ready) {
+  out.bracket = await page.until(`(document.querySelector('.blabel')||{}).textContent && document.querySelector('.blabel').textContent.includes('npm test')`) ? await page.ev(`document.querySelector('.blabel').textContent`) : '';
+  await new Promise(r => setTimeout(r, 7000));
+}
+
 console.log(JSON.stringify(out));
 page.close();

@@ -18,7 +18,7 @@ export function render(box, env) {
   const present = new Map();
   for (const c of childrenOf(ix, here)) {
     const t = typeOf(ix, c);
-    if (!present.has(c.type)) present.set(c.type, t);
+    if (c.type != null && !present.has(c.type)) present.set(c.type, t);
   }
   const types = slot(box, 'types');
   types.append(typeButton('all', 'All', '', state.type === 'all'));
