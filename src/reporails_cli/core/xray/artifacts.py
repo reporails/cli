@@ -275,6 +275,7 @@ def build_artifacts(
     in_context: Mapping[str, list[int]],
     findings: Mapping[str, FindingTally],
     root: Path,
+    *,
     advertised: Mapping[str, bool | None],
     contexts: Mapping[str, int],
 ) -> tuple[XrayArtifact, ...]:

@@ -8,8 +8,8 @@
 - Each turn on the `ails xray` page lists the prompts you typed in it (text read on request, never stored), the notes hooks added to the context and the Stop blocks that sent the agent back to work, and the session-start list adds up what Claude Code announced before its first compaction. Compactions are drawn from the session's own transcript.
 - The `ails xray` file list covers what a session in the folder can load: instruction, rule and memory files, and the skills, agents, commands and hook configs of the project, your user folder, the skills synced from your claude.ai account (`anthropic-skills:<name>`, the signed-in account only) and every installed, enabled plugin (`<plugin>:<name>`), each with where it comes from, its size and the name Claude Code uses. A memory file that `MEMORY.md` does not link within the part Claude Code loads is marked, and a skill, command or agent that ran counts as loaded from its turn; a skill run in its own subagent stays out of the main context, and a skill stays across a compaction as Claude Code re-attaches it.
 
-- The `ails xray` page knows which model replied and, once a reply passes 200k tokens, that the session has a 1M-token context window. It counts, for each kind of artifact, how many are on disk, listed to the model, loaded and used, and what each file costs across the main session and every subagent that loaded it.
-- The `ails xray` page checks the project's files once when it opens, so each file's findings, counted by severity, show without a click, and a file you check lists each finding's severity, rule title, category and docs link with the command that fixes the file.
+- The `ails xray` page names the model that replied and, once a reply passes 200k tokens, scales its chart to the session's 1M-token context window. It draws every compaction, each one shaded only until the next, and a file loaded before a compaction counts as in context only until it. It counts, for each kind of artifact, how many are on disk, listed to the model, loaded and used, and what each file costs across the main session and every subagent that loaded it.
+- The `ails xray` page checks the project's files once when it opens, so each file's findings, counted by severity with its errors marked, show without a click, and a file you check lists each finding's severity, rule title, category and docs link with the command that fixes the file.
 
 ### Changed
 
@@ -25,10 +25,6 @@
 - `--heal` on a single file no longer writes through a symlink whose real path points outside the project.
 - Files from your home folder and from installed plugins are found by walking only below their own folder, skipping `node_modules` and the other left-out folders, and a plugin folder with `[` or `*` in its path is read as written.
 - A stored API key is sent only to the default server or a local (loopback) address, never to any other `AILS_SERVER_URL` the cli is pointed at.
-
-- The `ails xray` page counts every compaction of a session, each one shaded only until the next, and a file loaded before a later compaction no longer counts as in context after it.
-
-- On the `ails xray` page the chart is scaled to the 1M context window once the session shows it, the header names the model that replied, a file's error count shows beside its findings, and each finding of a checked file shows its severity, rule title and docs link.
 
 ### Removed
 

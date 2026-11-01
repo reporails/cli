@@ -161,14 +161,14 @@ def _names(loads: tuple[XrayLoad, ...]) -> list[str]:
 def test_turn_context_is_the_three_counts_of_its_last_reply(tmp_path: Path, version: str) -> None:
     view = _view(_session(tmp_path, version, _project(tmp_path)))
     expected = _fixture_turn_contexts(version)
-    assert [turn.context for turn in view.turns] == expected
+    assert [turn.context.last for turn in view.turns] == expected
     assert expected[0] > 20000
-    assert view.first_context == view.turns[0].context_start
+    assert view.context.first_context == view.turns[0].context.first
 
 
 def test_a_turn_spans_the_replies_between_two_turn_ends(tmp_path: Path) -> None:
     view = _view(_session(tmp_path, "2.1.301", _project(tmp_path)))
-    assert [(turn.n, len(turn.series)) for turn in view.turns] == [(1, 1), (2, 1)]
+    assert [(turn.n, len(turn.context.series)) for turn in view.turns] == [(1, 1), (2, 1)]
     assert view.turns[0].t < view.turns[1].t
 
 
@@ -208,7 +208,7 @@ def test_refresh_reports_growth_and_bumps_the_version(tmp_path: Path) -> None:
     assert session.version == version + 1
     view = session.view({}, RUNNING)
     assert [turn.n for turn in view.turns] == [1, 2, 3]
-    assert view.turns[2].context == 30103
+    assert view.turns[2].context.last == 30103
     assert session.refresh() is False
 
 
@@ -230,7 +230,7 @@ def test_without_bus_records_reads_and_compactions_are_not_known(tmp_path: Path)
     view = _view(_session(tmp_path, "2.1.301", _project(tmp_path)))
     assert all(turn.reads is None for turn in view.turns)
     assert view.compactions == ()
-    assert "reads" in view.not_known
+    assert "reads" in view.gaps.not_known
 
 
 def test_a_compact_boundary_row_is_the_turns_compaction_with_no_bus(tmp_path: Path) -> None:
@@ -240,7 +240,7 @@ def test_a_compact_boundary_row_is_the_turns_compaction_with_no_bus(tmp_path: Pa
     (compaction,) = view.compactions
     assert compaction.turn == 2
     assert (compaction.trigger, compaction.before, compaction.after) == ("manual", 25172, 26009)
-    assert "reads" in view.not_known
+    assert "reads" in view.gaps.not_known
 
 
 def test_a_bus_compact_record_alone_draws_no_compaction(tmp_path: Path) -> None:
@@ -260,7 +260,7 @@ def test_bus_reads_land_in_the_turn_they_were_timed_in_and_a_row_compacts_it(tmp
     (compaction,) = view.compactions
     assert compaction.turn == 2
     assert (compaction.trigger, compaction.before, compaction.after) == ("manual", 25172, 26009)
-    assert "reads" not in view.not_known
+    assert "reads" not in view.gaps.not_known
 
 
 def test_artifacts_list_what_could_load_and_the_turns_it_sat_in_context(tmp_path: Path) -> None:
@@ -350,7 +350,13 @@ def test_a_session_with_no_records_is_an_empty_view(tmp_path: Path) -> None:
     session = XraySession(_project(tmp_path), tmp_path / "missing.jsonl")
     assert session.refresh() is False
     view = session.view({}, RUNNING)
-    assert (view.turns, view.start, view.subagents, view.first_context, view.span.length_s) == ((), (), (), None, None)
+    assert (view.turns, view.start, view.subagents, view.context.first_context, view.info.length_s) == (
+        (),
+        (),
+        (),
+        None,
+        None,
+    )
 
 
 def test_the_json_is_plain_data(tmp_path: Path) -> None:
@@ -373,7 +379,7 @@ def test_only_a_project_file_that_exists_is_actionable(tmp_path: Path) -> None:
         ),
         ArtifactFile(str(memory), "memory", "auto", None, "MEMORY.md", None, None),
     )
-    got = [a.actionable for a in build_artifacts(files, set(), {}, {}, root, {}, {})]
+    got = [a.actionable for a in build_artifacts(files, set(), {}, {}, root, advertised={}, contexts={})]
     assert got == [True, False, False, False]
 
 
@@ -434,10 +440,10 @@ def _text_size(*numbers: int) -> int:
 def test_a_turn_series_is_the_context_of_each_of_its_replies_in_order(tmp_path: Path) -> None:
     view = _view(_session(tmp_path, "2.1.308-harness", _project(tmp_path)))
     (turn,) = view.turns
-    assert [context for _, context in turn.series] == [2 + 500 + 1000, 2 + 700 + 1000, 2 + 900 + 1000]
-    assert [t for t, _ in turn.series] == sorted(t for t, _ in turn.series)
-    assert (turn.context_start, turn.context, len(turn.series)) == (1502, 1902, 3)
-    assert turn.to_json()["series"] == [[t, c] for t, c in turn.series]
+    assert [context for _, context in turn.context.series] == [2 + 500 + 1000, 2 + 700 + 1000, 2 + 900 + 1000]
+    assert [t for t, _ in turn.context.series] == sorted(t for t, _ in turn.context.series)
+    assert (turn.context.first, turn.context.last, len(turn.context.series)) == (1502, 1902, 3)
+    assert turn.to_json()["series"] == [[t, c] for t, c in turn.context.series]
 
 
 def test_the_harness_lists_the_first_of_each_kind_and_the_session_start_notes(tmp_path: Path) -> None:
@@ -502,7 +508,7 @@ def test_the_session_start_notes_stay_in_the_harness_and_out_of_the_turns(tmp_pa
 
 def test_the_view_no_longer_calls_stop_blocks_hook_notes_and_prompts_unknown(tmp_path: Path) -> None:
     view = _view(_turns_session(tmp_path))
-    assert not {"stop hook blocks", "hook notes", "prompts"} & set(view.not_known)
+    assert not {"stop hook blocks", "hook notes", "prompts"} & set(view.gaps.not_known)
 
 
 def test_a_prompt_text_is_given_only_for_a_prompt_the_records_name(tmp_path: Path) -> None:
@@ -889,7 +895,7 @@ def test_of_two_skills_sharing_a_label_only_the_winning_scope_is_advertised(tmp_
 
 def test_the_funnel_counts_what_the_artifacts_show_for_each_kind_on_disk(tmp_path: Path) -> None:
     view = _view(_session(tmp_path, "2.1.310-listing", _project(tmp_path)))
-    rows = {row.kind: row for row in view.funnel}
+    rows = {row.kind: row for row in view.verdict.funnel}
     assert list(rows) == ["instructions", "skill", "agent", "hook"]
     for kind, row in rows.items():
         items = [a for a in view.artifacts if a.kind == kind]
@@ -921,7 +927,7 @@ def test_every_compaction_is_kept_each_band_ends_at_the_next_and_the_last_at_the
     first, second = view.compactions
     assert (first.turn, first.trigger, second.turn, second.trigger) == (2, "manual", 3, "auto")
     assert first.band_end == second.t
-    assert view.span.length_s is not None and second.band_end == view.span.length_s
+    assert view.info.length_s is not None and second.band_end == view.info.length_s
     assert first.t < second.t < second.band_end
 
 
@@ -936,13 +942,13 @@ def test_the_peak_is_the_highest_context_a_reply_or_a_compaction_before_reached(
     view = _view(_session(tmp_path, "2.1.309-compactions", _project(tmp_path)))
     first, second = view.compactions
     assert first.before == 200096 and second.before == 61843 and second.after == 30102
-    assert view.peak == first.before
+    assert view.context.peak == first.before
 
 
 def test_the_preload_is_the_harness_items_plus_the_start_loads(tmp_path: Path) -> None:
     view = _view(_session(tmp_path, "2.1.301", _project(tmp_path)))
     harness = sum(item.tokens_est or 0 for item in view.harness or ())
-    assert view.preload_tokens_est == harness + sum(load.tokens_est or 0 for load in view.start) > 0
+    assert view.context.preload_tokens_est == harness + sum(load.tokens_est or 0 for load in view.start) > 0
 
 
 def test_a_turn_with_a_prompt_is_opened_by_it_and_prompts_are_numbered_through_the_session(tmp_path: Path) -> None:
@@ -958,8 +964,8 @@ def test_a_turn_delta_is_its_context_less_the_last_known_context_before_it(tmp_p
     view = _view(_turns_session(tmp_path))
     first, second = view.turns
     contexts = _fixture_turn_contexts("2.1.309-turns")
-    assert first.delta == 0 and view.first_context == contexts[0]
-    assert second.delta == contexts[1] - contexts[0]
+    assert first.context.delta == 0 and view.context.first_context == contexts[0]
+    assert second.context.delta == contexts[1] - contexts[0]
 
 
 def _without_rows(tmp_path: Path, drop: set[int]) -> XraySession:
@@ -976,8 +982,8 @@ def test_a_turn_with_no_prompt_after_a_stop_block_was_opened_by_the_stop_hook(tm
     first, second = view.turns
     assert second.prompts == () and second.opened_by == "stop_hook"
     assert first.opened_by == "prompt"
-    assert second.start == second.series[0][0]
-    assert second.delta is not None
+    assert second.start == second.context.series[0][0]
+    assert second.context.delta is not None
 
 
 def test_a_first_turn_with_no_prompt_is_opened_by_the_session_start(tmp_path: Path) -> None:

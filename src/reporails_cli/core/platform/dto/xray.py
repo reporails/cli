@@ -207,6 +207,17 @@ class XrayRun:
 
 
 @dataclass(frozen=True)
+class XrayTurnContext:
+    """A turn's context in tokens: at its first and last reply, how far it moved from the last context known
+    before the turn, and each reply's time and context."""
+
+    first: int | None
+    last: int | None
+    delta: int | None
+    series: tuple[tuple[float, int], ...]
+
+
+@dataclass(frozen=True)
 class XrayTurn:
     """The replies between two turn ends, the last turn open while the session runs: when it began, what opened it,
     how many Stop blocks it held and how far its context moved from the last one known."""
@@ -215,14 +226,11 @@ class XrayTurn:
     start: float
     opened_by: TurnOpener | None
     stop_blocks: int
-    delta: int | None
     t: float
-    context_start: int | None
-    context: int | None
+    context: XrayTurnContext
     loads: tuple[XrayLoad, ...]
     reads: tuple[str, ...] | None
     subagents: tuple[str, ...]
-    series: tuple[tuple[float, int], ...]
     prompts: tuple[XrayPrompt, ...]
     notes: tuple[XrayNote, ...]
     skill_runs: tuple[XrayRun, ...]
@@ -230,17 +238,17 @@ class XrayTurn:
     def to_json(self) -> JsonObject:
         """The turn as a JSON object."""
         reads: JsonValue = None if self.reads is None else list(self.reads)
-        series: list[JsonValue] = [[t, context] for t, context in self.series]
+        series: list[JsonValue] = [[t, context] for t, context in self.context.series]
         return {
             "n": self.n,
             "start": self.start,
             "opened_by": self.opened_by,
             "stop_blocks": self.stop_blocks,
-            "delta": self.delta,
+            "delta": self.context.delta,
             "t": self.t,
-            "context_start": self.context_start,
-            "context": self.context,
-            "replies": len(self.series),
+            "context_start": self.context.first,
+            "context": self.context.last,
+            "replies": len(self.context.series),
             "loads": _objects([load.to_json() for load in self.loads]),
             "reads": reads,
             "subagents": list(self.subagents),
@@ -421,11 +429,44 @@ class XrayHarnessItem:
 
 
 @dataclass(frozen=True)
-class XraySpan:
-    """When the session began (the time of its first record) and how long it ran, in seconds."""
+class XraySessionInfo:
+    """Which session and project the page shows, when the session began (the time of its first record) and how
+    long it ran, in seconds."""
 
+    session: str
+    project: str
     started_at: str | None
     length_s: float | None
+
+
+@dataclass(frozen=True)
+class XrayContextSummary:
+    """The session's context in tokens: its first reading, its peak, the estimate of what loaded before the
+    first prompt, the latest model and the window size."""
+
+    first_context: int | None
+    peak: int | None
+    preload_tokens_est: int | None
+    model: str | None
+    window: XrayWindow | None
+
+
+@dataclass(frozen=True)
+class XrayVerdict:
+    """What the page says about the files: the funnel per kind, the headline facts and the state of the launch
+    check."""
+
+    funnel: tuple[XrayFunnelRow, ...]
+    facts: tuple[XrayFact, ...]
+    check: XrayCheck
+
+
+@dataclass(frozen=True)
+class XrayGaps:
+    """What the view could not read: the refusals and the names of what is not known."""
+
+    refusals: tuple[str, ...]
+    not_known: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -433,48 +474,40 @@ class XrayView:
     """Everything the session page draws; the window is null until a reply's context shows the size."""
 
     version: int
-    session: str
-    project: str
-    span: XraySpan
-    first_context: int | None
-    peak: int | None
-    preload_tokens_est: int | None
+    info: XraySessionInfo
+    context: XrayContextSummary
     start: tuple[XrayLoad, ...]
     turns: tuple[XrayTurn, ...]
     compactions: tuple[XrayCompaction, ...]
     subagents: tuple[XraySubagent, ...]
     artifacts: tuple[XrayArtifact, ...]
-    refusals: tuple[str, ...]
-    not_known: tuple[str, ...]
+    gaps: XrayGaps
     harness: tuple[XrayHarnessItem, ...] | None
-    model: str | None
-    window: XrayWindow | None
-    funnel: tuple[XrayFunnelRow, ...]
-    check: XrayCheck
-    facts: tuple[XrayFact, ...]
+    verdict: XrayVerdict
 
     def to_json(self) -> JsonObject:
         """The view as a JSON object."""
+        window = self.context.window
         return {
             "version": self.version,
-            "session": self.session,
-            "project": self.project,
-            "started_at": self.span.started_at,
-            "length_s": self.span.length_s,
-            "model": self.model,
-            "window": None if self.window is None else self.window.to_json(),
-            "funnel": _objects([row.to_json() for row in self.funnel]),
-            "first_context": self.first_context,
-            "peak": self.peak,
-            "preload_tokens_est": self.preload_tokens_est,
+            "session": self.info.session,
+            "project": self.info.project,
+            "started_at": self.info.started_at,
+            "length_s": self.info.length_s,
+            "model": self.context.model,
+            "window": None if window is None else window.to_json(),
+            "funnel": _objects([row.to_json() for row in self.verdict.funnel]),
+            "first_context": self.context.first_context,
+            "peak": self.context.peak,
+            "preload_tokens_est": self.context.preload_tokens_est,
             "start": _objects([load.to_json() for load in self.start]),
             "turns": _objects([turn.to_json() for turn in self.turns]),
             "compactions": _objects([compaction.to_json() for compaction in self.compactions]),
             "subagents": _objects([sub.to_json() for sub in self.subagents]),
             "artifacts": _objects([artifact.to_json() for artifact in self.artifacts]),
-            "refusals": list(self.refusals),
-            "not_known": list(self.not_known),
+            "refusals": list(self.gaps.refusals),
+            "not_known": list(self.gaps.not_known),
             "harness": None if self.harness is None else _objects([item.to_json() for item in self.harness]),
-            "check": self.check.to_json(),
-            "facts": _objects([fact.to_json() for fact in self.facts]),
+            "check": self.verdict.check.to_json(),
+            "facts": _objects([fact.to_json() for fact in self.verdict.facts]),
         }

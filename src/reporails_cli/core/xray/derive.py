@@ -31,6 +31,7 @@ from reporails_cli.core.platform.dto.xray import (
     XrayRun,
     XraySubagent,
     XrayTurn,
+    XrayTurnContext,
     XrayWindow,
 )
 
@@ -415,41 +416,72 @@ def build_turns(
     count = len(ends) + (1 if len(ends) in buckets else 0)
     turns: list[XrayTurn] = []
     known = replies.points[0][1] if replies.points else None
-    number = 0
     for index in range(count):
         got = buckets.get(index, _Bucket())
         moment = ends[index] if index < len(ends) else got.last_time
-        prompts = []
-        for record in sorted(got.prompts, key=lambda item: epoch(item.time) or 0.0):
-            if record.prompt is None:
-                raise ValueError("prompt record holds no prompt")
-            number += 1
-            prompts.append(
-                XrayPrompt(number, record.prompt.id, frame.at(record) or 0.0, record.prompt.chars, record.prompt.queued)
-            )
-        previous = turns[-1] if turns else None
-        context = got.replies[-1][1] if got.replies else None
+        prompts = _numbered_prompts(got, frame, sum(len(turn.prompts) for turn in turns))
         turns.append(
-            XrayTurn(
-                n=index + 1,
-                start=_turn_start(prompts, got.replies, previous),
-                opened_by=_opened_by(prompts, got, previous),
-                stop_blocks=sum(1 for note in got.notes if note.kind == "stop_block"),
-                delta=None if context is None or known is None else context - known,
+            _one_turn(
+                index,
+                got,
+                prompts,
                 t=moment - frame.t0,
-                context_start=got.replies[0][1] if got.replies else None,
-                context=context,
-                loads=loads_of(got.loads, frame),
-                reads=tuple(relative_wire_path(path, frame.root) for path in got.reads) if bus else None,
-                subagents=tuple(got.runs),
-                series=tuple(got.replies),
-                prompts=tuple(prompts),
-                notes=tuple(got.notes),
-                skill_runs=tuple(got.skill_runs),
+                previous=turns[-1] if turns else None,
+                known=known,
+                bus=bus,
+                frame=frame,
             )
         )
-        known = context if context is not None else known
+        last = turns[-1].context.last
+        known = last if last is not None else known
     return tuple(turns)
+
+
+def _numbered_prompts(got: _Bucket, frame: Frame, before: int) -> list[XrayPrompt]:
+    """A turn's prompts in time order, numbered on from the `before` prompts of the turns ahead."""
+    prompts = []
+    for record in sorted(got.prompts, key=lambda item: epoch(item.time) or 0.0):
+        if record.prompt is None:
+            raise ValueError("prompt record holds no prompt")
+        before += 1
+        prompts.append(
+            XrayPrompt(before, record.prompt.id, frame.at(record) or 0.0, record.prompt.chars, record.prompt.queued)
+        )
+    return prompts
+
+
+def _one_turn(
+    index: int,
+    got: _Bucket,
+    prompts: list[XrayPrompt],
+    *,
+    t: float,
+    previous: XrayTurn | None,
+    known: int | None,
+    bus: Sequence[EventRecord] | None,
+    frame: Frame,
+) -> XrayTurn:
+    """The turn at `index` built from its bucket; `known` is the last context known before it."""
+    last = got.replies[-1][1] if got.replies else None
+    return XrayTurn(
+        n=index + 1,
+        start=_turn_start(prompts, got.replies, previous),
+        opened_by=_opened_by(prompts, got, previous),
+        stop_blocks=sum(1 for note in got.notes if note.kind == "stop_block"),
+        t=t,
+        context=XrayTurnContext(
+            first=got.replies[0][1] if got.replies else None,
+            last=last,
+            delta=None if last is None or known is None else last - known,
+            series=tuple(got.replies),
+        ),
+        loads=loads_of(got.loads, frame),
+        reads=tuple(relative_wire_path(path, frame.root) for path in got.reads) if bus else None,
+        subagents=tuple(got.runs),
+        prompts=tuple(prompts),
+        notes=tuple(got.notes),
+        skill_runs=tuple(got.skill_runs),
+    )
 
 
 def _turn_start(

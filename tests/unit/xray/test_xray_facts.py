@@ -15,7 +15,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 
 
 def _facts(tmp_path: Path, version: str, findings: dict[str, FindingTally] | None = None) -> tuple[XrayFact, ...]:
-    return _view(_session(tmp_path, version, _project(tmp_path)), findings).facts
+    return _view(_session(tmp_path, version, _project(tmp_path)), findings).verdict.facts
 
 
 def _of(facts: tuple[XrayFact, ...], kind: str) -> list[XrayFact]:
@@ -38,7 +38,7 @@ def test_file_findings_are_absent_when_every_tally_is_zero_or_none_is_given(tmp_
 def test_compaction_loss_is_one_fact_per_compaction_with_its_turn(tmp_path: Path) -> None:
     view = _view(_session(tmp_path, "2.1.309-compactions", _project(tmp_path)))
     known = [c for c in view.compactions if c.before is not None and c.after is not None]
-    losses = _of(view.facts, "compaction_loss")
+    losses = _of(view.verdict.facts, "compaction_loss")
     assert len(known) == len(losses) >= 1
     for compaction, fact in zip(known, losses, strict=True):
         assert compaction.before is not None and compaction.after is not None
@@ -53,8 +53,8 @@ def test_no_compaction_loss_without_a_compaction(tmp_path: Path) -> None:
 
 def test_funnel_drop_names_the_kind_whose_used_count_is_below_its_base(tmp_path: Path) -> None:
     view = _view(_session(tmp_path, "2.1.310-listing", _project(tmp_path)))
-    rows = {row.kind: row for row in view.funnel}
-    drops = {fact.artifact_kind: fact for fact in _of(view.facts, "funnel_drop")}
+    rows = {row.kind: row for row in view.verdict.funnel}
+    drops = {fact.artifact_kind: fact for fact in _of(view.verdict.facts, "funnel_drop")}
     for kind, row in rows.items():
         base = row.on_disk if row.advertised is None else row.advertised
         assert (kind in drops) == (row.used is not None and row.used < base)
@@ -67,8 +67,8 @@ def test_funnel_drop_names_the_kind_whose_used_count_is_below_its_base(tmp_path:
 
 def test_kind_absent_names_each_kind_with_nothing_on_disk(tmp_path: Path) -> None:
     view = _view(_session(tmp_path, "2.1.308", _project(tmp_path)))
-    present = {row.kind for row in view.funnel}
-    absent = _of(view.facts, "kind_absent")
+    present = {row.kind for row in view.verdict.funnel}
+    absent = _of(view.verdict.facts, "kind_absent")
     assert absent and not any(fact.artifact_kind in present for fact in absent)
     assert {fact.artifact_kind for fact in absent} >= {"rule", "memory"} - present
     assert all(fact.numbers == () and fact.target == XrayTarget("kind", str(fact.artifact_kind)) for fact in absent)

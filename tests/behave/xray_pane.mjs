@@ -14,6 +14,6 @@ const shown = (await page.until(`(document.querySelector('pre.peek')||{}).textCo
 console.log('SHOWN ' + JSON.stringify(shown));
 await new Promise(r => createInterface({ input: process.stdin }).once('line', r));
 let after = shown;
-for (let i = 0; i < 40 && after === shown; i++) { await sleep(500); after = await peek(); }
+for (let i = 0; i < 40 && (after === shown || after === ''); i++) { await sleep(500); after = await peek(); }
 console.log('AFTER ' + JSON.stringify(after));
 page.close();
