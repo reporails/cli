@@ -10,6 +10,7 @@ from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object, as_str
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessKind
 from reporails_cli.core.platform.dto.xray import (
+    AGENT_ARTIFACT_KINDS,
     ARTIFACT_KIND_OF_FILE_TYPE,
     INVOCABLE_ARTIFACT_KINDS,
     RUNNABLE_ARTIFACT_KINDS,
@@ -97,6 +98,16 @@ def runnable_paths(files: Sequence[ArtifactFile]) -> dict[str, str]:
     return {label: item.path for label, item in winners(files, RUNNABLE_ARTIFACT_KINDS).items()}
 
 
+def agent_file_tokens(files: Sequence[ArtifactFile], root: Path) -> dict[str, int]:
+    """The size in tokens of the definition file each listed agent type stands for; a type whose file is unreadable
+    is left out."""
+    sizes = {
+        label: file_tokens_est(real_path(item.path, root))
+        for label, item in winners(files, AGENT_ARTIFACT_KINDS).items()
+    }
+    return {label: size for label, size in sizes.items() if size is not None}
+
+
 def _listed_names(records: Sequence[EventRecord], kind: HarnessKind) -> set[str] | None:
     """The names the main session's listing rows of `kind` carry: a skill listing's `names`, an agent listing's
     added names; None when no such row carries any."""
@@ -117,7 +128,7 @@ def advertised_files(files: Sequence[ArtifactFile], records: Sequence[EventRecor
     skills = _listed_names(records, "skill_list")
     agents = _listed_names(records, "agent_list")
     runnable = winners(files, RUNNABLE_ARTIFACT_KINDS)
-    agent_files = winners(files, frozenset({"agent"}))
+    agent_files = winners(files, AGENT_ARTIFACT_KINDS)
     found: dict[str, bool | None] = {}
     for item in files:
         if item.kind in RUNNABLE_ARTIFACT_KINDS:

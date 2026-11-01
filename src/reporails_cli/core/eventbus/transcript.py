@@ -76,6 +76,16 @@ def _files(session_file: Path) -> list[tuple[str | None, Path]]:
     return files
 
 
+def last_write(session_file: Path) -> float | None:
+    """When the transcript or any of its subagent files was last written, in seconds since 1970; None when none can
+    be read."""
+    written: list[float] = []
+    for _, path in _files(session_file):
+        with contextlib.suppress(OSError):
+            written.append(path.stat().st_mtime)
+    return max(written, default=None)
+
+
 def subagent_brief(agent: str, session_file: Path, subagent_id: str) -> str | None:
     """The brief one subagent was given, or None when the session has no such subagent file.
 
@@ -113,13 +123,8 @@ def call_text(agent: str, session_file: Path, subagent_id: str | None, use_id: s
     path = (
         session_file if subagent_id is None else _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
     )
-    row = _find_row(path, use_id, lambda row: row.get("type") == "assistant" and _holds_call(row, use_id))
+    row = _find_row(path, use_id, lambda row: adapter.holds_call(row, use_id))
     return None if row is None else adapter.resolve_call(row, use_id)
-
-
-def _holds_call(row: JsonObject, use_id: str) -> bool:
-    content = as_object(row.get("message")).get("content")
-    return isinstance(content, list) and any(as_object(block).get("id") == use_id for block in content)
 
 
 def _read_file(

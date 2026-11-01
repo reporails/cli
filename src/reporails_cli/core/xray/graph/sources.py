@@ -11,7 +11,7 @@ from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.dto.events import EventRecord, is_note_kind
 from reporails_cli.core.platform.dto.xray import SOURCE_KIND_OF_ARTIFACT, SourceEntry, XrayArtifact
 from reporails_cli.core.platform.dto.xray_graph import SourceKind
-from reporails_cli.core.xray.derive import BYTES_PER_TOKEN, Frame, count_for, file_tokens_est, real_path
+from reporails_cli.core.xray.derive import Frame, count_for, file_tokens_est, real_path, tokens_of
 
 # The memory type an auto-memory file is loaded as.
 AUTO_MEMORY_TYPE = "AutoMem"
@@ -75,16 +75,17 @@ def _unlisted_loads(records: Sequence[EventRecord], known: Mapping[str, str], fr
 
 
 def _harness_sources(records: Sequence[EventRecord]) -> list[SourceEntry]:
-    """A source for each MCP server the records name and each hook note label."""
+    """A source for each MCP server the records name and each hook note label; a hook's size is that of its
+    largest firing."""
     servers: dict[str, int | None] = {}
     hooks: dict[str, int] = {}
     for record in records:
         entry = record.harness
         if record.event == "harness" and entry is not None and entry.kind == "mcp_instructions":
             for name, chars in entry.added:
-                servers[name] = chars // BYTES_PER_TOKEN
+                servers[name] = tokens_of(chars)
         elif record.event == "harness" and entry is not None and is_note_kind(entry.kind) and entry.event:
-            hooks[entry.label] = hooks.get(entry.label, 0) + entry.chars // BYTES_PER_TOKEN
+            hooks[entry.label] = max(hooks.get(entry.label, 0), tokens_of(entry.chars))
         elif record.event == "tool_call" and record.tool is not None and record.tool.server:
             servers.setdefault(record.tool.server, None)
     found = [

@@ -6,12 +6,14 @@ from collections.abc import Callable, Sequence
 
 from reporails_cli.core.platform.dto.xray import (
     AdapterVocabulary,
+    FactKind,
     XrayAgentTypeInfo,
     XrayCategoryInfo,
     XrayNesting,
     XrayNodeKindInfo,
     XrayRoot,
     XraySourceKindInfo,
+    XrayTriggerInfo,
 )
 
 # Colours handed to the agent types found on disk, in order, cycling.
@@ -50,6 +52,20 @@ _CLAUDE_CATEGORIES = (
     XrayCategoryInfo("other", "Other", False),
 )
 
+_CLAUDE_TRIGGERS = (
+    XrayTriggerInfo("session_start", "loaded with the session's instructions"),
+    XrayTriggerInfo("path_match", "loaded when a matching file was touched"),
+    XrayTriggerInfo("agent", "loaded by the agent"),
+    XrayTriggerInfo("inherited", "handed down at launch"),
+    XrayTriggerInfo("hook", "added by a hook"),
+)
+
+_CLAUDE_FACT_NOTES: dict[FactKind, str] = {
+    "memory_unlinked": "{count} not linked",
+    "repeated_instructions": "in {contexts} contexts",
+    "kind_absent": "No {label} configured",
+}
+
 
 def _claude(disk_types: Sequence[str]) -> AdapterVocabulary:
     """Claude Code's vocabulary, with each agent type found on disk after the built-in ones."""
@@ -67,6 +83,8 @@ def _claude(disk_types: Sequence[str]) -> AdapterVocabulary:
         node_kinds=(XrayNodeKindInfo("agent", "Agent", True, True),),
         categories=_CLAUDE_CATEGORIES,
         nesting=XrayNesting(True, None),
+        triggers=_CLAUDE_TRIGGERS,
+        fact_notes=_CLAUDE_FACT_NOTES,
     )
 
 

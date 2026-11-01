@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import time
 from pathlib import Path
 
 import pytest
@@ -11,7 +13,7 @@ import pytest
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list
 from reporails_cli.core.platform.dto.xray import ArtifactFile, FindingTally, XrayCheck, XrayView
-from reporails_cli.core.xray.artifacts import PEEK_LIMIT, artifact_files, build_artifacts
+from reporails_cli.core.xray.artifacts import PEEK_LIMIT, agent_file_tokens, artifact_files, build_artifacts
 from reporails_cli.core.xray.derive import BYTES_PER_TOKEN
 from reporails_cli.core.xray.session import XraySession
 
@@ -66,8 +68,10 @@ def _session(tmp_path: Path, version: str, root: Path) -> XraySession:
     """A session over a copy of the fixture whose paths point into `root`."""
     copy = tmp_path / version
     shutil.copytree(FIXTURES / version, copy)
+    long_ago = time.time() - 2 * 24 * 3600
     for file in copy.rglob("*.jsonl"):
         file.write_text(file.read_text().replace("/work/proj", str(root)))
+        os.utime(file, (long_ago, long_ago))
     return XraySession(root, copy / "session.jsonl")
 
 
@@ -130,8 +134,6 @@ def test_the_handoffs_session_shows_what_the_main_agent_did_on_its_station_and_t
     assert [(item.trigger, item.before is not None) for item in station.compactions] == [("manual", True)]
     track = next(item for item in view.tracks if item.node == "main")
     assert [run.count for run in track.failure_runs] == [3]
-    losses = [fact for fact in view.verdict.facts if fact.kind == "compaction_loss"]
-    assert [(fact.target.kind, fact.target.value) for fact in losses if fact.target] == [("node", "main")]
 
 
 def test_the_handoffs_session_holds_no_transcript_text(tmp_path: Path) -> None:
@@ -365,3 +367,60 @@ def test_a_prompt_text_is_given_only_for_a_prompt_the_records_name(tmp_path: Pat
     typed = main.detail.prompts
     assert typed and session.prompt(typed[0].id) is not None
     assert session.prompt("nosuchprompt") is None
+
+
+def _touch(session: Path, age_s: float) -> None:
+    moment = time.time() - age_s
+    for file in [session, *session.with_suffix("").rglob("*.jsonl")]:
+        os.utime(file, (moment, moment))
+
+
+def _agents_without_result(view: XrayView) -> set[str | None]:
+    return {edge.outcome for edge in view.edges if edge.child.startswith("abbb0")}
+
+
+def test_a_session_written_a_minute_ago_has_its_unanswered_agent_running_and_one_written_an_hour_ago_does_not(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    session = _session(tmp_path, HANDOFFS, root)
+    path = tmp_path / HANDOFFS / "session.jsonl"
+    _touch(path, 60)
+    assert _agents_without_result(_view(session)) == {"running"}
+    _touch(path, 3600)
+    assert _agents_without_result(_view(session)) == {"no_handback"}
+
+
+def test_the_handoffs_session_background_acknowledgements_are_no_size_coming_back(tmp_path: Path) -> None:
+    view = _handoffs(tmp_path)
+    ended = {edge.child[:5]: (edge.outcome, edge.back) for edge in view.edges}
+    for child in ("aeee0", "afff0"):
+        assert ended[child][0] in {"stopped", "no_handback"} and ended[child][1] is None
+
+
+def test_the_vocabulary_words_the_triggers_and_the_fact_notes_for_the_page(tmp_path: Path) -> None:
+    adapter = _handoffs(tmp_path).to_json()["adapter"]
+    assert isinstance(adapter, dict)
+    triggers = adapter["triggers"]
+    assert isinstance(triggers, list)
+    assert [item["key"] for item in triggers if isinstance(item, dict)] == [
+        "session_start", "path_match", "agent", "inherited", "hook",
+    ]  # fmt: skip
+    assert adapter["fact_notes"] == {
+        "memory_unlinked": "{count} not linked",
+        "repeated_instructions": "in {contexts} contexts",
+        "kind_absent": "No {label} configured",
+    }
+
+
+def test_a_kind_absent_fact_targets_a_source_kind_of_the_adapter_never_an_artifact_kind(tmp_path: Path) -> None:
+    view = _handoffs(tmp_path)
+    kinds = {item.key for item in view.adapter.source_kinds}
+    absent = [fact for fact in view.verdict.facts if fact.kind == "kind_absent"]
+    assert absent and all(fact.target is not None and fact.target.value in kinds for fact in absent)
+
+
+def test_the_size_of_each_listed_agent_definition_is_found_by_its_type(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    sizes = agent_file_tokens(artifact_files(root, []), root)
+    assert sizes["helper"] == (root / ".claude" / "agents" / "helper.md").stat().st_size // BYTES_PER_TOKEN > 0

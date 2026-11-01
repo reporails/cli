@@ -125,6 +125,7 @@ def _xray_node(node: ProducedNode, build: _Build) -> XrayNode:
         slots=spine.slots(build.had[node.id], build.sources, build.vocabulary),
         tool_counts=spine.tool_counts(node, build.vocabulary),
         withheld=withheld,
+        child_sources=spine.child_sources(layout.children[node.id], build.had),
         detail=node.detail,
     )
 

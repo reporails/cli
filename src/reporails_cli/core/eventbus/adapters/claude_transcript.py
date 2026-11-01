@@ -283,6 +283,17 @@ def _blocks_text(content: JsonValue, what: str) -> list[str] | None:
     return [text for text in texts if isinstance(text, str)]
 
 
+def _brief_text(first_row: JsonObject) -> str | None:
+    """The text of a subagent file's first row, None when it holds none; refuses a first row that is not a user row."""
+    if first_row.get("type") != "user":
+        raise PayloadRefused("subagent file does not open with a user row")
+    content = as_object(first_row.get("message")).get("content")
+    if isinstance(content, str):
+        return content or None
+    texts = _blocks_text(content, "subagent first row")
+    return BRIEF_BLOCK_SEPARATOR.join(texts) if texts else None
+
+
 class ClaudeTranscriptAdapter:
     """Resolves the rows of a Claude Code session transcript."""
 
@@ -324,13 +335,16 @@ class ClaudeTranscriptAdapter:
         row holding text."""
         if first_row.get("type") != "user":
             raise PayloadRefused("subagent file does not open with a user row")
-        content = as_object(first_row.get("message")).get("content")
-        if isinstance(content, str):
-            return content
-        texts = _blocks_text(content, "subagent first row")
-        if not texts:
+        text = _brief_text(first_row)
+        if text is None:
             raise PayloadRefused("subagent first row holds no text content")
-        return BRIEF_BLOCK_SEPARATOR.join(texts)
+        return text
+
+    def holds_call(self, row: JsonObject, use_id: str) -> bool:
+        """Whether `row` is an assistant row holding the tool call `use_id`."""
+        return row.get("type") == "assistant" and any(
+            block.get("id") == use_id for block in _content_blocks(row, "tool_use")
+        )
 
     def resolve_prompt(self, row: JsonObject) -> str:
         """The text of a typed prompt row, for the route that shows it; refuses a row that is not one."""
@@ -340,16 +354,18 @@ class ClaudeTranscriptAdapter:
         return text
 
     def resolve_subagent(self, subagent_id: str, meta: JsonObject, first_row: JsonObject) -> EventRecord:
-        """The `subagent_run` record of a subagent file; refuses a meta file without `agentType`."""
+        """The `subagent_run` record of a subagent file; refuses a meta file without `agentType` or a first row that
+        is not a user row. A first row with no text leaves the brief size unknown."""
         agent_type = opt_str(meta.get("agentType"))
         if not agent_type:
             raise PayloadRefused(f"subagent {subagent_id} meta has no agentType")
+        brief = _brief_text(first_row)
         launch = SubagentMeta(
             description=_meta_field(meta, "description", str),
             parent_id=_meta_field(meta, "parentAgentId", str),
             tool_use_id=_meta_field(meta, "toolUseId", str),
             depth=_meta_field(meta, "spawnDepth", int),
-            brief_chars=len(self.resolve_brief(first_row)),
+            brief_chars=None if brief is None else len(brief),
             stopped=_meta_field(meta, "stoppedByUser", bool) is True,
             background=_meta_field(meta, "requestShape", str) == BACKGROUND_SHAPE,
         )
@@ -370,7 +386,8 @@ class ClaudeTranscriptAdapter:
         if not all(isinstance(text, str) for text in texts):
             raise PayloadRefused("assistant text block has no text")
         chars = sum(len(text) for text in texts if isinstance(text, str))
-        return [replace(self._record(row, "assistant_text", subagent_id), item=ReplyText(chars))]
+        synthetic = as_object(row.get("message")).get("model") == SYNTHETIC_MODEL
+        return [replace(self._record(row, "assistant_text", subagent_id), item=ReplyText(chars, synthetic))]
 
     def _tool_results(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         return [

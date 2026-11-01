@@ -18,6 +18,8 @@ NodeKind = Literal["agent"]
 SourceKind = Literal["instructions", "rule", "skill", "memory", "mcp", "hook"]
 LoadTrigger = Literal["session_start", "path_match", "agent", "inherited", "hook"]
 AgentOutcome = Literal["returned", "failed", "stopped", "no_handback", "running"]
+# The outcomes in which an agent's parent received something back.
+HANDED_BACK_OUTCOMES: frozenset[AgentOutcome] = frozenset({"returned", "failed"})
 
 
 def objects(items: Iterable[JsonObject]) -> JsonValue:
@@ -228,13 +230,14 @@ class XrayDown:
 @dataclass(frozen=True)
 class XrayAgentDetail:
     """What the page shows of an agent beyond the generic node: its context line, what it was handed, what it
-    handed back, how it ended and the prompts a person typed to it."""
+    handed back (and how many times the context peak is that), how it ended and the prompts a person typed to it."""
 
     context_start: int | None
     peak: int | None
     series: tuple[tuple[float, int], ...]
     down: XrayDown
     back_tokens_est: int | None
+    back_ratio: int | None
     outcome: AgentOutcome | None
     given: tuple[XrayGiven, ...]
     prompts: tuple[XrayPrompt, ...]
@@ -250,6 +253,7 @@ class XrayAgentDetail:
             "series": series_json(self.series),
             "down": self.down.to_json(),
             "back_tokens_est": self.back_tokens_est,
+            "back_ratio": self.back_ratio,
             "outcome": self.outcome,
             "given": objects(item.to_json() for item in self.given),
             "prompts": objects(item.to_json() for item in self.prompts),
@@ -306,7 +310,7 @@ class XrayTree:
 @dataclass(frozen=True)
 class XrayNode:
     """One node of the session's graph: where it hangs, when it ran, the sources it had by kind, the calls it made by
-    category, what its parent withheld from it, and its kind's own detail."""
+    category, what its parent withheld from it, how many of its children had each source, and its kind's own detail."""
 
     id: str
     kind: NodeKind
@@ -318,6 +322,7 @@ class XrayNode:
     slots: dict[SourceKind, XraySlot]
     tool_counts: dict[ToolCategory, int]
     withheld: XrayWithheld | None
+    child_sources: dict[str, int]
     detail: XrayDetail
 
     def to_json(self) -> JsonObject:
@@ -326,6 +331,7 @@ class XrayNode:
             kind: {"count": slot.count, "findings": slot.findings} for kind, slot in self.slots.items()
         }
         counts: dict[str, JsonValue] = {str(category): count for category, count in self.tool_counts.items()}
+        child_sources: dict[str, JsonValue] = dict(self.child_sources)
         return {
             "id": self.id,
             "kind": self.kind,
@@ -340,6 +346,7 @@ class XrayNode:
             "slots": slots,
             "tool_counts": counts,
             "withheld": None if self.withheld is None else self.withheld.to_json(),
+            "child_sources": child_sources,
             "detail": self.detail.to_json(),
         }
 

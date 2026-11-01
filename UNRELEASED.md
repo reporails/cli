@@ -30,6 +30,7 @@
 ### Removed
 
 ### Internal
+- The x-ray view tells a crashed or killed session from a live one by when its transcript was last written, ends an agent that stopped on an API error as failed, keeps a subagent with an empty first row, reports a hook as the size of one firing, lists a custom agent's definition file among what it was given, and no longer counts a background launch's acknowledgement as what came back.
 - The x-ray page counts launched subagents from the agent's children, shows one loaded-of-on-disk count per Sources section, keeps the "+N running" marker off the cards, and clears a stale file pane when a prompt opens.
 
 - The `ails xray` view lists a session's agents as a tree (each with what its parent handed down, what it handed back, how it ended and the sources withheld from it), its sources with the agents that had each, and per agent the loads, MCP clusters, compactions, calls, repeated failing commands and idle breaks; the funnel and facts speak in source kinds.

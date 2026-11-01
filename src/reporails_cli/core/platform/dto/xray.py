@@ -14,6 +14,7 @@ from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValu
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
 from reporails_cli.core.platform.dto.events import HarnessKind, ToolCategory
 from reporails_cli.core.platform.dto.xray_graph import (
+    LoadTrigger,
     NodeKind,
     SourceKind,
     XrayEdge,
@@ -26,9 +27,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
 ArtifactKind = Literal["instructions", "rule", "memory", "skill", "agent", "command", "hook"]
 ArtifactScope = Literal["project", "user", "managed", "local", "plugin", "auto", "synced"]
 CheckState = Literal["running", "done", "refused"]
-FactKind = Literal[
-    "file_findings", "funnel_drop", "memory_unlinked", "compaction_loss", "repeated_instructions", "kind_absent"
-]
+FactKind = Literal["memory_unlinked", "repeated_instructions", "kind_absent"]
 TargetKind = Literal["path", "node", "kind"]
 Availability = Literal["loaded", "listed", "on_disk"]
 
@@ -48,6 +47,9 @@ INVOCABLE_ARTIFACT_KINDS: frozenset[ArtifactKind] = frozenset({"skill", "agent",
 
 # The kinds a person or the agent runs by name: a run of one is the file loading into context.
 RUNNABLE_ARTIFACT_KINDS: frozenset[ArtifactKind] = frozenset({"skill", "command"})
+
+# The kind of artifact that defines a subagent type.
+AGENT_ARTIFACT_KINDS: frozenset[ArtifactKind] = frozenset({"agent"})
 
 # Which scope wins when two listed files share a label, highest first. The skills page ranks managed over user over
 # project, the sub-agents page managed over project over user; a plugin's file carries its plugin's name in its
@@ -305,6 +307,14 @@ class XrayAgentTypeInfo:
 
 
 @dataclass(frozen=True)
+class XrayTriggerInfo:
+    """What brought a source into a context, as the coding agent words it for a tooltip."""
+
+    key: LoadTrigger
+    label: str
+
+
+@dataclass(frozen=True)
 class XrayNodeKindInfo:
     """One node kind: its key, label, whether the page may open one to show what is inside and whether its nodes
     carry a spine of loads and calls."""
@@ -343,7 +353,7 @@ class XrayNesting:
 @dataclass(frozen=True)
 class AdapterVocabulary:
     """What a coding agent calls things: its tool name, its root, source kinds, agent types, node kinds, tool
-    categories and nesting."""
+    categories, nesting, load triggers and fact notes."""
 
     tool: str
     root: XrayRoot
@@ -352,9 +362,13 @@ class AdapterVocabulary:
     node_kinds: tuple[XrayNodeKindInfo, ...]
     categories: tuple[XrayCategoryInfo, ...]
     nesting: XrayNesting
+    triggers: tuple[XrayTriggerInfo, ...]
+    # A sentence template per annotated fact kind, filled from the fact's numbers and the source kind's label.
+    fact_notes: dict[FactKind, str]
 
     def to_json(self) -> JsonObject:
         """The vocabulary as a JSON object."""
+        notes: dict[str, JsonValue] = {str(kind): text for kind, text in self.fact_notes.items()}
         return {
             "tool": self.tool,
             "root": {"type": self.root.type, "name": self.root.name},
@@ -374,6 +388,8 @@ class AdapterVocabulary:
                 {"key": item.key, "label": item.label, "track": item.track} for item in self.categories
             ),
             "nesting": {"enabled": self.nesting.enabled, "max_depth": self.nesting.max_depth},
+            "triggers": objects({"key": item.key, "label": item.label} for item in self.triggers),
+            "fact_notes": notes,
         }
 
 

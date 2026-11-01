@@ -92,7 +92,7 @@ def launch(
     use_id: str,
     *,
     description: str | None = "task",
-    brief_chars: int = 0,
+    brief_chars: int | None = 0,
     stopped: bool = False,
     background: bool = False,
 ) -> EventRecord:
@@ -151,8 +151,10 @@ def _graph(
     findings: dict[str, FindingTally] | None = None,
     runnable: dict[str, str] | None = None,
     vocabulary: AdapterVocabulary | None = None,
+    agent_files: dict[str, int] | None = None,
+    live: bool = False,
 ) -> Graph:
-    frame = Frame(epoch(at(0)) or 0.0, root, findings or {}, runnable or {})
+    frame = Frame(epoch(at(0)) or 0.0, root, findings or {}, runnable or {}, agent_files or {}, live)
     artifacts = build_artifacts(files, findings or {}, root, advertised=advertised or {})
     vocab = vocabulary or vocabulary_for("claude", [])
     return build_graph(list(records), frame, build_sources(artifacts, records, frame), vocab)
@@ -298,15 +300,15 @@ def test_a_subagent_ends_returned_failed_stopped_running_or_with_no_handback(
         reply(1000),
         *extra,
     ]
-    graph = _graph(tmp_path, records)
+    graph = _graph(tmp_path, records, live=end > 900)
     assert _agent(_node(graph, "X")).outcome == expected
     assert _edge(graph, "X").outcome == expected
     assert _agent(_node(graph, "main")).outcome is None
 
 
-def _text(seconds: float, sub: str, chars: int) -> EventRecord:
+def _text(seconds: float, sub: str, chars: int, *, synthetic: bool = False) -> EventRecord:
     """The text an assistant row of `sub` carries."""
-    return rec("assistant_text", seconds, sub, item=ReplyText(chars))
+    return rec("assistant_text", seconds, sub, item=ReplyText(chars, synthetic))
 
 
 @pytest.mark.parametrize(
@@ -347,7 +349,7 @@ def test_a_subagent_that_ends_on_a_text_reply_returns_it_and_one_that_ends_on_a_
         reply(1000),
         *tail,
     ]
-    edge = _edge(_graph(tmp_path, records), "X")
+    edge = _edge(_graph(tmp_path, records, live=end > 900), "X")
     assert (edge.outcome, edge.back, edge.back_t) == (expected, back, back_t)
 
 
@@ -575,7 +577,7 @@ class _Widget:
         self.producer = NodeProducer(self.kind, self.produce)
 
     def produce(self, records: Sequence[EventRecord], frame: Frame, context: ProducerContext) -> Produced:
-        detail = XrayAgentDetail(None, None, (), XrayDown(None, 0), None, None, (), (), False)
+        detail = XrayAgentDetail(None, None, (), XrayDown(None, 0), None, None, None, (), (), False)
         loads = () if self.source is None else (LoadEvent(self.source, 1.0, None, "agent", None, True),)
         spine = ProducedSpine((), loads, (), (), (1.0,))
         node = ProducedNode("w1", self.kind, self.parent, "a widget", None, 1.0, 2.0, detail, spine)
@@ -637,8 +639,9 @@ def _shape(value: JsonValue) -> JsonValue:
 
 
 def _differences(built: JsonValue, sample: JsonValue, path: str) -> list[str]:
-    """Where the key structure of `built` and `sample` differ; a null on either side holds no structure to compare."""
-    if not isinstance(built, dict) or not isinstance(sample, dict):
+    """Where the key structure of `built` and `sample` differ; a null on either side holds no structure to compare,
+    and neither does a map keyed by source id."""
+    if not isinstance(built, dict) or not isinstance(sample, dict) or path.endswith(".child_sources"):
         return []
     found = [f"{path}.{key}" for key in sorted(built.keys() ^ sample.keys())]
     for key in built.keys() & sample.keys():
@@ -693,9 +696,149 @@ def test_a_skill_that_ran_is_used_a_forked_one_is_used_but_not_loaded_and_a_comm
         rec("skill_run", 4, item=SkillRun("go", False)),
     ]
     runnable = {"plain": plain.path, "forked": forked.path, "go": command.path, "idle": idle.path}
-    frame = Frame(epoch(at(0)) or 0.0, tmp_path, {}, runnable)
+    frame = Frame(epoch(at(0)) or 0.0, tmp_path, {}, runnable, {}, False)
     files = [plain, forked, command, idle]
     table = build_sources(build_artifacts(files, {}, tmp_path, advertised={}), records, frame)
     graph = build_graph(records, frame, table, vocabulary_for("claude", []))
     (row,) = build_funnel(table.entries, graph.sources, ["skill"], ran_sources(records, table))
     assert (row.kind, row.on_disk, row.loaded, row.used) == ("skill", 4, 2, 3)
+
+
+def _hook(label: str, chars: int, event: str) -> HarnessEntry:
+    return HarnessEntry("hook_note", label, None, chars, event=event)
+
+
+def test_a_hook_that_fires_again_and_again_is_one_firing_in_size_and_the_sum_of_what_the_parent_held_at_a_launch(
+    tmp_path: Path,
+) -> None:
+    firing = "UserPromptSubmit:hook"
+    records = [reply(0)]
+    records += [
+        rec("harness", 1 + n, item=_hook(firing, size, "UserPromptSubmit")) for n, size in enumerate((400, 1200, 800))
+    ]
+    records += [reply(5), call(6, "tuA", "agent"), launch(7, "A", None, "tuA"), reply(8, "A")]
+    records += [rec("harness", 20, item=_hook(firing, 400, "UserPromptSubmit")), reply(30)]
+    graph = _graph(tmp_path, records)
+    source = next(item for item in graph.sources if item.id == f"hook:{firing}")
+    assert source.tokens_est == 300
+    withheld = _node(graph, "A").withheld
+    assert withheld is not None
+    assert [(item.source, item.tokens_est) for item in withheld.sources] == [(f"hook:{firing}", 100 + 300 + 200)]
+
+
+@pytest.mark.parametrize(
+    ("kind", "records", "back"),
+    [
+        ("stopped", [], None),
+        ("no_handback", [], None),
+        ("returned", [call(250, "hb", "handback", "X", chars=400)], 100),
+    ],
+)
+def test_only_a_returned_or_failed_agent_has_a_size_coming_back_whatever_the_launch_acknowledged(
+    tmp_path: Path, kind: str, records: list[EventRecord], back: int | None
+) -> None:
+    session = [
+        reply(1),
+        call(5, "tuX", "agent"),
+        launch(6, "X", None, "tuX", stopped=kind == "stopped", background=True),
+        reply(7, "X"),
+        result(8, "tuX", chars=20),
+        reply(300, "X"),
+        *records,
+        reply(1000),
+    ]
+    graph = _graph(tmp_path, session)
+    edge = _edge(graph, "X")
+    assert (edge.outcome, edge.back) == (kind, back)
+    assert _agent(_node(graph, "X")).back_tokens_est == back
+    assert (edge.back_t is None) == (back is None)
+
+
+def test_an_agent_that_ends_on_a_synthetic_reply_failed_even_when_the_parent_saw_a_result(tmp_path: Path) -> None:
+    session = [
+        reply(1),
+        call(5, "tuX", "agent"),
+        launch(6, "X", None, "tuX"),
+        reply(7, "X"),
+        _text(250, "X", 40, synthetic=True),
+        result(251, "tuX", chars=8),
+        reply(1000),
+    ]
+    graph = _graph(tmp_path, session)
+    assert _edge(graph, "X").outcome == "failed"
+    assert _agent(_node(graph, "X")).outcome == "failed"
+
+
+def test_a_session_that_is_not_live_leaves_an_agent_with_no_result_as_no_handback_and_a_live_one_running(
+    tmp_path: Path,
+) -> None:
+    session = [
+        reply(1),
+        call(5, "tuX", "agent"),
+        launch(6, "X", None, "tuX"),
+        reply(7, "X"),
+        call(9, "c", "other", "X"),
+    ]
+    assert _edge(_graph(tmp_path, session, live=False), "X").outcome == "no_handback"
+    assert _edge(_graph(tmp_path, session, live=True), "X").outcome == "running"
+
+
+def test_a_subagent_with_no_text_in_its_first_row_has_no_task_prompt_and_no_brief(tmp_path: Path) -> None:
+    session = [reply(1), call(5, "tuX", "agent"), launch(6, "X", None, "tuX", brief_chars=None), reply(7, "X")]
+    detail = _agent(_node(_graph(tmp_path, session), "X"))
+    assert detail.brief is False and detail.down.task_tokens_est is None
+    assert [item.label for item in detail.given] == []
+    assert _agent(
+        _node(_graph(tmp_path, [*session[:2], launch(6, "X", None, "tuX", brief_chars=40), session[3]]), "X")
+    ).brief
+
+
+def test_a_custom_agents_definition_file_is_given_to_it_right_after_the_task_prompt(tmp_path: Path) -> None:
+    run = launch(6, "X", None, "tuX", brief_chars=400)
+    run = EventRecord(**{**run.__dict__, "subagent_type": "reviewer"})
+    session = [reply(1), call(5, "tuX", "agent"), run, reply(7, "X")]
+    graph = _graph(tmp_path, session, agent_files={"reviewer": 625})
+    detail = _agent(_node(graph, "X"))
+    assert [(item.label, item.tokens_est, item.source) for item in detail.given] == [
+        ("task prompt", 100, None),
+        ("reviewer", 625, None),
+    ]
+    assert detail.down.inherited_tokens_est == 625
+    other = _agent(_node(_graph(tmp_path, session, agent_files={"planner": 9}), "X"))
+    assert [item.label for item in other.given] == ["task prompt"]
+
+
+def test_how_many_times_the_peak_is_what_came_back_is_known_only_for_a_returned_agent(tmp_path: Path) -> None:
+    session = [
+        reply(1),
+        call(5, "tuX", "agent"),
+        launch(6, "X", None, "tuX"),
+        reply(7, "X", context=40_000),
+        call(250, "hb", "handback", "X", chars=800),
+        reply(1000),
+    ]
+    detail = _agent(_node(_graph(tmp_path, session), "X"))
+    assert (detail.outcome, detail.back_tokens_est, detail.back_ratio) == ("returned", 200, 200)
+    failed = _agent(_node(_graph(tmp_path, [*session[:4], result(300, "tuX", chars=800, error=True)]), "X"))
+    assert failed.back_ratio is None
+
+
+def test_a_node_counts_how_many_of_its_children_had_each_source(tmp_path: Path) -> None:
+    claude = _file(tmp_path, "CLAUDE.md", 400)
+    rule = _file(tmp_path, ".claude/rules/r.md", 400, "rule")
+    session = [
+        reply(1),
+        call(5, "t1", "agent"),
+        launch(6, "A", None, "t1"),
+        load(6.5, claude, "A"),
+        reply(7, "A"),
+        call(8, "t2", "agent"),
+        launch(9, "B", None, "t2"),
+        load(9.5, claude, "B"),
+        load(9.6, rule, "B"),
+        reply(10, "B"),
+        reply(20),
+    ]
+    graph = _graph(tmp_path, session, [claude, rule])
+    assert _node(graph, "main").child_sources == {"CLAUDE.md": 2, ".claude/rules/r.md": 1}
+    assert _node(graph, "A").child_sources == {}

@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from pathlib import Path
 
 from reporails_cli.core.discovery.plugin_roots import installed_plugin_roots
 from reporails_cli.core.discovery.project_root import resolve_project_root
-from reporails_cli.core.eventbus.transcript import call_text, prompt_text, read_transcript, subagent_brief
+from reporails_cli.core.eventbus.transcript import (
+    call_text,
+    last_write,
+    prompt_text,
+    read_transcript,
+    subagent_brief,
+)
 from reporails_cli.core.pipeline.expected_loads import AGENT
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
@@ -26,6 +33,7 @@ from reporails_cli.core.platform.dto.xray import (
 )
 from reporails_cli.core.xray.artifacts import (
     advertised_files,
+    agent_file_tokens,
     artifact_files,
     build_artifacts,
     is_actionable,
@@ -41,6 +49,9 @@ from reporails_cli.core.xray.graph.sources import SourceTable, build_sources, ra
 from reporails_cli.core.xray.vocabulary import vocabulary_for
 
 _NO_WINDOW = "context window"
+
+# A session whose transcript was written this many seconds ago or less is taken to be still going.
+LIVE_WINDOW_S = 300.0
 
 
 class XraySession:
@@ -163,7 +174,16 @@ class XraySession:
     def _frame(self, files: tuple[ArtifactFile, ...], records: list[EventRecord]) -> Frame:
         """The clock zero, project root, finding tallies and runnable paths the derivations read."""
         timed = _timed(records)
-        return Frame(timed[0][0] if timed else 0.0, self._root, self._findings, runnable_paths(files))
+        written = last_write(self._file)
+        live = written is not None and time.time() - written <= LIVE_WINDOW_S
+        return Frame(
+            timed[0][0] if timed else 0.0,
+            self._root,
+            self._findings,
+            runnable_paths(files),
+            agent_file_tokens(files, self._root),
+            live,
+        )
 
     def _verdict(
         self, table: SourceTable, graph: Graph, records: list[EventRecord], vocabulary: AdapterVocabulary
@@ -171,8 +191,7 @@ class XraySession:
         """The funnel and headline facts over the sources and the graph, with the state of the launch check."""
         kinds = [item.key for item in vocabulary.source_kinds]
         funnel = build_funnel(table.entries, graph.sources, kinds, ran_sources(records, table))
-        compactions = [(station.node, item) for station in graph.stations for item in station.compactions]
-        facts = build_facts(table.entries, graph.sources, funnel, compactions, kinds)
+        facts = build_facts(table.entries, graph.sources, funnel, kinds)
         return XrayVerdict(funnel, facts, self._check)
 
     def _info(self, records: list[EventRecord]) -> XraySessionInfo:

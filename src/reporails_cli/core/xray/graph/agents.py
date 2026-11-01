@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.dto.events import ASSISTANT_ROW_KINDS, EventRecord, SubagentMeta, is_note_kind
 from reporails_cli.core.platform.dto.xray_graph import (
+    HANDED_BACK_OUTCOMES,
     AgentOutcome,
     LoadEvent,
     LoadTrigger,
@@ -21,7 +22,6 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayPrompt,
 )
 from reporails_cli.core.xray.derive import (
-    BYTES_PER_TOKEN,
     Frame,
     Replies,
     build_compactions,
@@ -30,6 +30,7 @@ from reporails_cli.core.xray.derive import (
     peak_context,
     replies_of,
     start_loads,
+    tokens_of,
 )
 from reporails_cli.core.xray.graph.port import (
     NodeProducer,
@@ -47,9 +48,6 @@ MAIN_ID = "main"
 
 _KIND: NodeKind = "agent"
 
-# A subagent whose last record is this close to the session's last record is taken to still be running.
-RUNNING_WINDOW_S = 120.0
-
 
 @dataclass(frozen=True)
 class _Result:
@@ -62,10 +60,12 @@ class _Result:
 
 @dataclass(frozen=True)
 class _Reply:
-    """The text an agent ended on: when it came and how long it was."""
+    """The text an agent ended on: when it came, how long it was and whether Claude Code wrote it for an API error or
+    an interrupt."""
 
     t: float
     chars: int
+    synthetic: bool
 
 
 @dataclass(frozen=True)
@@ -96,10 +96,6 @@ class _Own:
     def handback(self) -> ProducedCall | None:
         """The agent's first call that hands its result back."""
         return next((call for call in self.calls if call.category == "handback"), None)
-
-
-def _tokens(chars: int | None) -> int | None:
-    return None if chars is None else chars // BYTES_PER_TOKEN
 
 
 def _results(group: Sequence[EventRecord], frame: Frame) -> dict[str, _Result]:
@@ -134,7 +130,7 @@ def _calls(
                 failed=result is not None and result.error,
                 use_id=tool.use_id,
                 fingerprint=tool.fingerprint,
-                back_tokens_est=_tokens(chars),
+                back_tokens_est=None if chars is None else tokens_of(chars),
             )
         )
     return tuple(found)
@@ -170,11 +166,9 @@ def _harness_loads(record: EventRecord, reading: _Reading) -> list[LoadEvent]:
     t = reading.frame.at(record)
     if entry.kind == "mcp_instructions":
         trigger: LoadTrigger = "session_start" if reading.is_main else "inherited"
-        return [
-            LoadEvent(mcp_id(name), t, chars // BYTES_PER_TOKEN, trigger, None, True) for name, chars in entry.added
-        ]
+        return [LoadEvent(mcp_id(name), t, tokens_of(chars), trigger, None, True) for name, chars in entry.added]
     if is_note_kind(entry.kind) and entry.event is not None:
-        return [LoadEvent(hook_id(entry.label), t, entry.chars // BYTES_PER_TOKEN, "hook", entry.event, True)]
+        return [LoadEvent(hook_id(entry.label), t, tokens_of(entry.chars), "hook", entry.event, True)]
     return []
 
 
@@ -217,7 +211,7 @@ def _final_reply(group: Sequence[EventRecord], frame: Frame) -> _Reply | None:
     )
     if last is None or last.reply is None:
         return None
-    return _Reply(frame.at(last) or 0.0, last.reply.chars)
+    return _Reply(frame.at(last) or 0.0, last.reply.chars, last.reply.synthetic)
 
 
 def _own(key: str, group: list[EventRecord], frame: Frame, sources: SourceTable) -> _Own:
@@ -251,7 +245,7 @@ def _given(own: _Own, sources: SourceTable) -> tuple[list[XrayGiven], list[XrayG
 
 def _prompts(own: _Own, frame: Frame) -> tuple[XrayPrompt, ...]:
     typed = [
-        XrayPrompt(record.prompt.id, frame.at(record) or 0.0, record.prompt.chars // BYTES_PER_TOKEN)
+        XrayPrompt(record.prompt.id, frame.at(record) or 0.0, tokens_of(record.prompt.chars))
         for record in own.records
         if record.event == "prompt_submit" and record.prompt is not None
     ]
@@ -263,16 +257,18 @@ def _detail(
 ) -> XrayAgentDetail:
     down, back, outcome = handoff
     series = tuple((moment - frame.t0, context) for moment, context in own.replies.points)
+    peak = peak_context(own.replies, own.compactions)
     return XrayAgentDetail(
         context_start=series[0][1] if series else None,
-        peak=peak_context(own.replies, own.compactions),
+        peak=peak,
         series=series,
         down=down,
         back_tokens_est=back,
+        back_ratio=peak // back if outcome == "returned" and peak is not None and back else None,
         outcome=outcome,
         given=tuple(given),
         prompts=_prompts(own, frame) if own.key == MAIN_ID else (),
-        brief=own.key != MAIN_ID,
+        brief=down.task_tokens_est is not None,
     )
 
 
@@ -303,30 +299,33 @@ def _answered(meta: SubagentMeta | None, result: _Result | None) -> bool:
     return result is not None and not result.error and not (meta is not None and meta.background)
 
 
-def _outcome(meta: SubagentMeta | None, own: _Own, result: _Result | None, running: bool) -> AgentOutcome:
+def _outcome(meta: SubagentMeta | None, own: _Own, result: _Result | None, live: bool) -> AgentOutcome:
     if own.handback is not None:
         return "returned"
     if meta is not None and meta.stopped:
         return "stopped"
-    if result is not None and result.error:
+    if (result is not None and result.error) or (own.reply is not None and own.reply.synthetic):
         return "failed"
-    if _answered(meta, result) or (own.reply is not None and not running):
+    if _answered(meta, result) or (own.reply is not None and not live):
         return "returned"
-    return "running" if running else "no_handback"
+    return "running" if live else "no_handback"
 
 
 def _back(
     meta: SubagentMeta | None, own: _Own, result: _Result | None, outcome: AgentOutcome
 ) -> tuple[int | None, float | None]:
-    """The size in tokens of what came back to the parent and when: its hand-back, else the parent's result, else the
-    text the subagent ended on."""
+    """The size in tokens of what came back to the parent and when, known only for a subagent that returned or
+    failed: its hand-back, else the text it ended on, else the parent's result unless that result only acknowledged
+    a background launch."""
+    if outcome not in HANDED_BACK_OUTCOMES:
+        return None, None
     handback = own.handback
     if handback is not None:
         return handback.back_tokens_est, handback.t
     if outcome == "returned" and own.reply is not None and not _answered(meta, result):
-        return _tokens(own.reply.chars), own.reply.t
-    if result is not None:
-        return _tokens(result.chars), result.t
+        return tokens_of(own.reply.chars), own.reply.t
+    if result is not None and result.chars is not None and not (meta is not None and meta.background):
+        return tokens_of(result.chars), result.t
     return None, None
 
 
@@ -377,23 +376,33 @@ def _main_node(own: _Own, world: _World) -> ProducedNode:
     )
 
 
-def _handoff(own: _Own, parent: _Own, meta: SubagentMeta | None, down: XrayDown, session_end: float) -> _Handoff:
+def _handoff(own: _Own, parent: _Own, meta: SubagentMeta | None, down: XrayDown, live: bool) -> _Handoff:
     use_id = None if meta is None else meta.tool_use_id
     result = parent.results.get(use_id) if use_id is not None else None
     launch = next((call for call in parent.calls if call.use_id == use_id), None) if use_id is not None else None
-    outcome = _outcome(meta, own, result, own.end >= session_end - RUNNING_WINDOW_S)
+    outcome = _outcome(meta, own, result, live)
     back, back_t = _back(meta, own, result, outcome)
     return _Handoff(down, back, own.start if launch is None else launch.t, back_t, outcome)
 
 
-def _sub_node(own: _Own, parent: _Own, meta: SubagentMeta | None, world: _World) -> tuple[ProducedNode, XrayEdge]:
+def _subagent_given(
+    own: _Own, meta: SubagentMeta | None, run_type: str | None, world: _World
+) -> tuple[int | None, list[XrayGiven], XrayDown]:
+    """A subagent's task prompt size, everything it was given in order (the task prompt, its agent definition file,
+    the instruction files it loaded, its harness items) and what went down."""
     harness, loaded = _given(own, world.context.sources)
-    task = None if meta is None else meta.brief_chars // BYTES_PER_TOKEN
-    given = [*([] if task is None else [XrayGiven("task prompt", task, None)]), *loaded, *harness]
-    down = XrayDown(task, sum(item.tokens_est or 0 for item in (*loaded, *harness)))
-    handoff = _handoff(own, parent, meta, down, world.session_end)
-    detail = _detail(own, given, (down, handoff.back, handoff.outcome), world.frame)
+    task = None if meta is None or meta.brief_chars is None else tokens_of(meta.brief_chars)
+    definition = world.frame.agent_files.get(run_type or "")
+    inherited = [*([] if definition is None else [XrayGiven(run_type or "", definition, None)]), *loaded, *harness]
+    given = [*([] if task is None else [XrayGiven("task prompt", task, None)]), *inherited]
+    return task, given, XrayDown(task, sum(item.tokens_est or 0 for item in inherited))
+
+
+def _sub_node(own: _Own, parent: _Own, meta: SubagentMeta | None, world: _World) -> tuple[ProducedNode, XrayEdge]:
     run_type = next((r.subagent_type for r in own.records if r.event == "subagent_run"), None)
+    task, given, down = _subagent_given(own, meta, run_type, world)
+    handoff = _handoff(own, parent, meta, down, world.frame.live)
+    detail = _detail(own, given, (down, handoff.back, handoff.outcome), world.frame)
     node = ProducedNode(
         id=own.key,
         kind=_KIND,

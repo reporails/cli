@@ -45,6 +45,9 @@ class TranscriptAdapter(Protocol):
         """The brief a subagent was given, from the first row of its file; raises `PayloadRefused` when that
         row is not the pinned shape."""
 
+    def holds_call(self, row: JsonObject, use_id: str) -> bool:
+        """Whether the row is an assistant row holding the tool call `use_id`."""
+
     def resolve_prompt(self, row: JsonObject) -> str:
         """The text of a typed prompt, from its row; raises `PayloadRefused` when the row is not one."""
 

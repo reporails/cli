@@ -793,5 +793,47 @@ def test_the_handoffs_subagent_that_ends_on_a_reply_ends_on_its_text_record_and_
         sub: [r for r in records if r.subagent_id == sub and r.event in ("assistant_text", "tool_call")][-1]
         for sub in (SUB_C, "afff0000000000006")
     }
-    assert last[SUB_C].event == "assistant_text" and last[SUB_C].reply == ReplyText(len("PLACEHOLDER-TEXT-30"))
+    assert last[SUB_C].event == "assistant_text" and last[SUB_C].reply == ReplyText(len("PLACEHOLDER-TEXT-30"), False)
     assert last["afff0000000000006"].event == "tool_call"
+
+
+def _reply_row(text: str, **message: object) -> JsonObject:
+    return _assistant_row(content=[{"type": "text", "text": text}], **message)
+
+
+def test_a_reply_written_by_claude_code_itself_is_marked_synthetic_and_a_model_reply_is_not() -> None:
+    adapter = ClaudeTranscriptAdapter()
+    synthetic = [r for r in adapter.resolve_row(_reply_row("API Error: 529", model="<synthetic>"), "sub") if r.reply]
+    real = [r for r in adapter.resolve_row(_reply_row("Done.", model="claude-opus-5"), "sub") if r.reply]
+    assert [r.reply for r in synthetic] == [ReplyText(len("API Error: 529"), True)]
+    assert [r.reply for r in real] == [ReplyText(len("Done."), False)]
+
+
+def _first_row(content: object) -> JsonObject:
+    return {"type": "user", "sessionId": "s", "timestamp": "2026-10-31T10:00:00.000Z", "message": {"content": content}}
+
+
+@pytest.mark.parametrize("content", [[], "", [{"type": "image", "source": {}}]])
+def test_a_subagent_whose_first_row_holds_no_text_keeps_its_run_record_with_an_unknown_brief(content: object) -> None:
+    adapter = ClaudeTranscriptAdapter()
+    meta: JsonObject = {"agentType": "Explore", "description": "look", "toolUseId": "tu1"}
+    run = adapter.resolve_subagent("a1", meta, _first_row(content))
+    assert run.subagent_type == "Explore"
+    assert run.launch is not None and run.launch.brief_chars is None and run.launch.tool_use_id == "tu1"
+    with pytest.raises(PayloadRefused):
+        adapter.resolve_brief(_first_row(content))
+
+
+def test_a_first_row_that_is_not_a_user_row_still_refuses_the_run_record() -> None:
+    row = {**_first_row("hi"), "type": "assistant"}
+    with pytest.raises(PayloadRefused):
+        ClaudeTranscriptAdapter().resolve_subagent("a1", {"agentType": "Explore"}, row)
+
+
+def test_the_adapter_says_which_assistant_row_holds_a_call() -> None:
+    adapter = ClaudeTranscriptAdapter()
+    block = {"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "ls"}}
+    row = _assistant_row(content=[{"type": "text", "text": "x"}, block])
+    assert adapter.holds_call(row, "toolu_1") and not adapter.holds_call(row, "toolu_2")
+    assert not adapter.holds_call({**row, "type": "user"}, "toolu_1")
+    assert not adapter.holds_call(_assistant_row(content="plain"), "toolu_1")

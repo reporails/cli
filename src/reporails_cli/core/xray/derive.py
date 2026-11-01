@@ -22,6 +22,12 @@ from reporails_cli.core.platform.dto.xray_graph import XrayCompaction
 # How many bytes of file text one token stands for in a size estimate.
 BYTES_PER_TOKEN = 4
 
+
+def tokens_of(chars: int) -> int:
+    """The tokens `chars` characters (or bytes) stand for in a size estimate."""
+    return chars // BYTES_PER_TOKEN
+
+
 # A context above this many tokens shows the session runs in the extended window of WINDOW_EXTENDED tokens.
 WINDOW_STANDARD = 200_000
 WINDOW_EXTENDED = 1_000_000
@@ -59,13 +65,17 @@ def count_for(findings: Mapping[str, FindingTally], path: str, root: Path) -> Fi
 @dataclass(frozen=True)
 class Frame:
     """What a derivation reads beside the records: the session's first time, the project, its findings and the
-    files a run name can stand for."""
+    files a run name can stand for, the agent definition files and whether the session is still going."""
 
     t0: float
     root: Path
     findings: Mapping[str, FindingTally]
     # Absolute path of the skill or command file each run name stands for.
     runnable: Mapping[str, str]
+    # The size in tokens of the definition file of each agent type found on disk, by type.
+    agent_files: Mapping[str, int]
+    # Whether the session's transcript was written recently enough that the session is still going.
+    live: bool
 
     def at(self, record: EventRecord) -> float | None:
         """Seconds from the session's first transcript record to `record`, None for an unparsable time."""
@@ -77,7 +87,7 @@ def file_tokens_est(path: str) -> int | None:
     """The file's size in tokens, estimated from its bytes; None when it is not a readable file."""
     try:
         target = Path(path)
-        return target.stat().st_size // BYTES_PER_TOKEN if target.is_file() else None
+        return tokens_of(target.stat().st_size) if target.is_file() else None
     except OSError:
         return None
 
@@ -235,5 +245,5 @@ def build_harness(records: Sequence[EventRecord], replies: Replies) -> tuple[Xra
             slots.append(by_kind[entry.kind])
         elif entry.kind in DELTA_KINDS and not compacted:
             by_kind[entry.kind].add(entry)
-    items = [XrayHarnessItem(slot.kind, slot.label, slot.count, slot.chars // BYTES_PER_TOKEN) for slot in slots]
+    items = [XrayHarnessItem(slot.kind, slot.label, slot.count, tokens_of(slot.chars)) for slot in slots]
     return tuple(items) if items else None

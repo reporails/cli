@@ -76,9 +76,6 @@ DELTA_KINDS: frozenset[HarnessKind] = frozenset({"skill_list", "agent_list", "mc
 # The records an assistant row yields besides its usage: its text and its tool calls.
 ASSISTANT_ROW_KINDS: frozenset[EventKind] = frozenset({"assistant_text", "tool_call"})
 
-# The event kinds a main-session turn holds whatever else the record carries: a loaded file and a compaction.
-TURN_HELD_KINDS: frozenset[EventKind] = frozenset({"post_compact", "instruction_load"})
-
 
 def is_event_kind(value: str) -> TypeGuard[EventKind]:
     """Whether `value` is one of the event kinds."""
@@ -164,22 +161,25 @@ class SkillRun:
 class SubagentMeta:
     """What a subagent's meta file and first row say about its launch: the task's short description, the subagent
     that launched it (None for the main agent), the id of the launching call, its nesting depth, the size of its brief
-    in characters, whether the person stopped it and whether it ran in the background."""
+    in characters (None when its first row holds no text), whether the person stopped it and whether it ran in the
+    background."""
 
     description: str | None
     parent_id: str | None
     tool_use_id: str | None
     depth: int | None
-    brief_chars: int
+    brief_chars: int | None
     stopped: bool
     background: bool
 
 
 @dataclass(frozen=True)
 class ReplyText:
-    """The text an assistant row carries: its size in characters; never the text."""
+    """The text an assistant row carries: its size in characters, never the text, and whether Claude Code wrote the
+    reply itself for an API error or an interrupt."""
 
     chars: int
+    synthetic: bool
 
 
 @dataclass(frozen=True)

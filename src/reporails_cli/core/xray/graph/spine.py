@@ -8,6 +8,7 @@ from itertools import pairwise
 from reporails_cli.core.platform.dto.events import ToolCategory
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary
 from reporails_cli.core.platform.dto.xray_graph import (
+    LoadEvent,
     SourceKind,
     XrayBreak,
     XrayCall,
@@ -125,16 +126,33 @@ def breaks(node: ProducedNode) -> tuple[XrayBreak, ...]:
     return tuple(XrayBreak(before, after) for before, after in pairwise(times) if after - before >= BREAK_S)
 
 
+def _held_tokens(source: str, loads: Sequence[LoadEvent], sources: SourceTable) -> int | None:
+    """What the parent held of `source`: the sum of its loads before the launch for a hook, which fires over and over,
+    else the source's size."""
+    entry = sources.get(source)
+    if entry is None:
+        return None
+    if entry.kind != "hook":
+        return entry.tokens_est
+    return sum(load.tokens_est or 0 for load in loads if load.source == source)
+
+
 def withheld(parent: ProducedNode, child: ProducedNode, out_t: float, sources: SourceTable) -> XrayWithheld:
     """What the parent had at the launch of `child` that the child never had, and the parent's context then."""
     child_had = set(had_sources(child))
-    at_launch = [load.source for load in parent.spine.loads if load.t is None or load.t <= out_t]
-    missing = [source for source in dict.fromkeys(at_launch) if source not in child_had]
+    before = [load for load in parent.spine.loads if load.t is None or load.t <= out_t]
+    missing = [source for source in dict.fromkeys(load.source for load in before) if source not in child_had]
     context = [tokens for t, tokens in parent.spine.series if t <= out_t]
     return XrayWithheld(
-        tuple(
-            XrayWithheldSource(source, None if (entry := sources.get(source)) is None else entry.tokens_est)
-            for source in missing
-        ),
+        tuple(XrayWithheldSource(source, _held_tokens(source, before, sources)) for source in missing),
         context[-1] if context else None,
     )
+
+
+def child_sources(children: Sequence[str], had: dict[str, list[str]]) -> dict[str, int]:
+    """For each source at least one of `children` had, how many of them had it."""
+    counts: dict[str, int] = {}
+    for child in children:
+        for source in had.get(child, ()):
+            counts[source] = counts.get(source, 0) + 1
+    return counts
