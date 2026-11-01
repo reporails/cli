@@ -9,7 +9,6 @@ import glob
 import os
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,8 +20,8 @@ from reporails_cli.core.discovery.agent_config import (
     extract_properties,
     load_config_file_types,
 )
-from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
-from reporails_cli.core.discovery.external_patterns import OwnAccountOnly, external_anchor, resolve_external_pattern
+from reporails_cli.core.discovery.exclusions import covers, load_run_exclusions
+from reporails_cli.core.discovery.external_patterns import external_anchor, resolve_external_pattern
 from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.project_root import resolve_project_root, user_level_agent_dir
 from reporails_cli.core.discovery.read_gates import apply_read_gate
@@ -39,7 +38,9 @@ from reporails_cli.core.discovery.walk import (
     walk_glob_matches,
     walk_markdown,
 )
+from reporails_cli.core.platform.config.claude_settings import claude_synced_account_folder
 from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.discovery import AgentScope, OwnAccountOnly, RunExclusions
 from reporails_cli.core.platform.utils.utils import config_pattern_matches, is_rooted_pattern, matches_any_glob
 
 if TYPE_CHECKING:
@@ -228,7 +229,7 @@ def _run_descendant_recursive(
     return [
         m
         for m in results
-        if not exclusions.covers(m)
+        if not covers(exclusions, m)
         and config_pattern_matches(m.relative_to(target).as_posix(), pattern, ignore_case=True)
         and not (repo_cache is not None and in_nested_repository(m, target, pattern, repo_cache))
     ]
@@ -279,18 +280,18 @@ def glob_file_type_patterns(
         if eager_global and (is_recursive_leaf or is_bare_leaf):
             if project_root is None:
                 project_root = resolve_project_root(target)
-            found.extend(m for m in walk_ancestors(target, filename, project_root) if not exclusions.covers(m))
+            found.extend(m for m in walk_ancestors(target, filename, project_root) if not covers(exclusions, m))
         elif eager_global and "**" not in pattern:
             if project_root is None:
                 project_root = resolve_project_root(target)
-            found.extend(m for m in ci_glob(project_root, pattern, exclusions) if not exclusions.covers(m))
+            found.extend(m for m in ci_glob(project_root, pattern, exclusions) if not covers(exclusions, m))
         elif is_recursive_leaf:
             found.extend(_run_descendant_recursive(target, pattern, nested, exclusions, cache))
         else:
             found.extend(
                 m
                 for m in ci_glob(target, pattern, exclusions)
-                if not exclusions.covers(m)
+                if not covers(exclusions, m)
                 and not (cache is not None and in_nested_repository(m, target, pattern, cache))
             )
     return found
@@ -304,7 +305,7 @@ def _glob_external(pattern: str, target: Path, found: list[Path], exclusions: Ru
         return
     anchor, glob_below = external_anchor(resolved)
     if glob_below:
-        found.extend(walk_glob_matches(anchor, glob_below, OwnAccountOnly(exclusions)))
+        found.extend(walk_glob_matches(anchor, glob_below, OwnAccountOnly(exclusions, claude_synced_account_folder())))
 
 
 def _glob_directory_entries(
@@ -338,7 +339,7 @@ def _glob_directory_entries(
 
     # In-tree pattern: resolve glob relative to target, enumerate .md inside each dir
     for base in _resolve_in_tree_dirs(dir_pattern, target, exclusions):
-        found.extend(entry for entry in walk_markdown(base, exclusions) if not exclusions.covers(entry))
+        found.extend(entry for entry in walk_markdown(base, exclusions) if not covers(exclusions, entry))
 
 
 def _resolve_in_tree_dirs(
@@ -348,7 +349,7 @@ def _resolve_in_tree_dirs(
 ) -> list[Path]:
     """Resolve an in-tree directory glob (no trailing slash) to existing directories."""
     candidates = [Path(p) for p in glob.glob(str(target / dir_pattern))]
-    return [p for p in candidates if p.is_dir() and not exclusions.covers(p)]
+    return [p for p in candidates if p.is_dir() and not covers(exclusions, p)]
 
 
 def _repo_scoped_patterns(
@@ -382,23 +383,8 @@ def _repo_scoped_patterns(
     return patterns
 
 
-@dataclass
-class _AgentScope:
-    """What one agent's discovery run shares across its file types."""
-
-    target: Path
-    agent_id: str
-    project_config: ProjectConfig | None
-    exclusions: RunExclusions
-    repo_scoped: bool
-    user_dir: Path | None
-    exclude_globs: list[str]
-    plugin_roots: dict[str, list[Path]] = field(default_factory=dict)
-    installed_plugins: Sequence[Path] = ()
-
-
 def _discover_surface(
-    scope: _AgentScope, ft_name: str, spec: JsonObject, *, gated: bool = True
+    scope: AgentScope, ft_name: str, spec: JsonObject, *, gated: bool = True
 ) -> tuple[SurfaceBucket, list[Path]] | None:
     """The bucket and files of one file type, None when the file type contributes nothing.
     With `gated` false the agent's read gate leaves the files unnarrowed."""
@@ -436,7 +422,7 @@ def _agent_scope(
     project_config: ProjectConfig | None,
     repo_scoped: bool,
     installed_plugins: Sequence[Path] = (),
-) -> _AgentScope:
+) -> AgentScope:
     """The scope one agent's discovery run shares across its file types."""
     # Union of every per-surface exclude declared for this agent. Some agents
     # have multiple surfaces that match the same paths (e.g. cursor.rules and
@@ -444,7 +430,7 @@ def _agent_scope(
     # surface's exclude only within its own loop iteration leaves the file
     # surfaced from the other surface — counter to the user's mental model
     # ("I excluded draft, draft should be gone"). The union closes the gap.
-    return _AgentScope(
+    return AgentScope(
         target=target,
         agent_id=agent_id,
         project_config=project_config,

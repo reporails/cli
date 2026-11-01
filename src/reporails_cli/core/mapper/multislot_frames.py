@@ -34,10 +34,8 @@ from reporails_cli.core.mapper.bio_tagger import (
     _TAG_CLASS,
     CHARGE_OUTPUTS,
     SPAN_OUTPUTS,
-    AtomTuple,
     Float32Array,
     HeadClass,
-    Span,
     _enc_a,
     _enc_b,
     _extract_pass_from_states,
@@ -45,6 +43,7 @@ from reporails_cli.core.mapper.bio_tagger import (
     _softmax_rows,
 )
 from reporails_cli.core.mapper.encode_pool import run_buckets
+from reporails_cli.core.platform.dto.mapping import AtomTuple, Span
 from reporails_cli.core.platform.dto.ruleset import Modality
 
 # One charge run: (word start, word end exclusive, head class, modality, mean confidence).

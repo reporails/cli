@@ -4,29 +4,19 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 
-from reporails_cli.core.discovery.exclusions import RunExclusions
+from reporails_cli.core.discovery.exclusions import leaves_out
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import link_targets, strip_anchor
+from reporails_cli.core.platform.dto.classify import LinkEdge
+from reporails_cli.core.platform.dto.discovery import RunExclusions
 
 logger = logging.getLogger(__name__)
 
 # How many link hops from a seed file the walk follows.
 MAX_LINK_DEPTH = 3
-
-
-@dataclass(frozen=True)
-class LinkEdge:
-    """One `(source, target)` link emitted by `walk_markdown_links`."""
-
-    target: Path
-    source: Path
-    source_type: str
-    depth: int
-    verb: str
 
 
 def _reachability(
@@ -41,7 +31,7 @@ def _reachability(
             _is_in_tree(resolved, project_root_resolved)
             and resolved.is_file()
             and resolved not in classified_resolved
-            and not (exclusions is not None and exclusions.leaves_out(resolved))
+            and not (exclusions is not None and leaves_out(exclusions, resolved))
         )
 
     return reachable

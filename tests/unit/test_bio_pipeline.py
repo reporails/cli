@@ -10,9 +10,9 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.mapper import bio_graphs, bio_pipeline, multislot_frames, pipeline
-from reporails_cli.core.mapper.bio_tagger import AtomTuple, Span
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.mapper.pipeline import _apply_charge_stage
+from reporails_cli.core.platform.dto.mapping import AtomTuple, Span
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 

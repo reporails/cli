@@ -9,12 +9,10 @@ naming why nothing was checked, and words the reply itself; no formatter or inte
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
-from typing import Literal, NamedTuple
 
-from reporails_cli.core.discovery.agents import DetectedAgent, get_known_agents
-from reporails_cli.core.discovery.exclusions import RunExclusions
+from reporails_cli.core.discovery.agents import get_known_agents
 from reporails_cli.core.discovery.project_root import resolve_project_root, resolve_project_root_for_file
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.lint.client_checks import run_client_checks
@@ -22,12 +20,7 @@ from reporails_cli.core.lint.regex.not_evaluated import not_evaluated_scope
 from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes_over_pairs
 from reporails_cli.core.mapper.model_manifest import ModelFetchError, get_models_path, models_present
 from reporails_cli.core.mapper.skills import skill_membership
-from reporails_cli.core.pipeline.assemble import (
-    AssembleInputs,
-    assemble_result,
-    lint_request_local,
-    with_exclusions,
-)
+from reporails_cli.core.pipeline.assemble import assemble_result, lint_request_local, with_exclusions
 from reporails_cli.core.pipeline.mapping import (
     agent_file_pairs,
     apply_generic_scan,
@@ -38,44 +31,17 @@ from reporails_cli.core.platform.adapters.api_client import AilsClient
 from reporails_cli.core.platform.adapters.notices_seen import visible_notices
 from reporails_cli.core.platform.config.config import get_project_config, get_rules_path, is_initialized
 from reporails_cli.core.platform.dto.diagnostics import FindingItem, FunnelError, LintResponse, LintResult, Notice
+from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
 from reporails_cli.core.platform.dto.models import LocalFinding
+from reporails_cli.core.platform.dto.pipeline import AssembleInputs, CheckRun, Discovered, LeftOut, Refusal, Scope
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
 logger = logging.getLogger(__name__)
 
-# The `(folders, file globs)` a run left out because the user set them.
-Excluded = tuple[tuple[str, ...], tuple[str, ...]]
-
 # The `(M-probe, content, client)` findings of one local pass.
 LocalFindings = tuple[list[LocalFinding], list[LocalFinding], list[LocalFinding]]
-
-# Why a path was not checked.
-RefusalKind = Literal[
-    "rules_missing",
-    "path_not_found",
-    "unknown_agent",
-    "empty_project",
-    "model_downloading",
-    "model_unavailable",
-    "failed",
-]
-
-
-class Refusal(NamedTuple):
-    """Nothing to check, and why: `kind`, with `message` (a full sentence for the user), for an unknown agent
-    its `agent` name, and for an empty project the `target` and what it left out."""
-
-    kind: RefusalKind
-    message: str
-    target: Path | None = None
-    excluded: Excluded = ((), ())
-    agent: str = ""
-
-    @property
-    def text(self) -> str:
-        """The words for the refusal: its message."""
-        return self.message
 
 
 def rules_missing_message() -> str:
@@ -88,49 +54,7 @@ def rules_missing_message() -> str:
     )
 
 
-class LeftOut(NamedTuple):
-    """What a run left out: the `(folders, file globs)` to report and the exclusion set behind them."""
-
-    record: Excluded = ((), ())
-    exclusions: RunExclusions | None = None
-
-
 NOTHING_LEFT_OUT = LeftOut()
-
-
-class Discovered(NamedTuple):
-    """The agents and files a run at one root covers."""
-
-    filter_agents: list[DetectedAgent]
-    effective_agent: str
-    instruction_files: list[Path]
-    file_type_by_path: dict[str, str]
-    left_out: LeftOut
-
-
-class Scope(NamedTuple):
-    """Which files a check at one path covers, and how they are read."""
-
-    scan_root: Path
-    single_file: Path | None
-    filter_agents: list[DetectedAgent]
-    effective_agent: str
-    instruction_files: list[Path]
-    file_type_by_path: dict[str, str]
-    left_out: LeftOut
-
-
-@dataclass(frozen=True)
-class CheckRun:
-    """One finished check: the merged result, the server's rejection when it sent one, the map and the
-    mapper's failure text when the map did not build, and a single file's own display score."""
-
-    result: CombinedResult
-    funnel_error: FunnelError | None
-    ruleset_map: RulesetMap | None
-    mapper_error: str | None
-    file_score: float | None
-    scope: Scope
 
 
 def resolve_scan_target(target: Path) -> tuple[Path, Path | None]:

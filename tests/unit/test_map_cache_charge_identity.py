@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.mapper.map_cache import CachedFileEntry, MapCache
+from reporails_cli.core.mapper.map_cache import MapCache
+from reporails_cli.core.platform.dto.mapping import CachedFileEntry
 
 
 def _seed(cache_dir: Path, charge: str) -> None:

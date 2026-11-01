@@ -17,15 +17,11 @@ from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.lint.regex.not_evaluated import not_evaluated_scope
 from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes_over_pairs
 from reporails_cli.core.mapper.skills import skill_membership
-from reporails_cli.core.pipeline.assemble import (
-    AssembleInputs,
-    assemble_result,
-    lint_request_local,
-    with_exclusions,
-)
+from reporails_cli.core.pipeline.assemble import assemble_result, lint_request_local, with_exclusions
 from reporails_cli.core.pipeline.mapping import agent_file_pairs, map_instruction_files
 from reporails_cli.core.platform.adapters.api_client import AilsClient
 from reporails_cli.core.platform.adapters.notices_seen import visible_notices
+from reporails_cli.core.platform.dto.pipeline import AssembleInputs
 from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
 from reporails_cli.formatters.text.path_filter import filter_result_to_paths, filter_ruleset_map_to_paths
 from reporails_cli.interfaces.cli.check_notices import _agent_is_pinned

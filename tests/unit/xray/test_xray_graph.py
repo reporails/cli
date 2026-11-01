@@ -39,6 +39,14 @@ from reporails_cli.core.platform.dto.xray import (
     XrayVerdict,
     XrayView,
 )
+from reporails_cli.core.platform.dto.xray_build import (
+    Frame,
+    NodeProducer,
+    Produced,
+    ProducedNode,
+    ProducedSpine,
+    ProducerContext,
+)
 from reporails_cli.core.platform.dto.xray_graph import (
     LoadEvent,
     NodeKind,
@@ -49,19 +57,11 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayNode,
 )
 from reporails_cli.core.xray.artifacts import build_artifacts
-from reporails_cli.core.xray.derive import Frame, epoch
+from reporails_cli.core.xray.derive import epoch
 from reporails_cli.core.xray.funnel import build_funnel
 from reporails_cli.core.xray.graph.agents import MAIN_ID
 from reporails_cli.core.xray.graph.build import build_graph
-from reporails_cli.core.xray.graph.port import (
-    PRODUCERS,
-    NodeProducer,
-    Produced,
-    ProducedNode,
-    ProducedSpine,
-    ProducerContext,
-    register,
-)
+from reporails_cli.core.xray.graph.port import PRODUCERS, register
 from reporails_cli.core.xray.graph.sources import build_sources, ran_sources
 from reporails_cli.core.xray.vocabulary import vocabulary_for
 

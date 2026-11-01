@@ -22,7 +22,7 @@ from reporails_cli.core.discovery.agents import (
     detect_agents,
     get_all_instruction_files,
 )
-from reporails_cli.core.discovery.exclusions import RunExclusions
+from reporails_cli.core.discovery.exclusions import no_exclusions
 from reporails_cli.core.discovery.plugin_roots import (
     expand_plugin_patterns,
     find_plugin_roots,
@@ -77,11 +77,9 @@ def test_plugin_roots_at_the_root_and_below_it(tmp_path: Path) -> None:
     _plugin(tmp_path)
     _plugin(tmp_path / "plugins" / "demo")
     _plugin(tmp_path / "node_modules" / "vendored")
-    roots = find_plugin_roots(tmp_path, MANIFEST, RunExclusions.none(tmp_path))
+    roots = find_plugin_roots(tmp_path, MANIFEST, no_exclusions(tmp_path))
     assert roots == [tmp_path, tmp_path / "plugins" / "demo"]
-    assert expand_plugin_patterns(
-        [f"<{MANIFEST}>/skills/**/SKILL.md", "x.md"], tmp_path, RunExclusions.none(tmp_path)
-    ) == [
+    assert expand_plugin_patterns([f"<{MANIFEST}>/skills/**/SKILL.md", "x.md"], tmp_path, no_exclusions(tmp_path)) == [
         "skills/**/SKILL.md",
         "plugins/demo/skills/**/SKILL.md",
         "x.md",
@@ -92,7 +90,7 @@ def test_plugin_roots_at_the_root_and_below_it(tmp_path: Path) -> None:
 @pytest.mark.subsys_classify
 def test_no_manifest_no_plugin_pattern(tmp_path: Path) -> None:
     _write(tmp_path / "skills" / "fmt" / "SKILL.md", SKILL)
-    assert expand_plugin_patterns([f"<{MANIFEST}>/skills/**/SKILL.md"], tmp_path, RunExclusions.none(tmp_path)) == []
+    assert expand_plugin_patterns([f"<{MANIFEST}>/skills/**/SKILL.md"], tmp_path, no_exclusions(tmp_path)) == []
     assert plugin_relative_path(tmp_path / "skills" / "fmt" / "SKILL.md", tmp_path, MANIFEST) is None
 
 
@@ -180,7 +178,7 @@ def test_an_unreadable_folder_is_skipped_and_the_plugin_beside_it_is_found(tmp_p
     (locked / "inner").mkdir(parents=True)
     locked.chmod(0)
     try:
-        assert find_plugin_roots(project, MANIFEST, RunExclusions.none(project)) == [project / "plugins" / "demo"]
+        assert find_plugin_roots(project, MANIFEST, no_exclusions(project)) == [project / "plugins" / "demo"]
         clear_agent_cache()
         assert "claude" in {a.agent_type.id for a in detect_agents(project)}
     finally:

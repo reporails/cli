@@ -16,8 +16,9 @@ from reporails_cli.core.mapper.instructions import instruction_starts, without_l
 from reporails_cli.core.mapper.markers import strip_markdown_inline
 from reporails_cli.core.mapper.md_parser import emphasis_runs, has_bold_label, wrapping_runs
 from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark
-from reporails_cli.core.mapper.structure import LineSpans, in_any_span, line_spans
+from reporails_cli.core.mapper.structure import fragment_line_spans, in_any_span, line_spans
 from reporails_cli.core.platform.dto.diagnostics import BOLD_CHECK, FORMAT_CHECK, SEVERITY_RANK
+from reporails_cli.core.platform.dto.mapping import LineSpans
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.ruleset import RUNNING_TEXT_FORMATS, Atom, RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
@@ -122,7 +123,7 @@ def unformatted_token_is_reportable(
         return False
     written = source_line if source_line is not None and token in source_line else None
     text = written if written is not None else atom.text
-    spans = source_spans if written is not None and source_spans is not None else LineSpans.of_fragment(text)
+    spans = source_spans if written is not None and source_spans is not None else fragment_line_spans(text)
     if token not in text:
         return True
     if _is_inside_code(text, token, spans):

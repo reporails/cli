@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.runtime.merger import Omissions
+from reporails_cli.core.platform.dto.platform import Omissions
 from reporails_cli.formatters.text.scorecard import compute_surface_scores
 
 

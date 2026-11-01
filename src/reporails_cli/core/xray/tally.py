@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from reporails_cli.core.pipeline.check_one import CheckRun
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
+from reporails_cli.core.platform.dto.pipeline import CheckRun
 from reporails_cli.core.platform.dto.xray import FindingTally
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path, severity_counts
 

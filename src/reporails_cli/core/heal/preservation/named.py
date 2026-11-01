@@ -10,10 +10,10 @@ import re
 from collections import Counter
 from collections.abc import Sequence
 
-from reporails_cli.core.heal.preservation.snapshot import SnapshotAtom
 from reporails_cli.core.heal.preservation.words import AtomView, content_words, named_key
 from reporails_cli.core.platform.contract.environment import ProjectEnvironment
 from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.heal import SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 

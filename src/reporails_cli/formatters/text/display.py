@@ -15,11 +15,9 @@ from rich.console import Console
 
 from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.dto.diagnostics import KNOWN_ERRORS, UNENTITLED_TIERS, FindingItem, FunnelError, Notice
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
-from reporails_cli.core.platform.runtime.merger import (
-    CombinedResult,
-    normalize_finding_path,
-)
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.formatters.text.display_constants import (
     FILE_PANEL_ORDER,
     HRULE,

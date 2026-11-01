@@ -11,8 +11,9 @@ from pathlib import Path
 import typer
 from rich.markup import escape
 
-from reporails_cli.core.lint.harness_models import HarnessResult, HarnessStatus
+from reporails_cli.core.lint.harness_models import HarnessStatus
 from reporails_cli.core.platform.config.config import get_rules_path
+from reporails_cli.core.platform.dto.lint import HarnessResult
 from reporails_cli.interfaces.cli.helpers import console
 from reporails_cli.interfaces.cli.option_groups import command_options
 from reporails_cli.interfaces.cli.typer_app import app

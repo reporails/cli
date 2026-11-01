@@ -16,8 +16,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from reporails_cli.core.pipeline.assemble import AssembleInputs, assemble_result
+from reporails_cli.core.pipeline.assemble import assemble_result
 from reporails_cli.core.platform.dto.models import Level
+from reporails_cli.core.platform.dto.pipeline import AssembleInputs
 
 
 def _inputs(**overrides: object) -> AssembleInputs:
@@ -366,7 +367,8 @@ def test_a_finding_the_workflow_does_not_serve_keeps_the_grade_of_its_reply_row(
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_stamping_served_tiers_without_a_workflow_returns_the_same_result():
-    from reporails_cli.core.platform.runtime.merger import CombinedResult, stamp_served_tiers
+    from reporails_cli.core.platform.dto.platform import CombinedResult
+    from reporails_cli.core.platform.runtime.merger import stamp_served_tiers
 
     result = CombinedResult()
     assert stamp_served_tiers(result) is result

@@ -21,7 +21,6 @@ from __future__ import annotations
 import base64
 import json
 import re
-from dataclasses import dataclass
 from pathlib import Path
 from typing import get_args
 
@@ -33,7 +32,7 @@ from reporails_cli.core.mapper.classify import (
 from reporails_cli.core.mapper.classify_lexicon import MODAL_ABSOLUTE, words_of
 from reporails_cli.core.mapper.classify_no import starts_bare_no_status, starts_descriptive_no
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str, opt_str
-from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
+from reporails_cli.core.platform.dto.mapping import MapFinding
 from reporails_cli.core.platform.dto.ruleset import (
     NO_CHARGE,
     SLOT_COORD_FIELDS,
@@ -269,17 +268,6 @@ def load_ruleset_map(path: Path) -> RulesetMap:
 # ──────────────────────────────────────────────────────────────────
 # MAP VALIDATION
 # ──────────────────────────────────────────────────────────────────
-
-
-@dataclass
-class MapFinding:
-    """A validation finding from map inspection."""
-
-    severity: FindingSeverity
-    rule: str
-    message: str
-    line: int = 0
-    text: str = ""
 
 
 # Strong charge words that should not appear in NEUTRAL atoms (unless quoted): the classifier's words

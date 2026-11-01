@@ -15,12 +15,10 @@ import logging
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import NamedTuple
 
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.discovery.agent_config import categorize_file_type
 from reporails_cli.core.discovery.agents import (
-    DetectedAgent,
     detect_agents,
     detect_single_agent,
     filter_agents_by_exclusions,
@@ -30,7 +28,13 @@ from reporails_cli.core.discovery.agents import (
     partition_by_native_owner,
     resolve_agent,
 )
-from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
+from reporails_cli.core.discovery.exclusions import (
+    leaves_out,
+    load_run_exclusions,
+    no_exclusions,
+    record_patterns,
+    with_named,
+)
 from reporails_cli.core.discovery.walk import safe_resolve, shared_dir_listings
 from reporails_cli.core.mapper.daemon import is_daemon_running, retire_daemon
 from reporails_cli.core.mapper.daemon_client import (
@@ -46,27 +50,14 @@ from reporails_cli.core.mapper.reach import record_reach
 from reporails_cli.core.mapper.skills import record_skills
 from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
+from reporails_cli.core.platform.dto.pipeline import ScopeDiscovery
 from reporails_cli.core.platform.dto.results import MapperConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.observability.log_levels import quiet_loggers
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
 logger = logging.getLogger(__name__)
-
-
-class ScopeDiscovery(NamedTuple):
-    """What one discovery pass found at a scan root."""
-
-    detected: list[DetectedAgent]
-    effective_agent: str
-    assumed: bool
-    mixed: bool
-    filtered: list[DetectedAgent]
-    files: list[Path]
-    # The `(folders, file globs)` this pass left out because the user set them; empty when it listed no files.
-    excluded: tuple[tuple[str, ...], tuple[str, ...]]
-    # The run's exclusions: the command-line patterns joined with the project's config.
-    exclusions: RunExclusions
 
 
 def discover_scope(
@@ -89,9 +80,9 @@ def discover_scope(
     keeps every pattern the user set. A pass that lists no files records nothing.
     """
 
-    exclusions = load_run_exclusions(target, exclude_dirs, exclude_files).with_named(named)
+    exclusions = with_named(load_run_exclusions(target, exclude_dirs, exclude_files), named)
     detected, resolved, files = _scan(target, agent, exclusions, scan_files)
-    excluded = exclusions.record(narrowed=narrowed) if scan_files else ((), ())
+    excluded = record_patterns(exclusions, narrowed=narrowed) if scan_files else ((), ())
     return ScopeDiscovery(detected, *resolved, files, excluded, exclusions)
 
 
@@ -135,7 +126,7 @@ def resolve_agent_filters(
             filtered = [d for d in (detect_single_agent(target, effective),) if d is not None]
     else:
         filtered = list(all_detected)
-    exclusions = exclusions or RunExclusions.none(target)
+    exclusions = exclusions or no_exclusions(target)
     filtered = filter_agents_by_exclusions(filtered, exclusions)
     return (
         effective,
@@ -194,7 +185,7 @@ def _unlisted_named(filtered: list[DetectedAgent], exclusions: RunExclusions) ->
         return []
     bare = dataclasses.replace(exclusions, named=frozenset())
     held = set(_by_resolved_path(filtered))
-    return sorted(p for p in exclusions.named if p not in held and bare.leaves_out(p))
+    return sorted(p for p in exclusions.named if p not in held and leaves_out(bare, p))
 
 
 def _append_file(agents: list[DetectedAgent], owner: str, kind: str, path: Path) -> None:

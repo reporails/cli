@@ -22,8 +22,9 @@ from reporails_cli.core.lint.mechanical.checks import (
 )
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, str_list
 from reporails_cli.core.platform.dto.checks import CheckResult
+from reporails_cli.core.platform.dto.hooks import HookPath
 from reporails_cli.core.platform.dto.models import ClassifiedFile
-from reporails_cli.core.platform.utils.hook_config import HookPath, read_hook_config, value_at, walk_hooks
+from reporails_cli.core.platform.utils.hook_config import read_hook_config, value_at, walk_hooks
 
 _REQUIRE_FORMS = ("type", "non_empty", "matches", "not_matches")
 

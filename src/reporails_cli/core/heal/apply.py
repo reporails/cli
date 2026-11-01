@@ -4,16 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import NamedTuple
 
 from reporails_cli.core.discovery.walk import safe_resolve
-from reporails_cli.core.heal.keyed import KeyedResult, keyed_heal
+from reporails_cli.core.heal.keyed import keyed_heal
 from reporails_cli.core.lint.suppression import suppressed_lines
-from reporails_cli.core.pipeline.check_one import Refusal, check_path
+from reporails_cli.core.pipeline.check_one import check_path
 from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, RemediationWorkflow, tiers_unpaid
+from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult
+from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.utils.utils import matches_any_glob
 
@@ -147,14 +148,6 @@ def heal_workflow_within(
         allowed_files=files,
         suppressed=suppressed_by_path(files, scan_root),
     )
-
-
-class HealOutcome(NamedTuple):
-    """One file's heal: what was written (`None` when nothing could be), why nothing was, and the project root."""
-
-    written: KeyedResult | None
-    withheld: str
-    scan_root: Path
 
 
 def heal_one(path: str) -> HealOutcome:

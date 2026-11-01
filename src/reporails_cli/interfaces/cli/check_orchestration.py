@@ -21,8 +21,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import typer
 
 from reporails_cli.core.classify.capability_paths import TargetError, looks_like_windows_path, sniff_agent
-from reporails_cli.core.classify.focus_expansion import UnresolvedSkill, resolve_capability_spec
-from reporails_cli.core.discovery.exclusions import RunExclusions
+from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
 from reporails_cli.core.discovery.project_root import (
     agent_dir_names,
     resolve_project_root_for_file,
@@ -32,10 +31,13 @@ from reporails_cli.core.discovery.project_root import (
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.heal.apply import resolved_within, suppressed_by_path
 from reporails_cli.core.platform.adapters.notices_seen import due_notices
+from reporails_cli.core.platform.dto.classify import UnresolvedSkill
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, FunnelError
+from reporails_cli.core.platform.dto.discovery import RunExclusions
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.observability.log_levels import quiet_loggers
 from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
-from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.formatters import github as github_formatter
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters.text.display import print_text_result

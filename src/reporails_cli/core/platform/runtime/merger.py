@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from pathlib import Path
-from typing import TypedDict, get_args
+from typing import get_args
 
 from reporails_cli.core.platform.adapters.rules_query import rule_title
 from reporails_cli.core.platform.dto.diagnostics import (
@@ -19,20 +19,16 @@ from reporails_cli.core.platform.dto.diagnostics import (
     SEVERITY_RANK,
     CrossFileCoordinate,
     CrossFileFinding,
-    FileAnalysis,
     FindingItem,
     FindingSeverity,
-    FunnelError,
     Hint,
     LocalTier,
-    Notice,
-    QualityResult,
     RemediationWorkflow,
     RulesetReport,
     walk_findings,
 )
 from reporails_cli.core.platform.dto.models import Level, LocalFinding
-from reporails_cli.core.platform.dto.results import HookEntry
+from reporails_cli.core.platform.dto.platform import CombinedResult, CombinedStats, ServerReply, SeverityCounts
 
 
 def normalize_finding_path(file_path: str, project_root: Path | None = None) -> str:
@@ -70,74 +66,6 @@ def normalize_finding_path(file_path: str, project_root: Path | None = None) -> 
 
     # Already relative or fallback
     return p.as_posix()
-
-
-@dataclass(frozen=True)
-class CombinedStats:
-    """Aggregate statistics for the combined result."""
-
-    total_findings: int = 0
-    errors: int = 0
-    warnings: int = 0
-    infos: int = 0
-    cross_file_repetitions: int = 0
-    cross_file_overlaps: int = 0  # distinct file pairs whose instructions cover the same topics
-    m_probe_count: int = 0
-    client_check_count: int = 0
-    server_diagnostic_count: int = 0
-    # The agents whose rules ran; lets the summary name the agent even when no ruleset map
-    # exists (no model on disk); empty when none ran.
-    agents: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class ServerReply:
-    """What the diagnostics service answered with, carried onto every output surface."""
-
-    tier: str = ""  # Tier label propagated from LintResult ("free", "pro", "anonymous"); empty when offline
-    # The composable remediation HOW; `None` offline, on the anon tier, or
-    # from a pre-0.6.0 server. Carried through so JSON / MCP consumers can render it.
-    workflow: RemediationWorkflow | None = None
-    # The messages the server sent with its reply, for every output surface; empty offline.
-    notices: tuple[Notice, ...] = ()
-    # The diagnostics outcome when the request was rejected, timed out, or never
-    # reached the service (a `FunnelError`); `None` when a response arrived normally
-    # or no request was made. Carries the reason so JSON / github output can name it
-    # (`offline` alone does not).
-    server_error: FunnelError | None = None
-
-
-@dataclass(frozen=True)
-class Omissions:
-    """What the run left out or could not check."""
-
-    # The folders and file globs the user left out of the run (built-in default excludes are not listed).
-    excluded_dirs: tuple[str, ...] = ()
-    excluded_files: tuple[str, ...] = ()
-    # True when a checked file imports text from a file the user left out; that text still counts there.
-    excluded_imported: bool = False
-    # The `(rule id, project-relative file)` pairs whose check did not finish in time, so says
-    # nothing about that file; empty when every check finished.
-    not_evaluated: tuple[tuple[str, str], ...] = ()
-
-
-@dataclass(frozen=True)
-class CombinedResult:
-    """Merged local + server findings — the output of the new pipeline."""
-
-    findings: tuple[FindingItem, ...] = ()
-    cross_file: tuple[CrossFileFinding, ...] = ()
-    quality: QualityResult | None = None
-    per_file_analysis: tuple[FileAnalysis, ...] = ()
-    stats: CombinedStats = field(default_factory=CombinedStats)
-    offline: bool = True
-    hints: tuple[Hint, ...] = ()  # from tier gating
-    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = ()  # free tier
-    level: Level = Level.L0
-    reply: ServerReply = field(default_factory=ServerReply)
-    # The hooks found in the project's agent hook configs; empty when none were read.
-    hooks: tuple[HookEntry, ...] = ()
-    omissions: Omissions = field(default_factory=Omissions)
 
 
 def _collect_server_diagnostics(
@@ -267,15 +195,6 @@ def _dedup_same_secret(items: tuple[FindingItem, ...]) -> list[FindingItem]:
     return keep
 
 
-class _SeverityCounts(TypedDict):
-    """The `CombinedStats` fields holding the total and per-severity finding counts."""
-
-    total_findings: int
-    errors: int
-    warnings: int
-    infos: int
-
-
 def severity_counts(findings: Sequence[FindingItem]) -> dict[FindingSeverity, int]:
     """The count of `findings` at each severity, zero for a severity none has."""
     counts: dict[FindingSeverity, int] = dict.fromkeys(get_args(FindingSeverity), 0)
@@ -284,7 +203,7 @@ def severity_counts(findings: Sequence[FindingItem]) -> dict[FindingSeverity, in
     return counts
 
 
-def _severity_counts(findings: Sequence[FindingItem]) -> _SeverityCounts:
+def _severity_counts(findings: Sequence[FindingItem]) -> SeverityCounts:
     """The total and per-severity finding counts, keyed by their `CombinedStats` field."""
     counts = severity_counts(findings)
     return {

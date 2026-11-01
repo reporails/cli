@@ -50,12 +50,8 @@ from reporails_cli.core.platform.dto.diagnostics import (
     workflow_summary,
 )
 from reporails_cli.core.platform.dto.models import Rule
-from reporails_cli.core.platform.runtime.merger import (
-    CombinedResult,
-    drop_findings,
-    normalize_finding_path,
-    rebuild_cross_file_stats,
-)
+from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.runtime.merger import drop_findings, normalize_finding_path, rebuild_cross_file_stats
 from reporails_cli.core.platform.utils.directives import parse_directives
 from reporails_cli.core.platform.utils.utils import matches_any_glob
 

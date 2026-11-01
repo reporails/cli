@@ -9,7 +9,8 @@ import pytest
 from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.mapper import model_fetch
 from reporails_cli.core.pipeline import check_one
-from reporails_cli.core.pipeline.check_one import Refusal, check_path
+from reporails_cli.core.pipeline.check_one import check_path
+from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.interfaces.mcp import tools
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_server]

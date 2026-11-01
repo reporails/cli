@@ -7,8 +7,9 @@ sooner. Nothing here contacts the server, reads an account or counts as a `valid
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
-from reporails_cli.core.pipeline.check_one import Refusal, build_map, resolve_scan_target, scope_for_path
+from reporails_cli.core.pipeline.check_one import build_map, resolve_scan_target, scope_for_path
 from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.interfaces.mcp.tools import refusal_payload
 from reporails_cli.interfaces.mcp.validate_targets import named_files, resolve_validate_targets, target_tokens
 

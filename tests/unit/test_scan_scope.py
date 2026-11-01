@@ -19,7 +19,6 @@ import pytest
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.discovery.agent_discovery import claude_project_folder_name
 from reporails_cli.core.discovery.agents import (
-    DetectedAgent,
     clear_agent_cache,
     detect_agents,
     filter_agents_by_exclusions,
@@ -27,7 +26,8 @@ from reporails_cli.core.discovery.agents import (
     get_all_scannable_files,
     get_known_agents,
 )
-from reporails_cli.core.discovery.exclusions import RunExclusions
+from reporails_cli.core.discovery.exclusions import parse_run_exclusions
+from reporails_cli.core.platform.dto.discovery import DetectedAgent
 
 
 def _is_external(f: Path, scope: Path) -> bool:
@@ -633,7 +633,7 @@ class TestProjectConfigSurfaceAdjustments:
         )
 
         filtered = filter_agents_by_exclusions(
-            [agent], RunExclusions(tmp_path, files=(".claude/agents/lead.md", ".claude/skills/**"))
+            [agent], parse_run_exclusions(tmp_path, (), (".claude/agents/lead.md", ".claude/skills/**"))
         )
 
         assert len(filtered) == 1
@@ -653,7 +653,7 @@ class TestProjectConfigSurfaceAdjustments:
             instruction_files=[tmp_path / ".claude" / "agents" / "lead.md"],
         )
 
-        filtered = filter_agents_by_exclusions([agent], RunExclusions(tmp_path, files=("**/lead.md",)))
+        filtered = filter_agents_by_exclusions([agent], parse_run_exclusions(tmp_path, (), ("**/lead.md",)))
 
         assert filtered == []
 

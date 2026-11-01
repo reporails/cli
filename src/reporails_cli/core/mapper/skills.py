@@ -10,7 +10,6 @@ folder is one of that skill's files. Decided once per run and recorded on each `
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from reporails_cli.core.discovery.agent_config import extract_patterns
@@ -18,6 +17,7 @@ from reporails_cli.core.discovery.plugin_roots import entry_pattern
 from reporails_cli.core.discovery.walk import list_dir, safe_resolve
 from reporails_cli.core.mapper.inspect import load_registry
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
+from reporails_cli.core.platform.dto.mapping import SkillFolders
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap
 
@@ -85,12 +85,12 @@ def record_skills(
     """
     if not ruleset_map.files:
         return
-    folders = _SkillFolders.of(ruleset_map.files, agents, root, load_registry())
+    folders = skill_folders_of(ruleset_map.files, agents, root, load_registry())
     for rec in ruleset_map.files:
         rec.skill = ""
         if rec.type not in ("skills", "generic"):
             continue
-        folder = next((f for f in reversed(Path(rec.path).parents) if folders.is_skill(f, rec.agent)), None)
+        folder = next((f for f in reversed(Path(rec.path).parents) if _is_skill(folders, f, rec.agent)), None)
         was = rec.type
         rec.type = skill_type(was, rec.path, () if folder is None else (folder,))
         if folder is None:
@@ -100,53 +100,42 @@ def record_skills(
             _join_skill(rec, folders.entries.get(folder))
 
 
-@dataclass
-class _SkillFolders:
-    """Which folders are skill folders for one run, each answer computed once."""
+def skill_folders_of(
+    files: Iterable[FileRecord], agents: Iterable[str], root: Path, registry: dict[str, JsonObject]
+) -> SkillFolders:
+    """The skill folders of a run's records: the map's own entry records are read up front."""
+    files = list(files)
+    folders = SkillFolders(
+        root=root,
+        registry=registry,
+        base={*agents, *(a for a, cfg in registry.items() if cfg.get("core"))},
+        by_path={rec.path for rec in files},
+        entries={},
+    )
+    for rec in files:
+        path = Path(rec.path)
+        if rec.type == "skills" and path.name == "SKILL.md" and _matches(folders, path, rec.agent):
+            folders.entries[path.parent] = rec
+    return folders
 
-    root: Path
-    registry: dict[str, JsonObject]
-    base: set[str]
-    by_path: set[str]
-    entries: dict[Path, FileRecord]  # folder -> the map's own entry record
-    _patterns: dict[str, list[str]] = field(default_factory=dict)
-    _on_disk: dict[tuple[Path, str], bool] = field(default_factory=dict)
 
-    @classmethod
-    def of(
-        cls, files: Iterable[FileRecord], agents: Iterable[str], root: Path, registry: dict[str, JsonObject]
-    ) -> _SkillFolders:
-        """The skill folders of a run's records: the map's own entry records are read up front."""
-        files = list(files)
-        folders = cls(
-            root=root,
-            registry=registry,
-            base={*agents, *(a for a, cfg in registry.items() if cfg.get("core"))},
-            by_path={rec.path for rec in files},
-            entries={},
-        )
-        for rec in files:
-            path = Path(rec.path)
-            if rec.type == "skills" and path.name == "SKILL.md" and folders._matches(path, rec.agent):
-                folders.entries[path.parent] = rec
-        return folders
+def _matches(folders: SkillFolders, path: Path, agent: str) -> bool:
+    for a in (*folders.base, agent):
+        if a not in folders.patterns:
+            folders.patterns[a] = _entry_patterns(folders.registry, a)
+    return any(entry_pattern(path, folders.root, folders.patterns[a]) is not None for a in (*folders.base, agent))
 
-    def _matches(self, path: Path, agent: str) -> bool:
-        for a in (*self.base, agent):
-            if a not in self._patterns:
-                self._patterns[a] = _entry_patterns(self.registry, a)
-        return any(entry_pattern(path, self.root, self._patterns[a]) is not None for a in (*self.base, agent))
 
-    def is_skill(self, folder: Path, agent: str) -> bool:
-        """Whether `folder/SKILL.md` is a skill's entry file: the map's own verdict when it carries
-        that record, else a match on the agents' entry patterns plus the file existing on disk."""
-        candidate = folder / "SKILL.md"
-        if candidate.as_posix() in self.by_path:
-            return folder in self.entries
-        key = (folder, agent)
-        if key not in self._on_disk:
-            self._on_disk[key] = self._matches(candidate, agent) and _has_file(folder, "SKILL.md")
-        return self._on_disk[key]
+def _is_skill(folders: SkillFolders, folder: Path, agent: str) -> bool:
+    """Whether `folder/SKILL.md` is a skill's entry file: the map's own verdict when it carries
+    that record, else a match on the agents' entry patterns plus the file existing on disk."""
+    candidate = folder / "SKILL.md"
+    if candidate.as_posix() in folders.by_path:
+        return folder in folders.entries
+    key = (folder, agent)
+    if key not in folders.on_disk:
+        folders.on_disk[key] = _matches(folders, candidate, agent) and _has_file(folder, "SKILL.md")
+    return folders.on_disk[key]
 
 
 def _join_skill(rec: FileRecord, owner: FileRecord | None) -> None:

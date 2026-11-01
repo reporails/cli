@@ -10,9 +10,7 @@ from __future__ import annotations
 import re
 from bisect import bisect_right
 from collections.abc import Sequence
-from dataclasses import dataclass, field, replace
 from functools import lru_cache
-from typing import NamedTuple
 
 import mdurl
 from markdown_it.token import Token
@@ -21,7 +19,6 @@ from markdown_it.utils import EnvType
 from reporails_cli.core.mapper.markdown_extract import _extract_texts
 from reporails_cli.core.mapper.md_parser import (
     CODE_BLOCK_TOKENS,
-    EmphasisRun,
     code_spans,
     definition_ranges,
     emphasis_runs,
@@ -32,6 +29,7 @@ from reporails_cli.core.mapper.md_parser import (
     tok_line,
 )
 from reporails_cli.core.mapper.parse import inline_line, parse_blocks
+from reporails_cli.core.platform.dto.mapping import BlockReading, EmphasisRun, LineSpans, SourceRanges
 from reporails_cli.core.platform.dto.structure import DocumentStructure
 
 _LEAF_BLOCKS = frozenset({"paragraph_open", "heading_open", "table_open", "html_block", "hr", *CODE_BLOCK_TOKENS})
@@ -112,74 +110,73 @@ def _is_after_list(tokens: list[Token], i: int) -> bool:
     return j >= 0 and _is_list(tokens[j], -1) and tokens[j].level == tokens[i].level
 
 
-@dataclass
-class _Reading:
-    """What the walk over the parse tokens has found so far."""
+def _reading_line(reading: BlockReading, tok: Token) -> int:
+    """The file line `tok` starts on."""
+    return tok_line(tok, reading.offset)
 
-    offset: int
-    headings: list[int] = field(default_factory=list)
-    items: list[tuple[int, int]] = field(default_factory=list)
-    rows: list[tuple[int, str]] = field(default_factory=list)
-    fences: list[tuple[int, str]] = field(default_factory=list)
-    links: list[tuple[int, str]] = field(default_factory=list)
-    block_of: dict[int, int] = field(default_factory=dict)
-    lists: list[int] = field(default_factory=list)
-    group: int = 0
-    block: int = 0
-    item_just_opened: bool = False
 
-    def line(self, tok: Token) -> int:
-        """The file line `tok` starts on."""
-        return tok_line(tok, self.offset)
+def _open_list(reading: BlockReading, tokens: list[Token], i: int) -> None:
+    """Enter a list, starting a new list group unless it continues the previous list."""
+    if not reading.lists and not _is_after_list(tokens, i):
+        reading.group += 1
+    reading.lists.append(reading.group)
 
-    def open_list(self, tokens: list[Token], i: int) -> None:
-        """Enter a list, starting a new list group unless it continues the previous list."""
-        if not self.lists and not _is_after_list(tokens, i):
-            self.group += 1
-        self.lists.append(self.group)
 
-    def open_item(self, tok: Token) -> None:
-        """Record a list item with its list group and open a new block for it."""
-        self.items.append((self.line(tok), self.lists[-1] if self.lists else self.group))
-        self.block += 1
-        self.item_just_opened = True
+def _open_item(reading: BlockReading, tok: Token) -> None:
+    """Record a list item with its list group and open a new block for it."""
+    reading.items.append((_reading_line(reading, tok), reading.lists[-1] if reading.lists else reading.group))
+    reading.block += 1
+    reading.item_just_opened = True
 
-    def leaf(self, tok: Token) -> None:
-        """A leaf block's lines join the current block, or a new one; the first leaf of a list
-        item belongs to the item's own block."""
-        self.block += not self.item_just_opened
-        self.item_just_opened = False
-        first = self.line(tok)
-        height = tok.map[1] - tok.map[0] if tok.map else 0
-        self.block_of.update(dict.fromkeys(range(first, first + height), self.block))
 
-    def visit(self, tokens: list[Token], i: int) -> None:
-        """Update the walk state for the token at `i`."""
-        tok = tokens[i]
-        if _is_list(tok, 1):
-            self.open_list(tokens, i)
-        elif _is_list(tok, -1) and self.lists:
-            self.lists.pop()
-        elif tok.type == "list_item_open":
-            self.open_item(tok)
-        elif tok.type == "tr_open" and tokens[i + 1].type == "td_open" and tokens[i + 2].type == "inline":
-            self.rows.append((self.line(tok), _extract_texts(tokens[i + 2].children or [])[1]))
-        elif tok.type == "inline":
-            self.links.extend(_inline_links(tok, self.offset))
-        elif tok.type == "heading_open":
-            self.headings.append(self.line(tok))
-        elif tok.type == "fence":
-            self.fences.append((self.line(tok), tok.content))
-        if tok.type in _LEAF_BLOCKS and tok.map:
-            self.leaf(tok)
+def _leaf(reading: BlockReading, tok: Token) -> None:
+    """A leaf block's lines join the current block, or a new one; the first leaf of a list
+    item belongs to the item's own block."""
+    reading.block += not reading.item_just_opened
+    reading.item_just_opened = False
+    first = _reading_line(reading, tok)
+    height = tok.map[1] - tok.map[0] if tok.map else 0
+    reading.block_of.update(dict.fromkeys(range(first, first + height), reading.block))
+
+
+def _visit(reading: BlockReading, tokens: list[Token], i: int) -> None:
+    """Update the walk state for the token at `i`."""
+    tok = tokens[i]
+    if _is_list(tok, 1):
+        _open_list(reading, tokens, i)
+    elif _is_list(tok, -1) and reading.lists:
+        reading.lists.pop()
+    elif tok.type == "list_item_open":
+        _open_item(reading, tok)
+    elif tok.type == "tr_open" and tokens[i + 1].type == "td_open" and tokens[i + 2].type == "inline":
+        reading.rows.append((_reading_line(reading, tok), _extract_texts(tokens[i + 2].children or [])[1]))
+    elif tok.type == "inline":
+        reading.links.extend(_inline_links(tok, reading.offset))
+    elif tok.type == "heading_open":
+        reading.headings.append(_reading_line(reading, tok))
+    elif tok.type == "fence":
+        reading.fences.append((_reading_line(reading, tok), tok.content))
+    if tok.type in _LEAF_BLOCKS and tok.map:
+        _leaf(reading, tok)
+
+
+def fragment_line_spans(text: str) -> LineSpans:
+    """The columns of `text`, read as one inline fragment."""
+    return LineSpans(
+        tuple((span.start, span.end) for span in code_spans(text)),
+        link_spans(text),
+        0,
+        emphasis_runs(text),
+        html_spans(text),
+    )
 
 
 def read_structure(content: str) -> DocumentStructure:
     """The headings, list items, table rows, fenced blocks, links and block numbering of `content`."""
     tokens, offset = parse_blocks(content)
-    reading = _Reading(offset)
+    reading = BlockReading(offset)
     for i in range(len(tokens)):
-        reading.visit(tokens, i)
+        _visit(reading, tokens, i)
     return DocumentStructure(
         tuple(reading.headings),
         tuple(reading.items),
@@ -331,85 +328,6 @@ def code_ranges(content: str) -> list[tuple[int, int]]:
     return list(_source_ranges(content).code)
 
 
-def _moved(pos: int, at: int, removed: int, inserted: int, *, opens: bool) -> int:
-    """Where column `pos` lands when `removed` characters at `at` become `inserted` ones. A column that
-    opens something (a range start) at the edit point moves with the inserted text; one that closes
-    something (a range end) stays before it. A column inside the removed characters falls to `at`."""
-    if pos >= at + removed and (opens or pos > at):
-        return pos + inserted - removed
-    return min(pos, at)
-
-
-def _moved_ranges(
-    ranges: tuple[tuple[int, int], ...], at: int, removed: int, inserted: int
-) -> tuple[tuple[int, int], ...]:
-    return tuple(
-        (_moved(lo, at, removed, inserted, opens=True), _moved(hi, at, removed, inserted, opens=False))
-        for lo, hi in ranges
-    )
-
-
-@dataclass(frozen=True)
-class LineSpans:
-    """The `[start, end)` columns of a line that a code span (or code block), a link, image or
-    link reference definition and an inline HTML tag occupy, the column where the line's inline text
-    starts after a blockquote's `>` markers or a list item's marker (None for a line with no inline
-    text: a fenced or markup block, a blank line, a rule), and the emphasis runs that sit wholly on the
-    line (their positions are columns; a run that runs over a line break is not listed)."""
-
-    code: tuple[tuple[int, int], ...] = ()
-    links: tuple[tuple[int, int], ...] = ()
-    text: int | None = None
-    emphasis: tuple[EmphasisRun, ...] = ()
-    html: tuple[tuple[int, int], ...] = ()
-
-    @classmethod
-    def of_fragment(cls, text: str) -> LineSpans:
-        """The columns of `text`, read as one inline fragment."""
-        return cls(
-            tuple((span.start, span.end) for span in code_spans(text)),
-            link_spans(text),
-            0,
-            emphasis_runs(text),
-            html_spans(text),
-        )
-
-    def spliced(self, at: int, removed: int, inserted: int) -> LineSpans:
-        """These columns after `removed` characters of the line at column `at` are replaced by
-        `inserted` new ones: every column after the edit moves with it, so the line need not be read
-        again."""
-
-        def move(pos: int, *, opens: bool) -> int:
-            return _moved(pos, at, removed, inserted, opens=opens)
-
-        return LineSpans(
-            _moved_ranges(self.code, at, removed, inserted),
-            _moved_ranges(self.links, at, removed, inserted),
-            None if self.text is None else move(self.text, opens=False),
-            tuple(
-                EmphasisRun(
-                    move(run.start, opens=True),
-                    move(run.end, opens=False),
-                    move(run.content_start, opens=False),
-                    move(run.content_end, opens=True),
-                    run.marker,
-                )
-                for run in self.emphasis
-            ),
-            _moved_ranges(self.html, at, removed, inserted),
-        )
-
-    def with_code(self, span: tuple[int, int]) -> LineSpans:
-        """These columns with one more code span."""
-        return replace(self, code=tuple(sorted((*self.code, span))))
-
-    def softened(self, run: EmphasisRun) -> LineSpans:
-        """These columns after the bold `run` becomes italic: one delimiter character is dropped on each
-        side of its content."""
-        italic = replace(self, emphasis=tuple(r._replace(marker="*") if r == run else r for r in self.emphasis))
-        return italic.spliced(run.content_end, 1, 0).spliced(run.start, 1, 0)
-
-
 def _spread(
     ranges: tuple[tuple[int, int], ...], lines: list[str], starts: list[int]
 ) -> dict[int, list[tuple[int, int]]]:
@@ -468,45 +386,34 @@ def paragraph_lines(content: str) -> list[tuple[int, int]]:
     return out
 
 
-class _SourceRanges(NamedTuple):
-    """What the parse places in the file: code, link and inline HTML char ranges, `(line, column)` where
-    the inline text of each file line starts, and the emphasis runs (positions are file char offsets)."""
-
-    code: tuple[tuple[int, int], ...]
-    links: tuple[tuple[int, int], ...]
-    text: tuple[tuple[int, int], ...]
-    emphasis: tuple[EmphasisRun, ...]
-    html: tuple[tuple[int, int], ...]
-
-
 def _place_inline(
     tok: Token, lines: list[str], starts: list[int], first: int, cursor: dict[int, int]
-) -> _SourceRanges | None:
+) -> SourceRanges | None:
     """Where the inline token `tok` puts its text, code spans and links in the file; None when the
     file's lines do not hold its text."""
     columns = _token_columns(tok, lines, first, cursor)
     if columns is None:
         return None
     code, links, emphasis, html = _inline_span_ranges(tok, columns, starts, first)
-    return _SourceRanges(
+    return SourceRanges(
         tuple(code), tuple(links), tuple(_text_starts(tok, columns, first)), tuple(emphasis), tuple(html)
     )
 
 
 @lru_cache(maxsize=64)
-def _source_ranges(content: str) -> _SourceRanges:
+def _source_ranges(content: str) -> SourceRanges:
     """The code, link and inline HTML ranges, the text starts and the emphasis runs of `content`, placed in the file."""
     env: EnvType = {}
     tokens, offset = parse_blocks(content, env)
     lines = content.split("\n")
     starts = line_offsets(lines)
     starts.append(len(content) + 1)
-    parts: list[_SourceRanges] = []
+    parts: list[SourceRanges] = []
     cursor: dict[int, int] = {}
     for tok in tokens:
         if tok.type in CODE_BLOCK_TOKENS and tok.map:
             block = (starts[tok.map[0] + offset], min(starts[tok.map[1] + offset], len(content)))
-            parts.append(_SourceRanges((block,), (), (), (), ()))
+            parts.append(SourceRanges((block,), (), (), (), ()))
         elif tok.type == "inline" and tok.map:
             placed = _place_inline(tok, lines, starts, tok.map[0] + offset, cursor)
             if placed is not None:
@@ -514,7 +421,7 @@ def _source_ranges(content: str) -> _SourceRanges:
     text: dict[int, int] = {}
     for n, col in (start for part in parts for start in part.text):
         text.setdefault(n, col)
-    return _SourceRanges(
+    return SourceRanges(
         tuple(span for part in parts for span in part.code),
         (*(span for part in parts for span in part.links), *definition_ranges(env, starts, offset)),
         tuple(sorted(text.items())),

@@ -9,8 +9,9 @@ from typing import Any
 
 import pytest
 
-from reporails_cli.core.heal.preservation import Snapshot, compare, take_snapshot
+from reporails_cli.core.heal.preservation import compare, take_snapshot
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
+from reporails_cli.core.platform.dto.heal import Snapshot
 
 
 def _verdict(tmp_path, original: str, rewrite: str) -> dict[str, Any]:

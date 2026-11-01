@@ -15,7 +15,6 @@ from pathlib import Path
 import pytest
 import regex
 
-from reporails_cli.core.lint.regex.compiler import CompiledCheck
 from reporails_cli.core.lint.regex.expect import emit_expect_findings, file_below_min_lines, file_matches_path_filter
 from reporails_cli.core.lint.regex.runner import (
     _compile_ruleset,
@@ -23,6 +22,7 @@ from reporails_cli.core.lint.regex.runner import (
     _resolve_scan_targets,
     _scan_all_targets,
 )
+from reporails_cli.core.platform.dto.lint import CompiledCheck
 from reporails_cli.core.platform.utils.utils import strip_frontmatter
 
 

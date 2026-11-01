@@ -16,8 +16,6 @@ import pytest
 import reporails_cli.core.discovery.agents as agents_mod
 from reporails_cli.core.discovery.agent_config import extract_properties
 from reporails_cli.core.discovery.agents import (
-    AgentType,
-    DetectedAgent,
     _build_agent_registry,
     _disambiguate_shared_files,
     _distinctive_agents,
@@ -25,6 +23,7 @@ from reporails_cli.core.discovery.agents import (
     detect_single_agent,
     resolve_agent,
 )
+from reporails_cli.core.platform.dto.discovery import AgentType, DetectedAgent
 
 
 def _at(agent_id: str) -> AgentType:

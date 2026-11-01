@@ -32,11 +32,12 @@ from reporails_cli.bundled import get_xray_path
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.heal.apply import heal_one, resolved_within
-from reporails_cli.core.pipeline.check_one import Refusal, check_path, file_findings
+from reporails_cli.core.pipeline.check_one import check_path, file_findings
 from reporails_cli.core.platform.adapters.registry import file_level_check_ids
 from reporails_cli.core.platform.adapters.rules_query import rule_category, rule_title
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
+from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.xray import FindingTally, XrayCheck
 from reporails_cli.core.xray.session import XraySession
 from reporails_cli.core.xray.tally import tallies_by_file, tally_of

@@ -25,7 +25,6 @@ from reporails_cli.core.mapper.inspect import (
     load_registry,
 )
 from reporails_cli.core.mapper.map_cache import (
-    CachedFileEntry,
     MapCache,
     atoms_to_dicts,
     cache_key_for_path,
@@ -39,6 +38,7 @@ from reporails_cli.core.mapper.prose_split import SEGMENTATION_STRUCTURE_AWARE
 from reporails_cli.core.mapper.serialize import validate_atoms
 from reporails_cli.core.mapper.split_topic import split_over_merged_atoms
 from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.mapping import CachedFileEntry
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap
 from reporails_cli.core.platform.observability.stage_timer import StageTimer
 from reporails_cli.core.platform.observability.stage_timer import get_stage_timer as _get_stage_timer

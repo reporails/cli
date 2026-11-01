@@ -9,6 +9,7 @@ import pytest
 
 from reporails_cli.core.cache import sweep as sweep_module
 from reporails_cli.core.cache.sweep import sweep
+from reporails_cli.core.platform.dto.cache import SweepUnit
 
 NOW = 1_000_000.0
 DAY = 86400.0
@@ -99,7 +100,7 @@ def test_file_vanishing_mid_sweep_is_skipped(tmp_path: Path, monkeypatch: pytest
     else:
         real = sweep_module._delete
 
-        def racing(unit: sweep_module._Unit) -> None:
+        def racing(unit: SweepUnit) -> None:
             gone.unlink(missing_ok=True)  # another sweeper got there first
             real(unit)
 

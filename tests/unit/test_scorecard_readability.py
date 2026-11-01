@@ -15,7 +15,7 @@ from rich.text import Text
 
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.models import Level
-from reporails_cli.core.platform.runtime.merger import CombinedStats, Omissions, ServerReply
+from reporails_cli.core.platform.dto.platform import CombinedStats, Omissions, ServerReply
 from reporails_cli.formatters.text import item_scorecard, scorecard
 from reporails_cli.formatters.text.health import SurfaceHealth
 from reporails_cli.formatters.text.scorecard import (
@@ -349,7 +349,7 @@ class TestExcludedLine:
 class TestExcludedLineOnEveryTextPath:
     @staticmethod
     def _no_findings(capsys: pytest.CaptureFixture[str], **fields: object) -> str:
-        from reporails_cli.core.platform.runtime.merger import CombinedResult
+        from reporails_cli.core.platform.dto.platform import CombinedResult
         from reporails_cli.formatters.text import display
 
         result = CombinedResult(**{"quality": None, **fields})  # type: ignore[arg-type]

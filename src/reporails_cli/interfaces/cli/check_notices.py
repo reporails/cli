@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from reporails_cli.core.heal.apply import heal_withheld_for_run
 from reporails_cli.core.pipeline.assemble import with_exclusions
 from reporails_cli.core.platform.config.config import get_project_config
-from reporails_cli.core.platform.runtime.merger import CombinedResult
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.formatters.text.verdict import render_excluded_line
 from reporails_cli.interfaces.cli.check_orchestration import RenderContext, _dispatch_output
 from reporails_cli.interfaces.cli.helpers import _print_no_instruction_files, console

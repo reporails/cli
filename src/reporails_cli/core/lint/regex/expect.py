@@ -2,27 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from pathlib import Path
 
 from reporails_cli.core.discovery.walk import safe_resolve
-from reporails_cli.core.lint.regex.compiler import CompiledCheck
 from reporails_cli.core.lint.regex.not_evaluated import record_not_evaluated, rule_id_of
 from reporails_cli.core.platform.contract.glob_pattern import glob_matches
+from reporails_cli.core.platform.dto.lint import CompiledCheck, ScanOutcome
 from reporails_cli.core.platform.dto.models import LocalFinding
-
-
-@dataclass(frozen=True)
-class _ScanOutcome:
-    """What a scan found, for the checks to be judged against (see `emit_expect_findings`)."""
-
-    matched_pairs: set[tuple[str, str]]
-    match_details: dict[tuple[str, str], list[tuple[int, str, str]]]
-    scanned_files: list[str]
-    scan_root: Path | None = None
-    fix_by_rule: dict[str, str] = field(default_factory=dict)
-    skill_entries: set[Path] | None = None
-    not_evaluated: set[tuple[str, str]] = field(default_factory=set)
 
 
 def emit_expect_findings(
@@ -57,7 +44,7 @@ def emit_expect_findings(
     `LocalFinding.fix` so MCP / JSON consumers can render the suggested
     edit. Empty when the rule has no declared fix.
     """
-    outcome = _ScanOutcome(
+    outcome = ScanOutcome(
         matched_pairs, match_details, scanned_files, scan_root, fix_by_rule or {}, skill_entries, not_evaluated or set()
     )
     findings: list[LocalFinding] = []
@@ -66,7 +53,7 @@ def emit_expect_findings(
     return findings
 
 
-def _check_findings(check: CompiledCheck, outcome: _ScanOutcome) -> list[LocalFinding]:
+def _check_findings(check: CompiledCheck, outcome: ScanOutcome) -> list[LocalFinding]:
     """The findings of one check: every forbidden match, or every scanned file lacking the expected pattern."""
     rule_id = rule_id_of(check.id)
     fix_text = outcome.fix_by_rule.get(rule_id, "")
@@ -85,7 +72,7 @@ def _check_findings(check: CompiledCheck, outcome: _ScanOutcome) -> list[LocalFi
 
 
 def _forbidden_findings(
-    check: CompiledCheck, rule_id: str, fix_text: str, files: list[str], outcome: _ScanOutcome
+    check: CompiledCheck, rule_id: str, fix_text: str, files: list[str], outcome: ScanOutcome
 ) -> list[LocalFinding]:
     """One finding per matched line of a check that forbids something."""
     return [
@@ -106,7 +93,7 @@ def _forbidden_findings(
 
 
 def _missing_findings(
-    check: CompiledCheck, rule_id: str, fix_text: str, files: list[str], outcome: _ScanOutcome
+    check: CompiledCheck, rule_id: str, fix_text: str, files: list[str], outcome: ScanOutcome
 ) -> list[LocalFinding]:
     """One finding per file the check considers that lacks the pattern it expects."""
     return [

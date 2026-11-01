@@ -7,50 +7,14 @@ Nothing here reads a file: the caller hands over the text and the map.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, field
 
 from reporails_cli.core.heal.preservation.words import NEGATION_RE, AtomView, content_words
 from reporails_cli.core.lint.content_queries import instruction_atoms_for_file
 from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import read_structure
-from reporails_cli.core.platform.dto.ruleset import Atom, AtomFormat, Modality, RulesetMap
-from reporails_cli.core.platform.dto.structure import DocumentStructure
+from reporails_cli.core.platform.dto.heal import Snapshot, SnapshotAtom
+from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.core.platform.policy.negative_headings import is_negative_heading
-
-
-@dataclass(frozen=True)
-class SnapshotAtom:
-    """One snapshotted atom — the fields the compare needs, nothing more."""
-
-    line: int
-    text: str
-    charge_value: int
-    named_tokens: tuple[str, ...]
-    format: AtomFormat
-    embedding_int8: tuple[int, ...] | None
-    heading_context: str = ""
-    scope_conditional: bool = False
-    heading: bool = False
-    plain_text: str = ""
-    modality: Modality = "none"
-
-
-@dataclass(frozen=True)
-class Snapshot:
-    """A file's preservation baseline, taken before a rewrite."""
-
-    file_path: str
-    text: str
-    atoms: tuple[SnapshotAtom, ...]
-    score: float | None
-    relation_lines: frozenset[int] = field(default_factory=frozenset)
-    structure: DocumentStructure = field(init=False)
-    imports: tuple[str, ...] = field(init=False)
-
-    def __post_init__(self) -> None:
-        # The block structure of `text`, read once with the baseline.
-        object.__setattr__(self, "structure", read_structure(self.text))
-        object.__setattr__(self, "imports", tuple(import_refs(self.text)))
 
 
 def is_instruction_heading(atom: AtomView) -> bool:
@@ -87,7 +51,22 @@ def take_snapshot(
         for a in (instruction_atoms_for_file(ruleset_map, file_path, own=True) if ruleset_map is not None else ())
         if (a.kind != "heading" or a.charge_value != 0 or is_negative_heading(a.text))
     )
-    return Snapshot(file_path=file_path, text=text, atoms=atoms, score=score, relation_lines=frozenset(relation_lines))
+    return make_snapshot(file_path, text, atoms, score, relation_lines)
+
+
+def make_snapshot(
+    file_path: str, text: str, atoms: tuple[SnapshotAtom, ...], score: float | None, relation_lines: Iterable[int] = ()
+) -> Snapshot:
+    """A baseline of `file_path` holding `atoms`, with the block structure and `@` imports of `text` read once."""
+    return Snapshot(
+        file_path=file_path,
+        text=text,
+        atoms=atoms,
+        score=score,
+        structure=read_structure(text),
+        imports=tuple(import_refs(text)),
+        relation_lines=frozenset(relation_lines),
+    )
 
 
 def rewritten_atoms(new_map: RulesetMap | None, file_path: str) -> list[Atom]:

@@ -16,7 +16,7 @@ import pytest
 from reporails_cli.core.discovery import agent_discovery as ad
 from reporails_cli.core.discovery import walk
 from reporails_cli.core.discovery.agent_config import load_config_file_types
-from reporails_cli.core.discovery.exclusions import RunExclusions
+from reporails_cli.core.discovery.exclusions import covers, no_exclusions, parse_run_exclusions
 from reporails_cli.core.discovery.surface_config import surface_include_patterns
 from tests.conftest import skip_if_case_insensitive_fs
 
@@ -27,7 +27,7 @@ from tests.conftest import skip_if_case_insensitive_fs
 @pytest.mark.subsys_lint
 def test_covers_path_outside_root_is_not_covered() -> None:
     """A path not under the root is not covered, whatever name it carries."""
-    assert RunExclusions.parse(Path("/target"), ["x.md"], ()).covers(Path("/other/x.md")) is False
+    assert covers(parse_run_exclusions(Path("/target"), ["x.md"], ()), Path("/other/x.md")) is False
 
 
 # --- walk_glob always-skip pruning (L160) -----------------------------------
@@ -45,7 +45,7 @@ def test_walk_glob_skips_always_skip_dirs(tmp_path: Path) -> None:
     (tmp_path / ".git" / "CLAUDE.md").write_text("x")
     (tmp_path / "CLAUDE.md").write_text("y")
 
-    results = walk.walk_glob(tmp_path, "CLAUDE.md", RunExclusions.none(tmp_path))
+    results = walk.walk_glob(tmp_path, "CLAUDE.md", no_exclusions(tmp_path))
     assert set(results) == {tmp_path / "CLAUDE.md"}
 
 
@@ -58,7 +58,7 @@ def test_walk_glob_skips_a_wrong_case_name_on_a_case_sensitive_filesystem(tmp_pa
     """A lowercase `claude.md` is not the documented `CLAUDE.md` where the filesystem tells them apart."""
     skip_if_case_insensitive_fs(tmp_path)
     (tmp_path / "claude.md").write_text("y")
-    assert walk.walk_glob(tmp_path, "CLAUDE.md", RunExclusions.none(tmp_path)) == []
+    assert walk.walk_glob(tmp_path, "CLAUDE.md", no_exclusions(tmp_path)) == []
 
 
 @pytest.mark.unit
@@ -66,8 +66,8 @@ def test_walk_glob_skips_a_wrong_case_name_on_a_case_sensitive_filesystem(tmp_pa
 def test_ci_glob_matches_case_insensitively(tmp_path: Path) -> None:
     """ci_glob resolves a bare filename and a glob case-insensitively."""
     (tmp_path / "agents.md").write_text("a")
-    assert ad.ci_glob(tmp_path, "AGENTS.md", RunExclusions.none(tmp_path)) == [tmp_path / "agents.md"]
-    assert set(ad.ci_glob(tmp_path, "*.MD", RunExclusions.none(tmp_path))) == {tmp_path / "agents.md"}
+    assert ad.ci_glob(tmp_path, "AGENTS.md", no_exclusions(tmp_path)) == [tmp_path / "agents.md"]
+    assert set(ad.ci_glob(tmp_path, "*.MD", no_exclusions(tmp_path))) == {tmp_path / "agents.md"}
 
 
 @pytest.mark.unit
@@ -128,7 +128,7 @@ def test_eager_global_recursive_leaf_uses_ancestor_walk(tmp_path: Path) -> None:
     (tmp_path / "sub" / "CLAUDE.md").write_text("s")
 
     res = ad.glob_file_type_patterns(
-        tmp_path, ["**/CLAUDE.md"], {"scope": "global", "loading": "session_start"}, RunExclusions.none(tmp_path)
+        tmp_path, ["**/CLAUDE.md"], {"scope": "global", "loading": "session_start"}, no_exclusions(tmp_path)
     )
     assert res == [tmp_path / "CLAUDE.md"]
 
@@ -168,17 +168,17 @@ def test_surface_include_injects_fallbacks_only_for_main() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_agents_in_an_excluded_folder_are_dropped() -> None:
-    from reporails_cli.core.discovery.agents import DetectedAgent, filter_agents_by_exclusions
-    from reporails_cli.core.discovery.exclusions import RunExclusions
+    from reporails_cli.core.discovery.agents import filter_agents_by_exclusions
+    from reporails_cli.core.platform.dto.discovery import DetectedAgent
 
     class _Type:
         id = "claude"
 
     root = Path("/proj")
     agent = DetectedAgent(_Type(), [root / "CLAUDE.md", root / "scratch" / "CLAUDE.md"], [], [], [])  # type: ignore[arg-type]
-    kept = filter_agents_by_exclusions([agent], RunExclusions.parse(root, ["scratch"], ()))
+    kept = filter_agents_by_exclusions([agent], parse_run_exclusions(root, ["scratch"], ()))
     assert [a.instruction_files for a in kept] == [[root / "CLAUDE.md"]]
-    assert filter_agents_by_exclusions([agent], RunExclusions(root)) == [agent]
+    assert filter_agents_by_exclusions([agent], no_exclusions(root)) == [agent]
 
 
 # --- glob_file_type_patterns path-pinned ** patterns ------------------------
@@ -201,7 +201,7 @@ def test_pinned_recursive_patterns_match_the_whole_pattern(tmp_path: Path) -> No
     nested = {"scope": "nested"}
 
     def found(pattern: str) -> set[str]:
-        res = ad.glob_file_type_patterns(tmp_path, [pattern], nested, RunExclusions.none(tmp_path))
+        res = ad.glob_file_type_patterns(tmp_path, [pattern], nested, no_exclusions(tmp_path))
         return {p.relative_to(tmp_path).as_posix() for p in res}
 
     assert found("**/.agents/skills/*/agents/openai.yaml") == {".agents/skills/foo/agents/openai.yaml"}
@@ -216,7 +216,7 @@ def test_recursive_pattern_filter_keeps_only_the_documented_filename_case(tmp_pa
     for rel in ("AGENTS.md", "svc/AGENTS.md", "pkg/agents.md"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text("x")
-    res = ad.glob_file_type_patterns(tmp_path, ["**/AGENTS.md"], {"scope": "nested"}, RunExclusions.none(tmp_path))
+    res = ad.glob_file_type_patterns(tmp_path, ["**/AGENTS.md"], {"scope": "nested"}, no_exclusions(tmp_path))
     assert "pkg/agents.md" not in {p.relative_to(tmp_path).as_posix() for p in res}
 
 
@@ -228,7 +228,7 @@ class _ClaudeType:
 
 
 def _agent(inst: list[Path], rules: list[Path]):
-    from reporails_cli.core.discovery.agents import DetectedAgent
+    from reporails_cli.core.platform.dto.discovery import DetectedAgent
 
     return DetectedAgent(_ClaudeType(), inst, [], rules, [])  # type: ignore[arg-type]
 
@@ -237,13 +237,12 @@ def _agent(inst: list[Path], rules: list[Path]):
 @pytest.mark.subsys_lint
 def test_rule_only_agent_survives_an_exclusion_that_matches_nothing() -> None:
     from reporails_cli.core.discovery.agents import filter_agents_by_exclusions
-    from reporails_cli.core.discovery.exclusions import RunExclusions
 
     root = Path("/proj")
     rule = root / ".claude" / "rules" / "python.md"
     agent = _agent([], [rule])
-    by_dirs = filter_agents_by_exclusions([agent], RunExclusions.parse(root, ["vendor"], ()))
-    by_files = filter_agents_by_exclusions([agent], RunExclusions(root, files=("vendor/**",)))
+    by_dirs = filter_agents_by_exclusions([agent], parse_run_exclusions(root, ["vendor"], ()))
+    by_files = filter_agents_by_exclusions([agent], parse_run_exclusions(root, (), ("vendor/**",)))
     assert [a.rule_files for a in by_dirs] == [[rule]]
     assert [a.rule_files for a in by_files] == [[rule]]
 
@@ -252,14 +251,13 @@ def test_rule_only_agent_survives_an_exclusion_that_matches_nothing() -> None:
 @pytest.mark.subsys_lint
 def test_rule_only_agent_loses_a_rule_file_inside_the_excluded_folder() -> None:
     from reporails_cli.core.discovery.agents import filter_agents_by_exclusions
-    from reporails_cli.core.discovery.exclusions import RunExclusions
 
     root = Path("/proj")
     kept_rule = root / ".claude" / "rules" / "python.md"
     gone_rule = root / "vendor" / ".claude" / "rules" / "x.md"
     agent = _agent([], [kept_rule, gone_rule])
-    by_dirs = filter_agents_by_exclusions([agent], RunExclusions.parse(root, ["vendor"], ()))
-    by_files = filter_agents_by_exclusions([agent], RunExclusions(root, files=("vendor/**",)))
+    by_dirs = filter_agents_by_exclusions([agent], parse_run_exclusions(root, ["vendor"], ()))
+    by_files = filter_agents_by_exclusions([agent], parse_run_exclusions(root, (), ("vendor/**",)))
     assert [a.rule_files for a in by_dirs] == [[kept_rule]]
     assert [a.rule_files for a in by_files] == [[kept_rule]]
 
@@ -268,13 +266,12 @@ def test_rule_only_agent_loses_a_rule_file_inside_the_excluded_folder() -> None:
 @pytest.mark.subsys_lint
 def test_agent_whose_only_instruction_file_is_excluded_keeps_its_surviving_rule_files() -> None:
     from reporails_cli.core.discovery.agents import filter_agents_by_exclusions
-    from reporails_cli.core.discovery.exclusions import RunExclusions
 
     root = Path("/proj")
     rule = root / ".claude" / "rules" / "python.md"
     agent = _agent([root / "vendor" / "CLAUDE.md"], [rule])
-    by_dirs = filter_agents_by_exclusions([agent], RunExclusions.parse(root, ["vendor"], ()))
-    by_files = filter_agents_by_exclusions([agent], RunExclusions(root, files=("vendor/**",)))
+    by_dirs = filter_agents_by_exclusions([agent], parse_run_exclusions(root, ["vendor"], ()))
+    by_files = filter_agents_by_exclusions([agent], parse_run_exclusions(root, (), ("vendor/**",)))
     assert [(a.instruction_files, a.rule_files) for a in by_dirs] == [([], [rule])]
     assert [(a.instruction_files, a.rule_files) for a in by_files] == [([], [rule])]
 
@@ -283,31 +280,28 @@ def test_agent_whose_only_instruction_file_is_excluded_keeps_its_surviving_rule_
 @pytest.mark.subsys_lint
 def test_agent_whose_only_instruction_file_is_excluded_and_has_no_rule_files_is_dropped() -> None:
     from reporails_cli.core.discovery.agents import filter_agents_by_exclusions
-    from reporails_cli.core.discovery.exclusions import RunExclusions
 
     root = Path("/proj")
     agent = _agent([root / "vendor" / "CLAUDE.md"], [])
-    assert filter_agents_by_exclusions([agent], RunExclusions.parse(root, ["vendor"], ())) == []
-    assert filter_agents_by_exclusions([agent], RunExclusions(root, files=("vendor/**",))) == []
+    assert filter_agents_by_exclusions([agent], parse_run_exclusions(root, ["vendor"], ())) == []
+    assert filter_agents_by_exclusions([agent], parse_run_exclusions(root, (), ("vendor/**",))) == []
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_rule_only_agent_whose_every_rule_file_is_excluded_is_dropped() -> None:
     from reporails_cli.core.discovery.agents import filter_agents_by_exclusions
-    from reporails_cli.core.discovery.exclusions import RunExclusions
 
     root = Path("/proj")
     agent = _agent([], [root / "vendor" / ".claude" / "rules" / "x.md"])
-    assert filter_agents_by_exclusions([agent], RunExclusions.parse(root, ["vendor"], ())) == []
-    assert filter_agents_by_exclusions([agent], RunExclusions(root, files=("vendor/**",))) == []
+    assert filter_agents_by_exclusions([agent], parse_run_exclusions(root, ["vendor"], ())) == []
+    assert filter_agents_by_exclusions([agent], parse_run_exclusions(root, (), ("vendor/**",))) == []
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_excluding_the_main_instruction_file_keeps_the_rule_files_through_the_pipeline(tmp_path: Path) -> None:
     from reporails_cli.core.discovery.agents import detect_agents, get_all_instruction_files
-    from reporails_cli.core.discovery.exclusions import RunExclusions
     from reporails_cli.core.pipeline.mapping import resolve_agent_filters
 
     main = tmp_path / "CLAUDE.md"
@@ -317,7 +311,7 @@ def test_excluding_the_main_instruction_file_keeps_the_rule_files_through_the_pi
     rule.write_text("# Python\n\nUse type hints on every function.\n", encoding="utf-8")
 
     _, _, _, filtered = resolve_agent_filters(
-        "claude", detect_agents(tmp_path), tmp_path, RunExclusions(tmp_path, files=("CLAUDE.md",))
+        "claude", detect_agents(tmp_path), tmp_path, parse_run_exclusions(tmp_path, (), ("CLAUDE.md",))
     )
     files = get_all_instruction_files(tmp_path, filtered)
     assert rule in files
@@ -328,7 +322,6 @@ def test_excluding_the_main_instruction_file_keeps_the_rule_files_through_the_pi
 @pytest.mark.subsys_lint
 def test_rule_only_claude_project_keeps_its_rule_file_under_a_no_op_exclusion(tmp_path: Path) -> None:
     from reporails_cli.core.discovery.agents import detect_agents, get_all_instruction_files
-    from reporails_cli.core.discovery.exclusions import RunExclusions
     from reporails_cli.core.pipeline.mapping import resolve_agent_filters
 
     rule = tmp_path / ".claude" / "rules" / "python.md"
@@ -336,7 +329,7 @@ def test_rule_only_claude_project_keeps_its_rule_file_under_a_no_op_exclusion(tm
     rule.write_text("# Python\n\nUse type hints on every function.\n", encoding="utf-8")
 
     def checked(exclude_dirs: list[str] | None) -> list[Path]:
-        exclusions = RunExclusions.parse(tmp_path, exclude_dirs or (), ())
+        exclusions = parse_run_exclusions(tmp_path, exclude_dirs or (), ())
         _, _, _, filtered = resolve_agent_filters("claude", detect_agents(tmp_path), tmp_path, exclusions)
         return get_all_instruction_files(tmp_path, filtered)
 

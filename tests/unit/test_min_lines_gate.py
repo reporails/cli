@@ -6,12 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.lint.regex.compiler import CompiledCheck, compile_rules
+from reporails_cli.core.lint.regex.compiler import compile_rules
 from reporails_cli.core.lint.regex.expect import (
     apply_min_lines_overrides,
     emit_expect_findings,
     file_below_min_lines,
 )
+from reporails_cli.core.platform.dto.lint import CompiledCheck
 
 
 def _write_yml(path: Path, body: str) -> Path:

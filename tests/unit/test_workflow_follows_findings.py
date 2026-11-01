@@ -16,7 +16,7 @@ import pytest
 from reporails_cli.core.lint.suppression import apply_suppressions, apply_surface_mutations
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 from reporails_cli.core.platform.dto.diagnostics import FindingItem, RemediationWorkflow
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, ServerReply
+from reporails_cli.core.platform.dto.platform import CombinedResult, CombinedStats, ServerReply
 
 E4 = "CORE:E:0004"
 D3 = "CORE:D:0003"

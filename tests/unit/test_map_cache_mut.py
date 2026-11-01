@@ -18,11 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.mapper.map_cache import (
-    CACHE_VERSION,
-    CachedFileEntry,
-    MapCache,
-)
+from reporails_cli.core.mapper.map_cache import CACHE_VERSION, MapCache
+from reporails_cli.core.platform.dto.mapping import CachedFileEntry
 from reporails_cli.core.platform.dto.ruleset import EMBEDDING_MODEL, SCHEMA_VERSION
 
 

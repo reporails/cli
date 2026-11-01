@@ -14,7 +14,8 @@ from reporails_cli.core.platform.dto.diagnostics import (
     RemediationWorkflow,
     WorkflowLocation,
 )
-from reporails_cli.core.platform.runtime.merger import CombinedResult, ServerReply, merge_results
+from reporails_cli.core.platform.dto.platform import CombinedResult, ServerReply
+from reporails_cli.core.platform.runtime.merger import merge_results
 
 STYLE = "# Style\n\nKeep diffs small.{a}\n\nUse tabs.{b}\n\nPrefer clarity.{c}\n"
 

@@ -17,12 +17,13 @@ import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from reporails_cli.core.discovery.walk import ListedEntry, Pruner, child_real, list_dir
+from reporails_cli.core.discovery.walk import Pruner, child_real, list_dir
 from reporails_cli.core.platform.config.bootstrap import claude_plugins_dir
 from reporails_cli.core.platform.config.claude_settings import enabled_plugins
 from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
 from reporails_cli.core.platform.contract.glob_pattern import escape_glob
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, pattern_list
+from reporails_cli.core.platform.dto.discovery import ListedEntry
 from reporails_cli.core.platform.utils.utils import config_pattern_matches
 
 PLUGIN_SCOPE = "plugin"

@@ -6,10 +6,8 @@ segment is the folder of the signed-in claude.ai account under `~/.claude/skills
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from reporails_cli.core.discovery.walk import Pruner
 from reporails_cli.core.platform.config.claude_settings import claude_synced_account_folder
 from reporails_cli.core.platform.contract.glob_pattern import escape_glob, literal_segment
 
@@ -46,17 +44,3 @@ def external_anchor(pattern: str) -> tuple[Path, str]:
         anchor /= folder
         used += 1
     return anchor, "/".join(parts[used:])
-
-
-@dataclass(frozen=True)
-class OwnAccountOnly:
-    """A pruner that also skips the synced-skills folder of every account but the signed-in one, so a walk of the
-    user's skills folder never lists another account's files."""
-
-    inner: Pruner
-
-    def prunes(self, path: str, name: str, real: str) -> bool:
-        """True when `inner` prunes the folder, or it is another account's folder under `skills/synced/`."""
-        if self.inner.prunes(path, name, real):
-            return True
-        return Path(path).parts[-2:] == ("skills", "synced") and name != claude_synced_account_folder()

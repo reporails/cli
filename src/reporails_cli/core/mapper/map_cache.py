@@ -27,12 +27,12 @@ import os
 import shutil
 import tempfile
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.imports import expand_imports_with_origins
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, as_str
+from reporails_cli.core.platform.dto.mapping import CachedFileEntry
 from reporails_cli.core.platform.dto.ruleset import (
     EMBEDDING_MODEL,
     SCHEMA_VERSION,
@@ -94,15 +94,6 @@ _ATOM_FIELD_NAMES = frozenset(Atom.model_fields)
 CACHE_VERSION = 41
 _MAX_CACHE_ENTRIES = 5000  # global cache serves all projects
 _STALE_IDENTITY_DAYS = 30  # a sibling configuration's folder unused this long is removed
-
-
-@dataclass
-class CachedFileEntry:
-    """Cached tokenization + embedding result for a single file."""
-
-    atoms: list[JsonObject] = field(default_factory=list)
-    last_used: str = ""  # ISO timestamp for LRU eviction
-    description_embedding: list[int] | None = None  # int8 embedding of the frontmatter description
 
 
 def _identity_digest(version: int, model: str, schema: str, segmentation: str, charge: str) -> str:

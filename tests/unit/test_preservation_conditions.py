@@ -7,15 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from reporails_cli.core.heal.preservation import Snapshot, compare, take_snapshot
-from reporails_cli.core.heal.preservation.conditions import (
-    Pair,
-    added_conditions,
-    dropped_conditions,
-    hedge_made_absolute,
-)
-from reporails_cli.core.heal.preservation.snapshot import SnapshotAtom
+from reporails_cli.core.heal.preservation import compare, take_snapshot
+from reporails_cli.core.heal.preservation.conditions import added_conditions, dropped_conditions, hedge_made_absolute
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
+from reporails_cli.core.platform.dto.heal import Pair, Snapshot, SnapshotAtom
 from tests.unit.test_preservation import _atom
 
 

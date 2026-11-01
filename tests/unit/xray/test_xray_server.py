@@ -17,13 +17,12 @@ import pytest
 from starlette.testclient import TestClient
 
 from reporails_cli.core.discovery.agent_discovery import claude_project_dir
-from reporails_cli.core.heal.apply import HealOutcome
-from reporails_cli.core.heal.keyed import KeyedResult
-from reporails_cli.core.pipeline.check_one import Refusal
 from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.adapters.rules_query import rule_category, rule_title
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
+from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult
+from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.formatters.text.rule_meta import rule_docs_url
 from reporails_cli.interfaces.cli import xray_server
 from tests.unit.test_mcp_heal_apply import DOC, _wire

@@ -84,7 +84,7 @@ size and a command's hash, and a command's text on request. The meta `descriptio
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, replace
+from dataclasses import replace
 
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.platform.contract.json_value import (
@@ -100,8 +100,8 @@ from reporails_cli.core.platform.dto.events import (
     TARGETS_FILE,
     EventKind,
     EventRecord,
+    HarnessAttachment,
     HarnessEntry,
-    HarnessKind,
     InstructionLoad,
     PromptEntry,
     ReplyText,
@@ -216,20 +216,6 @@ def _meta_field[Field: (str, int, bool)](meta: JsonObject, key: str, kind: type[
     return value
 
 
-@dataclass(frozen=True)
-class _Harness:
-    """Where one harness attachment keeps its item count and its text: the key, and whether it holds a whole
-    number or text rather than a list of strings."""
-
-    kind: HarnessKind
-    label: str
-    count_key: str
-    count_is_number: bool
-    chars_key: str
-    chars_is_text: bool
-    removed_key: str | None = None
-
-
 def _sized_by_name(
     names: list[str], items: list[str], readded: tuple[str, ...], what: str
 ) -> tuple[tuple[str, int], ...]:
@@ -247,11 +233,15 @@ def _sized_by_name(
     return tuple((name, len(item)) for name, item in zip(names, items, strict=True))
 
 
-_HARNESS: dict[str, _Harness] = {
-    "prompt_snapshot": _Harness("system_prompt", "system prompt", "systemPrompt", False, "systemPrompt", False),
-    "skill_listing": _Harness("skill_list", "skills", "skillCount", True, "content", True),
-    "agent_listing_delta": _Harness("agent_list", "agents", "addedTypes", False, "addedLines", False, "removedTypes"),
-    "mcp_instructions_delta": _Harness(
+_HARNESS: dict[str, HarnessAttachment] = {
+    "prompt_snapshot": HarnessAttachment(
+        "system_prompt", "system prompt", "systemPrompt", False, "systemPrompt", False
+    ),
+    "skill_listing": HarnessAttachment("skill_list", "skills", "skillCount", True, "content", True),
+    "agent_listing_delta": HarnessAttachment(
+        "agent_list", "agents", "addedTypes", False, "addedLines", False, "removedTypes"
+    ),
+    "mcp_instructions_delta": HarnessAttachment(
         "mcp_instructions", "MCP server instructions", "addedNames", False, "addedBlocks", False, "removedNames"
     ),
 }

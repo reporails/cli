@@ -34,7 +34,7 @@
 - Tests: the unit tests for the per-source finding counts are removed; the total-equals-sum property covers them.
 - CI runs the behavioral scenarios on every pull request, not only in the release gate.
 - Tests: a skipped api-backed scenario leaves no temp directory behind, and the mutation probe's `--timeout` applies to a pytest target too.
-- Internal restructuring of the package boundaries; command output is unchanged.
+- Internal restructuring of the package boundaries: every data record lives in one layer; command output is unchanged.
 - `AILS_STAGE_TIMING=1` also prints the time of heal and of each MCP tool call.
 - The torch import blocker is removed; nothing the cli installs imports torch.
 - Tests: architecture checks guard the package boundaries, replacing two narrower checks they cover, and `poe hexagon` renders the package dependency view.

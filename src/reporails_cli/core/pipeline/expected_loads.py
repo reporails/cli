@@ -12,14 +12,14 @@ from reporails_cli.core.discovery.agent_discovery import (
     discover_ungated,
     is_memory_recall_entry,
 )
-from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
+from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions
 from reporails_cli.core.discovery.external_patterns import resolve_external_pattern
 from reporails_cli.core.discovery.plugin_roots import entry_pattern, installed_plugin_roots
 from reporails_cli.core.discovery.project_root import resolve_project_root
-from reporails_cli.core.discovery.read_gates import AliasFile, SkippedFile, claude_agents_md_reads, gated_file_types
+from reporails_cli.core.discovery.read_gates import claude_agents_md_reads, gated_file_types
 from reporails_cli.core.discovery.walk import safe_resolve, shared_dir_listings
 from reporails_cli.core.eventbus.store import prune
-from reporails_cli.core.mapper.inspect import SESSION_INVOCABLE_TYPES, FileRead, file_read_by, load_registry
+from reporails_cli.core.mapper.inspect import SESSION_INVOCABLE_TYPES, file_read_by, load_registry
 from reporails_cli.core.mapper.labels import file_label
 from reporails_cli.core.mapper.memory_index import is_linked, memory_type
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
@@ -31,6 +31,8 @@ from reporails_cli.core.platform.config.claude_settings import (
 )
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object
+from reporails_cli.core.platform.dto.discovery import AliasFile, RunExclusions, SkippedFile
+from reporails_cli.core.platform.dto.mapping import FileRead
 from reporails_cli.core.platform.dto.results import ProjectConfig
 from reporails_cli.core.platform.utils.hook_config import hook_sites, read_hook_config
 from reporails_cli.core.platform.utils.utils import strip_frontmatter
@@ -64,7 +66,7 @@ def expected_loads(target: Path, plugins: Sequence[tuple[str, Path]] | None = No
             exclusions, project_config, root, registry, installed_plugin_roots(root) if plugins is None else plugins
         )
     skipped = [SkippedFile(path, "setting_off", None) for path in switched_off]
-    reads = claude_agents_md_reads([p for p in candidates if not exclusions.leaves_out(p)], root, read_instructions)
+    reads = claude_agents_md_reads([p for p in candidates if not leaves_out(exclusions, p)], root, read_instructions)
     skipped.extend(reads.skipped)
     skipped_out: list[JsonValue] = [
         {
@@ -107,7 +109,7 @@ def _loaded_files(
     files: list[JsonValue] = []
     read_instructions: dict[Path, str] = {}
     switched_off: dict[Path, str] = {}
-    for path in sorted(p for p in instruction | rules if not exclusions.leaves_out(p)):
+    for path in sorted(p for p in instruction | rules if not leaves_out(exclusions, p)):
         read = file_read_by(AGENT, path, root, registry)
         if read is None or _is_blank(path):
             continue
@@ -175,7 +177,7 @@ def _invocable_files(
             installed_plugins=roots,
         )
         for path in paths:
-            if path in found or exclusions.leaves_out(path):
+            if path in found or leaves_out(exclusions, path):
                 continue
             if file_type == "skills" and entry_pattern(path, root, entries, roots) is None:
                 continue

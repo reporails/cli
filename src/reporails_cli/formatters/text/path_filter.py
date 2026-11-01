@@ -13,10 +13,9 @@ from pathlib import Path
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.platform.contract.json_value import as_int
 from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, QualityResult
+from reporails_cli.core.platform.dto.platform import CombinedResult, CombinedStats
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime.merger import (
-    CombinedResult,
-    CombinedStats,
     count_cross_file_overlaps,
     count_cross_file_repetitions,
     normalize_finding_path,

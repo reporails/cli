@@ -14,7 +14,6 @@ from functools import partial
 from itertools import pairwise
 
 from reporails_cli.core.heal.mechanical_fixers import (
-    MechanicalFix,
     fix_bold_on_constraints,
     fix_italic_constraints,
     fix_unformatted_code,
@@ -28,6 +27,7 @@ from reporails_cli.core.mapper.md_parser import code_spans, emphasis_runs, link_
 from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark
 from reporails_cli.core.mapper.structure import in_any_span, paragraph_lines, read_structure
 from reporails_cli.core.mapper.word_spans import words_between
+from reporails_cli.core.platform.dto.heal import MechanicalFix
 from reporails_cli.core.platform.dto.heal_plan import Edit, HealOp, PlanOp
 from reporails_cli.core.platform.dto.ruleset import LIST_ITEM_FORMATS, PROSE_OR_LIST_FORMATS, Atom
 

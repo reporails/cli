@@ -12,7 +12,7 @@ import os
 import re
 from collections.abc import Hashable
 from pathlib import Path
-from typing import ClassVar, NamedTuple
+from typing import ClassVar
 
 import yaml
 from yaml.constructor import SafeConstructor
@@ -20,6 +20,7 @@ from yaml.resolver import Resolver
 
 from reporails_cli.core.platform.contract.glob_pattern import glob_matches
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
+from reporails_cli.core.platform.dto.frontmatter import Frontmatter, FrontmatterBlock, FrontmatterProblem
 
 logger = logging.getLogger(__name__)
 
@@ -158,30 +159,7 @@ _PLAIN_TOKEN = re.compile(r"^(?:~|null|true|false|[-+]?\d+(?:\.\d+)?)$", re.IGNO
 _UNCLOSED = "the frontmatter block is not closed"
 
 
-class FrontmatterBlock(NamedTuple):
-    """Where a file's leading frontmatter block is: its YAML text and the lines it occupies."""
-
-    text: str  # the YAML between the two delimiter lines
-    first_line: int  # 1-based file line of `text`'s first line
-    body_line: int  # 0-based index of the first line after the closing delimiter
-
-
 NOT_A_MAPPING = "the block is not a YAML mapping"
-
-
-class FrontmatterProblem(NamedTuple):
-    """Why a frontmatter block cannot be read: the 1-based file line of the problem and one line of text."""
-
-    line: int
-    message: str
-
-
-class Frontmatter(NamedTuple):
-    """What a file's leading frontmatter block holds: the mapping, or the problem that stops it reading."""
-
-    block: FrontmatterBlock | None  # None when the file has no closed block (an opened one is the problem)
-    data: JsonObject | None  # None when there is no block, it is empty, or it does not read
-    problem: FrontmatterProblem | None
 
 
 def frontmatter_block(content: str) -> FrontmatterBlock | None:

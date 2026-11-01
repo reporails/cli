@@ -13,10 +13,11 @@ from pathlib import Path
 
 from reporails_cli.core.heal.conformance import check_plan
 from reporails_cli.core.heal.file_io import split_lines
-from reporails_cli.core.heal.preservation import Snapshot, take_snapshot
 from reporails_cli.core.heal.preservation import check_rewrite as judge_rewrite
+from reporails_cli.core.heal.preservation import take_snapshot
 from reporails_cli.core.lint.content_queries import atoms_for_file
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object
+from reporails_cli.core.platform.dto.heal import Snapshot
 from reporails_cli.core.platform.dto.heal_plan import Plan
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path

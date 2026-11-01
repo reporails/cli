@@ -14,7 +14,8 @@ from types import SimpleNamespace
 import pytest
 
 from reporails_cli.core.pipeline import check_one
-from reporails_cli.core.platform.runtime.merger import CombinedResult
+from reporails_cli.core.platform.dto.pipeline import Discovered, LeftOut
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.interfaces.mcp import tools, validate_targets
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_server]
@@ -52,9 +53,7 @@ def test_run_pipeline_for_path_scopes_a_single_file_target(monkeypatch, tmp_path
 
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.check_one.discover_files",
-        lambda _target, single_file=None, named=frozenset(): check_one.Discovered(
-            [], "claude", [single_file], {}, check_one.LeftOut()
-        ),
+        lambda _target, single_file=None, named=frozenset(): Discovered([], "claude", [single_file], {}, LeftOut()),
     )
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.is_initialized", lambda: True)
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.model_refusal", lambda: None)
@@ -83,9 +82,7 @@ def test_run_pipeline_for_path_does_not_scope_a_directory_target(monkeypatch, tm
 
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.check_one.discover_files",
-        lambda _target, single_file=None, named=frozenset(): check_one.Discovered(
-            [], "claude", [claude_md], {}, check_one.LeftOut()
-        ),
+        lambda _target, single_file=None, named=frozenset(): Discovered([], "claude", [claude_md], {}, LeftOut()),
     )
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.is_initialized", lambda: True)
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.model_refusal", lambda: None)
@@ -291,7 +288,7 @@ def test_discover_files_folds_generic_scanned_imports(monkeypatch, tmp_path):
 
     result = check_one.discover_files(tmp_path)
 
-    assert isinstance(result, check_one.Discovered), result
+    assert isinstance(result, Discovered), result
     files, file_type_by_path = result.instruction_files, result.file_type_by_path
     assert claude_md in files
     assert arch in files
@@ -320,7 +317,7 @@ def test_discover_files_skips_generic_scan_fold_when_disabled(monkeypatch, tmp_p
 
     result = check_one.discover_files(tmp_path)
 
-    assert isinstance(result, check_one.Discovered), result
+    assert isinstance(result, Discovered), result
     files, file_type_by_path = result.instruction_files, result.file_type_by_path
     assert files == [claude_md]
     assert file_type_by_path == {}

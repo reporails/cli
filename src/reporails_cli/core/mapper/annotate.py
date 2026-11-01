@@ -17,7 +17,8 @@ from functools import lru_cache
 
 from reporails_cli.core.mapper.classify import leading_prohibition
 from reporails_cli.core.mapper.lexicon import load_dotted_exclusions
-from reporails_cli.core.mapper.md_parser import EmphasisRun, code_spans, emphasis_runs, leading_bold_run, replace_spans
+from reporails_cli.core.mapper.md_parser import code_spans, emphasis_runs, leading_bold_run, replace_spans
+from reporails_cli.core.platform.dto.mapping import EmphasisRun
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 KNOWN_CODE_TOKENS: set[str] = {

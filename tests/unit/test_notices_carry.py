@@ -17,12 +17,13 @@ import yaml
 from typer.testing import CliRunner
 
 from reporails_cli.core.pipeline import check_one
-from reporails_cli.core.pipeline.assemble import AssembleInputs, assemble_result
+from reporails_cli.core.pipeline.assemble import assemble_result
 from reporails_cli.core.platform.adapters.api_client import AilsClient
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER
 from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResponse, Notice
+from reporails_cli.core.platform.dto.pipeline import AssembleInputs
+from reporails_cli.core.platform.dto.platform import CombinedResult, ServerReply
 from reporails_cli.core.platform.dto.ruleset import RulesetMap, RulesetSummary
-from reporails_cli.core.platform.runtime.merger import CombinedResult, ServerReply
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.interfaces.cli.main import app
 from reporails_cli.interfaces.mcp import tools

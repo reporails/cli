@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity, FunnelError
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, ServerReply
+from reporails_cli.core.platform.dto.platform import CombinedResult, CombinedStats, ServerReply
 from reporails_cli.formatters import github as github_formatter
 
 

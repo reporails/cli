@@ -15,7 +15,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     FunnelError,
     LintResponse,
 )
-from reporails_cli.core.platform.policy.exclusion import FolderValue
+from reporails_cli.core.platform.dto.exclusion import FolderValue
 from reporails_cli.core.platform.policy.preflight import (
     UNIVERSAL_ATOM_CAP,
     WIRE_MAX_FILES,

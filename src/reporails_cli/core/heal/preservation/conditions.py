@@ -14,9 +14,7 @@ import os
 import re
 from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
-from dataclasses import dataclass
 
-from reporails_cli.core.heal.preservation.snapshot import SnapshotAtom
 from reporails_cli.core.heal.preservation.words import (
     NEGATION_RE,
     WORD_RE,
@@ -48,6 +46,7 @@ from reporails_cli.core.mapper.classify_lexicon import (
 )
 from reporails_cli.core.mapper.prose_split import split_prose_sentences
 from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.heal import Condition, Pair, SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 # Thresholds.
@@ -66,25 +65,6 @@ _PHRASE_END = PHRASE_PREPOSITIONS | CONDITION_CONJUNCTIONS
 
 # Atoms of a file by line number, in file order.
 ByLine = dict[int, list[AtomView]]
-
-
-@dataclass(frozen=True)
-class Pair:
-    """A matched instruction: the original atom and its rewrite, each with the sentence it sits in."""
-
-    old: SnapshotAtom
-    new: Atom
-    old_sentence: str
-    new_sentence: str
-
-    def entry(self) -> JsonObject:
-        """The pair as a report entry: each side's line and sentence."""
-        return {
-            "line": self.old.line,
-            "text": self.old_sentence,
-            "new_line": self.new.line,
-            "new_text": self.new_sentence,
-        }
 
 
 def by_line(atoms: Iterable[AtomView]) -> ByLine:
@@ -384,23 +364,13 @@ _ENDING_REACH = 4  # letters an ending may add to a word and still be that word
 _CONDITION_COVERAGE = 0.5  # share of the words a condition governs that its rewrite must still hold
 
 
-@dataclass(frozen=True)
-class _Condition:
-    """The content words a condition governs; `restriction` when a restricting word that
-    limits where or to what the instruction applies (`only`) opens it rather than a frame marker
-    or an exclusion."""
-
-    words: frozenset[str]
-    restriction: bool
-
-
-def _conditions(atom: AtomView, marked_before: AbstractSet[str] = frozenset()) -> list[_Condition]:
+def _conditions(atom: AtomView, marked_before: AbstractSet[str] = frozenset()) -> list[Condition]:
     """The words each condition of `atom` governs, one per condition: a clause with a frame
     marker (`if`, `unless`, `before`, `only`, ...) holds the content words after the marker, and
     conditions joined by `and` / `or` (`When tests fail and the branch is main`) are one each.
     A marker is a word of the prose (or one the original already had as a prose word, for a rewrite
     that backticks it); the words a condition governs include code tokens."""
-    out: list[_Condition] = []
+    out: list[Condition] = []
     prose = _marker_words(atom, marked_before)
     for clause in _clauses(atom, named=True):
         for i, word in enumerate(clause):
@@ -413,7 +383,7 @@ def _conditions(atom: AtomView, marked_before: AbstractSet[str] = frozenset()) -
                         conjuncts[-1].append(tail_word)
                 restriction = word in SCOPE_RESTRICTORS and word not in EXCLUDING_RESTRICTORS
                 words = (content_words(" ".join(c)) - _CONDITION_WORDS for c in conjuncts)
-                out.extend(_Condition(frozenset(g), restriction) for g in words if g)
+                out.extend(Condition(frozenset(g), restriction) for g in words if g)
                 break
     return out
 
@@ -431,7 +401,7 @@ def _is_word_of(word: str, words: AbstractSet[str]) -> bool:
     return False
 
 
-def _holds(governed: _Condition, rewrite_conditions: list[_Condition], original_conditions: list[_Condition]) -> bool:
+def _holds(governed: Condition, rewrite_conditions: list[Condition], original_conditions: list[Condition]) -> bool:
     """Whether a condition of the rewrite stands for `governed`: it has enough of the words the
     original condition governs and no content word the original condition lacked (`If the build
     passes` is not `If the build fails`). Conditions joined by `and` / `or` share what follows the

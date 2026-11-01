@@ -17,10 +17,11 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from reporails_cli.core.discovery.exclusions import leaves_out
 from reporails_cli.core.discovery.features import detect_features_filesystem
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.lint.memory_checks import validate_memory_files
@@ -45,10 +46,11 @@ from reporails_cli.core.platform.adapters.registry import (
     whole_run_check_ids,
 )
 from reporails_cli.core.platform.adapters.rules_query import load_all_rules, rule_title
+from reporails_cli.core.platform.dto.pipeline import AssembleInputs
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.policy.dependencies import drop_dependent_findings
 from reporails_cli.core.platform.policy.levels import determine_level_from_gates
 from reporails_cli.core.platform.runtime.merger import (
-    CombinedResult,
     collapse_same_secret,
     drop_findings,
     merge_results,
@@ -59,41 +61,11 @@ from reporails_cli.core.platform.runtime.merger import (
 )
 
 if TYPE_CHECKING:
-    from reporails_cli.core.discovery.agents import DetectedAgent
-    from reporails_cli.core.discovery.exclusions import RunExclusions
     from reporails_cli.core.platform.contract.json_value import JsonObject
-    from reporails_cli.core.platform.dto.diagnostics import Diagnostic, FindingItem, LintResult, Notice, RulesetReport
+    from reporails_cli.core.platform.dto.diagnostics import Diagnostic, FindingItem, RulesetReport
+    from reporails_cli.core.platform.dto.discovery import RunExclusions
     from reporails_cli.core.platform.dto.models import LocalEntry, LocalFinding, Rule
     from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
-
-
-@dataclass
-class AssembleInputs:
-    """Everything the surface-agnostic assemble tail needs from either surface.
-
-    ``filter_agents`` is the agent list the level policy reads (the CLI passes its
-    resolved ``filtered`` list; the MCP shell passes its discovered agents until the
-    agent-filter drift surface is closed). ``lint_result`` is the surface's own
-    server-lint result (or ``None`` when offline) -- this core unpacks its
-    ``report``/``hints``/``cross_file_coordinates``/``tier``/``workflow`` itself, so both
-    surfaces stop hand-unpacking the same four projections before calling in, and stop
-    re-attaching ``workflow`` afterward. ``rule_agents`` names the agents whose rules
-    ran (the empty name is the core rule set); left empty, the run is taken to be
-    ``effective_agent`` alone.
-    """
-
-    m_findings: list[LocalFinding]
-    content_findings: list[LocalFinding]
-    client_findings: list[LocalFinding]
-    ruleset_map: RulesetMap | None
-    scan_root: Path
-    filter_agents: list[DetectedAgent] | None
-    effective_agent: str
-    lint_result: LintResult | None
-    rule_agents: tuple[str, ...] = ()
-    notices: tuple[Notice, ...] = ()
-    # `(rule id, file)` pairs whose check did not finish in time; the file is as the check reported it.
-    not_evaluated: tuple[tuple[str, str], ...] = ()
 
 
 def assemble_result(inp: AssembleInputs, exclusions: RunExclusions | None = None) -> CombinedResult:
@@ -180,7 +152,7 @@ def _imports_left_out(inp: AssembleInputs, exclusions: RunExclusions | None) -> 
     if exclusions is None or inp.ruleset_map is None:
         return False
     sources = {_imported_source(atom) for atom in inp.ruleset_map.atoms if atom.imported_from}
-    return any(exclusions.leaves_out(inp.scan_root / source) for source in sources)
+    return any(leaves_out(exclusions, inp.scan_root / source) for source in sources)
 
 
 def _relative_pairs(pairs: tuple[tuple[str, str], ...], scan_root: Path) -> tuple[tuple[str, str], ...]:

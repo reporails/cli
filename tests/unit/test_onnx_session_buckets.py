@@ -10,7 +10,8 @@ import pytest
 
 from reporails_cli.core.mapper import onnx_session
 from reporails_cli.core.mapper.bio_tagger import _BioEncoder
-from reporails_cli.core.mapper.onnx_session import _OnnxEncoderSession, _Tokens
+from reporails_cli.core.mapper.onnx_session import _OnnxEncoderSession
+from reporails_cli.core.platform.dto.mapping import Tokens
 
 
 class _FakeTokenizer:
@@ -116,7 +117,7 @@ def test_plan_buckets_counts_ignore_padding_in_encodings() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_encode_feed_zero_pads_and_masks_to_bucket_width() -> None:
-    bucket = [_Tokens("abc de", [3, 2], [(0, 3), (4, 6)]), _Tokens("f", [1], [(0, 1)])]
+    bucket = [Tokens("abc de", [3, 2], [(0, 3), (4, 6)]), Tokens("f", [1], [(0, 1)])]
     feed = _session().encode_feed(bucket)
     assert feed["input_ids"].dtype == np.int64
     assert feed["input_ids"].tolist() == [[3, 2], [1, 0]]
@@ -127,7 +128,7 @@ def test_encode_feed_zero_pads_and_masks_to_bucket_width() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_encode_feed_adds_zero_token_type_ids_when_graph_needs_them() -> None:
-    bucket = [_Tokens("ab c", [2, 1], [(0, 2), (3, 4)]), _Tokens("d", [1], [(0, 1)])]
+    bucket = [Tokens("ab c", [2, 1], [(0, 2), (3, 4)]), Tokens("d", [1], [(0, 1)])]
     feed = _session(needs_type_ids=True).encode_feed(bucket)
     assert feed["token_type_ids"].shape == feed["input_ids"].shape
     assert not feed["token_type_ids"].any()

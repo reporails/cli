@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.classify.link_walker import LinkEdge, walk_markdown_links
+from reporails_cli.core.classify.link_walker import walk_markdown_links
+from reporails_cli.core.platform.dto.classify import LinkEdge
 
 
 def _edges_to(edges: list[LinkEdge], target: Path) -> list[LinkEdge]:

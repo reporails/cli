@@ -11,6 +11,7 @@ import pytest
 from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.pipeline.mapping import discover_scope
+from reporails_cli.core.platform.dto.pipeline import Discovered, Refusal
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
 from reporails_cli.interfaces.mcp import tools
@@ -94,7 +95,7 @@ def test_mcp_discovery_reads_each_directory_once(tmp_path: Path, walker_scans: l
     project = _project(tmp_path)
     clear_agent_cache()
     discovered = check_one.discover_files(project)
-    assert isinstance(discovered, check_one.Discovered)
+    assert isinstance(discovered, Discovered)
     assert {p.name for p in discovered.instruction_files} >= {"CLAUDE.md", "SKILL.md"}
     assert walker_scans
     assert len(walker_scans) == len(set(walker_scans))
@@ -120,7 +121,7 @@ def test_a_single_file_pass_records_no_exclusions(tmp_path: Path) -> None:
     clear_agent_cache()
     assert discover_scope(project, "", ["docs"], ["a.md"], scan_files=False).excluded == ((), ())
     found = check_one.discover_files(project, single_file=project / "CLAUDE.md")
-    assert isinstance(found, check_one.Discovered)
+    assert isinstance(found, Discovered)
     assert found.left_out.record == ((), ())
 
 
@@ -134,7 +135,7 @@ def test_mcp_discovery_that_excludes_everything_still_names_the_exclusions(tmp_p
     )
     clear_agent_cache()
     refusal = check_one.discover_files(project)
-    assert isinstance(refusal, check_one.Refusal)
+    assert isinstance(refusal, Refusal)
     assert refusal.kind == "empty_project"
     payload = tools.refusal_payload(refusal)
     assert payload["excluded"] == {

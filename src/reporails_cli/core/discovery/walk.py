@@ -20,9 +20,10 @@ import logging
 import os
 from collections.abc import Callable, Iterator
 from pathlib import Path, PurePosixPath
-from typing import NamedTuple, Protocol
+from typing import Protocol
 
 from reporails_cli.core.platform.contract.glob_pattern import GLOB_CHARS, brace_alternatives, glob_matches
+from reporails_cli.core.platform.dto.discovery import ListedEntry
 
 logger = logging.getLogger(__name__)
 
@@ -80,17 +81,6 @@ class Pruner(Protocol):  # pylint: disable=too-few-public-methods  # a protocol 
 
     def prunes(self, path: str, name: str, real: str) -> bool:
         """True when the listed folder `path` named `name` (canonical path `real`) is skipped."""
-
-
-class ListedEntry(NamedTuple):
-    """One directory entry, resolved once: name, path, whether it resolves to a regular file
-    or to a directory (symlinks followed), and whether it is itself a symlink."""
-
-    name: str
-    path: str
-    is_file: bool
-    is_dir: bool
-    is_symlink: bool
 
 
 # While set, `list_dir` reads each directory once and replays it for every later walk.

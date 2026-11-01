@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
+from reporails_cli.core.discovery.exclusions import leaves_out
 from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.pipeline.mapping import discover_scope
 
@@ -30,7 +31,7 @@ def test_mcp_single_file_in_left_out_folder_is_named(tmp_path: Path) -> None:
     exclusions = check_one.discover_files(project, single_file=skill).left_out.exclusions
     assert exclusions is not None
     assert skill in exclusions.named
-    assert not exclusions.leaves_out(skill)
+    assert not leaves_out(exclusions, skill)
 
 
 @pytest.mark.unit
@@ -41,7 +42,7 @@ def test_single_file_pass_names_the_file_and_lists_nothing(tmp_path: Path) -> No
     found = discover_scope(project, "claude", None, None, scan_files=False, named=frozenset({skill}))
     assert found.exclusions is not None
     assert skill in found.exclusions.named
-    assert not found.exclusions.leaves_out(skill)
+    assert not leaves_out(found.exclusions, skill)
     assert found.files == []
     assert found.excluded == ((), ())
 
@@ -55,4 +56,4 @@ def test_mcp_single_file_run_names_only_the_file(tmp_path: Path) -> None:
     exclusions = check_one.discover_files(project, single_file=single, named=frozenset({skill})).left_out.exclusions
     assert exclusions is not None
     assert exclusions.named == frozenset({single.resolve()})
-    assert exclusions.leaves_out(skill)
+    assert leaves_out(exclusions, skill)

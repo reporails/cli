@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
-from reporails_cli.core.pipeline.check_one import Refusal, discover_files
+from reporails_cli.core.pipeline.check_one import discover_files
 from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.config.bootstrap import (
     get_global_config_path,
@@ -18,6 +18,7 @@ from reporails_cli.core.platform.config.config import get_global_config
 from reporails_cli.core.platform.config.credentials import credentials_path
 from reporails_cli.core.platform.config.endpoints import server_url
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
+from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
 

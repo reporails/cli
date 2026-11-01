@@ -19,7 +19,8 @@ from reporails_cli.core.platform.dto.diagnostics import (
     RETRYABLE_ERRORS,
     FunnelError,
 )
-from reporails_cli.core.platform.policy.exclusion import FolderValue, parse_folder_value
+from reporails_cli.core.platform.dto.exclusion import FolderValue
+from reporails_cli.core.platform.policy.exclusion import parse_folder_value
 
 logger = logging.getLogger(__name__)
 

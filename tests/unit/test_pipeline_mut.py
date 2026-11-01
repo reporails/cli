@@ -383,7 +383,8 @@ def _record(path, description="Does one thing well.", embedding=None):
 
 
 def _seed_entry(cache, path):
-    from reporails_cli.core.mapper.map_cache import CachedFileEntry, cache_key_for_path
+    from reporails_cli.core.mapper.map_cache import cache_key_for_path
+    from reporails_cli.core.platform.dto.mapping import CachedFileEntry
 
     key = cache_key_for_path(path)
     cache.put(key, CachedFileEntry([{"text": "x"}]))

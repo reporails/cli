@@ -4,40 +4,34 @@ carries."""
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 
 from reporails_cli.core.platform.dto.events import EventRecord
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary, Availability, Graph, SourceEntry, XraySource
+from reporails_cli.core.platform.dto.xray_build import (
+    BuildContext,
+    Frame,
+    NodeLayout,
+    ProducedNode,
+    ProducerContext,
+    SourceTable,
+)
 from reporails_cli.core.platform.dto.xray_graph import (
     LoadEvent,
     SourceKind,
-    XrayEdge,
     XrayLoad,
     XrayNode,
     XrayStation,
     XrayTrack,
     XrayTree,
 )
-from reporails_cli.core.xray.derive import Frame
 from reporails_cli.core.xray.graph import spine
-from reporails_cli.core.xray.graph.port import PRODUCERS, ProducedNode, ProducerContext
-from reporails_cli.core.xray.graph.sources import SourceTable
+from reporails_cli.core.xray.graph.port import PRODUCERS
 
 # A load smaller than this many tokens is small.
 SMALL_TOKENS = 1000
 
 
-@dataclass(frozen=True)
-class _Layout:
-    """Where each node hangs: its parent, depth, children by id in node order and number of descendants."""
-
-    parents: dict[str, str | None]
-    depth: dict[str, int]
-    children: dict[str, list[str]]
-    descendants: dict[str, int]
-
-
-def _layout(nodes: Sequence[ProducedNode]) -> _Layout:
+def _layout(nodes: Sequence[ProducedNode]) -> NodeLayout:
     """The layout of `nodes`; a parent that names no node leaves the node a root. Raises `ValueError` when the
     parents form a loop."""
     known = {item.id for item in nodes}
@@ -56,21 +50,7 @@ def _layout(nodes: Sequence[ProducedNode]) -> _Layout:
         depth[node_id] = len(chain) - 1
         for ancestor in chain[1:]:
             descendants[ancestor] += 1
-    return _Layout(parents, depth, children, descendants)
-
-
-@dataclass(frozen=True)
-class _Build:
-    """What each node is built against: the produced nodes, the launching edge of each child, the sources every
-    node had, the node kinds that carry a spine, the layout, the sources and the vocabulary."""
-
-    by_id: dict[str, ProducedNode]
-    launch: dict[str, XrayEdge]
-    had: dict[str, list[str]]
-    has_spine: set[str]
-    layout: _Layout
-    sources: SourceTable
-    vocabulary: AdapterVocabulary
+    return NodeLayout(parents, depth, children, descendants)
 
 
 def _station(node: ProducedNode, sources: SourceTable, vocabulary: AdapterVocabulary) -> XrayStation:
@@ -99,7 +79,7 @@ def _availability(entry: SourceEntry, had_by: Sequence[str]) -> Availability:
     return "listed" if entry.advertised else "on_disk"
 
 
-def _xray_node(node: ProducedNode, build: _Build) -> XrayNode:
+def _xray_node(node: ProducedNode, build: BuildContext) -> XrayNode:
     """The node with its place, its slots, its call counts and what its parent withheld from it."""
     edge = build.launch.get(node.id)
     parent = build.by_id.get(edge.parent) if edge is not None else None
@@ -138,7 +118,7 @@ def build_graph(
     produced = [producer.produce(records, frame, context) for producer in PRODUCERS]
     pnodes = [node for item in produced for node in item.nodes]
     edges = tuple(edge for item in produced for edge in item.edges)
-    build = _Build(
+    build = BuildContext(
         by_id={node.id: node for node in pnodes},
         launch={edge.child: edge for edge in edges},
         had={node.id: spine.had_sources(node) for node in pnodes},

@@ -10,6 +10,7 @@ import pytest
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.pipeline import check_one
+from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.interfaces.mcp import server, tools
 from reporails_cli.interfaces.mcp.prepare import prepare_for_path
@@ -57,7 +58,7 @@ def test_prepare_builds_no_api_client_and_leaves_the_validate_state_alone(projec
 
 def test_prepare_passes_model_downloading_through_without_mapping(project, monkeypatch):
     reply = {"error": "model_downloading", "message": tools._MODEL_DOWNLOADING}
-    monkeypatch.setattr(check_one, "model_refusal", lambda: check_one.Refusal("model_downloading", "downloading"))
+    monkeypatch.setattr(check_one, "model_refusal", lambda: Refusal("model_downloading", "downloading"))
 
     def refuse(*_a, **_k):
         raise AssertionError("no map while the model downloads")

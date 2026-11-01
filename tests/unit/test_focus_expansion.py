@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.classify.focus_expansion import UnresolvedSkill, expand_focus
+from reporails_cli.core.classify.focus_expansion import expand_focus
+from reporails_cli.core.platform.dto.classify import UnresolvedSkill
 
 
 def _make_agent_file(root: Path, name: str, skills: list[str] | None = None) -> Path:

@@ -20,7 +20,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     RemediationWorkflow,
     WorkflowLocation,
 )
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, ServerReply
+from reporails_cli.core.platform.dto.platform import CombinedResult, CombinedStats, ServerReply
 from reporails_cli.formatters.json import format_combined_result
 
 

@@ -8,6 +8,7 @@ import pytest
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.pipeline import check_one
+from reporails_cli.core.platform.dto.pipeline import Discovered
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
 
@@ -89,7 +90,7 @@ def test_whole_project_run_with_a_named_file_keeps_the_left_out_folder_in_the_re
     clear_agent_cache()
     named = frozenset({project / "packages" / "x" / "CLAUDE.md"})
     discovered = check_one.discover_files(project, named=named)
-    assert isinstance(discovered, check_one.Discovered)
+    assert isinstance(discovered, Discovered)
     files = {f.relative_to(project).as_posix() for f in discovered.instruction_files}
     assert "packages/x/CLAUDE.md" in files
     assert "packages/y/CLAUDE.md" not in files

@@ -347,3 +347,17 @@ class EventRecord:
             subagent_type=opt_str(obj.get("subagent_type")),
             item=InstructionLoad(path, opt_str(obj.get("memory_type"))) if is_load and path else None,
         )
+
+
+@dataclass(frozen=True)
+class HarnessAttachment:
+    """Where one harness attachment keeps its item count and its text: the key, and whether it holds a whole
+    number or text rather than a list of strings."""
+
+    kind: HarnessKind
+    label: str
+    count_key: str
+    count_is_number: bool
+    chars_key: str
+    chars_is_text: bool
+    removed_key: str | None = None

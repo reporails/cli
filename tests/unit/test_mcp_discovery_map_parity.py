@@ -99,7 +99,7 @@ def test_prepare_and_validate_map_the_same_files_for_a_named_left_out_file(monke
     import asyncio
 
     from reporails_cli.core.discovery.agents import clear_agent_cache
-    from reporails_cli.core.platform.runtime.merger import CombinedResult
+    from reporails_cli.core.platform.dto.platform import CombinedResult
     from reporails_cli.interfaces.mcp import server
     from reporails_cli.interfaces.mcp.prepare import prepare_for_path
 

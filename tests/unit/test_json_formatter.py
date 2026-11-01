@@ -15,8 +15,8 @@ from reporails_cli.core.platform.dto.diagnostics import (
     QualityResult,
 )
 from reporails_cli.core.platform.dto.models import Level
+from reporails_cli.core.platform.dto.platform import CombinedResult, CombinedStats, Omissions, ServerReply
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, Omissions, ServerReply
 from reporails_cli.formatters.json import format_combined_result
 
 

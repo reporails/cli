@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import parse_run_exclusions
 from reporails_cli.core.lint.mechanical.checks import (
     _safe_float,
     byte_size,
@@ -417,11 +418,9 @@ class TestSkillEntrypointPresent:
     def test_a_skill_folder_the_run_leaves_out_is_not_listed_as_missing_its_entry(
         self, tmp_path: Path, left_out: list[str], listed: bool
     ) -> None:
-        from reporails_cli.core.discovery.exclusions import RunExclusions
-
         self._make_skill(tmp_path, "alpha")
         (tmp_path / ".claude" / "skills" / "nofile").mkdir()
-        args = {"_exclusions": RunExclusions.parse(tmp_path, left_out, ())}
+        args = {"_exclusions": parse_run_exclusions(tmp_path, left_out, ())}
         result = skill_entrypoint_present(tmp_path, args, self._classified_alpha(tmp_path))
         assert result.passed is not listed
         assert ("nofile" in result.message) is listed

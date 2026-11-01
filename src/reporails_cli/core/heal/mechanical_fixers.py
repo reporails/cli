@@ -13,27 +13,18 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
-from typing import NamedTuple
 
 from reporails_cli.core.lint.client_checks import unformatted_token_is_reportable, wrap_site
 from reporails_cli.core.mapper.annotate import backticked_words
 from reporails_cli.core.mapper.markers import strip_markdown_inline
-from reporails_cli.core.mapper.md_parser import EmphasisRun, emphasis_runs, has_bold_label, replace_spans
+from reporails_cli.core.mapper.md_parser import emphasis_runs, has_bold_label, replace_spans
 from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark, sentence_spans
-from reporails_cli.core.mapper.structure import LineSpans, in_any_span, line_spans, paragraph_lines
+from reporails_cli.core.mapper.structure import in_any_span, line_spans, paragraph_lines
+from reporails_cli.core.platform.dto.heal import Located, MechanicalFix, Prose
+from reporails_cli.core.platform.dto.mapping import EmphasisRun, LineSpans
 from reporails_cli.core.platform.dto.ruleset import LIST_ITEM_FORMATS, Atom
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class MechanicalFix:
-    """Outcome of a mechanical fix applied to raw file content."""
-
-    line: int
-    before: str
-    after: str
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -182,30 +173,18 @@ def _takes_italic(flat: str, start: int, end: int) -> bool:
 _NORMALISE_DROP = frozenset("`*_")
 
 
-@dataclass(frozen=True)
-class _Prose:
-    """A file's lines with the places the markdown parse reads as plain paragraphs and as code."""
-
-    lines: list[str]
-    paragraphs: list[tuple[int, int]]
-    spans: list[LineSpans]
-
-    @classmethod
-    def read(cls, lines: list[str]) -> _Prose:
-        """The prose map of `lines`: its plain paragraphs and code spans as the markdown parse reads them."""
-        content = "".join(lines)
-        return cls(lines, paragraph_lines(content), line_spans(content))
-
-    def bounds(self, idx: int) -> tuple[int, int] | None:
-        """First and last line of the plain paragraph holding line `idx`, or None when it is not one."""
-        return next(((lo, hi) for lo, hi in self.paragraphs if lo <= idx <= hi), None)
-
-    def is_code(self, line: int, col: int) -> bool:
-        """Whether the character at `line`, `col` sits in a code span."""
-        return in_any_span(col, _spans_at(self.spans, line).code)
+def read_prose(lines: list[str]) -> Prose:
+    """The prose map of `lines`: its plain paragraphs and code spans as the markdown parse reads them."""
+    content = "".join(lines)
+    return Prose(lines, paragraph_lines(content), line_spans(content))
 
 
-def _flatten(prose: _Prose, lo: int, hi: int) -> tuple[str, list[tuple[int, int]]] | None:
+def _is_code(prose: Prose, line: int, col: int) -> bool:
+    """Whether the character at `line`, `col` sits in a code span."""
+    return in_any_span(col, _spans_at(prose.spans, line).code)
+
+
+def _flatten(prose: Prose, lo: int, hi: int) -> tuple[str, list[tuple[int, int]]] | None:
     """Join paragraph lines (one space between them) and map each character to (line, column); the
     text of a line starts where the parse puts it, after a blockquote's `>` markers. None when the
     parse has no text start for a line."""
@@ -271,17 +250,7 @@ def _sentence_spans(flat: str, in_code: list[bool]) -> list[tuple[int, int]]:
 _Span = tuple[tuple[int, int], tuple[int, int]]
 
 
-class _Located(NamedTuple):
-    """A paragraph flattened to one string, the (line, column) of each character and the
-    [start, end) of the atom's sentence in it."""
-
-    flat: str
-    where: list[tuple[int, int]]
-    start: int
-    end: int
-
-
-def _locate_sentence(atom: Atom, prose: _Prose) -> _Located | None:
+def _locate_sentence(atom: Atom, prose: Prose) -> Located | None:
     """The paragraph text, its (line, column) map and the [start, end) of the atom's sentence in it."""
     bounds = prose.bounds(atom.line - 1)
     if bounds is None:
@@ -293,7 +262,7 @@ def _locate_sentence(atom: Atom, prose: _Prose) -> _Located | None:
     on_line = [i for i, (n, _) in enumerate(where) if n == atom.line - 1]
     if not on_line:
         return None
-    in_code = [prose.is_code(n, col) for n, col in where]
+    in_code = [_is_code(prose, n, col) for n, col in where]
     found = _find_atom_text(flat, atom.text, (on_line[0], on_line[-1] + 1))
     sentences = _sentence_spans(flat, in_code)
     if found is None:
@@ -301,10 +270,10 @@ def _locate_sentence(atom: Atom, prose: _Prose) -> _Located | None:
     holding = [sp for sp in sentences if sp[0] <= found[0] and found[1] <= sp[1]]
     if len(holding) != 1:
         return None
-    return _Located(flat, where, holding[0][0], holding[0][1])
+    return Located(flat, where, holding[0][0], holding[0][1])
 
 
-def _constraint_sentence(atom: Atom, prose: _Prose) -> _Span | None:
+def _constraint_sentence(atom: Atom, prose: Prose) -> _Span | None:
     """Start and end (line, column) of the sentence holding a constraint, or None when unsure.
 
     The end is exclusive. None when the paragraph, the atom's text or a sentence boundary
@@ -360,7 +329,7 @@ def fix_italic_constraints(atoms: list[Atom], lines: list[str]) -> list[Mechanic
     and any sentence whose start and end cannot be located with certainty in the raw text.
     """
     found: set[_Span] = set()
-    prose = _Prose.read(lines)
+    prose = read_prose(lines)
     for atom in atoms:
         if atom.charge_value != -1:
             continue

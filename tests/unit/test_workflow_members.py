@@ -15,7 +15,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     RemediationWorkflow,
     walk_findings,
 )
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, ServerReply
+from reporails_cli.core.platform.dto.platform import CombinedResult, CombinedStats, ServerReply
 from reporails_cli.formatters.json import format_combined_result
 from reporails_cli.interfaces.mcp import remedy_brief
 

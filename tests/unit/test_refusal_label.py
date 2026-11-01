@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.platform.dto.diagnostics import FindingItem, FunnelError
-from reporails_cli.core.platform.runtime.merger import CombinedResult, ServerReply
+from reporails_cli.core.platform.dto.platform import CombinedResult, ServerReply
 from reporails_cli.formatters.text import display
 
 

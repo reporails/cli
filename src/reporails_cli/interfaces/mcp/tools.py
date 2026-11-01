@@ -8,12 +8,13 @@ health and, on the paid plan, the remediation workflow). `preflight` and `explai
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import get_known_agents
-from reporails_cli.core.pipeline.check_one import CheckRun, Refusal, check_path, model_refusal, rules_missing_message
+from reporails_cli.core.pipeline.check_one import check_path, model_refusal, rules_missing_message
 from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import FunnelError, tiers_unpaid
+from reporails_cli.core.platform.dto.pipeline import CheckRun, Refusal
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.formatters.host_hooks import host_hooks_field

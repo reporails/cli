@@ -18,21 +18,13 @@ import logging
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
 
 from reporails_cli.core.platform.config.bootstrap import env_flag
 from reporails_cli.core.platform.contract.json_value import JsonValue
 from reporails_cli.core.platform.dto.events import EventRecord
+from reporails_cli.core.platform.dto.timing import StageRecord
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class StageRecord:
-    """One timed stage: its label and its duration in milliseconds."""
-
-    stage: str
-    ms: float
 
 
 class Stopwatch:

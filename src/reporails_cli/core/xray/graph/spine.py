@@ -7,6 +7,7 @@ from itertools import pairwise
 
 from reporails_cli.core.platform.dto.events import ToolCategory
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary
+from reporails_cli.core.platform.dto.xray_build import ProducedCall, ProducedNode, SourceTable
 from reporails_cli.core.platform.dto.xray_graph import (
     LoadEvent,
     SourceKind,
@@ -18,8 +19,6 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayWithheld,
     XrayWithheldSource,
 )
-from reporails_cli.core.xray.graph.port import ProducedCall, ProducedNode
-from reporails_cli.core.xray.graph.sources import SourceTable
 
 # MCP calls to one server merge into one cluster while the gap to the one before is at most this share of the
 # node's span.

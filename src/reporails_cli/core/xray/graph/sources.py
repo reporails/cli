@@ -4,14 +4,13 @@ path, run name, server or hook label into a source id."""
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from pathlib import Path
 
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.dto.events import EventRecord, is_note_kind
 from reporails_cli.core.platform.dto.xray import SOURCE_KIND_OF_ARTIFACT, SourceEntry, XrayArtifact
+from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
 from reporails_cli.core.platform.dto.xray_graph import SourceKind
-from reporails_cli.core.xray.derive import Frame, count_for, file_tokens_est, real_path, tokens_of
+from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path, tokens_of
 
 # The memory type an auto-memory file is loaded as.
 AUTO_MEMORY_TYPE = "AutoMem"
@@ -27,22 +26,9 @@ def hook_id(label: str) -> str:
     return f"hook:{label}"
 
 
-@dataclass(frozen=True)
-class SourceTable:
-    """The sources in listing order, with the lookups from a file path or a skill or command name to its id."""
-
-    entries: tuple[SourceEntry, ...]
-    root: Path
-    by_real: Mapping[str, str]
-    by_run: Mapping[str, str]
-
-    def get(self, source_id: str) -> SourceEntry | None:
-        """The source with id `source_id`, or None when the session has none."""
-        return next((entry for entry in self.entries if entry.id == source_id), None)
-
-    def for_path(self, path: str) -> str | None:
-        """The id of the source the file at `path` is, or None when it is no source."""
-        return self.by_real.get(real_path(path, self.root))
+def for_path(table: SourceTable, path: str) -> str | None:
+    """The id of the source the file at `path` is, or None when it is no source."""
+    return table.by_real.get(real_path(path, table.root))
 
 
 def _unlisted_loads(records: Sequence[EventRecord], known: Mapping[str, str], frame: Frame) -> list[SourceEntry]:

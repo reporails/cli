@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem, QualityResult
-from reporails_cli.core.platform.runtime.merger import CombinedResult
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.formatters.text.item_scorecard import compute_item_scores
 from reporails_cli.formatters.text.score import score_color
 from reporails_cli.formatters.text.scorecard import compute_score, compute_surface_scores

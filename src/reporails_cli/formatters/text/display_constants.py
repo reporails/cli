@@ -18,8 +18,9 @@ from reporails_cli.core.lint.suppression import SHORT_TOKEN
 from reporails_cli.core.mapper.labels import skill_name
 from reporails_cli.core.mapper.skills import skill_membership
 from reporails_cli.core.platform.dto.diagnostics import BOLD_CHECK, CLIENT_CHECK_KINDS, FORMAT_CHECK, FindingItem
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
-from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path, overlapping_pairs
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path, overlapping_pairs
 
 # ── Aggregate rule sets ───────────────────────────────────────────────
 

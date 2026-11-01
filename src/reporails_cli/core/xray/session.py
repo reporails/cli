@@ -31,6 +31,7 @@ from reporails_cli.core.platform.dto.xray import (
     XrayView,
     XrayWindow,
 )
+from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
 from reporails_cli.core.xray.artifacts import (
     advertised_files,
     agent_file_tokens,
@@ -40,12 +41,12 @@ from reporails_cli.core.xray.artifacts import (
     peek_text,
     runnable_paths,
 )
-from reporails_cli.core.xray.derive import Frame, epoch, latest_model, replies_of, window_of
+from reporails_cli.core.xray.derive import epoch, latest_model, replies_of, window_of
 from reporails_cli.core.xray.facts import build_facts
 from reporails_cli.core.xray.funnel import build_funnel
 from reporails_cli.core.xray.graph.agents import main_records
 from reporails_cli.core.xray.graph.build import build_graph
-from reporails_cli.core.xray.graph.sources import SourceTable, build_sources, ran_sources
+from reporails_cli.core.xray.graph.sources import build_sources, ran_sources
 from reporails_cli.core.xray.vocabulary import vocabulary_for
 
 _NO_WINDOW = "context window"

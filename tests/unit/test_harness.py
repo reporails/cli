@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.lint.harness_models import LintError
+from reporails_cli.core.platform.dto.lint import LintError
 from reporails_cli.core.platform.dto.models import Check, FileTypeDeclaration
 
 # ── Helpers ──────────────────────────────────────────────────────────

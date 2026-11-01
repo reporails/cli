@@ -13,10 +13,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from reporails_cli.core.classify import classify_files, load_file_types
-from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.heal.apply import apply_keyed_heal
 from reporails_cli.core.heal.fixers import suggest_missing_sections
-from reporails_cli.core.heal.keyed import KeyedResult, put_back_line
+from reporails_cli.core.heal.keyed import put_back_line
 from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes
 from reporails_cli.core.lint.suppression import build_index, is_suppressed
 from reporails_cli.core.mapper.skills import skill_membership
@@ -24,6 +23,8 @@ from reporails_cli.core.platform.adapters.registry import load_rules
 from reporails_cli.core.platform.adapters.rules_query import rule_title
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
+from reporails_cli.core.platform.dto.discovery import RunExclusions
+from reporails_cli.core.platform.dto.heal import KeyedResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile, LocalFinding, Rule, Severity, Violation
 from reporails_cli.formatters.json import format_notices
 

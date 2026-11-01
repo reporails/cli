@@ -7,7 +7,6 @@ from collections.abc import Mapping
 from fnmatch import fnmatch
 from functools import cache, lru_cache
 from pathlib import Path
-from typing import NamedTuple
 
 import yaml
 
@@ -22,7 +21,7 @@ from reporails_cli.core.platform.config.config import (
 )
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
-from reporails_cli.core.platform.dto.models import Check, Execution, FieldProblem, Rule, RuleType, Severity
+from reporails_cli.core.platform.dto.models import Check, Execution, FieldProblem, Rule, RuleRead, RuleType, Severity
 from reporails_cli.core.platform.dto.results import AgentConfig, ProjectConfig
 from reporails_cli.core.platform.policy.applicability import filter_by_capability
 from reporails_cli.core.platform.utils.utils import (
@@ -184,13 +183,6 @@ def read_checks_document(yml_path: Path) -> JsonObject:
     if not isinstance(data, dict):
         raise RuleReadError(yml_path, f"must be a mapping with a `checks` list, not a {type(data).__name__}", {})
     return data
-
-
-class RuleRead(NamedTuple):
-    """A rule built from its files, with the frontmatter mapping it was built from."""
-
-    rule: Rule
-    frontmatter: JsonObject
 
 
 def read_rule(md_path: Path) -> RuleRead | None:

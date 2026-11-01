@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NamedTuple
 
 import regex
 from pydantic import (
@@ -28,7 +28,7 @@ from pydantic import (
 )
 from pydantic_core import PydanticCustomError
 
-from reporails_cli.core.platform.contract.json_value import JsonValue
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.contract.rule_pattern import compile_rule_pattern
 from reporails_cli.core.platform.dto.diagnostics import FindingBase
 
@@ -469,3 +469,10 @@ __all__ = [
     "Severity",
     "Violation",
 ]
+
+
+class RuleRead(NamedTuple):
+    """A rule built from its files, with the frontmatter mapping it was built from."""
+
+    rule: Rule
+    frontmatter: JsonObject

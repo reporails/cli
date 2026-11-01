@@ -8,28 +8,16 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import replace
 
 from reporails_cli.core.mapper.md_parser import wrapping_runs
 from reporails_cli.core.platform.contract.json_value import JsonValue, as_int, as_str, str_list
+from reporails_cli.core.platform.dto.lint import QueryResult
 from reporails_cli.core.platform.dto.ruleset import DESCRIPTION_FORMATS, LIST_OBJECT_ROLE, Atom, RulesetMap
 from reporails_cli.core.platform.policy.negative_headings import is_negative_heading
 
 # A check's `args` mapping, as the rule file wrote it.
 QueryArgs = Mapping[str, JsonValue]
-
-
-@dataclass(frozen=True)
-class QueryResult:
-    """Result of a content query against RulesetMap atoms."""
-
-    found: bool
-    file: str = ""
-    line: int = 0
-    evidence: str = ""
-    # Every match in the file, in line order, for a query that reports each one; the result
-    # itself then stands for the first. Empty for a query that reports one match.
-    matches: tuple[QueryResult, ...] = ()
 
 
 def _every_match(file_path: str, found: list[QueryResult]) -> QueryResult:

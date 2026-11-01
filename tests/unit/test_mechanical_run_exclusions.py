@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
-from reporails_cli.core.discovery.exclusions import RunExclusions
+from reporails_cli.core.discovery.exclusions import no_exclusions, parse_run_exclusions
 from reporails_cli.core.lint.mechanical.checks_absent import file_absent
 from reporails_cli.core.lint.rule_runner import run_m_probes
 from reporails_cli.core.pipeline.mapping import discover_scope
@@ -63,8 +63,8 @@ def test_rule_paths_glob_matches_files_inside_a_left_out_folder(tmp_path: Path) 
 def test_file_absent_ignores_a_forbidden_file_in_a_left_out_folder(tmp_path: Path) -> None:
     (tmp_path / "vendored").mkdir()
     (tmp_path / "vendored" / "BAD.md").write_text("x\n", encoding="utf-8")
-    left_out = RunExclusions.parse(tmp_path, ["vendored"], ())
+    left_out = parse_run_exclusions(tmp_path, ["vendored"], ())
     args = {"pattern": "**/BAD.md", "_exclusions": left_out}
     assert file_absent(tmp_path, args, []).passed
-    kept = RunExclusions.none(tmp_path)
+    kept = no_exclusions(tmp_path)
     assert not file_absent(tmp_path, {"pattern": "**/BAD.md", "_exclusions": kept}, []).passed

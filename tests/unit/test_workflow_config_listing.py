@@ -13,7 +13,7 @@ from reporails_cli.core.lint.suppression import (
 )
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, ServerReply
+from reporails_cli.core.platform.dto.platform import CombinedResult, CombinedStats, ServerReply
 
 CFG = ".claude/settings.local.json"
 RULE_A = "CORE:E:0004"

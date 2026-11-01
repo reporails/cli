@@ -6,11 +6,8 @@ from pathlib import Path, PurePath
 
 import pytest
 
-from reporails_cli.core.platform.policy.exclusion import (
-    FolderValue,
-    folder_value_problem,
-    parse_folder_value,
-)
+from reporails_cli.core.platform.dto.exclusion import FolderValue
+from reporails_cli.core.platform.policy.exclusion import folder_value_problem, parse_folder_value
 
 ROOT = Path("/proj/root")
 ROOTS = [ROOT]

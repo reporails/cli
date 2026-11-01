@@ -28,8 +28,8 @@ from reporails_cli.core.pipeline.mapping import (
     discover_scope,
 )
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
-from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.interfaces.cli.check_notices import (
     _emit_empty_run,
     _emit_heal_scope_refusal,
@@ -66,9 +66,8 @@ from reporails_cli.interfaces.cli.helpers import (
 )
 
 if TYPE_CHECKING:
-    from reporails_cli.core.discovery.agents import DetectedAgent
-    from reporails_cli.core.discovery.exclusions import RunExclusions
     from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResult, Notice, RemediationWorkflow
+    from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
     from reporails_cli.core.platform.dto.models import LocalFinding
     from reporails_cli.core.platform.dto.ruleset import RulesetMap
     from reporails_cli.core.platform.observability.stage_timer import StageTimer

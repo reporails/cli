@@ -17,8 +17,8 @@ from reporails_cli.core.platform.dto.models import Level
 from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
 
 if TYPE_CHECKING:
-    from reporails_cli.core.classify.focus_expansion import UnresolvedSkill
-    from reporails_cli.core.discovery.agents import DetectedAgent
+    from reporails_cli.core.platform.dto.classify import UnresolvedSkill
+    from reporails_cli.core.platform.dto.discovery import DetectedAgent
     from reporails_cli.core.platform.dto.models import Rule
 
 logger = logging.getLogger(__name__)

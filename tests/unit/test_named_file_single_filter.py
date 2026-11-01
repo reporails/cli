@@ -8,9 +8,11 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
+from reporails_cli.core.discovery.exclusions import leaves_out, record_patterns
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.pipeline.mapping import agent_file_pairs, discover_scope
+from reporails_cli.core.platform.dto.pipeline import Discovered
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
 
@@ -103,7 +105,7 @@ def test_mcp_single_file_in_a_left_out_folder_lands_in_rule_files(tmp_path: Path
     project = _project(tmp_path, "exclude_dirs: [rules]\n")
     rule = project / ".claude" / "rules" / "a.md"
     result = check_one.discover_files(project, single_file=rule)
-    assert isinstance(result, check_one.Discovered)
+    assert isinstance(result, Discovered)
     filter_agents, files = result.filter_agents, result.instruction_files
     assert safe_resolve(rule) in _rule_files(filter_agents)
     assert files == [safe_resolve(rule)]
@@ -158,8 +160,8 @@ def test_nothing_discovered_is_left_out(
     found = discover_scope(project, "", flag_dirs, flag_files)
     assert found.exclusions is not None
     assert found.files
-    assert not any(found.exclusions.leaves_out(f) for f in found.files)
-    assert not any(found.exclusions.leaves_out(f) for f in _listed(found))
+    assert not any(leaves_out(found.exclusions, f) for f in found.files)
+    assert not any(leaves_out(found.exclusions, f) for f in _listed(found))
 
 
 @pytest.mark.unit
@@ -179,7 +181,7 @@ def test_record_of_a_run_naming_a_file_is_the_exclusion_sets_own(tmp_path: Path)
     rule = project / ".claude" / "rules" / "a.md"
     state = _state(project, [str(project / "CLAUDE.md"), str(rule)], dirs=["rules", "vendor"])
     assert state.scope.exclusions is not None
-    assert state.render.excluded == state.scope.exclusions.record(narrowed=True)
+    assert state.render.excluded == record_patterns(state.scope.exclusions, narrowed=True)
     assert state.render.excluded == (("vendor",), ())
     single = _state(project, [str(rule)], dirs=["rules"])
     assert single.render.excluded == ((), ())

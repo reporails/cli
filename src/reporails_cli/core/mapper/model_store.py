@@ -9,27 +9,37 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from reporails_cli.core.mapper import model_fetch, model_manifest
 from reporails_cli.core.mapper.graph_hash import graph_content_hash
-
-
-@dataclass
-class _RepairFlight:
-    """One repair attempt in progress; `retry` says whether callers should reload."""
-
-    done: threading.Event = field(default_factory=threading.Event)
-    retry: bool = False
-
 
 # `reload_after_repair` coordination: threads failing on the same damaged file at
 # the same moment share one repair (the first is the leader, the rest wait for it
 # and retry their own load). A file that changes after an attempt is verified afresh,
 # so damage that appears later in a long-running process is repaired when it appears.
 _repair_lock = threading.Lock()
-_repair_events: dict[str, _RepairFlight] = {}
+
+
+class RepairFlight:
+    """One repair attempt in progress, shared by every thread that waits on it."""
+
+    def __init__(self) -> None:
+        self._done = threading.Event()
+        self._retry = False
+
+    def finish(self, retry: bool) -> None:
+        """End the attempt; `retry` says whether callers should reload."""
+        self._retry = retry
+        self._done.set()
+
+    def wait(self) -> bool:
+        """Block until the attempt ends; whether the caller should reload."""
+        self._done.wait()
+        return self._retry
+
+
+_repair_events: dict[str, RepairFlight] = {}
 # What a failed load taught about the cache, per model version, keyed by the cache
 # fingerprint (size and modification time of every required file): `_known_sound`
 # holds the fingerprint at which every file verified, `_known_unrepairable` the
@@ -126,19 +136,19 @@ def _repair_once(version: str) -> bool:
         flight = _repair_events.get(version)
         leader = flight is None
         if flight is None:
-            flight = _repair_events[version] = _RepairFlight()
+            flight = _repair_events[version] = RepairFlight()
 
     if not leader:
-        flight.done.wait()
-        return flight.retry
+        return flight.wait()
 
+    retry = False
     try:
-        flight.retry = _verify_and_repair(version)
+        retry = _verify_and_repair(version)
     finally:
         with _repair_lock:
             _repair_events.pop(version, None)
-        flight.done.set()
-    return flight.retry
+        flight.finish(retry)
+    return retry
 
 
 def _cache_fingerprint(version: str) -> _Fingerprint:

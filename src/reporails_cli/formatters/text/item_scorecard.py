@@ -15,8 +15,9 @@ from rich.console import Console
 
 from reporails_cli.core.mapper.labels import skill_name
 from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.formatters.text.display_constants import HEALTH_BAR_WIDTH, skill_lookup
 from reporails_cli.formatters.text.health import SurfaceHealth, count_tag, mean_display_score
 from reporails_cli.formatters.text.score import score_color

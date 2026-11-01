@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from reporails_cli.core.platform.dto.models import Level
-from reporails_cli.core.platform.runtime.merger import Omissions, ServerReply
+from reporails_cli.core.platform.dto.platform import Omissions, ServerReply
 from reporails_cli.formatters.text.display_constants import element_namer
 from reporails_cli.formatters.text.health import SurfaceHealth
 from reporails_cli.formatters.text.scorecard import (

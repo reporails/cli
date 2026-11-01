@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import logging
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from reporails_cli.core.discovery.walk import safe_resolve
@@ -16,6 +15,7 @@ from reporails_cli.core.heal.preservation import check_rewrite, failed_checks, t
 from reporails_cli.core.lint.suppression import finding_surface
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_int
 from reporails_cli.core.platform.dto.diagnostics import RemediationWorkflow, walk_findings
+from reporails_cli.core.platform.dto.heal import KeyedResult
 from reporails_cli.core.platform.dto.heal_plan import Edit, HealOp, Plan, PlanOp, is_heal_op
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
@@ -32,15 +32,6 @@ _DESCRIPTIONS: dict[HealOp, str] = {
     "move": "Moved the line",
     "dedupe": "Removed the repeated line",
 }
-
-
-@dataclass
-class KeyedResult:
-    """What a keyed heal pass did: fixes written, places left to a decision, files put back."""
-
-    fixes: list[JsonObject] = field(default_factory=list)
-    decisions: list[JsonObject] = field(default_factory=list)
-    put_back: list[JsonObject] = field(default_factory=list)
 
 
 def _aliases(path: str, target: Path) -> set[str]:

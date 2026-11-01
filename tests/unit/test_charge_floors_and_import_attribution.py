@@ -20,10 +20,10 @@ import pytest
 from reporails_cli.core.lint.client_checks import _check_bold_patterns
 from reporails_cli.core.mapper import bio_pipeline
 from reporails_cli.core.mapper.annotate import check_specificity
-from reporails_cli.core.mapper.bio_tagger import AtomTuple, Span
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.mapper.pipeline import _tokenize_and_cache
 from reporails_cli.core.platform.dto.diagnostics import Diagnostic, FileAnalysis, RulesetReport
+from reporails_cli.core.platform.dto.mapping import AtomTuple, Span
 from reporails_cli.core.platform.dto.ruleset import (
     LIST_OBJECT_ROLE,
     Atom,
