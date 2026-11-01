@@ -35,6 +35,8 @@
 ### Internal
 
 - The `ails xray` page is built from components over one static route, and no file name, prompt or file text it shows is ever read as HTML.
+- The `ails xray` session view names its headline findings as typed records: files with findings, a kind of file listed but never used, memory notes `MEMORY.md` does not link, what each compaction dropped, instructions repeated across subagents, and kinds of file the project has none of.
+
 - The `ails xray` page bundles the Geist and Geist Mono fonts (SIL Open Font License), so it loads no web fonts.
 - Release and CI builds install from the lock file with a fixed `uv` version, a fixed `hatchling` version and commit-pinned GitHub actions.
 - Tests: a property suite runs the real `ails` and the MCP server over a fixture set in text, JSON, `github` and MCP, and checks on every run that a disabled rule appears in no output, the total equals m_probe + client + server, every format carries one finding set, and the exit code matches the findings; the mutation probe accepts an upper-tier killing command.

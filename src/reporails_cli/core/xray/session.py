@@ -44,6 +44,7 @@ from reporails_cli.core.xray.derive import (
     turn_end_times,
     window_of,
 )
+from reporails_cli.core.xray.facts import build_facts
 from reporails_cli.core.xray.funnel import build_funnel
 
 _NO_WINDOW = "context window"
@@ -156,6 +157,7 @@ class XraySession:
             advertised_files(files, records),
             context_counts(main_context, subagents, files, self._root),
         )
+        funnel = build_funnel(artifacts, turns, subagents)
         return XrayView(
             version=self.version,
             session=self._file.stem,
@@ -179,6 +181,7 @@ class XraySession:
             harness=harness,
             model=latest_model(records),
             window=window,
-            funnel=build_funnel(artifacts, turns, subagents),
+            funnel=funnel,
             check=self._check,
+            facts=build_facts(artifacts, funnel, compactions),
         )

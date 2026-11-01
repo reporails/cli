@@ -19,6 +19,10 @@ TurnOpener = Literal["prompt", "stop_hook", "session_start"]
 ArtifactKind = Literal["instructions", "rule", "memory", "skill", "agent", "command", "hook"]
 ArtifactScope = Literal["project", "user", "managed", "local", "plugin", "auto", "synced"]
 CheckState = Literal["running", "done", "refused"]
+FactKind = Literal[
+    "file_findings", "funnel_drop", "memory_unlinked", "compaction_loss", "repeated_instructions", "kind_absent"
+]
+TargetKind = Literal["path", "turn", "subagent", "kind"]
 
 # The kind of artifact a config file type is shown as; a file type not listed is an instruction file.
 ARTIFACT_KIND_OF_FILE_TYPE: dict[str, ArtifactKind] = {
@@ -354,6 +358,38 @@ class XrayFunnelRow:
 
 
 @dataclass(frozen=True)
+class XrayTarget:
+    """What a fact points at on the page: a file path, a turn number, a subagent id or an artifact kind."""
+
+    kind: TargetKind
+    value: str | int
+
+    def to_json(self) -> JsonObject:
+        """The target as a JSON object."""
+        return {"kind": self.kind, "value": self.value}
+
+
+@dataclass(frozen=True)
+class XrayFact:
+    """One headline fact of the session: its kind, the artifact kind it is about, its named counts and its target."""
+
+    kind: FactKind
+    artifact_kind: ArtifactKind | None
+    numbers: tuple[tuple[str, int], ...]
+    target: XrayTarget | None
+
+    def to_json(self) -> JsonObject:
+        """The fact as a JSON object."""
+        numbers: dict[str, JsonValue] = dict(self.numbers)
+        return {
+            "kind": self.kind,
+            "artifact_kind": self.artifact_kind,
+            "numbers": numbers,
+            "target": None if self.target is None else self.target.to_json(),
+        }
+
+
+@dataclass(frozen=True)
 class XrayWindow:
     """The context window size in tokens and how it is known."""
 
@@ -415,6 +451,7 @@ class XrayView:
     window: XrayWindow | None
     funnel: tuple[XrayFunnelRow, ...]
     check: XrayCheck
+    facts: tuple[XrayFact, ...]
 
     def to_json(self) -> JsonObject:
         """The view as a JSON object."""
@@ -439,4 +476,5 @@ class XrayView:
             "not_known": list(self.not_known),
             "harness": None if self.harness is None else _objects([item.to_json() for item in self.harness]),
             "check": self.check.to_json(),
+            "facts": _objects([fact.to_json() for fact in self.facts]),
         }

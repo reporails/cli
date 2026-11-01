@@ -43,6 +43,7 @@ TOP_KEYS = {
     "not_known",
     "harness",
     "check",
+    "facts",
 }
 SUB_308 = "a27081343121455fb"
 NEW_TURN = (
