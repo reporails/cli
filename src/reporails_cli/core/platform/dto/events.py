@@ -35,7 +35,13 @@ EventKind = Literal[
     "skill_run",
     "instruction_load",
     "harness",
+    "tool_call",
+    "tool_result",
 ]
+
+# What a tool call does, as the side track and the inspector group it; `handback` is a subagent handing its result
+# back to the agent that launched it.
+ToolCategory = Literal["read", "edit", "run", "mcp", "agent", "handback", "other"]
 
 NoteKind = Literal["hook_note", "stop_block"]
 
@@ -105,11 +111,21 @@ class TokenUsage:
 
 @dataclass(frozen=True)
 class ToolUse:
-    """One tool call of a pre-tool or post-tool event: the tool's name, the call id and the file it targets."""
+    """One tool call or its result: the tool's name, the call id and the file it targets; never the call's input or
+    output text."""
 
     name: str | None = None
     use_id: str | None = None
     path: str | None = None
+    # The MCP server a call goes to; None for a tool that is not an MCP server's.
+    server: str | None = None
+    category: ToolCategory | None = None
+    # A size in characters: a hand-back's message, or a result's content.
+    chars: int | None = None
+    # A hash of a shell command, so repeats of one command are found without keeping its text.
+    fingerprint: str | None = None
+    # Whether a result reports an error; None on a call.
+    error: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -127,6 +143,21 @@ class SkillRun:
 
     name: str
     forked: bool
+
+
+@dataclass(frozen=True)
+class SubagentMeta:
+    """What a subagent's meta file and first row say about its launch: the task's short description, the subagent
+    that launched it (None for the main agent), the id of the launching call, its nesting depth, the size of its brief
+    in characters, whether the person stopped it and whether it ran in the background."""
+
+    description: str | None
+    parent_id: str | None
+    tool_use_id: str | None
+    depth: int | None
+    brief_chars: int
+    stopped: bool
+    background: bool
 
 
 @dataclass(frozen=True)
@@ -206,8 +237,9 @@ class EventRecord:
     # The agent type of a `subagent_run` record.
     subagent_type: str | None = None
     # The file of an `instruction_load` record, the piece of the harness's context a `harness` record names, the
-    # prompt a transcript's `prompt_submit` record sizes, or the skill a `skill_run` record names.
-    item: InstructionLoad | HarnessEntry | PromptEntry | SkillRun | None = None
+    # prompt a transcript's `prompt_submit` record sizes, the skill a `skill_run` record names, or the launch a
+    # `subagent_run` record describes.
+    item: InstructionLoad | HarnessEntry | PromptEntry | SkillRun | SubagentMeta | None = None
 
     @property
     def load(self) -> InstructionLoad | None:
@@ -228,6 +260,11 @@ class EventRecord:
     def skill(self) -> SkillRun | None:
         """The skill or command a `skill_run` record names."""
         return self.item if isinstance(self.item, SkillRun) else None
+
+    @property
+    def launch(self) -> SubagentMeta | None:
+        """The launch a `subagent_run` record describes."""
+        return self.item if isinstance(self.item, SubagentMeta) else None
 
     def to_json(self) -> JsonObject:
         """The record as a JSON object."""
