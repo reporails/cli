@@ -5,7 +5,7 @@ import { hashFor } from '../state.js';
 
 const MORE = { memory_unlinked: n => `${n.count} not linked`, repeated_instructions: n => `in ${n.contexts} contexts` };
 
-// Facts that annotate a row: by path target; the kind-level ones are read by `kindNote`.
+// Facts that annotate a row: by path target; the kind-level ones are read by `kindCount`.
 function rowNotes(facts) {
   const notes = new Map();
   for (const f of facts) {
@@ -15,9 +15,12 @@ function rowNotes(facts) {
   return notes;
 }
 
-function kindNote(facts, key) {
-  const drop = facts.find(f => f.kind === 'funnel_drop' && f.target && f.target.kind === 'kind' && f.target.value === key);
-  return drop ? `${drop.numbers.loaded ?? 0} of ${drop.numbers.advertised ?? drop.numbers.on_disk} loaded` : '';
+// One statement per section from the funnel row: loaded of on disk, plus the listed count only when it differs.
+function kindCount(ix, key, list) {
+  const row = (ix.view.funnel || []).find(f => f.kind === key);
+  if (!row) return list.length ? `${list.filter(s => s.availability === 'loaded').length} of ${list.length} loaded` : '';
+  const listed = row.advertised != null && row.advertised !== row.on_disk ? ` · ${row.advertised} listed` : '';
+  return `${row.loaded ?? 0} of ${row.on_disk} loaded${listed}`;
 }
 
 function who(ix, s) {
@@ -69,8 +72,7 @@ export function render(box, env) {
     slot(head, 'letter').textContent = k.letter;
     slot(head, 'label').textContent = k.label;
     const list = ix.view.sources.filter(s => s.kind === k.key);
-    const loaded = list.filter(s => s.availability === 'loaded').length;
-    slot(head, 'count').textContent = list.length ? [`${loaded} of ${list.length} loaded`, kindNote(facts, k.key)].filter(Boolean).join(' · ') : '';
+    slot(head, 'count').textContent = kindCount(ix, k.key, list);
     const body = slot(head, 'rows');
     if (!list.length) body.append(el('div', 'nk', `No ${k.label.toLowerCase()} configured`));
     for (const s of list) body.append(row(env, s, notes));

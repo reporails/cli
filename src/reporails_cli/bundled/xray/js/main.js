@@ -48,6 +48,7 @@ function render() {
     autoCheck();
     return;
   }
+  $('#view-file').replaceChildren();
   parentstrip.render($('#parentstrip'), e);
   toolbar.render($('#toolbar'), e);
   canvas.render($('#canvas'), e);

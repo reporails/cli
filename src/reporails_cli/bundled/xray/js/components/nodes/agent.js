@@ -109,8 +109,9 @@ function worked(node, env) {
   step.append(el('h4', null, 'Worked'));
   const calls = Object.entries(node.tool_counts).filter(([k]) => k !== 'agent').reduce((s, [, n]) => s + n, 0);
   step.append(el('p', 'line', `Peak context ${k1(d.peak)} · ${calls} tool calls`));
-  const launched = node.tool_counts.agent || 0;
-  step.append(el('p', 'line', launched ? `${launched} subagent${launched === 1 ? '' : 's'} launched` : 'No subagents launched.'));
+  const launched = node.children.length;
+  const below = node.descendants > launched ? ` · ${node.descendants} in total below` : '';
+  step.append(el('p', 'line', launched ? `${launched} subagent${launched === 1 ? '' : 's'} launched${below}` : 'No subagents launched.'));
   const cats = env.ix.view.adapter.categories.filter(c => (node.tool_counts[c.key] || 0) > 0);
   const most = Math.max(1, ...cats.map(c => node.tool_counts[c.key]));
   for (const c of cats) {

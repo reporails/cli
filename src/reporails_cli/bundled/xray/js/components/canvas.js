@@ -296,7 +296,7 @@ export function render(box, env) {
   for (const c of kids) cv.append(childCard(env, c, placedMap.get(c.id), matchOf(c), state.sel === c.id));
   cv.append(...stations(env, cur, scale), ...drawn.pills);
   for (const m of runningMarkers(kids, scale.y)) {
-    const e = abs('running', SPX + 12, m.y - 9);
+    const e = abs('running', SPX - 22, m.y - 4);
     e.textContent = `+${m.more} running`;
     e.title = `${m.more} more subagents run at ${clock(m.t)} than the columns hold`;
     cv.append(e);

@@ -30,6 +30,7 @@
 ### Removed
 
 ### Internal
+- The x-ray page counts launched subagents from the agent's children, shows one loaded-of-on-disk count per Sources section, keeps the "+N running" marker off the cards, and clears a stale file pane when a prompt opens.
 
 - The `ails xray` view lists a session's agents as a tree (each with what its parent handed down, what it handed back, how it ended and the sources withheld from it), its sources with the agents that had each, and per agent the loads, MCP clusters, compactions, calls, repeated failing commands and idle breaks; the funnel and facts speak in source kinds.
 - The `ails xray` transcript reader records each tool call (its category, MCP server, target path and a shell command's hash), each tool result's size and error state, and each subagent's description, parent, depth and brief size; `GET /call?id=` shows a shell call's command.

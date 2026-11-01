@@ -13,7 +13,7 @@ const cardsState = () => page.ev(`[...document.querySelectorAll('.card[data-node
 if (mode === 'overlap' && ready) {
   Object.assign(out, await page.ev(`(() => {
     const cards = [...document.querySelectorAll('.card[data-node], .card.bottom')];
-    const r = cards.map(c => c.getBoundingClientRect());
+    const r = [...cards, ...document.querySelectorAll('.running')].map(c => c.getBoundingClientRect());
     let overlaps = 0;
     for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
       const a = r[i], b = r[j];
