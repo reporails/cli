@@ -7,9 +7,11 @@ launch token and file path pass; the routes only translate between HTTP and the 
 from __future__ import annotations
 
 import secrets
+import shlex
 import socket
 import threading
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import typer
@@ -28,9 +30,15 @@ from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.heal.apply import heal_one, resolved_within
 from reporails_cli.core.pipeline.check_one import Refusal, check_path, file_findings
+from reporails_cli.core.platform.adapters.registry import file_level_check_ids
+from reporails_cli.core.platform.adapters.rules_query import rule_category, rule_title
 from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.diagnostics import FindingItem
+from reporails_cli.core.platform.dto.xray import FindingTally, XrayCheck
 from reporails_cli.core.xray.session import XraySession
+from reporails_cli.core.xray.tally import tallies_by_file, tally_of
 from reporails_cli.formatters.mcp_view import render_heal_apply
+from reporails_cli.formatters.text.rule_meta import rule_docs_url
 from reporails_cli.interfaces.cli.helpers import open_in_browser
 
 HOST = "127.0.0.1"
@@ -58,7 +66,8 @@ class XrayServer:
         self._session = XraySession(root, session_file)
         self._token = token
         self._origin = f"http://{HOST}:{port}"
-        self._findings: dict[str, int] = {}
+        self._findings: dict[str, FindingTally] = {}
+        self._launch = XrayCheck("running", None)
         self._view_lock = threading.Lock()
         self._work_lock = threading.Lock()
 
@@ -115,7 +124,7 @@ class XrayServer:
     def _build_view(self) -> tuple[JsonObject, int]:
         with self._view_lock:
             self._session.refresh()
-            view = self._session.view(self._findings)
+            view = self._session.view(self._findings, self._launch)
             return view.to_json(), view.version
 
     async def peek(self, request: Request) -> Response:
@@ -189,10 +198,31 @@ class XrayServer:
             if isinstance(run, Refusal):
                 return _refused(400, run.text)
             found = file_findings(run, target)
+            key = self._key(target)
             with self._view_lock:
-                self._findings[self._key(target)] = len(found)
-            lines = [{"line": f.line, "rule": f.rule, "message": f.message} for f in found]
-            return JSONResponse({"path": str(target), "findings": len(found), "lines": lines})
+                self._findings[key] = tally_of(found)
+            return JSONResponse(
+                {
+                    "path": str(target),
+                    "findings": len(found),
+                    "lines": [_line(f) for f in found],
+                    "fix_command": f"ails check {shlex.quote(key)} --heal",
+                }
+            )
+
+    def launch_check(self) -> None:
+        """Check the whole project once and hold the tally of every file it covers."""
+        with self._work_lock:
+            run = check_path(str(self._root))
+        if isinstance(run, Refusal):
+            outcome = XrayCheck("refused", run.text)
+            tallies: dict[str, FindingTally] = {}
+        else:
+            outcome = XrayCheck("done", None)
+            tallies = tallies_by_file(run)
+        with self._view_lock:
+            self._findings.update(tallies)
+            self._launch = outcome
 
     async def heal(self, request: Request) -> Response:
         """Heal one file and reply with the receipt."""
@@ -218,6 +248,20 @@ class XrayServer:
         return target.relative_to(safe_resolve(self._root)).as_posix()
 
 
+def _line(finding: FindingItem) -> JsonObject:
+    """One finding as the page shows it."""
+    return {
+        "line": finding.line,
+        "rule": finding.rule,
+        "message": finding.message,
+        "severity": finding.severity,
+        "title": rule_title(finding.rule),
+        "category": rule_category(finding.rule),
+        "file_level": finding.check_id in file_level_check_ids() or finding.line <= 1,
+        "docs_url": rule_docs_url(finding.rule),
+    }
+
+
 def _static(name: str) -> Callable[[Request], Awaitable[Response]]:
     """The endpoint that serves one file of the bundled page."""
 
@@ -231,7 +275,14 @@ def build_app(root: Path, session_file: Path, token: str, port: int) -> Starlett
     """The page server for one session: the fixed routes behind the host, origin, token and path guards."""
     server = XrayServer(safe_resolve(root), session_file, token, port)
     page = get_xray_path()
+
+    @asynccontextmanager
+    async def lifespan(_app: Starlette) -> AsyncIterator[None]:
+        threading.Thread(target=server.launch_check, daemon=True).start()
+        yield
+
     return Starlette(
+        lifespan=lifespan,
         routes=[
             Route("/", server.page, methods=["GET"]),
             Route("/view", server.view, methods=["GET"]),

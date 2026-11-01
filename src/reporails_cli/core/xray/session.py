@@ -13,7 +13,7 @@ from reporails_cli.core.pipeline.expected_loads import AGENT
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
 from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
-from reporails_cli.core.platform.dto.xray import ArtifactFile, XraySpan, XrayView
+from reporails_cli.core.platform.dto.xray import ArtifactFile, FindingTally, XrayCheck, XraySpan, XrayView
 from reporails_cli.core.xray.artifacts import (
     advertised_files,
     agent_run_turns,
@@ -62,7 +62,8 @@ class XraySession:
         self._bus: list[EventRecord] = []
         self._files: tuple[ArtifactFile, ...] | None = None
         self._plugin_problem: str | None = None
-        self._findings: dict[str, int] = {}
+        self._findings: dict[str, FindingTally] = {}
+        self._check = XrayCheck("running", None)
         self.version = 0
 
     def refresh(self) -> bool:
@@ -122,10 +123,12 @@ class XraySession:
             return None
         return prompt_text(AGENT, self._file, prompt_id)
 
-    def view(self, findings: Mapping[str, int]) -> XrayView:
-        """The view of the records read so far; `findings` maps a file path to its finding count."""
-        if dict(findings) != self._findings:
+    def view(self, findings: Mapping[str, FindingTally], check: XrayCheck) -> XrayView:
+        """The view of the records read so far; `findings` maps a file path to its finding tally and `check` is
+        the state of the launch check."""
+        if dict(findings) != self._findings or check != self._check:
             self._findings = dict(findings)
+            self._check = check
             self.version += 1
         files = self._listing()
         records = [record for record in self._transcript if record.event != "refusal"]
@@ -177,4 +180,5 @@ class XraySession:
             model=latest_model(records),
             window=window,
             funnel=build_funnel(artifacts, turns, subagents),
+            check=self._check,
         )

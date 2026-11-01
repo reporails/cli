@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Literal, TypeGuard, get_args
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
+from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
 from reporails_cli.core.platform.dto.events import HarnessKind, NoteKind
 
 LoadKind = Literal["project", "memory", "user", "local", "managed", "nested", "other"]
@@ -17,6 +18,7 @@ CompactionTrigger = Literal["manual", "auto"]
 TurnOpener = Literal["prompt", "stop_hook", "session_start"]
 ArtifactKind = Literal["instructions", "rule", "memory", "skill", "agent", "command", "hook"]
 ArtifactScope = Literal["project", "user", "managed", "local", "plugin", "auto", "synced"]
+CheckState = Literal["running", "done", "refused"]
 
 # The kind of artifact a config file type is shown as; a file type not listed is an instruction file.
 ARTIFACT_KIND_OF_FILE_TYPE: dict[str, ArtifactKind] = {
@@ -66,6 +68,37 @@ def _objects(items: list[JsonObject]) -> JsonValue:
 
 
 @dataclass(frozen=True)
+class FindingTally:
+    """The findings of one file: how many, and how many of each severity."""
+
+    count: int
+    by_severity: dict[FindingSeverity, int]
+
+    def to_json(self) -> JsonObject:
+        """The tally as a JSON object."""
+        by_severity: dict[str, JsonValue] = {
+            severity: self.by_severity[severity] for severity in get_args(FindingSeverity)
+        }
+        return {"count": self.count, "by_severity": by_severity}
+
+
+def _tally_json(tally: FindingTally | None) -> JsonValue:
+    return None if tally is None else tally.to_json()
+
+
+@dataclass(frozen=True)
+class XrayCheck:
+    """The launch check of the whole project: running, done, or refused with the reason."""
+
+    state: CheckState
+    message: str | None
+
+    def to_json(self) -> JsonObject:
+        """The launch check as a JSON object."""
+        return {"state": self.state, "message": self.message}
+
+
+@dataclass(frozen=True)
 class XrayLoad:
     """One instruction file loaded into a context."""
 
@@ -73,7 +106,7 @@ class XrayLoad:
     kind: LoadKind
     t: float | None
     tokens_est: int | None
-    findings: int | None
+    findings: FindingTally | None
 
     def to_json(self) -> JsonObject:
         """The load as a JSON object."""
@@ -82,7 +115,7 @@ class XrayLoad:
             "kind": self.kind,
             "t": self.t,
             "tokens_est": self.tokens_est,
-            "findings": self.findings,
+            "findings": _tally_json(self.findings),
         }
 
 
@@ -270,7 +303,7 @@ class XrayArtifact(ArtifactFile):
 
     loaded: bool
     turns: tuple[int, ...]
-    findings: int | None
+    findings: FindingTally | None
     actionable: bool
     tokens_est: int | None
     advertised: bool | None
@@ -289,7 +322,7 @@ class XrayArtifact(ArtifactFile):
             "linked": self.linked,
             "loaded": self.loaded,
             "turns": list(self.turns),
-            "findings": self.findings,
+            "findings": _tally_json(self.findings),
             "actionable": self.actionable,
             "tokens_est": self.tokens_est,
             "advertised": self.advertised,
@@ -381,6 +414,7 @@ class XrayView:
     model: str | None
     window: XrayWindow | None
     funnel: tuple[XrayFunnelRow, ...]
+    check: XrayCheck
 
     def to_json(self) -> JsonObject:
         """The view as a JSON object."""
@@ -404,4 +438,5 @@ class XrayView:
             "refusals": list(self.refusals),
             "not_known": list(self.not_known),
             "harness": None if self.harness is None else _objects([item.to_json() for item in self.harness]),
+            "check": self.check.to_json(),
         }

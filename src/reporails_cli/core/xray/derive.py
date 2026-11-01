@@ -21,6 +21,7 @@ from reporails_cli.core.platform.dto.events import (
 )
 from reporails_cli.core.platform.dto.xray import (
     LOAD_KIND_OF_MEMORY_TYPE,
+    FindingTally,
     TurnOpener,
     XrayCompaction,
     XrayHarnessItem,
@@ -60,8 +61,8 @@ def real_path(path: str, root: Path) -> str:
     return str(safe_resolve(root / Path(path).expanduser()))
 
 
-def count_for(findings: Mapping[str, int], path: str, root: Path) -> int | None:
-    """The finding count held for a file, by its absolute or project-relative path; None when none is held."""
+def count_for(findings: Mapping[str, FindingTally], path: str, root: Path) -> FindingTally | None:
+    """The finding tally held for a file, by its absolute or project-relative path; None when none is held."""
     if path in findings:
         return findings[path]
     try:
@@ -77,7 +78,7 @@ class Frame:
 
     t0: float
     root: Path
-    findings: Mapping[str, int]
+    findings: Mapping[str, FindingTally]
     # Absolute path of the skill or command file each run name stands for.
     runnable: Mapping[str, str]
 

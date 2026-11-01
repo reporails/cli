@@ -13,7 +13,7 @@ from reporails_cli.core.eventbus.transcript import read_transcript
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object
 from reporails_cli.core.platform.dto.events import EventKind, EventRecord, HarnessEntry, ToolUse, TranscriptCursor
-from reporails_cli.core.platform.dto.xray import ArtifactFile, XrayLoad, XrayView
+from reporails_cli.core.platform.dto.xray import ArtifactFile, FindingTally, XrayCheck, XrayLoad, XrayView
 from reporails_cli.core.xray.artifacts import PEEK_LIMIT, artifact_files, build_artifacts
 from reporails_cli.core.xray.derive import BYTES_PER_TOKEN, Replies, build_harness
 from reporails_cli.core.xray.session import XraySession
@@ -42,6 +42,7 @@ TOP_KEYS = {
     "refusals",
     "not_known",
     "harness",
+    "check",
 }
 SUB_308 = "a27081343121455fb"
 NEW_TURN = (
@@ -139,9 +140,16 @@ def _fixture_turn_contexts(version: str) -> list[int]:
     return [list(turn.values())[-1] for turn in turns if turn]
 
 
-def _view(session: XraySession, findings: dict[str, int] | None = None) -> XrayView:
+RUNNING = XrayCheck("running", None)
+
+
+def _tally(count: int) -> FindingTally:
+    return FindingTally(count, {"error": 0, "warning": count, "info": 0})
+
+
+def _view(session: XraySession, findings: dict[str, FindingTally] | None = None) -> XrayView:
     session.refresh()
-    return session.view(findings or {})
+    return session.view(findings or {}, RUNNING)
 
 
 def _names(loads: tuple[XrayLoad, ...]) -> list[str]:
@@ -192,12 +200,12 @@ def test_refresh_reports_growth_and_bumps_the_version(tmp_path: Path) -> None:
     version = session.version
     assert session.refresh() is False
     assert session.version == version
-    assert len(session.view({}).turns) == 2
+    assert len(session.view({}, RUNNING).turns) == 2
 
     _append_turn(tmp_path, "2.1.301")
     assert session.refresh() is True
     assert session.version == version + 1
-    view = session.view({})
+    view = session.view({}, RUNNING)
     assert [turn.n for turn in view.turns] == [1, 2, 3]
     assert view.turns[2].context == 30103
     assert session.refresh() is False
@@ -207,12 +215,14 @@ def test_the_version_follows_the_findings_it_is_given(tmp_path: Path) -> None:
     session = _session(tmp_path, "2.1.301", _project(tmp_path))
     session.refresh()
     version = session.version
-    session.view({})
+    session.view({}, RUNNING)
     assert session.version == version
-    session.view({"a.md": 2})
+    session.view({"a.md": _tally(2)}, RUNNING)
     assert session.version == version + 1
-    session.view({"a.md": 2})
+    session.view({"a.md": _tally(2)}, RUNNING)
     assert session.version == version + 1
+    session.view({"a.md": _tally(2)}, XrayCheck("done", None))
+    assert session.version == version + 2
 
 
 def test_without_bus_records_reads_and_compactions_are_not_known(tmp_path: Path) -> None:
@@ -257,14 +267,14 @@ def test_artifacts_list_what_could_load_and_the_turns_it_sat_in_context(tmp_path
     session = _session(tmp_path, "2.1.301", root)
     _append_compaction(tmp_path, "2.1.301", "2026-10-17T16:54:30.000Z", "auto")
     _append_turn(tmp_path, "2.1.301")
-    view = _view(session, {str(root / "CLAUDE.md"): 3})
+    view = _view(session, {str(root / "CLAUDE.md"): _tally(3)})
     by_path = {a.path: a for a in view.artifacts}
     kinds = {(Path(path).name, a.kind) for path, a in by_path.items()}
     assert {("SKILL.md", "skill"), ("helper.md", "agent"), ("settings.json", "hook")} <= kinds
     main = by_path["CLAUDE.md"]
     # Loaded at the start and in context in turn 2, where the compaction ran, then gone in turn 3.
-    assert main.loaded and main.turns == (0, 1, 2) and main.findings == 3
-    assert view.start[0].findings == 3
+    assert main.loaded and main.turns == (0, 1, 2) and main.findings == _tally(3)
+    assert view.start[0].findings == _tally(3)
     assert main.tokens_est == (root / "CLAUDE.md").stat().st_size // BYTES_PER_TOKEN > 0
     skill = by_path[".claude/skills/demo/SKILL.md"]
     assert not skill.loaded and skill.turns == ()
@@ -331,12 +341,14 @@ def test_the_view_holds_numbers_names_and_paths_only(tmp_path: Path) -> None:
         "contexts",
         "session_tokens_est",
     }
+    assert data["check"] == {"state": "running", "message": None}
+    assert data["check"] == {"state": "running", "message": None}
 
 
 def test_a_session_with_no_records_is_an_empty_view(tmp_path: Path) -> None:
     session = XraySession(_project(tmp_path), tmp_path / "missing.jsonl")
     assert session.refresh() is False
-    view = session.view({})
+    view = session.view({}, RUNNING)
     assert (view.turns, view.start, view.subagents, view.first_context, view.span.length_s) == ((), (), (), None, None)
 
 
@@ -566,11 +578,11 @@ def test_a_tool_the_harness_retracts_takes_its_size_off_with_it(tmp_path: Path) 
     lines = [f"{name}: " + "x" * 40 for name in names]
     _append_delta(tmp_path, "2.1.308-harness", "2099-01-01T00:00:00.000Z", addedNames=names, addedLines=lines)
     session.refresh()
-    grown = deferred(session.view({}))
+    grown = deferred(session.view({}, RUNNING))
     assert grown[0] == (first[0] or 0) + 4 and (grown[1] or 0) > (first[1] or 0)
     _append_delta(tmp_path, "2.1.308-harness", "2099-01-01T00:00:01.000Z", removedNames=names)
     session.refresh()
-    assert deferred(session.view({})) == first
+    assert deferred(session.view({}, RUNNING)) == first
 
 
 def test_a_session_with_no_harness_row_has_a_null_harness(tmp_path: Path) -> None:

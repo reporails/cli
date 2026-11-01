@@ -109,6 +109,13 @@ def rule_title(rule_id: str) -> str:
 
 
 @lru_cache(maxsize=256)
+def rule_category(rule_id: str) -> str:
+    """The category (`structure` .. `governance`) of a bundled rule, or an empty string when none is known."""
+    rule = find_rule_by_id(rule_id)
+    return rule.category.value if rule else ""
+
+
+@lru_cache(maxsize=256)
 def rule_severity(rule_id: str) -> str:
     """The severity (`critical` .. `low`) of a bundled rule, or an empty string when none is known."""
     rule = find_rule_by_id(rule_id)

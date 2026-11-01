@@ -7,6 +7,8 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -19,8 +21,10 @@ from reporails_cli.core.heal.apply import HealOutcome
 from reporails_cli.core.heal.keyed import KeyedResult
 from reporails_cli.core.pipeline.check_one import Refusal
 from reporails_cli.core.pipeline.mapping import map_instruction_files
+from reporails_cli.core.platform.adapters.rules_query import rule_category, rule_title
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
+from reporails_cli.formatters.text.rule_meta import rule_docs_url
 from reporails_cli.interfaces.cli import xray_server
 from tests.unit.test_mcp_heal_apply import DOC, _wire
 
@@ -33,6 +37,7 @@ ORIGIN = f"http://127.0.0.1:{PORT}"
 TOP_KEYS = {
     "version", "session", "project", "started_at", "length_s", "window", "model", "funnel", "first_context", "peak",
     "preload_tokens_est", "start", "turns", "compactions", "subagents", "artifacts", "refusals", "not_known", "harness",
+    "check",
 }  # fmt: skip
 HEAVY = ("starlette", "uvicorn", "reporails_cli.core.mapper", "onnxruntime", "tokenizers", "numpy")
 
@@ -158,15 +163,72 @@ def test_check_reports_a_refusal_as_400_and_a_file_as_its_findings(
     class Run:
         pass
 
-    finding = FindingItem(file="CLAUDE.md", line=3, severity="warning", rule="CORE:C:0001", message="Say it plainly")
+    finding = FindingItem(file="CLAUDE.md", line=3, severity="warning", rule="CORE:C:0053", message="Say it plainly")
     monkeypatch.setattr(xray_server, "check_path", lambda path: Run())
     monkeypatch.setattr(xray_server, "file_findings", lambda run, file: (finding,))
     reply = client.post("/check", json={"path": "CLAUDE.md"}, headers={"X-Xray-Token": TOKEN, "Origin": ORIGIN})
     assert reply.json()["findings"] == 1
-    assert reply.json()["lines"] == [{"line": 3, "rule": "CORE:C:0001", "message": "Say it plainly"}]
+    assert reply.json()["fix_command"] == "ails check CLAUDE.md --heal"
+    [line] = reply.json()["lines"]
+    assert set(line) == {"line", "rule", "message", "severity", "title", "category", "file_level", "docs_url"}
+    assert (line["line"], line["rule"], line["severity"], line["file_level"]) == (3, "CORE:C:0053", "warning", False)
+    assert line["title"] == rule_title("CORE:C:0053") != ""
+    assert line["category"] == rule_category("CORE:C:0053") != ""
+    assert line["docs_url"] == rule_docs_url("CORE:C:0053") is not None
     view = client.get("/view", headers={"X-Xray-Token": TOKEN}).json()
     artifact = next(a for a in view["artifacts"] if a["path"].endswith("CLAUDE.md"))
-    assert artifact["findings"] == 1
+    assert artifact["findings"] == {"count": 1, "by_severity": {"error": 0, "warning": 1, "info": 0}}
+
+
+def _view_of(client: TestClient) -> Any:
+    return client.get("/view", headers={"X-Xray-Token": TOKEN}).json()
+
+
+def _settled_view(client: TestClient) -> Any:
+    for _ in range(100):
+        view = _view_of(client)
+        if view["check"]["state"] != "running":
+            return view
+        time.sleep(0.05)
+    raise AssertionError("the launch check never landed")
+
+
+def test_the_launch_check_fills_every_files_tally_and_moves_the_version(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    finding = FindingItem(file="CLAUDE.md", line=1, severity="error", rule="CORE:C:0053", message="m")
+    other = FindingItem(file="CLAUDE.md", line=4, severity="info", rule="CORE:C:0053", message="m")
+    run = SimpleNamespace(
+        result=SimpleNamespace(findings=[finding, other]),
+        scope=SimpleNamespace(scan_root=project.resolve(), instruction_files=[project / "CLAUDE.md"]),
+    )
+    monkeypatch.setattr(xray_server, "check_path", lambda path: run)
+    app = xray_server.build_app(project, tmp_path / "session" / "session.jsonl", TOKEN, PORT)
+    with TestClient(app, base_url=ORIGIN) as client:
+        view = _settled_view(client)
+        artifact = next(a for a in view["artifacts"] if a["path"].endswith("CLAUDE.md"))
+        assert view["check"] == {"state": "done", "message": None}
+        assert artifact["findings"] == {"count": 2, "by_severity": {"error": 1, "warning": 0, "info": 1}}
+
+
+def test_the_view_says_running_until_the_launch_check_lands_and_the_version_moves_when_it_does(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    release = threading.Event()
+
+    def slow_check(path: str) -> Refusal:
+        release.wait(5)
+        return Refusal("failed", "no model")
+
+    monkeypatch.setattr(xray_server, "check_path", slow_check)
+    app = xray_server.build_app(project, tmp_path / "session" / "session.jsonl", TOKEN, PORT)
+    with TestClient(app, base_url=ORIGIN) as client:
+        first = _view_of(client)
+        assert first["check"] == {"state": "running", "message": None}
+        release.set()
+        view = _settled_view(client)
+        assert view["check"] == {"state": "refused", "message": "no model"}
+        assert view["version"] > first["version"]
 
 
 def test_heal_replies_with_the_receipt_or_the_reason_nothing_was_written(

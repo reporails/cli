@@ -9,6 +9,7 @@
 - The `ails xray` file list covers what a session in the folder can load: instruction, rule and memory files, and the skills, agents, commands and hook configs of the project, your user folder, the skills synced from your claude.ai account (`anthropic-skills:<name>`, the signed-in account only) and every installed, enabled plugin (`<plugin>:<name>`), each with where it comes from, its size and the name Claude Code uses. A memory file that `MEMORY.md` does not link within the part Claude Code loads is marked, and a skill, command or agent that ran counts as loaded from its turn; a skill run in its own subagent stays out of the main context, and a skill stays across a compaction as Claude Code re-attaches it.
 
 - The `ails xray` page knows which model replied and, once a reply passes 200k tokens, that the session has a 1M-token context window. It counts, for each kind of artifact, how many are on disk, listed to the model, loaded and used, and what each file costs across the main session and every subagent that loaded it.
+- The `ails xray` page checks the project's files once when it opens, so each file's findings, counted by severity, show without a click, and a file you check lists each finding's severity, rule title, category and docs link with the command that fixes the file.
 
 ### Changed
 
