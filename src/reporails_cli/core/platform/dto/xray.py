@@ -207,6 +207,8 @@ class XraySubagent:
     series: tuple[tuple[float, int], ...]
     loads: tuple[XrayLoad, ...]
     skill_runs: tuple[XrayRun, ...]
+    peak: int | None
+    has_project_instructions: bool
 
     def to_json(self) -> JsonObject:
         """The subagent as a JSON object."""
@@ -220,6 +222,8 @@ class XraySubagent:
             "series": series,
             "loads": _objects([load.to_json() for load in self.loads]),
             "skill_runs": _objects([run.to_json() for run in self.skill_runs]),
+            "peak": self.peak,
+            "has_project_instructions": self.has_project_instructions,
         }
 
 
@@ -240,14 +244,19 @@ class ArtifactFile:
 
 @dataclass(frozen=True)
 class XrayArtifact(ArtifactFile):
-    """A file the session could load, whether it did, the turns it sat in context and whether the page may
-    check or fix it (a file of the project that exists)."""
+    """A file the session could load, whether the harness listed it by name (`advertised`, None when no listing
+    names its kind), whether it loaded, the turns it sat in context, whether the page may check or fix it (a file
+    of the project that exists), and how many contexts (the main session's and each subagent's) it entered, with
+    its size over all of them."""
 
     loaded: bool
     turns: tuple[int, ...]
     findings: int | None
     actionable: bool
     tokens_est: int | None
+    advertised: bool | None
+    contexts: int
+    session_tokens_est: int | None
 
     def to_json(self) -> JsonObject:
         """The artifact as a JSON object."""
@@ -264,7 +273,44 @@ class XrayArtifact(ArtifactFile):
             "findings": self.findings,
             "actionable": self.actionable,
             "tokens_est": self.tokens_est,
+            "advertised": self.advertised,
+            "contexts": self.contexts,
+            "session_tokens_est": self.session_tokens_est,
         }
+
+
+@dataclass(frozen=True)
+class XrayFunnelRow:
+    """How many artifacts of a kind sit on disk, are advertised by the harness, load and are used; a count with
+    no source is None."""
+
+    kind: ArtifactKind
+    on_disk: int
+    advertised: int | None
+    loaded: int | None
+    used: int | None
+
+    def to_json(self) -> JsonObject:
+        """The row as a JSON object."""
+        return {
+            "kind": self.kind,
+            "on_disk": self.on_disk,
+            "advertised": self.advertised,
+            "loaded": self.loaded,
+            "used": self.used,
+        }
+
+
+@dataclass(frozen=True)
+class XrayWindow:
+    """The context window size in tokens and how it is known."""
+
+    size: int
+    basis: Literal["observed"]
+
+    def to_json(self) -> JsonObject:
+        """The window as a JSON object."""
+        return {"size": self.size, "basis": self.basis}
 
 
 @dataclass(frozen=True)
@@ -296,7 +342,7 @@ class XraySpan:
 
 @dataclass(frozen=True)
 class XrayView:
-    """Everything the session page draws; the context window size is never known here, so it is always null."""
+    """Everything the session page draws; the window is null until a reply's context shows the size."""
 
     version: int
     session: str
@@ -310,6 +356,9 @@ class XrayView:
     refusals: tuple[str, ...]
     not_known: tuple[str, ...]
     harness: tuple[XrayHarnessItem, ...] | None
+    model: str | None
+    window: XrayWindow | None
+    funnel: tuple[XrayFunnelRow, ...]
 
     def to_json(self) -> JsonObject:
         """The view as a JSON object."""
@@ -319,7 +368,9 @@ class XrayView:
             "project": self.project,
             "started_at": self.span.started_at,
             "length_s": self.span.length_s,
-            "window": None,
+            "model": self.model,
+            "window": None if self.window is None else self.window.to_json(),
+            "funnel": _objects([row.to_json() for row in self.funnel]),
             "first_context": self.first_context,
             "start": _objects([load.to_json() for load in self.start]),
             "turns": _objects([turn.to_json() for turn in self.turns]),

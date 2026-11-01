@@ -29,6 +29,8 @@ TOP_KEYS = {
     "started_at",
     "length_s",
     "window",
+    "model",
+    "funnel",
     "first_context",
     "start",
     "turns",
@@ -305,6 +307,8 @@ def test_the_view_holds_numbers_names_and_paths_only(tmp_path: Path) -> None:
         "series",
         "loads",
         "skill_runs",
+        "peak",
+        "has_project_instructions",
     }
     assert set(as_object(as_list(data["start"])[0])) == {"path", "kind", "t", "tokens_est", "findings"}
     assert set(as_object(as_list(data["artifacts"])[0])) == {
@@ -320,6 +324,9 @@ def test_the_view_holds_numbers_names_and_paths_only(tmp_path: Path) -> None:
         "findings",
         "actionable",
         "tokens_est",
+        "advertised",
+        "contexts",
+        "session_tokens_est",
     }
 
 
@@ -350,7 +357,7 @@ def test_only_a_project_file_that_exists_is_actionable(tmp_path: Path) -> None:
         ),
         ArtifactFile(str(memory), "memory", "auto", None, "MEMORY.md", None, None),
     )
-    got = [a.actionable for a in build_artifacts(files, set(), {}, {}, root)]
+    got = [a.actionable for a in build_artifacts(files, set(), {}, {}, root, {}, {})]
     assert got == [True, False, False, False]
 
 
@@ -825,3 +832,69 @@ def test_a_skill_a_subagent_ran_is_loaded_in_the_turn_the_subagent_ran(tmp_path:
     skill = next(a for a in view.artifacts if a.label == "demo")
     assert [run.name for run in sub.skill_runs] == ["demo"]
     assert skill.loaded and skill.turns == (sub.turn,)
+
+
+def _user_demo_skill() -> None:
+    folder = Path.home() / ".claude" / "skills" / "demo"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text("---\nname: demo\ndescription: User demo.\n---\n\n# Demo\n")
+
+
+def test_the_model_is_the_latest_main_reply_that_names_one_and_the_window_shows_past_200k(tmp_path: Path) -> None:
+    data = _view(_session(tmp_path, "2.1.310-listing", _project(tmp_path))).to_json()
+    # The last main reply names no model, so the one before it stands; the subagent's model is not the session's.
+    assert data["model"] == "claude-opus-5[1m]"
+    assert data["window"] == {"size": 1_000_000, "basis": "observed"}
+    assert "context window" not in as_list(data["not_known"])
+
+
+def test_a_session_below_200k_has_no_window_and_no_model_when_no_row_names_one(tmp_path: Path) -> None:
+    data = _view(_session(tmp_path, "2.1.308", _project(tmp_path))).to_json()
+    assert data["window"] is None and data["model"] is None
+    assert "context window" in as_list(data["not_known"])
+
+
+def test_an_artifact_is_advertised_when_the_listing_names_it_and_none_without_names(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    by_label = {(a.kind, a.label): a for a in _view(_session(tmp_path, "2.1.310-listing", root)).artifacts}
+    assert by_label[("skill", "demo")].advertised is True
+    assert by_label[("agent", "helper")].advertised is True
+    assert by_label[("instructions", "CLAUDE.md")].advertised is None
+    bare = {(a.kind, a.label): a for a in _view(_session(tmp_path, "2.1.308", root)).artifacts}
+    assert bare[("skill", "demo")].advertised is None and bare[("agent", "helper")].advertised is None
+
+
+def test_of_two_skills_sharing_a_label_only_the_winning_scope_is_advertised(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _user_demo_skill()
+    demos = [a for a in _view(_session(tmp_path, "2.1.310-listing", root)).artifacts if a.label == "demo"]
+    assert {a.scope: a.advertised for a in demos} == {"user": True, "project": False}
+
+
+def test_the_funnel_counts_what_the_artifacts_show_for_each_kind_on_disk(tmp_path: Path) -> None:
+    view = _view(_session(tmp_path, "2.1.310-listing", _project(tmp_path)))
+    rows = {row.kind: row for row in view.funnel}
+    assert list(rows) == ["instructions", "skill", "agent", "hook"]
+    for kind, row in rows.items():
+        items = [a for a in view.artifacts if a.kind == kind]
+        assert row.on_disk == len(items)
+        assert row.loaded == (None if kind == "hook" else sum(a.loaded for a in items))
+    assert (rows["skill"].advertised, rows["skill"].used) == (1, 0)
+    assert (rows["agent"].advertised, rows["agent"].loaded, rows["agent"].used) == (1, 1, 1)
+    assert rows["instructions"].advertised is None and rows["instructions"].used is None
+    assert rows["hook"].advertised is None and rows["hook"].used is None
+
+
+def test_a_file_counts_the_main_context_and_each_subagent_that_put_it_in_its_own(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    view = _view(_session(tmp_path, "2.1.310-listing", root))
+    by_path = {a.path: a for a in view.artifacts}
+    (sub,) = view.subagents
+    assert sub.has_project_instructions and sub.peak == 30_000
+    # The project CLAUDE.md loaded at the main start and again into the subagent's context.
+    claude = by_path["CLAUDE.md"]
+    assert claude.contexts == 2 and claude.session_tokens_est == 2 * (claude.tokens_est or 0) > 0
+    # The agent file is in the context of the subagent that ran as it, and no other.
+    helper = by_path[".claude/agents/helper.md"]
+    assert helper.contexts == 1
+    assert by_path[".claude/skills/demo/SKILL.md"].contexts == 0

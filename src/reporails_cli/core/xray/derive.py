@@ -30,10 +30,15 @@ from reporails_cli.core.platform.dto.xray import (
     XrayRun,
     XraySubagent,
     XrayTurn,
+    XrayWindow,
 )
 
 # How many bytes of file text one token stands for in a size estimate.
 BYTES_PER_TOKEN = 4
+
+# A context above this many tokens shows the session runs in the extended window of WINDOW_EXTENDED tokens.
+WINDOW_STANDARD = 200_000
+WINDOW_EXTENDED = 1_000_000
 
 
 def epoch(text: str) -> float | None:
@@ -146,6 +151,27 @@ def main_replies(records: Sequence[EventRecord]) -> Replies:
         if (moment := epoch(record.time)) is not None
     ]
     return Replies(tuple(sorted(points)))
+
+
+def latest_model(records: Sequence[EventRecord]) -> str | None:
+    """The model of the main session's latest reply that names one."""
+    models = [
+        (moment, record.usage.model)
+        for record in records
+        if record.event == "assistant_usage"
+        and record.subagent_id is None
+        and record.usage is not None
+        and record.usage.model is not None
+        and (moment := epoch(record.time)) is not None
+    ]
+    return max(models)[1] if models else None
+
+
+def window_of(replies: Replies) -> XrayWindow | None:
+    """The extended window once a main reply's context exceeds the standard one; None before."""
+    if any(context > WINDOW_STANDARD for _, context in replies.points):
+        return XrayWindow(WINDOW_EXTENDED, "observed")
+    return None
 
 
 def _compaction(post: EventRecord, replies: Replies, t0: float) -> XrayCompaction | None:
@@ -405,6 +431,7 @@ def _subagent(sid: str, group: Sequence[EventRecord], ends: Sequence[float], fra
         for record in group
         if record.event == "assistant_usage" and record.usage is not None and (moment := frame.at(record)) is not None
     )
+    loads = loads_of(group, frame)
     return XraySubagent(
         id=sid,
         type=run.subagent_type if run is not None else None,
@@ -412,8 +439,10 @@ def _subagent(sid: str, group: Sequence[EventRecord], ends: Sequence[float], fra
         start=times[0] if times else None,
         end=times[-1] if times else None,
         series=tuple(series),
-        loads=loads_of(group, frame),
+        loads=loads,
         skill_runs=tuple(
             _skill_run(record, frame) for record in group if record.event == "skill_run" and record.skill is not None
         ),
+        peak=max((context for _, context in series), default=None),
+        has_project_instructions=any(load.kind == "project" for load in loads),
     )

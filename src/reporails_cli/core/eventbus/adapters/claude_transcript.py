@@ -15,8 +15,9 @@ Undocumented: the row layout. The sessions page calls the entry format "internal
 it changes between versions. These are shapes recorded on Claude Code 2.1.292, 2.1.301 and 2.1.308, and
 the adapter refuses any other shape of a row type it reads:
 
-- an assistant row: `type: "assistant"`, `timestamp`, `message.id` and `message.usage` holding the three
-  counts above; one row is written per content block, so the rows of one response repeat `message.id`.
+- an assistant row: `type: "assistant"`, `timestamp`, `message.id`, `message.usage` holding the three
+  counts above and optionally `message.model`, a string; one row is written per content block, so the rows of
+  one response repeat `message.id`.
 - a turn end: `type: "system"` with `subtype: "turn_duration"` and `timestamp`.
 - an instruction load: `type: "attachment"` with `attachment.type: "instructions"` and
   `attachment.files[].path` / `.type`, or `attachment.type: "nested_memory"` and `attachment.path`. The
@@ -24,8 +25,9 @@ the adapter refuses any other shape of a row type it reads:
   Claude Code 2.1.308, 2026-10-30), which is why the transcript is the source.
 - a harness record: `type: "attachment"` with one of these `attachment.type` values, each sized by character
   count and then dropped: `prompt_snapshot` (`systemPrompt`, a list of strings), `skill_listing` (`skillCount`,
-  a whole number, and `content`, a string), `agent_listing_delta` (`addedTypes` and `addedLines`, lists of
-  strings), `mcp_instructions_delta` (`addedNames` and `addedBlocks`, lists of strings), `deferred_tools_delta`
+  a whole number, `content`, a string, and optionally `names`, a list of strings), `agent_listing_delta`
+  (`addedTypes` and `addedLines`, lists of strings), `mcp_instructions_delta`
+  (`addedNames` and `addedBlocks`, lists of strings), `deferred_tools_delta`
   (`addedNames` and `addedLines`, lists of strings, or in a subagent file `content`, a string),
   `session_context` (`context`, an object of strings). The three delta rows may also carry `removedTypes` or
   `removedNames`, lists of strings, counted off their item count; a deferred-tools delta row whose
@@ -270,7 +272,10 @@ class ClaudeTranscriptAdapter:
         usage = TokenUsage.from_json(message_id, as_object(message.get("usage")))
         if usage is None:
             raise PayloadRefused("assistant usage counts are not whole numbers")
-        return replace(self._record(row, "assistant_usage", subagent_id), usage=usage)
+        model = message.get("model")
+        if model is not None and not isinstance(model, str):
+            raise PayloadRefused("assistant message model is not a string")
+        return replace(self._record(row, "assistant_usage", subagent_id), usage=replace(usage, model=model))
 
     def _attachment(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         attachment = as_object(row.get("attachment"))
@@ -334,7 +339,14 @@ class ClaudeTranscriptAdapter:
             if spec.removed_key is not None:
                 added = _sized_by_name(names, items, (), what)
         removed = self._removed_names(attachment, spec.removed_key, what)
-        return HarnessEntry(spec.kind, spec.label, count - len(removed), chars, added=added, removed=removed)
+        listed = (
+            tuple(_strings(attachment["names"], "names", what))
+            if kind == "skill_listing" and "names" in attachment
+            else None
+        )
+        return HarnessEntry(
+            spec.kind, spec.label, count - len(removed), chars, added=added, removed=removed, names=listed
+        )
 
     def _removed_names(self, attachment: JsonObject, key: str | None, what: str) -> tuple[str, ...]:
         """The names a delta row removed; none when the row does not carry the list."""

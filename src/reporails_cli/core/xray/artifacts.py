@@ -9,6 +9,7 @@ from pathlib import Path
 from reporails_cli.core.pipeline.expected_loads import expected_loads
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object, as_str
+from reporails_cli.core.platform.dto.events import EventRecord, HarnessKind
 from reporails_cli.core.platform.dto.xray import (
     ARTIFACT_KIND_OF_FILE_TYPE,
     INVOCABLE_ARTIFACT_KINDS,
@@ -83,7 +84,7 @@ def artifact_files(root: Path, plugins: Sequence[tuple[str, Path]]) -> tuple[Art
     return tuple(first.values())
 
 
-def _winners(files: Sequence[ArtifactFile], kinds: frozenset[ArtifactKind]) -> dict[str, ArtifactFile]:
+def winners(files: Sequence[ArtifactFile], kinds: frozenset[ArtifactKind]) -> dict[str, ArtifactFile]:
     """The file each label stands for among the listed files of `kinds`: the one of the scope that wins, the first
     listed when two share a scope."""
 
@@ -101,7 +102,7 @@ def _winners(files: Sequence[ArtifactFile], kinds: frozenset[ArtifactKind]) -> d
 
 def runnable_paths(files: Sequence[ArtifactFile]) -> dict[str, str]:
     """The absolute path of the skill or command file each label stands for."""
-    return {label: item.path for label, item in _winners(files, RUNNABLE_ARTIFACT_KINDS).items()}
+    return {label: item.path for label, item in winners(files, RUNNABLE_ARTIFACT_KINDS).items()}
 
 
 @dataclass(frozen=True)
@@ -185,16 +186,70 @@ def agent_run_turns(
     """For each resolved path, the turns a subagent put its file in context in: an agent file in the turn a subagent
     of its type ran, a skill or command file in the turn a subagent ran it. A built-in type matches no file; a run
     that itself ran in a subagent counts for neither."""
-    agents = {label: real_path(item.path, root) for label, item in _winners(files, frozenset({"agent"})).items()}
+    agents = _agent_paths(files, root)
     found: dict[str, list[int]] = {}
     for run in subagents:
         if run.turn is None:
             continue
-        paths = [agents[run.type]] if run.type in agents else []
-        paths += [real_path(item.path, root) for item in run.skill_runs if item.path is not None and not item.forked]
-        for path in paths:
+        for path in _ran_paths(run, agents, root):
             found.setdefault(path, []).append(run.turn)
     return {path: sorted(set(turns)) for path, turns in found.items()}
+
+
+def _agent_paths(files: Sequence[ArtifactFile], root: Path) -> dict[str, str]:
+    """The resolved path of the agent file each agent type stands for."""
+    return {label: real_path(item.path, root) for label, item in winners(files, frozenset({"agent"})).items()}
+
+
+def _ran_paths(run: XraySubagent, agents: Mapping[str, str], root: Path) -> list[str]:
+    """The resolved paths a subagent put in context by what it ran as: its agent file and the skill or command
+    files it ran non-forked."""
+    paths = [agents[run.type]] if run.type is not None and run.type in agents else []
+    return paths + [real_path(item.path, root) for item in run.skill_runs if item.path is not None and not item.forked]
+
+
+def context_counts(
+    main: Mapping[str, list[int]], subagents: Sequence[XraySubagent], files: Sequence[ArtifactFile], root: Path
+) -> dict[str, int]:
+    """For each resolved path, the contexts it entered: the main session's (`main` holds the turns it sat in
+    there) and each subagent's, by its loads and by what it ran as."""
+    agents = _agent_paths(files, root)
+    counts = dict.fromkeys(main, 1)
+    for run in subagents:
+        entered = {real_path(load.path, root) for load in run.loads} | set(_ran_paths(run, agents, root))
+        for path in entered:
+            counts[path] = counts.get(path, 0) + 1
+    return counts
+
+
+def _listed_names(records: Sequence[EventRecord], kind: HarnessKind) -> set[str] | None:
+    """The names the main session's listing rows of `kind` carry: a skill listing's `names`, an agent listing's
+    added names; None when no such row carries any."""
+    found: set[str] | None = None
+    for record in records:
+        entry = record.harness
+        if record.subagent_id is not None or entry is None or entry.kind != kind:
+            continue
+        names = entry.names if kind == "skill_list" else tuple(name for name, _ in entry.added)
+        if names is not None:
+            found = (found or set()) | set(names)
+    return found
+
+
+def advertised_files(files: Sequence[ArtifactFile], records: Sequence[EventRecord]) -> dict[str, bool | None]:
+    """For each listed skill, command and agent file (by path), whether a listing row names its label and the file
+    is the one its label stands for; None when no listing row of its kind names anything."""
+    skills = _listed_names(records, "skill_list")
+    agents = _listed_names(records, "agent_list")
+    runnable = winners(files, RUNNABLE_ARTIFACT_KINDS)
+    agent_files = winners(files, frozenset({"agent"}))
+    found: dict[str, bool | None] = {}
+    for item in files:
+        if item.kind in RUNNABLE_ARTIFACT_KINDS:
+            found[item.path] = None if skills is None else item.label in skills and runnable[item.label] == item
+        elif item.kind == "agent":
+            found[item.path] = None if agents is None else item.label in agents and agent_files[item.label] == item
+    return found
 
 
 def merged_turns(first: Mapping[str, list[int]], second: Mapping[str, list[int]]) -> dict[str, list[int]]:
@@ -215,11 +270,16 @@ def build_artifacts(
     in_context: Mapping[str, list[int]],
     findings: Mapping[str, int],
     root: Path,
+    advertised: Mapping[str, bool | None],
+    contexts: Mapping[str, int],
 ) -> tuple[XrayArtifact, ...]:
-    """The artifact list: `loaded` and `in_context` are keyed by resolved path."""
+    """The artifact list: `loaded`, `in_context` and `contexts` are keyed by resolved path, `advertised` by the
+    file's path."""
     out: list[XrayArtifact] = []
     for item in files:
         resolved = real_path(item.path, root)
+        tokens_est = file_tokens_est(resolved)
+        entered = contexts.get(resolved, 0)
         out.append(
             XrayArtifact(
                 path=relative_wire_path(item.path, root),
@@ -233,7 +293,10 @@ def build_artifacts(
                 turns=tuple(in_context.get(resolved, ())),
                 findings=count_for(findings, item.path, root),
                 actionable=is_actionable(item, root),
-                tokens_est=file_tokens_est(resolved),
+                tokens_est=tokens_est,
+                advertised=advertised.get(item.path),
+                contexts=entered,
+                session_tokens_est=None if tokens_est is None else tokens_est * entered,
             )
         )
     return tuple(out)

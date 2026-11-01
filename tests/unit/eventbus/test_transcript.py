@@ -481,3 +481,41 @@ def test_deferred_tools_with_no_items_are_refused_unless_every_name_is_re_added(
         ClaudeTranscriptAdapter().resolve_row(
             _deferred_row(addedNames=names, addedLines=[], readdedNames=["a", "b"]), None
         )
+
+
+def _assistant_row(**message: object) -> JsonObject:
+    usage = {"input_tokens": 1, "cache_creation_input_tokens": 2, "cache_read_input_tokens": 3}
+    return {
+        "type": "assistant",
+        "sessionId": "s",
+        "timestamp": "2026-10-31T10:00:00.000Z",
+        "message": {"id": "msg_1", "usage": usage, **message},
+    }
+
+
+def test_a_reply_carries_the_model_its_row_names_and_the_model_survives_the_stored_record() -> None:
+    (record,) = ClaudeTranscriptAdapter().resolve_row(_assistant_row(model="claude-opus-5"), None)
+    assert record.usage is not None and record.usage.model == "claude-opus-5"
+    assert EventRecord.from_json(record.to_json()).usage == record.usage
+    (bare,) = ClaudeTranscriptAdapter().resolve_row(_assistant_row(), None)
+    assert bare.usage is not None and bare.usage.model is None
+    assert EventRecord.from_json(bare.to_json()).usage == bare.usage
+
+
+def test_a_reply_whose_model_is_not_a_string_is_refused() -> None:
+    with pytest.raises(PayloadRefused, match="model"):
+        ClaudeTranscriptAdapter().resolve_row(_assistant_row(model=5), None)
+
+
+def _listing_row(**fields: object) -> JsonObject:
+    attachment = {"type": "skill_listing", "content": "abc", "skillCount": 2, **fields}
+    return {"type": "attachment", "sessionId": "s", "timestamp": "2026-10-31T10:00:00.000Z", "attachment": attachment}
+
+
+def test_a_skill_listing_row_names_its_skills_only_when_the_row_carries_them() -> None:
+    (named,) = ClaudeTranscriptAdapter().resolve_row(_listing_row(names=["a", "b"]), None)
+    (bare,) = ClaudeTranscriptAdapter().resolve_row(_listing_row(), None)
+    assert named.harness is not None and named.harness.names == ("a", "b")
+    assert bare.harness is not None and bare.harness.names is None
+    with pytest.raises(PayloadRefused, match="names"):
+        ClaudeTranscriptAdapter().resolve_row(_listing_row(names="a"), None)

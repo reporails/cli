@@ -80,10 +80,13 @@ class TokenUsage:
     input_tokens: int
     cache_creation_input_tokens: int
     cache_read_input_tokens: int
+    # The model that wrote the reply; None when the row names none.
+    model: str | None = None
 
     def counts_json(self) -> JsonObject:
-        """The three counts as a JSON object."""
+        """The three counts and the model as a JSON object."""
         return {
+            "model": self.model,
             "input_tokens": self.input_tokens,
             "cache_creation_input_tokens": self.cache_creation_input_tokens,
             "cache_read_input_tokens": self.cache_read_input_tokens,
@@ -96,7 +99,8 @@ class TokenUsage:
         values = [opt_int(counts.get(key)) for key in _USAGE_KEYS]
         if message_id is None or any(value is None for value in values):
             return None
-        return cls(message_id, *(value or 0 for value in values))
+        first, second, third = (value or 0 for value in values)
+        return cls(message_id, first, second, third, model=opt_str(counts.get("model")))
 
 
 @dataclass(frozen=True)
@@ -141,6 +145,8 @@ class HarnessEntry:
     removed: tuple[str, ...] = ()
     # Names a row re-added whose text was sent before.
     readded: tuple[str, ...] = ()
+    # The names a skill listing row names; None when the row carries none.
+    names: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)

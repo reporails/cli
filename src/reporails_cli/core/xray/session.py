@@ -15,9 +15,11 @@ from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadab
 from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
 from reporails_cli.core.platform.dto.xray import ArtifactFile, XraySpan, XrayView
 from reporails_cli.core.xray.artifacts import (
+    advertised_files,
     agent_run_turns,
     artifact_files,
     build_artifacts,
+    context_counts,
     in_context_turns,
     is_actionable,
     merged_turns,
@@ -31,14 +33,17 @@ from reporails_cli.core.xray.derive import (
     build_subagents,
     build_turns,
     epoch,
+    latest_model,
     loads_of,
     main_replies,
     real_path,
     start_loads,
     turn_end_times,
+    window_of,
 )
+from reporails_cli.core.xray.funnel import build_funnel
 
-_NOT_KNOWN = ("context window",)
+_NO_WINDOW = "context window"
 _NO_BUS = "reads"
 
 
@@ -128,9 +133,20 @@ class XraySession:
         turns = build_turns(records, self._bus or None, frame)
         subagents = build_subagents(records, turn_end_times(records), frame)
         agent_turns = agent_run_turns(subagents, files, self._root)
-        in_context = merged_turns(in_context_turns(start, turns, self._root), agent_turns)
+        main_context = in_context_turns(start, turns, self._root)
+        in_context = merged_turns(main_context, agent_turns)
         loaded = {real_path(load.path, self._root) for load in loads_of(records, frame)}
         loaded |= run_paths(turns, self._root) | set(agent_turns)
+        window = window_of(replies)
+        artifacts = build_artifacts(
+            files,
+            loaded,
+            in_context,
+            self._findings,
+            self._root,
+            advertised_files(files, records),
+            context_counts(main_context, subagents, files, self._root),
+        )
         return XrayView(
             version=self.version,
             session=self._file.stem,
@@ -140,13 +156,16 @@ class XraySession:
             start=start,
             turns=turns,
             subagents=subagents,
-            artifacts=build_artifacts(files, loaded, in_context, self._findings, self._root),
+            artifacts=artifacts,
             refusals=tuple(
                 dict.fromkeys(
                     [r.refusal for r in self._transcript if r.event == "refusal" and r.refusal]
                     + ([self._plugin_problem] if self._plugin_problem else [])
                 )
             ),
-            not_known=_NOT_KNOWN if self._bus else (*_NOT_KNOWN, _NO_BUS),
+            not_known=(*((_NO_WINDOW,) if window is None else ()), *(() if self._bus else (_NO_BUS,))),
             harness=build_harness(records, replies),
+            model=latest_model(records),
+            window=window,
+            funnel=build_funnel(artifacts, turns, subagents),
         )
