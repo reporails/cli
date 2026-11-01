@@ -1,4 +1,5 @@
-"""The session view: one session's loads, turns, subagents and files as numbers, names and paths.
+"""The session view: one session's agents, the sources they had and the calls they made, as numbers, names and
+paths.
 
 A view never holds prompt, tool or file text. A value with no source is `None`, which reads as
 "not known here".
@@ -6,23 +7,27 @@ A view never holds prompt, tool or file text. A value with no source is `None`, 
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal, TypeGuard, get_args
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
-from reporails_cli.core.platform.dto.events import HarnessKind, NoteKind
+from reporails_cli.core.platform.dto.events import HarnessKind, ToolCategory
 
-LoadKind = Literal["project", "memory", "user", "local", "managed", "nested", "other"]
 CompactionTrigger = Literal["manual", "auto"]
-TurnOpener = Literal["prompt", "stop_hook", "session_start"]
 ArtifactKind = Literal["instructions", "rule", "memory", "skill", "agent", "command", "hook"]
 ArtifactScope = Literal["project", "user", "managed", "local", "plugin", "auto", "synced"]
 CheckState = Literal["running", "done", "refused"]
 FactKind = Literal[
     "file_findings", "funnel_drop", "memory_unlinked", "compaction_loss", "repeated_instructions", "kind_absent"
 ]
-TargetKind = Literal["path", "turn", "subagent", "kind"]
+TargetKind = Literal["path", "node", "kind"]
+NodeKind = Literal["agent"]
+SourceKind = Literal["instructions", "rule", "skill", "memory", "mcp", "hook"]
+LoadTrigger = Literal["session_start", "path_match", "agent", "inherited", "hook"]
+AgentOutcome = Literal["returned", "failed", "stopped", "no_handback", "running"]
+Availability = Literal["loaded", "listed", "on_disk"]
 
 # The kind of artifact a config file type is shown as; a file type not listed is an instruction file.
 ARTIFACT_KIND_OF_FILE_TYPE: dict[str, ArtifactKind] = {
@@ -50,14 +55,13 @@ SCOPE_PRECEDENCE: dict[ArtifactKind, tuple[ArtifactScope, ...]] = {
     "agent": ("managed", "project", "user"),
 }
 
-# The kind of an instruction-file load as the transcript names it, to the view's load kind.
-LOAD_KIND_OF_MEMORY_TYPE: dict[str, LoadKind] = {
-    "Project": "project",
-    "AutoMem": "memory",
-    "User": "user",
-    "Local": "local",
-    "Managed": "managed",
-    "nested": "nested",
+# The source kind an artifact kind is shown as; agent files and hook configs are no source.
+SOURCE_KIND_OF_ARTIFACT: dict[ArtifactKind, SourceKind] = {
+    "instructions": "instructions",
+    "rule": "rule",
+    "memory": "memory",
+    "skill": "skill",
+    "command": "skill",
 }
 
 
@@ -66,9 +70,16 @@ def is_artifact_scope(precedence: str) -> TypeGuard[ArtifactScope]:
     return precedence in get_args(ArtifactScope)
 
 
-def _objects(items: list[JsonObject]) -> JsonValue:
+def objects(items: Iterable[JsonObject]) -> JsonValue:
+    """Plain JSON objects as one JSON list."""
     values: list[JsonValue] = list(items)
     return values
+
+
+def series_json(series: Iterable[tuple[float, int]]) -> JsonValue:
+    """(seconds, tokens) points as a JSON list of pairs."""
+    points: list[JsonValue] = [[t, tokens] for t, tokens in series]
+    return points
 
 
 @dataclass(frozen=True)
@@ -104,190 +115,367 @@ class XrayCheck:
 
 @dataclass(frozen=True)
 class XrayLoad:
-    """One instruction file loaded into a context."""
+    """One station on a node's spine: a source entering its context, when, how big, what brought it there and
+    whether it is small; `on_spine` is false for an instruction file the node started with."""
 
-    path: str
-    kind: LoadKind
+    source: str
     t: float | None
     tokens_est: int | None
-    findings: FindingTally | None
+    trigger: LoadTrigger
+    event: str | None
+    small: bool
+    on_spine: bool
 
     def to_json(self) -> JsonObject:
         """The load as a JSON object."""
         return {
-            "path": self.path,
-            "kind": self.kind,
+            "source": self.source,
             "t": self.t,
             "tokens_est": self.tokens_est,
-            "findings": _tally_json(self.findings),
+            "trigger": self.trigger,
+            "event": self.event,
+            "small": self.small,
+            "on_spine": self.on_spine,
+        }
+
+
+@dataclass(frozen=True)
+class XrayMcpCluster:
+    """The calls a node made to one MCP server close together in time, and the size of their results."""
+
+    server: str
+    first: float
+    last: float
+    calls: int
+    back_tokens_est: int
+
+    def to_json(self) -> JsonObject:
+        """The cluster as a JSON object."""
+        return {
+            "server": self.server,
+            "first": self.first,
+            "last": self.last,
+            "calls": self.calls,
+            "back_tokens_est": self.back_tokens_est,
         }
 
 
 @dataclass(frozen=True)
 class XrayCompaction:
-    """One compaction: the turn it ran in, when, what started it, the context before and after, and when the band
-    it opens ends (the next compaction, else the session's end)."""
+    """One compaction of a node's context: when, what started it and the context before and after."""
 
-    turn: int
     t: float
     trigger: CompactionTrigger | None
     before: int | None
     after: int | None
-    band_end: float
 
     def to_json(self) -> JsonObject:
         """The compaction as a JSON object."""
+        return {"t": self.t, "trigger": self.trigger, "before": self.before, "after": self.after}
+
+
+@dataclass(frozen=True)
+class XrayStation:
+    """What happened on one node's spine: its loads, its MCP clusters and its compactions."""
+
+    node: str
+    loads: tuple[XrayLoad, ...]
+    mcp: tuple[XrayMcpCluster, ...]
+    compactions: tuple[XrayCompaction, ...]
+
+    def to_json(self) -> JsonObject:
+        """The station as a JSON object."""
         return {
-            "turn": self.turn,
+            "node": self.node,
+            "loads": objects(load.to_json() for load in self.loads),
+            "mcp": objects(cluster.to_json() for cluster in self.mcp),
+            "compactions": objects(item.to_json() for item in self.compactions),
+        }
+
+
+@dataclass(frozen=True)
+class XrayCall:
+    """One call on a node's side track: when, its category, its label, the source its file is, whether it failed
+    and the id the page asks the command text by."""
+
+    t: float
+    category: ToolCategory
+    label: str
+    source: str | None
+    failed: bool
+    use_id: str
+
+    def to_json(self) -> JsonObject:
+        """The call as a JSON object."""
+        return {
             "t": self.t,
-            "trigger": self.trigger,
-            "before": self.before,
-            "after": self.after,
-            "band_end": self.band_end,
+            "category": self.category,
+            "label": self.label,
+            "source": self.source,
+            "failed": self.failed,
+            "use_id": self.use_id,
+        }
+
+
+@dataclass(frozen=True)
+class XrayFailureRun:
+    """Three or more shell calls in a row that ran one command and all failed."""
+
+    first: float
+    last: float
+    count: int
+    call_id: str
+
+    def to_json(self) -> JsonObject:
+        """The run as a JSON object."""
+        return {"first": self.first, "last": self.last, "count": self.count, "call_id": self.call_id}
+
+
+@dataclass(frozen=True)
+class XrayBreak:
+    """A long stretch in which a node held no record."""
+
+    start: float
+    end: float
+
+    def to_json(self) -> JsonObject:
+        """The break as a JSON object."""
+        return {"start": self.start, "end": self.end}
+
+
+@dataclass(frozen=True)
+class XrayTrack:
+    """A node's side track: its calls, the runs of one failing command and its breaks."""
+
+    node: str
+    calls: tuple[XrayCall, ...]
+    failure_runs: tuple[XrayFailureRun, ...]
+    breaks: tuple[XrayBreak, ...]
+
+    def to_json(self) -> JsonObject:
+        """The track as a JSON object."""
+        return {
+            "node": self.node,
+            "calls": objects(call.to_json() for call in self.calls),
+            "failure_runs": objects(item.to_json() for item in self.failure_runs),
+            "breaks": objects(item.to_json() for item in self.breaks),
         }
 
 
 @dataclass(frozen=True)
 class XrayPrompt:
-    """One prompt a person typed in a turn: its number in the session, the id the page asks the text by, when, its
-    size and whether it was queued while the agent worked. Never the text."""
+    """One prompt a person typed: the id the page asks the text by, when, and its size. Never the text."""
 
-    no: int
     id: str
-    t: float
-    chars: int
-    queued: bool
-
-    def to_json(self) -> JsonObject:
-        """The prompt as a JSON object."""
-        return {"no": self.no, "id": self.id, "t": self.t, "chars": self.chars, "queued": self.queued}
-
-
-@dataclass(frozen=True)
-class XrayNote:
-    """One note a hook put into a turn: a hook's added context or a Stop block, sized by an estimate."""
-
-    kind: NoteKind
-    event: str
-    label: str
     t: float
     tokens_est: int
 
     def to_json(self) -> JsonObject:
-        """The note as a JSON object."""
-        return {
-            "kind": self.kind,
-            "event": self.event,
-            "label": self.label,
-            "t": self.t,
-            "tokens_est": self.tokens_est,
-        }
+        """The prompt as a JSON object."""
+        return {"id": self.id, "t": self.t, "tokens_est": self.tokens_est}
 
 
 @dataclass(frozen=True)
-class XrayRun:
-    """One skill or command run: its name, when, whether it ran in a subagent of its own, and for a listed file its
-    project-relative path and size; a run whose name matches no listed file has neither."""
+class XrayHarnessItem:
+    """One piece of the harness's own context at an agent's start, sized by an estimate."""
 
-    name: str
-    t: float
-    forked: bool
-    path: str | None
+    kind: HarnessKind
+    label: str
+    count: int | None
     tokens_est: int | None
 
+
+@dataclass(frozen=True)
+class XrayGiven:
+    """One piece of what an agent started with: its label, size and, for a source, the source's id."""
+
+    label: str
+    tokens_est: int | None
+    source: str | None
+
     def to_json(self) -> JsonObject:
-        """The run as a JSON object."""
-        return {
-            "name": self.name,
-            "t": self.t,
-            "forked": self.forked,
-            "path": self.path,
-            "tokens_est": self.tokens_est,
-        }
+        """The piece as a JSON object."""
+        return {"label": self.label, "tokens_est": self.tokens_est, "source": self.source}
 
 
 @dataclass(frozen=True)
-class XrayTurnContext:
-    """A turn's context in tokens: at its first and last reply, how far it moved from the last context known
-    before the turn, and each reply's time and context."""
+class XrayDown:
+    """What a parent handed an agent: the task prompt's size (None for the root) and the rest it started with."""
 
-    first: int | None
-    last: int | None
-    delta: int | None
+    task_tokens_est: int | None
+    inherited_tokens_est: int
+
+    def to_json(self) -> JsonObject:
+        """The hand-down as a JSON object."""
+        return {"task_tokens_est": self.task_tokens_est, "inherited_tokens_est": self.inherited_tokens_est}
+
+
+@dataclass(frozen=True)
+class XrayAgentDetail:
+    """What the page shows of an agent beyond the generic node: its context line, what it was handed, what it
+    handed back, how it ended and the prompts a person typed to it."""
+
+    context_start: int | None
+    peak: int | None
     series: tuple[tuple[float, int], ...]
+    down: XrayDown
+    back_tokens_est: int | None
+    outcome: AgentOutcome | None
+    given: tuple[XrayGiven, ...]
+    prompts: tuple[XrayPrompt, ...]
+    brief: bool
+    kind: NodeKind = "agent"
+
+    def to_json(self) -> JsonObject:
+        """The detail as a JSON object."""
+        return {
+            "kind": self.kind,
+            "context_start": self.context_start,
+            "peak": self.peak,
+            "series": series_json(self.series),
+            "down": self.down.to_json(),
+            "back_tokens_est": self.back_tokens_est,
+            "outcome": self.outcome,
+            "given": objects(item.to_json() for item in self.given),
+            "prompts": objects(item.to_json() for item in self.prompts),
+            "brief": self.brief,
+        }
+
+
+# What a node carries beyond the generic facts, one member per node kind.
+XrayDetail = XrayAgentDetail
 
 
 @dataclass(frozen=True)
-class XrayTurn:
-    """The replies between two turn ends, the last turn open while the session runs: when it began, what opened it,
-    how many Stop blocks it held and how far its context moved from the last one known."""
+class XraySlot:
+    """How many sources of one kind a node had and how many findings they carry together."""
 
-    n: int
-    start: float
-    opened_by: TurnOpener | None
-    stop_blocks: int
-    t: float
-    context: XrayTurnContext
-    loads: tuple[XrayLoad, ...]
-    reads: tuple[str, ...] | None
-    subagents: tuple[str, ...]
-    prompts: tuple[XrayPrompt, ...]
-    notes: tuple[XrayNote, ...]
-    skill_runs: tuple[XrayRun, ...]
+    count: int
+    findings: int
+
+
+@dataclass(frozen=True)
+class XrayWithheldSource:
+    """A source the parent had at a child's launch that the child never had."""
+
+    source: str
+    tokens_est: int | None
+
+
+@dataclass(frozen=True)
+class XrayWithheld:
+    """What a child did not get: the sources its parent had at the launch and the parent's context then."""
+
+    sources: tuple[XrayWithheldSource, ...]
+    context_tokens: int | None
 
     def to_json(self) -> JsonObject:
-        """The turn as a JSON object."""
-        reads: JsonValue = None if self.reads is None else list(self.reads)
-        series: list[JsonValue] = [[t, context] for t, context in self.context.series]
+        """What was withheld as a JSON object."""
         return {
-            "n": self.n,
-            "start": self.start,
-            "opened_by": self.opened_by,
-            "stop_blocks": self.stop_blocks,
-            "delta": self.context.delta,
-            "t": self.t,
-            "context_start": self.context.first,
-            "context": self.context.last,
-            "replies": len(self.context.series),
-            "loads": _objects([load.to_json() for load in self.loads]),
-            "reads": reads,
-            "subagents": list(self.subagents),
-            "series": series,
-            "prompts": _objects([prompt.to_json() for prompt in self.prompts]),
-            "notes": _objects([note.to_json() for note in self.notes]),
-            "skill_runs": _objects([run.to_json() for run in self.skill_runs]),
+            "sources": objects({"source": item.source, "tokens_est": item.tokens_est} for item in self.sources),
+            "context_tokens": self.context_tokens,
         }
 
 
 @dataclass(frozen=True)
-class XraySubagent:
-    """One subagent run: its type, where it started and its own context over time."""
+class XrayNode:
+    """One node of the session's graph: where it hangs, when it ran, the sources it had by kind, the calls it made by
+    category, what its parent withheld from it, and its kind's own detail."""
 
     id: str
+    kind: NodeKind
+    parent: str | None
+    depth: int
+    name: str
     type: str | None
-    turn: int | None
-    start: float | None
-    end: float | None
-    series: tuple[tuple[float, int], ...]
-    loads: tuple[XrayLoad, ...]
-    skill_runs: tuple[XrayRun, ...]
-    peak: int | None
-    has_project_instructions: bool
+    start: float
+    end: float
+    children: tuple[str, ...]
+    descendants: int
+    slots: dict[SourceKind, XraySlot]
+    tool_counts: dict[ToolCategory, int]
+    withheld: XrayWithheld | None
+    detail: XrayDetail
 
     def to_json(self) -> JsonObject:
-        """The subagent as a JSON object."""
-        series: list[JsonValue] = [[t, context] for t, context in self.series]
+        """The node as a JSON object."""
+        slots: dict[str, JsonValue] = {
+            kind: {"count": slot.count, "findings": slot.findings} for kind, slot in self.slots.items()
+        }
+        counts: dict[str, JsonValue] = {str(category): count for category, count in self.tool_counts.items()}
         return {
             "id": self.id,
+            "kind": self.kind,
+            "parent": self.parent,
+            "depth": self.depth,
+            "name": self.name,
             "type": self.type,
-            "turn": self.turn,
             "start": self.start,
             "end": self.end,
-            "series": series,
-            "loads": _objects([load.to_json() for load in self.loads]),
-            "skill_runs": _objects([run.to_json() for run in self.skill_runs]),
-            "peak": self.peak,
-            "has_project_instructions": self.has_project_instructions,
+            "children": list(self.children),
+            "descendants": self.descendants,
+            "slots": slots,
+            "tool_counts": counts,
+            "withheld": None if self.withheld is None else self.withheld.to_json(),
+            "detail": self.detail.to_json(),
+        }
+
+
+@dataclass(frozen=True)
+class XrayEdge:
+    """One handoff from a parent node to a child: what went down, what came back, when each happened and how the
+    child ended."""
+
+    parent: str
+    child: str
+    down: int
+    back: int | None
+    out_t: float
+    back_t: float | None
+    outcome: AgentOutcome | None
+
+    def to_json(self) -> JsonObject:
+        """The edge as a JSON object."""
+        return {
+            "from": self.parent,
+            "to": self.child,
+            "kind": "handoff",
+            "down": self.down,
+            "back": self.back,
+            "out_t": self.out_t,
+            "back_t": self.back_t,
+            "outcome": self.outcome,
+        }
+
+
+@dataclass(frozen=True)
+class XraySource:
+    """One thing that can enter a context: its kind, name, path (None for an MCP server or a hook), size, findings,
+    whether it loaded, was only listed or sat on disk, the nodes whose context it entered, and whether the page
+    may check or fix it."""
+
+    id: str
+    kind: SourceKind
+    name: str
+    path: str | None
+    tokens_est: int | None
+    findings: FindingTally | None
+    availability: Availability
+    had_by: tuple[str, ...]
+    actionable: bool
+
+    def to_json(self) -> JsonObject:
+        """The source as a JSON object."""
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "name": self.name,
+            "path": self.path,
+            "tokens_est": self.tokens_est,
+            "findings": _tally_json(self.findings),
+            "availability": self.availability,
+            "had_by": list(self.had_by),
+            "actionable": self.actionable,
         }
 
 
@@ -308,47 +496,21 @@ class ArtifactFile:
 
 @dataclass(frozen=True)
 class XrayArtifact(ArtifactFile):
-    """A file the session could load, whether the harness listed it by name (`advertised`, None when no listing
-    names its kind), whether it loaded, the turns it sat in context, whether the page may check or fix it (a file
-    of the project that exists), and how many contexts (the main session's and each subagent's) it entered, with
-    its size over all of them."""
+    """A file the session could load with its size, its findings, whether the harness listed it by name
+    (`advertised`, None when no listing names its kind) and whether the page may check or fix it."""
 
-    loaded: bool
-    turns: tuple[int, ...]
     findings: FindingTally | None
     actionable: bool
     tokens_est: int | None
     advertised: bool | None
-    contexts: int
-    session_tokens_est: int | None
-
-    def to_json(self) -> JsonObject:
-        """The artifact as a JSON object."""
-        return {
-            "path": self.path,
-            "kind": self.kind,
-            "scope": self.scope,
-            "plugin": self.plugin,
-            "label": self.label,
-            "memory_type": self.memory_type,
-            "linked": self.linked,
-            "loaded": self.loaded,
-            "turns": list(self.turns),
-            "findings": _tally_json(self.findings),
-            "actionable": self.actionable,
-            "tokens_est": self.tokens_est,
-            "advertised": self.advertised,
-            "contexts": self.contexts,
-            "session_tokens_est": self.session_tokens_est,
-        }
 
 
 @dataclass(frozen=True)
 class XrayFunnelRow:
-    """How many artifacts of a kind sit on disk, are advertised by the harness, load and are used; a count with
+    """How many sources of a kind sit on disk, are advertised by the harness, load and are used; a count with
     no source is None."""
 
-    kind: ArtifactKind
+    kind: SourceKind
     on_disk: int
     advertised: int | None
     loaded: int | None
@@ -367,10 +529,10 @@ class XrayFunnelRow:
 
 @dataclass(frozen=True)
 class XrayTarget:
-    """What a fact points at on the page: a file path, a turn number, a subagent id or an artifact kind."""
+    """What a fact points at on the page: a file path, a node id or a source kind."""
 
     kind: TargetKind
-    value: str | int
+    value: str
 
     def to_json(self) -> JsonObject:
         """The target as a JSON object."""
@@ -379,10 +541,10 @@ class XrayTarget:
 
 @dataclass(frozen=True)
 class XrayFact:
-    """One headline fact of the session: its kind, the artifact kind it is about, its named counts and its target."""
+    """One headline fact of the session: its kind, the source kind it is about, its named counts and its target."""
 
     kind: FactKind
-    artifact_kind: ArtifactKind | None
+    artifact_kind: SourceKind | None
     numbers: tuple[tuple[str, int], ...]
     target: XrayTarget | None
 
@@ -410,25 +572,6 @@ class XrayWindow:
 
 
 @dataclass(frozen=True)
-class XrayHarnessItem:
-    """One piece of the harness's own context at session start, sized by an estimate."""
-
-    kind: HarnessKind
-    label: str
-    count: int | None
-    tokens_est: int | None
-
-    def to_json(self) -> JsonObject:
-        """The item as a JSON object."""
-        return {
-            "kind": self.kind,
-            "label": self.label,
-            "count": self.count,
-            "tokens_est": self.tokens_est,
-        }
-
-
-@dataclass(frozen=True)
 class XraySessionInfo:
     """Which session and project the page shows, when the session began (the time of its first record) and how
     long it ran, in seconds."""
@@ -437,19 +580,6 @@ class XraySessionInfo:
     project: str
     started_at: str | None
     length_s: float | None
-
-
-@dataclass(frozen=True)
-class XrayContextSummary:
-    """The session's context in tokens: its first reading, its line over time, its peak, the estimate of what
-    loaded before the first prompt, the latest model and the window size."""
-
-    first_context: int | None
-    line: tuple[tuple[float, int], ...]
-    peak: int | None
-    preload_tokens_est: int | None
-    model: str | None
-    window: XrayWindow | None
 
 
 @dataclass(frozen=True)
@@ -471,45 +601,136 @@ class XrayGaps:
 
 
 @dataclass(frozen=True)
+class XraySourceKindInfo:
+    """One source kind the coding agent has: its key, label, the letter the page marks it with and whether its
+    sources are usually under a thousand tokens."""
+
+    key: SourceKind
+    label: str
+    letter: str
+    small: bool
+
+
+@dataclass(frozen=True)
+class XrayAgentTypeInfo:
+    """One agent type the page can draw: its key as the transcript names it, a short label, a colour and an icon
+    path in a 24-unit box."""
+
+    key: str
+    label: str
+    colour: str
+    icon: str
+
+
+@dataclass(frozen=True)
+class XrayNodeKindInfo:
+    """One node kind: its key, label, whether the page may open one to show what is inside and whether its nodes
+    carry a spine of loads and calls."""
+
+    key: NodeKind
+    label: str
+    opens: bool
+    has_spine: bool
+
+
+@dataclass(frozen=True)
+class XrayCategoryInfo:
+    """One tool category the page counts: its label and whether its calls sit on the side track."""
+
+    key: ToolCategory
+    label: str
+    track: bool
+
+
+@dataclass(frozen=True)
+class XrayRoot:
+    """The root node's type key and name."""
+
+    type: str
+    name: str
+
+
+@dataclass(frozen=True)
+class XrayNesting:
+    """Whether the coding agent nests subagents and how deep."""
+
+    enabled: bool
+    max_depth: int | None
+
+
+@dataclass(frozen=True)
+class AdapterVocabulary:
+    """What a coding agent calls things: its tool name, its root, source kinds, agent types, node kinds, tool
+    categories and nesting."""
+
+    tool: str
+    root: XrayRoot
+    source_kinds: tuple[XraySourceKindInfo, ...]
+    agent_types: tuple[XrayAgentTypeInfo, ...]
+    node_kinds: tuple[XrayNodeKindInfo, ...]
+    categories: tuple[XrayCategoryInfo, ...]
+    nesting: XrayNesting
+
+    def to_json(self) -> JsonObject:
+        """The vocabulary as a JSON object."""
+        return {
+            "tool": self.tool,
+            "root": {"type": self.root.type, "name": self.root.name},
+            "source_kinds": objects(
+                {"key": item.key, "label": item.label, "letter": item.letter, "small": item.small}
+                for item in self.source_kinds
+            ),
+            "agent_types": objects(
+                {"key": item.key, "label": item.label, "colour": item.colour, "icon": item.icon}
+                for item in self.agent_types
+            ),
+            "node_kinds": objects(
+                {"key": item.key, "label": item.label, "opens": item.opens, "has_spine": item.has_spine}
+                for item in self.node_kinds
+            ),
+            "categories": objects(
+                {"key": item.key, "label": item.label, "track": item.track} for item in self.categories
+            ),
+            "nesting": {"enabled": self.nesting.enabled, "max_depth": self.nesting.max_depth},
+        }
+
+
+@dataclass(frozen=True)
 class XrayView:
     """Everything the session page draws; the window is null until a reply's context shows the size."""
 
     version: int
     info: XraySessionInfo
-    context: XrayContextSummary
-    start: tuple[XrayLoad, ...]
-    turns: tuple[XrayTurn, ...]
-    compactions: tuple[XrayCompaction, ...]
-    subagents: tuple[XraySubagent, ...]
-    artifacts: tuple[XrayArtifact, ...]
+    model: str | None
+    window: XrayWindow | None
+    adapter: AdapterVocabulary
+    nodes: tuple[XrayNode, ...]
+    edges: tuple[XrayEdge, ...]
+    sources: tuple[XraySource, ...]
+    stations: tuple[XrayStation, ...]
+    tracks: tuple[XrayTrack, ...]
     gaps: XrayGaps
-    harness: tuple[XrayHarnessItem, ...] | None
     verdict: XrayVerdict
 
     def to_json(self) -> JsonObject:
         """The view as a JSON object."""
-        window = self.context.window
         return {
             "version": self.version,
             "session": self.info.session,
             "project": self.info.project,
             "started_at": self.info.started_at,
             "length_s": self.info.length_s,
-            "model": self.context.model,
-            "window": None if window is None else window.to_json(),
-            "funnel": _objects([row.to_json() for row in self.verdict.funnel]),
-            "first_context": self.context.first_context,
-            "context_line": [[t, context] for t, context in self.context.line],
-            "peak": self.context.peak,
-            "preload_tokens_est": self.context.preload_tokens_est,
-            "start": _objects([load.to_json() for load in self.start]),
-            "turns": _objects([turn.to_json() for turn in self.turns]),
-            "compactions": _objects([compaction.to_json() for compaction in self.compactions]),
-            "subagents": _objects([sub.to_json() for sub in self.subagents]),
-            "artifacts": _objects([artifact.to_json() for artifact in self.artifacts]),
+            "model": self.model,
+            "window": None if self.window is None else self.window.to_json(),
+            "adapter": self.adapter.to_json(),
+            "nodes": objects(node.to_json() for node in self.nodes),
+            "edges": objects(edge.to_json() for edge in self.edges),
+            "sources": objects(source.to_json() for source in self.sources),
+            "stations": objects(station.to_json() for station in self.stations),
+            "track": objects(track.to_json() for track in self.tracks),
+            "funnel": objects(row.to_json() for row in self.verdict.funnel),
+            "facts": objects(fact.to_json() for fact in self.verdict.facts),
+            "check": self.verdict.check.to_json(),
             "refusals": list(self.gaps.refusals),
             "not_known": list(self.gaps.not_known),
-            "harness": None if self.harness is None else _objects([item.to_json() for item in self.harness]),
-            "check": self.verdict.check.to_json(),
-            "facts": _objects([fact.to_json() for fact in self.verdict.facts]),
         }

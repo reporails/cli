@@ -1,0 +1,646 @@
+"""The node graph: the tree of agents, what each was handed and handed back, how each ended, and the facts every
+node with a spine carries, built from records shaped as the transcript adapter emits them."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Iterator, Sequence
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import cast
+
+import pytest
+
+from reporails_cli.core.platform.contract.json_value import JsonValue, as_list, as_object
+from reporails_cli.core.platform.dto.events import (
+    EventKind,
+    EventRecord,
+    HarnessEntry,
+    HarnessKind,
+    InstructionLoad,
+    SkillRun,
+    SubagentMeta,
+    TokenUsage,
+    ToolCategory,
+    ToolUse,
+)
+from reporails_cli.core.platform.dto.xray import (
+    AdapterVocabulary,
+    ArtifactFile,
+    ArtifactKind,
+    FindingTally,
+    NodeKind,
+    XrayAgentDetail,
+    XrayCheck,
+    XrayCompaction,
+    XrayDown,
+    XrayEdge,
+    XrayGaps,
+    XrayNode,
+    XrayNodeKindInfo,
+    XraySessionInfo,
+    XrayVerdict,
+    XrayView,
+)
+from reporails_cli.core.xray.artifacts import build_artifacts
+from reporails_cli.core.xray.derive import Frame, epoch
+from reporails_cli.core.xray.funnel import build_funnel
+from reporails_cli.core.xray.graph.agents import MAIN_ID
+from reporails_cli.core.xray.graph.build import Graph, build_graph
+from reporails_cli.core.xray.graph.port import (
+    PRODUCERS,
+    Produced,
+    ProducedLoad,
+    ProducedNode,
+    ProducerContext,
+    register,
+)
+from reporails_cli.core.xray.graph.sources import build_sources, ran_sources
+from reporails_cli.core.xray.vocabulary import vocabulary_for
+
+pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
+
+BASE = datetime(2026, 10, 31, 10, 0, 0, tzinfo=UTC)
+
+
+def at(seconds: float) -> str:
+    """The written time `seconds` after the session's first record."""
+    return (BASE + timedelta(seconds=seconds)).isoformat().replace("+00:00", "Z")
+
+
+def rec(event: EventKind, seconds: float, sub: str | None = None, **fields: object) -> EventRecord:
+    """A record of the session at `seconds`, of the main agent or of subagent `sub`."""
+    return EventRecord(agent="claude", event=event, session_id="s", time=at(seconds), subagent_id=sub, **fields)  # type: ignore[arg-type]
+
+
+def reply(seconds: float, sub: str | None = None, context: int = 1000) -> EventRecord:
+    """A reply whose context is `context` tokens."""
+    return rec("assistant_usage", seconds, sub, usage=TokenUsage(f"msg-{sub}-{seconds}", 1, 0, context - 1))
+
+
+def launch(
+    seconds: float,
+    sub: str,
+    parent: str | None,
+    use_id: str,
+    *,
+    description: str | None = "task",
+    brief_chars: int = 0,
+    stopped: bool = False,
+    background: bool = False,
+) -> EventRecord:
+    """The run record of subagent `sub`, launched by the call `use_id` of `parent`."""
+    meta = SubagentMeta(description, parent, use_id, None, brief_chars, stopped, background)
+    return rec("subagent_run", seconds, sub, subagent_type="general-purpose", item=meta)
+
+
+def call(
+    seconds: float,
+    use_id: str,
+    category: ToolCategory,
+    sub: str | None = None,
+    *,
+    name: str = "Tool",
+    path: str | None = None,
+    server: str | None = None,
+    chars: int | None = None,
+    fingerprint: str | None = None,
+) -> EventRecord:
+    """A tool call."""
+    return rec("tool_call", seconds, sub, tool=ToolUse(name, use_id, path, server, category, chars, fingerprint))
+
+
+def result(seconds: float, use_id: str, sub: str | None = None, chars: int = 0, error: bool = False) -> EventRecord:
+    """The result of the call `use_id`."""
+    return rec("tool_result", seconds, sub, tool=ToolUse(use_id=use_id, chars=chars, error=error))
+
+
+def load(
+    seconds: float, file: ArtifactFile | Path, sub: str | None = None, memory_type: str = "Project"
+) -> EventRecord:
+    """An instruction file loaded."""
+    path = file if isinstance(file, Path) else Path(file.path)
+    return rec("instruction_load", seconds, sub, item=InstructionLoad(str(path), memory_type))
+
+
+def harness(seconds: float, kind: HarnessKind, label: str, chars: int, sub: str | None = None) -> EventRecord:
+    """A piece of the harness's context."""
+    return rec("harness", seconds, sub, item=HarnessEntry(kind, label, None, chars))
+
+
+def _file(root: Path, name: str, size: int, kind: ArtifactKind = "instructions") -> ArtifactFile:
+    path = root / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x" * size)
+    return ArtifactFile(str(path), kind, "project", None, name, None, None)
+
+
+def _graph(
+    root: Path,
+    records: Sequence[EventRecord],
+    files: Sequence[ArtifactFile] = (),
+    *,
+    advertised: dict[str, bool | None] | None = None,
+    findings: dict[str, FindingTally] | None = None,
+    runnable: dict[str, str] | None = None,
+    vocabulary: AdapterVocabulary | None = None,
+) -> Graph:
+    frame = Frame(epoch(at(0)) or 0.0, root, findings or {}, runnable or {})
+    artifacts = build_artifacts(files, findings or {}, root, advertised=advertised or {})
+    vocab = vocabulary or vocabulary_for("claude", [])
+    return build_graph(list(records), frame, build_sources(artifacts, records, frame), vocab)
+
+
+def _node(graph: Graph, node_id: str) -> XrayNode:
+    return next(node for node in graph.nodes if node.id == node_id)
+
+
+def _edge(graph: Graph, child: str) -> XrayEdge:
+    return next(edge for edge in graph.edges if edge.child == child)
+
+
+def _agent(node: XrayNode) -> XrayAgentDetail:
+    assert isinstance(node.detail, XrayAgentDetail)
+    return node.detail
+
+
+def _tree_records() -> list[EventRecord]:
+    """D is launched by main last but its records come first; A launches B, B launches C; D names a parent that is
+    no subagent."""
+    return [
+        launch(20, "D", "ghost", "tuD"),
+        reply(21, "D"),
+        reply(1),
+        call(5, "tuA", "agent"),
+        launch(6, "A", None, "tuA"),
+        reply(7, "A"),
+        call(8, "tuB", "agent", "A"),
+        launch(9, "B", "A", "tuB"),
+        reply(10, "B"),
+        call(11, "tuC", "agent", "B"),
+        launch(12, "C", "B", "tuC"),
+        reply(13, "C"),
+        call(19, "tuD", "agent"),
+        reply(30),
+    ]
+
+
+def test_the_agents_form_a_tree_by_the_launching_subagent_and_a_stranger_hangs_under_main(tmp_path: Path) -> None:
+    graph = _graph(tmp_path, _tree_records())
+    assert [node.id for node in graph.nodes] == ["main", "A", "B", "C", "D"]
+    assert {node.id: (node.parent, node.depth) for node in graph.nodes} == {
+        "main": (None, 0),
+        "A": ("main", 1),
+        "B": ("A", 2),
+        "C": ("B", 3),
+        "D": ("main", 1),
+    }
+    assert {node.id: node.descendants for node in graph.nodes} == {"main": 4, "A": 2, "B": 1, "C": 0, "D": 0}
+    # Children follow launch order, not the order the records were read in.
+    assert _node(graph, "main").children == ("A", "D")
+    assert _node(graph, "A").children == ("B",)
+    assert [(edge.parent, edge.child) for edge in graph.edges] == [("main", "A"), ("A", "B"), ("B", "C"), ("main", "D")]
+
+
+def test_launchers_that_lead_back_to_each_other_hang_under_main(tmp_path: Path) -> None:
+    graph = _graph(tmp_path, [reply(1), launch(5, "A", "B", "t1"), launch(6, "B", "A", "t2")])
+    assert {node.id: (node.parent, node.depth) for node in graph.nodes} == {
+        "main": (None, 0),
+        "A": ("main", 1),
+        "B": ("main", 1),
+    }
+
+
+def test_a_node_is_named_by_its_description_else_its_type_and_a_subagent_with_no_run_record_still_has_a_node(
+    tmp_path: Path,
+) -> None:
+    records = [reply(1), launch(5, "A", None, "t1", description=None), reply(6, "A"), reply(7, "ghost")]
+    graph = _graph(tmp_path, records)
+    assert _node(graph, "A").name == "general-purpose"
+    stray = _node(graph, "ghost")
+    assert (stray.name, stray.type, stray.parent) == ("ghost", None, "main")
+    assert _agent(stray).down.task_tokens_est is None
+    assert _node(graph, "main").name == "main agent"
+
+
+def test_a_subagent_is_handed_its_task_prompt_and_what_it_started_with_and_hands_back_its_message(
+    tmp_path: Path,
+) -> None:
+    claude = _file(tmp_path, "CLAUDE.md", 400)
+    records = [
+        reply(1),
+        call(5, "tuA", "agent"),
+        launch(6, "A", None, "tuA", brief_chars=1600),
+        load(6.5, claude, "A"),
+        harness(6.6, "system_prompt", "system prompt", 800, "A"),
+        reply(7, "A"),
+        call(100, "hb", "handback", "A", name="SubagentHandback", chars=800),
+        reply(101, "A"),
+        reply(200),
+    ]
+    graph = _graph(tmp_path, records, [claude])
+    detail = _agent(_node(graph, "A"))
+    assert detail.down == XrayDown(400, 300)
+    assert [(item.label, item.tokens_est, item.source) for item in detail.given] == [
+        ("task prompt", 400, None),
+        ("CLAUDE.md", 100, "CLAUDE.md"),
+        ("system prompt", 200, None),
+    ]
+    assert detail.back_tokens_est == 200 and detail.outcome == "returned"
+    edge = _edge(graph, "A")
+    assert (edge.down, edge.back, edge.out_t, edge.back_t, edge.outcome) == (700, 200, 5.0, 100.0, "returned")
+
+
+def test_a_foreground_subagent_comes_back_with_the_parents_result_when_it_hands_nothing_back(tmp_path: Path) -> None:
+    records = [
+        reply(1),
+        call(5, "tuD", "agent"),
+        launch(6, "D", None, "tuD", brief_chars=40),
+        reply(7, "D"),
+        result(60, "tuD", chars=400),
+        reply(61),
+    ]
+    graph = _graph(tmp_path, records)
+    edge = _edge(graph, "D")
+    assert (edge.back, edge.back_t, edge.outcome) == (100, 60.0, "returned")
+    assert _agent(_node(graph, "D")).back_tokens_est == 100
+
+
+@pytest.mark.parametrize(
+    ("meta", "extra", "end", "expected"),
+    [
+        ({}, [call(250, "hb", "handback", "X", chars=40)], 300, "returned"),
+        ({}, [result(300, "tuX", chars=80)], 300, "returned"),
+        ({}, [result(300, "tuX", chars=80, error=True)], 300, "failed"),
+        ({"stopped": True}, [], 300, "stopped"),
+        ({}, [], 300, "no_handback"),
+        ({}, [], 950, "running"),
+        ({"background": True}, [result(6, "tuX", chars=10)], 300, "no_handback"),
+        ({"background": True}, [result(6, "tuX", chars=10)], 950, "running"),
+    ],
+)
+def test_a_subagent_ends_returned_failed_stopped_running_or_with_no_handback(
+    tmp_path: Path, meta: dict[str, bool], extra: list[EventRecord], end: float, expected: str
+) -> None:
+    records = [
+        reply(1),
+        call(5, "tuX", "agent"),
+        launch(6, "X", None, "tuX", stopped=meta.get("stopped", False), background=meta.get("background", False)),
+        reply(7, "X"),
+        reply(end, "X"),
+        reply(1000),
+        *extra,
+    ]
+    graph = _graph(tmp_path, records)
+    assert _agent(_node(graph, "X")).outcome == expected
+    assert _edge(graph, "X").outcome == expected
+    assert _agent(_node(graph, "main")).outcome is None
+
+
+def test_close_calls_to_one_mcp_server_make_one_pill_and_a_far_call_another(tmp_path: Path) -> None:
+    records = [reply(0), reply(1000)]
+    for number, (seconds, size) in enumerate([(100, 400), (150, 800), (200, 1200), (500, 40)]):
+        use_id = f"m{number}"
+        records += [
+            call(seconds, use_id, "mcp", name="mcp__docs__search", server="docs"),
+            result(seconds + 1, use_id, chars=size),
+        ]
+    graph = _graph(tmp_path, records)
+    station = next(item for item in graph.stations if item.node == "main")
+    assert [(c.server, c.first, c.last, c.calls, c.back_tokens_est) for c in station.mcp] == [
+        ("mcp:docs", 100.0, 200.0, 3, 600),
+        ("mcp:docs", 500.0, 500.0, 1, 10),
+    ]
+    assert _node(graph, "main").tool_counts["mcp"] == 4
+    # The server's results entered the node's context, so the server counts among its sources.
+    assert next(source for source in graph.sources if source.id == "mcp:docs").had_by == ("main",)
+
+
+def test_mcp_calls_to_two_servers_never_share_a_pill(tmp_path: Path) -> None:
+    records = [reply(0), reply(1000), call(100, "a", "mcp", server="docs"), call(101, "b", "mcp", server="wiki")]
+    station = next(item for item in _graph(tmp_path, records).stations if item.node == "main")
+    assert sorted(c.server for c in station.mcp) == ["mcp:docs", "mcp:wiki"]
+
+
+def _runs(tmp_path: Path, shape: list[tuple[str, bool]]) -> list[tuple[int, str]]:
+    """Shell calls in order, each (fingerprint, failed), a read call between each pair."""
+    records: list[EventRecord] = [reply(0)]
+    seconds = 10.0
+    for number, (fingerprint, failed) in enumerate(shape):
+        use_id = f"b{number}"
+        records += [
+            call(seconds, use_id, "run", name="Bash", fingerprint=fingerprint),
+            result(seconds + 1, use_id, error=failed),
+            call(seconds + 2, f"r{number}", "read", name="Read"),
+        ]
+        seconds += 10
+    track = next(item for item in _graph(tmp_path, records).tracks if item.node == "main")
+    return [(run.count, run.call_id) for run in track.failure_runs]
+
+
+@pytest.mark.parametrize(
+    ("shape", "expected"),
+    [
+        ([("f", True)] * 3, [(3, "b0")]),
+        ([("f", True)] * 2, []),
+        ([("f", True), ("f", True), ("f", False), ("f", True), ("f", True)], []),
+        ([("f", True), ("f", True), ("g", True), ("g", True)], []),
+        ([("f", True)] * 3 + [("f", False)] + [("g", True)] * 4, [(3, "b0"), (4, "b4")]),
+    ],
+)
+def test_three_failing_runs_of_one_command_in_a_row_are_a_failure_run(
+    tmp_path: Path, shape: list[tuple[str, bool]], expected: list[tuple[int, str]]
+) -> None:
+    assert _runs(tmp_path, shape) == expected
+
+
+def test_the_track_lists_read_edit_and_run_calls_with_their_label_source_and_failure(tmp_path: Path) -> None:
+    claude = _file(tmp_path, "CLAUDE.md", 40)
+    records = [
+        reply(0),
+        call(5, "r1", "read", name="Read", path=claude.path),
+        call(6, "e1", "edit", name="Edit", path=str(tmp_path / "src" / "x.py")),
+        call(7, "b1", "run", name="Bash", fingerprint="f"),
+        result(8, "b1", error=True),
+        call(9, "m1", "mcp", name="mcp__a__b", server="a"),
+        call(10, "o1", "other", name="TodoWrite"),
+    ]
+    track = next(item for item in _graph(tmp_path, records, [claude]).tracks if item.node == "main")
+    assert [(c.t, c.category, c.label, c.source, c.failed, c.use_id) for c in track.calls] == [
+        (5.0, "read", "Read · CLAUDE.md", "CLAUDE.md", False, "r1"),
+        (6.0, "edit", "Edit · src/x.py", None, False, "e1"),
+        (7.0, "run", "Bash", None, True, "b1"),
+    ]
+
+
+def test_a_gap_of_half_an_hour_without_a_record_is_a_break(tmp_path: Path) -> None:
+    records = [reply(0), reply(100), reply(100 + 1800), reply(2000), reply(2000 + 1799)]
+    track = next(item for item in _graph(tmp_path, records).tracks if item.node == "main")
+    assert [(b.start, b.end) for b in track.breaks] == [(100.0, 1900.0)]
+
+
+def test_a_source_is_had_by_the_nodes_whose_context_it_entered_and_a_listed_file_nobody_loaded_is_on_disk(
+    tmp_path: Path,
+) -> None:
+    claude = _file(tmp_path, "CLAUDE.md", 400)
+    shared = _file(tmp_path, ".claude/rules/shared.md", 80, "rule")
+    only_child = _file(tmp_path, "sub/CLAUDE.md", 40)
+    never = _file(tmp_path, ".claude/rules/never.md", 40, "rule")
+    heard = _file(tmp_path, ".claude/rules/heard.md", 40, "rule")
+    records = [
+        load(0.1, claude),
+        load(0.2, shared),
+        reply(1),
+        call(5, "tuA", "agent"),
+        launch(6, "A", None, "tuA"),
+        load(6.1, claude, "A"),
+        load(6.2, only_child, "A", "nested"),
+        reply(7, "A"),
+        load(8, shared, "A"),
+        reply(20),
+    ]
+    graph = _graph(tmp_path, records, [claude, shared, only_child, never, heard], advertised={heard.path: True})
+    by_id = {source.id: source for source in graph.sources}
+    assert (by_id["CLAUDE.md"].had_by, by_id["CLAUDE.md"].availability) == (("main", "A"), "loaded")
+    assert by_id[".claude/rules/shared.md"].had_by == ("main", "A")
+    assert by_id["sub/CLAUDE.md"].had_by == ("A",)
+    assert (by_id[".claude/rules/never.md"].had_by, by_id[".claude/rules/never.md"].availability) == ((), "on_disk")
+    assert (by_id[".claude/rules/heard.md"].had_by, by_id[".claude/rules/heard.md"].availability) == ((), "listed")
+    # The node's slots count its distinct sources per kind.
+    assert _node(graph, "A").slots["instructions"].count == 2 and _node(graph, "A").slots["rule"].count == 1
+    assert _node(graph, "main").slots["mcp"].count == 0
+
+
+def test_the_findings_of_a_nodes_sources_add_up_in_its_slot(tmp_path: Path) -> None:
+    one, two = _file(tmp_path, "CLAUDE.md", 40), _file(tmp_path, "sub/CLAUDE.md", 40)
+    tallies = {
+        "CLAUDE.md": FindingTally(3, {"error": 1, "warning": 2, "info": 0}),
+        "sub/CLAUDE.md": FindingTally(2, {"error": 0, "warning": 2, "info": 0}),
+    }
+    graph = _graph(tmp_path, [load(0.1, one), load(0.2, two), reply(1)], [one, two], findings=tallies)
+    assert _node(graph, "main").slots["instructions"].findings == 5
+
+
+def test_a_loaded_file_the_listing_lacks_still_shows_as_a_source(tmp_path: Path) -> None:
+    stray = tmp_path / "other" / "CLAUDE.md"
+    stray.parent.mkdir()
+    stray.write_text("y" * 80)
+    graph = _graph(tmp_path, [load(0.1, stray), reply(1)])
+    (source,) = graph.sources
+    assert (source.id, source.kind, source.tokens_est, source.had_by, source.actionable) == (
+        "other/CLAUDE.md",
+        "instructions",
+        20,
+        ("main",),
+        False,
+    )
+
+
+def test_a_load_says_what_brought_it_and_whether_it_sits_on_the_spine(tmp_path: Path) -> None:
+    claude = _file(tmp_path, "CLAUDE.md", 400)
+    nested = _file(tmp_path, "sub/CLAUDE.md", 40)
+    skill = _file(tmp_path, ".claude/skills/demo/SKILL.md", 4000, "skill")
+    big = _file(tmp_path, "docs/big.md", 8000)
+    mcp = HarnessEntry("mcp_instructions", "MCP server instructions", 1, 800, added=(("docs", 800),))
+    hook = HarnessEntry("hook_note", "SessionStart:startup", None, 120, event="SessionStart")
+    records = [
+        load(0.1, claude),
+        rec("harness", 0.3, item=mcp),
+        rec("harness", 0.4, item=hook),
+        reply(1),
+        load(2, nested, memory_type="nested"),
+        rec("skill_run", 3, item=SkillRun("demo", False)),
+        rec("skill_run", 3.5, item=SkillRun("demo", True)),
+        call(4, "r1", "read", name="Read", path=big.path),
+        load(5, claude),
+    ]
+    graph = _graph(tmp_path, records, [claude, nested, skill, big], runnable={"demo": skill.path})
+    station = next(item for item in graph.stations if item.node == "main")
+    shown = [(x.source, round(x.t or 0, 3), x.trigger, x.event, x.small, x.on_spine) for x in station.loads]
+    assert shown == [
+        ("CLAUDE.md", 0.1, "session_start", None, True, False),
+        ("mcp:docs", 0.3, "session_start", None, True, True),
+        ("hook:SessionStart:startup", 0.4, "hook", "SessionStart", True, True),
+        ("sub/CLAUDE.md", 2.0, "path_match", None, True, True),
+        (".claude/skills/demo/SKILL.md", 3.0, "agent", None, False, True),
+        ("docs/big.md", 4.0, "agent", None, False, True),
+        ("CLAUDE.md", 5.0, "session_start", None, True, True),
+    ]
+    sizes = {s.id: s.tokens_est for s in graph.sources if s.kind in {"mcp", "hook"}}
+    assert sizes == {"mcp:docs": 200, "hook:SessionStart:startup": 30}
+
+
+def test_a_compaction_is_a_station_of_the_node_it_ran_in_with_that_nodes_own_context(tmp_path: Path) -> None:
+    records = [
+        reply(1, context=500),
+        call(5, "tuA", "agent"),
+        launch(6, "A", None, "tuA"),
+        reply(10, "A", context=9000),
+        rec("post_compact", 20, "A", source="auto"),
+        reply(25, "A", context=1200),
+        reply(30, context=700),
+    ]
+    graph = _graph(tmp_path, records)
+    station = next(item for item in graph.stations if item.node == "A")
+    assert station.compactions == (XrayCompaction(t=20.0, trigger="auto", before=9000, after=1200),)
+    assert next(item for item in graph.stations if item.node == MAIN_ID).compactions == ()
+    assert _agent(_node(graph, "A")).peak == 9000
+
+
+def test_the_sources_the_parent_had_at_a_launch_and_the_child_never_had_are_withheld(tmp_path: Path) -> None:
+    claude = _file(tmp_path, "CLAUDE.md", 400)
+    style = _file(tmp_path, ".claude/rules/style.md", 1200, "rule")
+    late = _file(tmp_path, ".claude/rules/late.md", 80, "rule")
+    records = [
+        load(0.1, claude),
+        load(0.2, style),
+        reply(1, context=51200),
+        call(10, "tuA", "agent"),
+        launch(11, "A", None, "tuA"),
+        load(11.1, claude, "A"),
+        reply(12, "A"),
+        load(13, late),
+        reply(30, context=60000),
+    ]
+    graph = _graph(tmp_path, records, [claude, style, late])
+    withheld = _node(graph, "A").withheld
+    assert withheld is not None
+    assert [(item.source, item.tokens_est) for item in withheld.sources] == [(".claude/rules/style.md", 300)]
+    assert withheld.context_tokens == 51200
+    assert _node(graph, MAIN_ID).withheld is None
+
+
+class _Widget:
+    """A producer of a second node kind whose node hangs under an agent."""
+
+    kind = cast(NodeKind, "widget")
+
+    def __init__(self, parent: str, source: str | None = None) -> None:
+        self.parent = parent
+        self.source = source
+
+    def produce(self, records: Sequence[EventRecord], frame: Frame, context: ProducerContext) -> Produced:
+        detail = XrayAgentDetail(None, None, (), XrayDown(None, 0), None, None, (), (), False)
+        loads = () if self.source is None else (ProducedLoad(self.source, 1.0, None, "agent", None, True),)
+        node = ProducedNode("w1", self.kind, self.parent, "a widget", None, 1.0, 2.0, detail, (), loads, (), (), (1.0,))
+        return Produced((node,), (XrayEdge(self.parent, "w1", 0, None, 1.0, None, None),))
+
+
+@pytest.fixture(name="widget")
+def _widget() -> Iterator[_Widget]:
+    stub = _Widget("A")
+    register(stub)
+    yield stub
+    PRODUCERS.remove(stub)
+
+
+def test_a_second_node_kind_hangs_under_an_agent_with_no_change_to_the_builder(tmp_path: Path, widget: _Widget) -> None:
+    records = [reply(1), call(5, "tuA", "agent"), launch(6, "A", None, "tuA"), reply(7, "A"), reply(20)]
+    graph = _graph(tmp_path, records)
+    stub = _node(graph, "w1")
+    assert (stub.kind, stub.parent, stub.depth) == ("widget", "A", 2)
+    assert _node(graph, "A").children == ("w1",)
+    assert _node(graph, "A").descendants == 1 and _node(graph, MAIN_ID).descendants == 2
+    # A kind the vocabulary gives no spine gets no station or track.
+    assert "w1" not in {item.node for item in graph.stations} | {item.node for item in graph.tracks}
+    assert [edge.child for edge in graph.edges] == ["A", "w1"]
+
+
+def test_a_second_node_kind_with_a_spine_gets_a_station_and_a_track(tmp_path: Path, widget: _Widget) -> None:
+    claude = _file(tmp_path, "CLAUDE.md", 400)
+    widget.source = "CLAUDE.md"
+    vocabulary = vocabulary_for("claude", [])
+    info = XrayNodeKindInfo(widget.kind, "Widget", False, True)
+    wider = replace(vocabulary, node_kinds=(*vocabulary.node_kinds, info))
+    records = [reply(1), call(5, "tuA", "agent"), launch(6, "A", None, "tuA"), reply(7, "A"), reply(20)]
+    graph = _graph(tmp_path, records, [claude], vocabulary=wider)
+    assert [load.source for item in graph.stations if item.node == "w1" for load in item.loads] == ["CLAUDE.md"]
+    assert "w1" in {item.node for item in graph.tracks}
+    assert next(s for s in graph.sources if s.id == "CLAUDE.md").had_by == ("w1",)
+    assert _node(graph, "w1").slots["instructions"].count == 1
+
+
+def test_a_producer_of_a_kind_already_registered_is_refused(widget: _Widget) -> None:
+    with pytest.raises(ValueError, match="widget"):
+        register(_Widget("A"))
+    assert widget in PRODUCERS
+
+
+def _shape(value: JsonValue) -> JsonValue:
+    """The keys a JSON value holds, recursively; a list holds the merge of its elements' keys."""
+    if isinstance(value, dict):
+        return {key: _shape(item) for key, item in value.items()}
+    if isinstance(value, list):
+        merged: dict[str, JsonValue] = {}
+        for item in value:
+            shape = _shape(item)
+            if isinstance(shape, dict):
+                merged = {**shape, **{key: inner for key, inner in merged.items() if inner is not None}}
+        return merged or None
+    return None
+
+
+def _differences(built: JsonValue, sample: JsonValue, path: str) -> list[str]:
+    """Where the key structure of `built` and `sample` differ; a null on either side holds no structure to compare."""
+    if not isinstance(built, dict) or not isinstance(sample, dict):
+        return []
+    found = [f"{path}.{key}" for key in sorted(built.keys() ^ sample.keys())]
+    for key in built.keys() & sample.keys():
+        found += _differences(built[key], sample[key], f"{path}.{key}")
+    return found
+
+
+def test_the_built_views_key_structure_matches_the_sample_the_page_is_built_against(tmp_path: Path) -> None:
+    sample = json.loads((Path(__file__).resolve().parents[2] / "fixtures" / "xray" / "view_sample.json").read_text())
+    claude = _file(tmp_path, "CLAUDE.md", 400)
+    records = [
+        load(0.1, claude),
+        reply(1),
+        call(5, "tuA", "agent"),
+        launch(6, "A", None, "tuA", brief_chars=40),
+        reply(7, "A"),
+        call(8, "b1", "run", "A", fingerprint="f"),
+        result(9, "b1", "A", error=True),
+        reply(20),
+    ]
+    graph = _graph(tmp_path, records, [claude])
+    view = XrayView(
+        1,
+        XraySessionInfo("s", "p", at(0), 20.0),
+        None,
+        None,
+        vocabulary_for("claude", []),
+        graph.nodes,
+        graph.edges,
+        graph.sources,
+        graph.stations,
+        graph.tracks,
+        XrayGaps((), ()),
+        XrayVerdict((), (), XrayCheck("done", None)),
+    )
+    built = view.to_json()
+    assert as_list(built["nodes"])
+    assert not _differences(_shape(built), _shape(as_object(sample)), "view")
+
+
+def test_a_skill_that_ran_is_used_a_forked_one_is_used_but_not_loaded_and_a_command_counts_as_a_skill(
+    tmp_path: Path,
+) -> None:
+    plain = _file(tmp_path, ".claude/skills/plain/SKILL.md", 80, "skill")
+    forked = _file(tmp_path, ".claude/skills/forked/SKILL.md", 80, "skill")
+    command = _file(tmp_path, ".claude/commands/go.md", 80, "command")
+    idle = _file(tmp_path, ".claude/skills/idle/SKILL.md", 80, "skill")
+    records = [
+        reply(1),
+        rec("skill_run", 2, item=SkillRun("plain", False)),
+        rec("skill_run", 3, item=SkillRun("forked", True)),
+        rec("skill_run", 4, item=SkillRun("go", False)),
+    ]
+    runnable = {"plain": plain.path, "forked": forked.path, "go": command.path, "idle": idle.path}
+    frame = Frame(epoch(at(0)) or 0.0, tmp_path, {}, runnable)
+    files = [plain, forked, command, idle]
+    table = build_sources(build_artifacts(files, {}, tmp_path, advertised={}), records, frame)
+    graph = build_graph(records, frame, table, vocabulary_for("claude", []))
+    (row,) = build_funnel(table.entries, graph.sources, ["skill"], ran_sources(records, table))
+    assert (row.kind, row.on_disk, row.loaded, row.used) == ("skill", 4, 2, 3)

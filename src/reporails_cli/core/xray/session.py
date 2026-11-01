@@ -14,54 +14,31 @@ from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
 from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
 from reporails_cli.core.platform.dto.xray import (
+    AdapterVocabulary,
     ArtifactFile,
     FindingTally,
-    XrayArtifact,
     XrayCheck,
-    XrayCompaction,
-    XrayContextSummary,
     XrayGaps,
-    XrayLoad,
     XraySessionInfo,
-    XraySubagent,
-    XrayTurn,
     XrayVerdict,
     XrayView,
     XrayWindow,
 )
 from reporails_cli.core.xray.artifacts import (
     advertised_files,
-    agent_run_turns,
     artifact_files,
     build_artifacts,
-    context_counts,
-    in_context_turns,
     is_actionable,
-    merged_turns,
     peek_text,
-    run_paths,
     runnable_paths,
 )
-from reporails_cli.core.xray.derive import (
-    Frame,
-    build_compactions,
-    build_harness,
-    build_subagents,
-    build_turns,
-    context_line,
-    epoch,
-    latest_model,
-    loads_of,
-    main_replies,
-    peak_context,
-    preload_tokens,
-    real_path,
-    start_loads,
-    turn_end_times,
-    window_of,
-)
+from reporails_cli.core.xray.derive import Frame, epoch, latest_model, replies_of, window_of
 from reporails_cli.core.xray.facts import build_facts
 from reporails_cli.core.xray.funnel import build_funnel
+from reporails_cli.core.xray.graph.agents import main_records
+from reporails_cli.core.xray.graph.build import Graph, build_graph
+from reporails_cli.core.xray.graph.sources import SourceTable, build_sources, ran_sources
+from reporails_cli.core.xray.vocabulary import vocabulary_for
 
 _NO_WINDOW = "context window"
 _NO_BUS = "reads"
@@ -168,34 +145,24 @@ class XraySession:
         files = self._listing()
         records = [record for record in self._transcript if record.event != "refusal"]
         frame = self._frame(files, records)
-        info = self._info(records)
-        replies = main_replies(records)
-        start = loads_of(start_loads(records, replies), frame)
-        turns = build_turns(records, self._bus or None, frame)
-        compactions = build_compactions(records, replies, turn_end_times(records), frame, info.length_s)
-        harness = build_harness(records, replies)
-        subagents = build_subagents(records, turn_end_times(records), frame)
-        artifacts = self._artifacts(files, records, frame, (start, turns, compactions, subagents))
-        context = XrayContextSummary(
-            first_context=replies.points[0][1] if replies.points else None,
-            line=context_line(replies, compactions, frame.t0),
-            peak=peak_context(replies, compactions),
-            preload_tokens_est=preload_tokens(harness, start),
-            model=latest_model(records),
-            window=window_of(replies),
-        )
+        vocabulary = vocabulary_for(AGENT, [item.label for item in files if item.kind == "agent"])
+        artifacts = build_artifacts(files, self._findings, self._root, advertised=advertised_files(files, records))
+        table = build_sources(artifacts, records, frame)
+        graph = build_graph(records, frame, table, vocabulary)
+        window = window_of(replies_of(main_records(records)))
         return XrayView(
             version=self.version,
-            info=info,
-            context=context,
-            start=start,
-            turns=turns,
-            compactions=compactions,
-            subagents=subagents,
-            artifacts=artifacts,
-            gaps=self._gaps(context.window),
-            harness=harness,
-            verdict=self._verdict(artifacts, turns, subagents, compactions),
+            info=self._info(records),
+            model=latest_model(records),
+            window=window,
+            adapter=vocabulary,
+            nodes=graph.nodes,
+            edges=graph.edges,
+            sources=graph.sources,
+            stations=graph.stations,
+            tracks=graph.tracks,
+            gaps=self._gaps(window),
+            verdict=self._verdict(table, graph, records, vocabulary),
         )
 
     def _frame(self, files: tuple[ArtifactFile, ...], records: list[EventRecord]) -> Frame:
@@ -204,15 +171,14 @@ class XraySession:
         return Frame(timed[0][0] if timed else 0.0, self._root, self._findings, runnable_paths(files))
 
     def _verdict(
-        self,
-        artifacts: tuple[XrayArtifact, ...],
-        turns: tuple[XrayTurn, ...],
-        subagents: tuple[XraySubagent, ...],
-        compactions: tuple[XrayCompaction, ...],
+        self, table: SourceTable, graph: Graph, records: list[EventRecord], vocabulary: AdapterVocabulary
     ) -> XrayVerdict:
-        """The funnel and headline facts over the artifacts, with the state of the launch check."""
-        funnel = build_funnel(artifacts, turns, subagents)
-        return XrayVerdict(funnel, build_facts(artifacts, funnel, compactions), self._check)
+        """The funnel and headline facts over the sources and the graph, with the state of the launch check."""
+        kinds = [item.key for item in vocabulary.source_kinds]
+        funnel = build_funnel(table.entries, graph.sources, kinds, ran_sources(records, table))
+        compactions = [(station.node, item) for station in graph.stations for item in station.compactions]
+        facts = build_facts(table.entries, graph.sources, funnel, compactions, kinds)
+        return XrayVerdict(funnel, facts, self._check)
 
     def _info(self, records: list[EventRecord]) -> XraySessionInfo:
         """The session and project names, when the first record was written and how long the records span."""
@@ -220,29 +186,6 @@ class XraySession:
         if not timed:
             return XraySessionInfo(self._file.stem, self._root.name, None, None)
         return XraySessionInfo(self._file.stem, self._root.name, timed[0][1], timed[-1][0] - timed[0][0])
-
-    def _artifacts(
-        self,
-        files: tuple[ArtifactFile, ...],
-        records: list[EventRecord],
-        frame: Frame,
-        read: tuple[tuple[XrayLoad, ...], tuple[XrayTurn, ...], tuple[XrayCompaction, ...], tuple[XraySubagent, ...]],
-    ) -> tuple[XrayArtifact, ...]:
-        """The artifact list; `read` holds the start loads, turns, compactions and subagents of the view."""
-        start, turns, compactions, subagents = read
-        agent_turns = agent_run_turns(subagents, files, self._root)
-        main_context = in_context_turns(start, turns, compactions, self._root)
-        loaded = {real_path(load.path, self._root) for load in loads_of(records, frame)}
-        loaded |= run_paths(turns, self._root) | set(agent_turns)
-        return build_artifacts(
-            files,
-            loaded,
-            merged_turns(main_context, agent_turns),
-            self._findings,
-            self._root,
-            advertised=advertised_files(files, records),
-            contexts=context_counts(main_context, subagents, files, self._root),
-        )
 
     def _gaps(self, window: XrayWindow | None) -> XrayGaps:
         """The refusals the records and the plugin listing hold, and what the view could not read."""

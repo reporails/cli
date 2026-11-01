@@ -35,9 +35,8 @@ TOKEN = "launch-token"
 PORT = 8765
 ORIGIN = f"http://127.0.0.1:{PORT}"
 TOP_KEYS = {
-    "version", "session", "project", "started_at", "length_s", "window", "model", "funnel", "first_context",
-    "context_line", "peak", "preload_tokens_est", "start", "turns", "compactions", "subagents", "artifacts",
-    "refusals", "not_known", "harness", "check", "facts",
+    "version", "session", "project", "started_at", "length_s", "model", "window", "adapter", "nodes", "edges",
+    "sources", "stations", "track", "funnel", "facts", "check", "refusals", "not_known",
 }  # fmt: skip
 HEAVY = ("starlette", "uvicorn", "reporails_cli.core.mapper", "onnxruntime", "tokenizers", "numpy")
 
@@ -176,7 +175,7 @@ def test_check_reports_a_refusal_as_400_and_a_file_as_its_findings(
     assert line["category"] == rule_category("CORE:C:0053") != ""
     assert line["docs_url"] == rule_docs_url("CORE:C:0053") is not None
     view = client.get("/view", headers={"X-Xray-Token": TOKEN}).json()
-    artifact = next(a for a in view["artifacts"] if a["path"].endswith("CLAUDE.md"))
+    artifact = next(a for a in view["sources"] if a["path"].endswith("CLAUDE.md"))
     assert artifact["findings"] == {"count": 1, "by_severity": {"error": 0, "warning": 1, "info": 0}}
 
 
@@ -206,7 +205,7 @@ def test_the_launch_check_fills_every_files_tally_and_moves_the_version(
     app = xray_server.build_app(project, tmp_path / "session" / "session.jsonl", TOKEN, PORT)
     with TestClient(app, base_url=ORIGIN) as client:
         view = _settled_view(client)
-        artifact = next(a for a in view["artifacts"] if a["path"].endswith("CLAUDE.md"))
+        artifact = next(a for a in view["sources"] if a["path"].endswith("CLAUDE.md"))
         assert view["check"] == {"state": "done", "message": None}
         assert artifact["findings"] == {"count": 2, "by_severity": {"error": 1, "warning": 0, "info": 1}}
 
@@ -295,7 +294,7 @@ def test_heal_button_puts_back_a_file_that_departs(
 
 def test_view_carries_the_contract_keys_and_answers_the_same_version_with_304(client: TestClient) -> None:
     first = client.get("/view", headers={"X-Xray-Token": TOKEN})
-    assert first.status_code == 200 and set(first.json()) == TOP_KEYS and first.json()["turns"]
+    assert first.status_code == 200 and set(first.json()) == TOP_KEYS and first.json()["nodes"]
     again = client.get("/view", headers={"X-Xray-Token": TOKEN, "If-None-Match": first.headers["ETag"]})
     assert again.status_code == 304
 
@@ -310,7 +309,9 @@ def test_view_lists_no_plugin_file_and_shows_the_refusal_when_the_install_record
     body = reply.json()
     assert reply.status_code == 200
     assert any("installed_plugins.json" in refusal for refusal in body["refusals"])
-    assert [a["path"] for a in body["artifacts"]] == ["CLAUDE.md"]
+    # Only the files the session loaded and the project lists are sources: no plugin file is among them.
+    paths = [a["path"] for a in body["sources"]]
+    assert "CLAUDE.md" in paths and not any("plugins" in path for path in paths)
 
 
 def test_the_page_carries_the_policy_and_the_token(client: TestClient) -> None:
@@ -322,7 +323,7 @@ def test_the_page_carries_the_policy_and_the_token(client: TestClient) -> None:
 
 
 def test_module_scripts_are_served_as_javascript_from_the_one_static_mount(client: TestClient) -> None:
-    reply = client.get("/static/js/components/chart.js")
+    reply = client.get("/static/js/components/canvas.js")
     assert reply.status_code == 200
     assert reply.headers["content-type"].split(";")[0] == "text/javascript"
     page = client.get("/").text
@@ -348,8 +349,8 @@ def test_the_page_and_its_data_load_with_the_network_blocked(
         "/view",
         "/static/js/main.js",
         "/static/xray.css",
-        "/static/fonts/Geist-Variable.woff2",
-        "/static/fonts/GeistMono-Variable.woff2",
+        "/static/fonts/InterVariable.woff2",
+        "/static/fonts/JetBrainsMono-Variable.woff2",
     ]
     codes = [client.get(path, headers={"X-Xray-Token": TOKEN}).status_code for path in paths]
     assert codes == [200] * len(paths)
@@ -406,7 +407,7 @@ def test_peek_reads_a_listed_memory_file_by_its_home_path(
     memory = claude_project_dir(project) / "memory" / "MEMORY.md"
     memory.parent.mkdir(parents=True)
     memory.write_text("# Memory\n")
-    shown = [a["path"] for a in client.get("/view", headers={"X-Xray-Token": TOKEN}).json()["artifacts"]]
+    shown = [a["path"] for a in client.get("/view", headers={"X-Xray-Token": TOKEN}).json()["sources"]]
     path = next(item for item in shown if item.endswith("MEMORY.md"))
     assert path.startswith("~/")
     assert _get(client, "/peek", {"path": path}).json()["text"] == "# Memory\n"
@@ -443,7 +444,8 @@ def test_brief_refuses_an_unknown_subagent_and_a_missing_query(client: TestClien
 
 def test_view_still_carries_no_text(client: TestClient) -> None:
     body = client.get("/view", headers={"X-Xray-Token": TOKEN}).text
-    assert "PLACEHOLDER" not in body
+    # A subagent's task description names its node; no prompt, tool or file text is in the view.
+    assert "PLACEHOLDER" not in body.replace("PLACEHOLDER_DESCRIPTION", "")
 
 
 def test_brief_replies_with_the_refusal_when_the_subagent_file_opens_with_no_user_row(
@@ -470,7 +472,7 @@ def test_prompt_replies_with_the_text_of_a_prompt_the_view_lists_and_is_never_ca
     prompt_client: TestClient,
 ) -> None:
     view = prompt_client.get("/view", headers={"X-Xray-Token": TOKEN}).json()
-    ids = [prompt["id"] for turn in view["turns"] for prompt in turn["prompts"]]
+    ids = [prompt["id"] for node in view["nodes"] for prompt in node["detail"]["prompts"]]
     assert ids == ["p-one", "p-two", "q-one"]
     reply = _get(prompt_client, "/prompt", {"id": "p-one"})
     assert reply.status_code == 200 and reply.headers["Cache-Control"] == "no-store"
