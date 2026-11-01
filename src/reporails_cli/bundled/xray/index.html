@@ -9,58 +9,43 @@
 </head>
 <body>
 <div class="wrap">
-  <header class="bar">
-    <div class="brand"><span class="mark" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 7h8M5 12h14M5 17h10"/></svg></span><span>reporails</span><span>x-ray</span></div>
-    <div class="sess" id="sess"></div>
-    <div class="right">
-      <div class="seg theme" role="group" aria-label="Theme">
-        <button id="lightBtn" aria-label="Light theme"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
-        <button id="darkBtn" aria-label="Dark theme"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></button>
-      </div>
-    </div>
-  </header>
+  <header id="header"></header>
   <div class="banner" id="banner" hidden></div>
-  <div class="nk chk" id="chk" hidden></div>
-  <section class="card chartcard" id="chartcard"></section>
+  <div class="banner nk" id="chk" hidden></div>
+  <div class="panel pstrip" id="parentstrip" hidden></div>
+  <div class="toolbar" id="toolbar"></div>
   <div class="cols">
-    <aside class="card art" id="art"></aside>
-    <main class="card info" id="info"></main>
+    <aside class="panel sources" id="sources"></aside>
+    <main>
+      <div class="agentview" id="view-agent">
+        <div class="canvaswrap" id="canvas"></div>
+        <aside class="panel inspector" id="inspector"></aside>
+      </div>
+      <section class="panel filecard" id="view-file" hidden></section>
+    </main>
   </div>
   <footer class="foot"><span id="src"></span></footer>
 </div>
 <script type="module" src="/static/js/main.js"></script>
-<template id="t-chart">
-<div class="ch"><b>Context window</b><span data-slot="counts"></span><span class="scale" data-slot="scale"></span></div>
-<div data-slot="plot"></div>
-<div class="keys">
-<span><svg width="14" height="10" viewBox="0 0 14 10" style="overflow:visible;margin-right:5px;vertical-align:-1px"><rect x="0" y="1" width="14" height="8" rx="1" fill="color-mix(in srgb,var(--blue) 22%,transparent)" stroke="var(--blue)"/></svg>main session, context after each reply</span>
-<span><svg width="14" height="10" viewBox="0 0 14 10" style="overflow:visible;margin-right:5px;vertical-align:-1px"><rect x="0" y="0" width="12" height="9" rx="3" fill="var(--yellow-soft)" stroke="var(--yellow)"/></svg>turn start</span>
-<span><svg width="14" height="10" viewBox="0 0 14 10" style="overflow:visible;margin-right:5px;vertical-align:-1px"><line x1="0" x2="14" y1="5" y2="5" stroke="var(--violet)" stroke-width="1.6"/></svg>subagent</span>
-<span><svg width="8" height="10" viewBox="0 0 8 10" style="overflow:visible;margin-right:5px;vertical-align:-1px"><line x1="4" x2="4" y1="0" y2="10" stroke="var(--amber)" stroke-width="1.6"/></svg>Stop hook sent the reply back</span>
-<span><svg width="14" height="10" viewBox="0 0 14 10" style="overflow:visible;margin-right:5px;vertical-align:-1px"><rect x="0" y="0" width="14" height="9" fill="var(--amber-soft)"/></svg>after /compact</span>
-</div>
-<div class="tip" id="tip" hidden></div>
+<template id="t-header"><div class="hdr">
+  <div class="brand"><span class="mark" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 7h8M5 12h14M5 17h10"/></svg></span><span>reporails</span><span>x-ray</span></div>
+  <nav class="crumbs" aria-label="Agent path" data-slot="crumbs"></nav>
+  <div class="hmeta"><span data-slot="session"></span><span class="achip" data-slot="adapter"></span></div>
+</div></template>
+<template id="t-parentstrip">
+  <a class="up" data-slot="up" href="#">↑ parent</a>
+  <span class="pn"><span data-slot="parent"></span></span>
+  <div class="bars" data-slot="bars"></div>
+  <span class="rg" data-slot="range"></span>
 </template>
-<template id="t-artifacts"><div class="ah"><b>Artifacts</b></div><div class="alist" id="alist"></div></template>
-<template id="t-group"><div class="gh"><span class="cv"></span><span class="gt"></span><span class="gc"></span></div></template>
-<template id="t-file"><div class="fr"><span class="sd"></span><span class="p path" data-slot="label"></span><span class="sp" data-slot="sp"></span><span class="tk" data-slot="tk"></span></div></template>
-<template id="t-harness-row"><div class="fr"><span class="sd hv"></span><span class="p" style="font-family:Geist,sans-serif" data-slot="label"></span><span class="sp"></span><span class="tk" data-slot="tk"></span></div></template>
-<template id="t-order">
-<div class="oh"><b>Load order</b><span class="sub">what arrived, why, tokens</span><button data-expand data-slot="expand"></button></div>
-<div class="th" data-startt data-slot="start"><span class="cv"></span><span class="tg quiet">turn 0</span><span class="tm0">0:00</span><span class="lbl">session start, before any prompt</span><span class="ln"></span><span class="rt" data-slot="first"></span></div>
+<template id="t-toolbar">
+  <div class="tbgroup" role="group" aria-label="Agent type" data-slot="types"></div>
+  <div class="tbgroup" role="group" aria-label="Layers" data-slot="layers"></div>
 </template>
-<template id="t-turn"><div class="th"><span class="cv"></span><span class="tg" data-slot="tag"></span><span class="tm0" data-slot="start"></span><span class="lbl" data-slot="label"></span><span class="ln"></span><span class="rt" data-slot="rt"></span></div></template>
-<template id="t-or"><div class="or"><span class="tm" data-slot="time"></span><span class="dt" data-slot="dot"></span><span class="nm" data-slot="name"></span><span class="why" data-slot="why"></span><span class="tc"><span class="num" data-slot="num"></span><span class="trk"><i data-slot="bar"></i></span></span></div></template>
-<template id="t-or-mute"><div class="or mute"><span class="tm"></span><span class="dt"></span><span class="nm" style="color:var(--ink-3)">nothing new loaded in this turn</span><span></span><span></span></div></template>
-<template id="t-prompt"><div class="pr"><span class="tm" data-slot="time"></span><span class="pn" data-slot="no"></span><span class="pt" data-slot="what"></span><span class="open" data-slot="open"></span></div></template>
-<template id="t-dl"><div class="dl"><span data-slot="mark"></span><span class="p" data-slot="name"></span><span class="w" data-slot="what"></span></div></template>
+<template id="t-source-section"><section class="ssec"><div class="sh"><span class="chip on" data-slot="letter"></span><span data-slot="label"></span><span class="ct" data-slot="count"></span></div><div data-slot="rows"></div></section></template>
 <template id="t-file-pane">
-<div class="oh"><button class="back" data-back>‹ Load order</button><b class="mono fn" data-slot="name"></b></div>
+<div class="oh"><button class="back" data-slot="back">‹ Back</button><b class="mono fn" data-slot="name"></b></div>
 <div class="pane" data-slot="pane"><div class="dm" data-slot="detail"><br><span class="rid" data-slot="path"></span></div></div>
-</template>
-<template id="t-harness-pane">
-<div class="oh"><button class="back" data-back>‹ Load order</button><b class="fn" data-slot="name"></b></div>
-<div class="pane"><div class="dm" data-slot="detail"></div><div class="nk">Harness text is not stored in this view.</div></div>
 </template>
 </body>
 </html>

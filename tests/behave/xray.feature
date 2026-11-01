@@ -5,39 +5,16 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Given a project with a recorded Claude Code session
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
-    And the page carries a launch token and the session view with that token has turns
+    And the page carries a launch token and the session view with that token holds the main agent
     And the session view without the token is refused with 403
 
   @e2e @browser
-  Scenario: The page opened in a real browser draws the session's context window
-    Given a project with a recorded Claude Code session
-    When "ails xray --no-open" is started in the project
-    Then the printed address is on 127.0.0.1
-    And headless Chrome rendering the page shows the context window chart, not a server error
-
-  @e2e @browser
-  Scenario: The page draws each turn's replies as chart points and labels each turn
-    Given a project with a recorded Claude Code session
-    When "ails xray --no-open" is started in the project
-    Then the printed address is on 127.0.0.1
-    And the drawn main-session points of each turn equal that turn's series in the view
-    And each turn is labelled with its number and its reply count
-    And no two chart labels overlap at 925 and at 1440 pixels
-
-  @e2e @browser
-  Scenario: At 925 pixels the chart fits the first screen and the artifact list sits beside the information display
-    Given a project with a recorded Claude Code session
-    When "ails xray --no-open" is started in the project
-    Then the printed address is on 127.0.0.1
-    And at 925 pixels the chart ends inside the first 1000 pixels and the artifact list is left of the information display
-
-  @e2e @browser
-  Scenario: A memory file that was not loaded can be selected and its text shows
+  Scenario: A memory file that was not loaded can be opened and its text shows
     Given a project with a recorded Claude Code session
     And the project's memory folder holds an unlinked topic file reading "unlinked memory text"
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
-    And selecting the not-loaded memory file shows "unlinked memory text"
+    And opening the not-loaded memory file shows "unlinked memory text"
 
   @e2e @browser
   Scenario: A prompt line shows no text until it is clicked
@@ -74,21 +51,54 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And checking the instruction file lists each finding with the message the check route returns
 
   @e2e @browser
-  Scenario: A session with two compactions draws two bands, the first ending where the second compaction starts
+  Scenario: A session with two compactions marks both on the main agent's spine
     Given a project with a recorded Claude Code session that compacted twice
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
-    And the page draws a band and a line for each of the two compactions and the first band ends at the second line
-
-  @e2e @browser
-  Scenario: The page shows the view's peak, turn starts and prompt numbers instead of working them out
-    Given a project with a recorded Claude Code session
-    When "ails xray --no-open" is started in the project
-    Then the printed address is on 127.0.0.1
-    And the header peak, each turn's start, its prompt numbers and its Stop count are the view's own values
+    And the page draws a compaction marker for each of the two compactions with the sizes the view holds
 
   @e2e
   Scenario: A project with no recorded session is refused
     Given a project with no recorded Claude Code session
     When "ails xray --no-open" is run in the project
     Then it exits 2 saying no Claude Code session was found
+
+  @page @browser
+  Scenario: No two cards overlap and the subagents stacked in time say how many more run
+    Given the bundled page is served over the "view_sample" fixture view
+    Then no two cards overlap at 1440 and at 925 pixels, and the subagents stacked in time say how many more run
+
+  @page @browser
+  Scenario: Drilling in three levels shows the collapsed breadcrumb and the direct parent's strip
+    Given the bundled page is served over the "view_sample" fixture view
+    Then drilling in three levels shows the collapsed breadcrumb and the parent strip of the direct parent
+
+  @page @browser
+  Scenario: Focusing a source rings who had it, and a never-loaded source says so
+    Given the bundled page is served over the "view_sample" fixture view
+    Then focusing a source rings exactly the nodes that had it and dims the rest, and a never-loaded source says so
+
+  @page @browser
+  Scenario: Toggling a layer removes its chips, section and stations together
+    Given the bundled page is served over the "view_sample" fixture view
+    Then toggling a layer removes that kind's slot chips, Sources section and stations at once
+
+  @page @browser
+  Scenario: An adapter that declares fewer source kinds gets no empty slot, toggle or section
+    Given the bundled page is served over the "view_stub_adapter" fixture view
+    Then the page draws no slot, toggle, section or station for a source kind the adapter omits
+
+  @page @browser
+  Scenario: A compaction, a stopped subagent and a never-loaded source render as specified
+    Given the bundled page is served over the "view_sample" fixture view
+    Then a compaction marker, a stopped subagent and a never-loaded source each render as specified
+
+  @page @browser
+  Scenario: A findings pill and a source row open the file's findings
+    Given the bundled page is served over the "view_sample" fixture view
+    Then a findings pill opens the file's findings at its hash and a source row links to its file
+
+  @page @browser
+  Scenario: A node of a second kind is drawn by its own renderer with no canvas change
+    Given the bundled page is served over the "view_stub_kind" fixture view
+    Then the stub kind's cards are drawn by a stub renderer only the test serves, with no change to the canvas

@@ -18,5 +18,5 @@ export async function openPage(url, width = 925, height = 1000) {
   await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url });
   const until = async (expr, tries = 60) => { for (let i = 0; i < tries; i++) { const v = await ev(expr); if (v) return v; await sleep(250); } return null; };
-  return { ev, until, close: () => { ws.close(); chrome.kill(); } };
+  return { ev, until, send, close: () => { ws.close(); chrome.kill(); } };
 }

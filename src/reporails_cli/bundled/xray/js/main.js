@@ -1,192 +1,177 @@
-import { dur, k1 } from './format.js';
 import { el } from './dom.js';
-import { derive } from './model.js';
-import * as chart from './components/chart.js';
-import * as artifacts from './components/artifacts.js';
-import * as loadorder from './components/loadorder.js';
+import { text, viewHeaders, xrayFetch, onTextArrived, forgetTexts } from './api.js';
+import { index, focusSource } from './views.js';
+import { state, applyHash, hashFor } from './state.js';
+import * as header from './components/header.js';
+import * as parentstrip from './components/parentstrip.js';
+import * as toolbar from './components/toolbar.js';
+import * as sources from './components/sources.js';
+import * as canvas from './components/canvas.js';
+import * as inspector from './components/inspector.js';
 import * as filepane from './components/filepane.js';
-import * as harness from './components/harness.js';
+import { render as renderFindings } from './components/findings.js';
+import { onRegister } from './components/nodes/index.js';
 
 const $ = s => document.querySelector(s);
-const token = document.querySelector('meta[name="xray-token"]')?.content ?? '';
+let ix = null, version = null, etag = null, inflight = false, lastAgentHash = '#/agent/main';
+const run = { busy: false, res: null, autoChecked: new Set() };
+const opened = new Set();
 
-let model = null, version = null, etag = null, inflight = false;
-const fetched = new Map();
+const env = () => ({ ix, state, focus: focusSource(ix, state), text, opened, busy: run.busy, res: run.res });
 
-async function xrayFetch(url, init) {
-  try {
-    const r = await fetch(url, { cache: 'no-store', ...init, headers: { 'X-Xray-Token': token, ...(init && init.headers) } });
-    let j = null;
-    try { j = await r.json(); } catch (_) { j = null; }
-    return { ok: r.ok, status: r.status, j };
-  } catch (_) { return null; }
-}
-
-// The text behind a key, fetched once per view version; the page draws again when it arrives.
-function text(key, url) {
-  if (fetched.has(key)) return fetched.get(key);
-  const e = { loading: true };
-  fetched.set(key, e);
-  xrayFetch(url).then(res => {
-    if (!res) fetched.set(key, { error: 'The x-ray server did not answer.' });
-    else if (res.ok && res.j && typeof res.j.text === 'string') fetched.set(key, { text: res.j.text, truncated: !!res.j.truncated });
-    else fetched.set(key, { error: (res.j && res.j.error) || `request refused (${res.status})` });
-  }).then(render);
-  return e;
-}
-
-const ctx = {
-  sel: null, selTurn: null, openTurns: new Set(), startOpen: true, groupsOpen: new Set(['instructions']), busy: false, res: null,
-  text, selectTurn, selectRun,
-};
-
-function renderHeader() {
-  const d = model.started_at ? new Date(model.started_at) : null;
-  const when = d && !isNaN(d) ? d.toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '';
-  const project = el('span');
-  project.append(el('b', null, model.project));
-  const spans = [project];
-  if (when) spans.push(el('span', null, when));
-  if (model.model) spans.push(el('span', null, model.model));
-  spans.push(el('span', null, `${model.length_s != null ? dur(model.length_s) + ', ' : ''}${model.turns.length} turns, ${model.runs.length} subagents${model.peak != null ? ', peak ' + k1(model.peak) : ''}`));
-  $('#sess').replaceChildren(...spans);
-  $('#src').textContent = `Session ${model.session}. Numbers come from the session transcript and files on disk; ~ marks an estimate.`;
-}
-
-function renderChart() {
-  const m = model;
-  chart.render($('#chartcard'), { turns: m.turns, runs: m.runs, context_line: m.context_line, length_s: m.length_s, window: m.window, peak: m.peak, compactions: m.compactions, stops: m.stops }, ctx);
-}
-
-function renderInfo() {
-  const m = model, info = $('#info'), sel = ctx.sel;
-  const a = sel && sel.file ? m.art.find(x => x.key === sel.file) : null;
-  if (a) return filepane.render(info, { artifact: a }, ctx);
-  if (sel && sel.harness != null && m.harness[sel.harness]) return harness.render(info, m.harness[sel.harness]);
-  loadorder.render(info, { turns: m.turns, runs: m.runs, start: m.start, harness: m.harness, first_context: m.first_context, not_known: m.not_known, art: m.art, tokMax: m.tokMax, compactions: m.compactions }, ctx);
+function renderNotices() {
+  const v = ix.view, b = $('#banner');
+  b.hidden = !v.refusals.length;
+  if (v.refusals.length) {
+    b.textContent = `${v.adapter.tool} wrote rows this reporails version does not read; parts of this page may be missing.`;
+    b.title = v.refusals.join('\n');
+  }
+  const c = v.check, chk = $('#chk');
+  chk.hidden = !c || c.state === 'done';
+  chk.textContent = !c ? '' : c.state === 'running' ? 'checking the project…' : (c.message || 'The project check was refused.');
+  $('#src').textContent = `Session ${v.session}. Numbers come from the session transcript and files on disk; ~ marks an estimate.`;
 }
 
 function render() {
-  if (!model) return;
-  const b = $('#banner');
-  if (model.refusals.length) {
-    b.hidden = false;
-    b.textContent = 'Claude Code wrote rows this reporails version does not read; parts of this page may be missing.';
-    b.title = model.refusals.join('\n');
-  } else b.hidden = true;
-  const chk = $('#chk'), c = model.check;
-  chk.hidden = !c || c.state === 'done';
-  chk.textContent = !c ? '' : c.state === 'running' ? 'checking the project…' : (c.message || 'The project check was refused.');
-  renderChart();
-  artifacts.render($('#art'), { art: model.art, harness: model.harness, funnel: model.funnel, facts: model.facts }, ctx);
-  renderInfo();
-  renderHeader();
+  if (!ix) return;
+  const e = env();
+  renderNotices();
+  header.render($('#header'), e);
+  const filing = state.file != null;
+  $('#view-agent').hidden = filing;
+  $('#view-file').hidden = !filing;
+  sources.render($('#sources'), e);
+  if (filing) {
+    parentstrip.render($('#parentstrip'), { ...e, state: { ...state, path: ['main'] } });
+    $('#toolbar').replaceChildren();
+    filepane.render($('#view-file'), e);
+    autoCheck();
+    return;
+  }
+  parentstrip.render($('#parentstrip'), e);
+  toolbar.render($('#toolbar'), e);
+  canvas.render($('#canvas'), e);
+  inspector.render($('#inspector'), e);
 }
 
-function scrollToIn(node) {
-  const box = $('#info');
-  if (node && box) box.scrollTop = node.offsetTop - box.offsetTop - 8;
+function renderFocus() {
+  if (!ix || state.file != null) return;
+  const e = env();
+  canvas.render($('#canvas'), e);
+  for (const r of document.querySelectorAll('#sources .sr')) r.classList.toggle('on', !!e.focus && r.dataset.source === e.focus.id);
 }
 
-function selectTurn(n, scroll) {
-  ctx.selTurn = n;
-  ctx.openTurns.add(n);
-  if (ctx.sel && (ctx.sel.file || ctx.sel.harness != null)) ctx.sel = null;
-  render();
-  if (scroll) scrollToIn(document.getElementById('turn-' + n));
+function autoCheck() {
+  const s = ix.view.sources.find(x => x.path === state.file);
+  if (!s || !s.actionable || run.autoChecked.has(s.path)) return;
+  run.autoChecked.add(s.path);
+  runAct('check', s.path);
 }
-
-function selectRun(id) {
-  const r = model.runs.find(x => x.id === id);
-  if (!r) return;
-  if (r.turn != null) { ctx.openTurns.add(r.turn); ctx.selTurn = r.turn; }
-  ctx.sel = { run: r.id };
-  render();
-  scrollToIn(document.getElementById('turn-' + r.turn));
-}
-
-const toggle = (set, v) => { if (!set.delete(v)) set.add(v); };
-const picked = (key, v) => ctx.sel && ctx.sel[key] === v ? null : { [key]: v };
 
 async function runAct(kind, path) {
-  if (ctx.busy || !path) return;
-  ctx.busy = true;
-  ctx.res = { path, running: true };
+  if (run.busy || !path) return;
+  run.busy = true;
+  run.res = { path, running: true };
   render();
   const res = await xrayFetch(kind === 'check' ? 'check' : 'heal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) });
   let part;
   if (!res) part = { error: 'The x-ray server did not answer.' };
   else if (res.j) part = !res.ok && !res.j.error ? { error: `request refused (${res.status})` } : res.j;
   else part = { error: `request failed (${res.status})` };
-  if (kind === 'heal') fetched.clear();
-  ctx.busy = false;
-  ctx.res = { ...part, path };
+  if (kind === 'heal') forgetTexts();
+  run.busy = false;
+  run.res = { ...part, path };
   render();
 }
 
+const toggle = (set, v) => { if (!set.delete(v)) set.add(v); };
+
 document.addEventListener('click', e => {
-  if (!model || e.target.closest('#chart')) return;
-  const act = e.target.closest('[data-act]');
+  if (!ix) return;
+  const t = e.target;
+  const act = t.closest('[data-act]');
   if (act) return runAct(act.dataset.act, act.dataset.path);
-  if (e.target.closest('pre.peek,.detail')) return;
-  if (e.target.closest('[data-back]')) { ctx.sel = null; return render(); }
-  const gr = e.target.closest('[data-group]');
-  if (gr) { toggle(ctx.groupsOpen, gr.dataset.group); return render(); }
-  const hv = e.target.closest('[data-harness]');
-  if (hv) { ctx.sel = { harness: +hv.dataset.harness }; return render(); }
-  if (e.target.closest('[data-expand]')) {
-    if (ctx.openTurns.size) { ctx.openTurns.clear(); ctx.selTurn = null; } else model.turns.forEach(t => ctx.openTurns.add(t.n));
-    return render();
-  }
-  if (e.target.closest('[data-startt]')) { ctx.startOpen = !ctx.startOpen; return render(); }
-  const th = e.target.closest('[data-turnh]');
-  if (th) {
-    const n = +th.dataset.turnh;
-    if (ctx.openTurns.has(n)) { ctx.openTurns.delete(n); if (ctx.selTurn === n) ctx.selTurn = null; } else { ctx.openTurns.add(n); ctx.selTurn = n; }
-    return render();
-  }
-  const pr = e.target.closest('[data-prompt]');
-  if (pr) { ctx.sel = picked('prompt', pr.dataset.prompt); return render(); }
-  const run = e.target.closest('[data-run]');
-  if (run) { ctx.sel = picked('run', run.dataset.run); return render(); }
-  const fl = e.target.closest('[data-file]');
-  if (fl) { ctx.sel = picked('file', fl.dataset.file); return render(); }
+  if (t.closest('a[href]')) return;
+  if (t.closest('[data-back]')) { location.hash = lastAgentHash; return; }
+  const open = t.closest('[data-open]');
+  if (open) { toggle(opened, open.dataset.open); return render(); }
+  if (t.closest('[data-clear]')) { state.pinned = null; return render(); }
+  const type = t.closest('[data-type]');
+  if (type) { state.type = type.dataset.type; state.pinned = null; state.hover = null; return render(); }
+  const layer = t.closest('[data-layer]');
+  if (layer) { state.layers[layer.dataset.layer] = !state.layers[layer.dataset.layer]; return render(); }
+  const src = t.closest('[data-source]');
+  if (src) { state.pinned = state.pinned === src.dataset.source ? null : src.dataset.source; return render(); }
+  const card = t.closest('.card[data-node]');
+  if (card && !card.classList.contains('top')) { state.sel = card.dataset.node; return render(); }
+  if (card) { state.sel = null; render(); }
 });
+
+document.addEventListener('dblclick', e => {
+  const card = e.target.closest('.card[data-node]:not(.top)');
+  if (!card || !ix) return;
+  const node = ix.nodes.get(card.dataset.node);
+  const kind = node && ix.nodeKinds.get(node.kind);
+  if (kind && kind.opens) location.hash = hashFor([...state.path, node.id]);
+});
+
+document.addEventListener('keydown', e => {
+  if (!ix) return;
+  const card = e.target.closest && e.target.closest('.card[data-node]');
+  if (e.key === 'Enter' && card && !card.classList.contains('top')) { state.sel = card.dataset.node; render(); }
+  if (e.key === 'Escape' && state.pinned) { state.pinned = null; render(); }
+});
+
+document.addEventListener('mouseover', e => {
+  const src = e.target.closest && e.target.closest('[data-source]');
+  const id = src ? src.dataset.source : null;
+  if (id === state.hover) return;
+  state.hover = id;
+  renderFocus();
+});
+
+window.addEventListener('hashchange', () => {
+  if (!ix) return;
+  applyHash(location.hash, ix.nodes);
+  if (state.file == null) lastAgentHash = location.hash || lastAgentHash;
+  render();
+});
+
+onTextArrived(render);
+onRegister(render);
+
+function adopt(view) {
+  ix = index(view);
+  if (!state.layers) state.layers = {};
+  for (const k of view.adapter.source_kinds) if (!(k.key in state.layers)) state.layers[k.key] = true;
+  applyHash(location.hash, ix.nodes);
+  if (state.sel && !ix.nodes.has(state.sel)) state.sel = null;
+  if (state.file == null && location.hash) lastAgentHash = location.hash;
+}
 
 async function poll() {
   if (document.hidden || inflight) return;
   inflight = true;
   try {
-    const headers = etag ? { 'X-Xray-Token': token, 'If-None-Match': etag } : { 'X-Xray-Token': token };
-    const r = await fetch('view', { headers, cache: 'no-store' });
+    const r = await fetch('view', { headers: viewHeaders(etag), cache: 'no-store' });
     if (r.status === 304) return;
     if (!r.ok) throw new Error(String(r.status));
     const j = await r.json();
     if (j.version === version) return;
     etag = r.headers.get('ETag') || String(j.version);
     version = j.version;
-    fetched.clear();
-    model = derive(j);
+    forgetTexts();
+    adopt(j);
     render();
   } catch (_) {
-    if (!model) {
+    if (!ix) {
       const n = el('div', 'nk', 'The x-ray server did not answer; retrying.');
       n.style.padding = '14px';
-      $('#info').replaceChildren(n);
+      $('#canvas').replaceChildren(n);
     }
   } finally { inflight = false; }
 }
 
-function setTheme(t) {
-  document.documentElement.dataset.theme = t;
-  $('#lightBtn').setAttribute('aria-pressed', t === 'light');
-  $('#darkBtn').setAttribute('aria-pressed', t === 'dark');
-}
-$('#lightBtn').addEventListener('click', () => setTheme('light'));
-$('#darkBtn').addEventListener('click', () => setTheme('dark'));
-setTheme(new URLSearchParams(location.search).get('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
-let resizing = null;
-window.addEventListener('resize', () => { clearTimeout(resizing); resizing = setTimeout(() => model && renderChart(), 120); });
 poll();
 setInterval(poll, 2000);

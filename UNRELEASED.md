@@ -32,6 +32,7 @@
 ### Internal
 
 - The `ails xray` transcript reader records each tool call (its category, MCP server, target path and a shell command's hash), each tool result's size and error state, and each subagent's description, parent, depth and brief size; `GET /call?id=` shows a shell call's command.
+- The `ails xray` page draws a session as its agents on a timeline: subagent cards with launch and return arches, instruction files, rules, skills, memory, MCP and hooks where they entered each context, a side track of reads, edits and commands, and a findings drill-down per file; labels, agent types and source kinds come from the coding agent's own vocabulary, and the page ships Inter and JetBrains Mono.
 - File names, prompts and file text on the `ails xray` page always show as plain text; markup in them never runs.
 
 - The `ails xray` page bundles the Geist and Geist Mono fonts (SIL Open Font License), so it loads no web fonts.
