@@ -205,3 +205,9 @@ svg.chart{display:block;width:100%;user-select:none;cursor:pointer;overflow:visi
 .fr .p.path{direction:rtl;text-align:left}
 .fr .tag{max-width:120px;overflow:hidden;text-overflow:ellipsis}
 .chart .rp{fill:var(--blue)}
+.fcs{display:inline-flex;gap:4px;align-items:center}
+.fc.bad{background:color-mix(in srgb,var(--red) 18%,transparent);color:var(--red)}
+.fl .sv{font:600 11px 'Geist Mono',monospace;margin-right:6px}
+.fl .sv.error{color:var(--red)}
+.fl .sv.warning{color:var(--amber)}
+code.cmd{display:block;margin-top:8px;padding:6px 8px;border-radius:6px;background:var(--line-2);user-select:all;font:12px 'Geist Mono',monospace}

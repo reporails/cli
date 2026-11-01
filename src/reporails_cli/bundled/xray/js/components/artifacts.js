@@ -1,9 +1,9 @@
-// part: art (the artifacts, each with its `key`), harness. ctx: sel, groupsOpen.
+// part: art (the artifacts, each with its `key`), harness, funnel (kind -> the view's row), facts. ctx: sel, groupsOpen.
 import { tk } from '../format.js';
 import { el, row, tpl, slot, nk } from '../dom.js';
+import { tally } from './findings.js';
 
 const GROUPS = [['instructions', 'Instruction files'], ['rule', 'Rules'], ['memory', 'Memory'], ['skill', 'Skills'], ['agent', 'Agents'], ['command', 'Commands'], ['hook', 'Hooks'], ['harness', 'Harness']];
-const LISTING_OF = { skill: 'skill_list', agent: 'agent_list' };
 
 const sorted = (list, by) => [...list].sort(by);
 const noneRow = text => { const n = nk(text); n.style.padding = '4px 10px'; return n; };
@@ -25,7 +25,7 @@ function fileRow(a, ctx) {
   r.querySelector('.sd').classList.add(a.loaded ? 'in' : 'not');
   slot(r, 'label').textContent = a.label;
   tagsOf(a).forEach(t => r.insertBefore(t, slot(r, 'sp')));
-  if (a.findings != null) r.insertBefore(el('span', 'fc' + (a.findings ? '' : ' zero'), String(a.findings)), slot(r, 'tk'));
+  if (a.findings != null) r.insertBefore(tally(a.findings), slot(r, 'tk'));
   slot(r, 'tk').textContent = tk(a.tokens_est, true);
   return r;
 }
@@ -54,12 +54,11 @@ function harnessRows(harness, ctx) {
 function kindRows(k, part, ctx) {
   const items = part.art.filter(a => a.kind === k);
   const loaded = items.filter(a => a.loaded);
-  const unlinked = k === 'memory' ? items.filter(a => a.linked === false).length : 0;
-  const listing = LISTING_OF[k] ? part.harness.find(x => x.kind === LISTING_OF[k]) : null;
-  const listed = listing ? listing.count : null;
-  const summary = [`${items.length} · ${loaded.length} loaded`];
-  if (unlinked) summary.push(' · ', el('b', 'warn', `${unlinked} not linked`));
-  if (listed != null) summary.push(` · ${listed} listed`);
+  const f = part.funnel.get(k);
+  const unlinked = k === 'memory' ? part.facts.find(x => x.kind === 'memory_unlinked') : null;
+  const summary = [`${f ? f.on_disk : 0}${f && f.loaded != null ? ` · ${f.loaded} loaded` : ''}`];
+  if (unlinked && unlinked.numbers && unlinked.numbers.count) summary.push(' · ', el('b', 'warn', `${unlinked.numbers.count} not linked`));
+  if (f && f.advertised != null) summary.push(` · ${f.advertised} listed`);
   const open = ctx.groupsOpen.has(k);
   const out = [groupHead(k, GROUPS.find(g => g[0] === k)[1], open, summary)];
   if (!open) return out;

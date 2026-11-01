@@ -51,6 +51,17 @@ def step_project_with_session(context):
     (folder / "session.jsonl").write_text(text, encoding="utf-8")
 
 
+@given("a project with a recorded Claude Code session that compacted twice")
+def step_project_with_compactions(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    folder = context.home / ".claude" / "projects" / claude_project_folder_name(context.project)
+    folder.mkdir(parents=True)
+    source = FIXTURE.parent / "2.1.309-compactions" / "session.jsonl"
+    (folder / "session.jsonl").write_text(
+        source.read_text(encoding="utf-8").replace("/work/proj", str(context.project)), encoding="utf-8"
+    )
+
+
 @given('the project\'s instruction file reads "{text}"')
 def step_instruction_text(context, text):
     (context.project / "CLAUDE.md").write_text(text + "\n", encoding="utf-8")
@@ -259,6 +270,58 @@ def step_markup_is_text(context):
     assert seen["text"].strip().endswith("<b>bold</b>"), seen
     assert seen["promptText"] == "<b>bold</b> <img src=x onerror=window.__pwned=1>", seen
     assert seen["dom"] == {"pwned": None, "imgs": 0, "inPeek": 0, "rowChildren": 0}, seen
+
+
+def _full_view(context) -> dict:
+    page = _get(context.url)[1]
+    token = re.search(r'name="xray-token" content="([^"]+)"', page).group(1)
+    return json.loads(_get(context.url + "view", token)[1])
+
+
+@then("the page draws a band and a line for each of the two compactions and the first band ends at the second line")
+def step_two_bands(context):
+    seen = _layout_script(context, "facts")
+    if seen is None:
+        return
+    assert seen["ready"], "the page did not draw"
+    compactions = _full_view(context)["compactions"]
+    assert len(compactions) == 2, compactions
+    assert len(seen["bands"]) == 2 and len(seen["lines"]) == 2, seen
+    first, second = seen["bands"]
+    assert abs(seen["lines"][0] - first["x"]) < 0.01 and abs(seen["lines"][1] - second["x"]) < 0.01, seen
+    assert abs(first["x"] + first["w"] - seen["lines"][1]) < 0.01, ("first band must end at the second line", seen)
+    assert first["w"] > 1 and second["w"] >= 1, seen
+
+
+def _k1(n: int) -> str:
+    if n >= 1_000_000:
+        return f"{n / 1e6:.0f}M" if n >= 10_000_000 else f"{n / 1e6:.2f}".rstrip("0").rstrip(".") + "M"
+    if n >= 1000:
+        return f"{n / 1000:.0f}k" if n >= 10_000 else f"{n / 1000:.1f}".removesuffix(".0") + "k"
+    return str(n)
+
+
+def _clock(t: float) -> str:
+    t = max(0, round(t))
+    hours, minutes, seconds = t // 3600, t % 3600 // 60, t % 60
+    return f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
+
+
+@then("the header peak, each turn's start, its prompt numbers and its Stop count are the view's own values")
+def step_view_facts(context):
+    seen = _layout_script(context, "facts")
+    if seen is None:
+        return
+    assert seen["ready"], "the page did not draw"
+    view = _full_view(context)
+    assert f"peak {_k1(view['peak'])}" in seen["header"], (seen["header"], view["peak"])
+    by_turn = {tag["n"]: tag for tag in seen["tags"]}
+    for turn in view["turns"]:
+        tag = by_turn[turn["n"]]
+        assert tag["start"] == _clock(turn["start"]), (tag, turn["start"])
+        for prompt in turn["prompts"]:
+            assert str(prompt["no"]) in tag["label"], (tag, prompt["no"])
+        assert (f"{turn['stop_blocks']} Stop" in tag["rt"]) == (turn["stop_blocks"] > 0), (tag, turn["stop_blocks"])
 
 
 @then("the page's scripts write to no HTML sink")

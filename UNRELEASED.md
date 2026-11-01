@@ -28,6 +28,8 @@
 
 - The `ails xray` page counts every compaction of a session, each one shaded only until the next, and a file loaded before a later compaction no longer counts as in context after it.
 
+- On the `ails xray` page the chart is scaled to the 1M context window once the session shows it, the header names the model that replied, a file's error count shows beside its findings, and each finding of a checked file shows its severity, rule title and docs link.
+
 ### Removed
 
 ### Internal

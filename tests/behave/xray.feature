@@ -65,6 +65,20 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And the markup in the file name, the file and the prompt shows literally and no element or handler was injected
     And the page's scripts write to no HTML sink
 
+  @e2e @browser
+  Scenario: A session with two compactions draws two bands, the first ending where the second compaction starts
+    Given a project with a recorded Claude Code session that compacted twice
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the page draws a band and a line for each of the two compactions and the first band ends at the second line
+
+  @e2e @browser
+  Scenario: The page shows the view's peak, turn starts and prompt numbers instead of working them out
+    Given a project with a recorded Claude Code session
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the header peak, each turn's start, its prompt numbers and its Stop count are the view's own values
+
   @e2e
   Scenario: A project with no recorded session is refused
     Given a project with no recorded Claude Code session

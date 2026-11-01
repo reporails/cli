@@ -1,10 +1,11 @@
-// part: turns, runs, start, harness, first_context, not_known, art, tokMax, starts, promptNo.
+// part: turns, runs, start, harness, first_context, not_known, art, tokMax, compactions.
 // ctx: sel, selTurn, openTurns, startOpen, text.
 import { k1, tk, clock, dur, plural } from '../format.js';
 import { el, row, tpl, slot, svg } from '../dom.js';
 import { artByPath, nameOf } from '../model.js';
 import { textBlock } from './textblock.js';
 
+const OPENED = { stop_hook: 'a Stop hook sent the reply back', session_start: 'session start' };
 const KIND_WORD = { project: 'project instructions', memory: 'auto memory', user: 'your user instructions', local: 'local instructions', managed: 'managed instructions', nested: 'loaded because a file in that folder was read' };
 
 // One line of the load order. `name` is a list of nodes or strings; `o.data` is a [name, value] data attribute that makes it clickable.
@@ -51,7 +52,7 @@ function agentDetail(r, part, ctx) {
   const head = (title, count) => { const h = el('h4', null, title); h.append(el('span', null, String(count))); return h; };
   d.append(dm, head('Started with', first.length || 'nothing'));
   if (first.length) d.append(...first.map(l => dline('+', 'var(--green)', nameOf(part, l.path), tk(l.tokens_est, true))));
-  else d.append(dline('✕', 'var(--red)', 'CLAUDE.md', 'not given', 'var(--red)'));
+  else if (!r.sb.has_project_instructions) d.append(dline('✕', 'var(--red)', 'CLAUDE.md', 'not given', 'var(--red)'));
   if (later.length) d.append(head('Loaded during its run', later.length), ...later.map(l => dline('+', 'var(--green)', nameOf(part, l.path), at(l.t) + tk(l.tokens_est, true))));
   const ran = r.sb.skill_runs || [];
   if (ran.length) d.append(head('Skills it ran', ran.length), ...ran.map(x => dline('+', 'var(--green)', x.name, at(x.t) + (x.forked ? 'in its own subagent' : tk(x.tokens_est, true)))));
@@ -93,14 +94,15 @@ function groupNotes(notes) {
 function subagentRow(part, r, ctx) {
   const on = ctx.sel && ctx.sel.run === r.id;
   const open = el('a', 'open', `${on ? 'close' : 'open'} ›`);
-  const why = r.miss ? 'started without CLAUDE.md' : 'its own context' + (r.start != null && r.end != null ? `, ran ${dur(r.end - r.start)}` : '');
-  const line = orow(part, r.start, r.miss ? 'r' : 'v', [`${r.type} subagent `, open], why, r.pts.length ? Math.max(...r.pts.map(p => p[1])) : 0, { data: ['run', r.id], barCls: 'a', whyCls: r.miss ? 'red' : '', on });
+  const miss = !r.sb.has_project_instructions;
+  const why = miss ? 'started without CLAUDE.md' : 'its own context' + (r.start != null && r.end != null ? `, ran ${dur(r.end - r.start)}` : '');
+  const line = orow(part, r.start, miss ? 'r' : 'v', [`${r.type} subagent `, open], why, r.pts.length ? Math.max(...r.pts.map(p => p[1])) : 0, { data: ['run', r.id], barCls: 'a', whyCls: miss ? 'red' : '', on });
   return on ? [line, agentDetail(r, part, ctx)] : [line];
 }
 
-function turnRows(part, t, i, ctx) {
+function turnRows(part, t, ctx) {
   const out = el('div', 'tb');
-  const t0 = part.starts[i];
+  const t0 = t.start;
   const prompts = t.prompts || [];
   prompts.forEach(p => {
     const on = ctx.sel && ctx.sel.prompt === p.id;
@@ -108,7 +110,7 @@ function turnRows(part, t, i, ctx) {
     if (on) r.classList.add('on');
     r.dataset.prompt = p.id;
     slot(r, 'time').textContent = clock(p.t);
-    slot(r, 'no').textContent = String(part.promptNo.get(p.id));
+    slot(r, 'no').textContent = String(p.no);
     slot(r, 'what').textContent = `${p.queued ? 'queued prompt' : 'your prompt'} · ${p.chars.toLocaleString('en')} chars`;
     slot(r, 'open').textContent = `${on ? 'close' : 'open'} ›`;
     out.append(r);
@@ -123,11 +125,10 @@ function turnRows(part, t, i, ctx) {
     const r = part.runs.find(x => x.id === String(id));
     if (r) out.append(...subagentRow(part, r, ctx));
   });
-  if (t.compaction) {
-    const c = t.compaction;
+  part.compactions.filter(c => c.turn === t.n).forEach(c => {
     out.append(orow(part, c.t, 'a', [`/compact${c.trigger ? ' (' + c.trigger + ')' : ''}`], c.before != null && c.after != null ? `context ${k1(c.before)} → ${k1(c.after)}` : '', 0, { whyCls: 'warn' }));
-  }
-  const empty = !(t.loads || []).length && !(t.skill_runs || []).length && !notes.length && !(t.subagents || []).length && !t.compaction && !prompts.length;
+  });
+  const empty = !(t.loads || []).length && !(t.skill_runs || []).length && !notes.length && !(t.subagents || []).length && !part.compactions.some(c => c.turn === t.n) && !prompts.length;
   if (empty) out.append(row('t-or-mute'));
   return out;
 }
@@ -142,7 +143,7 @@ function startRows(part) {
   return out;
 }
 
-function turnHead(part, t, i, delta, ctx) {
+function turnHead(part, t, ctx) {
   const open = ctx.openTurns.has(t.n);
   const h = row('t-turn');
   if (open) h.classList.add('on');
@@ -152,15 +153,15 @@ function turnHead(part, t, i, delta, ctx) {
   h.querySelector('.cv').textContent = open ? '▾' : '▸';
   const tg = slot(h, 'tag');
   tg.textContent = `turn ${t.n}`;
-  if (t.compaction) tg.classList.add('cmp');
-  slot(h, 'start').textContent = clock(part.starts[i]);
-  const prompts = t.prompts || [], no = id => part.promptNo.get(id);
-  slot(h, 'label').textContent = prompts.length ? (prompts.length > 1 ? `your prompts ${no(prompts[0].id)}–${no(prompts[prompts.length - 1].id)}` : `your prompt ${no(prompts[0].id)}`) : 'no prompt of yours';
-  const stops = (t.notes || []).filter(x => x.kind === 'stop_block').length;
+  const compacted = part.compactions.some(c => c.turn === t.n);
+  if (compacted) tg.classList.add('cmp');
+  slot(h, 'start').textContent = clock(t.start);
+  const prompts = t.prompts || [];
+  slot(h, 'label').textContent = OPENED[t.opened_by] || (t.opened_by === 'prompt' && prompts.length ? (prompts.length > 1 ? `your prompts ${prompts[0].no}–${prompts[prompts.length - 1].no}` : `your prompt ${prompts[0].no}`) : 'opener not known');
   const rt = slot(h, 'rt');
-  if (stops) rt.append(el('em', 'st', `${stops} Stop`));
-  if (t.compaction) rt.append(el('em', 'st', '/compact'));
-  rt.append(plural(t.replies, 'reply', 'replies') + (delta != null ? ` · ${delta >= 0 ? '+' : '−'}${k1(Math.abs(delta))}` : ''));
+  if (t.stop_blocks) rt.append(el('em', 'st', `${t.stop_blocks} Stop`));
+  if (compacted) rt.append(el('em', 'st', '/compact'));
+  rt.append(plural(t.replies, 'reply', 'replies') + (t.delta != null ? ` · ${t.delta >= 0 ? '+' : '−'}${k1(Math.abs(t.delta))}` : ''));
   return h;
 }
 
@@ -172,12 +173,9 @@ export function render(box, part, ctx) {
   st.querySelector('.cv').textContent = ctx.startOpen ? '▾' : '▸';
   slot(box, 'first').textContent = part.first_context != null ? k1(part.first_context) + ' at the first reply' : '';
   if (ctx.startOpen) box.append(startRows(part));
-  let prev = part.first_context;
-  part.turns.forEach((t, i) => {
-    const delta = t.context != null && prev != null ? t.context - prev : null;
-    if (t.context != null) prev = t.context;
-    box.append(turnHead(part, t, i, delta, ctx));
-    if (ctx.openTurns.has(t.n)) box.append(turnRows(part, t, i, ctx));
+  part.turns.forEach(t => {
+    box.append(turnHead(part, t, ctx));
+    if (ctx.openTurns.has(t.n)) box.append(turnRows(part, t, ctx));
   });
   if (part.not_known.length) {
     const n = el('div', 'nk', `Not known here: ${part.not_known.join(', ')}`);

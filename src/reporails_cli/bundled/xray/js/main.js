@@ -1,6 +1,6 @@
 import { dur, k1 } from './format.js';
 import { el } from './dom.js';
-import { derive, whereLoaded } from './model.js';
+import { derive } from './model.js';
 import * as chart from './components/chart.js';
 import * as artifacts from './components/artifacts.js';
 import * as loadorder from './components/loadorder.js';
@@ -47,22 +47,23 @@ function renderHeader() {
   project.append(el('b', null, model.project));
   const spans = [project];
   if (when) spans.push(el('span', null, when));
-  spans.push(el('span', null, `${model.length_s != null ? dur(model.length_s) + ', ' : ''}${model.turns.length} turns, ${model.runs.length} subagents, peak ${k1(model.peak)}`));
+  if (model.model) spans.push(el('span', null, model.model));
+  spans.push(el('span', null, `${model.length_s != null ? dur(model.length_s) + ', ' : ''}${model.turns.length} turns, ${model.runs.length} subagents${model.peak != null ? ', peak ' + k1(model.peak) : ''}`));
   $('#sess').replaceChildren(...spans);
   $('#src').textContent = `Session ${model.session}. Numbers come from the session transcript and files on disk; ~ marks an estimate.`;
 }
 
 function renderChart() {
   const m = model;
-  chart.render($('#chartcard'), { turns: m.turns, runs: m.runs, first_context: m.first_context, length_s: m.length_s, window: m.window, peak: m.peak, comp: m.comp, stops: m.stops, starts: m.starts }, ctx);
+  chart.render($('#chartcard'), { turns: m.turns, runs: m.runs, first_context: m.first_context, length_s: m.length_s, window: m.window, peak: m.peak, compactions: m.compactions, stops: m.stops }, ctx);
 }
 
 function renderInfo() {
   const m = model, info = $('#info'), sel = ctx.sel;
   const a = sel && sel.file ? m.art.find(x => x.key === sel.file) : null;
-  if (a) return filepane.render(info, { artifact: a, where: whereLoaded(m, a) }, ctx);
+  if (a) return filepane.render(info, { artifact: a }, ctx);
   if (sel && sel.harness != null && m.harness[sel.harness]) return harness.render(info, m.harness[sel.harness]);
-  loadorder.render(info, { turns: m.turns, runs: m.runs, start: m.start, harness: m.harness, first_context: m.first_context, not_known: m.not_known, art: m.art, tokMax: m.tokMax, starts: m.starts, promptNo: m.promptNo }, ctx);
+  loadorder.render(info, { turns: m.turns, runs: m.runs, start: m.start, harness: m.harness, first_context: m.first_context, not_known: m.not_known, art: m.art, tokMax: m.tokMax, compactions: m.compactions }, ctx);
 }
 
 function render() {
@@ -73,8 +74,11 @@ function render() {
     b.textContent = 'Claude Code wrote rows this reporails version does not read; parts of this page may be missing.';
     b.title = model.refusals.join('\n');
   } else b.hidden = true;
+  const chk = $('#chk'), c = model.check;
+  chk.hidden = !c || c.state === 'done';
+  chk.textContent = !c ? '' : c.state === 'running' ? 'checking the project…' : (c.message || 'The project check was refused.');
   renderChart();
-  artifacts.render($('#art'), { art: model.art, harness: model.harness }, ctx);
+  artifacts.render($('#art'), { art: model.art, harness: model.harness, funnel: model.funnel, facts: model.facts }, ctx);
   renderInfo();
   renderHeader();
 }

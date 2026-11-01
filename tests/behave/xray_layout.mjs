@@ -1,4 +1,4 @@
-// usage: node xray_layout.mjs <page-url> <layout|memory|prompt|markup> [width]
+// usage: node xray_layout.mjs <page-url> <layout|memory|prompt|markup|facts> [width]
 // Drives the page in headless Chrome and prints one JSON object describing what it drew.
 import { openPage } from './xray_cdp.mjs';
 
@@ -61,6 +61,18 @@ if (mode === 'markup' && ready) {
     inPeek: document.querySelectorAll('pre.peek *').length,
     rowChildren: [...document.querySelectorAll('#alist .fr *')].filter(e => e.tagName !== 'SPAN').length,
   })`);
+}
+
+if (mode === 'facts' && ready) {
+  out = { ...out, ...await page.ev(`(() => {
+    const num = e => ({ x: +e.getAttribute('x'), w: +e.getAttribute('width') });
+    return {
+      bands: [...document.querySelectorAll('#chart rect.band')].map(num),
+      lines: [...document.querySelectorAll('#chart line.cmpl')].map(e => +e.getAttribute('x1')),
+      header: document.querySelector('#sess').textContent,
+      tags: [...document.querySelectorAll('[data-turnh]')].map(h => ({ n: +h.dataset.turnh, label: h.querySelector('.lbl').textContent, rt: h.querySelector('.rt').textContent, start: h.querySelector('.tm0').textContent })),
+    };
+  })()`) };
 }
 
 console.log(JSON.stringify(out));

@@ -1,9 +1,31 @@
-// part: artifact (one of the view's), where (its arrival in words). ctx: busy, res ({path, ...a findings part}), run(kind, path), text.
-import { tk } from '../format.js';
+// part: artifact (one of the view's). ctx: busy, res ({path, ...a findings part}), run(kind, path), text.
+import { tk, k1, plural } from '../format.js';
 import { el, tpl, slot, nk } from '../dom.js';
 import { tagsOf } from './artifacts.js';
 import { textBlock } from './textblock.js';
-import { render as renderFindings } from './findings.js';
+import { render as renderFindings, tally } from './findings.js';
+
+const lab = n => n === 0 ? 'start' : String(n);
+const ranges = ns => {
+  const out = [];
+  let i = 0;
+  while (i < ns.length) {
+    let j = i;
+    while (j + 1 < ns.length && ns[j + 1] === ns[j] + 1) j++;
+    out.push(ns[i] === ns[j] ? lab(ns[i]) : `${lab(ns[i])}–${ns[j]}`);
+    i = j + 1;
+  }
+  return out.join(', ');
+};
+
+// Where and when the file entered the context, in words, from the artifact's own fields.
+function whereLoaded(a) {
+  if (!a.loaded) return 'On disk, not loaded this session.';
+  const ns = a.turns || [];
+  const arrived = ns.length ? (ns[0] === 0 ? 'Arrived at session start' : `Arrived in turn ${ns[0]}`) : 'Arrived by a skill call';
+  const cost = a.contexts ? `, in ${plural(a.contexts, 'context')}${a.session_tokens_est != null ? `, ~${k1(a.session_tokens_est)} tokens across the session` : ''}` : '';
+  return `${arrived}; in context in ${ns.length ? 'turns ' + ranges(ns) : 'no turn recorded'}${cost}.`;
+}
 
 function actions(a, ctx) {
   const out = document.createDocumentFragment();
@@ -33,11 +55,11 @@ export function render(box, part, ctx) {
   name.after(...tagsOf(a));
   const pane = slot(box, 'pane');
   const dm = slot(box, 'detail');
-  dm.prepend(`${part.where}${a.tokens_est ? ` · ${tk(a.tokens_est, true)} tokens` : ''}`);
+  dm.prepend(`${whereLoaded(a)}${a.tokens_est ? ` · ${tk(a.tokens_est, true)} tokens` : ''}`);
   slot(box, 'path').textContent = a.path;
   if (a.findings != null) {
     const h = el('h4', null, 'reporails findings, from the last check');
-    h.append(el('span', null, String(a.findings)));
+    h.append(tally(a.findings));
     pane.append(h);
   }
   const hook = a.kind === 'hook';
