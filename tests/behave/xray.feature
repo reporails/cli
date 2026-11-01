@@ -66,6 +66,14 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And the page's scripts write to no HTML sink
 
   @e2e @browser
+  Scenario: A checked file's finding rows show each finding's own message
+    Given a project with a recorded Claude Code session
+    And the project's instruction file reads "Be careful and try to write good code when possible."
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And checking the instruction file lists each finding with the message the check route returns
+
+  @e2e @browser
   Scenario: A session with two compactions draws two bands, the first ending where the second compaction starts
     Given a project with a recorded Claude Code session that compacted twice
     When "ails xray --no-open" is started in the project

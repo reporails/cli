@@ -2,23 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from typing import get_args
+from collections.abc import Sequence
 
 from reporails_cli.core.pipeline.check_one import CheckRun
-from reporails_cli.core.platform.dto.diagnostics import FindingItem, FindingSeverity
+from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.xray import FindingTally
-from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path, severity_counts
 
 
-def tally_of(findings: Iterable[FindingItem]) -> FindingTally:
+def tally_of(findings: Sequence[FindingItem]) -> FindingTally:
     """The count of `findings` and the count of each severity."""
-    by_severity: dict[FindingSeverity, int] = dict.fromkeys(get_args(FindingSeverity), 0)
-    total = 0
-    for finding in findings:
-        by_severity[finding.severity] += 1
-        total += 1
-    return FindingTally(total, by_severity)
+    return FindingTally(len(findings), severity_counts(findings))
 
 
 def tallies_by_file(run: CheckRun) -> dict[str, FindingTally]:

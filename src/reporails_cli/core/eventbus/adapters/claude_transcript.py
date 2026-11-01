@@ -16,7 +16,8 @@ it changes between versions. These are shapes recorded on Claude Code 2.1.292, 2
 the adapter refuses any other shape of a row type it reads:
 
 - an assistant row: `type: "assistant"`, `timestamp`, `message.id`, `message.usage` holding the three
-  counts above and optionally `message.model`, a string; one row is written per content block, so the rows of
+  counts above and optionally `message.model`, a string, read as no model when it is `<synthetic>` (the value
+  Claude Code writes for an API error or an interrupt); one row is written per content block, so the rows of
   one response repeat `message.id`.
 - a turn end: `type: "system"` with `subtype: "turn_duration"` and `timestamp`.
 - an instruction load: `type: "attachment"` with `attachment.type: "instructions"` and
@@ -88,6 +89,8 @@ from reporails_cli.core.platform.dto.events import (
     TokenUsage,
 )
 
+# The `message.model` Claude Code writes on a reply it made itself, for an API error or an interrupt.
+SYNTHETIC_MODEL = "<synthetic>"
 NESTED_MARKER = "nested"
 BRIEF_BLOCK_SEPARATOR = "\n\n"
 HOOK_NOTE_ATTACHMENTS = ("hook_additional_context", "hook_success", "hook_blocking_error")
@@ -275,7 +278,8 @@ class ClaudeTranscriptAdapter:
         model = message.get("model")
         if model is not None and not isinstance(model, str):
             raise PayloadRefused("assistant message model is not a string")
-        return replace(self._record(row, "assistant_usage", subagent_id), usage=replace(usage, model=model))
+        named = None if model == SYNTHETIC_MODEL else model
+        return replace(self._record(row, "assistant_usage", subagent_id), usage=replace(usage, model=named))
 
     def _attachment(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         attachment = as_object(row.get("attachment"))

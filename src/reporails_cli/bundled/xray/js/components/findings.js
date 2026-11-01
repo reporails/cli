@@ -22,7 +22,9 @@ export function render(box, part) {
       const d = el('div', 'fl');
       d.append(el('span', 'ln', l.file_level ? 'whole file' : `line ${l.line == null ? '—' : l.line}`));
       if (l.severity) d.append(el('span', 'sv ' + l.severity, l.severity));
-      d.append(el('span', 'rl', l.rule), el('span', null, l.title || l.message));
+      d.append(el('span', 'rl', l.rule));
+      if (l.title) d.append(el('span', 'ttl', l.title));
+      d.append(el('span', 'msg', l.message));
       if (l.category) d.append(el('span', 'nk', l.category));
       if (safeLink(l.docs_url)) {
         const a = el('a', null, 'docs');

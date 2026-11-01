@@ -11,7 +11,7 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, get_args
 
 from reporails_cli.core.platform.adapters.rules_query import rule_title
 from reporails_cli.core.platform.dto.diagnostics import (
@@ -21,6 +21,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     CrossFileFinding,
     FileAnalysis,
     FindingItem,
+    FindingSeverity,
     FunnelError,
     Hint,
     LocalTier,
@@ -275,13 +276,22 @@ class _SeverityCounts(TypedDict):
     infos: int
 
 
+def severity_counts(findings: Sequence[FindingItem]) -> dict[FindingSeverity, int]:
+    """The count of `findings` at each severity, zero for a severity none has."""
+    counts: dict[FindingSeverity, int] = dict.fromkeys(get_args(FindingSeverity), 0)
+    for finding in findings:
+        counts[finding.severity] += 1
+    return counts
+
+
 def _severity_counts(findings: Sequence[FindingItem]) -> _SeverityCounts:
     """The total and per-severity finding counts, keyed by their `CombinedStats` field."""
+    counts = severity_counts(findings)
     return {
         "total_findings": len(findings),
-        "errors": sum(1 for f in findings if f.severity == "error"),
-        "warnings": sum(1 for f in findings if f.severity == "warning"),
-        "infos": sum(1 for f in findings if f.severity == "info"),
+        "errors": counts["error"],
+        "warnings": counts["warning"],
+        "infos": counts["info"],
     }
 
 

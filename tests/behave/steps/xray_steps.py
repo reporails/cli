@@ -246,6 +246,26 @@ def step_memory_selected(context, text):
     assert text in seen["text"], seen
 
 
+@then("checking the instruction file lists each finding with the message the check route returns")
+def step_finding_messages(context):
+    seen = _layout_script(context, "check")
+    if seen is None:
+        return
+    assert seen["ready"], "the page did not draw"
+    page = _get(context.url)[1]
+    token = re.search(r'name="xray-token" content="([^"]+)"', page).group(1)
+    request = urllib.request.Request(
+        context.url + "check",
+        data=json.dumps({"path": "CLAUDE.md"}).encode(),
+        headers={"x-xray-token": token, "Origin": context.url.rstrip("/"), "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=120) as reply:
+        lines = json.loads(reply.read())["lines"]
+    assert lines and len(seen["rows"]) == len(lines), (seen["rows"], lines)
+    for row, line in zip(seen["rows"], lines, strict=True):
+        assert line["message"] in row, (row, line)
+
+
 @then("the prompt line shows no text and asks for none until it is clicked, then shows what the prompt route returns")
 def step_prompt_on_click(context):
     seen = _layout_script(context, "prompt")

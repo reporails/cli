@@ -17,7 +17,7 @@ export function derive(view) {
   return {
     turns, runs, art, harness, tokMax, stops, funnel,
     compactions: view.compactions || [], facts: view.facts || [], peak: view.peak, model: view.model, check: view.check || null,
-    start: view.start || [], first_context: view.first_context, length_s: view.length_s, window: view.window || null,
+    start: view.start || [], first_context: view.first_context, context_line: view.context_line || [], length_s: view.length_s, window: view.window || null,
     not_known: view.not_known || [], refusals: view.refusals || [], project: view.project, session: view.session, started_at: view.started_at,
   };
 }

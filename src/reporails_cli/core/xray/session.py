@@ -48,6 +48,7 @@ from reporails_cli.core.xray.derive import (
     build_harness,
     build_subagents,
     build_turns,
+    context_line,
     epoch,
     latest_model,
     loads_of,
@@ -159,6 +160,7 @@ class XraySession:
         artifacts = self._artifacts(files, records, frame, (start, turns, compactions, subagents))
         context = XrayContextSummary(
             first_context=replies.points[0][1] if replies.points else None,
+            line=context_line(replies, compactions, frame.t0),
             peak=peak_context(replies, compactions),
             preload_tokens_est=preload_tokens(harness, start),
             model=latest_model(records),

@@ -55,7 +55,7 @@ function renderHeader() {
 
 function renderChart() {
   const m = model;
-  chart.render($('#chartcard'), { turns: m.turns, runs: m.runs, first_context: m.first_context, length_s: m.length_s, window: m.window, peak: m.peak, compactions: m.compactions, stops: m.stops }, ctx);
+  chart.render($('#chartcard'), { turns: m.turns, runs: m.runs, context_line: m.context_line, length_s: m.length_s, window: m.window, peak: m.peak, compactions: m.compactions, stops: m.stops }, ctx);
 }
 
 function renderInfo() {
@@ -120,7 +120,7 @@ async function runAct(kind, path) {
   else part = { error: `request failed (${res.status})` };
   if (kind === 'heal') fetched.clear();
   ctx.busy = false;
-  ctx.res = { path, ...part };
+  ctx.res = { ...part, path };
   render();
 }
 

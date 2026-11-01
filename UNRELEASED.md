@@ -30,8 +30,7 @@
 
 ### Internal
 
-- The `ails xray` page is built from components over one static route, and no file name, prompt or file text it shows is ever read as HTML.
-- The `ails xray` session view names its headline findings as typed records: files with findings, a kind of file listed but never used, memory notes `MEMORY.md` does not link, what each compaction dropped, instructions repeated across subagents, and kinds of file the project has none of.
+- File names, prompts and file text on the `ails xray` page always show as plain text; markup in them never runs.
 
 - The `ails xray` page bundles the Geist and Geist Mono fonts (SIL Open Font License), so it loads no web fonts.
 - Release and CI builds install from the lock file with a fixed `uv` version, a fixed `hatchling` version and commit-pinned GitHub actions.

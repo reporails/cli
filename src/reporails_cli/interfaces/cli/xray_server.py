@@ -6,6 +6,7 @@ launch token and file path pass; the routes only translate between HTTP and the 
 
 from __future__ import annotations
 
+import logging
 import mimetypes
 import secrets
 import shlex
@@ -53,6 +54,8 @@ PAGE_HEADERS = {
     "Cache-Control": "no-store",
 }
 NO_STORE = {"Cache-Control": "no-store"}
+
+logger = logging.getLogger(__name__)
 
 # Browsers refuse a module script served under another type, and some platforms map `.js` to one.
 mimetypes.add_type("text/javascript", ".js")
@@ -215,18 +218,23 @@ class XrayServer:
             )
 
     def launch_check(self) -> None:
-        """Check the whole project once and hold the tally of every file it covers."""
+        """Check the whole project once and hold the tally of every file it covers; any failure lands as refused."""
         with self._work_lock:
+            outcome, tallies = self._launch_outcome()
+            with self._view_lock:
+                self._findings.update(tallies)
+                self._launch = outcome
+
+    def _launch_outcome(self) -> tuple[XrayCheck, dict[str, FindingTally]]:
+        """The launch check's state and the tally of every file it covers; a failed check is refused with its text."""
+        try:
             run = check_path(str(self._root))
-        if isinstance(run, Refusal):
-            outcome = XrayCheck("refused", run.text)
-            tallies: dict[str, FindingTally] = {}
-        else:
-            outcome = XrayCheck("done", None)
-            tallies = tallies_by_file(run)
-        with self._view_lock:
-            self._findings.update(tallies)
-            self._launch = outcome
+            if isinstance(run, Refusal):
+                return XrayCheck("refused", run.text), {}
+            return XrayCheck("done", None), tallies_by_file(run)
+        except Exception as err:  # pylint: disable=broad-exception-caught  # thread boundary: any failure lands as refused
+            logger.warning("the launch check failed: %s", err)
+            return XrayCheck("refused", str(err)), {}
 
     async def heal(self, request: Request) -> Response:
         """Heal one file and reply with the receipt."""
@@ -261,7 +269,7 @@ def _line(finding: FindingItem) -> JsonObject:
         "severity": finding.severity,
         "title": rule_title(finding.rule),
         "category": rule_category(finding.rule),
-        "file_level": finding.check_id in file_level_check_ids() or finding.line <= 1,
+        "file_level": finding.check_id in file_level_check_ids() or finding.line == 0,
         "docs_url": rule_docs_url(finding.rule),
     }
 

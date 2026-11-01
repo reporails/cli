@@ -441,10 +441,11 @@ class XraySessionInfo:
 
 @dataclass(frozen=True)
 class XrayContextSummary:
-    """The session's context in tokens: its first reading, its peak, the estimate of what loaded before the
-    first prompt, the latest model and the window size."""
+    """The session's context in tokens: its first reading, its line over time, its peak, the estimate of what
+    loaded before the first prompt, the latest model and the window size."""
 
     first_context: int | None
+    line: tuple[tuple[float, int], ...]
     peak: int | None
     preload_tokens_est: int | None
     model: str | None
@@ -498,6 +499,7 @@ class XrayView:
             "window": None if window is None else window.to_json(),
             "funnel": _objects([row.to_json() for row in self.verdict.funnel]),
             "first_context": self.context.first_context,
+            "context_line": [[t, context] for t, context in self.context.line],
             "peak": self.context.peak,
             "preload_tokens_est": self.context.preload_tokens_est,
             "start": _objects([load.to_json() for load in self.start]),

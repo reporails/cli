@@ -207,6 +207,21 @@ def peak_context(replies: Replies, compactions: Sequence[XrayCompaction]) -> int
     return max(seen, default=None)
 
 
+def context_line(replies: Replies, compactions: Sequence[XrayCompaction], t0: float) -> tuple[tuple[float, int], ...]:
+    """The main session's context over time as (seconds, tokens): the first reading at zero, every reply, and each
+    compaction's before then after at its time."""
+    if not replies.points:
+        return ()
+    line = [(0.0, replies.points[0][1])]
+    line.extend((moment - t0, context) for moment, context in replies.points)
+    for compaction in compactions:
+        if compaction.before is None or compaction.after is None:
+            continue
+        index = next((i for i, point in enumerate(line) if point[0] > compaction.t), len(line))
+        line[index:index] = [(compaction.t, compaction.before), (compaction.t, compaction.after)]
+    return tuple(line)
+
+
 def preload_tokens(harness: Sequence[XrayHarnessItem] | None, start: Sequence[XrayLoad]) -> int | None:
     """The tokens the session holds before its first reply: the harness items and the start loads; None when it
     holds neither."""

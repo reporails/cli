@@ -35,9 +35,9 @@ TOKEN = "launch-token"
 PORT = 8765
 ORIGIN = f"http://127.0.0.1:{PORT}"
 TOP_KEYS = {
-    "version", "session", "project", "started_at", "length_s", "window", "model", "funnel", "first_context", "peak",
-    "preload_tokens_est", "start", "turns", "compactions", "subagents", "artifacts", "refusals", "not_known", "harness",
-    "check", "facts",
+    "version", "session", "project", "started_at", "length_s", "window", "model", "funnel", "first_context",
+    "context_line", "peak", "preload_tokens_est", "start", "turns", "compactions", "subagents", "artifacts",
+    "refusals", "not_known", "harness", "check", "facts",
 }  # fmt: skip
 HEAVY = ("starlette", "uvicorn", "reporails_cli.core.mapper", "onnxruntime", "tokenizers", "numpy")
 
@@ -488,3 +488,56 @@ def test_prompt_refuses_an_id_that_is_not_a_listed_prompt(prompt_client: TestCli
 def test_prompt_without_the_launch_token_is_refused(prompt_client: TestClient) -> None:
     assert _get(prompt_client, "/prompt", {"id": "p-one"}, token=None).status_code == 403
     assert _get(prompt_client, "/prompt", {"id": "p-one"}, token="wrong").status_code == 403
+
+
+def _server(project: Path, tmp_path: Path) -> xray_server.XrayServer:
+    return xray_server.XrayServer(project.resolve(), tmp_path / "session" / "session.jsonl", TOKEN, PORT)
+
+
+def test_a_launch_check_that_fails_unexpectedly_lands_as_refused_with_the_error_text(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def boom(path: str) -> None:
+        raise PermissionError("no read access")
+
+    monkeypatch.setattr(xray_server, "check_path", boom)
+    server = _server(project, tmp_path)
+    with caplog.at_level("WARNING", logger=xray_server.__name__):
+        server.launch_check()
+    check = server._build_view()[0]["check"]
+    assert check == {"state": "refused", "message": "no read access"}
+    assert any("no read access" in record.getMessage() for record in caplog.records)
+
+
+def test_a_heal_ordered_after_the_launch_check_keeps_its_dropped_tally(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = SimpleNamespace(
+        result=SimpleNamespace(findings=[]),
+        scope=SimpleNamespace(scan_root=project.resolve(), instruction_files=[project / "CLAUDE.md"]),
+    )
+    monkeypatch.setattr(xray_server, "check_path", lambda path: run)
+    monkeypatch.setattr(xray_server, "heal_one", lambda path: HealOutcome(KeyedResult(), "", project))
+    server = _server(project, tmp_path)
+    tallies_of = xray_server.tallies_by_file
+    healers: list[threading.Thread] = []
+
+    def tallies_with_a_heal_arriving(checked: Any) -> Any:
+        # A heal arrives as the launch check turns its run into tallies, and gets as far as the lock lets it.
+        healer = threading.Thread(target=server._heal, args=(project.resolve() / "CLAUDE.md",))
+        healers.append(healer)
+        healer.start()
+        healer.join(0.3)
+        return tallies_of(checked)
+
+    monkeypatch.setattr(xray_server, "tallies_by_file", tallies_with_a_heal_arriving)
+    server.launch_check()
+    healers[0].join(5)
+    assert "CLAUDE.md" not in server._findings
+
+
+def test_file_level_is_the_whole_file_sentinel_line_zero_never_line_one() -> None:
+    one = FindingItem(file="CLAUDE.md", line=1, severity="info", rule="CORE:C:0053", message="m", check_id="x")
+    zero = FindingItem(file="CLAUDE.md", line=0, severity="info", rule="CORE:C:0053", message="m", check_id="x")
+    assert xray_server._line(one)["file_level"] is False
+    assert xray_server._line(zero)["file_level"] is True

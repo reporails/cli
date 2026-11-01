@@ -32,6 +32,7 @@ TOP_KEYS = {
     "model",
     "funnel",
     "first_context",
+    "context_line",
     "peak",
     "preload_tokens_est",
     "start",
@@ -870,6 +871,25 @@ def test_the_model_is_the_latest_main_reply_that_names_one_and_the_window_shows_
     assert "context window" not in as_list(data["not_known"])
 
 
+def test_a_synthetic_reply_after_a_real_one_is_not_the_session_model(tmp_path: Path) -> None:
+    session = _session(tmp_path, "2.1.310-listing", _project(tmp_path))
+    row = {
+        "type": "assistant",
+        "timestamp": "2099-01-01T00:00:00.000Z",
+        "sessionId": "s",
+        "message": {
+            "id": "msg_synthetic",
+            "role": "assistant",
+            "model": "<synthetic>",
+            "content": [],
+            "usage": {"input_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0},
+        },
+    }
+    with (tmp_path / "2.1.310-listing" / "session.jsonl").open("a") as handle:
+        handle.write(json.dumps(row) + "\n")
+    assert _view(session).to_json()["model"] == "claude-opus-5[1m]"
+
+
 def test_a_session_below_200k_has_no_window_and_no_model_when_no_row_names_one(tmp_path: Path) -> None:
     data = _view(_session(tmp_path, "2.1.308", _project(tmp_path))).to_json()
     assert data["window"] is None and data["model"] is None
@@ -990,3 +1010,26 @@ def test_a_first_turn_with_no_prompt_is_opened_by_the_session_start(tmp_path: Pa
     view = _view(_without_rows(tmp_path, {3}))
     assert view.turns[0].prompts == () and view.turns[0].opened_by == "session_start"
     assert view.turns[1].opened_by == "prompt"
+
+
+def test_the_context_line_holds_the_before_and_after_of_each_compaction_at_its_time(tmp_path: Path) -> None:
+    view = _view(_session(tmp_path, "2.1.309-compactions", _project(tmp_path)))
+    line = view.context.line
+    assert line[0] == (0.0, view.context.first_context)
+    assert [p[0] for p in line] == sorted(p[0] for p in line)
+    for compaction in view.compactions:
+        at = [i for i, point in enumerate(line) if point[0] == compaction.t]
+        assert len(at) == 2 and at[1] == at[0] + 1
+        assert (line[at[0]][1], line[at[1]][1]) == (compaction.before, compaction.after)
+    assert as_list(view.to_json()["context_line"])[0] == [0.0, view.context.first_context]
+
+
+def test_the_severity_counts_name_every_severity_and_agree_with_the_tally() -> None:
+    from reporails_cli.core.platform.dto.diagnostics import FindingItem
+    from reporails_cli.core.platform.runtime.merger import severity_counts
+    from reporails_cli.core.xray.tally import tally_of
+
+    found = [FindingItem(file="a", line=1, severity=s, rule="r", message="m") for s in ("error", "info", "info")]
+    assert severity_counts(found) == {"error": 1, "warning": 0, "info": 2}
+    assert tally_of(found).by_severity == severity_counts(found)
+    assert tally_of(found).count == 3

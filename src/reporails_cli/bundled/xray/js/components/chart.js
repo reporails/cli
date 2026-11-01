@@ -1,4 +1,4 @@
-// part: turns, runs (subagents), first_context, length_s, window, peak, compactions (the view's), stops (where Stop blocks sit).
+// part: turns, runs (subagents), context_line, length_s, window, peak, compactions (the view's), stops (where Stop blocks sit).
 // ctx: selTurn, sel, selectTurn(n, scroll), selectRun(id).
 import { k1, clock } from '../format.js';
 import { svg, tpl, slot } from '../dom.js';
@@ -10,20 +10,6 @@ const niceCeil = v => {
   return 10 * p;
 };
 
-function mainPoints(part) {
-  const pts = [];
-  if (part.first_context != null) pts.push([0, part.first_context]);
-  part.turns.forEach(t => (t.series || []).forEach(p => pts.push([p[0], p[1]])));
-  pts.sort((a, b) => a[0] - b[0]);
-  part.compactions.forEach(c => {
-    if (c.before == null || c.after == null) return;
-    let i = pts.findIndex(p => p[0] > c.t);
-    if (i < 0) i = pts.length;
-    pts.splice(i, 0, [c.t, c.before], [c.t, c.after]);
-  });
-  return pts;
-}
-
 const pointList = (pts, x, y) => pts.map(p => `${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ');
 
 function draw(part, ctx, W) {
@@ -34,7 +20,7 @@ function draw(part, ctx, W) {
   const scale = part.window ? part.window.size : niceCeil(part.peak);
   const x = t => L + Math.min(1, Math.max(0, t / total)) * pw;
   const y = v => T + ph - Math.min(1, (v || 0) / scale) * ph;
-  const pts = mainPoints(part);
+  const pts = part.context_line;
   const root = svg('svg', { class: 'chart', id: 'chart', width: W, height: H, viewBox: `0 0 ${W} ${H}` });
   const add = (tag, attrs, text) => root.appendChild(svg(tag, attrs, text));
 

@@ -58,7 +58,7 @@ function agentDetail(r, part, ctx) {
   if (ran.length) d.append(head('Skills it ran', ran.length), ...ran.map(x => dline('+', 'var(--green)', x.name, at(x.t) + (x.forked ? 'in its own subagent' : tk(x.tokens_est, true)))));
   const ser = r.pts;
   if (ser.length > 1) {
-    const mx = Math.max(1, ...ser.map(p => p[1]));
+    const mx = Math.max(1, r.sb.peak || 0);
     const h = head('Its context', '');
     h.firstElementChild.textContent = `${k1(ser[0][1])} → ${k1(ser[ser.length - 1][1])}, peak ${k1(mx)}`;
     const spk = svg('svg', { class: 'spk', viewBox: '0 0 300 46', preserveAspectRatio: 'none' });
@@ -96,7 +96,7 @@ function subagentRow(part, r, ctx) {
   const open = el('a', 'open', `${on ? 'close' : 'open'} ›`);
   const miss = !r.sb.has_project_instructions;
   const why = miss ? 'started without CLAUDE.md' : 'its own context' + (r.start != null && r.end != null ? `, ran ${dur(r.end - r.start)}` : '');
-  const line = orow(part, r.start, miss ? 'r' : 'v', [`${r.type} subagent `, open], why, r.pts.length ? Math.max(...r.pts.map(p => p[1])) : 0, { data: ['run', r.id], barCls: 'a', whyCls: miss ? 'red' : '', on });
+  const line = orow(part, r.start, miss ? 'r' : 'v', [`${r.type} subagent `, open], why, r.sb.peak || 0, { data: ['run', r.id], barCls: 'a', whyCls: miss ? 'red' : '', on });
   return on ? [line, agentDetail(r, part, ctx)] : [line];
 }
 

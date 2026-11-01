@@ -1,4 +1,4 @@
-// usage: node xray_layout.mjs <page-url> <layout|memory|prompt|markup|facts> [width]
+// usage: node xray_layout.mjs <page-url> <layout|memory|prompt|markup|facts|check> [width]
 // Drives the page in headless Chrome and prints one JSON object describing what it drew.
 import { openPage } from './xray_cdp.mjs';
 
@@ -30,6 +30,14 @@ if (mode === 'memory' && ready) {
   })()`);
   out.row = picked;
   out.text = picked ? (await page.until(`(document.querySelector('pre.peek')||{}).textContent`)) || '' : '';
+}
+
+if (mode === 'check' && ready) {
+  await page.ev(`[...document.querySelectorAll('[data-file]')].find(e => e.textContent.includes('CLAUDE.md')).click(); 0`);
+  await page.until(`!!document.querySelector('[data-act="check"]')`);
+  await page.ev(`document.querySelector('[data-act="check"]').click(); 0`);
+  await page.until(`!!document.querySelector('.fl')`, 240);
+  out.rows = await page.ev(`[...document.querySelectorAll('.fl')].map(r => r.textContent)`);
 }
 
 if (mode === 'prompt' && ready) {
