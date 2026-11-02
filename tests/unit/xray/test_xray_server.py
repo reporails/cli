@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -31,11 +32,12 @@ pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "eventbus" / "transcript" / "2.1.308"
 TOKEN = "launch-token"
+LAUNCH = "launch-id"
 PORT = 8765
 ORIGIN = f"http://127.0.0.1:{PORT}"
 TOP_KEYS = {
-    "version", "session", "project", "started_at", "length_s", "model", "window", "adapter", "price_list", "nodes",
-    "edges", "sources", "stations", "track", "funnel", "facts", "check", "refusals", "not_known",
+    "version", "session", "project", "started_at", "length_s", "picked", "model", "window", "adapter", "price_list",
+    "nodes", "edges", "sources", "stations", "track", "funnel", "facts", "check", "refusals", "not_known",
 }  # fmt: skip
 HEAVY = ("starlette", "uvicorn", "reporails_cli.core.mapper", "onnxruntime", "tokenizers", "numpy")
 
@@ -81,7 +83,9 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
 
 @pytest.fixture
 def client(project: Path, tmp_path: Path) -> TestClient:
-    app = xray_server.build_app(project, tmp_path / "session" / "session.jsonl", TOKEN, PORT)
+    app = xray_server.build_app(
+        project, tmp_path / "session" / "session.jsonl", picked="newest", token=TOKEN, launch=LAUNCH, port=PORT
+    )
     return TestClient(app, base_url=ORIGIN)
 
 
@@ -201,7 +205,9 @@ def test_the_launch_check_fills_every_files_tally_and_moves_the_version(
         scope=SimpleNamespace(scan_root=project.resolve(), instruction_files=[project / "CLAUDE.md"]),
     )
     monkeypatch.setattr(xray_server, "check_path", lambda path: run)
-    app = xray_server.build_app(project, tmp_path / "session" / "session.jsonl", TOKEN, PORT)
+    app = xray_server.build_app(
+        project, tmp_path / "session" / "session.jsonl", picked="newest", token=TOKEN, launch=LAUNCH, port=PORT
+    )
     with TestClient(app, base_url=ORIGIN) as client:
         view = _settled_view(client)
         artifact = next(a for a in view["sources"] if a["path"].endswith("CLAUDE.md"))
@@ -219,7 +225,9 @@ def test_the_view_says_running_until_the_launch_check_lands_and_the_version_move
         return Refusal("failed", "no model")
 
     monkeypatch.setattr(xray_server, "check_path", slow_check)
-    app = xray_server.build_app(project, tmp_path / "session" / "session.jsonl", TOKEN, PORT)
+    app = xray_server.build_app(
+        project, tmp_path / "session" / "session.jsonl", picked="newest", token=TOKEN, launch=LAUNCH, port=PORT
+    )
     with TestClient(app, base_url=ORIGIN) as client:
         first = _view_of(client)
         assert first["check"] == {"state": "running", "message": None}
@@ -463,7 +471,7 @@ def test_brief_replies_with_the_refusal_when_the_subagent_file_opens_with_no_use
 def prompt_client(project: Path, tmp_path: Path) -> TestClient:
     copy = tmp_path / "prompts"
     shutil.copytree(FIXTURES.parent / "2.1.309-turns", copy)
-    app = xray_server.build_app(project, copy / "session.jsonl", TOKEN, PORT)
+    app = xray_server.build_app(project, copy / "session.jsonl", picked="newest", token=TOKEN, launch=LAUNCH, port=PORT)
     return TestClient(app, base_url=ORIGIN)
 
 
@@ -492,7 +500,14 @@ def test_prompt_without_the_launch_token_is_refused(prompt_client: TestClient) -
 
 
 def _server(project: Path, tmp_path: Path) -> xray_server.XrayServer:
-    return xray_server.XrayServer(project.resolve(), tmp_path / "session" / "session.jsonl", TOKEN, PORT)
+    return xray_server.XrayServer(
+        project.resolve(),
+        tmp_path / "session" / "session.jsonl",
+        picked="newest",
+        token=TOKEN,
+        launch=LAUNCH,
+        port=PORT,
+    )
 
 
 def test_a_launch_check_that_fails_unexpectedly_lands_as_refused_with_the_error_text(
@@ -505,7 +520,9 @@ def test_a_launch_check_that_fails_unexpectedly_lands_as_refused_with_the_error_
     server = _server(project, tmp_path)
     with caplog.at_level("WARNING", logger=xray_server.__name__):
         server.launch_check()
-    check = server._build_view()[0]["check"]
+    launch = server._session_for("session")
+    assert launch is not None
+    check = server._build_view(launch, "newest")[0]["check"]
     assert check == {"state": "refused", "message": "no read access"}
     assert any("no read access" in record.getMessage() for record in caplog.records)
 
@@ -548,7 +565,7 @@ def test_file_level_is_the_whole_file_sentinel_line_zero_never_line_one() -> Non
 def handoff_client(project: Path, tmp_path: Path) -> TestClient:
     copy = tmp_path / "handoffs"
     shutil.copytree(FIXTURES.parent / "2.1.309-handoffs", copy)
-    app = xray_server.build_app(project, copy / "session.jsonl", TOKEN, PORT)
+    app = xray_server.build_app(project, copy / "session.jsonl", picked="newest", token=TOKEN, launch=LAUNCH, port=PORT)
     client = TestClient(app, base_url=ORIGIN)
     client.get("/view", headers={"X-Xray-Token": TOKEN})
     return client
@@ -573,3 +590,80 @@ def test_call_refuses_an_id_that_is_not_a_shell_call_of_the_session(handoff_clie
 def test_call_without_the_launch_token_is_refused(handoff_client: TestClient) -> None:
     assert _get(handoff_client, "/call", {"id": "toolu_bash1"}, token=None).status_code == 403
     assert _get(handoff_client, "/call", {"id": "toolu_bash1"}, token="wrong").status_code == 403
+
+
+TYPED_PROMPT = {
+    "type": "user",
+    "uuid": "u-1",
+    "timestamp": "2026-10-30T20:10:30.000Z",
+    "sessionId": "older",
+    "promptSource": "typed",
+    "origin": {"kind": "human"},
+    "message": {"role": "user", "content": "open the settings page"},
+}
+
+
+@pytest.fixture
+def two_sessions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    """A page opened on the newer of two recorded sessions of one project."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    root = tmp_path / "two"
+    root.mkdir()
+    older = claude_project_dir(root) / "older.jsonl"
+    older.parent.mkdir(parents=True)
+    older.write_text(json.dumps(TYPED_PROMPT) + "\n", encoding="utf-8")
+    newer = claude_project_dir(root) / "newer.jsonl"
+    shutil.copy(FIXTURES / "session.jsonl", newer)
+    os.utime(older, (1_000_000, 1_000_000))
+    app = xray_server.build_app(root, newer, picked="current_unknown", token=TOKEN, launch=LAUNCH, port=PORT)
+    return TestClient(app, base_url=ORIGIN)
+
+
+def test_view_serves_the_session_the_query_names_from_the_same_server(two_sessions: TestClient) -> None:
+    launch = _get(two_sessions, "/view", {}).json()
+    older = _get(two_sessions, "/view", {"session": "older"}).json()
+    assert (launch["session"], launch["picked"]) == ("newer", "current_unknown")
+    assert (older["session"], older["picked"]) == ("older", "named")
+    assert _get(two_sessions, "/view", {"session": "older", "pick": "current_unknown"}).json()["picked"] == (
+        "current_unknown"
+    )
+
+
+def test_the_etag_names_the_session_so_two_sessions_never_share_one(two_sessions: TestClient) -> None:
+    newer = _get(two_sessions, "/view", {})
+    older = _get(two_sessions, "/view", {"session": "older"})
+    assert newer.headers["ETag"].startswith('"newer:') and older.headers["ETag"].startswith('"older:')
+
+
+@pytest.mark.parametrize("session", ["nosuch", "../outside", "a/b"])
+def test_a_session_that_is_not_one_of_the_project_is_refused_on_every_session_route(
+    two_sessions: TestClient, session: str
+) -> None:
+    for route in ("/view", "/sessions", "/first-prompt", "/peek", "/prompt"):
+        reply = _get(two_sessions, route, {"session": session, "path": "x", "id": "x"})
+        assert reply.status_code == 400 and reply.json() == {"error": "not a session of this project"}, route
+
+
+def test_a_pick_outside_the_vocabulary_is_refused(two_sessions: TestClient) -> None:
+    assert _get(two_sessions, "/view", {"pick": "bogus"}).status_code == 400
+
+
+def test_sessions_lists_each_session_with_its_facts_and_the_one_the_request_is_on(two_sessions: TestClient) -> None:
+    body = _get(two_sessions, "/sessions", {"session": "older"}).json()
+    assert body["session"] == "older"
+    by_id = {entry["session"]: entry for entry in body["sessions"]}
+    assert set(by_id) == {"older", "newer"}
+    assert by_id["older"]["started_at"] == "2026-10-30T20:10:30.000Z" and by_id["older"]["subagents"] == 0
+    assert _get(two_sessions, "/sessions", {}).json()["session"] == "newer"
+
+
+def test_first_prompt_replies_with_the_text_of_the_named_session_and_never_caches_it(two_sessions: TestClient) -> None:
+    reply = _get(two_sessions, "/first-prompt", {"session": "older"})
+    assert reply.json() == {"id": "older", "text": "open the settings page"}
+    assert reply.headers["Cache-Control"] == "no-store"
+
+
+def test_launch_answers_its_id_without_the_token_and_sessions_does_not(two_sessions: TestClient) -> None:
+    assert _get(two_sessions, "/launch", {}, token=None).json() == {"launch": LAUNCH}
+    assert _get(two_sessions, "/sessions", {}, token=None).status_code == 403
+    assert _get(two_sessions, "/first-prompt", {"session": "older"}, token=None).status_code == 403

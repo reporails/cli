@@ -22,8 +22,8 @@ pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "eventbus" / "transcript"
 RUNNING = XrayCheck("running", None)
 TOP_KEYS = {
-    "version", "session", "project", "started_at", "length_s", "model", "window", "adapter", "price_list", "nodes",
-    "edges", "sources", "stations", "track", "funnel", "facts", "check", "refusals", "not_known",
+    "version", "session", "project", "started_at", "length_s", "picked", "model", "window", "adapter", "price_list",
+    "nodes", "edges", "sources", "stations", "track", "funnel", "facts", "check", "refusals", "not_known",
 }  # fmt: skip
 HANDOFFS = "2.1.309-handoffs"
 NEW_TURN = (
@@ -87,7 +87,7 @@ def _tally(count: int) -> FindingTally:
 
 def _view(session: XraySession, findings: dict[str, FindingTally] | None = None) -> XrayView:
     session.refresh()
-    return session.view(findings or {}, RUNNING)
+    return session.view(findings or {}, RUNNING, "newest")
 
 
 def _handoffs(tmp_path: Path) -> XrayView:
@@ -155,11 +155,11 @@ def test_refresh_reports_growth_and_bumps_the_version(tmp_path: Path) -> None:
     version = session.version
     assert session.refresh() is False
     assert session.version == version
-    before = session.view({}, RUNNING).nodes[0].detail
+    before = session.view({}, RUNNING, "newest").nodes[0].detail
     _append_turn(tmp_path, "2.1.301")
     assert session.refresh() is True
     assert session.version == version + 1
-    after = session.view({}, RUNNING).nodes[0].detail
+    after = session.view({}, RUNNING, "newest").nodes[0].detail
     assert len(after.series) == len(before.series) + 1 and after.series[-1][1] == 30103
     assert session.refresh() is False
 
@@ -168,13 +168,13 @@ def test_the_version_follows_the_findings_it_is_given(tmp_path: Path) -> None:
     session = _session(tmp_path, "2.1.301", _project(tmp_path))
     session.refresh()
     version = session.version
-    session.view({}, RUNNING)
+    session.view({}, RUNNING, "newest")
     assert session.version == version
-    session.view({"a.md": _tally(2)}, RUNNING)
+    session.view({"a.md": _tally(2)}, RUNNING, "newest")
     assert session.version == version + 1
-    session.view({"a.md": _tally(2)}, RUNNING)
+    session.view({"a.md": _tally(2)}, RUNNING, "newest")
     assert session.version == version + 1
-    session.view({"a.md": _tally(2)}, XrayCheck("done", None))
+    session.view({"a.md": _tally(2)}, XrayCheck("done", None), "newest")
     assert session.version == version + 2
 
 
@@ -212,7 +212,7 @@ def test_a_skills_supporting_file_is_no_artifact_of_its_own(tmp_path: Path) -> N
 def test_a_session_with_no_records_is_an_empty_view(tmp_path: Path) -> None:
     session = XraySession(_project(tmp_path), tmp_path / "missing.jsonl")
     assert session.refresh() is False
-    view = session.view({}, RUNNING)
+    view = session.view({}, RUNNING, "newest")
     assert view.info.length_s is None and view.edges == ()
     (main,) = view.nodes
     assert (main.id, main.end, main.tree.children, main.detail.series) == ("main", 0.0, (), ())
@@ -365,7 +365,7 @@ def test_a_file_that_entered_two_contexts_is_a_repeated_instruction(tmp_path: Pa
 def test_a_prompt_text_is_given_only_for_a_prompt_the_records_name(tmp_path: Path) -> None:
     session = _session(tmp_path, "2.1.309-turns", _project(tmp_path))
     session.refresh()
-    main = next(node for node in session.view({}, RUNNING).nodes if node.id == "main")
+    main = next(node for node in session.view({}, RUNNING, "newest").nodes if node.id == "main")
     typed = main.detail.prompts
     assert typed and session.prompt(typed[0].id) is not None
     assert session.prompt("nosuchprompt") is None

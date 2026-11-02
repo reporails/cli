@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # `tests.suite_env`, shared with pytest
 
-from support import LOCAL_API_ENV, LOCAL_API_URL, local_api_answers, run_ails, scenario_home
+from support import LOCAL_API_ENV, LOCAL_API_URL, local_api_answers, run_ails, scenario_home, stop_xray_pages
 
 
 def before_all(context) -> None:
@@ -59,6 +59,8 @@ def after_scenario(context, scenario) -> None:
     if scenario.status == "skipped":
         return  # skipped before any setup ran: there is no home or tmp project to tear down
     tmpdir = getattr(context, "tmpdir", None)
+    if tmpdir is not None and tmpdir.exists():
+        stop_xray_pages(context.home)  # a detached x-ray page the scenario started must not outlive it
     if tmpdir is not None and tmpdir.exists():
         # A check starts a mapper daemon under the scenario's own home; stop it before the home goes.
         run_ails(tmpdir, "daemon", "stop", home=context.home, timeout=30)

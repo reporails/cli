@@ -91,7 +91,7 @@ def test_preservation_reply_is_one_text_block(tmp_path: Path, monkeypatch) -> No
     target = tmp_path / "CLAUDE.md"
     target.write_text("# P\n\nRun tests.\n", encoding="utf-8")
     preservation = {"ok": True, "score_before": 7.0, "score_after": 8.0, "kept": {"instructions": 1}}
-    monkeypatch.setattr(server, "_with_preservation", lambda payload, *a: {**payload, "preservation": preservation})
+    monkeypatch.setattr(server, "with_preservation", lambda payload, *a: {**payload, "preservation": preservation})
     monkeypatch.setattr(server, "_with_feedback", lambda payload, *a: {**payload, "feedback": []})
     result = _call(target, monkeypatch, {"tier": "free", "files": {}, "level": "L2"})
     assert len(result.content) == 1 and result.structured_content is None

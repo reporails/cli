@@ -42,7 +42,7 @@ def runs(monkeypatch: pytest.MonkeyPatch) -> list[int]:
         return payload, None, 0.0
 
     monkeypatch.setattr(server, "_fresh_validate_payload", fake_fresh)
-    monkeypatch.setattr(server, "_with_preservation", lambda payload, *a, **k: payload)
+    monkeypatch.setattr(server, "with_preservation", lambda payload, *a, **k: payload)
     return seen
 
 
@@ -208,7 +208,7 @@ def mapped(project: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[int], l
         return payload, state.last_ruleset_map, 0.0
 
     monkeypatch.setattr(server, "_fresh_validate_payload", fake_fresh)
-    monkeypatch.setattr(server, "_with_preservation", lambda payload, *a, **k: payload)
+    monkeypatch.setattr(server, "with_preservation", lambda payload, *a, **k: payload)
     return seen, mapped_paths
 
 
@@ -311,7 +311,7 @@ def pipeline_replies(project: Path, monkeypatch: pytest.MonkeyPatch) -> list[dic
     monkeypatch.setattr(
         server, "run_pipeline_for_path", lambda path, full, named=frozenset(): (replies.pop(0), None, 0.0)
     )
-    monkeypatch.setattr(server, "_with_preservation", lambda payload, *a, **k: payload)
+    monkeypatch.setattr(server, "with_preservation", lambda payload, *a, **k: payload)
     return replies
 
 
@@ -419,7 +419,7 @@ def test_a_concurrent_calls_result_survives_a_retryable_reply(project: Path, mon
         return dict(_BUSY), None, 0.0
 
     monkeypatch.setattr(server, "_fresh_validate_payload", fake_fresh)
-    monkeypatch.setattr(server, "_with_preservation", lambda payload, *a, **k: payload)
+    monkeypatch.setattr(server, "with_preservation", lambda payload, *a, **k: payload)
     assert _call(project)["funnel"]["retryable"] is True
     state = _state()
     assert state.call_count == 3

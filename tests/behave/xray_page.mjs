@@ -1,8 +1,8 @@
-// usage: node xray_page.mjs <page-url> <mode> [width]
+// usage: node xray_page.mjs <page-url> <mode> [width] [session]
 // Drives the bundled page, served over a fixture view, in headless Chrome and prints one JSON object per mode.
 import { openPage, sleep as sleepMs } from './xray_cdp.mjs';
 
-const [url, mode, width] = [process.argv[2], process.argv[3], Number(process.argv[4] || 1440)];
+const [url, mode, width, picked] = [process.argv[2], process.argv[3], Number(process.argv[4] || 1440), process.argv[5]];
 const page = await openPage(url, width);
 const ready = await page.until(`!!document.querySelector('.card.top')`);
 const out = { ready: !!ready };
@@ -417,6 +417,20 @@ if (mode === 'switcher' && ready) {
   out.search = await page.ev(`location.search`);
   out.footer = await page.ev(`document.querySelector('#src').textContent`);
   out.after = (await requests()).slice(mark);
+}
+
+// Against the real server: open the switcher, pick the session named in argv, and read what the page then shows.
+if (mode === 'pickother' && ready) {
+  out.firstSrc = await page.ev(`document.querySelector('#src').textContent`);
+  await click('.swbtn');
+  await page.until(`document.querySelectorAll('.swpick').length >= 2`);
+  out.listed = await page.ev(`[...document.querySelectorAll('.swpick')].map(b => b.dataset.session)`);
+  out.noIdTyped = await page.ev(`!document.querySelector('input, textarea')`);
+  await click(`.swpick[data-session="${picked}"]`);
+  await page.until(`location.search === '?session=${picked}'`);
+  await page.until(`!!document.querySelector('.card.top') && document.querySelector('#src').textContent.includes('Session ${picked}.')`);
+  out.search = await page.ev(`location.search`);
+  out.src = await page.ev(`document.querySelector('#src').textContent`);
 }
 
 console.log(JSON.stringify(out));

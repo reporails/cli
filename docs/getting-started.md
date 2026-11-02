@@ -143,6 +143,8 @@ The whole-repo summary also shows a `Top rules (by finding count)` block — a f
 ails xray                      # the newest Claude Code session started in this folder
 ails xray --session <id>       # one session by its id
 ails xray --no-open            # print the address instead of opening the browser
+ails xray --current            # the session of the agent running this command
+ails xray --background         # start the page detached, print its address and return
 ```
 
 `ails xray` opens a page on `127.0.0.1` that shows one session as who handed what to whom. The main agent sits on a timeline that runs top to bottom; each subagent is a card beside it, joined by an arch that leaves the timeline when the agent launched and returns when it handed its result back. The line's thickness follows the context size, and a compaction narrows it with a marker showing the sizes before and after.
@@ -150,6 +152,12 @@ ails xray --no-open            # print the address instead of opening the browse
 - **Click a card** to see what its agent was given (its task prompt, the instruction files it inherited, the parent's context it was not given), how it worked (peak context, tool calls, subagents launched) and what came back. An agent that failed, was stopped or ended without a result says so instead. **Double-click a card**, or press its Open button, to open that agent in the same layout; the path shows in the address bar and in the breadcrumb at the top, so a level can be linked.
 - **Along the timeline**, each instruction file, rule, skill, memory file, MCP server and hook shows where it entered the agent's context, with its size. Repeated calls to one MCP server collapse into one round-trip mark. Reads, edits and shell commands go in a side track, and a command that failed over and over gets one bracket with its text.
 - **The Sources list** on the left names every file the session could load and says what did not happen: listed but never loaded, on disk but never loaded, or none configured. Hover a source to light the agents that had it; click it to keep the focus. The toolbar filters agents by type and switches a kind of source off everywhere at once. A source's findings show as an orange count; click it to open the file's findings, the command that fixes it, and its text.
+
+### Open any session
+
+- **From a terminal**, `ails xray` opens the newest session of the folder and keeps serving until Ctrl-C. `--session <id>` opens one by its id. To choose without an id, open the session button in the page header: it lists the folder's recent sessions with their start time, length and subagent count, a "first prompt" toggle shows a session's first prompt only when clicked, and picking a session opens it on the same page. `--session` and `--current` cannot be combined, and an id that is not a session of the folder is refused.
+- **From inside an agent**, ask for the x-ray and the page opens in the background, so the agent's call returns at once with the address to show you. In the reporails plugin that is `/reporails:ails xray`; any agent connected to the reporails MCP server can call its `xray` tool, optionally with a `session`. Without a terminal tool, `ails xray --current --background` prints the same address. A page already running for the project is reused, and a page started with `ails xray` in a terminal is reused too.
+- **Which session opens.** From inside Claude Code, `--current` and the `xray` tool open the session you are running in, even when a newer session of the folder exists. When the agent does not tell the command which session it is, the newest session opens and the page says that it is only the newest.
 
 The page uses the names your coding agent gives its agents, tools and files, so only what that agent has appears. It updates while the session runs, checks the project's files once when it opens, and reads the session transcript Claude Code keeps under `~/.claude/projects/` and, with the reporails plugin installed, the session's recorded events. Nothing is sent off the machine except the check and fix calls `ails check` makes; a part of the page with no source shows "not known here".
 

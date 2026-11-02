@@ -12,11 +12,12 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
+from reporails_cli.core.platform.adapters import programs
 from reporails_cli.core.platform.config.credentials import credentials_path, read_credentials
 from reporails_cli.core.platform.contract.errors import PlatformRefusedError, PlatformUnavailableError
 from reporails_cli.core.platform.dto.diagnostics import STILL_REACHING_MESSAGE, Notice
 from reporails_cli.core.platform.dto.sign_in import KeyCheck, PollOutcome, SignedIn, SignInGrant
-from reporails_cli.interfaces.cli import helpers, login_flow
+from reporails_cli.interfaces.cli import login_flow
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner(env={"COLUMNS": "200"})  # no line wrapping inside the asserted sentences
@@ -48,7 +49,7 @@ class _Site:
         monkeypatch.setattr(login_flow, "poll_sign_in", self._poll)
         monkeypatch.setattr(login_flow, "revoke_sign_in", self._revoke)
         monkeypatch.setattr(login_flow, "check_api_key", self._check)
-        monkeypatch.setattr(helpers, "launch_detached", lambda cmd: self.opened.append(cmd[-1]))
+        monkeypatch.setattr(programs, "launch_detached", lambda cmd, *, cwd: self.opened.append(cmd[-1]))
 
     def _sleep(self, seconds: float) -> None:
         self.sleeps.append(seconds)
@@ -91,7 +92,7 @@ def _on_platform(monkeypatch: pytest.MonkeyPatch, platform: str = "darwin") -> N
     """Run the command on `platform`, with no screen and no SSH session unless the test sets one."""
     for name in _ENV_THAT_DECIDES:
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr(helpers, "sys", _FakeSys(platform))
+    monkeypatch.setattr(programs, "sys", _FakeSys(platform))
 
 
 @pytest.fixture
@@ -181,11 +182,11 @@ def test_login_opens_the_browser_only_where_a_screen_can_show_it(
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_login_ignores_a_browser_that_will_not_open(site: _Site, monkeypatch: pytest.MonkeyPatch) -> None:
-    def _fail(cmd: list[str]) -> None:
+    def _fail(cmd: list[str], *, cwd: Path | None) -> int:
         raise OSError("no browser")
 
     _on_platform(monkeypatch)
-    monkeypatch.setattr(helpers, "launch_detached", _fail)
+    monkeypatch.setattr(programs, "launch_detached", _fail)
     site.polls = [_signed_in()]
     assert runner.invoke(app, ["login"]).exit_code == 0
 
@@ -207,7 +208,7 @@ def test_the_page_opens_in_a_real_child_that_ignores_the_working_directory(
     monkeypatch.chdir(cwd)
     monkeypatch.delenv("CI", raising=False)
     monkeypatch.setenv("BROWSER", f'"{Path(sys.executable).as_posix()}" "{program.as_posix()}" %s')
-    helpers.open_in_browser("https://reporails.com/x")
+    programs.open_in_browser("https://reporails.com/x")
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline and not (marker.exists() or shadowed.exists()):
         time.sleep(0.05)
@@ -611,7 +612,7 @@ def test_the_shared_browser_opener_starts_nothing_where_no_screen_can_show_a_pag
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     started: list[list[str]] = []
-    monkeypatch.setattr(helpers, "launch_detached", started.append)
+    monkeypatch.setattr(programs, "launch_detached", lambda cmd, *, cwd: started.append(cmd))
     _on_platform(monkeypatch, "linux")
-    helpers.open_in_browser("http://127.0.0.1:1/")
+    programs.open_in_browser("http://127.0.0.1:1/")
     assert started == []

@@ -692,7 +692,7 @@ def test_the_built_views_key_structure_matches_the_sample_the_page_is_built_agai
         stations=graph.stations,
         tracks=graph.tracks,
         version=1,
-        info=XraySessionInfo("s", "p", at(0), 20.0),
+        info=XraySessionInfo("s", "p", at(0), 20.0, "newest"),
         model=None,
         window=None,
         adapter=vocabulary_for("claude", []),

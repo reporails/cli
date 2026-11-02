@@ -264,15 +264,48 @@ class XrayWindow:
         return {"size": self.size, "basis": self.basis}
 
 
+SessionPick = Literal["named", "current", "current_unknown", "newest"]
+
+
 @dataclass(frozen=True)
 class XraySessionInfo:
-    """Which session and project the page shows, when the session began (the time of its first record) and how
-    long it ran, in seconds."""
+    """Which session and project the page shows, when the session began (the time of its first record), how
+    long it ran, in seconds, and how the session was chosen."""
 
     session: str
     project: str
     started_at: str | None
     length_s: float | None
+    picked: SessionPick
+
+
+@dataclass(frozen=True)
+class XraySessionEntry:
+    """One session of a project as the switcher lists it: its id, when it began, how long it ran, in seconds, and
+    how many subagents it started."""
+
+    session: str
+    started_at: str | None
+    length_s: float | None
+    subagents: int
+
+    def to_json(self) -> JsonObject:
+        """The entry as a JSON object."""
+        return {
+            "session": self.session,
+            "started_at": self.started_at,
+            "length_s": self.length_s,
+            "subagents": self.subagents,
+        }
+
+
+@dataclass(frozen=True)
+class XrayPage:
+    """A running x-ray page: the process serving it, its port and the id of its launch."""
+
+    pid: int
+    port: int
+    launch: str
 
 
 @dataclass(frozen=True)
@@ -467,6 +500,7 @@ class XrayView(Graph):
             "project": self.info.project,
             "started_at": self.info.started_at,
             "length_s": self.info.length_s,
+            "picked": self.info.picked,
             "model": self.model,
             "window": None if self.window is None else self.window.to_json(),
             "adapter": self.adapter.to_json(),

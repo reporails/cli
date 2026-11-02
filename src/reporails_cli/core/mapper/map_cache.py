@@ -29,6 +29,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from reporails_cli.core.cache.hashing import content_hash
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.imports import expand_imports_with_origins
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, as_str
@@ -45,12 +46,6 @@ from reporails_cli.core.platform.utils.directives import strip_directives
 from reporails_cli.core.platform.utils.utils import compact_json
 
 logger = logging.getLogger(__name__)
-
-
-def content_hash(text: str) -> str:
-    """Compute SHA-256 hash of text with sha256: prefix."""
-    h = hashlib.sha256(text.encode("utf-8")).hexdigest()
-    return f"sha256:{h}"
 
 
 def file_cache_key(

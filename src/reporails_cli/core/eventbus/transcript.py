@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from reporails_cli.core.discovery.agent_discovery import claude_project_dir
@@ -16,11 +16,14 @@ from reporails_cli.core.eventbus.port import (
     register_transcript,
     utc_now,
 )
+from reporails_cli.core.eventbus.store import UNSAFE_ID_CHARS
 from reporails_cli.core.eventbus.tail import read_appended_lines
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
 from reporails_cli.core.platform.dto.events import EventRecord, FileCursor, TranscriptCursor
 
 _SUBAGENT_PREFIX = "agent-"
+# How many of a project's transcripts the session listing keeps.
+RECENT_SESSIONS = 20
 
 register_transcript(ClaudeTranscriptAdapter())
 
@@ -30,14 +33,70 @@ def session_transcript(project_root: Path, session_id: str) -> Path:
     return claude_project_dir(project_root) / f"{session_id}.jsonl"
 
 
+def known_session(project_root: Path, session_id: str) -> Path | None:
+    """The transcript of session `session_id` of the project; None unless the id holds only letters, digits,
+    `_` and `-` and its transcript is a file."""
+    if not session_id or UNSAFE_ID_CHARS.search(session_id):
+        return None
+    path = session_transcript(project_root, session_id)
+    return path if path.is_file() else None
+
+
+def recent_sessions(project_root: Path) -> list[Path]:
+    """The project's transcripts, the most recently written first, at most `RECENT_SESSIONS`."""
+    try:
+        files = [path for path in claude_project_dir(project_root).glob("*.jsonl") if path.is_file()]
+    except OSError:
+        return []
+    written = {path: last_write(path) or 0.0 for path in files}
+    return sorted(files, key=lambda path: written[path], reverse=True)[:RECENT_SESSIONS]
+
+
 def newest_session(project_root: Path) -> Path | None:
     """The most recently written transcript of the project, or None when it has none."""
-    folder = claude_project_dir(project_root)
-    try:
-        files = [path for path in folder.glob("*.jsonl") if path.is_file()]
-        return max(files, key=lambda path: path.stat().st_mtime, default=None)
-    except OSError:
+    return next(iter(recent_sessions(project_root)), None)
+
+
+def subagent_count(session_file: Path) -> int:
+    """How many subagent files the session has."""
+    return len(_files(session_file)) - 1
+
+
+def _main_rows(path: Path) -> Iterator[JsonObject]:
+    """The rows of the main transcript in order, from the head; an undecodable line is skipped."""
+    with contextlib.suppress(OSError), path.open("rb") as handle:
+        for line in handle:
+            with contextlib.suppress(ValueError):
+                yield as_object(json.loads(line))
+
+
+def session_start(agent: str, session_file: Path) -> str | None:
+    """The time of the first record the main transcript's rows resolve to; None when the agent is unknown or no
+    row resolves to a timed record."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
         return None
+    for row in _main_rows(session_file):
+        with contextlib.suppress(PayloadRefused):
+            timed = next((record.time for record in adapter.resolve_row(row, None) if record.time), None)
+            if timed is not None:
+                return timed
+    return None
+
+
+def first_prompt_text(agent: str, session_file: Path) -> str | None:
+    """The text of the first typed prompt of the main transcript; None when the agent is unknown or there is
+    none. A row the adapter refuses is skipped. The text is returned, never stored."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        return None
+    for row in _main_rows(session_file):
+        try:
+            if any(record.prompt is not None for record in adapter.resolve_row(row, None)):
+                return adapter.resolve_prompt(row)
+        except PayloadRefused:
+            continue
+    return None
 
 
 def read_transcript(

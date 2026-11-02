@@ -7,8 +7,9 @@ import shutil
 import typer
 
 from reporails_cli.core.install.self_update import detect_install_method, npm_update_hint
+from reporails_cli.core.platform.adapters.programs import run_uv_tool
 from reporails_cli.core.platform.utils.version import installed_version
-from reporails_cli.interfaces.cli.helpers import console, run_uv_tool
+from reporails_cli.interfaces.cli.helpers import console
 from reporails_cli.interfaces.cli.typer_app import app
 
 

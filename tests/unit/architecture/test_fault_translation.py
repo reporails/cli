@@ -47,6 +47,9 @@ _KNOWN_EXCEPTIONS: set[tuple[str, str, str]] = {
     ("src/reporails_cli/core/platform/adapters/rate_cooldown.py", "_load", "FileNotFoundError"),
     ("src/reporails_cli/core/platform/adapters/rate_cooldown.py", "_load", "OSError,ValueError"),
     ("src/reporails_cli/core/platform/adapters/rate_cooldown.py", "active_cooldown", "ValueError"),
+    # Legitimate logged-isolation — a program that cannot start or runs out of time is logged at WARNING and
+    # reads as no result.
+    ("src/reporails_cli/core/platform/adapters/programs.py", "run_program", "OSError,subprocess.TimeoutExpired"),
 }
 
 

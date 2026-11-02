@@ -331,6 +331,18 @@ class _FixtureHandler(BaseHTTPRequestHandler):
     def _json(self, status: int, payload: object) -> None:
         self._send(status, json.dumps(payload).encode(), "application/json")
 
+    def _serve_view(self, query: dict[str, list[str]]) -> None:
+        type(self).views_served += 1
+        body = self.view_text
+        if self.overrides or "session" in query:
+            shown = {**json.loads(body), **self.overrides}
+            if "session" in query:
+                shown["session"] = query["session"][0]
+            body = json.dumps(shown)
+        if self.bump_version:  # a session that keeps growing: every poll carries a new version
+            body = json.dumps({**json.loads(body), "version": 1000 + self.views_served})
+        self._send(200, body.encode(), "application/json")
+
     def do_GET(self) -> None:  # http.server's name
         url = urlparse(self.path)
         query = parse_qs(url.query)
@@ -351,21 +363,14 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             return self._json(200, type(self).requests)
         type(self).requests.append(self.path)
         if url.path == "/sessions":
-            return self._json(200, {"session": query.get("session", [STUB_SESSIONS[0]["session"]])[0], "sessions": STUB_SESSIONS})
+            return self._json(
+                200, {"session": query.get("session", [STUB_SESSIONS[0]["session"]])[0], "sessions": STUB_SESSIONS}
+            )
         if url.path == "/first-prompt":
             wanted = query.get("session", [""])[0]
             return self._json(200, {"id": wanted, "text": STUB_PROMPTS.get(wanted, "")})
         if url.path == "/view":
-            type(self).views_served += 1
-            body = self.view_text
-            if self.overrides or "session" in query:
-                shown = {**json.loads(body), **self.overrides}
-                if "session" in query:
-                    shown["session"] = query["session"][0]
-                body = json.dumps(shown)
-            if self.bump_version:  # a session that keeps growing: every poll carries a new version
-                body = json.dumps({**json.loads(body), "version": 1000 + self.views_served})
-            return self._send(200, body.encode(), "application/json")
+            return self._serve_view(query)
         key = query.get("id", query.get("subagent", query.get("path", [""])))[0]
         texts = {
             "/call": CALLS.get(key, ""),

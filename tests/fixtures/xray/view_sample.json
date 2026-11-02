@@ -4,6 +4,7 @@
   "project": "demo",
   "started_at": "2026-10-28T09:14:02Z",
   "length_s": 7200.0,
+  "picked": "named",
   "model": "claude-opus-4-8",
   "window": {
     "size": 1000000,

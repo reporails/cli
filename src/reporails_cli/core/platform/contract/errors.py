@@ -42,3 +42,7 @@ class InstalledPluginsUnreadableError(PlatformError):
 
 class BundledConfigMissingError(PlatformError):
     """The agent configs that ship with the package are missing or unreadable: a broken install."""
+
+
+class XrayPageError(PlatformError):
+    """The x-ray page did not start, or did not answer within the time given to it."""

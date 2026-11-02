@@ -16,6 +16,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import urllib.error
 import urllib.request
@@ -52,6 +53,13 @@ def scenario_home(tmpdir: Path, real_models: Path) -> Path:
         with contextlib.suppress(OSError):  # no symlink privilege (Windows): the run works offline without the model
             models.symlink_to(real_models, target_is_directory=True)
     return home
+
+
+def stop_xray_pages(home: Path) -> None:
+    """Kill every x-ray page process the scenario's own home records, so no server outlives its scenario."""
+    for record in (home / ".reporails" / "xray-pages").glob("*.json"):
+        with contextlib.suppress(OSError, ValueError, KeyError):
+            os.kill(int(json.loads(record.read_text(encoding="utf-8"))["pid"]), signal.SIGKILL)
 
 
 def build_project(root: Path) -> Path:

@@ -18,12 +18,12 @@ LOG_RETENTION_DAYS = 30
 LOG_FOLDER_MAX_BYTES = 100 * 1024 * 1024
 # `<session id>.<start ms>.<part>.jsonl` (the x-ray mod's log) or `<session id>.events.jsonl`.
 _LOG_NAME = re.compile(r"^[^.]+\.(\d+\.\d+|events)\.jsonl$")
-_UNSAFE = re.compile(r"[^A-Za-z0-9_-]")
+UNSAFE_ID_CHARS = re.compile(r"[^A-Za-z0-9_-]")
 
 
 def events_path(session_id: str) -> Path:
     """The event-log file of one session."""
-    return get_xray_log_dir() / f"{_UNSAFE.sub('', session_id) or 'unknown'}.events.jsonl"
+    return get_xray_log_dir() / f"{UNSAFE_ID_CHARS.sub('', session_id) or 'unknown'}.events.jsonl"
 
 
 def append(record: EventRecord) -> None:

@@ -32,6 +32,8 @@ class TranscriptAdapter(Protocol):
     """What an agent's transcript adapter offers: its name and the records one transcript row carries."""
 
     agent: str
+    # The env var that names the calling session of this agent.
+    session_env: str
 
     def resolve_row(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         """The records one row carries (none for a row type it does not read); raises `PayloadRefused`

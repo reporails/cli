@@ -10,6 +10,7 @@ from reporails_cli.core.discovery.plugin_roots import installed_plugin_roots
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.eventbus.transcript import (
     call_text,
+    first_prompt_text,
     last_write,
     prompt_text,
     read_transcript,
@@ -24,6 +25,7 @@ from reporails_cli.core.platform.dto.xray import (
     ArtifactFile,
     FindingTally,
     Graph,
+    SessionPick,
     XrayCheck,
     XrayGaps,
     XraySessionInfo,
@@ -125,6 +127,10 @@ class XraySession:
             return None
         return prompt_text(AGENT, self._file, prompt_id)
 
+    def first_prompt(self) -> str | None:
+        """The text of the first typed prompt of the session; None when it has none. The text is not kept."""
+        return first_prompt_text(AGENT, self._file)
+
     def call(self, use_id: str) -> str | None:
         """The command of a shell call the records name; None for any other id. Raises `PayloadRefused` when the
         call is not the shape the adapter is pinned to. The text is not kept."""
@@ -143,9 +149,9 @@ class XraySession:
             return None
         return call_text(AGENT, self._file, named.subagent_id, use_id)
 
-    def view(self, findings: Mapping[str, FindingTally], check: XrayCheck) -> XrayView:
+    def view(self, findings: Mapping[str, FindingTally], check: XrayCheck, picked: SessionPick) -> XrayView:
         """The view of the records read so far; `findings` maps a file path to its finding tally and `check` is
-        the state of the launch check."""
+        the state of the launch check; `picked` is how the session was chosen."""
         if dict(findings) != self._findings or check != self._check:
             self._findings = dict(findings)
             self._check = check
@@ -161,7 +167,7 @@ class XraySession:
         window = window_of(replies_of(main_records(records)))
         return XrayView(
             version=self.version,
-            info=self._info(records),
+            info=self._info(records, picked),
             model=latest_model(records),
             window=window,
             adapter=vocabulary,
@@ -199,12 +205,12 @@ class XraySession:
         facts = build_facts(table.entries, graph.sources, funnel, kinds, definitions)
         return XrayVerdict(funnel, facts, self._check)
 
-    def _info(self, records: list[EventRecord]) -> XraySessionInfo:
+    def _info(self, records: list[EventRecord], picked: SessionPick) -> XraySessionInfo:
         """The session and project names, when the first record was written and how long the records span."""
         timed = _timed(records)
         if not timed:
-            return XraySessionInfo(self._file.stem, self._root.name, None, None)
-        return XraySessionInfo(self._file.stem, self._root.name, timed[0][1], timed[-1][0] - timed[0][0])
+            return XraySessionInfo(self._file.stem, self._root.name, None, None, picked)
+        return XraySessionInfo(self._file.stem, self._root.name, timed[0][1], timed[-1][0] - timed[0][0], picked)
 
     def _gaps(self, window: XrayWindow | None) -> XrayGaps:
         """The refusals the records and the plugin listing hold, and what the view could not read."""

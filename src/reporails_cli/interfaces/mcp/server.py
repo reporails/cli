@@ -1,6 +1,6 @@
 """MCP server for reporails — exposes validation tools to MCP clients.
 
-Registers `validate` / `prepare` / `remedy_brief` / `heal_apply` / `preflight` / `explain` on the
+Registers `validate` / `prepare` / `remedy_brief` / `heal_apply` / `preflight` / `explain` / `xray` on the
 mcp 2.x high-level `MCPServer`. Tools return a pre-built `CallToolResult` (see `_result`): the wire
 payload as `structured_content` plus a compact text mirror, with no derived output schema.
 """
@@ -30,6 +30,7 @@ from reporails_cli.interfaces.mcp.feedback import file_feedback
 from reporails_cli.interfaces.mcp.heal_apply import heal_apply_message, heal_apply_write, release_written
 from reporails_cli.interfaces.mcp.idle_release import lifespan, touch_activity
 from reporails_cli.interfaces.mcp.prepare import prepare_for_path
+from reporails_cli.interfaces.mcp.preservation import with_preservation
 from reporails_cli.interfaces.mcp.remedy_brief import build_remedy_brief
 from reporails_cli.interfaces.mcp.rule_tools import explain_tool, preflight_tool
 from reporails_cli.interfaces.mcp.scan_fingerprint import (
@@ -50,6 +51,7 @@ from reporails_cli.interfaces.mcp.validate_targets import (
     resolve_validate_targets,
     target_tokens,
 )
+from reporails_cli.interfaces.mcp.xray_tool import xray_page
 
 # Circuit breaker: content-aware loop detection.
 _MAX_CALLS = 10
@@ -162,7 +164,7 @@ def _remedy_brief_reply(path: str, location: int, targets: list[str] | None, has
 
 def _with_feedback(payload: JsonObject, target: Path, scan_root: Path) -> JsonObject:
     """Add the `feedback` block to `payload` when `target` is a file `remedy_brief`
-    snapshotted — same gate as `_with_preservation`, so the two blocks always ride together on
+    snapshotted — same gate as `with_preservation`, so the two blocks always ride together on
     a snapshotted file's reply."""
     if "error" in payload or "needs_install" in payload:
         return payload
@@ -171,41 +173,6 @@ def _with_feedback(payload: JsonObject, target: Path, scan_root: Path) -> JsonOb
     state = _validate_states.get(_state_key(str(scan_root), ()))
     stored = state.full_payload if state is not None else None
     return {**payload, "feedback": [*file_feedback(payload, target, scan_root, stored)]}
-
-
-def _with_preservation(
-    payload: JsonObject, target: Path, ruleset_map: RulesetMap | None, score: float | None, scan_root: Path | None
-) -> JsonObject:
-    """Add the `preservation` block, and the `conformance` block (the file against the plan its
-    brief listed), to `payload` when `target` is a file `remedy_brief` snapshotted.
-    Carried on both the bounded and full replies — the caller bounds afterward.
-
-    Runs entirely off the event loop (the caller wraps this whole function in
-    `asyncio.to_thread`). `ruleset_map` / `score` are the file's own, reused from the
-    `_CircuitState` cache on a cache-hit reply — this never re-runs the pipeline itself;
-    a caller that has no map to hand it (an unusual, defensively-guarded case) sees no
-    preservation block rather than paying a second pipeline run here. `scan_root` is the
-    project root the preservation `invented_named` check resolves a path-shaped named token
-    against. A file that cannot be read gets no block.
-    """
-    if "error" in payload or "needs_install" in payload:
-        return payload
-    if not target.is_file() or ruleset_map is None:
-        return payload
-    snap = snapshots.get_snapshot(target)
-    if snap is None:
-        return payload
-    try:
-        new_text = target.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return payload
-    block = snapshots.check_rewrite(snap, target, ruleset_map, new_text, score=score, scan_root=scan_root)
-    block["introduced"] = snapshots.introduced_count(target, payload)
-    out = {**payload, "preservation": block}
-    conformance = snapshots.check_conformance(target, ruleset_map, new_text, scan_root)
-    if conformance is not None:
-        out["conformance"] = conformance
-    return out
 
 
 async def _fresh_validate_payload(
@@ -352,8 +319,8 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None = Non
             )
         )
 
-    # `_with_preservation` is CPU/IO work: run it off the event loop so it never blocks a concurrent tool call.
-    payload = await asyncio.to_thread(_with_preservation, payload, target, ruleset_map, score, scan_root)
+    # `with_preservation` is CPU/IO work: run it off the event loop so it never blocks a concurrent tool call.
+    payload = await asyncio.to_thread(with_preservation, payload, target, ruleset_map, score, scan_root)
     payload = await asyncio.to_thread(_with_feedback, payload, target, scan_root)
     return with_rule_labels(payload) if full else bound_validate_payload(payload)
 
@@ -575,6 +542,27 @@ async def explain(rule_id: str) -> str:
         except ConfigUnreadableError as exc:
             result = _config_unreadable(exc)
     return result if isinstance(result, str) else json.dumps(result)
+
+
+@server.tool(
+    name="xray",
+    description=(
+        "Open the x-ray page of a session of this project in the background and return its address at once;"
+        " a page already running for the project is reused. Show the returned `url` to the user."
+        " With no `session` it opens the session you are running in (the newest one when this agent cannot say"
+        " which it is, marked `picked: current_unknown`: tell the user the newest session is shown); pass"
+        " `session` to open another session of the project. Returns `url`, `session`, `picked` and `reused`."
+    ),
+    annotations=ToolAnnotations(read_only_hint=False, idempotent_hint=True),
+)
+async def xray(path: str = ".", session: str = "") -> CallToolResult:
+    """Start the project's x-ray page in the background; see the tool description."""
+    touch_activity()
+    with get_stage_timer().run("mcp xray"):
+        try:
+            return _result(await asyncio.to_thread(xray_page, path, session))
+        except ConfigUnreadableError as exc:
+            return _result(_config_unreadable(exc))
 
 
 def _prewarm_models() -> None:

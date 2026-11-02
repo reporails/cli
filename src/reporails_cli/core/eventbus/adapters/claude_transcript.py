@@ -75,8 +75,7 @@ the adapter refuses any other shape of a row type it reads:
 - a subagent file: its first row's `timestamp`, the `agentType` of `agent-<id>.meta.json` and, when present, the
   meta fields `description`, `parentAgentId`, `toolUseId`, `requestShape` (strings; `background` marks a background
   run), `spawnDepth` (a whole number) and `stoppedByUser` (a boolean).
-- a request blob: `type: "api-request-blob"` repeats request content; the row is not read, and tool calls come from
-  `assistant` rows only.
+- a request blob: `type: "api-request-blob"` repeats request content; not read (tool calls come from `assistant` rows).
 
 Never read, except for the sizes (a reply's text included), the brief and the prompts above: message content,
 tool output, `content`, `displayPath`. Tool input is read only for the path, the MCP server, a hand-back message's
@@ -304,6 +303,7 @@ class ClaudeTranscriptAdapter:
     """Resolves the rows of a Claude Code session transcript."""
 
     agent = "claude"
+    session_env = "CLAUDE_CODE_SESSION_ID"  # https://code.claude.com/docs/en/env-vars
 
     def resolve_row(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         """The records one row carries; refuses a known row type whose fields are not the pinned shape."""

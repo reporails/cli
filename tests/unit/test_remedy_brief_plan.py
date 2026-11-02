@@ -8,7 +8,8 @@ from typing import Any
 import pytest
 
 from reporails_cli.formatters.mcp_view import render_text_view
-from reporails_cli.interfaces.mcp import remedy_brief, server, snapshots, tools
+from reporails_cli.interfaces.mcp import remedy_brief, snapshots, tools
+from reporails_cli.interfaces.mcp.preservation import with_preservation
 
 SPLIT = "*Do not preload a fixed trinity or walk the whole corpus — resolve only the named entries.*"
 NEGATION = "*Never bypass `reviewer` on cross-release work.*"
@@ -66,7 +67,7 @@ def _apply(file: Path, reply: dict[str, Any]) -> None:
 
 def _conformance(file: Path, root: Path) -> dict[str, Any]:
     payload, ruleset_map, score = tools.run_pipeline_for_path(str(file), True)
-    return server._with_preservation(payload, file, ruleset_map, score, root)["conformance"]
+    return with_preservation(payload, file, ruleset_map, score, root)["conformance"]
 
 
 @pytest.mark.unit

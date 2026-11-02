@@ -13,7 +13,8 @@ from typing import Any
 
 import pytest
 
-from reporails_cli.interfaces.mcp import remedy_brief, server
+from reporails_cli.interfaces.mcp import remedy_brief
+from reporails_cli.interfaces.mcp.preservation import with_preservation
 
 
 def _payload(*rules: str) -> dict[str, Any]:
@@ -38,7 +39,7 @@ def _brief(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *rules: str) -> Path
 
 def _after(file: Path, tmp_path: Path, *rules: str) -> dict[str, Any]:
     fake_map = SimpleNamespace(atoms=(), files=())
-    return server._with_preservation(_payload(*rules), file, fake_map, 5.0, tmp_path)["preservation"]
+    return with_preservation(_payload(*rules), file, fake_map, 5.0, tmp_path)["preservation"]
 
 
 @pytest.mark.unit

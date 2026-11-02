@@ -11,6 +11,7 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
+from reporails_cli.core.cache.hashing import content_hash
 from reporails_cli.core.discovery.file_tags import classify_file
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.assemble import build_ruleset_map
@@ -28,7 +29,6 @@ from reporails_cli.core.mapper.map_cache import (
     MapCache,
     atoms_to_dicts,
     cache_key_for_path,
-    content_hash,
     dicts_to_atoms,
     file_cache_key,
 )

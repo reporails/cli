@@ -12,12 +12,13 @@ from pathlib import Path, PureWindowsPath
 
 import typer
 
+from reporails_cli.core.platform.adapters.programs import ProgramRun, run_program, run_uv_tool
 from reporails_cli.core.platform.config.bootstrap import env_text, environment_without
 from reporails_cli.core.platform.config.credentials import effective_tier
 from reporails_cli.core.platform.dto.diagnostics import UNENTITLED_TIERS
 from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 from reporails_cli.core.platform.utils.version import UNKNOWN_VERSION, installed_version
-from reporails_cli.interfaces.cli.helpers import ProgramRun, console, run_program, run_uv_tool
+from reporails_cli.interfaces.cli.helpers import console
 from reporails_cli.interfaces.cli.typer_app import app
 
 logger = logging.getLogger(__name__)
