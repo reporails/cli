@@ -183,3 +183,33 @@ Feature: ails xray serves a session's context window on the loopback address thr
   Scenario: A long task name wraps to two lines, with no type label and its full text in the tooltip
     Given the bundled page is served over the "view_p4" fixture view
     Then a long card title wraps to two lines, the subtitle has no type label and the title attribute holds the full name
+
+  @page @browser
+  Scenario: A card launched early and an expanded fan-out box stay clear of the top card
+    Given the bundled page is served over the "view_fxpage" fixture view
+    Then a subagent launched at the start and an expanded fan-out box sit below the top card and touch no card
+
+  @page @browser
+  Scenario: No station pill covers a card
+    Given the bundled page is served over the "view_fxpage" fixture view
+    Then no station pill overlaps a card at 1440 and at 925 pixels
+
+  @page @browser
+  Scenario: A group card keeps every line inside its border
+    Given the bundled page is served over the "view_p1" fixture view
+    Then every group card line and its expand label sit inside the card at 1440 and at 925 pixels
+
+  @page @browser
+  Scenario: Going up from a group member opens its group
+    Given the bundled page is served over the "view_p4" fixture view
+    Then going up a level from a member of a collapsed group selects the member and shows its group expanded
+
+  @page @browser
+  Scenario: Every printed token estimate carries a tilde and says it is estimated
+    Given the bundled page is served over the "view_sample" fixture view
+    Then a source row, the focus banner and a load station's tooltip print their token counts with a tilde and the word estimated
+
+  @page @browser
+  Scenario: Unpriced replies with no model named say so
+    Given the bundled page is served over the "view_fxpage" fixture view
+    Then the cost pane says replies were not priced because no model was named, and lists the models when there are some

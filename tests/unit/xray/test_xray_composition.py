@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.platform.contract.json_value import as_list
-from reporails_cli.core.platform.dto.events import EventRecord, HarnessEntry, PromptEntry, ReplyText
+from reporails_cli.core.platform.dto.events import EventRecord, HarnessEntry, PromptEntry, ReplyText, TokenUsage
 from reporails_cli.core.platform.dto.xray import ArtifactFile
 from reporails_cli.core.platform.dto.xray_composition import COMPOSITION_KEYS, REMAINDER_KEY
 from reporails_cli.core.xray.vocabulary import vocabulary_for
@@ -131,6 +131,29 @@ def test_an_estimate_over_the_total_keeps_the_negative_remainder_and_flags_the_r
     assert ok[REMAINDER_KEY] == 700 and ok["over_estimate"] is False
     assert over[REMAINDER_KEY] == -100 and over["over_estimate"] is True
     assert sum(_num(over, key) for key in COMPOSITION_KEYS) == over["total"]
+
+
+def test_a_compaction_drops_the_hook_notes_and_the_hook_sources_attribution_and_keeps_the_files(
+    tmp_path: Path,
+) -> None:
+    claude, _, _ = _files(tmp_path)
+
+    def priced(seconds: float) -> EventRecord:
+        return rec("assistant_usage", seconds, usage=TokenUsage(f"m{seconds}", 1, 0, 9999, "claude-opus-4-8"))
+
+    records = [
+        load(0.1, claude),
+        _note(0.2),
+        priced(1),
+        rec("post_compact", 2, source="auto"),
+        priced(3),
+    ]
+    before, after = _rows(tmp_path, records)
+    assert (before["hook_notes"], after["hook_notes"], after["instructions"]) == (20, 0, 100)
+    graph = _graph(tmp_path, records, _files(tmp_path))
+    spent = dict(_agent(_node(graph, "main")).usage.cost.by_source_usd_est)
+    rate = spent[next(key for key in spent if key.startswith("hook:"))] / 20
+    assert spent["CLAUDE.md"] == pytest.approx(rate * 200)
 
 
 def test_a_compaction_zeroes_the_conversation_and_tool_results_after_it_and_keeps_the_loads(tmp_path: Path) -> None:

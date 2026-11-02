@@ -21,49 +21,56 @@
     "label": "Instructions",
     "letter": "I",
     "small": false,
-    "note": null
+    "note": null,
+    "definitions": false
    },
    {
     "key": "rule",
     "label": "Rules",
     "letter": "R",
     "small": false,
-    "note": null
+    "note": null,
+    "definitions": false
    },
    {
     "key": "skill",
     "label": "Skills",
     "letter": "S",
     "small": false,
-    "note": null
+    "note": null,
+    "definitions": false
    },
    {
     "key": "agent",
     "label": "Agents",
     "letter": "A",
     "small": true,
-    "note": "Built-in agent types are not listed."
+    "note": "Built-in agent types are not listed.",
+    "definitions": true
    },
    {
     "key": "memory",
     "label": "Memory",
     "letter": "M",
     "small": false,
-    "note": null
+    "note": null,
+    "definitions": false
    },
    {
     "key": "mcp",
     "label": "MCP",
     "letter": "C",
     "small": false,
-    "note": null
+    "note": null,
+    "definitions": false
    },
    {
     "key": "hook",
     "label": "Hooks",
     "letter": "H",
     "small": false,
-    "note": null
+    "note": null,
+    "definitions": false
    }
   ],
   "agent_types": [

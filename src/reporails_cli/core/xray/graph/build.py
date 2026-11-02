@@ -107,6 +107,7 @@ def _xray_node(node: ProducedNode, build: BuildContext) -> XrayNode:
                 [item for item in build.launch.values() if item.parent == node.id],
                 node.end - node.start,
                 build.vocabulary.burst,
+                {item.id: item.end for item in build.by_id.values()},
             ),
         ),
         name=node.name,

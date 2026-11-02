@@ -8,13 +8,9 @@ import { rendererFor } from './nodes/index.js';
 import { tile } from './nodes/agent.js';
 import { pane, tag } from './pane.js';
 
-// The source kind the view marks as launched-from-a-definition: its sources carry a launch count (or the adapter notes
-// what the kind leaves out).
-const definesAgents = (k, view) => !!k.note || view.sources.some(x => x.kind === k.key && x.launches != null);
-
 function slotText(node, k, s, env) {
   const view = env.ix.view;
-  if (definesAgents(k, view)) {
+  if (k.definitions) {
     if (node.parent === null) return `${k.label} · ${s.count} defined, listed`;
     const def = s.count === 1 && view.sources.find(x => x.kind === k.key && x.had_by.includes(node.id));
     return `${k.label} · ${def ? def.path.split('/').pop() : 'built-in'}`;
@@ -99,7 +95,10 @@ function costPane(node, env) {
   if (cost.peak_turn_usd != null) body.push(row(`peak turn${cost.peak_turn_t != null ? ' at ' + clock(cost.peak_turn_t) : ''}`, usd(cost.peak_turn_usd)));
   if (cost.cache_hit_rate != null) body.push(row('cache hit rate', `${Math.round(cost.cache_hit_rate * 100)}%`, tag('exact', 'exact')));
   if (cost.instructions_usd_est != null) body.push(row('instruction files carried every turn', `~${usd(cost.instructions_usd_est)}`, tag('estimated', 'est')));
-  if (cost.unpriced > 0) body.push(note(`${plural(cost.unpriced, 'reply', 'replies')} not priced: ${cost.unpriced_models.join(', ')}`));
+  if (cost.unpriced > 0) {
+    const named = cost.unpriced_models.length ? `: ${cost.unpriced_models.join(', ')}` : ' (no model named)';
+    body.push(note(`${plural(cost.unpriced, 'reply', 'replies')} not priced${named}`));
+  }
   if (cost.split_assumed > 0) body.push(note(`${plural(cost.split_assumed, 'reply', 'replies')} had no 5-minute / 1-hour cache split and ${cost.split_assumed === 1 ? 'was' : 'were'} priced at the 5-minute rate.`));
   body.push(note(`Exact token counts × list price (${list.name}, ${list.as_of}). API-equivalent: on a subscription you don't pay per token.`));
   return pane('cost', head, body);

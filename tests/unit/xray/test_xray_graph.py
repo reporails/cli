@@ -51,6 +51,7 @@ from reporails_cli.core.platform.dto.xray_build import (
 )
 from reporails_cli.core.platform.dto.xray_composition import XrayComposition
 from reporails_cli.core.platform.dto.xray_graph import (
+    AgentOutcome,
     LoadEvent,
     NodeKind,
     XrayAgentDetail,
@@ -975,17 +976,33 @@ def test_a_launch_past_the_window_starts_a_new_group(tmp_path: Path) -> None:
     assert _launches(tmp_path, [0, 30, 60, 100, 130, 160], 600) == [("S0", "S1", "S2"), ("S3", "S4", "S5")]
 
 
-def _handoff_edge(child: str, out_t: float, back_t: float | None, down: int = 10) -> XrayEdge:
-    return XrayEdge("p", child, down, None, out_t, back_t, None)
+def _handoff_edge(
+    child: str, out_t: float, back_t: float | None, down: int = 10, outcome: AgentOutcome | None = "returned"
+) -> XrayEdge:
+    return XrayEdge("p", child, down, None, out_t, back_t, outcome)
 
 
 def test_the_window_grows_with_a_long_agent_and_a_burst_sums_what_went_down() -> None:
     settings = XrayBurstSettings(window_s=90.0, window_share=0.013, min_size=3)
     edges = [_handoff_edge("a", 0, 50), _handoff_edge("b", 93, 80), _handoff_edge("c", 93.5, 120)]
-    assert bursts(edges, 600.0, settings) == ()
-    (found,) = bursts(edges, 7200.0, settings)
+    assert bursts(edges, 600.0, settings, {}) == ()
+    (found,) = bursts(edges, 7200.0, settings, {})
     assert (found.members, found.first_launch, found.last_return, found.down_tokens) == (("a", "b", "c"), 0, 120, 30)
     (open_run,) = bursts(
-        [_handoff_edge("a", 0, 5), _handoff_edge("b", 1, None), _handoff_edge("c", 2, 7)], 600.0, settings
+        [_handoff_edge("a", 0, 5), _handoff_edge("b", 1, None, outcome="running"), _handoff_edge("c", 2, 7)],
+        600.0,
+        settings,
+        {"a": 5, "b": 9, "c": 7},
     )
     assert open_run.last_return is None
+
+
+def test_a_member_that_did_not_hand_back_ends_the_burst_at_its_own_end() -> None:
+    settings = XrayBurstSettings(window_s=90.0, window_share=0.013, min_size=3)
+    edges = [
+        _handoff_edge("a", 0, 5),
+        _handoff_edge("b", 1, None, outcome="stopped"),
+        _handoff_edge("c", 2, None, outcome="no_handback"),
+    ]
+    (found,) = bursts(edges, 600.0, settings, {"a": 5, "b": 40, "c": 30})
+    assert found.last_return == 40

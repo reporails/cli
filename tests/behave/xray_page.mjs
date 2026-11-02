@@ -14,12 +14,15 @@ const cardsState = () => page.ev(`[...document.querySelectorAll('.card[data-node
 const overlapsOf = () => page.ev(`(() => {
   const cards = [...document.querySelectorAll('.card[data-node], .card[data-group], .card.bottom')];
   const r = cards.map(c => c.getBoundingClientRect());
+  const hit = (a, b) => a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5;
   let overlaps = 0;
-  for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
-    const a = r[i], b = r[j];
-    if (a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5) overlaps++;
-  }
-  return { cards: cards.length, overlaps };
+  for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) if (hit(r[i], r[j])) overlaps++;
+  // a station pill that touches any card, and a fan-out box that cuts a card it does not hold whole
+  const stations = [...document.querySelectorAll('.station')].map(e => e.getBoundingClientRect());
+  const stationHits = stations.filter(s => r.some(c => hit(s, c))).length;
+  const boxes = [...document.querySelectorAll('.gbox')].map(e => e.getBoundingClientRect());
+  const boxHits = boxes.reduce((n, b) => n + r.filter(c => hit(b, c) && !(c.left >= b.left - 0.5 && c.right <= b.right + 0.5 && c.top >= b.top - 0.5 && c.bottom <= b.bottom + 0.5)).length, 0);
+  return { cards: cards.length, overlaps, stations: stations.length, stationHits, boxes: boxes.length, boxHits };
 })()`);
 const runningText = () => page.ev(`[...document.querySelectorAll('.cv *')].filter(e => e.classList.contains('running') || /\\+\\d+ running/.test(e.textContent)).length`);
 // Each card's top and the y its out-edge leaves the spine at, both measured from the drawn page.
@@ -37,6 +40,52 @@ const launchOf = () => page.ev(`(() => {
 if (mode === 'overlap' && ready) {
   Object.assign(out, await overlapsOf());
   out.running = await runningText();
+}
+
+if (mode === 'fxtop' && ready) {
+  Object.assign(out, await overlapsOf());
+  out.opened = await click('.card[data-group="main:a1"]');
+  await page.until(`!!document.querySelector('.gbox')`);
+  out.expanded = await overlapsOf();
+  const cv = await page.ev(`document.querySelector('.cv').getBoundingClientRect().top`);
+  out.early = await page.ev(`(() => { const c = document.querySelector('.card[data-node="a0"]'); return { top: c.getBoundingClientRect().top - ${cv}, launchY: Number(c.dataset.launchY) }; })()`);
+  out.topBottom = await page.ev(`document.querySelector('.card.top').getBoundingClientRect().bottom - ${cv}`);
+  out.boxTop = await page.ev(`document.querySelector('.gbox').getBoundingClientRect().top - ${cv}`);
+}
+
+if (mode === 'fxgroup' && ready) {
+  out.groups = await page.ev(`[...document.querySelectorAll('.card.group')].map(g => {
+    const b = g.getBoundingClientRect();
+    return { key: g.dataset.group, expand: g.textContent.includes('expand'), over: [...g.querySelectorAll('*')].filter(x => { const q = x.getBoundingClientRect(); return q.right > b.right - 0.5 || q.left < b.left + 0.5; }).length };
+  })`);
+}
+
+if (mode === 'fxup' && ready) {
+  const open = () => page.ev(`!!document.querySelector('.gbox')`);
+  out.before = await open();
+  await go('#/agent/main/a1');
+  await page.until(`document.querySelector('.crumb.here') && !document.querySelector('.card.top').dataset.node.startsWith('main')`);
+  await go('#/agent/main');
+  await page.until(`document.querySelector('.card.top').dataset.node === 'main'`);
+  out.afterUp = await open();
+  out.sel = await page.ev(`(document.querySelector('.card.sel') || {dataset: {}}).dataset.node || null`);
+}
+
+if (mode === 'fxbare' && ready) {
+  await expandAll();
+  const rows = () => page.ev(`[...document.querySelectorAll('#sources .sr')].filter(r => /\\beach\\b/.test(r.querySelector('.sw').textContent))`);
+  out.rows = await page.ev(`[...document.querySelectorAll('#sources .sr .sw')].map(e => e.textContent).filter(t => /\\beach\\b/.test(t))`);
+  await page.ev(`(() => { const r = [...document.querySelectorAll('#sources .sr')].find(r => /\\beach\\b/.test(r.querySelector('.sw').textContent)); r.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return 0; })()`);
+  out.focus = await page.ev(`(document.querySelector('.fbanner') || {}).textContent || ''`);
+  out.titles = await page.ev(`[...document.querySelectorAll('.station')].map(e => e.title).filter(t => /\\d[kM]? loaded/.test(t))`);
+}
+
+if (mode === 'fxcost' && ready) {
+  const note = () => page.ev(`[...document.querySelectorAll('#inspector [data-pane="cost"] .note')].map(e => e.textContent).filter(t => t.includes('not priced'))`);
+  out.main = await note();
+  await click('.card[data-group="main:a1"]');
+  await click('.card[data-node="a1"]');
+  out.member = await note();
 }
 
 if (mode === 'p1layout' && ready) {

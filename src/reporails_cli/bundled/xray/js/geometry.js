@@ -1,6 +1,8 @@
 // Canvas geometry: where times, cards, ticks and breaks sit. Pure functions of the view's numbers.
 export const W = 780, SPX = 466, Y0 = 108, CW = 132, CH = 76, TOP_W = 148, BOT_W = 180, BOT_H = 48;
 export const COLX = { L1: SPX - 26 - CW, L2: SPX - 26 - CW - 8 - CW, R1: SPX + 26, R2: SPX + 26 + CW + 8 };
+// The top card's y, and the most tiles a group card shows (more members show one fewer and "+N").
+export const TOP_Y = 24, GROUP_TILES = 6;
 export const TRACK_X0 = 52, TRACK_STEP = 15;
 const CAP_S = 6 * 3600, GAP_PX = 28, LANE_GAP = 8;
 
@@ -67,7 +69,9 @@ export function layoutTime(node, breaks, len, units) {
     return a.d + (b.d - a.d) * (t - a.t) / (b.t - a.t);
   };
   const y = t => { const c = Math.min(node.end, Math.max(node.start, t)); return base.y(c) + delta(c); };
-  const bottoms = { L1: -Infinity, R1: -Infinity, L2: -Infinity, R2: -Infinity };
+  // The columns the top card spans start occupied down to its bottom, so a unit launched under it is pushed below it.
+  const topSpans = c => COLX[c] < SPX + TOP_W / 2 && COLX[c] + CW > SPX - TOP_W / 2;
+  const bottoms = Object.fromEntries(ROW_ORDER.map(c => [c, topSpans(c) ? TOP_Y + CH : -Infinity]));
   const placed = [];
   let lowest = 0;
   [...units].sort((a, b) => a.t - b.t).forEach((u, idx) => {
@@ -130,6 +134,20 @@ export const BAND_COLOURS = ['#8A8C92', '#A9C2FF', '#A594FF', '#6EA8FF', '#7FD4B
 export const bandColour = i => BAND_COLOURS[i % BAND_COLOURS.length];
 // Stations whose drawn y lie this close together merge into one pill.
 export const MERGE_GAP = 14;
+
+// A station pill is this tall; beside the spine it starts this far from the spine's centre (the widest spine plus a gap),
+// and when no side has room it shrinks to a dot this wide.
+export const STATION_H = 18, STATION_EDGE = SPINE_HALF_MAX + 4, STATION_DOT = 10;
+
+// Where a station pill of `width` at `y` can sit without touching a rectangle ({ left, top, width, height }): centred on the
+// spine, else beside it on the right, else on the left, else squeezed to a dot. A card is never moved for it.
+export function stationSide(y, width, rects) {
+  const free = (x0, x1) => !rects.some(r => r.left < x1 && r.left + r.width > x0 && r.top < y + STATION_H / 2 && r.top + r.height > y - STATION_H / 2);
+  if (free(SPX - width / 2, SPX + width / 2)) return 'center';
+  if (free(SPX + STATION_EDGE, SPX + STATION_EDGE + width)) return 'right';
+  if (free(SPX - STATION_EDGE - width, SPX - STATION_EDGE)) return 'left';
+  return 'dot';
+}
 
 // The reply row at t, numbers interpolated between the two replies around t and read inside the stretch between
 // compactions, so the spine narrows at the compaction itself. A reply row is [t, total, ...].

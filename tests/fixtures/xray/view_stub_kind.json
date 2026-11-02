@@ -20,37 +20,43 @@
     "key": "instructions",
     "label": "Instructions",
     "letter": "I",
-    "small": false
+    "small": false,
+    "definitions": false
    },
    {
     "key": "rule",
     "label": "Rules",
     "letter": "R",
-    "small": false
+    "small": false,
+    "definitions": false
    },
    {
     "key": "skill",
     "label": "Skills",
     "letter": "S",
-    "small": false
+    "small": false,
+    "definitions": false
    },
    {
     "key": "memory",
     "label": "Memory",
     "letter": "M",
-    "small": false
+    "small": false,
+    "definitions": false
    },
    {
     "key": "mcp",
     "label": "MCP",
     "letter": "C",
-    "small": false
+    "small": false,
+    "definitions": false
    },
    {
     "key": "hook",
     "label": "Hooks",
     "letter": "H",
-    "small": false
+    "small": false,
+    "definitions": false
    }
   ],
   "agent_types": [

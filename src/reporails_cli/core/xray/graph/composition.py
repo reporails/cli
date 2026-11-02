@@ -117,9 +117,11 @@ def _sweep(
 ) -> Iterator[tuple[float, TokenUsage, dict[CompositionKey, int], dict[str, int]]]:
     """For each reply, what each estimated category holds at it: loads, hook notes and the skills
     listing up to and including the reply's time, conversation and tool results strictly before it; and the tokens
-    each source that has an id contributed."""
+    each source that has an id contributed. A compaction empties the conversation, the tool results and the hook
+    notes with the hook sources' tokens; loaded files stay."""
     held: dict[CompositionKey, int] = dict.fromkeys(ESTIMATED_KEYS, 0)
     carried: dict[str, int] = {}
+    hooks: set[str] = set()
     ahead = 0
     behind = 0
     for moment, usage in usages:
@@ -128,11 +130,15 @@ def _sweep(
             held[category] += tokens
             if source is not None:
                 carried[source] = carried.get(source, 0) + tokens
+                if category == "hook_notes":
+                    hooks.add(source)
             ahead += 1
         while behind < len(spoken) and spoken[behind][0] < moment:
             _, grown, size = spoken[behind]
             if grown is None:
-                held["conversation"] = held["tool_results"] = 0
+                held["conversation"] = held["tool_results"] = held["hook_notes"] = 0
+                carried = {source: size for source, size in carried.items() if source not in hooks}
+                hooks.clear()
             else:
                 held[grown] += size
             behind += 1

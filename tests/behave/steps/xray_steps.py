@@ -858,3 +858,73 @@ def step_card_title(context):
         assert card["lines"] <= 2 and card["fits"] is True, card
         assert card["title"] == names[card["id"]], card
         assert re.fullmatch(r"\d+[ms]( \d+s)?", card["sub"]), card  # a duration, no type label
+
+
+@then("a subagent launched at the start and an expanded fan-out box sit below the top card and touch no card")
+def step_top_card_clear(context):
+    for width in (1440, 925):
+        seen = _page(context, "fxtop", width)
+        if seen is None:
+            return
+        for state in (seen, seen["expanded"]):
+            assert state["overlaps"] == 0 and state["boxHits"] == 0, (width, state)
+        assert abs(seen["early"]["top"] + 18 - seen["early"]["launchY"]) < 0.6, (
+            width,
+            seen,
+        )  # still at its launch time
+        assert seen["boxTop"] >= seen["topBottom"] - 0.6, (width, seen)
+
+
+@then("no station pill overlaps a card at 1440 and at 925 pixels")
+def step_stations_clear(context):
+    for width in (1440, 925):
+        seen = _page(context, "overlap", width)
+        if seen is None:
+            return
+        assert seen["stations"] > 0, (width, seen)
+        assert seen["stationHits"] == 0, (width, seen)
+
+
+@then("every group card line and its expand label sit inside the card at 1440 and at 925 pixels")
+def step_group_text_inside(context):
+    for width in (1440, 925):
+        seen = _page(context, "fxgroup", width)
+        if seen is None:
+            return
+        assert len(seen["groups"]) == 2, seen
+        for group in seen["groups"]:
+            assert group["expand"] and group["over"] == 0, (width, group)
+
+
+@then("going up a level from a member of a collapsed group selects the member and shows its group expanded")
+def step_up_opens_group(context):
+    seen = _page(context, "fxup")
+    if seen is None:
+        return
+    assert seen["before"] is False, seen
+    assert seen["sel"] == "a1" and seen["afterUp"] is True, seen
+
+
+@then(
+    "a source row, the focus banner and a load station's tooltip print their token counts "
+    "with a tilde and the word estimated"
+)
+def step_estimates_tilde(context):
+    seen = _page(context, "fxbare")
+    if seen is None:
+        return
+    assert seen["rows"] and seen["titles"], seen
+    for text in seen["rows"]:
+        assert re.search(r"~[\d.]+k? each \(estimated\)", text), text
+    assert re.search(r"~[\d.]+k? each \(estimated\)", seen["focus"]), seen["focus"]
+    for title in seen["titles"]:
+        assert re.search(r"~[\d.]+k? loaded \(estimated\)", title), title
+
+
+@then("the cost pane says replies were not priced because no model was named, and lists the models when there are some")
+def step_unpriced_wording(context):
+    seen = _page(context, "fxcost")
+    if seen is None:
+        return
+    assert seen["main"] == ["2 replies not priced (no model named)"], seen
+    assert seen["member"] == ["1 reply not priced: claude-unlisted-1"], seen

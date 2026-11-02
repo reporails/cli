@@ -34,7 +34,12 @@ export function applyHash(hash, nodes) {
     keep.push(id);
   }
   const next = keep.length ? keep : ['main'];
-  if (next.join('/') !== state.path.join('/')) { state.sel = null; state.type = 'all'; }
+  const old = state.path;
+  if (next.join('/') !== old.join('/')) {
+    // Going up a level selects the child it came from, so that child's collapsed group opens.
+    state.sel = next.length < old.length && next.every((id, i) => id === old[i]) ? old[next.length] : null;
+    state.type = 'all';
+  }
   state.path = next;
 }
 

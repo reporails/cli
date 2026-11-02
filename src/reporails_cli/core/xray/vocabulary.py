@@ -32,7 +32,7 @@ _CLAUDE_SOURCE_KINDS = (
     XraySourceKindInfo("instructions", "Instructions", "I", False),
     XraySourceKindInfo("rule", "Rules", "R", False),
     XraySourceKindInfo("skill", "Skills", "S", False),
-    XraySourceKindInfo("agent", "Agents", "A", True, "Built-in agent types are not listed."),
+    XraySourceKindInfo("agent", "Agents", "A", True, "Built-in agent types are not listed.", True),
     XraySourceKindInfo("memory", "Memory", "M", False),
     XraySourceKindInfo("mcp", "MCP servers", "C", False),
     XraySourceKindInfo("hook", "Hooks", "H", False),

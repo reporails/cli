@@ -111,6 +111,8 @@ a.pill:hover{background:rgba(240,136,62,.3)}
 .station{position:absolute;z-index:3;transform:translate(-50%,-50%);display:inline-flex;align-items:center;gap:5px;height:18px;padding:0 8px 0 3px;border-radius:999px;border:1px solid #3A3C42;background:var(--chip);color:var(--chip-t);font:10px 'JetBrains Mono',monospace;cursor:pointer;white-space:nowrap}
 .station .kl{width:13px;height:13px;border-radius:50%;background:#3A3C42;display:inline-flex;align-items:center;justify-content:center;font-size:8px}
 .station.mcp,.station.hook{border-style:dashed}
+.station.side-r{transform:translate(0,-50%)} .station.side-l{transform:translate(-100%,-50%)}
+.station.squeezed{border-style:solid}
 .station.merged{padding:0 9px}
 .legend{display:flex;align-items:center;gap:4px;margin:0 0 6px;font-size:10.5px;color:var(--t3)} .legend .lg-text{margin-right:6px} .lg-sw{width:9px;height:9px;border-radius:2px;opacity:.7;display:inline-block}
 .station.dot{width:10px;height:10px;padding:0;border-radius:50%;background:var(--chip-t);border:2px solid var(--canvas)}
@@ -128,8 +130,11 @@ a.pill:hover{background:rgba(240,136,62,.3)}
 .card.group{align-items:flex-start;text-align:left;font:inherit;background:#1C1B24;border:1px dashed rgba(165,148,255,.55);box-shadow:4px 4px 0 -1px #1D1E24,4px 4px 0 0 rgba(165,148,255,.25),8px 8px 0 -1px #1D1E24,8px 8px 0 0 rgba(165,148,255,.14)}
 .card.group .gh{display:flex;align-items:center;gap:6px;width:100%}
 .card.group .gn{font-size:10.5px;color:#E6E0FF;background:rgba(165,148,255,.2);border-radius:4px;padding:1px 6px}
-.card.group .gt{display:flex;align-items:center;gap:3px;width:100%}
-.card.group .gx{margin-left:auto;font-size:10px;color:#A9C2FF}
+.card.group .gt{display:flex;align-items:center;gap:3px;width:100%;min-width:0;overflow:hidden}
+.card.group .gm{font-size:10px;color:var(--t3)}
+.card.group .gs{display:flex;align-items:baseline;gap:6px;width:100%;min-width:0}
+.card.group .gs .sub{flex:0 1 auto;min-width:0}
+.card.group .gx{margin-left:auto;flex:none;font-size:10px;color:#A9C2FF}
 .gbox{position:absolute;z-index:1;box-sizing:border-box;border:1px dashed rgba(165,148,255,.4);border-radius:14px;background:rgba(165,148,255,.035);pointer-events:none}
 .ghead{position:absolute;z-index:3;display:flex;align-items:center;gap:10px}
 .ghead .mono{font-size:10.5px;color:#E6E0FF;background:#221E38;border-radius:6px;padding:2px 8px}

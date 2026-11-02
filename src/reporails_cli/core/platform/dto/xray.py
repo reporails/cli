@@ -303,6 +303,8 @@ class XraySourceKindInfo:
     letter: str
     small: bool
     note: str | None = None
+    # Its sources are definitions that subagents are launched from.
+    definitions: bool = False
 
 
 @dataclass(frozen=True)
@@ -403,6 +405,7 @@ class AdapterVocabulary:
                     "letter": item.letter,
                     "small": item.small,
                     "note": item.note,
+                    "definitions": item.definitions,
                 }
                 for item in self.source_kinds
             ),

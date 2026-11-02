@@ -1,6 +1,6 @@
 // The Sources panel: one section per source kind the adapter declares and the layers show.
 import { el, tpl, slot } from '../dom.js';
-import { fill, k1, plural } from '../format.js';
+import { fill, plural, tk } from '../format.js';
 import { hashFor } from '../state.js';
 import { SOURCES_SHOWN } from '../geometry.js';
 
@@ -23,11 +23,11 @@ function kindCount(ix, key, list) {
   return `${row.loaded ?? 0} of ${row.on_disk} loaded${listed}`;
 }
 
-// An item the view counts launches for is a definition: it says how often it was launched, not who held it.
-const isDefinition = s => typeof s.launches === 'number';
+// A source of a kind the adapter marks as definitions says how often it was launched, not who held it.
+const isDefinition = (ix, s) => !!(ix.kinds.get(s.kind) || {}).definitions;
 
 function who(ix, s) {
-  if (isDefinition(s)) {
+  if (isDefinition(ix, s)) {
     return s.launches > 0
       ? `launched as ${plural(s.launches, 'subagent')} · passed down as its system prompt`
       : 'defined, never launched';
@@ -47,9 +47,9 @@ function row(env, s, notes) {
   const finds = s.findings && s.findings.count > 0;
   r.append(el('span', 'sdot' + (finds ? ' find' : '')));
   const text = el('span', 'stx');
-  text.append(el('b', 'sn', isDefinition(s) && s.path ? s.path : s.name));
+  text.append(el('b', 'sn', isDefinition(env.ix, s) && s.path ? s.path : s.name));
   const bits = [who(env.ix, s), ...(notes.get(s.path) || [])];
-  if (s.tokens_est != null && !never && !isDefinition(s)) bits.push(`${k1(s.tokens_est)} each`);
+  if (s.tokens_est != null && !never && !isDefinition(env.ix, s)) bits.push(`${tk(s.tokens_est, true)} each (estimated)`);
   if (typeof s.cost_usd_est === 'number') bits.push(`~$${s.cost_usd_est.toFixed(2)} estimated`);
   text.append(el('span', 'sw', bits.join(' · ')));
   r.append(text);

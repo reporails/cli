@@ -4,8 +4,8 @@ import { el, svg } from '../dom.js';
 import { clock, k1, range, tk } from '../format.js';
 import { callText } from '../api.js';
 import {
-  BAND_OPACITY, BOT_H, BOT_W, CH, COLX, CW, SPINE_HALF_MAX, SPINE_HALF_MIN, SPX, TOP_W, TRACK_STEP, TRACK_X0, W, Y0,
-  bandColour, layoutTime, lengthFor, mergeStations, replyAt, tickMarks,
+  BAND_OPACITY, BOT_H, BOT_W, CH, COLX, CW, GROUP_TILES, SPINE_HALF_MAX, SPINE_HALF_MIN, SPX, STATION_EDGE, TOP_W, TOP_Y, TRACK_STEP, TRACK_X0, W, Y0,
+  bandColour, layoutTime, lengthFor, mergeStations, replyAt, stationSide, tickMarks,
 } from '../geometry.js';
 import { groupOpen } from '../state.js';
 import { childrenOf, kindOfSource, replyParts, typeOf } from '../views.js';
@@ -34,7 +34,7 @@ function banner(env, cur, kids) {
     const n = (cur.child_sources || {})[f.id] || 0;
     const parts = [f.had_by.includes(cur.id) ? 'This agent had it' : 'This agent didn’t have it'];
     if (kids.length) parts.push(`${n} of ${kids.length} subagents here did`);
-    if (f.tokens_est) parts.push(`${k1(f.tokens_est)} each`);
+    if (f.tokens_est) parts.push(`${tk(f.tokens_est, true)} each (estimated)`);
     box.append(parts.join(' · '));
   }
   if (env.state.pinned) {
@@ -136,7 +136,7 @@ function breaks(scale) {
 }
 
 function topNode(env, cur, focus) {
-  const box = abs('card top' + (hasIt(focus, cur) ? '' : ' dim') + (focus && hasIt(focus, cur) ? ' ring' : ''), SPX - TOP_W / 2, 24);
+  const box = abs('card top' + (hasIt(focus, cur) ? '' : ' dim') + (focus && hasIt(focus, cur) ? ' ring' : ''), SPX - TOP_W / 2, TOP_Y);
   box.dataset.node = cur.id;
   box.title = cur.name;
   box.style.width = `${TOP_W}px`;
@@ -212,9 +212,12 @@ function groupCard(env, grp, p, match) {
   const head = el('span', 'gh');
   head.append(el('span', 'gn mono', `⇉ ${grp.members.length}`), el('b', 'nm', 'in parallel'));
   const tiles = el('span', 'gt');
-  for (const m of grp.members) tiles.append(tile(env.ix, m, 16));
-  tiles.append(el('span', 'gx', 'expand ›'));
-  box.append(head, el('span', 'sub mono', range(grp.burst.first_launch, grp.burst.last_return)), tiles);
+  const shown = grp.members.length > GROUP_TILES ? GROUP_TILES - 1 : grp.members.length;
+  for (const m of grp.members.slice(0, shown)) tiles.append(tile(env.ix, m, 16));
+  if (shown < grp.members.length) tiles.append(el('span', 'gm mono', `+${grp.members.length - shown}`));
+  const when = el('span', 'gs');
+  when.append(el('span', 'sub mono', range(grp.burst.first_launch, grp.burst.last_return)), el('span', 'gx', 'expand ›'));
+  box.append(head, when, tiles);
   return box;
 }
 
@@ -296,7 +299,7 @@ function stationItems(env, cur, scale) {
     items.push({
       type: 'load', source: l.source, name: s ? s.name : l.source, when: ix.triggers.get(l.trigger) || l.trigger, y: scale.y(l.t ?? cur.start), small: l.small, letter: k ? k.letter : '?',
       tokens: l.tokens_est, find: !!(s && s.findings && s.findings.count > 0),
-      title: `${k ? k.label : 'Source'} · ${s ? s.name : l.source} · ${l.tokens_est == null ? 'size unknown' : k1(l.tokens_est) + ' loaded'}` +
+      title: `${k ? k.label : 'Source'} · ${s ? s.name : l.source} · ${l.tokens_est == null ? 'size unknown' : tk(l.tokens_est, true) + ' loaded (estimated)'}` +
         ` · ${l.t == null ? 'time unknown, shown at the start' : 'at ' + clock(l.t)} · ${ix.triggers.get(l.trigger) || l.trigger}${l.event ? ' ' + l.event : ''}` +
         `${s && s.findings && s.findings.count ? ' · has findings' : ''}`,
     });
@@ -309,7 +312,7 @@ function stationItems(env, cur, scale) {
     items.push({
       type: 'mcp', source: m.server, name: s ? s.name : m.server, y: scale.y((m.first + m.last) / 2), letter: k ? k.letter : '?', calls: m.calls, big,
       tokens: m.back_tokens_est,
-      title: `${s ? s.name : m.server} · ${m.calls} call${m.calls === 1 ? '' : 's'} ${clock(m.first)}–${clock(m.last)} · ${tk(m.back_tokens_est, true)} came back`,
+      title: `${s ? s.name : m.server} · ${m.calls} call${m.calls === 1 ? '' : 's'} ${clock(m.first)}–${clock(m.last)} · ${tk(m.back_tokens_est, true)} came back (estimated)`,
     });
   }
   // A stretch of repeated hook firings is one pill at the middle of the stretch.
@@ -320,7 +323,7 @@ function stationItems(env, cur, scale) {
     items.push({
       type: 'hook', source: h.source, y: scale.y((h.first + h.last) / 2), letter: k ? k.letter : '?', calls: h.count, tokens: h.tokens_est,
       name: s ? s.name : h.source,
-      title: `${s ? s.name : h.source} · ${h.count} firing${h.count === 1 ? '' : 's'} ${clock(h.first)}–${clock(h.last)} · ${tk(h.tokens_est, true)} loaded`,
+      title: `${s ? s.name : h.source} · ${h.count} firing${h.count === 1 ? '' : 's'} ${clock(h.first)}–${clock(h.last)} · ${tk(h.tokens_est, true)} loaded (estimated)`,
     });
   }
   return items;
@@ -367,6 +370,20 @@ function stations(env, cur, scale) {
     out.push(m);
   }
   return out;
+}
+
+// Places each drawn station pill by `stationSide` among the cards, once the page has measured its width.
+function settleStations(cv, rects) {
+  for (const e of cv.querySelectorAll('.station')) {
+    const where = stationSide(parseFloat(e.style.top), e.offsetWidth, rects);
+    if (where === 'right') { e.style.left = `${SPX + STATION_EDGE}px`; e.classList.add('side-r'); }
+    else if (where === 'left') { e.style.left = `${SPX - STATION_EDGE}px`; e.classList.add('side-l'); }
+    else if (where === 'dot') {
+      if (!e.getAttribute('aria-label')) e.setAttribute('aria-label', e.title);
+      e.replaceChildren();
+      e.classList.add('dot', 'squeezed');
+    }
+  }
 }
 
 function failureLabel(run) {
@@ -494,4 +511,10 @@ export function render(box, env) {
     cv.append(none);
   }
   box.replaceChildren(banner(env, cur, kids), legend(cur, ix.view.adapter.composition || []), cv);
+  const rects = [{ left: SPX - TOP_W / 2, top: TOP_Y, width: TOP_W, height: CH }];
+  for (const p of placedMap.values()) {
+    for (const q of p.slots || [p]) if (q.left !== undefined && q.side !== undefined) rects.push({ left: q.left, top: q.top, width: CW, height: CH });
+  }
+  if (hand) rects.push({ left: SPX - BOT_W / 2, top: botY, width: BOT_W, height: BOT_H });
+  settleStations(cv, rects);
 }

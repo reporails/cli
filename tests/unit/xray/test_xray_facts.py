@@ -37,14 +37,14 @@ def _memory(path: str, linked: bool | None) -> SourceEntry:
 
 def test_memory_unlinked_counts_unlinked_memory_files_and_points_at_the_first_by_path() -> None:
     entries = (_memory("m/b.md", False), _memory("m/a.md", False), _memory("m/c.md", True), _memory("m/d.md", None))
-    (fact,) = _of(build_facts(entries, (), (), ()), "memory_unlinked")
+    (fact,) = _of(build_facts(entries, (), (), (), frozenset()), "memory_unlinked")
     assert fact.kind == "memory_unlinked" and fact.artifact_kind == "memory"
     assert dict(fact.numbers) == {"count": 2} and fact.target == XrayTarget("path", "m/a.md")
 
 
 def test_no_memory_unlinked_when_every_memory_file_is_linked_or_unknown() -> None:
     entries = (_memory("m/c.md", True), _memory("m/d.md", None))
-    assert not _of(build_facts(entries, (), (), ()), "memory_unlinked")
+    assert not _of(build_facts(entries, (), (), (), frozenset()), "memory_unlinked")
 
 
 def _source(path: str, tokens: int | None, had_by: tuple[str, ...]) -> XraySource:
@@ -58,14 +58,24 @@ def test_repeated_instructions_point_at_the_file_with_the_largest_extra() -> Non
         _source("c.md", 500, ("main",)),
         _source("d.md", None, ("main", "x")),
     )
-    (fact,) = _of(build_facts((), sources, (), ()), "repeated_instructions")
+    (fact,) = _of(build_facts((), sources, (), (), frozenset()), "repeated_instructions")
     assert dict(fact.numbers) == {"files": 3, "contexts": 3, "tokens_est": 10 + 200}
     assert fact.target == XrayTarget("path", "b.md")
 
 
+def test_an_agent_definition_launched_twice_is_not_a_repeated_instruction() -> None:
+    definition = XraySource(
+        "agent:x", "agent", "x", "x.md", 80, None, "loaded", ("main", "s0", "s1"), False, None, None
+    )
+    assert not _of(build_facts((), (definition,), (), (), frozenset({"agent"})), "repeated_instructions")
+    plain = _source("a.md", 10, ("main", "x"))
+    (fact,) = _of(build_facts((), (definition, plain), (), (), frozenset({"agent"})), "repeated_instructions")
+    assert dict(fact.numbers) == {"files": 1, "contexts": 2, "tokens_est": 10}
+
+
 def test_an_mcp_server_in_two_contexts_is_not_a_repeated_instruction_file() -> None:
     server = XraySource("mcp:n0", "mcp", "n0", None, 40, None, "loaded", ("main", "x"), False, None, None)
-    assert not _of(build_facts((), (server,), (), ()), "repeated_instructions")
+    assert not _of(build_facts((), (server,), (), (), frozenset()), "repeated_instructions")
 
 
 def test_no_repeated_instructions_when_no_file_entered_two_contexts(tmp_path: Path) -> None:
