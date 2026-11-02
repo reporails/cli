@@ -172,7 +172,7 @@ async def _fresh_validate_payload(
 
 
 async def _begin_validate_call(
-    path: str, tokens: tuple[str, ...], full: bool, target: Path, scan_root: Path, project_root: Path
+    path: str, tokens: tuple[str, ...], full: bool, target: Path, scan_root: Path, *, project_root: Path
 ) -> tuple[CircuitState, bool, str]:
     """Fingerprint the scan inputs, then count this `validate` call on its `(path, targets)` state.
     Returns `(state, unchanged, base_hash)`: whether the content matches the last call's, and the
@@ -247,7 +247,9 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None, proj
     scan_root = resolve_scan_target(target, project_root)[0]
 
     tokens = target_tokens(targets)
-    state, unchanged, base_hash = await _begin_validate_call(path, tokens, full, target, scan_root, project_root)
+    state, unchanged, base_hash = await _begin_validate_call(
+        path, tokens, full, target, scan_root, project_root=project_root
+    )
 
     if state.call_count > MAX_CALLS or state.consecutive_unchanged >= MAX_UNCHANGED:
         return {

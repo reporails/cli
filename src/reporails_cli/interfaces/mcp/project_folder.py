@@ -77,7 +77,7 @@ async def _listed_roots(ctx: ToolContext | None) -> list[Path]:
 
 
 async def _agent_folder(ctx: ToolContext | None, target: Path | None) -> Path | None:
-    """The folder the agent says it works in: the root holding `target`, else its first root, else `AILS_PROJECT_DIR`."""
+    """The folder the agent says it works in: the root holding `target`, else its first root, else the env value."""
     roots = await _listed_roots(ctx)
     if roots:
         holding = next((root for root in roots if target is not None and target.is_relative_to(root)), None)

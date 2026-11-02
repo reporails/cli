@@ -412,11 +412,18 @@ class TestValidateTargets:
         _run_async(server._run_validate(str(project), True, ["skills"], project))
         brief = server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True, project_root=project)
         assert brief["location"]["element"] == "the `backlog` skill"
-        assert server._serve_remedy_brief(str(project), 1, has_guide=True, project_root=project)["error"] == "no_workflow"
-        _run_async(server._run_validate(str(project), True, None, project))
-        assert server._serve_remedy_brief(str(project), 1, has_guide=True, project_root=project)["location"]["element"] == "CLAUDE.md"
         assert (
-            server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True, project_root=project)["location"]["element"]
+            server._serve_remedy_brief(str(project), 1, has_guide=True, project_root=project)["error"] == "no_workflow"
+        )
+        _run_async(server._run_validate(str(project), True, None, project))
+        assert (
+            server._serve_remedy_brief(str(project), 1, has_guide=True, project_root=project)["location"]["element"]
+            == "CLAUDE.md"
+        )
+        assert (
+            server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True, project_root=project)["location"][
+                "element"
+            ]
             == "the `backlog` skill"
         )
 

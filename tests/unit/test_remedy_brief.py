@@ -491,7 +491,9 @@ def test_a_caller_with_the_rewrite_guide_gets_the_brief(monkeypatch, tmp_path: P
         remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"files": {}}, _fake_map(), None)
     )
     payload = {"workflow": {"locations": [{"order": 1, "kind": "other", "files": []}]}}
-    server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = server.CircuitState(full_payload=payload, scan_root=tmp_path)
+    server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = server.CircuitState(
+        full_payload=payload, scan_root=tmp_path
+    )
 
     reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True, project_root=tmp_path)
 
@@ -504,7 +506,9 @@ def test_a_caller_with_the_rewrite_guide_gets_the_brief(monkeypatch, tmp_path: P
 def test_location_not_found_names_the_count(tmp_path: Path) -> None:
     server.validate_states.clear()
     payload = {"workflow": {"locations": [{"order": 1, "kind": "main", "files": []}]}}
-    server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = server.CircuitState(full_payload=payload, scan_root=tmp_path)
+    server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = server.CircuitState(
+        full_payload=payload, scan_root=tmp_path
+    )
 
     reply = server._serve_remedy_brief(str(tmp_path), 9, has_guide=True, project_root=tmp_path)
 
