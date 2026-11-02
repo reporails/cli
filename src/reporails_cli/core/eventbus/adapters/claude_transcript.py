@@ -403,13 +403,8 @@ class ClaudeTranscriptAdapter:
 
     def _record(self, row: JsonObject, event: EventKind, subagent_id: str | None) -> EventRecord:
         what = f"{row.get('type')} row"
-        return EventRecord(
-            agent=self.agent,
-            event=event,
-            session_id=_text(row, "sessionId", what),
-            time=_text(row, "timestamp", what),
-            subagent_id=subagent_id,
-        )
+        session_id, time = _text(row, "sessionId", what), _text(row, "timestamp", what)
+        return EventRecord(self.agent, event, session_id, time, subagent_id, opt_str(row.get("cwd")) or None)
 
     def _compaction(self, row: JsonObject, subagent_id: str | None) -> EventRecord:
         trigger = opt_str(as_object(row.get("compactMetadata")).get("trigger"))

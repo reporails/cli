@@ -128,9 +128,14 @@ def claude_project_folder_name(project_root: Path) -> str:
     return re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(project_root))
 
 
+def claude_projects_dir() -> Path:
+    """`~/.claude/projects/`, the folder that holds one folder per project Claude Code ran in."""
+    return Path.home() / ".claude" / "projects"
+
+
 def claude_project_dir(project_root: Path) -> Path:
     """The folder under `~/.claude/projects/` that holds a project's transcripts and auto memory."""
-    return Path.home() / ".claude" / "projects" / claude_project_folder_name(project_root)
+    return claude_projects_dir() / claude_project_folder_name(project_root)
 
 
 def is_memory_recall_entry(file_type: str, filename: str) -> bool:

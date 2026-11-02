@@ -44,11 +44,17 @@ Feature: Any session of a project opens in x-ray without typing an id, from a te
     And the page at that address shows the newest session marked as not known to be the agent's own
 
   @e2e
-  Scenario: Run in a subfolder of the project, the page opens on the project's sessions
+  Scenario: Run in a project subfolder as the agent of the older session, the page opens that session
     Given a project with two recorded Claude Code sessions, the older one written first
     When "ails xray --current --background --no-open" is run in a project subfolder as the agent of the older session
     Then the printed address names the older session
     And the page at that address shows the older session as the current one
+
+  @e2e
+  Scenario: A folder with no recorded session is refused naming the folder
+    Given a folder with no recorded Claude Code session
+    When "ails xray --no-open" is run in that folder
+    Then it exits 2 naming the folder and where Claude Code was started
 
   @e2e
   Scenario: A page started in the background stops by itself once no request has come for its idle window

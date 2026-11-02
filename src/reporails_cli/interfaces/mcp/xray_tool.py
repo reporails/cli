@@ -19,7 +19,10 @@ def xray_page(path: str, session: str) -> JsonObject:
     chosen = pick_session(here, session or None, current=not session)
     if chosen is None:
         missing = f"No session {session}" if session else "No Claude Code session found"
-        return {"error": "no_session", "message": f"{missing} for {here} or a folder above it."}
+        return {
+            "error": "no_session",
+            "message": f"{missing} for {here}; run it in the folder Claude Code was started in.",
+        }
     session_id = chosen.transcript.stem
     try:
         page, reused = start_page(chosen.root, session_id)

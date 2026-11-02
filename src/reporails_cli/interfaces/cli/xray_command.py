@@ -66,7 +66,7 @@ def xray_command(
     if picked is None:
         missing = "no Claude Code session found" if session is None else f"no session {session}"
         typer.echo(
-            f"Error: {missing} for {here} or a folder above it; run it in the folder Claude Code was started in",
+            f"Error: {missing} for {here}; run it in the folder Claude Code was started in",
             err=True,
         )
         raise typer.Exit(2)

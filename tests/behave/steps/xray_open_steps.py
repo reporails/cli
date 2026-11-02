@@ -333,3 +333,21 @@ def step_same_page(context):
 def step_newest_current(context):
     view = _view_of(context.url)
     assert (view["session"], view["picked"]) == (NEWER, "current"), view
+
+
+@given("a folder with no recorded Claude Code session")
+def step_no_session_folder(context):
+    context.project = build_project(context.tmpdir / "empty").resolve()
+
+
+@when('"ails xray --no-open" is run in that folder')
+def step_plain_in_empty_folder(context):
+    context.result = run_ails(context.project, "xray", "--no-open", home=context.home, timeout=120)
+
+
+@then("it exits 2 naming the folder and where Claude Code was started")
+def step_refused_naming_folder(context):
+    assert context.result.returncode == 2, context.result.returncode
+    stderr = " ".join(context.result.stderr.split())
+    assert f"no Claude Code session found for {context.project}" in stderr, stderr
+    assert "run it in the folder Claude Code was started in" in stderr, stderr

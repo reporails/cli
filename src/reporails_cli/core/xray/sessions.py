@@ -4,19 +4,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reporails_cli.core.discovery.project_root import git_root, home_folder
 from reporails_cli.core.eventbus.port import get_transcript_adapter
 from reporails_cli.core.eventbus.transcript import (
     known_session,
     last_write,
     newest_session,
     recent_sessions,
+    session_anywhere,
+    session_cwd,
     session_start,
     subagent_count,
 )
 from reporails_cli.core.pipeline.expected_loads import AGENT
 from reporails_cli.core.platform.config.bootstrap import env_text
-from reporails_cli.core.platform.dto.xray import PickedSession, SessionPick, XraySessionEntry
+from reporails_cli.core.platform.dto.xray import PickedSession, XraySessionEntry
 from reporails_cli.core.xray.derive import epoch
 
 
@@ -26,46 +27,30 @@ def _calling_id() -> str:
     return env_text(adapter.session_env) if adapter is not None else ""
 
 
-def _holding(folders: tuple[Path, ...], session_id: str, picked: SessionPick) -> PickedSession | None:
-    """The nearest of `folders` that holds session `session_id`, picked as `picked`; None when none does."""
-    for folder in folders:
-        transcript = known_session(folder, session_id)
-        if transcript is not None:
-            return PickedSession(folder, transcript, picked)
-    return None
+def _recorded_root(transcript: Path, fallback: Path) -> Path:
+    """The folder the transcript records the agent ran in, else `fallback`."""
+    recorded = session_cwd(AGENT, transcript)
+    return fallback if recorded is None else Path(recorded)
 
 
-def _search_folders(start: Path) -> tuple[Path, ...]:
-    """`start` and the folders above it whose sessions it may open: up to the repository `start` is in, else every
-    folder below the home folder (below the filesystem root when `start` is outside home)."""
-    top = git_root(start)
-    if top is not None:
-        return (start, *(folder for folder in start.parents if folder.is_relative_to(top)))
-    home = home_folder()
-    ceiling = home if home is not None and start.is_relative_to(home) else Path(start.anchor)
-    return (start, *(folder for folder in start.parents if folder != ceiling and folder.is_relative_to(ceiling)))
+def pick_session(root: Path, named: str | None, *, current: bool) -> PickedSession | None:
+    """The session to show, the project folder it belongs to and how it was chosen.
 
-
-def pick_session(start: Path, named: str | None, *, current: bool) -> PickedSession | None:
-    """The session to show, the folder Claude Code holds it under and how it was chosen.
-
-    The folder is `start` or the nearest folder above it with a session (`_search_folders`), so a command run in a
-    subfolder of the folder Claude Code was started in finds its sessions. A named session must be held by one of
-    them, else None. `current` takes the session the calling agent's env var names, else the newest one, picked as
-    `current_unknown`. With neither, the newest. None when no such folder has a session."""
-    folders = _search_folders(start)
+    Reads only the sessions recorded for `root`, the folder the command runs in. A named session must be one of
+    them, else None. `current` takes the session the calling agent's env var names, found in any of the agent's
+    project folders, its folder the one the transcript records; when no transcript has that id it takes the
+    newest session of `root`, picked as `current_unknown`. With neither, the newest. None when `root` has none."""
     if named is not None:
-        return _holding(folders, named, "named")
+        transcript = known_session(root, named)
+        return None if transcript is None else PickedSession(root, transcript, "named")
     calling = _calling_id() if current else ""
-    if calling:
-        mine = _holding(folders, calling, "current")
-        if mine is not None:
-            return mine
-    for folder in folders:
-        newest = newest_session(folder)
-        if newest is not None:
-            return PickedSession(folder, newest, "current_unknown" if current else "newest")
-    return None
+    mine = session_anywhere(calling) if calling else None
+    if mine is not None:
+        return PickedSession(_recorded_root(mine, root), mine, "current")
+    newest = newest_session(root)
+    if newest is None:
+        return None
+    return PickedSession(root, newest, "current_unknown" if current else "newest")
 
 
 def _entry(session_file: Path) -> XraySessionEntry:

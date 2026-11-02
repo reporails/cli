@@ -7,7 +7,7 @@ import json
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
-from reporails_cli.core.discovery.agent_discovery import claude_project_dir
+from reporails_cli.core.discovery.agent_discovery import claude_project_dir, claude_projects_dir
 from reporails_cli.core.eventbus.adapters.claude_transcript import ClaudeTranscriptAdapter
 from reporails_cli.core.eventbus.port import (
     PayloadRefused,
@@ -40,6 +40,17 @@ def known_session(project_root: Path, session_id: str) -> Path | None:
         return None
     path = session_transcript(project_root, session_id)
     return path if path.is_file() else None
+
+
+def session_anywhere(session_id: str) -> Path | None:
+    """The transcript of session `session_id` in any project folder of the agent; None unless the id holds only
+    letters, digits, `_` and `-` and a folder holds its transcript."""
+    if not session_id or UNSAFE_ID_CHARS.search(session_id):
+        return None
+    try:
+        return next((path for path in claude_projects_dir().glob(f"*/{session_id}.jsonl") if path.is_file()), None)
+    except OSError:
+        return None
 
 
 def recent_sessions(project_root: Path) -> list[Path]:
@@ -81,6 +92,20 @@ def session_start(agent: str, session_file: Path) -> str | None:
             timed = next((record.time for record in adapter.resolve_row(row, None) if record.time), None)
             if timed is not None:
                 return timed
+    return None
+
+
+def session_cwd(agent: str, session_file: Path) -> str | None:
+    """The folder the session's first row that records one says the agent ran in; None when the agent is unknown
+    or no row records one."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        return None
+    for row in _main_rows(session_file):
+        with contextlib.suppress(PayloadRefused):
+            folder = next((record.cwd for record in adapter.resolve_row(row, None) if record.cwd), None)
+            if folder is not None:
+                return folder
     return None
 
 

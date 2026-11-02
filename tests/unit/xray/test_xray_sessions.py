@@ -82,7 +82,7 @@ def test_a_named_session_of_the_project_is_picked_and_an_unknown_or_unsafe_one_i
 def test_current_opens_the_calling_session_even_when_a_newer_one_exists(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    mine = _session(project, "mine", 100)
+    mine = _session(project, "mine", 100, rows=[{**PROMPT_ROW, "sessionId": "mine", "cwd": str(project)}])
     _session(project, "newer", 0)
     monkeypatch.setenv(SESSION_ENV, "mine")
     assert pick_session(project, None, current=True) == PickedSession(project, mine, "current")
@@ -99,39 +99,42 @@ def test_current_without_a_session_of_this_folder_shows_the_newest_and_says_so(
     assert pick_session(project, None, current=True) == PickedSession(project, newest, "current_unknown")
 
 
-def test_a_subfolder_finds_the_sessions_of_the_folder_above_it(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    mine = _session(project, "mine", 100)
-    newest = _session(project, "newer", 0)
+def test_a_subfolder_has_no_sessions_of_its_own(project: Path) -> None:
+    _session(project, "mine", 100)
     deep = project / "src" / "pkg"
     deep.mkdir(parents=True)
-    assert pick_session(deep, None, current=False) == PickedSession(project, newest, "newest")
-    assert pick_session(deep, "mine", current=False) == PickedSession(project, mine, "named")
+    assert pick_session(deep, None, current=False) is None
+    assert pick_session(deep, "mine", current=False) is None
+
+
+def test_current_with_the_env_id_finds_a_session_recorded_under_another_project_folder(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started = project.parent / "started-here"
+    started.mkdir()
+    rows = [{**PROMPT_ROW, "sessionId": "mine", "cwd": str(started)}]
+    mine = _session(started, "mine", 100, rows=rows)
+    _session(project, "newer", 0)
     monkeypatch.setenv(SESSION_ENV, "mine")
-    assert pick_session(deep, None, current=True) == PickedSession(project, mine, "current")
+    assert pick_session(project, None, current=True) == PickedSession(started, mine, "current")
 
 
-def test_the_nearest_folder_with_a_session_wins_over_one_further_up(project: Path) -> None:
-    _session(project, "outer", 0)
-    inner = project / "sub"
-    inner.mkdir()
-    own = _session(inner, "inner", 100)
-    assert pick_session(inner / "deeper", None, current=False) == PickedSession(inner, own, "newest")
+def test_current_with_an_unsafe_env_id_is_refused_and_falls_back(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    claude_project_dir(project).parent.mkdir(parents=True)
+    claude_project_dir(project).parent.joinpath("x.jsonl").write_text("{}\n", encoding="utf-8")
+    newest = _session(project, "newer", 0)
+    monkeypatch.setenv(SESSION_ENV, "../x")
+    assert pick_session(project, None, current=True) == PickedSession(project, newest, "current_unknown")
 
 
-def test_a_session_folder_above_the_repository_is_never_used(project: Path) -> None:
-    _session(project.parent, "started-above", 0)
-    assert pick_session(project / "src", None, current=False) is None
-    assert pick_session(project / "src", "started-above", current=False) is None
-
-
-def test_outside_a_repository_a_subfolder_finds_its_folder_but_never_the_home_folder(project: Path) -> None:
-    home = Path.home()
-    plain = home / "work" / "plain"
-    (plain / "sub").mkdir(parents=True)
-    own = _session(plain, "plain-session", 100)
-    _session(home, "home-session", 0)
-    assert pick_session(plain / "sub", None, current=False) == PickedSession(plain, own, "newest")
-    assert pick_session(home / "work", None, current=False) is None
+def test_current_with_an_id_no_transcript_carries_falls_back_to_the_newest_of_the_folder(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    newest = _session(project, "newer", 0)
+    monkeypatch.setenv(SESSION_ENV, "nobody")
+    assert pick_session(project, None, current=True) == PickedSession(project, newest, "current_unknown")
 
 
 def test_the_switcher_lists_each_session_with_its_start_length_and_subagents(project: Path) -> None:
