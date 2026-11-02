@@ -180,3 +180,19 @@ def step_unlisted_file_notice(context, name):
     file = str(context.elsewhere / name)
     assert f"{file} is not an instruction file in the project at " in output, output
     assert "run ails check in that project's folder." in output, output
+
+
+@given('a home agent folder with a CLAUDE.md and a "skills/demo/SKILL.md"')
+def step_home_agent_folder(context):
+    agent = context.home / ".claude"
+    (agent / "skills" / "demo").mkdir(parents=True)
+    (agent / "CLAUDE.md").write_text(_SPARSE, encoding="utf-8")
+    skill = "---\nname: demo\ndescription: Demo skill used to show a folder check.\n---\n\n" + _SPARSE
+    (agent / "skills" / "demo" / "SKILL.md").write_text(skill, encoding="utf-8")
+    context.project = build_project(context.tmpdir)
+
+
+@when('I run "ails check" on the home "{folder}" folder from a project folder')
+def step_run_home_folder(context, folder):
+    target = str(context.home / ".claude" / folder)
+    context.result = run_ails(context.project, "check", target, "--format", "json", home=context.home)

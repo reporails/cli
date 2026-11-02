@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 import typer
 
 from reporails_cli.core.classify.capability_paths import canonicalize_capability, classify_target_token
-from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
 from reporails_cli.core.heal.apply import heal_bound
 from reporails_cli.core.pipeline.mapping import (
     apply_generic_scan,
@@ -43,16 +43,15 @@ from reporails_cli.interfaces.cli.check_orchestration import (
     RenderContext,
     _dispatch_output,
     _emit_stage_timing,
-    _file_under_target,
     _named_paths,
     _narrow_to_path_targets,
     _quiet_mapper_logs,
     _resolve_capability_paths,
     _resolved_within_target,
     _run_heal_pass,
-    _scan_root,
     _should_exit_strict,
     _token_agent,
+    scan_scope,
 )
 from reporails_cli.interfaces.cli.check_pipeline import _flow_assemble, _flow_pipeline
 from reporails_cli.interfaces.cli.check_support import (
@@ -103,7 +102,7 @@ class CheckTargets:
     single_file: Path | None = None
     # A lone directory target that lives INSIDE the project and is NOT a project root
     # of its own — the run stays anchored at the project root and is scoped to this
-    # subtree. `None` for every other target shape. See `_scan_root`.
+    # subtree. `None` for every other target shape. See `scan_scope`.
     subtree: Path | None = None
     # Mirrors `subtree is not None` — the run is scope-to-subtree rather than
     # anchored at the target.
@@ -206,9 +205,7 @@ def _flow_targets(state: CheckState) -> None:
         if (state.targets.single_path is not None and state.targets.single_path.is_file())
         else None
     )
-    state.targets.subtree, state.targets.target = _scan_root(
-        state.targets.single_path, state.targets.single_file, state.inputs.project_root
-    )
+    state.targets.subtree, state.targets.target = scan_scope(state.targets.single_path, state.inputs.project_root)
     state.targets.subtree_scoped = state.targets.subtree is not None
     state.targets.output_format = state.inputs.format_opt or _default_format()
 
@@ -254,7 +251,7 @@ def _resolve_scope_at_target(state: CheckState, capability_paths: frozenset[Path
         state.scope.instruction_files = [safe_resolve(state.targets.single_file)]
     elif state.targets.target != state.inputs.project_root:
         state.scope.instruction_files = [
-            f for f in state.scope.instruction_files if _file_under_target(f, state.targets.target)
+            f for f in state.scope.instruction_files if file_under_target(f, state.targets.target)
         ]
 
 

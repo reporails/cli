@@ -55,3 +55,10 @@ Feature: `ails check` scores and validates instruction files end-to-end
     When I run "ails check" on "proj/.claude/rules/x.md" from the folder beside it
     Then the check exits 0
     And the notice names "proj/.claude/rules/x.md" and says to run ails check in the project's folder
+
+  @e2e @regression
+  Scenario: A folder inside ~/.claude checks only that folder
+    Given a home agent folder with a CLAUDE.md and a "skills/demo/SKILL.md"
+    When I run "ails check" on the home "skills" folder from a project folder
+    Then the check exits 0
+    And the json files map contains only "skills/demo/SKILL.md"

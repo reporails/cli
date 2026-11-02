@@ -15,6 +15,7 @@ import pytest
 
 from reporails_cli.core.classify import capability_paths as cap_paths
 from reporails_cli.core.classify import focus_expansion as focus_mod
+from reporails_cli.core.discovery.walk import file_under_target
 from reporails_cli.core.platform.config import vocabulary as vocab_mod
 from reporails_cli.core.platform.dto.lexicon import CapabilityVocabulary
 from reporails_cli.interfaces.cli import check_orchestration as orch
@@ -49,7 +50,7 @@ def test_file_target_matches_exact_file(tmp_path):
     """A file target must match the identical file path (L154 == guard)."""
     tgt = tmp_path / "x.md"
     tgt.write_text("hi", encoding="utf-8")
-    assert orch._file_under_target(tgt, tgt) is True
+    assert file_under_target(tgt, tgt) is True
 
 
 @pytest.mark.unit
@@ -59,7 +60,7 @@ def test_file_target_rejects_other_file(tmp_path):
     tgt.write_text("hi", encoding="utf-8")
     other = tmp_path / "y.md"
     other.write_text("hi", encoding="utf-8")
-    assert orch._file_under_target(other, tgt) is False
+    assert file_under_target(other, tgt) is False
 
 
 @pytest.mark.unit
@@ -69,7 +70,7 @@ def test_nonexistent_target_returns_false(tmp_path):
     ghost = tmp_path / "does_not_exist"
     f = tmp_path / "f.md"
     f.write_text("hi", encoding="utf-8")
-    assert orch._file_under_target(f, ghost) is False
+    assert file_under_target(f, ghost) is False
 
 
 # --- L189/L192/L194: _capability_declared ---

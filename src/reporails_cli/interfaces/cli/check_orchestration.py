@@ -8,10 +8,8 @@ command body reads as a flow over named helpers rather than one long function.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
-import os
 import sys
 from contextlib import AbstractContextManager
 from dataclasses import replace
@@ -22,9 +20,9 @@ import typer
 
 from reporails_cli.core.classify.capability_paths import TargetError, looks_like_windows_path, sniff_agent
 from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
-from reporails_cli.core.discovery.project_root import user_level_agent_dir
-from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
 from reporails_cli.core.heal.apply import resolved_within, suppressed_by_path
+from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.platform.adapters.notices_seen import due_notices
 from reporails_cli.core.platform.dto.classify import UnresolvedSkill
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, FunnelError
@@ -125,25 +123,14 @@ def _resolved_within_target(f: Path, target: Path) -> bool:
     return resolved_within(f, target)
 
 
-def _scan_root(single_path: Path | None, single_file: Path | None, project_root: Path) -> tuple[Path | None, Path]:
-    """Resolve a lone path target to `(subtree, scan_root)`.
-
-    The folder the command runs in (`project_root`) is the project root. A target inside it, file or
-    folder, agent configuration folders included, is scoped inside that project: the root stays
-    `project_root` and `subtree` names a folder target narrower than it. A target outside it roots
-    at itself (a folder) or at its own folder (a file). A path under the user's own agent folder
-    (`~/.claude`) roots on that folder alone.
-    """
+def scan_scope(single_path: Path | None, project_root: Path) -> tuple[Path | None, Path]:
+    """The `(subtree, scan_root)` of a lone path target: the scan root the shared target rule picks, and
+    the folder target narrower than it (None for a file, the whole project or no target)."""
     if single_path is None:
         return None, project_root
-    user_dir = user_level_agent_dir(single_path)
-    if user_dir is not None:
-        return None, user_dir
-    if not single_path.is_relative_to(project_root):
-        return None, single_path.parent if single_file is not None else single_path
-    if single_file is not None or single_path == project_root:
-        return None, project_root
-    return single_path, project_root
+    scan_root, _ = resolve_scan_target(single_path, project_root)
+    narrower = single_path.is_dir() and single_path != scan_root and single_path.is_relative_to(scan_root)
+    return (single_path if narrower else None), scan_root
 
 
 def _existing_target_root(token: str, project_root: Path) -> Path | None:
@@ -160,7 +147,7 @@ def _existing_target_root(token: str, project_root: Path) -> Path | None:
         path = safe_resolve(Path(raw))
         if not path.exists():
             return None
-        return _scan_root(path, path if path.is_file() else None, project_root)[1]
+        return resolve_scan_target(path, project_root)[0]
     except OSError:
         return None
 
@@ -177,27 +164,7 @@ def _token_agent(token: str, agent: str, project_root: Path, sniffed: dict[Path,
 
 def _narrow_to_path_targets(instruction_files: list[Path], path_targets: set[Path]) -> list[Path]:
     """Keep only instruction files that are equal to or beneath one of `path_targets`."""
-    return [f for f in instruction_files if any(_file_under_target(f, tgt) for tgt in path_targets)]
-
-
-def _file_under_target(f: Path, tgt: Path) -> bool:
-    """True when instruction file `f` is the target or sits beneath it.
-
-    Tests the file's logical absolute path alongside its symlink-resolved path so a
-    directory target keeps in-tree symlinked files (e.g. symlinked rules) instead
-    of dropping them when resolution escapes the target. The single shared check used
-    by both the single-directory narrowing and the multi-path `--target` narrowing.
-    """
-
-    candidates = [Path(os.path.abspath(f))]
-    # A symlink loop resolves nowhere; its logical path stands alone.
-    with contextlib.suppress(OSError, RuntimeError):
-        candidates.append(safe_resolve(f))
-    if tgt.is_file():
-        return any(p == tgt for p in candidates)
-    if tgt.is_dir():
-        return any(p == tgt or p.is_relative_to(tgt) for p in candidates)
-    return False
+    return [f for f in instruction_files if any(file_under_target(f, tgt) for tgt in path_targets)]
 
 
 def _relativize_paths(paths: set[Path], project_root: Path) -> set[str]:

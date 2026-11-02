@@ -37,23 +37,16 @@ def home_folder() -> Path | None:
 
 
 @functools.lru_cache(maxsize=1)
-def root_markers() -> tuple[tuple[tuple[str, ...], frozenset[str]], ...]:
-    """Per supported agent: `(main-instruction relative paths, config directory names)`.
+def root_markers() -> tuple[frozenset[str], ...]:
+    """Per supported agent: the dot-directories it declares surfaces in (`.claude/`, `.codex/`,
+    `.cursor/`, `.gemini/`, `.github/`, `.agents/`, …).
 
-    Derived from the bundled `framework/rules/*/config.yml` so the marker set covers
-    every shipped agent and follows config rather than a hand-kept list: the `main`
-    file_type's project-scope patterns (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`,
-    `.github/copilot-instructions.md`, …) paired with the dot-directories that agent
-    declares surfaces in (`.claude/`, `.codex/`, `.cursor/`, `.gemini/`, `.github/`,
-    `.agents/`, …). User-scope (`~/…`) and absolute managed patterns are dropped —
-    they say nothing about the directory under test.
+    Derived from the bundled `framework/rules/*/config.yml` so the set covers every shipped agent and
+    follows config rather than a hand-kept list. User-scope (`~/…`) and absolute managed patterns are
+    dropped: they say nothing about the directory under test.
     """
-    markers: list[tuple[tuple[str, ...], frozenset[str]]] = []
-    for file_types in bundled_file_types():
-        mains, dirs = _markers_from_file_types(file_types)
-        if mains and dirs:
-            markers.append((tuple(sorted(mains)), frozenset(dirs)))
-    return tuple(markers)
+    per_agent = (_config_dirs_from_file_types(file_types) for file_types in bundled_file_types())
+    return tuple(dirs for dirs in per_agent if dirs)
 
 
 def _repo_relative_pattern(pattern: str) -> str:
@@ -64,29 +57,24 @@ def _repo_relative_pattern(pattern: str) -> str:
     return text.removeprefix("**/")
 
 
-def _markers_from_file_types(file_types: JsonObject) -> tuple[set[str], set[str]]:
-    """Split one agent's `file_types` into its main-file names and its config dir names."""
-    mains: set[str] = set()
+def _config_dirs_from_file_types(file_types: JsonObject) -> frozenset[str]:
+    """The config dir names one agent's `file_types` declare surfaces in."""
     dirs: set[str] = set()
-    for ft_name, ft in file_types.items():
+    for ft in file_types.values():
         if not isinstance(ft, dict):
             continue
         for scope in as_object(ft.get("scopes")).values():
             for pattern in pattern_list(as_object(scope).get("patterns")):
                 rel = _repo_relative_pattern(pattern)
-                if not rel:
-                    continue
-                if ft_name == "main" and "*" not in rel:
-                    mains.add(rel)
                 head = rel.split("/", 1)[0]
                 if "/" in rel and head.startswith(".") and "*" not in head:
                     dirs.add(head)
-    return mains, dirs
+    return frozenset(dirs)
 
 
 def agent_dir_names() -> frozenset[str]:
     """Every dot-directory a shipped agent declares surfaces in (`.claude`, `.codex`, …)."""
-    return frozenset().union(*(dirs for _, dirs in root_markers())) if root_markers() else frozenset()
+    return frozenset().union(*root_markers())
 
 
 def user_level_agent_dir(target: Path) -> Path | None:

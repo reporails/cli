@@ -39,6 +39,23 @@ def safe_resolve(path: Path) -> Path:
         return path
 
 
+def file_under_target(f: Path, tgt: Path) -> bool:
+    """True when instruction file `f` is the target or sits beneath it.
+
+    Tests the file's logical absolute path alongside its symlink-resolved path, so a folder target keeps
+    in-tree symlinked files whose real location is elsewhere.
+    """
+    candidates = [Path(os.path.abspath(f))]
+    # A symlink loop resolves nowhere; its logical path stands alone.
+    with contextlib.suppress(OSError, RuntimeError):
+        candidates.append(safe_resolve(f))
+    if tgt.is_file():
+        return any(p == tgt for p in candidates)
+    if tgt.is_dir():
+        return any(p == tgt or p.is_relative_to(tgt) for p in candidates)
+    return False
+
+
 def is_symlink_loop_error(exc: BaseException) -> bool:
     """True when `exc` from `Path.resolve(strict=True)` reports a symlink loop.
 

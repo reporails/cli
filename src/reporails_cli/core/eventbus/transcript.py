@@ -50,6 +50,7 @@ def session_anywhere(session_id: str) -> Path | None:
     try:
         return next((path for path in claude_projects_dir().glob(f"*/{session_id}.jsonl") if path.is_file()), None)
     except OSError:
+        # Best-effort lookup: an unreadable session folder means no session.
         return None
 
 

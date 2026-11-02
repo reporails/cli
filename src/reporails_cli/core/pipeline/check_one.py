@@ -14,7 +14,7 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.agents import get_known_agents
 from reporails_cli.core.discovery.project_root import user_level_agent_dir
-from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
 from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.lint.regex.not_evaluated import not_evaluated_scope
 from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes_over_pairs
@@ -204,7 +204,7 @@ def scope_for_path(path: str, project_root: Path, named: frozenset[Path] = froze
     if model_error is not None:
         return model_error
     if single_file is None and target != scan_root and target.is_relative_to(scan_root):
-        inside = [f for f in discovery.instruction_files if safe_resolve(f).is_relative_to(target)]
+        inside = [f for f in discovery.instruction_files if file_under_target(f, target)]
         if not inside:
             return Refusal(
                 "empty_project", f"No instruction files found in {target}", target, discovery.left_out.record

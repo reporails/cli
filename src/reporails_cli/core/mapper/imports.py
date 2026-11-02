@@ -5,7 +5,7 @@ content at the reference position before the model sees it. The mapper must see
 the same expanded content to produce accurate atom counts and
 classification.
 
-Public entry point: `expand_imports(content, source_path)`.
+Public entry point: `expand_imports(content, source_path, boundary)`.
 """
 
 from __future__ import annotations
