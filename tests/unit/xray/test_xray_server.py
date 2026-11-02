@@ -34,8 +34,8 @@ TOKEN = "launch-token"
 PORT = 8765
 ORIGIN = f"http://127.0.0.1:{PORT}"
 TOP_KEYS = {
-    "version", "session", "project", "started_at", "length_s", "model", "window", "adapter", "nodes", "edges",
-    "sources", "stations", "track", "funnel", "facts", "check", "refusals", "not_known",
+    "version", "session", "project", "started_at", "length_s", "model", "window", "adapter", "price_list", "nodes",
+    "edges", "sources", "stations", "track", "funnel", "facts", "check", "refusals", "not_known",
 }  # fmt: skip
 HEAVY = ("starlette", "uvicorn", "reporails_cli.core.mapper", "onnxruntime", "tokenizers", "numpy")
 

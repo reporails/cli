@@ -29,3 +29,8 @@ def get_lexicon_path() -> Path:
 def get_xray_path() -> Path:
     """Get path to the bundled x-ray page folder (`index.html`, `xray.js`, `xray.css`, `fonts/`)."""
     return get_bundled_path() / "xray"
+
+
+def get_prices_path(agent: str) -> Path:
+    """Get path to the bundled list prices of an agent's models (`prices/<agent>.yml`)."""
+    return get_bundled_path() / "prices" / f"{agent}.yml"

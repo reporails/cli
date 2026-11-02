@@ -51,6 +51,7 @@ _READERS: dict[str, str] = {
     "core/platform/config/vocabulary.py::load_capability_vocabulary": "bundled/lexicon/capabilities.yml",
     "core/mapper/lexicon.py::load_dotted_exclusions": "bundled/lexicon/dotted_exclusions.yml",
     "core/mapper/lexicon.py::load_markdown_tokens": "bundled/lexicon/markdown_tokens.yml",
+    "core/xray/cost.py::load_price_list": "bundled/prices/claude.yml",
 }
 
 _READER_FUNCS = {"load_yaml_file", "fast_yaml_load"}

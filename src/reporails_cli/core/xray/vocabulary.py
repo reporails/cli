@@ -8,6 +8,7 @@ from reporails_cli.core.platform.dto.xray import (
     AdapterVocabulary,
     FactKind,
     XrayAgentTypeInfo,
+    XrayBurstSettings,
     XrayCategoryInfo,
     XrayNesting,
     XrayNodeKindInfo,
@@ -15,6 +16,7 @@ from reporails_cli.core.platform.dto.xray import (
     XraySourceKindInfo,
     XrayTriggerInfo,
 )
+from reporails_cli.core.platform.dto.xray_composition import REMAINDER_KEY, XrayCompositionLabel
 
 # Colours handed to the agent types found on disk, in order, cycling.
 DISK_TYPE_COLOURS = ("#7FD4A8", "#E8C27A", "#5FC4E8", "#C9A0F0", "#D4B483", "#8FB8A8", "#E89AB8", "#B8C77F")
@@ -30,6 +32,7 @@ _CLAUDE_SOURCE_KINDS = (
     XraySourceKindInfo("instructions", "Instructions", "I", False),
     XraySourceKindInfo("rule", "Rules", "R", False),
     XraySourceKindInfo("skill", "Skills", "S", False),
+    XraySourceKindInfo("agent", "Agents", "A", True, "Built-in agent types are not listed."),
     XraySourceKindInfo("memory", "Memory", "M", False),
     XraySourceKindInfo("mcp", "MCP servers", "C", False),
     XraySourceKindInfo("hook", "Hooks", "H", False),
@@ -66,6 +69,20 @@ _CLAUDE_FACT_NOTES: dict[FactKind, str] = {
     "kind_absent": "No {label} configured",
 }
 
+_CLAUDE_COMPOSITION = (
+    XrayCompositionLabel("system_tools", "System prompt + tools"),
+    XrayCompositionLabel("instructions", "Instruction files"),
+    XrayCompositionLabel("rules_skills", "Rules + loaded skills"),
+    XrayCompositionLabel("skill_listing", "Skills listing"),
+    XrayCompositionLabel("memory", "Memory"),
+    XrayCompositionLabel("hook_notes", "Hook notes"),
+    XrayCompositionLabel("conversation", "Conversation"),
+    XrayCompositionLabel("tool_results", "Tool results"),
+)
+
+
+_CLAUDE_BURST = XrayBurstSettings(window_s=90.0, window_share=0.013, min_size=3)
+
 
 def _claude(disk_types: Sequence[str]) -> AdapterVocabulary:
     """Claude Code's vocabulary, with each agent type found on disk after the built-in ones."""
@@ -85,6 +102,9 @@ def _claude(disk_types: Sequence[str]) -> AdapterVocabulary:
         nesting=XrayNesting(True, None),
         triggers=_CLAUDE_TRIGGERS,
         fact_notes=_CLAUDE_FACT_NOTES,
+        composition=_CLAUDE_COMPOSITION,
+        composition_remainder=REMAINDER_KEY,
+        burst=_CLAUDE_BURST,
     )
 
 

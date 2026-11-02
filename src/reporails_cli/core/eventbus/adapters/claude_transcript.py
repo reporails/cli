@@ -6,7 +6,8 @@ Documented by the vendor:
   https://code.claude.com/docs/en/sessions#where-transcripts-are-stored
 - A subagent's transcript, `<session-id>/subagents/agent-<agentId>.jsonl`:
   https://code.claude.com/docs/en/sub-agents#resume-subagents
-- The token counts `input_tokens`, `cache_creation_input_tokens` and `cache_read_input_tokens`:
+- The token counts `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens` and
+  the cache-write split `cache_creation.ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens`:
   https://code.claude.com/docs/en/prompt-caching#check-cache-performance
 - The instruction-file load events, `InstructionsLoaded` with `file_path`, `memory_type` and `load_reason`:
   https://code.claude.com/docs/en/hooks
@@ -16,7 +17,8 @@ it changes between versions. These are shapes recorded on Claude Code 2.1.292, 2
 the adapter refuses any other shape of a row type it reads:
 
 - an assistant row: `type: "assistant"`, `timestamp`, `message.id`, `message.usage` holding the three
-  counts above and optionally `message.model`, a string, read as no model when it is `<synthetic>` (the value
+  input counts above, optionally `output_tokens` and `cache_creation` (an object holding the 5-minute and 1-hour
+  cache-write counts), and optionally `message.model`, a string, read as no model when it is `<synthetic>` (the value
   Claude Code writes for an API error or an interrupt); one row is written per content block, so the rows of
   one response repeat `message.id`.
 - a turn end: `type: "system"` with `subtype: "turn_duration"` and `timestamp`.
@@ -284,6 +286,20 @@ def _brief_text(first_row: JsonObject) -> str | None:
     return BRIEF_BLOCK_SEPARATOR.join(texts) if texts else None
 
 
+def _usage_counts(usage: JsonObject) -> JsonObject:
+    """A row's usage object with the cache-write split lifted to the keys the usage record reads; a present
+    `cache_creation` that is not an object refuses the row."""
+    creation = usage.get("cache_creation")
+    if creation is not None and not isinstance(creation, dict):
+        raise PayloadRefused("assistant usage cache_creation is not an object")
+    split = creation or {}
+    return {
+        **usage,
+        "cache_write_5m_tokens": split.get("ephemeral_5m_input_tokens"),
+        "cache_write_1h_tokens": split.get("ephemeral_1h_input_tokens"),
+    }
+
+
 class ClaudeTranscriptAdapter:
     """Resolves the rows of a Claude Code session transcript."""
 
@@ -445,7 +461,7 @@ class ClaudeTranscriptAdapter:
     def _usage(self, row: JsonObject, subagent_id: str | None) -> EventRecord:
         message = as_object(row.get("message"))
         message_id = _text(message, "id", "assistant message")
-        usage = TokenUsage.from_json(message_id, as_object(message.get("usage")))
+        usage = TokenUsage.from_json(message_id, _usage_counts(as_object(message.get("usage"))))
         if usage is None:
             raise PayloadRefused("assistant usage counts are not whole numbers")
         model = message.get("model")

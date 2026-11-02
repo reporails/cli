@@ -15,6 +15,7 @@ from reporails_cli.core.platform.dto.xray_build import (
     ProducerContext,
     SourceTable,
 )
+from reporails_cli.core.platform.dto.xray_cost import PriceList
 from reporails_cli.core.platform.dto.xray_graph import (
     LoadEvent,
     SourceKind,
@@ -25,6 +26,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayTree,
 )
 from reporails_cli.core.xray.graph import spine
+from reporails_cli.core.xray.graph.bursts import bursts
 from reporails_cli.core.xray.graph.port import PRODUCERS
 
 # A load smaller than this many tokens is small.
@@ -55,11 +57,15 @@ def _layout(nodes: Sequence[ProducedNode]) -> NodeLayout:
 
 def _station(node: ProducedNode, sources: SourceTable, vocabulary: AdapterVocabulary) -> XrayStation:
     small_kinds = {kind.key for kind in vocabulary.source_kinds if kind.small}
+    hooks, stretched = spine.hook_stretches(node, sources)
     return XrayStation(
         node.id,
-        tuple(_load(load, sources, small_kinds) for load in node.spine.loads),
+        tuple(
+            _load(load, sources, small_kinds) for number, load in enumerate(node.spine.loads) if number not in stretched
+        ),
         spine.mcp_clusters(node),
         node.spine.compactions,
+        hooks,
     )
 
 
@@ -97,12 +103,17 @@ def _xray_node(node: ProducedNode, build: BuildContext) -> XrayNode:
             layout.depth[node.id],
             tuple(layout.children[node.id]),
             layout.descendants[node.id],
+            bursts(
+                [item for item in build.launch.values() if item.parent == node.id],
+                node.end - node.start,
+                build.vocabulary.burst,
+            ),
         ),
         name=node.name,
         type=node.type,
         start=node.start,
         end=node.end,
-        slots=spine.slots(build.had[node.id], build.sources, build.vocabulary),
+        slots=spine.slots(node, edge is not None, build.had[node.id], build.sources, build.vocabulary),
         tool_counts=spine.tool_counts(node, build.vocabulary),
         withheld=withheld,
         child_sources=spine.child_sources(layout.children[node.id], build.had),
@@ -111,10 +122,14 @@ def _xray_node(node: ProducedNode, build: BuildContext) -> XrayNode:
 
 
 def build_graph(
-    records: Sequence[EventRecord], frame: Frame, sources: SourceTable, vocabulary: AdapterVocabulary
+    records: Sequence[EventRecord],
+    frame: Frame,
+    sources: SourceTable,
+    vocabulary: AdapterVocabulary,
+    prices: PriceList,
 ) -> Graph:
     """The graph of `records`: the nodes and edges of every registered producer, linked by parent."""
-    context = ProducerContext(sources, vocabulary)
+    context = ProducerContext(sources, vocabulary, prices)
     produced = [producer.produce(records, frame, context) for producer in PRODUCERS]
     pnodes = [node for item in produced for node in item.nodes]
     edges = tuple(edge for item in produced for edge in item.edges)
@@ -131,7 +146,7 @@ def build_graph(
     return Graph(
         tuple(_xray_node(node, build) for node in pnodes),
         edges,
-        _sources(sources, pnodes, build.had),
+        _sources(sources, pnodes, build.had, set(build.launch)),
         tuple(_station(node, sources, vocabulary) for node in spined),
         tuple(
             XrayTrack(node.id, spine.track_calls(node, vocabulary), spine.failure_runs(node), spine.breaks(node))
@@ -140,10 +155,21 @@ def build_graph(
     )
 
 
-def _sources(sources: SourceTable, nodes: Sequence[ProducedNode], had: dict[str, list[str]]) -> tuple[XraySource, ...]:
+def _had_by(
+    entry: SourceEntry, nodes: Sequence[ProducedNode], had: dict[str, list[str]], launched: set[str]
+) -> tuple[str, ...]:
+    """The nodes whose context the source entered; for an agent definition, the launched nodes of its type."""
+    if entry.kind == "agent":
+        return tuple(node.id for node in nodes if node.id in launched and node.type == entry.name)
+    return tuple(node.id for node in nodes if entry.id in had[node.id])
+
+
+def _sources(
+    sources: SourceTable, nodes: Sequence[ProducedNode], had: dict[str, list[str]], launched: set[str]
+) -> tuple[XraySource, ...]:
     out: list[XraySource] = []
     for entry in sources.entries:
-        had_by = tuple(node.id for node in nodes if entry.id in had[node.id])
+        had_by = _had_by(entry, nodes, had, launched)
         out.append(
             XraySource(
                 id=entry.id,
@@ -155,6 +181,7 @@ def _sources(sources: SourceTable, nodes: Sequence[ProducedNode], had: dict[str,
                 availability=_availability(entry, had_by),
                 had_by=had_by,
                 actionable=entry.actionable,
+                launches=len(had_by) if entry.kind == "agent" else None,
             )
         )
     return tuple(out)

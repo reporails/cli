@@ -9,6 +9,7 @@ from pathlib import Path
 
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessEntry, HarnessKind, ToolCategory
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary, FindingTally, SourceEntry
+from reporails_cli.core.platform.dto.xray_cost import PriceList
 from reporails_cli.core.platform.dto.xray_graph import (
     AgentOutcome,
     LoadEvent,
@@ -152,10 +153,12 @@ class Produced:
 
 @dataclass(frozen=True)
 class ProducerContext:
-    """What a producer reads beside the records: the session's sources and the coding agent's vocabulary."""
+    """What a producer reads beside the records: the session's sources, the coding agent's vocabulary and the price
+    list."""
 
     sources: SourceTable
     vocabulary: AdapterVocabulary
+    prices: PriceList
 
 
 @dataclass(frozen=True)

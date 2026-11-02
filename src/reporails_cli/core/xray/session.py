@@ -41,6 +41,7 @@ from reporails_cli.core.xray.artifacts import (
     peek_text,
     runnable_paths,
 )
+from reporails_cli.core.xray.cost import load_price_list
 from reporails_cli.core.xray.derive import epoch, latest_model, replies_of, window_of
 from reporails_cli.core.xray.facts import build_facts
 from reporails_cli.core.xray.funnel import build_funnel
@@ -155,7 +156,8 @@ class XraySession:
         vocabulary = vocabulary_for(AGENT, [item.label for item in files if item.kind == "agent"])
         artifacts = build_artifacts(files, self._findings, self._root, advertised=advertised_files(files, records))
         table = build_sources(artifacts, records, frame)
-        graph = build_graph(records, frame, table, vocabulary)
+        prices = load_price_list()
+        graph = build_graph(records, frame, table, vocabulary, prices)
         window = window_of(replies_of(main_records(records)))
         return XrayView(
             version=self.version,
@@ -163,6 +165,7 @@ class XraySession:
             model=latest_model(records),
             window=window,
             adapter=vocabulary,
+            price_list=prices.info,
             nodes=graph.nodes,
             edges=graph.edges,
             sources=graph.sources,

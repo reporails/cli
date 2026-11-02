@@ -32,6 +32,7 @@ from reporails_cli.core.platform.dto.xray import (
     ArtifactKind,
     FindingTally,
     Graph,
+    XrayBurstSettings,
     XrayCheck,
     XrayGaps,
     XrayNodeKindInfo,
@@ -47,6 +48,7 @@ from reporails_cli.core.platform.dto.xray_build import (
     ProducedSpine,
     ProducerContext,
 )
+from reporails_cli.core.platform.dto.xray_composition import XrayComposition
 from reporails_cli.core.platform.dto.xray_graph import (
     LoadEvent,
     NodeKind,
@@ -55,12 +57,15 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayDown,
     XrayEdge,
     XrayNode,
+    XrayUsage,
 )
 from reporails_cli.core.xray.artifacts import build_artifacts
+from reporails_cli.core.xray.cost import agent_cost, load_price_list
 from reporails_cli.core.xray.derive import epoch
 from reporails_cli.core.xray.funnel import build_funnel
 from reporails_cli.core.xray.graph.agents import MAIN_ID
 from reporails_cli.core.xray.graph.build import build_graph
+from reporails_cli.core.xray.graph.bursts import bursts
 from reporails_cli.core.xray.graph.port import PRODUCERS, register
 from reporails_cli.core.xray.graph.sources import build_sources, ran_sources
 from reporails_cli.core.xray.vocabulary import vocabulary_for
@@ -157,7 +162,7 @@ def _graph(
     frame = Frame(epoch(at(0)) or 0.0, root, findings or {}, runnable or {}, agent_files or {}, live)
     artifacts = build_artifacts(files, findings or {}, root, advertised=advertised or {})
     vocab = vocabulary or vocabulary_for("claude", [])
-    return build_graph(list(records), frame, build_sources(artifacts, records, frame), vocab)
+    return build_graph(list(records), frame, build_sources(artifacts, records, frame), vocab, load_price_list())
 
 
 def _node(graph: Graph, node_id: str) -> XrayNode:
@@ -566,6 +571,9 @@ def test_the_sources_the_parent_had_at_a_launch_and_the_child_never_had_are_with
     assert _node(graph, MAIN_ID).withheld is None
 
 
+_NO_COST = agent_cost([], load_price_list(), 0.0)
+
+
 class _Widget:
     """A producer of a second node kind whose node hangs under an agent."""
 
@@ -577,7 +585,19 @@ class _Widget:
         self.producer = NodeProducer(self.kind, self.produce)
 
     def produce(self, records: Sequence[EventRecord], frame: Frame, context: ProducerContext) -> Produced:
-        detail = XrayAgentDetail(None, None, (), XrayDown(None, 0), None, None, None, (), (), False)
+        detail = XrayAgentDetail(
+            None,
+            None,
+            (),
+            XrayDown(None, 0),
+            None,
+            None,
+            None,
+            (),
+            (),
+            False,
+            XrayUsage(_NO_COST, XrayComposition((), None)),
+        )
         loads = () if self.source is None else (LoadEvent(self.source, 1.0, None, "agent", None, True),)
         spine = ProducedSpine((), loads, (), (), (1.0,))
         node = ProducedNode("w1", self.kind, self.parent, "a widget", None, 1.0, 2.0, detail, spine)
@@ -674,6 +694,7 @@ def test_the_built_views_key_structure_matches_the_sample_the_page_is_built_agai
         model=None,
         window=None,
         adapter=vocabulary_for("claude", []),
+        price_list=load_price_list().info,
         gaps=XrayGaps((), ()),
         verdict=XrayVerdict((), (), XrayCheck("done", None)),
     )
@@ -699,7 +720,7 @@ def test_a_skill_that_ran_is_used_a_forked_one_is_used_but_not_loaded_and_a_comm
     frame = Frame(epoch(at(0)) or 0.0, tmp_path, {}, runnable, {}, False)
     files = [plain, forked, command, idle]
     table = build_sources(build_artifacts(files, {}, tmp_path, advertised={}), records, frame)
-    graph = build_graph(records, frame, table, vocabulary_for("claude", []))
+    graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
     (row,) = build_funnel(table.entries, graph.sources, ["skill"], ran_sources(records, table))
     assert (row.kind, row.on_disk, row.loaded, row.used) == ("skill", 4, 2, 3)
 
@@ -842,3 +863,128 @@ def test_a_node_counts_how_many_of_its_children_had_each_source(tmp_path: Path) 
     graph = _graph(tmp_path, session, [claude, rule])
     assert _node(graph, "main").child_sources == {"CLAUDE.md": 2, ".claude/rules/r.md": 1}
     assert _node(graph, "A").child_sources == {}
+
+
+def _typed_launch(seconds: float, sub: str, parent: str | None, use_id: str, agent_type: str) -> EventRecord:
+    return replace(launch(seconds, sub, parent, use_id), subagent_type=agent_type)
+
+
+def _definition(root: Path, label: str) -> ArtifactFile:
+    path = root / ".claude" / "agents" / f"{label}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x" * 80)
+    return ArtifactFile(str(path), "agent", "project", None, label, None, None)
+
+
+def test_an_agent_definition_is_a_source_had_by_every_launch_of_its_type_at_any_depth(tmp_path: Path) -> None:
+    reviewer, never = _definition(tmp_path, "reviewer"), _definition(tmp_path, "never")
+    records = [
+        reply(1),
+        call(5, "tuA", "agent"),
+        _typed_launch(6, "A", None, "tuA", "reviewer"),
+        reply(7, "A"),
+        call(8, "tuB", "agent", "A"),
+        _typed_launch(9, "B", "A", "tuB", "reviewer"),
+        reply(10, "B"),
+        call(11, "tuC", "agent", "B"),
+        launch(12, "C", "B", "tuC"),
+        reply(13, "C"),
+        reply(30),
+    ]
+    graph = _graph(tmp_path, records, [reviewer, never], advertised={never.path: True})
+    by_name = {source.name: source for source in graph.sources if source.kind == "agent"}
+    assert set(by_name) == {"reviewer", "never"}
+    assert (by_name["reviewer"].had_by, by_name["reviewer"].launches, by_name["reviewer"].availability) == (
+        ("A", "B"),
+        2,
+        "loaded",
+    )
+    assert (by_name["never"].had_by, by_name["never"].launches, by_name["never"].availability) == ((), 0, "listed")
+    assert all(source.launches is None for source in graph.sources if source.kind != "agent")
+
+
+def test_a_definition_nobody_listed_or_launched_is_on_disk(tmp_path: Path) -> None:
+    graph = _graph(tmp_path, [reply(1), reply(30)], [_definition(tmp_path, "idle")])
+    (source,) = [item for item in graph.sources if item.kind == "agent"]
+    assert (source.availability, source.launches) == ("on_disk", 0)
+
+
+def test_a_built_in_agent_type_is_no_source_and_the_slots_count_definitions(tmp_path: Path) -> None:
+    reviewer, helper = _definition(tmp_path, "reviewer"), _definition(tmp_path, "helper")
+    records = [
+        reply(1),
+        call(5, "tuA", "agent"),
+        _typed_launch(6, "A", None, "tuA", "reviewer"),
+        reply(7, "A"),
+        call(8, "tuB", "agent"),
+        launch(9, "B", None, "tuB"),
+        reply(10, "B"),
+        reply(30),
+    ]
+    tally = {reviewer.path: FindingTally(2, {"error": 0, "warning": 2, "info": 0})}
+    graph = _graph(tmp_path, records, [reviewer, helper], findings=tally)
+    assert not any(source.name == "general-purpose" for source in graph.sources)
+    assert _node(graph, "main").slots["agent"].count == 2
+    assert (_node(graph, "A").slots["agent"].count, _node(graph, "A").slots["agent"].findings) == (1, 2)
+    assert _node(graph, "B").slots["agent"].count == 0
+
+
+def _hook_note(seconds: float, label: str, event: str, chars: int) -> EventRecord:
+    return rec("harness", seconds, item=HarnessEntry("hook_note", label, None, chars, event=event))
+
+
+def test_close_loads_of_one_hook_are_one_stretch_and_a_lone_note_stays_a_load(tmp_path: Path) -> None:
+    records = [
+        reply(0),
+        _hook_note(0.5, "SessionStart:startup", "SessionStart", 120),
+        _hook_note(100, "PreToolUse:Edit", "PreToolUse", 400),
+        _hook_note(110, "PreToolUse:Edit", "PreToolUse", 800),
+        _hook_note(120, "PreToolUse:Edit", "PreToolUse", 400),
+        reply(1000),
+    ]
+    graph = _graph(tmp_path, records)
+    station = next(item for item in graph.stations if item.node == "main")
+    assert [(h.source, h.first, h.last, h.count, h.tokens_est) for h in station.hooks] == [
+        ("hook:PreToolUse:Edit", 100.0, 120.0, 3, 400)
+    ]
+    assert [load.source for load in station.loads] == ["hook:SessionStart:startup"]
+    # The hook still counts as a source the node had.
+    assert next(item for item in graph.sources if item.id == "hook:PreToolUse:Edit").had_by == ("main",)
+
+
+def _launches(tmp_path: Path, times: list[float], span: float) -> list[tuple[str, ...]]:
+    records: list[EventRecord] = [reply(0)]
+    for number, seconds in enumerate(times):
+        sub, use_id = f"S{number}", f"tu{number}"
+        records += [call(seconds, use_id, "agent"), launch(seconds + 0.1, sub, None, use_id), reply(seconds + 1, sub)]
+    records.append(reply(span))
+    graph = _graph(tmp_path, records)
+    return [burst.members for burst in _node(graph, "main").tree.bursts]
+
+
+def test_four_launches_within_a_minute_of_a_ten_minute_agent_are_one_burst(tmp_path: Path) -> None:
+    assert _launches(tmp_path, [100, 120, 140, 160], 600) == [("S0", "S1", "S2", "S3")]
+
+
+def test_two_launches_are_never_a_burst(tmp_path: Path) -> None:
+    assert _launches(tmp_path, [100, 110], 600) == []
+
+
+def test_a_launch_past_the_window_starts_a_new_group(tmp_path: Path) -> None:
+    assert _launches(tmp_path, [0, 30, 60, 100, 130, 160], 600) == [("S0", "S1", "S2"), ("S3", "S4", "S5")]
+
+
+def _handoff_edge(child: str, out_t: float, back_t: float | None, down: int = 10) -> XrayEdge:
+    return XrayEdge("p", child, down, None, out_t, back_t, None)
+
+
+def test_the_window_grows_with_a_long_agent_and_a_burst_sums_what_went_down() -> None:
+    settings = XrayBurstSettings(window_s=90.0, window_share=0.013, min_size=3)
+    edges = [_handoff_edge("a", 0, 50), _handoff_edge("b", 93, 80), _handoff_edge("c", 93.5, 120)]
+    assert bursts(edges, 600.0, settings) == ()
+    (found,) = bursts(edges, 7200.0, settings)
+    assert (found.members, found.first_launch, found.last_return, found.down_tokens) == (("a", "b", "c"), 0, 120, 30)
+    (open_run,) = bursts(
+        [_handoff_edge("a", 0, 5), _handoff_edge("b", 1, None), _handoff_edge("c", 2, 7)], 600.0, settings
+    )
+    assert open_run.last_return is None

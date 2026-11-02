@@ -34,7 +34,9 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayEdge,
     XrayGiven,
     XrayPrompt,
+    XrayUsage,
 )
+from reporails_cli.core.xray.cost import agent_cost
 from reporails_cli.core.xray.derive import (
     build_compactions,
     build_harness,
@@ -45,6 +47,7 @@ from reporails_cli.core.xray.derive import (
     start_loads,
     tokens_of,
 )
+from reporails_cli.core.xray.graph.composition import composition_series
 from reporails_cli.core.xray.graph.port import register
 from reporails_cli.core.xray.graph.sources import for_path, hook_id, mcp_id
 
@@ -202,9 +205,11 @@ def _detail(
     own: AgentRecords,
     given: Sequence[XrayGiven],
     handoff: tuple[XrayDown, int | None, AgentOutcome | None],
-    frame: Frame,
+    world: AgentWorld,
 ) -> XrayAgentDetail:
     down, back, outcome = handoff
+    frame = world.frame
+    brief_chars = None if own.key == MAIN_ID else _brief_chars(own)
     series = tuple((moment - frame.t0, context) for moment, context in own.replies.points)
     peak = peak_context(own.replies, own.compactions)
     return XrayAgentDetail(
@@ -218,7 +223,17 @@ def _detail(
         given=tuple(given),
         prompts=_prompts(own, frame) if own.key == MAIN_ID else (),
         brief=down.task_tokens_est is not None,
+        usage=XrayUsage(
+            agent_cost(own.records, world.context.prices, frame.t0),
+            composition_series(own, world.context.sources, frame, brief_chars),
+        ),
     )
+
+
+def _brief_chars(own: AgentRecords) -> int | None:
+    """The size in characters of the task brief a subagent was launched with; None when its records hold none."""
+    meta = _launch(own.records)
+    return None if meta is None else meta.brief_chars
 
 
 def _launch(group: Sequence[EventRecord]) -> SubagentMeta | None:
@@ -291,7 +306,7 @@ def _main_node(own: AgentRecords, world: AgentWorld) -> ProducedNode:
     harness, loaded = _given(own, world.context.sources)
     given = [*harness, *loaded]
     down = XrayDown(None, sum(item.tokens_est or 0 for item in given))
-    detail = _detail(own, given, (down, None, None), world.frame)
+    detail = _detail(own, given, (down, None, None), world)
     return ProducedNode(
         id=MAIN_ID,
         kind=_KIND,
@@ -333,7 +348,7 @@ def _sub_node(
     run_type = next((r.subagent_type for r in own.records if r.event == "subagent_run"), None)
     task, given, down = _subagent_given(own, meta, run_type, world)
     handoff = _handoff(own, parent, meta, down, world.frame.live)
-    detail = _detail(own, given, (down, handoff.back, handoff.outcome), world.frame)
+    detail = _detail(own, given, (down, handoff.back, handoff.outcome), world)
     node = ProducedNode(
         id=own.key,
         kind=_KIND,

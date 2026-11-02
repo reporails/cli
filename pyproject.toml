@@ -120,6 +120,7 @@ packages = ["src/reporails_cli"]
 artifacts = [
     "src/reporails_cli/bundled/*.yml",
     "src/reporails_cli/bundled/lexicon/*.yml",
+    "src/reporails_cli/bundled/prices/*.yml",
     "src/reporails_cli/bundled/xray/**",
 ]
 # Named explicitly, not left to `.gitignore` alone: a checkout outside the

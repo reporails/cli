@@ -13,6 +13,8 @@ from typing import Literal, TypeGuard, get_args
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
 from reporails_cli.core.platform.dto.events import HarnessKind, ToolCategory
+from reporails_cli.core.platform.dto.xray_composition import CompositionKey, XrayCompositionLabel
+from reporails_cli.core.platform.dto.xray_cost import PriceListInfo
 from reporails_cli.core.platform.dto.xray_graph import (
     LoadTrigger,
     NodeKind,
@@ -60,13 +62,14 @@ SCOPE_PRECEDENCE: dict[ArtifactKind, tuple[ArtifactScope, ...]] = {
     "agent": ("managed", "project", "user"),
 }
 
-# The source kind an artifact kind is shown as; agent files and hook configs are no source.
+# The source kind an artifact kind is shown as; hook configs are no source.
 SOURCE_KIND_OF_ARTIFACT: dict[ArtifactKind, SourceKind] = {
     "instructions": "instructions",
     "rule": "rule",
     "memory": "memory",
     "skill": "skill",
     "command": "skill",
+    "agent": "agent",
 }
 
 
@@ -147,6 +150,8 @@ class XraySource(SourceFacts):
     availability: Availability
     had_by: tuple[str, ...]
     actionable: bool
+    # How many agents ran from an agent definition (None for any other kind).
+    launches: int | None
 
     def to_json(self) -> JsonObject:
         """The source as a JSON object."""
@@ -160,6 +165,7 @@ class XraySource(SourceFacts):
             "availability": self.availability,
             "had_by": list(self.had_by),
             "actionable": self.actionable,
+            "launches": self.launches,
         }
 
 
@@ -293,6 +299,7 @@ class XraySourceKindInfo:
     label: str
     letter: str
     small: bool
+    note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -351,6 +358,16 @@ class XrayNesting:
 
 
 @dataclass(frozen=True)
+class XrayBurstSettings:
+    """When children launched close together count as a burst: the window in seconds, its share of the launching
+    node's span (the larger of the two applies) and the fewest children."""
+
+    window_s: float
+    window_share: float
+    min_size: int
+
+
+@dataclass(frozen=True)
 class AdapterVocabulary:
     """What a coding agent calls things: its tool name, its root, source kinds, agent types, node kinds, tool
     categories, nesting, load triggers and fact notes."""
@@ -365,6 +382,10 @@ class AdapterVocabulary:
     triggers: tuple[XrayTriggerInfo, ...]
     # A sentence template per annotated fact kind, filled from the fact's numbers and the source kind's label.
     fact_notes: dict[FactKind, str]
+    # The categories a context is split into, in row order, and the one that takes what the estimates leave.
+    composition: tuple[XrayCompositionLabel, ...]
+    composition_remainder: CompositionKey
+    burst: XrayBurstSettings
 
     def to_json(self) -> JsonObject:
         """The vocabulary as a JSON object."""
@@ -373,7 +394,13 @@ class AdapterVocabulary:
             "tool": self.tool,
             "root": {"type": self.root.type, "name": self.root.name},
             "source_kinds": objects(
-                {"key": item.key, "label": item.label, "letter": item.letter, "small": item.small}
+                {
+                    "key": item.key,
+                    "label": item.label,
+                    "letter": item.letter,
+                    "small": item.small,
+                    "note": item.note,
+                }
                 for item in self.source_kinds
             ),
             "agent_types": objects(
@@ -390,6 +417,13 @@ class AdapterVocabulary:
             "nesting": {"enabled": self.nesting.enabled, "max_depth": self.nesting.max_depth},
             "triggers": objects({"key": item.key, "label": item.label} for item in self.triggers),
             "fact_notes": notes,
+            "composition": objects({"key": item.key, "label": item.label} for item in self.composition),
+            "composition_remainder": self.composition_remainder,
+            "burst": {
+                "window_s": self.burst.window_s,
+                "window_share": self.burst.window_share,
+                "min_size": self.burst.min_size,
+            },
         }
 
 
@@ -415,6 +449,7 @@ class XrayView(Graph):
     model: str | None
     window: XrayWindow | None
     adapter: AdapterVocabulary
+    price_list: PriceListInfo
     gaps: XrayGaps
     verdict: XrayVerdict
 
@@ -429,6 +464,7 @@ class XrayView(Graph):
             "model": self.model,
             "window": None if self.window is None else self.window.to_json(),
             "adapter": self.adapter.to_json(),
+            "price_list": self.price_list.to_json(),
             "nodes": objects(node.to_json() for node in self.nodes),
             "edges": objects(edge.to_json() for edge in self.edges),
             "sources": objects(source.to_json() for source in self.sources),

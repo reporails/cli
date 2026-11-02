@@ -88,11 +88,14 @@ def is_note_kind(kind: HarnessKind) -> TypeGuard[NoteKind]:
 
 
 _USAGE_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+# The counts a reply may leave out; a stored or written one that is present must be a whole number.
+_OPTIONAL_USAGE_KEYS = ("output_tokens", "cache_write_5m_tokens", "cache_write_1h_tokens")
 
 
 @dataclass(frozen=True)
 class TokenUsage:
-    """One assistant reply: the id of the API response and its token counts (fresh input, cache writes, cache reads)."""
+    """One assistant reply: the id of the API response and its token counts (fresh input, cache writes, cache reads,
+    and where the row carries them the output and the cache writes by lifetime)."""
 
     message_id: str
     input_tokens: int
@@ -100,25 +103,45 @@ class TokenUsage:
     cache_read_input_tokens: int
     # The model that wrote the reply; None when the row names none.
     model: str | None = None
+    # None when the row does not carry the count.
+    output_tokens: int | None = None
+    cache_write_5m_tokens: int | None = None
+    cache_write_1h_tokens: int | None = None
 
     def counts_json(self) -> JsonObject:
-        """The three counts and the model as a JSON object."""
+        """The counts and the model as a JSON object."""
         return {
             "model": self.model,
             "input_tokens": self.input_tokens,
             "cache_creation_input_tokens": self.cache_creation_input_tokens,
             "cache_read_input_tokens": self.cache_read_input_tokens,
+            "output_tokens": self.output_tokens,
+            "cache_write_5m_tokens": self.cache_write_5m_tokens,
+            "cache_write_1h_tokens": self.cache_write_1h_tokens,
         }
 
     @classmethod
     def from_json(cls, message_id: str | None, counts: JsonObject) -> TokenUsage | None:
-        """The usage of reply `message_id` with the counts a stored object holds, or None when the id is missing
-        or any of the three is not a whole number."""
+        """The usage of reply `message_id` with the counts a stored object holds, or None when the id is missing,
+        any of the three input counts is not a whole number, or a present optional count is not one."""
         values = [opt_int(counts.get(key)) for key in _USAGE_KEYS]
-        if message_id is None or any(value is None for value in values):
+        optional = [opt_int(counts.get(key)) for key in _OPTIONAL_USAGE_KEYS]
+        malformed = any(
+            counts.get(key) is not None and got is None for key, got in zip(_OPTIONAL_USAGE_KEYS, optional, strict=True)
+        )
+        if message_id is None or malformed or any(value is None for value in values):
             return None
         first, second, third = (value or 0 for value in values)
-        return cls(message_id, first, second, third, model=opt_str(counts.get("model")))
+        return cls(
+            message_id,
+            first,
+            second,
+            third,
+            model=opt_str(counts.get("model")),
+            output_tokens=optional[0],
+            cache_write_5m_tokens=optional[1],
+            cache_write_1h_tokens=optional[2],
+        )
 
 
 @dataclass(frozen=True)

@@ -7,9 +7,15 @@ from collections.abc import Mapping, Sequence
 
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.dto.events import EventRecord, is_note_kind
-from reporails_cli.core.platform.dto.xray import SOURCE_KIND_OF_ARTIFACT, SourceEntry, XrayArtifact
+from reporails_cli.core.platform.dto.xray import (
+    AGENT_ARTIFACT_KINDS,
+    SOURCE_KIND_OF_ARTIFACT,
+    SourceEntry,
+    XrayArtifact,
+)
 from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
 from reporails_cli.core.platform.dto.xray_graph import SourceKind
+from reporails_cli.core.xray.artifacts import winners
 from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path, tokens_of
 
 # The memory type an auto-memory file is loaded as.
@@ -86,7 +92,14 @@ def _harness_sources(records: Sequence[EventRecord]) -> list[SourceEntry]:
 def build_sources(artifacts: Sequence[XrayArtifact], records: Sequence[EventRecord], frame: Frame) -> SourceTable:
     """The session's sources: each listed file that can enter a context, each loaded file the listing misses, each
     MCP server seen and each hook note label."""
-    listed = [item for item in artifacts if item.kind in SOURCE_KIND_OF_ARTIFACT]
+    # Of two agent definitions sharing a type name only the one the harness resolves to is a source.
+    agent_winners = {item.path for item in winners(artifacts, AGENT_ARTIFACT_KINDS).values()}
+    listed = [
+        item
+        for item in artifacts
+        if item.kind in SOURCE_KIND_OF_ARTIFACT
+        and (item.kind not in AGENT_ARTIFACT_KINDS or item.path in agent_winners)
+    ]
     entries = [
         SourceEntry(
             item.path,

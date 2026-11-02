@@ -1,0 +1,82 @@
+# Claude API list prices, USD per million tokens. Read from the pricing page on the date below.
+# A model id matches an entry when it equals one of the entry's ids, or is that id plus a dated
+# snapshot suffix (`-YYYYMMDD`). `long_prompt` prices replace the base prices for a reply whose
+# prompt (input + cache write + cache read) is over `above_tokens`.
+name: Claude API list prices
+as_of: '2026-11-02'
+source: https://platform.claude.com/docs/en/about-claude/pricing
+unit: usd_per_mtok
+models:
+  - ids: [claude-fable-5-1]
+    input: 10
+    cache_write_5m: 12.5
+    cache_write_1h: 20
+    cache_read: 0.25
+    output: 50
+  - ids: [claude-fable-5]
+    input: 10
+    cache_write_5m: 12.5
+    cache_write_1h: 20
+    cache_read: 1
+    output: 50
+  - ids: [claude-opus-5-5]
+    input: 4
+    cache_write_5m: 5
+    cache_write_1h: 8
+    cache_read: 0.2
+    output: 20
+  - ids: [claude-opus-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, claude-opus-4-5]
+    input: 5
+    cache_write_5m: 6.25
+    cache_write_1h: 10
+    cache_read: 0.5
+    output: 25
+  - ids: [claude-opus-4-1, claude-opus-4]
+    input: 15
+    cache_write_5m: 18.75
+    cache_write_1h: 30
+    cache_read: 1.5
+    output: 75
+  - ids: [claude-sonnet-5-5]
+    input: 2
+    cache_write_5m: 2.5
+    cache_write_1h: 4
+    cache_read: 0.1
+    output: 10
+  - ids: [claude-sonnet-5]
+    input: 2
+    cache_write_5m: 2.5
+    cache_write_1h: 4
+    cache_read: 0.2
+    output: 10
+  - ids: [claude-sonnet-4-6, claude-sonnet-4-5, claude-sonnet-4]
+    input: 3
+    cache_write_5m: 3.75
+    cache_write_1h: 6
+    cache_read: 0.3
+    output: 15
+  - ids: [claude-haiku-5-5]
+    input: 0.1
+    cache_write_5m: 0.125
+    cache_write_1h: 0.2
+    cache_read: 0.01
+    output: 0.5
+    long_prompt:
+      above_tokens: 100000
+      input: 0.5
+      cache_write_5m: 0.625
+      cache_write_1h: 1
+      cache_read: 0.05
+      output: 2.5
+  - ids: [claude-haiku-4-5]
+    input: 1
+    cache_write_5m: 1.25
+    cache_write_1h: 2
+    cache_read: 0.1
+    output: 5
+  - ids: [claude-3-5-haiku]
+    input: 0.8
+    cache_write_5m: 1
+    cache_write_1h: 1.6
+    cache_read: 0.08
+    output: 4

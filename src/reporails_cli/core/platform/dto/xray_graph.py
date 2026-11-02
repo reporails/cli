@@ -8,14 +8,16 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.events import ToolCategory
+from reporails_cli.core.platform.dto.xray_composition import XrayComposition
+from reporails_cli.core.platform.dto.xray_cost import XrayAgentCost
 
 CompactionTrigger = Literal["manual", "auto"]
 NodeKind = Literal["agent"]
-SourceKind = Literal["instructions", "rule", "skill", "memory", "mcp", "hook"]
+SourceKind = Literal["instructions", "rule", "skill", "agent", "memory", "mcp", "hook"]
 LoadTrigger = Literal["session_start", "path_match", "agent", "inherited", "hook"]
 AgentOutcome = Literal["returned", "failed", "stopped", "no_handback", "running"]
 # The outcomes in which an agent's parent received something back.
@@ -88,6 +90,28 @@ class XrayMcpCluster:
 
 
 @dataclass(frozen=True)
+class XrayHookStretch:
+    """The loads of one hook that came close together in time, as one stretch: when it began and ended, how many
+    loads it holds and their size together."""
+
+    source: str
+    first: float
+    last: float
+    count: int
+    tokens_est: int
+
+    def to_json(self) -> JsonObject:
+        """The stretch as a JSON object."""
+        return {
+            "source": self.source,
+            "first": self.first,
+            "last": self.last,
+            "count": self.count,
+            "tokens_est": self.tokens_est,
+        }
+
+
+@dataclass(frozen=True)
 class XrayCompaction:
     """One compaction of a node's context: when, what started it and the context before and after."""
 
@@ -109,6 +133,7 @@ class XrayStation:
     loads: tuple[XrayLoad, ...]
     mcp: tuple[XrayMcpCluster, ...]
     compactions: tuple[XrayCompaction, ...]
+    hooks: tuple[XrayHookStretch, ...]
 
     def to_json(self) -> JsonObject:
         """The station as a JSON object."""
@@ -117,6 +142,7 @@ class XrayStation:
             "loads": objects(load.to_json() for load in self.loads),
             "mcp": objects(cluster.to_json() for cluster in self.mcp),
             "compactions": objects(item.to_json() for item in self.compactions),
+            "hooks": objects(item.to_json() for item in self.hooks),
         }
 
 
@@ -228,6 +254,14 @@ class XrayDown:
 
 
 @dataclass(frozen=True)
+class XrayUsage:
+    """What an agent's replies carried, per category, and what they cost."""
+
+    cost: XrayAgentCost
+    composition: XrayComposition
+
+
+@dataclass(frozen=True)
 class XrayAgentDetail:
     """What the page shows of an agent beyond the generic node: its context line, what it was handed, what it
     handed back (and how many times the context peak is that), how it ended and the prompts a person typed to it."""
@@ -242,6 +276,7 @@ class XrayAgentDetail:
     given: tuple[XrayGiven, ...]
     prompts: tuple[XrayPrompt, ...]
     brief: bool
+    usage: XrayUsage
     kind: NodeKind = "agent"
 
     def to_json(self) -> JsonObject:
@@ -258,6 +293,8 @@ class XrayAgentDetail:
             "given": objects(item.to_json() for item in self.given),
             "prompts": objects(item.to_json() for item in self.prompts),
             "brief": self.brief,
+            "cost": self.usage.cost.to_json(),
+            "composition": self.usage.composition.to_json(),
         }
 
 
@@ -297,14 +334,45 @@ class XrayWithheld:
 
 
 @dataclass(frozen=True)
+class XrayBurst:
+    """Children a node launched in one quick run: their ids, when the first went out, when the last came back (None
+    while any has not) and the size of what went down to them together."""
+
+    members: tuple[str, ...]
+    first_launch: float
+    last_return: float | None
+    down_tokens: int
+
+    def to_json(self) -> JsonObject:
+        """The burst as a JSON object."""
+        return {
+            "members": list(self.members),
+            "first_launch": self.first_launch,
+            "last_return": self.last_return,
+            "down_tokens": self.down_tokens,
+        }
+
+
+class ClusterItem(NamedTuple):
+    """One thing to merge by time: the key it merges under, when it happened, its size and its place in the list it
+    came from."""
+
+    key: str
+    t: float
+    tokens: int
+    position: int
+
+
+@dataclass(frozen=True)
 class XrayTree:
-    """Where a node hangs: its parent (None for a root), its depth, its children in launch order and how many nodes
-    hang below it."""
+    """Where a node hangs: its parent (None for a root), its depth, its children in launch order, how many nodes
+    hang below it and the bursts among its children."""
 
     parent: str | None
     depth: int
     children: tuple[str, ...]
     descendants: int
+    bursts: tuple[XrayBurst, ...]
 
 
 @dataclass(frozen=True)
@@ -348,6 +416,7 @@ class XrayNode:
             "withheld": None if self.withheld is None else self.withheld.to_json(),
             "child_sources": child_sources,
             "detail": self.detail.to_json(),
+            "bursts": objects(item.to_json() for item in self.tree.bursts),
         }
 
 

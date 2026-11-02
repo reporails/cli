@@ -48,7 +48,7 @@ def test_no_memory_unlinked_when_every_memory_file_is_linked_or_unknown() -> Non
 
 
 def _source(path: str, tokens: int | None, had_by: tuple[str, ...]) -> XraySource:
-    return XraySource(path, "instructions", path, path, tokens, None, "loaded", had_by, False)
+    return XraySource(path, "instructions", path, path, tokens, None, "loaded", had_by, False, None)
 
 
 def test_repeated_instructions_point_at_the_file_with_the_largest_extra() -> None:
@@ -64,7 +64,7 @@ def test_repeated_instructions_point_at_the_file_with_the_largest_extra() -> Non
 
 
 def test_an_mcp_server_in_two_contexts_is_not_a_repeated_instruction_file() -> None:
-    server = XraySource("mcp:n0", "mcp", "n0", None, 40, None, "loaded", ("main", "x"), False)
+    server = XraySource("mcp:n0", "mcp", "n0", None, 40, None, "loaded", ("main", "x"), False, None)
     assert not _of(build_facts((), (server,), (), ()), "repeated_instructions")
 
 

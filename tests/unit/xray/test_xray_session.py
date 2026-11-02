@@ -22,8 +22,8 @@ pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "eventbus" / "transcript"
 RUNNING = XrayCheck("running", None)
 TOP_KEYS = {
-    "version", "session", "project", "started_at", "length_s", "model", "window", "adapter", "nodes", "edges",
-    "sources", "stations", "track", "funnel", "facts", "check", "refusals", "not_known",
+    "version", "session", "project", "started_at", "length_s", "model", "window", "adapter", "price_list", "nodes",
+    "edges", "sources", "stations", "track", "funnel", "facts", "check", "refusals", "not_known",
 }  # fmt: skip
 HANDOFFS = "2.1.309-handoffs"
 NEW_TURN = (
@@ -194,8 +194,10 @@ def test_a_source_lists_what_could_load_with_its_size_findings_and_the_nodes_tha
     assert main.tokens_est == (root / "CLAUDE.md").stat().st_size // BYTES_PER_TOKEN > 0
     skill = by_id[".claude/skills/demo/SKILL.md"]
     assert (skill.kind, skill.availability, skill.had_by) == ("skill", "on_disk", ())
-    # Agent files and hook configs are no source.
-    assert not any(source.path and source.path.endswith(("helper.md", "settings.json")) for source in view.sources)
+    # A hook config is no source; an agent definition is one, launched by none here.
+    assert not any(source.path and source.path.endswith("settings.json") for source in view.sources)
+    helper = next(source for source in view.sources if source.path and source.path.endswith("helper.md"))
+    assert (helper.kind, helper.launches, helper.had_by) == ("agent", 0, ())
 
 
 def test_a_skills_supporting_file_is_no_artifact_of_its_own(tmp_path: Path) -> None:
@@ -345,8 +347,8 @@ def test_a_source_is_listed_when_the_harness_listing_names_it_and_the_funnel_cou
     skill = next(s for s in view.sources if s.name == "demo")
     assert (skill.availability, skill.had_by) == ("listed", ())
     rows = {row.kind: row for row in view.verdict.funnel}
-    # Rows carry source kinds only: a command folds into the skill row and agent files have none.
-    assert list(rows) == ["instructions", "skill"]
+    # Rows carry source kinds only: a command folds into the skill row.
+    assert list(rows) == ["instructions", "skill", "agent"]
     assert (rows["skill"].advertised, rows["skill"].loaded, rows["skill"].used) == (1, 0, 0)
     assert rows["instructions"].loaded == 1 and rows["instructions"].used is None
 

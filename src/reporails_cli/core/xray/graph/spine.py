@@ -9,11 +9,13 @@ from reporails_cli.core.platform.dto.events import ToolCategory
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary
 from reporails_cli.core.platform.dto.xray_build import ProducedCall, ProducedNode, SourceTable
 from reporails_cli.core.platform.dto.xray_graph import (
+    ClusterItem,
     LoadEvent,
     SourceKind,
     XrayBreak,
     XrayCall,
     XrayFailureRun,
+    XrayHookStretch,
     XrayMcpCluster,
     XraySlot,
     XrayWithheld,
@@ -23,6 +25,9 @@ from reporails_cli.core.platform.dto.xray_graph import (
 # MCP calls to one server merge into one cluster while the gap to the one before is at most this share of the
 # node's span.
 CLUSTER_GAP_SHARE = 0.09
+
+# Loads of one hook in a run that make a stretch rather than separate loads.
+HOOK_STRETCH_MIN = 2
 
 # Shell calls in a row with one command, all failed, that make a failure run.
 FAILURE_RUN_MIN = 3
@@ -39,8 +44,23 @@ def had_sources(node: ProducedNode) -> list[str]:
     return list(dict.fromkeys(ids))
 
 
-def slots(had: Sequence[str], sources: SourceTable, vocabulary: AdapterVocabulary) -> dict[SourceKind, XraySlot]:
-    """For each source kind of the vocabulary, how many sources of it the node had and their findings together."""
+def _agent_slot(node: ProducedNode, launched: bool, sources: SourceTable) -> list[int]:
+    """The `agent` slot of a node: a launched node has its own definition (count 1, that definition's findings) or
+    none when its type is built in; the root received the listing of every definition."""
+    definitions = [entry for entry in sources.entries if entry.kind == "agent"]
+    if not launched:
+        return [len(definitions), 0]
+    own = next((entry for entry in definitions if node.type is not None and entry.name == node.type), None)
+    if own is None:
+        return [0, 0]
+    return [1, 0 if own.findings is None else own.findings.count]
+
+
+def slots(
+    node: ProducedNode, launched: bool, had: Sequence[str], sources: SourceTable, vocabulary: AdapterVocabulary
+) -> dict[SourceKind, XraySlot]:
+    """For each source kind of the vocabulary, how many sources of it the node had and their findings together;
+    `launched` is whether a parent launched the node."""
     counts = {kind.key: [0, 0] for kind in vocabulary.source_kinds}
     for source_id in had:
         entry = sources.get(source_id)
@@ -48,6 +68,8 @@ def slots(had: Sequence[str], sources: SourceTable, vocabulary: AdapterVocabular
             continue
         counts[entry.kind][0] += 1
         counts[entry.kind][1] += 0 if entry.findings is None else entry.findings.count
+    if "agent" in counts:
+        counts["agent"] = _agent_slot(node, launched, sources)
     return {kind: XraySlot(count, findings) for kind, (count, findings) in counts.items()}
 
 
@@ -68,30 +90,49 @@ def track_calls(node: ProducedNode, vocabulary: AdapterVocabulary) -> tuple[Xray
     )
 
 
+def _runs(items: Sequence[ClusterItem], node: ProducedNode) -> list[list[ClusterItem]]:
+    """`items` grouped by key, each group split into runs of items close together in time: the gap to the item
+    before is at most `CLUSTER_GAP_SHARE` of the node's span."""
+    limit = CLUSTER_GAP_SHARE * (node.end - node.start)
+    groups: dict[str, list[list[ClusterItem]]] = {}
+    for item in sorted(items, key=lambda entry: entry.t):
+        runs = groups.setdefault(item.key, [])
+        if runs and item.t - runs[-1][-1].t <= limit:
+            runs[-1].append(item)
+        else:
+            runs.append([item])
+    return [run for runs in groups.values() for run in runs]
+
+
 def mcp_clusters(node: ProducedNode) -> tuple[XrayMcpCluster, ...]:
     """The node's MCP calls per server, merged into clusters of calls close together in time."""
-    limit = CLUSTER_GAP_SHARE * (node.end - node.start)
-    groups: dict[str, list[list[ProducedCall]]] = {}
-    for call in sorted(node.spine.calls, key=lambda item: item.t):
-        if call.mcp_source is None:
-            continue
-        runs = groups.setdefault(call.mcp_source, [])
-        if runs and call.t - runs[-1][-1].t <= limit:
-            runs[-1].append(call)
-        else:
-            runs.append([call])
+    items = [
+        ClusterItem(call.mcp_source, call.t, call.back_tokens_est or 0, number)
+        for number, call in enumerate(node.spine.calls)
+        if call.mcp_source is not None
+    ]
     clusters = [
-        XrayMcpCluster(
-            server,
-            run[0].t,
-            run[-1].t,
-            len(run),
-            sum(call.back_tokens_est or 0 for call in run),
-        )
-        for server, runs in groups.items()
-        for run in runs
+        XrayMcpCluster(run[0].key, run[0].t, run[-1].t, len(run), sum(item.tokens for item in run))
+        for run in _runs(items, node)
     ]
     return tuple(sorted(clusters, key=lambda item: item.first))
+
+
+def hook_stretches(node: ProducedNode, sources: SourceTable) -> tuple[tuple[XrayHookStretch, ...], frozenset[int]]:
+    """The node's hook loads that came close together, a run of two or more per hook as one stretch, and the
+    positions in `node.spine.loads` of the loads that went into a stretch."""
+    items = [
+        ClusterItem(load.source, load.t, load.tokens_est or 0, number)
+        for number, load in enumerate(node.spine.loads)
+        if load.t is not None and (entry := sources.get(load.source)) is not None and entry.kind == "hook"
+    ]
+    stretches = [
+        (XrayHookStretch(run[0].key, run[0].t, run[-1].t, len(run), sum(item.tokens for item in run)), run)
+        for run in _runs(items, node)
+        if len(run) >= HOOK_STRETCH_MIN
+    ]
+    stretches.sort(key=lambda found: found[0].first)
+    return tuple(found for found, _ in stretches), frozenset(item.position for _, run in stretches for item in run)
 
 
 def failure_runs(node: ProducedNode) -> tuple[XrayFailureRun, ...]:

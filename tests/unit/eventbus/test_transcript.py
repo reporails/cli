@@ -837,3 +837,58 @@ def test_the_adapter_says_which_assistant_row_holds_a_call() -> None:
     assert adapter.holds_call(row, "toolu_1") and not adapter.holds_call(row, "toolu_2")
     assert not adapter.holds_call({**row, "type": "user"}, "toolu_1")
     assert not adapter.holds_call(_assistant_row(content="plain"), "toolu_1")
+
+
+def test_a_reply_carries_output_and_the_cache_write_split_through_the_stored_record() -> None:
+    usage = {
+        "input_tokens": 1,
+        "cache_creation_input_tokens": 30,
+        "cache_read_input_tokens": 3,
+        "output_tokens": 7,
+        "cache_creation": {"ephemeral_5m_input_tokens": 10, "ephemeral_1h_input_tokens": 20},
+    }
+    row = _assistant_row()
+    as_object(row["message"])["usage"] = usage
+    (record,) = ClaudeTranscriptAdapter().resolve_row(row, None)
+    assert record.usage is not None
+    assert (record.usage.output_tokens, record.usage.cache_write_5m_tokens, record.usage.cache_write_1h_tokens) == (
+        7,
+        10,
+        20,
+    )
+    assert EventRecord.from_json(record.to_json()).usage == record.usage
+
+
+def test_a_reply_without_the_new_counts_reads_them_as_none_and_an_old_stored_record_still_loads() -> None:
+    (record,) = ClaudeTranscriptAdapter().resolve_row(_assistant_row(), None)
+    assert record.usage is not None
+    assert (record.usage.output_tokens, record.usage.cache_write_5m_tokens, record.usage.cache_write_1h_tokens) == (
+        None,
+        None,
+        None,
+    )
+    stored = record.to_json()
+    old_usage = {
+        key: value
+        for key, value in as_object(stored["usage"]).items()
+        if not key.endswith(("_5m_tokens", "_1h_tokens", "output_tokens"))
+    }
+    loaded = EventRecord.from_json({**stored, "usage": old_usage}).usage
+    assert loaded is not None and loaded.output_tokens is None and loaded.input_tokens == 1
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"output_tokens": "many"},
+        {"output_tokens": 1.5},
+        {"cache_creation": {"ephemeral_5m_input_tokens": "x"}},
+        {"cache_creation": [1]},
+    ],
+)
+def test_a_present_count_that_is_not_a_whole_number_refuses_the_row(bad: JsonObject) -> None:
+    row = _assistant_row()
+    usage = as_object(as_object(row["message"])["usage"])
+    as_object(row["message"])["usage"] = {**usage, **bad}
+    with pytest.raises(PayloadRefused):
+        ClaudeTranscriptAdapter().resolve_row(row, None)

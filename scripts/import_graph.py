@@ -65,10 +65,21 @@ ALLOWED: dict[str, set[str]] = {
         "utils",
     },
     # The session view reads the event bus, the expected-loads listing and discovery; it holds no mapper,
-    # lint or heal import of its own.
+    # lint or heal import of its own; the bundled price list is located through the `bundled` package.
     "xray": {
-        "eventbus", "pipeline", "discovery", "cache", "contract", "dto", "policy", "adapters", "runtime", "config",
-        "observability", "utils",
+        "eventbus",
+        "pipeline",
+        "discovery",
+        "cache",
+        "contract",
+        "dto",
+        "policy",
+        "adapters",
+        "runtime",
+        "config",
+        "observability",
+        "utils",
+        "bundled",
     },
 }
 
