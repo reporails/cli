@@ -12,7 +12,6 @@ from pathlib import Path, PureWindowsPath
 
 import typer
 
-from reporails_cli.core.discovery.project_root import git_root
 from reporails_cli.core.platform.adapters.programs import ProgramRun, run_program, run_uv_tool
 from reporails_cli.core.platform.config.bootstrap import env_text, environment_without
 from reporails_cli.core.platform.config.credentials import effective_tier
@@ -388,7 +387,7 @@ def _install_agent_plugin(agent: str, project: bool = False) -> bool:
         console.print(f"  [dim]Run by hand: {manual}[/dim]")
         return False
     scoped = project and agent == "claude"
-    root = (git_root(Path.cwd()) or Path.cwd()) if scoped else None
+    root = Path.cwd() if scoped else None
     where = f" for this project ({root})" if root else ""
     console.print(f"  Installing the plugin into {label}{where}...")
     source = _plugin_source()
@@ -452,9 +451,16 @@ def install(
     with collaborators through the project's Claude Code settings; Codex
     installs for your user.
     """
+    from reporails_cli.core.discovery.project_root import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        home_folder,
+    )
     from reporails_cli.core.platform.adapters.api_key import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         has_api_key,
     )
+
+    if project and Path.cwd().resolve() == home_folder():
+        console.print("[red]Error:[/red] --project needs a project folder; run it inside one, not the home folder.")
+        raise typer.Exit(2)
 
     console.print("[bold]Installing the reporails engine (CLI + MCP server)...[/bold]")
     _install_to_path()

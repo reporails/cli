@@ -81,7 +81,7 @@ class SuppressionIndex(dict[tuple[str, int], set[str]]):
 ImportedPlaces = Mapping[tuple[str, int], tuple[str, int]]
 
 
-def _index_file(index: SuppressionIndex, rel: str, path: Path) -> None:
+def _index_file(index: SuppressionIndex, rel: str, path: Path, boundary: Path) -> None:
     """Read `path`, expand its imports and record each directive into `index`.
 
     A directive written in the file itself is keyed under `rel` and its source line;
@@ -93,7 +93,7 @@ def _index_file(index: SuppressionIndex, rel: str, path: Path) -> None:
     except OSError:
         return
     try:
-        text, line_map, origins = expand_imports_with_origins(raw, path)
+        text, line_map, origins = expand_imports_with_origins(raw, path, boundary)
     except (OSError, UnicodeDecodeError, RecursionError):
         text, line_map, origins = raw, list(range(1, len(raw.split("\n")) + 1)), []
     for lineno, rules in parse_directives(text).items():
@@ -127,7 +127,7 @@ def build_index(
     for rel in set(finding_files):
         path = resolve_finding_path(rel, project_root)
         if path is not None:
-            _index_file(index, rel, path)
+            _index_file(index, rel, path, project_root or path.parent)
     return index
 
 

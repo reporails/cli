@@ -273,7 +273,8 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None = Non
     # The mtime hash walks the scan root the pipeline discovers from: a FILE target's root is its
     # enclosing project, never the bare file path (which reads as an empty directory and would
     # keep a same-content repeat validate from ever hitting the cached reply).
-    scan_root = resolve_scan_target(target)[0]
+    # project folder: set by the MCP layer
+    scan_root = resolve_scan_target(target, Path.cwd().resolve())[0]
 
     tokens = target_tokens(targets)
     state, unchanged, base_hash = await _begin_validate_call(path, tokens, full, target, scan_root)
@@ -339,7 +340,8 @@ async def _heal_apply_reply(path: str, targets: list[str] | None = None) -> str:
     model_error = await asyncio.to_thread(model_not_ready_error)
     if model_error is not None or not target.exists():
         return heal_apply_message(model_error or {"error": f"Path not found: {target}"})
-    scan_root = resolve_scan_target(target)[0]
+    # project folder: set by the MCP layer
+    scan_root = resolve_scan_target(target, Path.cwd().resolve())[0]
     result = await _fresh_validate_payload(path, target_tokens(targets), scan_root, _CircuitState())
     if isinstance(result, dict):
         return heal_apply_message(result)

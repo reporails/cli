@@ -13,7 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import get_known_agents
-from reporails_cli.core.discovery.project_root import resolve_project_root, resolve_project_root_for_file
+from reporails_cli.core.discovery.project_root import user_level_agent_dir
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.lint.regex.not_evaluated import not_evaluated_scope
@@ -57,21 +57,20 @@ def rules_missing_message() -> str:
 NOTHING_LEFT_OUT = LeftOut()
 
 
-def resolve_scan_target(target: Path) -> tuple[Path, Path | None]:
-    """Map a target to `(scan_root, single_file)`.
+def resolve_scan_target(target: Path, project_root: Path) -> tuple[Path, Path | None]:
+    """Map a target to `(scan_root, single_file)` for a run in `project_root`.
 
-    A directory target roots at itself (`resolve_project_root`, CLI parity). A FILE target cannot use that
-    same function: it resolves to `target.parent`, which is right for the CLI only because the CLI's actual
-    single-file root is the invoking terminal's `cwd`, not the file's directory (see
-    `resolve_project_root_for_file`'s docstring). A caller with no cwd to read walks a file target up to the
-    real project root instead, matching what the CLI resolves when a human `cd`s there first; otherwise
-    `.claude/rules/style.md` roots at `.claude/rules`, which misclassifies the file and never shares the
-    CLI's whole-map cache entry for the same file.
+    A file inside `project_root` is checked in that project; a file outside it roots at its own folder.
+    A folder outside `project_root`, or `project_root` itself, roots at itself; a folder inside it stays
+    in the project, scoped to that folder by the caller.
     """
 
+    user_dir = user_level_agent_dir(target)
+    if user_dir is not None:
+        return user_dir, target if target.is_file() else None
     if target.is_file():
-        return resolve_project_root_for_file(target), target
-    return resolve_project_root(target), None
+        return (project_root if target.is_relative_to(project_root) else target.parent), target
+    return (project_root if target != project_root and target.is_relative_to(project_root) else target), None
 
 
 def discover_files(
@@ -186,7 +185,8 @@ def model_refusal() -> Refusal | None:
 def scope_for_path(path: str, named: frozenset[Path] = frozenset()) -> Scope | Refusal:
     """The files a check at `path` covers, or why there is nothing to check.
 
-    A directory `path` roots at itself and a file `path` at its project, with that one file checked. For a
+    A `path` inside the current folder is checked in that folder's project, a directory narrowing it to the
+    files under it. A `path` outside it roots at itself (a directory) or at its own folder (a file). For a
     directory `path`, `named` holds files the caller named, which are checked whatever is excluded; for a
     file `path` it is ignored. The refusal is `rules_missing`, `path_not_found`, `unknown_agent`,
     `empty_project` or a model set that is not ready.
@@ -196,13 +196,22 @@ def scope_for_path(path: str, named: frozenset[Path] = frozenset()) -> Scope | R
     target = Path(path).resolve()
     if not target.exists():
         return Refusal("path_not_found", f"Path not found: {target}")
-    scan_root, single_file = resolve_scan_target(target)
+    scan_root, single_file = resolve_scan_target(target, Path.cwd().resolve())
     discovery = discover_files(scan_root, single_file=single_file, named=named)
     if isinstance(discovery, Refusal):
         return discovery
     model_error = model_refusal()
     if model_error is not None:
         return model_error
+    if single_file is None and target != scan_root and target.is_relative_to(scan_root):
+        inside = [f for f in discovery.instruction_files if safe_resolve(f).is_relative_to(target)]
+        if not inside:
+            return Refusal(
+                "empty_project", f"No instruction files found in {target}", target, discovery.left_out.record
+            )
+        discovery = Discovered(
+            discovery.filter_agents, discovery.effective_agent, inside, discovery.file_type_by_path, discovery.left_out
+        )
     return Scope(scan_root, single_file, *discovery)
 
 

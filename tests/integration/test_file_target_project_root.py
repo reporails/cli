@@ -1,8 +1,6 @@
-"""A file target roots on its own project, never on the home directory or an unrelated folder.
+"""A file target roots on the folder the command runs in, never on the home directory or an unrelated folder.
 
-A user-level agent folder (`~/.claude`) is checked on its own: nothing outside it is read. Only an
-agent's own config folder gives a project boundary when no `.git`, `.ails` or IDE folder exists
-above the file, and the outermost one wins.
+A user-level agent folder (`~/.claude`) is checked on its own: nothing outside it is read.
 """
 
 from __future__ import annotations
@@ -15,7 +13,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.discovery.project_root import resolve_project_root_for_file
+from reporails_cli.core.discovery.project_root import user_level_agent_dir
 from reporails_cli.core.pipeline import check_one
 from reporails_cli.interfaces.cli import check_orchestration as orch
 from reporails_cli.interfaces.cli.main import app
@@ -107,8 +105,8 @@ def _findings(payload: dict) -> set[tuple[str, int]]:
 @pytest.mark.subsys_cli_ux
 def test_a_user_level_agent_folder_is_its_own_project_root(scratch_home: Path) -> None:
     main, config = _write_user_level(scratch_home)
-    assert resolve_project_root_for_file(main) == scratch_home / ".claude"
-    assert resolve_project_root_for_file(config) == scratch_home / ".claude"
+    assert user_level_agent_dir(main) == scratch_home / ".claude"
+    assert user_level_agent_dir(config) == scratch_home / ".claude"
 
 
 @pytest.mark.unit
@@ -116,7 +114,7 @@ def test_a_user_level_agent_folder_is_its_own_project_root(scratch_home: Path) -
 def test_a_user_level_file_roots_the_same_when_checked_from_the_home_directory(scratch_home: Path) -> None:
     main, _ = _write_user_level(scratch_home)
     assert orch._scan_root(main, main, scratch_home) == (None, scratch_home / ".claude")
-    assert check_one.resolve_scan_target(main) == (scratch_home / ".claude", main)
+    assert check_one.resolve_scan_target(main, scratch_home) == (scratch_home / ".claude", main)
 
 
 @pytest.mark.integration
@@ -163,75 +161,23 @@ def test_a_user_level_file_draws_the_findings_it_draws_as_a_project_file(scratch
         assert user_findings == _findings(_check(elsewhere, project_file))
 
 
-@pytest.mark.unit
-@pytest.mark.subsys_cli_ux
-def test_a_hidden_folder_that_is_not_an_agent_folder_is_no_project_boundary(tmp_path: Path) -> None:
-    notes = tmp_path / "a" / ".config" / "tool" / "sub"
-    notes.mkdir(parents=True)
-    (notes / "notes.md").write_text("# Notes\n", encoding="utf-8")
-    assert resolve_project_root_for_file(notes / "notes.md") == notes
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_cli_ux
-def test_a_hidden_folder_inside_an_agent_folder_does_not_end_the_walk(tmp_path: Path) -> None:
-    hidden = tmp_path / "proj" / ".claude" / "skills" / ".hidden"
-    hidden.mkdir(parents=True)
-    (hidden / "SKILL.md").write_text("# Skill\n", encoding="utf-8")
-    assert resolve_project_root_for_file(hidden / "SKILL.md") == tmp_path / "proj"
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_cli_ux
-def test_the_outermost_agent_folder_wins(tmp_path: Path) -> None:
-    inner = tmp_path / "proj" / ".claude" / "skills" / "x" / ".codex"
-    inner.mkdir(parents=True)
-    (inner / "note.md").write_text("# Note\n", encoding="utf-8")
-    assert resolve_project_root_for_file(inner / "note.md") == tmp_path / "proj"
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_cli_ux
-def test_stronger_markers_still_decide_the_root(tmp_path: Path) -> None:
-    (tmp_path / "git-proj" / ".git").mkdir(parents=True)
-    (tmp_path / "git-proj" / "pkg" / ".claude").mkdir(parents=True)
-    git_file = tmp_path / "git-proj" / "pkg" / ".claude" / "x.md"
-    git_file.write_text("# X\n", encoding="utf-8")
-    assert resolve_project_root_for_file(git_file) == tmp_path / "git-proj"
-
-    (tmp_path / "ide-proj" / ".vscode").mkdir(parents=True)
-    (tmp_path / "ide-proj" / ".claude").mkdir()
-    ide_file = tmp_path / "ide-proj" / ".claude" / "x.md"
-    ide_file.write_text("# X\n", encoding="utf-8")
-    assert resolve_project_root_for_file(ide_file) == tmp_path / "ide-proj"
-
-    (tmp_path / "ails-proj" / ".ails").mkdir(parents=True)
-    (tmp_path / "ails-proj" / ".ails" / "backbone.yml").write_text("modules: []\n", encoding="utf-8")
-    (tmp_path / "ails-proj" / "deep" / ".claude").mkdir(parents=True)
-    ails_file = tmp_path / "ails-proj" / "deep" / ".claude" / "x.md"
-    ails_file.write_text("# X\n", encoding="utf-8")
-    assert resolve_project_root_for_file(ails_file) == tmp_path / "ails-proj"
-
-
 @pytest.mark.integration
 @pytest.mark.subsys_cli_ux
 @pytest.mark.requires_model
-def test_a_misspelled_hook_event_is_reported_in_a_project_with_no_git_checked_from_anywhere(
-    scratch_home: Path, tmp_path: Path
+def test_a_misspelled_hook_event_is_reported_in_a_project_with_no_git_checked_from_the_project(
+    scratch_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     project = scratch_home / "proj"
     (project / ".claude").mkdir(parents=True)
     settings = project / ".claude" / "settings.json"
     settings.write_text(_BAD_HOOK_SETTINGS, encoding="utf-8")
     (project / "CLAUDE.md").write_text(_MAIN_TEXT, encoding="utf-8")
-    elsewhere = tmp_path / "elsewhere"
-    elsewhere.mkdir()
 
-    assert resolve_project_root_for_file(settings) == project
-    assert orch._scan_root(settings, settings, elsewhere) == (None, project)
-    assert check_one.resolve_scan_target(settings) == (project, settings)
+    assert orch._scan_root(settings, settings, project) == (None, project)
+    assert check_one.resolve_scan_target(settings, project) == (project, settings)
 
-    cli = _check(elsewhere, settings)
+    monkeypatch.chdir(project)
+    cli = _check(project, settings)
     assert list(cli["files"]) == [".claude/settings.json"]
     assert ("CLAUDE:G:0001", 1) in _findings(cli)
     mcp = tools.run_pipeline_for_path(str(settings), full=True)[0]

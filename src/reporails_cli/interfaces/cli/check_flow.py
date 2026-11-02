@@ -208,9 +208,6 @@ def _flow_targets(state: CheckState) -> None:
         state.targets.single_path, state.targets.single_file, state.inputs.project_root
     )
     state.targets.subtree_scoped = state.targets.subtree is not None
-    if state.targets.subtree is not None and not state.targets.path_targets and not state.targets.capability_specs:
-        # No target named, run from inside an agent configuration folder: the folder is the scope.
-        state.targets.path_targets.add(state.targets.subtree)
     state.targets.output_format = state.inputs.format_opt or _default_format()
 
     root_targeted = any(t == state.inputs.project_root for t in state.targets.path_targets)

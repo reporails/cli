@@ -8,8 +8,17 @@ derivation, and both the text and JSON formatters. No in-process ``CliRunner``.
 
 from __future__ import annotations
 
+import subprocess
+
 from behave import given, then, when  # type: ignore[import-untyped]
-from support import build_project, findings, run_ails, write_claude  # behave puts features/ on sys.path
+from support import (  # behave puts features/ on sys.path
+    build_project,
+    document,
+    findings,
+    run_ails,
+    write_claude,
+    write_config,
+)
 
 # A sparse instruction file with real error findings; the rich rewrite carries more
 # structure, specificity, and backticked constructs, so the finding set changes.
@@ -106,3 +115,48 @@ def step_determinism(context):
 def step_reacts_to_edit(context):
     assert len(context.runs) >= 2, "need a baseline run and a post-edit run"
     assert context.runs[-1] != context.runs[0], "pipeline did not react to the persisted edit"
+
+
+def _json_files(context) -> dict:
+    return document(context.result).get("files", {})
+
+
+@given('a git project whose "sub/CLAUDE.md" has findings that the project config disables')
+def step_nested_file_with_project_config(context):
+    context.project = build_project(context.tmpdir)
+    nested = context.project / "sub"
+    nested.mkdir()
+    write_claude(context.project, _RICH)
+    (nested / "CLAUDE.md").write_text(_SPARSE, encoding="utf-8")
+    baseline = document(run_ails(context.project, "check", "sub/CLAUDE.md", "--format", "json", home=context.home))
+    rules = sorted({f["rule"] for record in baseline["files"].values() for f in record.get("findings", [])})
+    assert rules, "the baseline run reported no rule, so nothing was disabled"
+    write_config(context.project, "disabled_rules:\n" + "".join(f"  - {rule}\n" for rule in rules))
+
+
+@given('a git project "proj" elsewhere with a CLAUDE.md and a "docs/CLAUDE.md"')
+def step_other_project(context):
+    context.elsewhere = context.tmpdir / "elsewhere"
+    proj = context.elsewhere / "proj"
+    (proj / "docs").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=proj, check=True)
+    (proj / "CLAUDE.md").write_text(_SPARSE, encoding="utf-8")
+    (proj / "docs" / "CLAUDE.md").write_text(_SPARSE, encoding="utf-8")
+    context.project = context.tmpdir / "cwd"
+    context.project.mkdir()
+
+
+@when('I run "ails check" on "{target}" from the folder beside it')
+def step_run_elsewhere(context, target):
+    absolute = str(context.elsewhere / target)
+    context.result = run_ails(context.project, "check", absolute, "--format", "json", home=context.home)
+
+
+@then('the json files map contains only "{name}"')
+def step_json_files_only(context, name):
+    assert sorted(_json_files(context)) == [name], sorted(_json_files(context))
+
+
+@then("that file carries no finding")
+def step_file_no_finding(context):
+    assert not findings(context.result), [f["rule"] for f in findings(context.result)]

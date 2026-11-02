@@ -307,7 +307,7 @@ def test_each_expanded_line_knows_the_file_and_line_it_is_written_in(tmp_path: P
     from reporails_cli.core.mapper.imports import expand_imports_with_origins
 
     main = _import_fixture(tmp_path)
-    expanded, line_map, origins = expand_imports_with_origins(main.read_text(encoding="utf-8"), main)
+    expanded, line_map, origins = expand_imports_with_origins(main.read_text(encoding="utf-8"), main, main.parent)
     by_text = dict(zip(expanded.split("\n"), zip(line_map, origins, strict=True), strict=False))
     assert by_text["Run the tests."] == (3, None)
     assert by_text["Keep the diff small."] == (5, (tmp_path / "docs" / "style.md", 3))
@@ -321,7 +321,7 @@ def test_an_imported_atom_keeps_the_import_line_and_names_where_it_is_written(tm
     from reporails_cli.core.mapper.imports import expand_imports_with_origins
 
     main = _import_fixture(tmp_path)
-    expanded, line_map, origins = expand_imports_with_origins(main.read_text(encoding="utf-8"), main)
+    expanded, line_map, origins = expand_imports_with_origins(main.read_text(encoding="utf-8"), main, main.parent)
     atoms = {a.text: a for a in _tokenize_and_cache(main, expanded, line_map, origins, "legacy")}
     kept = atoms["Keep the diff small."]
     assert (kept.line, kept.imported_from, kept.imported_line) == (5, "docs/style.md", 3)

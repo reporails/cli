@@ -110,28 +110,40 @@ def test_run_pipeline_for_path_does_not_scope_a_directory_target(monkeypatch, tm
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_resolve_scan_target_roots_a_nested_file_at_the_project_root(tmp_path):
-    (tmp_path / ".git").mkdir()
+def test_resolve_scan_target_keeps_the_project_for_a_file_inside_it(tmp_path):
     rules_dir = tmp_path / ".claude" / "rules"
     rules_dir.mkdir(parents=True)
     target = rules_dir / "style.md"
     target.write_text("# Style\n", encoding="utf-8")
 
-    scan_root, single_file = check_one.resolve_scan_target(target)
-
-    assert scan_root == tmp_path
-    assert single_file == target
+    assert check_one.resolve_scan_target(target, tmp_path) == (tmp_path, target)
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_resolve_scan_target_directory_still_roots_at_itself(tmp_path):
-    """A directory target keeps CLI parity via `resolve_project_root` — unaffected by
-    the file-target fix above."""
-    scan_root, single_file = check_one.resolve_scan_target(tmp_path)
+def test_resolve_scan_target_roots_a_file_outside_the_project_at_its_folder(tmp_path):
+    project = tmp_path / "proj"
+    other = tmp_path / "other" / "sub"
+    project.mkdir()
+    other.mkdir(parents=True)
+    target = other / "CLAUDE.md"
+    target.write_text("# Doc\n", encoding="utf-8")
 
-    assert scan_root == tmp_path
-    assert single_file is None
+    assert check_one.resolve_scan_target(target, project) == (other, target)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_resolve_scan_target_folders(tmp_path):
+    project = tmp_path / "proj"
+    inside = project / "docs"
+    outside = tmp_path / "other"
+    inside.mkdir(parents=True)
+    outside.mkdir()
+
+    assert check_one.resolve_scan_target(project, project) == (project, None)
+    assert check_one.resolve_scan_target(outside, project) == (outside, None)
+    assert check_one.resolve_scan_target(inside, project) == (project, None)
 
 
 # ---------------------------------------------------------------------------

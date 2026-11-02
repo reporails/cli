@@ -22,12 +22,7 @@ import typer
 
 from reporails_cli.core.classify.capability_paths import TargetError, looks_like_windows_path, sniff_agent
 from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
-from reporails_cli.core.discovery.project_root import (
-    agent_dir_names,
-    resolve_project_root_for_file,
-    root_markers,
-    user_level_agent_dir,
-)
+from reporails_cli.core.discovery.project_root import user_level_agent_dir
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.heal.apply import resolved_within, suppressed_by_path
 from reporails_cli.core.platform.adapters.notices_seen import due_notices
@@ -130,186 +125,25 @@ def _resolved_within_target(f: Path, target: Path) -> bool:
     return resolved_within(f, target)
 
 
-def _is_project_root(directory: Path) -> bool:
-    """True when `directory` is itself a project root, not a slice of the enclosing one.
-
-    Two markers, both read off disk at `directory`'s own top level:
-
-    * an `.ails/` directory — the validator's own project marker; or
-    * a supported agent's MAIN instruction file together with a config directory of
-      that same agent (`CLAUDE.md` + `.claude/`, `.github/copilot-instructions.md` +
-      `.github/`). Both halves are required: a monorepo package carrying its own
-      agent surfaces is a root, a directory holding only a stray main file is not.
-
-    An agent's own config directory (`.claude/`, `.codex/`, …) is never a root, whatever
-    it contains — a `CLAUDE.md` that someone dropped inside `.claude/` is a misplaced
-    file in THIS project, not the root of another one.
-    """
-    if directory.name in agent_dir_names():
-        return False
-    if (directory / ".ails").is_dir():
-        return True
-    return any(
-        any(_has_file(directory, main) for main in mains) and any((directory / d).is_dir() for d in dirs)
-        for mains, dirs in root_markers()
-    )
-
-
-def _has_file(directory: Path, rel: str) -> bool:
-    """Whether `rel` is a file under `directory`, its name matched whatever its case (`claude.md`), as
-    discovery finds instruction files."""
-    path = directory / rel
-    if path.is_file():
-        return True
-    try:
-        entries = list(path.parent.iterdir()) if path.parent.is_dir() else []
-    except OSError:
-        return False
-    return any(e.name.lower() == path.name.lower() and e.is_file() for e in entries)
-
-
-def _has_any_main_file(directory: Path) -> bool:
-    """True when `directory` holds any supported agent's MAIN instruction file at its own
-    top level, its config directory or not.
-
-    Looser than `_is_project_root`'s paired check — used only to tell whether the
-    ENCLOSING root has agent surfaces of its own, never to decide the target's own
-    root-ness (that stays paired, so a stray main file inside a real slice does not
-    turn the slice into a root).
-    """
-    return any(_has_file(directory, main) for mains, _ in root_markers() for main in mains)
-
-
-def _has_project_markers(directory: Path) -> bool:
-    """True when `directory` already carries a project marker of its own at its own top
-    level: an `.ails/` directory, any supported agent's config directory (`.claude/`,
-    `.codex/`, …, per `agent_dir_names`), or any supported agent's MAIN instruction file.
-
-    The same markers `_is_project_root` inspects, but without requiring the main-file +
-    config-dir pairing — used only to tell whether the ENCLOSING root already anchors a
-    project of its own, so the bare-main-file branch below never fires under it. Without
-    the config-dir and `.ails/` halves, a project that carries rules or skills but no main
-    file at its own root (a `.claude/rules/`-only project) read as agent-less, so a bare
-    main file dropped inside its `.claude/` still won anchoring and split the run off from
-    the project's own rules and skills.
-    """
-    if (directory / ".ails").is_dir():
-        return True
-    if any((directory / d).is_dir() for d in agent_dir_names()):
-        return True
-    return _has_any_main_file(directory)
-
-
-def _enclosing_project(path: Path, project_root: Path) -> Path:
-    """The project a FILE or FOLDER target sits in: `project_root` (the cwd's project) when the
-    target lies inside it, so a nested target stays scoped to the whole project it belongs to,
-    never re-rooted onto its own package/skill folder. A target OUTSIDE `project_root` walks up
-    from itself (`resolve_project_root_for_file`, the same function MCP's `validate` tool uses)
-    to find its own real project, since `project_root` there is not that project at all. When
-    `project_root` is no project (a parent holding several checkouts, a temp folder, `/`), a
-    real project root found above the target scopes the run, never the unrelated folder around it."""
-    if not path.is_relative_to(project_root):
-        return resolve_project_root_for_file(path)
-    if _has_project_markers(project_root):
-        return project_root
-    own = resolve_project_root_for_file(path)
-    if own != project_root and own.is_relative_to(project_root) and _is_own_project(own):
-        return own
-    return project_root
-
-
-def _file_target_root(single_file: Path, project_root: Path) -> Path:
-    """Root for a lone FILE target: its enclosing project (`_enclosing_project`). A file in the
-    user's own agent folder (`~/.claude`) roots on that folder alone, wherever the command runs from."""
-    user_dir = user_level_agent_dir(single_file)
-    if user_dir is not None:
-        return user_dir
-    return _enclosing_project(single_file, project_root)
-
-
-def _is_own_project(directory: Path) -> bool:
-    """True when `directory` is a project root of its own: a `.git` folder, or the markers `_is_project_root` reads."""
-    return (directory / ".git").exists() or _is_project_root(directory)
-
-
-def _agent_config_holder(directory: Path, project_root: Path) -> Path | None:
-    """The project that holds `directory` when it is an agent's own configuration folder (`.claude/`,
-    `.codex/`, …) or a folder inside one (`.claude/rules/`), named from outside that project, from a
-    folder that is no project, or run from inside it (the current folder is `project_root`), else None.
-
-    Such a folder is never a project of its own; its rules and skills belong to the project around it.
-    """
-    if user_level_agent_dir(directory):
-        return None
-    if directory != project_root and directory.is_relative_to(project_root) and _has_project_markers(project_root):
-        return None
-    holder = resolve_project_root_for_file(directory)
-    if holder == directory or not directory.is_relative_to(holder):
-        return None
-    return holder if directory.relative_to(holder).parts[0] in agent_dir_names() else None
-
-
 def _scan_root(single_path: Path | None, single_file: Path | None, project_root: Path) -> tuple[Path | None, Path]:
     """Resolve a lone path target to `(subtree, scan_root)`.
 
-    A lone FILE target keeps today's root (`project_root`, the project resolved from the
-    invoking terminal's cwd) whenever the file lies INSIDE that root — a nested child file
-    (`packages/api/CLAUDE.md`, a skill's `SKILL.md`) stays scoped to the whole project it
-    belongs to, exactly as before; walking up FROM the file here would anchor it at
-    whatever marker-bearing directory happens to sit above it (its own package, its own
-    skill folder), silently re-rooting and re-scoping a file that was never meant to be
-    its own project. Only a file OUTSIDE `project_root` — given from elsewhere entirely
-    (`cd /tmp && ails check /abs/proj/CLAUDE.md`), or above the cwd within its own project
-    (`cd proj/.claude && ails check ../CLAUDE.md`) — walks up from the file itself
-    (`resolve_project_root_for_file`, the same function MCP's `validate` tool uses) to
-    find that file's real project, since `project_root` there is not that project at all.
-
-    A lone DIRECTORY target resolves by one question — is it a project root of its own? —
-    asked against the project it sits in (`_enclosing_project`, the walk a file target
-    takes), so a folder named from a terminal outside its project reads the same as when named
-    from within.
-
-    * A root (another checkout, or a monorepo package carrying its own `.ails/` or
-      `CLAUDE.md` + `.claude/`) is anchored as its own scan root and keeps its own path
-      keys and level. So is a folder that is its own project (the current folder, or the
-      walk up from it ends at the folder itself).
-    * A directory holding any project marker (a bare main instruction file, an agent
-      config directory without a main file, an `.ails/`) is ALSO anchored as its own root
-      when the enclosing project carries no project marker of its own (no `.ails/`,
-      no agent config directory, no main file —
-      `_has_project_markers`, mirroring `_is_project_root`'s own marker check) —
-      anchoring at that enclosing root would detect no agent at all and silently drop
-      the target, the same way a lone `CLAUDE.md` repo checked from its parent must
-      still be found. An enclosing project that already carries a marker of its own (an
-      `.ails`- or `.claude/rules/`-anchored project, say) keeps the folder as
-      a slice instead, so its own rules and skills are not split off from it.
-    * Anything else inside the enclosing project is a SLICE of it. Discovery finds an
-      agent's surfaces (`.claude/rules/`, `.claude/skills/`) only relative to the
-      project root, so the scan stays anchored there and is narrowed to the subtree —
-      `subtree` names it for the caller.
-
-    Deciding on the root marker rather than on "did anchoring here find anything"
-    matters for a slice that discovery can partly resolve on its own: anchoring at
-    `.claude/` finds a stray `.claude/CLAUDE.md` and nothing else, so an
-    empty-result fallback never fires and the rules and skills underneath are silently
-    dropped from the run.
+    The folder the command runs in (`project_root`) is the project root. A target inside it, file or
+    folder, agent configuration folders included, is scoped inside that project: the root stays
+    `project_root` and `subtree` names a folder target narrower than it. A target outside it roots
+    at itself (a folder) or at its own folder (a file). A path under the user's own agent folder
+    (`~/.claude`) roots on that folder alone.
     """
-    if single_file is None:
-        # The folder in scope is the target, or the current folder when none is named.
-        scoped = single_path or project_root
-        holder = _agent_config_holder(scoped, project_root)
-        if holder is not None:
-            return scoped, holder
     if single_path is None:
         return None, project_root
-    if single_file is not None:
-        return None, _file_target_root(single_file, project_root)
-    enclosing = _enclosing_project(single_path, project_root)
-    if single_path == enclosing or not single_path.is_relative_to(enclosing):
-        return None, single_path
-    if _is_project_root(single_path) or (not _has_project_markers(enclosing) and _has_project_markers(single_path)):
-        return None, single_path
-    return single_path, enclosing
+    user_dir = user_level_agent_dir(single_path)
+    if user_dir is not None:
+        return None, user_dir
+    if not single_path.is_relative_to(project_root):
+        return None, single_path.parent if single_file is not None else single_path
+    if single_file is not None or single_path == project_root:
+        return None, project_root
+    return single_path, project_root
 
 
 def _existing_target_root(token: str, project_root: Path) -> Path | None:

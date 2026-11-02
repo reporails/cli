@@ -29,7 +29,8 @@ def prepare_for_path(path: str, targets: list[str] | None = None) -> JsonObject:
         tokens = target_tokens(targets)
         target = Path(path).resolve()
         if tokens and target.exists():
-            resolved = resolve_validate_targets(tokens, resolve_scan_target(target)[0])
+            # project folder: set by the MCP layer
+            resolved = resolve_validate_targets(tokens, resolve_scan_target(target, Path.cwd().resolve())[0])
             if isinstance(resolved, dict):
                 return resolved
             named = named_files(resolved)

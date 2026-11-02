@@ -54,7 +54,7 @@ def test_code_holds_no_link_or_import(text: str, tmp_path: Path) -> None:
     assert _outgoing_links(doc) == []
     assert not (extract_markdown_links(tmp_path, {}, classified).annotations or {})
     assert not (extract_imports(tmp_path, {}, classified).annotations or {})
-    assert expand_imports(text, doc) == text
+    assert expand_imports(text, doc, doc.parent) == text
 
 
 @pytest.mark.unit
@@ -129,7 +129,7 @@ def test_expansion_splices_import_after_a_code_span(tmp_path: Path) -> None:
     (tmp_path / "child.md").write_text("CHILD")
     src = tmp_path / "CLAUDE.md"
     text = "``@child.md`` then @child.md\n"
-    assert expand_imports(text, src) == "``@child.md`` then CHILD\n"
+    assert expand_imports(text, src, src.parent) == "``@child.md`` then CHILD\n"
 
 
 @pytest.mark.unit

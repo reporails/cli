@@ -231,7 +231,8 @@ def _scan_file(
     except ValueError:
         file_uri = file_path.as_posix()
 
-    expanded = expand_imports_with_origins(content, file_path) if any(c.follow_imports for c in checks) else None
+    follows_imports = any(c.follow_imports for c in checks)
+    expanded = expand_imports_with_origins(content, file_path, scan_root) if follows_imports else None
     for check in checks:
         try:
             matches, text, imports = _check_hits(check, content, expanded, scan_root)

@@ -123,6 +123,8 @@ def _classify_file(
     map_cache: MapCache | None,
     all_atoms: list[Atom],
     atoms_needing_embed: list[Atom],
+    root: Path,
+    *,
     segmentation: str = "legacy",
 ) -> str:
     """Classify a single file: tokenize or use cache. Returns content hash.
@@ -132,7 +134,9 @@ def _classify_file(
     cache goes fresh through charge + embed exactly like the first copy — it is
     never short-circuited by an earlier, not-yet-charged same-run write.
     """
-    expanded, line_map, origins = expand_imports_with_origins(path.read_text(encoding="utf-8", errors="replace"), path)
+    expanded, line_map, origins = expand_imports_with_origins(
+        path.read_text(encoding="utf-8", errors="replace"), path, root
+    )
     content = strip_directives(expanded)
     chash = content_hash(content)
 
@@ -152,6 +156,7 @@ def _update_cache_after_embedding(
     all_atoms: list[Atom],
     atoms_needing_embed: list[Atom],
     file_records: list[FileRecord],
+    root: Path,
 ) -> None:
     """Update cache entries with embeddings for newly-embedded atoms."""
     by_file: dict[str, list[Atom]] = {}
@@ -162,7 +167,7 @@ def _update_cache_after_embedding(
         file_atoms = by_file.get(frec.path, [])
         if any(id(a) in embed_set for a in file_atoms):
             try:
-                key = cache_key_for_path(Path(frec.path))
+                key = cache_key_for_path(Path(frec.path), root)
             except OSError:
                 continue
             map_cache.put(key, CachedFileEntry(atoms_to_dicts(file_atoms)))
@@ -269,7 +274,7 @@ def _classify_one_file(
 ) -> FileRecord:
     """Classify one instruction file, appending its atoms to the shared lists."""
     loading, scope, globs, agent, file_type, activation = _detect_file_activation(path, root, registry)
-    chash = _classify_file(path, map_cache, all_atoms, atoms_needing_embed, segmentation)
+    chash = _classify_file(path, map_cache, all_atoms, atoms_needing_embed, root, segmentation=segmentation)
     description = _parse_frontmatter_description(path) if loading == "on_invocation" else ""
     return FileRecord(
         path=path.as_posix(),
@@ -281,7 +286,7 @@ def _classify_one_file(
         type=file_type,
         activation=activation,
         description=description,
-        description_embedding=map_cache.description_embedding(path) if map_cache and description else None,
+        description_embedding=map_cache.description_embedding(path, root) if map_cache and description else None,
     )
 
 
@@ -290,6 +295,7 @@ def _embed_and_audit_fresh(
     all_atoms: list[Atom],
     file_records: list[FileRecord],
     map_cache: MapCache | None,
+    root: Path,
     *,
     models: Models,
     timer: StageTimer,
@@ -309,7 +315,7 @@ def _embed_and_audit_fresh(
     if not structure_aware:
         audit_over_merged(atoms_needing_embed, models.st)
     if map_cache is not None:
-        _update_cache_after_embedding(map_cache, all_atoms, atoms_needing_embed, file_records)
+        _update_cache_after_embedding(map_cache, all_atoms, atoms_needing_embed, file_records, root)
 
 
 def _open_map_cache(cache_dir: Path | None, segmentation: str) -> MapCache | None:
@@ -426,7 +432,9 @@ def _topic_split_if_enabled(all_atoms: list[Atom], models: Models, *, structure_
     )
 
 
-def _embed_file_descriptions_if_any(file_records: list[FileRecord], models: Models, map_cache: MapCache | None) -> None:
+def _embed_file_descriptions_if_any(
+    file_records: list[FileRecord], models: Models, map_cache: MapCache | None, root: Path
+) -> None:
     """Embed the on_invocation file descriptions that did not come back from the per-file cache.
 
     The embedder (`models.st`, a lazy ONNX-loading property) is handed over as a callable, so
@@ -435,7 +443,7 @@ def _embed_file_descriptions_if_any(file_records: list[FileRecord], models: Mode
     """
     embedded = _embed_file_descriptions(file_records, lambda: models.st)
     if map_cache is not None:
-        map_cache.store_description_embeddings(embedded)
+        map_cache.store_description_embeddings(embedded, root)
 
 
 def _classify_charge_embed_dispatch(
@@ -479,11 +487,12 @@ def _classify_charge_embed_dispatch(
         all_atoms,
         file_records,
         map_cache,
+        root,
         models=models,
         timer=timer,
         structure_aware=structure_aware,
     )
-    _embed_file_descriptions_if_any(file_records, models, map_cache)
+    _embed_file_descriptions_if_any(file_records, models, map_cache, root)
     # Fire the completion flash only after BOTH charge and the (silent) embed finish,
     # so the label never claims "done" while the embed step is still running.
     if had_fresh and progress is not None:

@@ -181,7 +181,7 @@ class TestBuildIndex:
 
         from reporails_cli.core.mapper.imports import expand_imports
 
-        expanded = expand_imports(main.read_text(encoding="utf-8"), main)
+        expanded = expand_imports(main.read_text(encoding="utf-8"), main, main.parent)
         expanded_line = next(i for i, line in enumerate(expanded.splitlines(), start=1) if "ails-disable-line" in line)
         assert expanded_line != 2, "import expansion did not move the directive off its source line"
 

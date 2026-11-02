@@ -16,6 +16,8 @@
 
 ### Changed
 
+- The folder you run `ails check` in is the project root. A file or folder inside it is checked within that project, an agent folder such as `.claude/rules` included; a file outside it is checked at its own folder and a folder outside it at itself. Nothing walks up from the target looking for `.git` or other markers.
+- `ails install --project` installs for the folder you run it in, and refuses to run in your home folder.
 - `ails expected-loads` also lists the skills, agents, commands and hook configs a session in the folder can invoke, from the project, your user folder, the skills synced from your claude.ai account and every installed, enabled plugin, and says for each memory file whether `MEMORY.md` links it within the part Claude Code loads. A malformed `installed_plugins.json` ends the command with the error and exit 2.
 - Antigravity rules are now also found in `.agent/rules/`, `~/.gemini/antigravity-cli/rules/` and plugin `rules/` folders, and plugin `mcp_config.json` files are checked as MCP config.
 - The Codex, Copilot, Cursor and Antigravity agent pages now state what each agent's docs say: Codex custom agents cannot override sandbox, approval, provider or MCP settings, Copilot's `excludeAgent` takes `cloud-agent`, Cursor ignores a plain `.md` in `.cursor/rules`, and Antigravity keeps hooks in `hooks.json`, not `settings.json`.

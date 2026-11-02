@@ -44,7 +44,7 @@ def _write_fixture(tmp_path: Path) -> Path:
 def test_line_map_attributes_import_content_to_reference_line(tmp_path: Path) -> None:
     main = _write_fixture(tmp_path)
     raw = main.read_text(encoding="utf-8")
-    expanded, line_map, _origins = expand_imports_with_origins(raw, main)
+    expanded, line_map, _origins = expand_imports_with_origins(raw, main, main.parent)
 
     expanded_lines = expanded.split("\n")
     # Sanity: the expansion did shift "Never skip..." down to expanded line 9,
@@ -71,7 +71,7 @@ def test_line_map_attributes_import_content_to_reference_line(tmp_path: Path) ->
 def test_line_map_identity_when_no_imports(tmp_path: Path) -> None:
     content = "One.\nTwo.\nThree.\n"
     src = tmp_path / "plain.md"
-    expanded, line_map, _origins = expand_imports_with_origins(content, src)
+    expanded, line_map, _origins = expand_imports_with_origins(content, src, src.parent)
     assert expanded == content
     assert line_map == [1, 2, 3, 4]  # trailing empty element from the final "\n"
 
@@ -89,7 +89,7 @@ def test_classify_file_translates_import_shifted_atom_lines(tmp_path: Path) -> N
     main = _write_fixture(tmp_path)
     all_atoms: list = []
     atoms_needing_embed: list = []
-    pl._classify_file(main, None, all_atoms, atoms_needing_embed, "legacy")
+    pl._classify_file(main, None, all_atoms, atoms_needing_embed, tmp_path, segmentation="legacy")
 
     by_text = {a.text: a.line for a in all_atoms}
     assert by_text["Never skip the final step."] == 7
@@ -106,7 +106,7 @@ def test_classify_file_no_imports_lines_unchanged(tmp_path: Path) -> None:
     plain = tmp_path / "plain.md"
     plain.write_text("Always do the thing.\nNever skip the check.\n", encoding="utf-8")
     all_atoms: list = []
-    pl._classify_file(plain, None, all_atoms, [], "legacy")
+    pl._classify_file(plain, None, all_atoms, [], tmp_path, segmentation="legacy")
     by_text = {a.text: a.line for a in all_atoms}
     assert by_text["Always do the thing."] == 1
     assert by_text["Never skip the check."] == 2
@@ -119,6 +119,6 @@ def test_classify_file_position_index_order_preserved(tmp_path: Path) -> None:
     emission order regardless of the (possibly out-of-source-order) line values."""
     main = _write_fixture(tmp_path)
     all_atoms: list = []
-    pl._classify_file(main, None, all_atoms, [], "legacy")
+    pl._classify_file(main, None, all_atoms, [], tmp_path, segmentation="legacy")
     indices = [a.position_index for a in all_atoms]
     assert indices == sorted(indices)

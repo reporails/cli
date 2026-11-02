@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 _MAX_ENTRIES = 32  # global cache serves all projects; one file per distinct input set
 
 
-def _expanded_content_hash(path: Path) -> str:
+def _expanded_content_hash(path: Path, root: Path) -> str:
     """Hash a file the same way the pipeline does — import-expanded + directive-stripped.
 
     Matching `_classify_file`'s hash keeps the identity key import-aware: an
@@ -50,7 +50,7 @@ def _expanded_content_hash(path: Path) -> str:
     """
 
     raw = path.read_text(encoding="utf-8", errors="replace")
-    return content_hash(strip_directives(expand_imports(raw, path)))
+    return content_hash(strip_directives(expand_imports(raw, path, root)))
 
 
 def _registry_fingerprint() -> str:
@@ -108,7 +108,7 @@ def compute_identity(
     ]
     for path in sorted(paths, key=str):
         try:
-            file_hash = _expanded_content_hash(path)
+            file_hash = _expanded_content_hash(path, root)
         except OSError:
             file_hash = "unreadable"
         parts.append(f"{path}\t{file_hash}")

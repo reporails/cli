@@ -539,7 +539,7 @@ def test_agent_commands_do_not_inherit_the_agent_session(monkeypatch: pytest.Mon
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
-def test_project_install_runs_from_the_repository_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_project_install_runs_in_the_folder_it_is_run_from(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
     sub = tmp_path / "pkg" / "sub"
     sub.mkdir(parents=True)
@@ -549,8 +549,25 @@ def test_project_install_runs_from_the_repository_root(monkeypatch: pytest.Monke
     result = _runner.invoke(app, ["install", "--project"])
 
     claude_cwds = {kw.get("cwd") for c, kw in zip(runner.calls, runner.kwargs, strict=True) if c[0] == "/bin/claude"}
-    assert claude_cwds == {tmp_path}
-    assert str(tmp_path) in result.stdout.replace("\n", "")
+    assert claude_cwds == {sub}
+    assert str(sub) in result.stdout.replace("\n", "")
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_project_install_refuses_the_home_folder(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    runner = _Runner()
+    _setup(monkeypatch, runner, {"claude"}, tmp_path=home)
+
+    result = _runner.invoke(app, ["install", "--project"])
+
+    assert result.exit_code == 2
+    assert "project folder" in result.output
+    assert runner.calls == []
 
 
 @pytest.mark.unit
@@ -587,25 +604,6 @@ def test_project_install_adds_a_declared_marketplace_the_machine_has_not_added(
     cmds = runner.commands()
     assert "claude plugin marketplace add reporails/plugin --scope project" in cmds
     assert not any(c.startswith("claude plugin marketplace update") for c in cmds)
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_cli_ux
-def test_project_install_uses_the_nearest_git_root_in_a_nested_repository(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    (tmp_path / ".ails").mkdir()
-    (tmp_path / ".ails" / "backbone.yml").write_text("{}\n", encoding="utf-8")
-    inner = tmp_path / "inner"
-    (inner / "src").mkdir(parents=True)
-    (inner / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
-    runner = _Runner()
-    _setup(monkeypatch, runner, {"claude"}, tmp_path=inner / "src")
-
-    _runner.invoke(app, ["install", "--project"])
-
-    claude_cwds = {kw.get("cwd") for c, kw in zip(runner.calls, runner.kwargs, strict=True) if c[0] == "/bin/claude"}
-    assert claude_cwds == {inner}
 
 
 @pytest.mark.unit

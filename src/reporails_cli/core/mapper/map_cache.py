@@ -73,9 +73,11 @@ def file_cache_key(
     return f"{chash}+{hashlib.sha256(signature.encode('utf-8')).hexdigest()[:16]}"
 
 
-def cache_key_for_path(path: Path) -> str:
-    """The per-file cache key the mapper uses for `path`."""
-    expanded, line_map, origins = expand_imports_with_origins(path.read_text(encoding="utf-8", errors="replace"), path)
+def cache_key_for_path(path: Path, root: Path) -> str:
+    """The per-file cache key the mapper uses for `path`, its `@import`s read within `root`."""
+    expanded, line_map, origins = expand_imports_with_origins(
+        path.read_text(encoding="utf-8", errors="replace"), path, root
+    )
     return file_cache_key(path, content_hash(strip_directives(expanded)), line_map, origins)
 
 
@@ -357,23 +359,23 @@ class MapCache:
                 evicted += 1
         return evicted
 
-    def description_embedding(self, path: Path) -> tuple[int, ...] | None:
+    def description_embedding(self, path: Path, root: Path) -> tuple[int, ...] | None:
         """The description embedding stored with `path`'s per-file entry, or None."""
         try:
-            entry = self.get(cache_key_for_path(path))
+            entry = self.get(cache_key_for_path(path, root))
         except OSError:
             return None
         if entry is None or entry.description_embedding is None:
             return None
         return tuple(entry.description_embedding)
 
-    def store_description_embeddings(self, records: list[FileRecord]) -> None:
+    def store_description_embeddings(self, records: list[FileRecord], root: Path) -> None:
         """Write each record's description embedding into its file's per-file entry."""
         for record in records:
             if record.description_embedding is None:
                 continue
             try:
-                key = cache_key_for_path(Path(record.path))
+                key = cache_key_for_path(Path(record.path), root)
             except OSError:
                 continue
             entry = self.get(key)

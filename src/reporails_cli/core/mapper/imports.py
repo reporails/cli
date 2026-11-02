@@ -13,7 +13,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from reporails_cli.core.discovery.project_root import resolve_project_root_for_file
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.md_parser import line_offsets
 from reporails_cli.core.mapper.structure import code_ranges, in_any_span
@@ -67,12 +66,6 @@ def import_target(ref: str, source_path: Path) -> Path:
     return Path(ref).expanduser() if ref.startswith("~") else source_path.parent / ref
 
 
-def import_boundary(source_path: Path) -> Path:
-    """The folder an `@import` chain starting at `source_path` may not leave: the project that
-    holds the file, symlinks resolved."""
-    return safe_resolve(resolve_project_root_for_file(source_path))
-
-
 def _resolve_import_target(
     ref: str,
     source_path: Path,
@@ -105,10 +98,10 @@ def _resolve_import_target(
 def expand_imports(
     content: str,
     source_path: Path,
+    boundary: Path,
     *,
     depth: int = 0,
     visited: set[str] | None = None,
-    boundary: Path | None = None,
 ) -> str:
     """Expand @path inline imports in instruction file content.
 
@@ -130,8 +123,7 @@ def expand_imports(
         return content
     if visited is None:
         visited = {str(safe_resolve(source_path))}
-    if boundary is None:
-        boundary = import_boundary(source_path)
+    boundary = safe_resolve(boundary)
 
     ranges = code_ranges(content) if IMPORT_REF_RE.search(content) else []
 
@@ -151,7 +143,7 @@ def expand_imports(
         # cycle) should be rejected by `_resolve_import_target`.
         visited.add(str(target))
         try:
-            return expand_imports(imported, target, depth=depth + 1, visited=visited, boundary=boundary)
+            return expand_imports(imported, target, boundary, depth=depth + 1, visited=visited)
         finally:
             visited.discard(str(target))
 
@@ -276,6 +268,7 @@ def _splice(
 def expand_imports_with_origins(
     content: str,
     source_path: Path,
+    boundary: Path,
 ) -> tuple[str, list[int], list[tuple[Path, int] | None]]:
     """Expand @path imports in `content`; return `(expanded_content, line_map, origins)`.
 
@@ -292,7 +285,7 @@ def expand_imports_with_origins(
     detection mirror `expand_imports`.
     """
     visited: set[str] = {str(safe_resolve(source_path))}
-    boundary = import_boundary(source_path)
+    boundary = safe_resolve(boundary)
     ranges = code_ranges(content) if IMPORT_REF_RE.search(content) else []
     orig_lines = content.split("\n")
 

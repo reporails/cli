@@ -1,11 +1,7 @@
-"""A lone `CLAUDE.md` (or `AGENTS.md`) checked from its own parent directory.
+"""A lone `CLAUDE.md` (or `AGENTS.md`) checked from the folder it sits in.
 
-Previously broken: `ails check <dir>` on a folder holding only a main instruction
-file, run from outside it, treated the folder as a slice of the cwd. The cwd
-carries no agent surfaces of its own, so agent detection at the cwd found nothing
-and the target's own `CLAUDE.md` was silently dropped — "No instruction files
-found." at exit 0, `--strict` included. The Action's `path:` input and every
-`post-publish-smoke.yml` leg hit the same path on the most common minimal project.
+The folder the command runs in is the project root, so a folder holding only a main instruction
+file is found when the command runs there.
 
 Every test here runs with an isolated `HOME` (via the autouse `_isolate_home`
 fixture in `conftest.py`) so a contributor's real `~/.claude` can never turn into
@@ -34,11 +30,8 @@ def _json_run(monkeypatch: pytest.MonkeyPatch, cwd: Path, *args: str) -> tuple[i
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
 @pytest.mark.requires_model
-def test_lone_main_file_checked_from_its_parent_is_its_own_project(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A folder holding only `CLAUDE.md`, checked from its parent (which has no agent
-    surfaces of its own), is scanned as its own project rather than silently dropped."""
+def test_lone_main_file_checked_from_its_own_folder_is_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A folder holding only `CLAUDE.md`, checked from inside it, is scanned."""
     parent = tmp_path / "workspace"
     proj = parent / "proj"
     proj.mkdir(parents=True)
@@ -47,7 +40,7 @@ def test_lone_main_file_checked_from_its_parent_is_its_own_project(
         encoding="utf-8",
     )
 
-    exit_code, data = _json_run(monkeypatch, parent, "proj")
+    exit_code, data = _json_run(monkeypatch, proj)
 
     assert sorted(data["files"]) == ["CLAUDE.md"], data["files"]
     assert exit_code == 0
@@ -56,8 +49,7 @@ def test_lone_main_file_checked_from_its_parent_is_its_own_project(
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
 def test_lone_main_file_strict_exits_1_on_its_own_findings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`--strict` on the same lone-main-file target exits 1 when the file has findings —
-    the parent-anchored bug always reported nothing and stayed green."""
+    """`--strict` on the same lone-main-file folder exits 1 when the file has findings."""
     parent = tmp_path / "workspace"
     proj = parent / "proj"
     proj.mkdir(parents=True)
@@ -66,8 +58,8 @@ def test_lone_main_file_strict_exits_1_on_its_own_findings(tmp_path: Path, monke
         encoding="utf-8",
     )
 
-    monkeypatch.chdir(parent)
-    result = runner.invoke(app, ["check", "proj", "--strict"])
+    monkeypatch.chdir(proj)
+    result = runner.invoke(app, ["check", "--strict"])
 
     assert "CLAUDE.md" in result.output
     assert result.exit_code == 1
@@ -76,10 +68,8 @@ def test_lone_main_file_strict_exits_1_on_its_own_findings(tmp_path: Path, monke
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
 @pytest.mark.requires_model
-def test_lone_agents_md_checked_from_its_parent_is_its_own_project(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The same anchoring applies to a bare `AGENTS.md` project, not only `CLAUDE.md`."""
+def test_lone_agents_md_checked_from_its_own_folder_is_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The same holds for a bare `AGENTS.md` project, not only `CLAUDE.md`."""
     parent = tmp_path / "workspace"
     proj = parent / "proj"
     proj.mkdir(parents=True)
@@ -88,7 +78,7 @@ def test_lone_agents_md_checked_from_its_parent_is_its_own_project(
         encoding="utf-8",
     )
 
-    exit_code, data = _json_run(monkeypatch, parent, "proj")
+    exit_code, data = _json_run(monkeypatch, proj)
 
     assert sorted(data["files"]) == ["AGENTS.md"], data["files"]
     assert exit_code == 0

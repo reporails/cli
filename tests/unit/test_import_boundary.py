@@ -25,7 +25,10 @@ def project(tmp_path: Path) -> Path:
 def _expanded_both(content: str, source: Path) -> list[str]:
     """The text both expansion entry points produce for `content`, written into `source`."""
     source.write_text(content, encoding="utf-8")
-    return [expand_imports(content, source), expand_imports_with_origins(content, source)[0]]
+    return [
+        expand_imports(content, source, source.parent),
+        expand_imports_with_origins(content, source, source.parent)[0],
+    ]
 
 
 @pytest.mark.unit

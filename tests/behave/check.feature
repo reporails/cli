@@ -32,3 +32,19 @@ Feature: `ails check` scores and validates instruction files end-to-end
     When the CLAUDE.md is rewritten to a richer instruction set
     And I run "ails check --format json"
     Then the findings differ from the first run
+
+  @e2e @regression
+  Scenario: A file inside the folder the command runs in keeps that folder as the project root
+    Given a git project whose "sub/CLAUDE.md" has findings that the project config disables
+    When I run "ails check sub/CLAUDE.md --format json"
+    Then the check exits 0
+    And that file carries no finding
+
+  @e2e @regression
+  Scenario: A file in another project folder roots at its own folder
+    Given a git project "proj" elsewhere with a CLAUDE.md and a "docs/CLAUDE.md"
+    When I run "ails check" on "proj/CLAUDE.md" from the folder beside it
+    Then the check exits 0
+    And the json files map contains only "CLAUDE.md"
+    When I run "ails check" on "proj/docs/CLAUDE.md" from the folder beside it
+    Then the json files map contains only "CLAUDE.md"
