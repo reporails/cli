@@ -74,6 +74,10 @@ class XrayAgentCost:
     unpriced_models: tuple[str, ...]
     split_assumed: int
     output_missing: int
+    # What the instruction files carried across the replies cost, an estimate (the carried tokens are estimated).
+    instructions_usd_est: float | None
+    # Each source id with the estimated USD it cost across the replies; the graph sums them onto the sources.
+    by_source_usd_est: tuple[tuple[str, float], ...]
 
     def to_json(self) -> JsonObject:
         """The cost as a JSON object."""
@@ -87,4 +91,5 @@ class XrayAgentCost:
             "unpriced_models": list(self.unpriced_models),
             "split_assumed": self.split_assumed,
             "output_missing": self.output_missing,
+            "instructions_usd_est": self.instructions_usd_est,
         }

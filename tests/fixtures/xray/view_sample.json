@@ -396,7 +396,8 @@
           "unpriced": 0,
           "unpriced_models": [],
           "split_assumed": 0,
-          "output_missing": 0
+          "output_missing": 0,
+          "instructions_usd_est": 0.169
         },
         "composition": {
           "keys": [
@@ -829,7 +830,8 @@
           "unpriced": 0,
           "unpriced_models": [],
           "split_assumed": 0,
-          "output_missing": 0
+          "output_missing": 0,
+          "instructions_usd_est": 0.065
         },
         "composition": {
           "keys": [
@@ -1146,7 +1148,8 @@
           "unpriced": 0,
           "unpriced_models": [],
           "split_assumed": 0,
-          "output_missing": 0
+          "output_missing": 0,
+          "instructions_usd_est": 0.069
         },
         "composition": {
           "keys": [
@@ -1471,7 +1474,8 @@
           "unpriced": 0,
           "unpriced_models": [],
           "split_assumed": 0,
-          "output_missing": 0
+          "output_missing": 0,
+          "instructions_usd_est": 0.059
         },
         "composition": {
           "keys": [
@@ -1796,7 +1800,8 @@
           "unpriced": 0,
           "unpriced_models": [],
           "split_assumed": 0,
-          "output_missing": 0
+          "output_missing": 0,
+          "instructions_usd_est": 0.066
         },
         "composition": {
           "keys": [
@@ -2123,7 +2128,8 @@
           "unpriced": 0,
           "unpriced_models": [],
           "split_assumed": 0,
-          "output_missing": 0
+          "output_missing": 0,
+          "instructions_usd_est": 0.083
         },
         "composition": {
           "keys": [
@@ -2429,7 +2435,8 @@
           "unpriced": 0,
           "unpriced_models": [],
           "split_assumed": 0,
-          "output_missing": 0
+          "output_missing": 0,
+          "instructions_usd_est": 0.062
         },
         "composition": {
           "keys": [
@@ -2737,7 +2744,8 @@
           "unpriced": 0,
           "unpriced_models": [],
           "split_assumed": 0,
-          "output_missing": 0
+          "output_missing": 0,
+          "instructions_usd_est": 0.058
         },
         "composition": {
           "keys": [
@@ -3062,7 +3070,8 @@
           "unpriced": 0,
           "unpriced_models": [],
           "split_assumed": 0,
-          "output_missing": 0
+          "output_missing": 0,
+          "instructions_usd_est": 0.079
         },
         "composition": {
           "keys": [
@@ -3387,7 +3396,8 @@
           "unpriced": 0,
           "unpriced_models": [],
           "split_assumed": 0,
-          "output_missing": 0
+          "output_missing": 0,
+          "instructions_usd_est": 0.064
         },
         "composition": {
           "keys": [
@@ -3712,7 +3722,8 @@
           "unpriced": 0,
           "unpriced_models": [],
           "split_assumed": 0,
-          "output_missing": 0
+          "output_missing": 0,
+          "instructions_usd_est": 0.057
         },
         "composition": {
           "keys": [
@@ -4037,7 +4048,8 @@
           "unpriced": 0,
           "unpriced_models": [],
           "split_assumed": 0,
-          "output_missing": 0
+          "output_missing": 0,
+          "instructions_usd_est": 0.062
         },
         "composition": {
           "keys": [
@@ -4362,7 +4374,8 @@
           "unpriced": 0,
           "unpriced_models": [],
           "split_assumed": 0,
-          "output_missing": 0
+          "output_missing": 0,
+          "instructions_usd_est": 0.059
         },
         "composition": {
           "keys": [
@@ -4682,7 +4695,8 @@
         "a10"
       ],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "cost_usd_est": 0.0123
     },
     {
       "id": "~/.claude/CLAUDE.md",
@@ -4708,7 +4722,8 @@
         "a10"
       ],
       "actionable": false,
-      "launches": null
+      "launches": null,
+      "cost_usd_est": 0.0123
     },
     {
       "id": "packages/cli/CLAUDE.md",
@@ -4727,7 +4742,8 @@
       "availability": "on_disk",
       "had_by": [],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "cost_usd_est": 0.0123
     },
     {
       "id": ".claude/rules/rules-engine.md",
@@ -4749,7 +4765,8 @@
         "a2"
       ],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "cost_usd_est": null
     },
     {
       "id": ".claude/rules/style.md",
@@ -4768,7 +4785,8 @@
       "availability": "on_disk",
       "had_by": [],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "cost_usd_est": null
     },
     {
       "id": ".claude/skills/orient/SKILL.md",
@@ -4782,7 +4800,8 @@
         "main"
       ],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "cost_usd_est": null
     },
     {
       "id": ".claude/skills/agents-sdk/SKILL.md",
@@ -4796,7 +4815,8 @@
         "main"
       ],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "cost_usd_est": null
     },
     {
       "id": ".claude/skills/cloudflare/SKILL.md",
@@ -4808,7 +4828,8 @@
       "availability": "listed",
       "had_by": [],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "cost_usd_est": null
     },
     {
       "id": "~/.claude/projects/-work-demo/memory/MEMORY.md",
@@ -4829,7 +4850,8 @@
         "main"
       ],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "cost_usd_est": null
     },
     {
       "id": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
@@ -4841,7 +4863,8 @@
       "availability": "on_disk",
       "had_by": [],
       "actionable": false,
-      "launches": null
+      "launches": null,
+      "cost_usd_est": null
     },
     {
       "id": "mcp:docs-server",
@@ -4858,7 +4881,8 @@
         "a5b"
       ],
       "actionable": false,
-      "launches": null
+      "launches": null,
+      "cost_usd_est": null
     },
     {
       "id": "hook:PreToolUse:Edit",
@@ -4872,7 +4896,8 @@
         "main"
       ],
       "actionable": false,
-      "launches": null
+      "launches": null,
+      "cost_usd_est": null
     },
     {
       "id": ".claude/agents/test-runner.md",
@@ -4894,7 +4919,8 @@
         "a9"
       ],
       "actionable": true,
-      "launches": 2
+      "launches": 2,
+      "cost_usd_est": null
     },
     {
       "id": ".claude/agents/reviewer.md",
@@ -4916,7 +4942,8 @@
         "a10"
       ],
       "actionable": true,
-      "launches": 2
+      "launches": 2,
+      "cost_usd_est": null
     }
   ],
   "stations": [

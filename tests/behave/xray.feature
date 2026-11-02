@@ -64,9 +64,29 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Then it exits 2 saying no Claude Code session was found
 
   @page @browser
-  Scenario: No two cards overlap and the subagents stacked in time say how many more run
+  Scenario: No two cards overlap and no running count is drawn
     Given the bundled page is served over the "view_sample" fixture view
-    Then no two cards overlap at 1440 and at 925 pixels, and the subagents stacked in time say how many more run
+    Then no two cards overlap at 1440 and at 925 pixels and no "+N running" text is drawn
+
+  @page @browser
+  Scenario: No card is displaced from its launch time when agents fan out
+    Given the bundled page is served over the "view_p1" fixture view
+    Then at 1440 and at 925 pixels no card overlaps another and every card sits 18 pixels above its launch on the spine
+
+  @page @browser
+  Scenario: A burst of parallel subagents is one group card that expands into rows of four and collapses again
+    Given the bundled page is served over the "view_p1" fixture view
+    Then the bursts are collapsed group cards, a click expands one into rows of four members and a second click collapses it
+
+  @page @browser
+  Scenario: A selected member opens its group, and an explicit choice wins
+    Given the bundled page is served over the "view_p1" fixture view
+    Then selecting a member of a collapsed group shows its group expanded until the user collapses it
+
+  @page @browser
+  Scenario: A stretched time scale is marked and its ticks keep their distance
+    Given the bundled page is served over the "view_p1" fixture view
+    Then a stretched segment shows a violet bar with its tooltip and the note, and no two ticks sit closer than 18 pixels
 
   @page @browser
   Scenario: Drilling in three levels shows the collapsed breadcrumb and the direct parent's strip
@@ -104,6 +124,11 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Then the page shows the view's own model, window, unknown facts, trigger words, notes, ratio and subagent counts
 
   @page @browser
+  Scenario: The inspector's Context at peak, Cost and Not passed down panes are compact until opened
+    Given the bundled page is served over the "view_sample" fixture view
+    Then the inspector's panes start compact, open independently, stay open across agents, and print every estimate with a tilde
+
+  @page @browser
   Scenario: A kind reported absent and an untyped node
     Given the bundled page is served over the "view_stub_adapter" fixture view
     Then a kind the view reports absent says so from its fact, and an untyped node adds no filter button but still shows
@@ -123,3 +148,18 @@ Feature: ails xray serves a session's context window on the loopback address thr
   Scenario: A node of a second kind is drawn by its own renderer with no canvas change
     Given the bundled page is served over the "view_stub_kind" fixture view
     Then the stub kind's cards are drawn by a stub renderer only the test serves, with no change to the canvas
+
+  @page @browser
+  Scenario: The Sources panel groups its sources by kind, collapsed except the first, with show more and focus-opens-group
+    Given the bundled page is served over the "view_p3" fixture view
+    Then the Sources groups follow the adapter order with only the first open, expand and collapse all work, a long group shows four with a show-more, and focusing a source opens its group
+
+  @page @browser
+  Scenario: Agent definitions list their launch counts, light their subagents and carry the A chip
+    Given the bundled page is served over the "view_p3" fixture view
+    Then a launched agent source lights exactly its subagents, a never-launched one lights nothing, the group ends with the adapter note, the A chip is filled or outlined by count and the toolbar has a toggle per adapter kind
+
+  @page @browser
+  Scenario: A source row shows its estimated cost
+    Given the bundled page is served over the "view_sample" fixture view
+    Then an instructions source row shows its cost as an estimate and a source without one shows none

@@ -59,6 +59,7 @@ function renderFocus() {
   if (!ix || state.file != null) return;
   const e = env();
   canvas.render($('#canvas'), e);
+  sources.follow($('#sources'), e);
   for (const r of document.querySelectorAll('#sources .sr')) r.classList.toggle('on', !!e.focus && r.dataset.source === e.focus.id);
 }
 
@@ -90,6 +91,7 @@ const toggle = (set, v) => { if (!set.delete(v)) set.add(v); };
 document.addEventListener('click', e => {
   if (!ix) return;
   const t = e.target;
+  if (sources.click(t, env())) return render();
   const act = t.closest('[data-act]');
   if (act) return runAct(act.dataset.act, act.dataset.path);
   if (t.closest('a[href]')) return;
@@ -103,6 +105,8 @@ document.addEventListener('click', e => {
   if (layer) { state.layers[layer.dataset.layer] = !state.layers[layer.dataset.layer]; return render(); }
   const src = t.closest('[data-source]');
   if (src) { state.pinned = state.pinned === src.dataset.source ? null : src.dataset.source; return render(); }
+  const group = t.closest('[data-group]');
+  if (group) { state.groups[group.dataset.group] = group.getAttribute('aria-expanded') !== 'true'; return render(); }
   const card = t.closest('.card[data-node]');
   if (card && !card.classList.contains('top')) { state.sel = card.dataset.node; return render(); }
   if (card) { state.sel = null; render(); }

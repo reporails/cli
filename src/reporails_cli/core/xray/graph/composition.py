@@ -15,6 +15,7 @@ from reporails_cli.core.platform.dto.xray_composition import (
     COMPOSITION_KEYS,
     ESTIMATED_KEYS,
     REMAINDER_KEY,
+    CarriedReply,
     CompositionKey,
     ReplyComposition,
     XrayComposition,
@@ -31,8 +32,8 @@ _LOAD_CATEGORY: dict[SourceKind, CompositionKey] = {
     "hook": "hook_notes",
 }
 
-# (time, category, tokens): a size that enters the context at a time and stays.
-type Added = tuple[float, CompositionKey, int]
+# (time, category, tokens, source id or None): a size that enters the context at a time and stays.
+type Added = tuple[float, CompositionKey, int, str | None]
 # (time, category, tokens): conversation and tool-result sizes; a category of None is a compaction.
 type Spoken = tuple[float, CompositionKey | None, int]
 
@@ -50,7 +51,7 @@ def _load_deltas(own: AgentRecords, sources: SourceTable) -> list[Added]:
             if load.source in seen:
                 continue
             seen.add(load.source)
-        found.append((load.t, category, load.tokens_est or 0))
+        found.append((load.t, category, load.tokens_est or 0, load.source))
     return found
 
 
@@ -75,7 +76,7 @@ def _skill_listing_deltas(own: AgentRecords, frame: Frame) -> list[Added]:
         else:
             slot.add(entry)
         size = tokens_of(slot.chars)
-        found.append((moment, "skill_listing", size - held))
+        found.append((moment, "skill_listing", size - held, None))
         held = size
     return found
 
@@ -113,16 +114,20 @@ def _usages(records: Sequence[EventRecord], frame: Frame) -> list[tuple[float, T
 
 def _sweep(
     added: Sequence[Added], spoken: Sequence[Spoken], usages: Sequence[tuple[float, TokenUsage]]
-) -> Iterator[tuple[float, TokenUsage, dict[CompositionKey, int]]]:
+) -> Iterator[tuple[float, TokenUsage, dict[CompositionKey, int], dict[str, int]]]:
     """For each reply, what each estimated category holds at it: loads, hook notes and the skills
-    listing up to and including the reply's time, conversation and tool results strictly before it."""
+    listing up to and including the reply's time, conversation and tool results strictly before it; and the tokens
+    each source that has an id contributed."""
     held: dict[CompositionKey, int] = dict.fromkeys(ESTIMATED_KEYS, 0)
+    carried: dict[str, int] = {}
     ahead = 0
     behind = 0
     for moment, usage in usages:
         while ahead < len(added) and added[ahead][0] <= moment:
-            _, category, tokens = added[ahead]
+            _, category, tokens, source = added[ahead]
             held[category] += tokens
+            if source is not None:
+                carried[source] = carried.get(source, 0) + tokens
             ahead += 1
         while behind < len(spoken) and spoken[behind][0] < moment:
             _, grown, size = spoken[behind]
@@ -131,7 +136,7 @@ def _sweep(
             else:
                 held[grown] += size
             behind += 1
-        yield moment, usage, held
+        yield moment, usage, held, dict(carried)
 
 
 def _timeline(
@@ -142,27 +147,33 @@ def _timeline(
     return added, spoken
 
 
+def _reply_row(moment: float, usage: TokenUsage, held: dict[CompositionKey, int]) -> ReplyComposition:
+    """One reply's row: its exact total and cache split, and the categories with the remainder in its own."""
+    total = context_of(usage)
+    remainder = total - sum(held.values())
+    parts = tuple(remainder if key == REMAINDER_KEY else held[key] for key in COMPOSITION_KEYS)
+    return ReplyComposition(
+        moment,
+        total,
+        usage.input_tokens,
+        usage.cache_creation_input_tokens,
+        usage.cache_read_input_tokens,
+        parts,
+        remainder < 0,
+    )
+
+
 def composition_series(
     own: AgentRecords, sources: SourceTable, frame: Frame, brief_chars: int | None
-) -> XrayComposition:
-    """The composition of the agent's context at each of its replies; `brief_chars` is the size of the task brief a
-    subagent was launched with (None for the main agent)."""
+) -> tuple[XrayComposition, tuple[CarriedReply, ...]]:
+    """The composition of the agent's context at each of its replies, and for each reply the tokens each source
+    carried in it; `brief_chars` is the size of the task brief a subagent was launched with (None for the main
+    agent)."""
     added, spoken = _timeline(own, sources, frame, brief_chars)
     replies: list[ReplyComposition] = []
-    for moment, usage, held in _sweep(added, spoken, _usages(own.records, frame)):
-        total = context_of(usage)
-        remainder = total - sum(held.values())
-        parts = tuple(remainder if key == REMAINDER_KEY else held[key] for key in COMPOSITION_KEYS)
-        replies.append(
-            ReplyComposition(
-                moment,
-                total,
-                usage.input_tokens,
-                usage.cache_creation_input_tokens,
-                usage.cache_read_input_tokens,
-                parts,
-                remainder < 0,
-            )
-        )
+    carried: list[CarriedReply] = []
+    for moment, usage, held, by_source in _sweep(added, spoken, _usages(own.records, frame)):
+        carried.append(CarriedReply(usage, by_source))
+        replies.append(_reply_row(moment, usage, held))
     peak = max(range(len(replies)), key=lambda index: replies[index].total) if replies else None
-    return XrayComposition(tuple(replies), peak)
+    return XrayComposition(tuple(replies), peak), tuple(carried)

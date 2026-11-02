@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Literal, get_args
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
+from reporails_cli.core.platform.dto.events import TokenUsage
 
 CompositionKey = Literal[
     "system_tools",
@@ -30,6 +31,14 @@ REMAINDER_KEY: CompositionKey = "system_tools"
 
 # The categories that are estimated, in row order.
 ESTIMATED_KEYS: tuple[CompositionKey, ...] = tuple(key for key in COMPOSITION_KEYS if key != REMAINDER_KEY)
+
+
+@dataclass(frozen=True)
+class CarriedReply:
+    """One reply's usage and the estimated tokens each source (by source id) carried in its context."""
+
+    usage: TokenUsage
+    by_source: dict[str, int]
 
 
 @dataclass(frozen=True)

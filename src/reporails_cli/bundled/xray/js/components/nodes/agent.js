@@ -1,9 +1,10 @@
 // The agent node: its card on the canvas and the passed down / worked / came back section of the inspector.
 import { el, svg } from '../../dom.js';
-import { clock, dur, k1, tk } from '../../format.js';
+import { clock, dur, k1, plural, tk } from '../../format.js';
 import { typeOf, visibleKinds } from '../../views.js';
 import { briefUrl, promptUrl } from '../../api.js';
 import { textBlock } from '../textblock.js';
+import { pane } from '../pane.js';
 import { register } from './index.js';
 
 export function tile(ix, node, size) {
@@ -91,13 +92,17 @@ function passedDown(node, env) {
     step.append(opener(env, 'prompt:' + p.id, promptUrl(p.id), `prompt at ${clock(p.t)}`, p.tokens_est));
   }
   const w = node.withheld;
-  if (w && (w.sources.length || w.context_tokens)) {
-    const box = el('div', 'withheld');
-    box.append(el('span', null, `Its parent held ${k1(w.context_tokens)} tokens of context and ${w.sources.length ? 'did not pass down' : 'passed down every source'}`));
+  if (w && w.sources.length) {
+    const sum = w.sources.reduce((n, x) => n + (x.tokens_est || 0), 0);
+    const body = [el('p', 'note', `Its parent held ${k1(w.context_tokens)} tokens of context and did not pass down:`)];
     for (const s of w.sources) {
       const src = env.ix.sources.get(s.source);
-      box.append(item(env, src ? src.name : s.source, s.tokens_est, null));
+      body.push(item(env, src ? src.name : s.source, s.tokens_est, null));
     }
+    step.append(pane('withheld', [el('b', null, `Not passed down: ${plural(w.sources.length, 'source')} · ~${k1(sum)}`)], body));
+  } else if (w && w.context_tokens) {
+    const box = el('div', 'withheld');
+    box.append(el('span', null, `Its parent held ${k1(w.context_tokens)} tokens of context and passed down every source`));
     step.append(box);
   }
   return step;

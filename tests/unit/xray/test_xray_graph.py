@@ -47,6 +47,7 @@ from reporails_cli.core.platform.dto.xray_build import (
     ProducedNode,
     ProducedSpine,
     ProducerContext,
+    SourceTable,
 )
 from reporails_cli.core.platform.dto.xray_composition import XrayComposition
 from reporails_cli.core.platform.dto.xray_graph import (
@@ -571,7 +572,7 @@ def test_the_sources_the_parent_had_at_a_launch_and_the_child_never_had_are_with
     assert _node(graph, MAIN_ID).withheld is None
 
 
-_NO_COST = agent_cost([], load_price_list(), 0.0)
+_NO_COST = agent_cost([], load_price_list(), 0.0, (), SourceTable((), Path(), {}, {}))
 
 
 class _Widget:

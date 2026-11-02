@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import re
@@ -412,15 +413,80 @@ def _page(context, mode: str, width: int = 1440) -> dict | None:
     return seen
 
 
-@then("no two cards overlap at 1440 and at 925 pixels, and the subagents stacked in time say how many more run")
+@then('no two cards overlap at 1440 and at 925 pixels and no "+N running" text is drawn')
 def step_no_card_overlap(context):
     for width in (1440, 925):
         seen = _page(context, "overlap", width)
         if seen is None:
             return
-        assert seen["cards"] == len(context.fixture["nodes"][0]["children"]) + 1, (width, seen)  # top node + subagents
         assert seen["overlaps"] == 0, (width, seen)
-    assert any(text.endswith("running") and text.startswith("+") for text in seen["running"]), seen
+        assert seen["running"] == 0, (width, seen)
+
+
+@then("at 1440 and at 925 pixels no card overlaps another and every card sits 18 pixels above its launch on the spine")
+def step_no_displaced_card(context):
+    for width in (1440, 925):
+        seen = _page(context, "p1layout", width)
+        if seen is None:
+            return
+        assert seen["overlaps"] == 0, (width, seen)
+        assert seen["running"] == 0, (width, seen)
+        assert len(seen["launches"]) == 5, seen["launches"]  # two group cards and three lone cards
+        for card in seen["launches"]:
+            assert abs(card["top"] + 18 - card["launchY"]) < 0.6, (width, card)
+            # the edge leaves the spine where the card is anchored
+            assert abs(card["top"] + 18 - card["out"]) < 8, (width, card)
+
+
+@then(
+    "the bursts are collapsed group cards, a click expands one into rows of four members "
+    "and a second click collapses it"
+)
+def step_group_toggle(context):
+    seen = _page(context, "p1groups")
+    if seen is None:
+        return
+    assert [g["key"] for g in seen["groupsBefore"]] == ["main:b1", "main:c1"], seen
+    first = seen["groupsBefore"][0]
+    assert "⇉ 6" in first["text"] and "in parallel" in first["text"] and "expand \u203a" in first["text"], first
+    assert first["tiles"] == 6 and first["dashed"] == "dashed" and first["expanded"] == "false", first
+    assert seen["membersBefore"] == [], seen
+    members = seen["membersOpen"]
+    assert len(members) == 6, seen
+    tops = sorted({m["top"] for m in members})
+    assert len(tops) == 2, members
+    assert [sum(1 for m in members if m["top"] == t) for t in tops] == [4, 2], members
+    assert len({m["left"] for m in members if m["top"] == tops[0]}) == 4, members
+    assert "⇉ fan-out · 6 subagents in parallel · " in seen["head"], seen["head"]
+    assert seen["box"] is True and seen["groupCardsOpen"] == ["main:c1"], seen
+    assert seen["arches"] == 6, seen
+    assert seen["membersAfter"] == [] and seen["groupCardsAfter"] == 2, seen
+
+
+@then("selecting a member of a collapsed group shows its group expanded until the user collapses it")
+def step_group_selected(context):
+    seen = _page(context, "p1select")
+    if seen is None:
+        return
+    assert seen["before"] == 0, seen
+    assert seen["after"] == 3 and seen["selected"] == "c2", seen
+    assert seen["collapsed"] == 0 and seen["groupCard"] == 1, seen
+
+
+@then(
+    "a stretched segment shows a violet bar with its tooltip and the note, and no two ticks sit closer than 18 pixels"
+)
+def step_stretch_marked(context):
+    seen = _page(context, "p1stretch")
+    if seen is None:
+        return
+    assert seen["bars"], seen
+    for bar in seen["bars"]:
+        assert re.fullmatch(r"Scale stretched \d+\.\d\u00d7 between \d+:\d\d and \d+:\d\d", bar["title"]), bar
+        assert bar["width"] == 2 and bar["colour"] == "rgb(165, 148, 255)", bar
+    assert seen["note"] == "▍ time scale stretched where agents fan out", seen
+    for ys in (seen["ticks"], seen["dense"]):
+        assert len(ys) > 1 and all(b - a >= 18 for a, b in itertools.pairwise(ys)), ys
 
 
 @then("drilling in three levels shows the collapsed breadcrumb and the parent strip of the direct parent")
@@ -441,9 +507,11 @@ def step_focus_source(context):
         return
     nodes = {node["id"]: node for node in context.fixture["nodes"]}
     had = set(next(s for s in context.fixture["sources"] if s["id"] == "mcp:docs-server")["had_by"])
-    here = list(nodes["main"]["children"])
-    assert {c["id"] for c in seen["mcp"] if c["ring"]} == had & set(here), seen["mcp"]
-    assert {c["id"] for c in seen["mcp"] if c["dim"]} == set(here) - had, seen["mcp"]
+    burst = set(nodes["main"]["bursts"][0]["members"])  # drawn inside the collapsed group card, not as cards
+    here = set(nodes["main"]["children"]) - burst
+    assert {c["id"] for c in seen["mcp"] if c["ring"]} == had & here, seen["mcp"]
+    assert {c["id"] for c in seen["mcp"] if c["dim"]} == here - had, seen["mcp"]
+    assert [(g["ring"], g["dim"]) for g in seen["mcpGroup"]] == [(bool(had & burst), not had & burst)], seen["mcpGroup"]
     assert seen["mcpTop"] is ("main" in had), seen
     assert all(c["dim"] and not c["ring"] for c in seen["never"]), seen["never"]
     assert "Never loaded by any agent in this session." in seen["neverBanner"], seen
@@ -573,3 +641,136 @@ def step_call_fetched_once(context):
     assert context.handler.views_served >= 3, context.handler.views_served
     calls = [r for r in context.handler.requests if r.startswith("/call")]
     assert calls and len(calls) == len(set(calls)), calls
+
+
+@then(
+    "the inspector's panes start compact, open independently, stay open across agents, "
+    "and print every estimate with a tilde"
+)
+def step_inspector_panes(context):
+    seen = _page(context, "panes")
+    if seen is None:
+        return
+    view = context.fixture
+    nodes = {n["id"]: n for n in view["nodes"]}
+    assert seen["start"]["context"]["open"] == "false" and seen["start"]["context"]["bodyHidden"], seen["start"]
+    assert seen["start"]["cost"]["open"] == "false" and seen["start"]["cost"]["bodyHidden"], seen["start"]
+    assert seen["contextOpen"]["open"] == "true" and not seen["contextOpen"]["bodyHidden"], seen["contextOpen"]
+    assert seen["costAfterContext"]["open"] == "false", "opening Context must not open Cost"
+    comp = nodes["main"]["detail"]["composition"]
+    reply = comp["replies"][comp["peak"]]
+    total, first = reply[1], 5
+    assert [c["key"] for c in seen["categories"]] == [c["key"] for c in view["adapter"]["composition"]]
+    remainder = view["adapter"]["composition_remainder"]
+    for row in seen["categories"]:
+        assert row["value"].startswith("~"), row
+        want = "est. + remainder" if row["key"] == remainder else "estimated"
+        assert row["tags"] == [want], row
+    assert sum(reply[first : first + len(comp["keys"])]) == total, "fixture row must sum to its exact total"
+    assert "exact" in seen["exactTag"] and _k1(total) in seen["contextOpen"]["head"], seen["contextOpen"]
+    assert f"cache read {reply[4]:,}" in seen["contextText"], seen["contextText"]
+    assert seen["costOpen"]["open"] == "true"
+    price = view["price_list"]
+    assert f"{price['name']}, {price['as_of']}" in seen["costText"], seen["costText"]
+    assert "derived" in seen["costOpen"]["head"] and "cached" in seen["costOpen"]["head"], seen["costOpen"]
+    assert "~$" in seen["costText"], "instruction-file cost is an estimate"
+    after = seen["afterSelect"]
+    assert after["context"]["open"] == "true" and after["cost"]["open"] == "true", after
+    withheld = nodes["a1"]["withheld"]
+    summary = f"Not passed down: {len(withheld['sources'])} sources · ~"
+    compact = seen["withheldCompact"]
+    assert summary in compact["head"] and compact["open"] == "false", compact
+    assert seen["withheldRowsBefore"] == 0 and seen["withheldRowsAfter"] == len(withheld["sources"]), seen
+    assert any(line.endswith("Agents · 2 defined, listed") for line in seen["mainChip"]), seen["mainChip"]
+    assert any(line.endswith("Agents · built-in") for line in seen["a1Chip"]), seen["a1Chip"]
+    definition = next(s for s in view["sources"] if s["kind"] == "agent" and "a3" in s["had_by"])
+    name = definition["path"].rsplit("/", 1)[-1]
+    assert any(line.endswith(f"Agents · {name}") for line in seen["a3Chip"]), seen["a3Chip"]
+    for key, text in (("a1", seen["a1Text"]), ("main", seen["mainText"])):
+        node = nodes[key]
+        values = [g["tokens_est"] for g in node["detail"]["given"]]
+        values += [p["tokens_est"] for p in node["detail"]["prompts"]]
+        values += [s["tokens_est"] for s in (node.get("withheld") or {"sources": []})["sources"]]
+        if node["detail"]["back_tokens_est"] is not None:
+            values.append(node["detail"]["back_tokens_est"])
+        assert values, key
+        for value in values:
+            shown = re.escape(_k1(value))
+            assert value == 0 or not re.search(rf"(?<![~\w.,]){shown}(?![\w.,])", text), (key, value, text)
+            assert f"~{_k1(value)}" in text, (key, value)
+
+
+@then(
+    "the Sources groups follow the adapter order with only the first open, expand and collapse all work, "
+    "a long group shows four with a show-more, and focusing a source opens its group"
+)
+def step_source_groups(context):
+    seen = _page(context, "groups")
+    if seen is None:
+        return
+    order = [kind["key"] for kind in context.fixture["adapter"]["source_kinds"]]
+    first = order[0]
+    assert [g["kind"] for g in seen["initial"]] == order, seen["initial"]
+    assert [g["kind"] for g in seen["initial"] if g["open"]] == [first], seen["initial"]
+    assert all(not g["rows"] for g in seen["initial"] if g["kind"] != first), seen["initial"]
+    assert all(g["open"] for g in seen["expanded"]), seen["expanded"]
+    assert not any(g["open"] for g in seen["collapsed"]), seen["collapsed"]
+    agents = [s["id"] for s in context.fixture["sources"] if s["kind"] == "agent"]
+    assert len(agents) == 6, agents
+    group = next(g for g in seen["agentOpen"] if g["kind"] == "agent")
+    assert group["rows"] == agents[:4] and group["more"] == "Show 2 more", group
+    group = next(g for g in seen["agentAll"] if g["kind"] == "agent")
+    assert group["rows"] == agents and group["more"] == "Show fewer", group
+    group = next(g for g in seen["agentFewer"] if g["kind"] == "agent")
+    assert group["rows"] == agents[:4] and group["more"] == "Show 2 more", group
+    assert not any(g["open"] for g in seen["closedAgain"]), seen["closedAgain"]
+    focused = {g["kind"]: g for g in seen["focused"]}
+    assert focused["agent"]["open"] and focused["agent"]["rows"] == agents, focused["agent"]
+    assert [kind for kind, g in focused.items() if g["open"]] == ["agent"], focused
+    instructions_sources = [s for s in context.fixture["sources"] if s["kind"] == "instructions"]
+    findings = sum((s["findings"] or {}).get("count", 0) for s in instructions_sources)
+    instructions = next(g for g in seen["initial"] if g["kind"] == "instructions")
+    assert str(findings) in instructions["head"], instructions
+
+
+@then(
+    "a launched agent source lights exactly its subagents, a never-launched one lights nothing, the group ends "
+    "with the adapter note, the A chip is filled or outlined by count and the toolbar has a toggle per adapter kind"
+)
+def step_agent_sources(context):
+    seen = _page(context, "agents")
+    if seen is None:
+        return
+    sources = {s["id"]: s for s in context.fixture["sources"] if s["kind"] == "agent"}
+    rows = seen["rows"]
+    reviewer = rows[".claude/agents/reviewer.md"]
+    assert reviewer["name"] == ".claude/agents/reviewer.md", reviewer
+    assert reviewer["who"] == "launched as 2 subagents · passed down as its system prompt", reviewer
+    assert reviewer["pill"] is True, reviewer
+    assert rows[".claude/agents/planner.md"]["who"] == "launched as 1 subagent · passed down as its system prompt", rows
+    assert rows[".claude/agents/idle.md"]["who"] == "defined, never launched", rows
+    here = set(context.fixture["nodes"][0]["children"])
+    lit = seen["lit"]
+    assert set(lit[".claude/agents/reviewer.md"]) == set(sources[".claude/agents/reviewer.md"]["had_by"]) & here, lit
+    assert lit[".claude/agents/idle.md"] == [] and lit[".claude/agents/idle.md top"] is False, lit
+    notes = [kind["note"] for kind in context.fixture["adapter"]["source_kinds"] if kind["key"] == "agent"]
+    assert notes and notes[0] and seen["note"] == notes[0], (notes, seen["note"])
+    chips = seen["chips"]
+
+    def filled(name: str) -> bool:
+        return bool({"on", "find"} & set(chips[name].split()))
+
+    assert filled("a3") and filled("a4"), chips  # launched from a definition
+    assert not filled("a1") and not filled("a5"), chips  # built-in types: outlined
+    letters = [f"{kind['key']}:{kind['letter']}" for kind in context.fixture["adapter"]["source_kinds"]]
+    assert seen["toggles"] == letters, seen["toggles"]
+    assert "agent:A" in letters and "hook:H" in letters, letters
+
+
+@then("an instructions source row shows its cost as an estimate and a source without one shows none")
+def step_source_cost(context):
+    seen = _page(context, "cost")
+    if seen is None:
+        return
+    assert "~$0.01 estimated" in seen["claude"] and "~$0.01 estimated" in seen["other"], seen
+    assert "$" not in seen["rule"], seen

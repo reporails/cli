@@ -1,14 +1,16 @@
 // The canvas: the current agent's spine over time, its subagents as cards with arches, the stations on the spine and
 // the side track of everyday calls. Card placement, scale, arches and ticks are geometry; every fact comes from the view.
 import { el, svg } from '../dom.js';
-import { clock, k1, tk } from '../format.js';
+import { clock, k1, range, tk } from '../format.js';
 import { callText } from '../api.js';
 import {
-  BOT_H, BOT_W, CH, CW, SPX, TOP_W, TRACK_STEP, TRACK_X0, W, Y0,
-  contextAt, lengthFor, placeCards, runningMarkers, spreadStations, tickTimes, timeScale,
+  BOT_H, BOT_W, CH, COLX, CW, SPX, TOP_W, TRACK_STEP, TRACK_X0, W, Y0,
+  contextAt, layoutTime, lengthFor, spreadStations, tickMarks,
 } from '../geometry.js';
+import { groupOpen } from '../state.js';
 import { childrenOf, kindOfSource, typeOf } from '../views.js';
 import { rendererFor } from './nodes/index.js';
+import { tile } from './nodes/agent.js';
 
 const VIOLET = '#A594FF', BLUE = '#6EA8FF', WHITE = '#ECECEC', FIND = '#F0883E', NEUTRAL_EDGE = 'rgba(236,236,236,0.20)';
 
@@ -19,6 +21,7 @@ const abs = (cls, left, top, tag = 'div') => {
   return e;
 };
 
+const COLX_HEAD = COLX.L2;
 const hasIt = (focus, node) => !focus || focus.had_by.includes(node.id);
 
 function banner(env, cur, kids) {
@@ -54,11 +57,25 @@ function spinePoints(cur, scale, cuts, series, isRoot, peak) {
 }
 
 function ticks(cur, scale) {
-  return tickTimes(cur).map(t => {
-    const e = abs('tick', 0, scale.y(t) - 7);
-    e.textContent = clock(t);
+  return tickMarks(cur, scale.y).map(m => {
+    const e = abs('tick', 0, m.y - 7);
+    e.textContent = clock(m.t);
     return e;
   });
+}
+
+// A 2 px bar beside the time labels wherever the scale was stretched, and the one-line note saying so.
+function stretches(scale) {
+  if (!scale.stretches.length) return [];
+  const out = scale.stretches.map(s => {
+    const e = abs('stretch', 40, s.y0);
+    e.style.height = `${s.y1 - s.y0}px`;
+    e.title = `Scale stretched ${s.factor.toFixed(1)}× between ${clock(s.t0)} and ${clock(s.t1)}`;
+    return e;
+  });
+  const note = abs('scalenote mono', 0, 6);
+  note.textContent = '▍ time scale stretched where agents fan out';
+  return [...out, note];
 }
 
 function breaks(scale) {
@@ -83,6 +100,7 @@ function childCard(env, c, p, match, selected) {
   const focus = env.focus;
   const box = abs('card', p.left, p.top);
   box.dataset.node = c.id;
+  if (p.launchY !== undefined) box.dataset.launchY = p.launchY.toFixed(1);
   box.dataset.kind = c.kind;
   box.tabIndex = 0;
   box.setAttribute('role', 'button');
@@ -103,7 +121,68 @@ function childCard(env, c, p, match, selected) {
   return box;
 }
 
-function arches(env, kids, placedMap, scale, matchOf) {
+// The y the child's way back lands on the spine, or null while it has not come back.
+function backY(c, edge, scale) {
+  const outcome = edge ? edge.outcome : null;
+  const backT = edge && edge.back_t != null ? edge.back_t : outcome === 'running' || outcome === null ? null : c.end;
+  return backT == null ? null : scale.y(backT);
+}
+
+// A collapsed group: one thick edge out at the first launch, one thin edge back from the card per member.
+function groupEdges(env, grp, p, scale, matchOf, g, marks) {
+  const match = grp.members.some(matchOf);
+  const dim = match ? NEUTRAL_EDGE : 'rgba(236,236,236,0.05)';
+  const ys = scale.y(grp.burst.first_launch);
+  const mx = (SPX + p.inner) / 2, ay = p.top + 18, by = p.top + CH - 18;
+  const w = Math.min(3, 1.1 + (grp.burst.down_tokens || 0) / 4500);
+  g.append(svg('path', {
+    d: `M${SPX},${ys.toFixed(1)} C${mx.toFixed(1)},${ys.toFixed(1)} ${mx.toFixed(1)},${ay.toFixed(1)} ${p.inner.toFixed(1)},${ay.toFixed(1)}`,
+    fill: 'none', 'data-group': grp.key, stroke: match ? VIOLET : dim, 'stroke-width': w.toFixed(2), class: 'arch out',
+  }));
+  marks.append(svg('circle', { cx: SPX, cy: ys.toFixed(1), r: 2.5, fill: VIOLET, opacity: match ? 0.8 : 0.2 }));
+  for (const c of grp.members) {
+    const ye = backY(c, env.ix.edges.get(c.id), scale);
+    if (ye === null) continue;
+    g.append(svg('path', {
+      d: `M${p.inner.toFixed(1)},${by.toFixed(1)} C${mx.toFixed(1)},${by.toFixed(1)} ${mx.toFixed(1)},${ye.toFixed(1)} ${SPX},${ye.toFixed(1)}`,
+      fill: 'none', 'data-group': grp.key, stroke: dim, 'stroke-width': 0.9, class: 'arch back group-back',
+    }));
+    marks.append(svg('circle', { cx: SPX, cy: ye.toFixed(1), r: 2.5, fill: '#8A8C92', opacity: match ? 0.6 : 0.15 }));
+  }
+}
+
+function groupCard(env, grp, p, match) {
+  const box = abs('card group' + (match ? '' : ' dim') + (env.focus && match ? ' ring' : ''), p.left, p.top, 'button');
+  box.dataset.group = grp.key;
+  box.dataset.launchY = p.launchY.toFixed(1);
+  box.setAttribute('aria-expanded', 'false');
+  box.setAttribute('aria-label', `${grp.members.length} subagents launched in parallel, ${range(grp.burst.first_launch, grp.burst.last_return)}. Expand to see them.`);
+  box.style.width = `${CW}px`;
+  box.style.height = `${CH}px`;
+  const head = el('span', 'gh');
+  head.append(el('span', 'gn mono', `⇉ ${grp.members.length}`), el('b', 'nm', 'in parallel'));
+  const tiles = el('span', 'gt');
+  for (const m of grp.members) tiles.append(tile(env.ix, m, 16));
+  tiles.append(el('span', 'gx', 'expand ›'));
+  box.append(head, el('span', 'sub mono', range(grp.burst.first_launch, grp.burst.last_return)), tiles);
+  return box;
+}
+
+// The dashed box and header of an expanded group.
+function groupBox(grp, p) {
+  const box = abs('gbox', p.box.left, p.box.top);
+  box.style.width = `${p.box.width}px`;
+  box.style.height = `${p.box.height}px`;
+  const head = abs('ghead', COLX_HEAD, p.box.top + 4);
+  const label = el('span', 'mono', `⇉ fan-out · ${grp.members.length} subagents in parallel · ${range(grp.burst.first_launch, grp.burst.last_return)}`);
+  const btn = el('button', 'gcollapse', 'collapse');
+  btn.dataset.group = grp.key;
+  btn.setAttribute('aria-expanded', 'true');
+  head.append(label, btn);
+  return [box, head];
+}
+
+function arches(env, kids, placedMap, scale, matchOf, groups) {
   const g = svg('g', { class: 'arches' });
   const marks = svg('g', { class: 'marks' });
   const pills = [];
@@ -115,8 +194,8 @@ function arches(env, kids, placedMap, scale, matchOf) {
     const outT = edge ? edge.out_t : c.start;
     const ys = scale.y(outT);
     const outcome = edge ? edge.outcome : null;
-    const backT = edge && edge.back_t != null ? edge.back_t : outcome === 'running' || outcome === null ? null : c.end;
-    const ye = backT == null ? null : scale.y(backT);
+    const ye = backY(c, edge, scale);
+    const backT = ye;
     const mx = (SPX + p.inner) / 2, ay = p.top + 18, by = p.top + CH - 18;
     const dim = match ? NEUTRAL_EDGE : 'rgba(236,236,236,0.05)';
     const down = edge ? edge.down : 0;
@@ -137,8 +216,9 @@ function arches(env, kids, placedMap, scale, matchOf) {
       marks.append(svg('circle', { cx: SPX, cy: ye.toFixed(1), r: on ? 4 : 2.5, fill: on && returned ? BLUE : '#8A8C92', opacity: on ? 1 : match ? 0.55 : 0.12 }));
     }
     marks.append(svg('circle', { cx: SPX, cy: ys.toFixed(1), r: on ? 4 : 2.5, fill: on ? VIOLET : '#8A8C92', opacity: on ? 1 : match ? 0.55 : 0.12 }));
-    if (on) pills.push(...selectedPills(c, p, edge, ys, backT === null ? null : ye, outcome));
+    if (on) pills.push(...selectedPills(c, p, edge, ys, ye, outcome));
   }
+  for (const grp of groups) if (!grp.expanded) groupEdges(env, grp, placedMap.get(grp.key), scale, matchOf, g, marks);
   return { arches: g, marks, pills };
 }
 
@@ -262,15 +342,41 @@ function sideTrack(env, cur, scale, sel) {
   return out;
 }
 
+// The node's fan-out groups: its bursts with the members that are on this canvas, collapsed unless a member is selected
+// or the user opened the group.
+function groupsOf(cur, kids, state) {
+  const byId = new Map(kids.map(c => [c.id, c]));
+  const out = [];
+  for (const burst of cur.bursts || []) {
+    const members = burst.members.map(id => byId.get(id)).filter(Boolean).sort((a, b) => a.start - b.start);
+    if (members.length < 2) continue;
+    const key = `${cur.id}:${members[0].id}`;
+    out.push({ key, burst, members, expanded: groupOpen(state, key, members.map(m => m.id)) });
+  }
+  return out;
+}
+
 export function render(box, env) {
   const { ix, state, focus } = env;
   const cur = ix.nodes.get(state.path[state.path.length - 1]);
   const isRoot = cur.parent === null;
   const kids = childrenOf(ix, cur);
   const tr = ix.track.get(cur.id) || { breaks: [] };
-  const scale = timeScale(cur, tr.breaks, lengthFor(isRoot));
-  const { placed, lowest } = placeCards(kids, scale.y);
-  const placedMap = new Map(placed.map(p => [p.id, p]));
+  const groups = groupsOf(cur, kids, state);
+  const inGroup = new Set(groups.flatMap(g => g.members.map(m => m.id)));
+  const units = [
+    ...kids.filter(c => !inGroup.has(c.id)).map(c => ({ key: c.id, t: c.start, members: 0, expanded: false })),
+    ...groups.map(g => ({ key: g.key, t: g.burst.first_launch, members: g.members.length, expanded: g.expanded })),
+  ];
+  const scale = layoutTime(cur, tr.breaks, lengthFor(isRoot), units);
+  const placedMap = new Map();
+  for (const p of scale.placed) {
+    const grp = groups.find(g => g.key === p.key);
+    if (grp && grp.expanded) grp.members.forEach((m, i) => placedMap.set(m.id, p.slots[i]));
+    placedMap.set(p.key, p);
+  }
+  const lowest = scale.lowest;
+  const shownKids = kids.filter(c => !groups.some(g => !g.expanded && g.members.includes(c)));
   const matchOf = c => (focus ? focus.had_by.includes(c.id) : state.type === 'all' || c.type === state.type);
   const station = ix.stations.get(cur.id) || { compactions: [] };
   const cuts = station.compactions.map(c => c.t);
@@ -286,17 +392,16 @@ export function render(box, env) {
   const s = svg('svg', { width: W, height, class: 'cvg' });
   s.append(svg('polygon', { points: spinePoints(cur, scale, cuts, cur.detail.series || [], isRoot, ix.peak), fill: typeOf(ix, cur).colour, 'fill-opacity': 0.1, class: 'band' }));
   s.append(svg('line', { x1: SPX, x2: SPX, y1: Y0, y2: scale.end, class: 'spine' }));
-  const drawn = arches(env, kids, placedMap, scale, matchOf);
+  const drawn = arches(env, shownKids, placedMap, scale, matchOf, groups);
   s.append(drawn.arches, drawn.marks);
-  cv.append(s, ...ticks(cur, scale), ...breaks(scale), ...sideTrack(env, cur, scale, sel), topNode(env, cur, focus));
-  for (const c of kids) cv.append(childCard(env, c, placedMap.get(c.id), matchOf(c), state.sel === c.id));
-  cv.append(...stations(env, cur, scale), ...drawn.pills);
-  for (const m of runningMarkers(kids, scale.y)) {
-    const e = abs('running', SPX - 22, m.y - 4);
-    e.textContent = `+${m.more} running`;
-    e.title = `${m.more} more subagents run at ${clock(m.t)} than the columns hold`;
-    cv.append(e);
+  cv.append(s, ...ticks(cur, scale), ...stretches(scale), ...breaks(scale), ...sideTrack(env, cur, scale, sel), topNode(env, cur, focus));
+  for (const grp of groups) {
+    const p = placedMap.get(grp.key);
+    if (grp.expanded) cv.append(...groupBox(grp, p));
+    else cv.append(groupCard(env, grp, p, grp.members.some(matchOf)));
   }
+  for (const c of shownKids) cv.append(childCard(env, c, placedMap.get(c.id), matchOf(c), state.sel === c.id));
+  cv.append(...stations(env, cur, scale), ...drawn.pills);
   if (hand) {
     const b = abs('card bottom', SPX - BOT_W / 2, botY);
     b.style.width = `${BOT_W}px`;

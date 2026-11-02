@@ -8,6 +8,7 @@ const ready = await page.until(`!!document.querySelector('.card.top')`);
 let out = { ready: !!ready };
 const peekText = () => page.until(`(document.querySelector('pre.peek')||{}).textContent`).then(t => t || '');
 const openRow = needle => page.ev(`(() => {
+  const all = document.querySelector('[data-groups="open"]'); if (all) all.click();
   const row = [...document.querySelectorAll('#sources .sr')].find(r => r.querySelector('.sn').textContent.includes(${JSON.stringify(needle)}));
   if (!row) return null;
   const label = row.querySelector('.sn').textContent; row.querySelector('a.sopen').click(); return label;

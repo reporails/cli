@@ -1,6 +1,10 @@
 // Page state and its URL hash: the agent path (#/agent/<id>/<id>) and the findings drill-down (#/file/<path>).
 export const state = {
-  path: ['main'], sel: null, type: 'all', pinned: null, hover: null, layers: null, file: null,
+  path: ['main'], sel: null, type: 'all', pinned: null, hover: null, layers: null, file: null, groups: {},
+  // Inspector panes by key; open state lives here so it survives selecting another agent and the page's re-renders.
+  panes: {},
+  // Source kinds opened or closed by hand, the long kinds showing all, and the source last revealed by focus.
+  sourceGroups: {}, more: new Set(), revealed: null,
 };
 
 const enc = s => encodeURIComponent(s);
@@ -35,3 +39,6 @@ export function applyHash(hash, nodes) {
 }
 
 export const go = (path, file) => { location.hash = hashFor(path, file ?? null); };
+
+// A fan-out group is open when the user said so; otherwise when the selected agent is one of its members.
+export const groupOpen = (st, key, memberIds) => (key in st.groups ? st.groups[key] : memberIds.includes(st.sel));

@@ -212,6 +212,7 @@ def _detail(
     brief_chars = None if own.key == MAIN_ID else _brief_chars(own)
     series = tuple((moment - frame.t0, context) for moment, context in own.replies.points)
     peak = peak_context(own.replies, own.compactions)
+    composition, carried = composition_series(own, world.context.sources, frame, brief_chars)
     return XrayAgentDetail(
         context_start=series[0][1] if series else None,
         peak=peak,
@@ -224,8 +225,8 @@ def _detail(
         prompts=_prompts(own, frame) if own.key == MAIN_ID else (),
         brief=down.task_tokens_est is not None,
         usage=XrayUsage(
-            agent_cost(own.records, world.context.prices, frame.t0),
-            composition_series(own, world.context.sources, frame, brief_chars),
+            agent_cost(own.records, world.context.prices, frame.t0, carried, world.context.sources),
+            composition,
         ),
     )
 

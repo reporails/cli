@@ -164,10 +164,20 @@ def _had_by(
     return tuple(node.id for node in nodes if entry.id in had[node.id])
 
 
+def _source_costs(nodes: Sequence[ProducedNode]) -> dict[str, float]:
+    """Each source's estimated cost summed over every agent's replies."""
+    total: dict[str, float] = {}
+    for node in nodes:
+        for source, usd in node.detail.usage.cost.by_source_usd_est:
+            total[source] = total.get(source, 0.0) + usd
+    return total
+
+
 def _sources(
     sources: SourceTable, nodes: Sequence[ProducedNode], had: dict[str, list[str]], launched: set[str]
 ) -> tuple[XraySource, ...]:
     out: list[XraySource] = []
+    costs = _source_costs(nodes)
     for entry in sources.entries:
         had_by = _had_by(entry, nodes, had, launched)
         out.append(
@@ -182,6 +192,7 @@ def _sources(
                 had_by=had_by,
                 actionable=entry.actionable,
                 launches=len(had_by) if entry.kind == "agent" else None,
+                cost_usd_est=costs.get(entry.id),
             )
         )
     return tuple(out)

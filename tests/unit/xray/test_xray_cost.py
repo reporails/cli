@@ -8,10 +8,12 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.platform.dto.events import EventRecord, TokenUsage
+from reporails_cli.core.platform.dto.xray_build import SourceTable
 from reporails_cli.core.xray.cost import agent_cost, load_price_list, prices_for, reply_cost
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 
+NO_SOURCES = SourceTable((), Path(), {}, {})
 T0 = datetime(2026, 11, 1, 10, 0, 0, tzinfo=UTC)
 
 
@@ -59,9 +61,11 @@ def test_a_reply_without_the_split_prices_its_writes_at_the_5m_rate_and_is_count
     prices = load_price_list()
     usage = _usage("claude-opus-4-8", cache_creation_input_tokens=4_000, output_tokens=0)
     assert reply_cost(usage, prices) == pytest.approx(4_000 * 6.25 / 1_000_000)
-    found = agent_cost([_record(usage, 0)], prices, T0.timestamp())
+    found = agent_cost([_record(usage, 0)], prices, T0.timestamp(), (), NO_SOURCES)
     assert (found.split_assumed, found.output_missing) == (1, 0)
-    bare = agent_cost([_record(_usage("claude-opus-4-8", input_tokens=1_000), 0)], prices, T0.timestamp())
+    bare = agent_cost(
+        [_record(_usage("claude-opus-4-8", input_tokens=1_000), 0)], prices, T0.timestamp(), (), NO_SOURCES
+    )
     assert (bare.split_assumed, bare.output_missing) == (0, 1)
     assert bare.total_usd == pytest.approx(1_000 * 5 / 1_000_000)
 
@@ -71,10 +75,12 @@ def test_an_unknown_model_has_no_cost_and_is_named() -> None:
     mystery = _usage("claude-mystery-9", input_tokens=1_000, output_tokens=1)
     assert reply_cost(mystery, prices) is None
     known = _usage("claude-sonnet-5-5", input_tokens=1_000_000, output_tokens=0)
-    found = agent_cost([_record(mystery, 0), _record(known, 10), _record(mystery, 20)], prices, T0.timestamp())
+    found = agent_cost(
+        [_record(mystery, 0), _record(known, 10), _record(mystery, 20)], prices, T0.timestamp(), (), NO_SOURCES
+    )
     assert (found.turns, found.unpriced, found.unpriced_models) == (3, 2, ("claude-mystery-9",))
     assert found.total_usd == pytest.approx(2.0)
-    nothing = agent_cost([_record(mystery, 0)], prices, T0.timestamp())
+    nothing = agent_cost([_record(mystery, 0)], prices, T0.timestamp(), (), NO_SOURCES)
     assert (nothing.total_usd, nothing.peak_turn_usd, nothing.peak_turn_t) == (None, None, None)
 
 
@@ -103,11 +109,11 @@ def test_cache_hit_rate_is_cache_reads_over_total_context_across_replies() -> No
     prices = load_price_list()
     first = _usage("claude-sonnet-5-5", input_tokens=100, cache_creation_input_tokens=900, output_tokens=10)
     second = _usage("claude-sonnet-5-5", input_tokens=100, cache_read_input_tokens=900, output_tokens=10)
-    found = agent_cost([_record(first, 5), _record(second, 65)], prices, T0.timestamp())
+    found = agent_cost([_record(first, 5), _record(second, 65)], prices, T0.timestamp(), (), NO_SOURCES)
     assert found.cache_hit_rate == pytest.approx(900 / 2_000)
     assert found.turns == 2
     assert found.peak_turn_usd is not None and found.peak_turn_t == 5.0
-    assert agent_cost([], prices, T0.timestamp()).cache_hit_rate is None
+    assert agent_cost([], prices, T0.timestamp(), (), NO_SOURCES).cache_hit_rate is None
 
 
 def test_a_malformed_price_list_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

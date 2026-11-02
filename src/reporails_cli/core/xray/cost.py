@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from dataclasses import replace
 from functools import lru_cache
 
 from reporails_cli.bundled import get_prices_path
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object
 from reporails_cli.core.platform.dto.events import EventRecord, TokenUsage
+from reporails_cli.core.platform.dto.xray_build import SourceTable
+from reporails_cli.core.platform.dto.xray_composition import CarriedReply
 from reporails_cli.core.platform.dto.xray_cost import (
     LongPrompt,
     ModelPrices,
@@ -94,28 +97,82 @@ def _write_split(usage: TokenUsage) -> tuple[int, int, bool]:
     return usage.cache_write_5m_tokens or 0, usage.cache_write_1h_tokens or 0, False
 
 
-def reply_cost(usage: TokenUsage, prices: PriceList) -> float | None:
-    """The USD one reply cost at list price; None when its model has no price. A reply without the cache-write
-    split prices all its writes at the 5-minute rate, and one without `output_tokens` prices no output."""
+def _reply_rate(usage: TokenUsage, prices: PriceList) -> Rate | None:
+    """The rates one reply is priced at: its model's base rates, or the long-prompt rates when its context is over
+    the threshold; None when its model has no price."""
     row = prices_for(usage.model, prices)
     if row is None:
         return None
-    rate = row.rate
     if row.long_prompt is not None and context_of(usage) > row.long_prompt.above_tokens:
-        rate = row.long_prompt.rate
+        return row.long_prompt.rate
+    return row.rate
+
+
+def _input_side_usd(usage: TokenUsage, rate: Rate) -> float:
+    """The USD the reply's input, cache writes and cache reads cost, with no output."""
     five, hour, _ = _write_split(usage)
     total = (
         usage.input_tokens * rate.input
         + five * rate.cache_write_5m
         + hour * rate.cache_write_1h
         + usage.cache_read_input_tokens * rate.cache_read
-        + (usage.output_tokens or 0) * rate.output
     )
     return total / _PER_TOKENS
 
 
-def agent_cost(records: Sequence[EventRecord], prices: PriceList, t0: float) -> XrayAgentCost:
-    """What the `assistant_usage` records among `records` cost; `peak_turn_t` is seconds from `t0`."""
+def reply_cost(usage: TokenUsage, prices: PriceList) -> float | None:
+    """The USD one reply cost at list price; None when its model has no price. A reply without the cache-write
+    split prices all its writes at the 5-minute rate, and one without `output_tokens` prices no output."""
+    rate = _reply_rate(usage, prices)
+    if rate is None:
+        return None
+    return _input_side_usd(usage, rate) + (usage.output_tokens or 0) * rate.output / _PER_TOKENS
+
+
+def input_rate(usage: TokenUsage, prices: PriceList) -> float | None:
+    """The USD one token of the reply's context cost: the reply's input, cache-write and cache-read cost, with no
+    output, over its context. None when the reply is unpriced or its context is empty."""
+    rate = _reply_rate(usage, prices)
+    context = context_of(usage)
+    if rate is None or context == 0:
+        return None
+    return _input_side_usd(usage, rate) / context
+
+
+def attributed_cost(
+    carried: Sequence[CarriedReply], sources: SourceTable, prices: PriceList
+) -> tuple[float | None, tuple[tuple[str, float], ...]]:
+    """What the sources carried across the replies cost: the instruction files' total (None when no reply is
+    priced) and each source's own sum. A source's cost in a reply is the tokens it carried times the reply's rate;
+    an unpriced reply adds nothing."""
+    per_source: dict[str, float] = {}
+    instructions = 0.0
+    priced = False
+    for reply in carried:
+        rate = input_rate(reply.usage, prices)
+        if rate is None:
+            continue
+        priced = True
+        for source, tokens in reply.by_source.items():
+            usd = tokens * rate
+            per_source[source] = per_source.get(source, 0.0) + usd
+            entry = sources.get(source)
+            if entry is not None and entry.kind == "instructions":
+                instructions += usd
+    return (instructions if priced else None), tuple(per_source.items())
+
+
+def agent_cost(
+    records: Sequence[EventRecord], prices: PriceList, t0: float, carried: Sequence[CarriedReply], sources: SourceTable
+) -> XrayAgentCost:
+    """What the `assistant_usage` records among `records` cost; `peak_turn_t` is seconds from `t0`, and `carried`
+    is what each source carried per reply."""
+    instructions, by_source = attributed_cost(carried, sources, prices)
+    return replace(_replies_cost(records, prices, t0), instructions_usd_est=instructions, by_source_usd_est=by_source)
+
+
+def _replies_cost(records: Sequence[EventRecord], prices: PriceList, t0: float) -> XrayAgentCost:
+    """The cost of the replies among `records`, before any of it is attributed to a source."""
     priced: list[tuple[float, float | None]] = []
     unpriced: list[str] = []
     assumed = missing = unnamed = 0
@@ -148,4 +205,6 @@ def agent_cost(records: Sequence[EventRecord], prices: PriceList, t0: float) -> 
         unpriced_models=tuple(dict.fromkeys(unpriced)),
         split_assumed=assumed,
         output_missing=missing,
+        instructions_usd_est=None,
+        by_source_usd_est=(),
     )

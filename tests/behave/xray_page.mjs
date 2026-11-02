@@ -8,19 +8,74 @@ const ready = await page.until(`!!document.querySelector('.card.top')`);
 const out = { ready: !!ready };
 const go = async hash => { await page.ev(`location.hash = ${JSON.stringify(hash)}; 0`); await page.until(`location.hash === ${JSON.stringify(hash)}`); };
 const click = sel => page.ev(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return false; e.click(); return true; })()`);
+const expandAll = () => click('[data-groups="open"]');
 const cardsState = () => page.ev(`[...document.querySelectorAll('.card[data-node]:not(.top):not(.bottom)')].map(c => ({ id: c.dataset.node, ring: c.classList.contains('ring'), dim: c.classList.contains('dim') }))`);
 
+const overlapsOf = () => page.ev(`(() => {
+  const cards = [...document.querySelectorAll('.card[data-node], .card[data-group], .card.bottom')];
+  const r = cards.map(c => c.getBoundingClientRect());
+  let overlaps = 0;
+  for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
+    const a = r[i], b = r[j];
+    if (a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5) overlaps++;
+  }
+  return { cards: cards.length, overlaps };
+})()`);
+const runningText = () => page.ev(`[...document.querySelectorAll('.cv *')].filter(e => e.classList.contains('running') || /\\+\\d+ running/.test(e.textContent)).length`);
+// Each card's top and the y its out-edge leaves the spine at, both measured from the drawn page.
+const launchOf = () => page.ev(`(() => {
+  const cv = document.querySelector('.cv').getBoundingClientRect();
+  return [...document.querySelectorAll('.card[data-node]:not(.top):not(.bottom), .card[data-group]')].map(c => {
+    const attr = c.dataset.node ? 'data-node' : 'data-group';
+    const key = c.dataset.node || c.dataset.group;
+    const edge = document.querySelector('path.arch.out[' + attr + '="' + key + '"]');
+    const out = Number(edge.getAttribute('d').match(/^M[\\d.]+,([\\d.]+)/)[1]);
+    return { key, top: c.getBoundingClientRect().top - cv.top, out, launchY: Number(c.dataset.launchY || NaN) };
+  });
+})()`);
+
 if (mode === 'overlap' && ready) {
-  Object.assign(out, await page.ev(`(() => {
-    const cards = [...document.querySelectorAll('.card[data-node], .card.bottom')];
-    const r = [...cards, ...document.querySelectorAll('.running')].map(c => c.getBoundingClientRect());
-    let overlaps = 0;
-    for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
-      const a = r[i], b = r[j];
-      if (a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5) overlaps++;
-    }
-    return { cards: cards.length, overlaps, running: [...document.querySelectorAll('.running')].map(e => e.textContent) };
-  })()`));
+  Object.assign(out, await overlapsOf());
+  out.running = await runningText();
+}
+
+if (mode === 'p1layout' && ready) {
+  Object.assign(out, await overlapsOf());
+  out.launches = await launchOf();
+  out.running = await runningText();
+}
+
+if (mode === 'p1groups' && ready) {
+  const rows = () => page.ev(`[...document.querySelectorAll('.card[data-node]:not(.top):not(.bottom)')].filter(c => /^b/.test(c.dataset.node)).map(c => ({ id: c.dataset.node, left: Math.round(c.getBoundingClientRect().left), top: Math.round(c.getBoundingClientRect().top) }))`);
+  out.groupsBefore = await page.ev(`[...document.querySelectorAll('.card[data-group]')].map(c => ({ key: c.dataset.group, text: c.textContent, expanded: c.getAttribute('aria-expanded'), tiles: c.querySelectorAll('.tile').length, dashed: getComputedStyle(c).borderTopStyle }))`);
+  out.membersBefore = await rows();
+  await click('.card[data-group="main:b1"]');
+  out.membersOpen = await rows();
+  out.head = await page.ev(`(document.querySelector('.ghead') || {}).textContent || ''`);
+  out.box = await page.ev(`!!document.querySelector('.gbox')`);
+  out.groupCardsOpen = await page.ev(`[...document.querySelectorAll('.card[data-group]')].map(c => c.dataset.group)`);
+  out.arches = await page.ev(`[...document.querySelectorAll('path.arch.out[data-node]')].filter(p => /^b/.test(p.dataset.node)).length`);
+  await click('.gcollapse');
+  out.membersAfter = await rows();
+  out.groupCardsAfter = await page.ev(`document.querySelectorAll('.card[data-group]').length`);
+}
+
+if (mode === 'p1select' && ready) {
+  const open = () => page.ev(`[...document.querySelectorAll('.card[data-node]')].filter(c => /^c/.test(c.dataset.node)).length`);
+  out.before = await open();
+  await page.ev(`import('/static/js/state.js').then(m => { m.state.sel = 'c2'; window.dispatchEvent(new Event('hashchange')); return 0; })`);
+  out.after = await open();
+  out.selected = await page.ev(`(document.querySelector('.card.sel') || {dataset: {}}).dataset.node || null`);
+  await click('.gcollapse');
+  out.collapsed = await open();
+  out.groupCard = await page.ev(`document.querySelectorAll('.card[data-group="main:c1"]').length`);
+}
+
+if (mode === 'p1stretch' && ready) {
+  out.bars = await page.ev(`[...document.querySelectorAll('.stretch')].map(e => ({ title: e.title, width: e.getBoundingClientRect().width, colour: getComputedStyle(e).backgroundColor }))`);
+  out.note = await page.ev(`(document.querySelector('.scalenote') || {}).textContent || null`);
+  out.ticks = await page.ev(`[...document.querySelectorAll('.tick')].map(e => e.getBoundingClientRect().top).sort((a, b) => a - b)`);
+  out.dense = await page.ev(`import('/static/js/geometry.js').then(g => g.tickMarks({ start: 0, end: 7200 }, t => t * 0.01).map(m => m.y))`);
 }
 
 if (mode === 'drill' && ready) {
@@ -38,8 +93,10 @@ if (mode === 'drill' && ready) {
 }
 
 if (mode === 'focus' && ready) {
+  await expandAll();
   await click('#sources .sr[data-source="mcp:docs-server"]');
   out.mcp = await cardsState();
+  out.mcpGroup = await page.ev(`[...document.querySelectorAll('.card[data-group]')].map(c => ({ key: c.dataset.group, ring: c.classList.contains('ring'), dim: c.classList.contains('dim') }))`);
   out.mcpTop = await page.ev(`document.querySelector('.card.top').classList.contains('ring')`);
   out.mcpBanner = await page.ev(`document.querySelector('.fbanner').textContent`);
   await click('[data-clear]');
@@ -75,6 +132,7 @@ if (mode === 'omitted' && ready) {
 }
 
 if (mode === 'markers' && ready) {
+  await expandAll();
   out.compact = await page.ev(`[...document.querySelectorAll('.compact')].map(e => e.textContent)`);
   out.never = await page.ev(`[...document.querySelectorAll('#sources .sr.never')].map(e => e.querySelector('.sn').textContent + ' | ' + e.querySelector('.sw').textContent)`);
   await click('.card[data-node="a6"]');
@@ -86,6 +144,7 @@ if (mode === 'markers' && ready) {
     inspector: document.querySelector('#inspector').textContent,
     animated: document.querySelectorAll('path.arch.flow').length,
   })`);
+  await click('.card[data-group="main:a1"]');
   await click('.card[data-node="a1"]');
   out.returned = await page.ev(`({ up: document.querySelectorAll('.pill-arch.up').length, down: document.querySelectorAll('.pill-arch.down').length, animated: document.querySelectorAll('path.arch.flow').length })`);
   await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
@@ -94,6 +153,7 @@ if (mode === 'markers' && ready) {
 }
 
 if (mode === 'file' && ready) {
+  await expandAll();
   out.pill = await page.ev(`(() => { const a = document.querySelector('#sources .sr[data-source="CLAUDE.md"] a.pill'); const h = a.getAttribute('href'); a.click(); return h; })()`);
   await page.until(`location.hash.startsWith('#/file/')`);
   out.hash = await page.ev(`location.hash`);
@@ -116,11 +176,51 @@ if (mode === 'stub' && ready) {
   out.agentCard = await page.ev(`document.querySelectorAll('.card[data-node="a1"] .nc, .card.top .nc').length`);
 }
 
+if (mode === 'panes' && ready) {
+  const state = key => page.ev(`(() => { const p = document.querySelector('#inspector [data-pane="${key}"]'); return p ? { open: p.querySelector('.ph').getAttribute('aria-expanded'), bodyHidden: p.querySelector('.pb').hidden, head: p.querySelector('.ph').textContent } : null; })()`);
+  const toggle = key => click(`#inspector [data-pane="${key}"] .ph`);
+  const selectNode = async id => {
+    const before = await page.ev(`document.querySelector('#inspector .nm').textContent`);
+    // A member of a collapsed fan-out group has no card until its group is expanded: expand the groups first.
+    while (await page.ev(`!document.querySelector('.card[data-node="${id}"]') && !!document.querySelector('.card[data-group][aria-expanded="false"]')`)) {
+      await click('.card[data-group][aria-expanded="false"]');
+    }
+    await click(`.card[data-node="${id}"]`);
+    await page.until(`document.querySelector('#inspector .nm').textContent !== ${JSON.stringify(before)}`);
+  };
+  const chips = () => page.ev(`[...document.querySelectorAll('#inspector .sl')].map(e => e.textContent)`);
+  const visibleRows = () => page.ev(`[...document.querySelectorAll('#inspector [data-pane="withheld"] .pb .it')].filter(e => e.offsetParent !== null).length`);
+  out.start = { context: await state('context'), cost: await state('cost') };
+  await toggle('context');
+  out.contextOpen = await state('context');
+  out.costAfterContext = await state('cost');
+  out.categories = await page.ev(`[...document.querySelectorAll('#inspector [data-pane="context"] [data-category]')].map(r => ({ key: r.dataset.category, label: r.querySelector('.lb').textContent, value: r.querySelector('.v').textContent, tags: [...r.querySelectorAll('.tag')].map(t => t.textContent) }))`);
+  out.contextText = await page.ev(`document.querySelector('#inspector [data-pane="context"] .pb').textContent`);
+  out.exactTag = await page.ev(`[...document.querySelectorAll('#inspector [data-pane="context"] .ph .tag')].map(t => t.textContent)`);
+  await toggle('cost');
+  out.costOpen = await state('cost');
+  out.costText = await page.ev(`document.querySelector('#inspector [data-pane="cost"] .pb').textContent`);
+  out.mainChip = await chips();
+  out.mainText = await page.ev(`document.querySelector('#inspector').textContent`);
+  await selectNode('a1');
+  out.afterSelect = { context: await state('context'), cost: await state('cost') };
+  out.a1Chip = await chips();
+  out.withheldCompact = await state('withheld');
+  out.withheldRowsBefore = await visibleRows();
+  await toggle('withheld');
+  out.withheldRowsAfter = await visibleRows();
+  out.a1Text = await page.ev(`document.querySelector('#inspector').textContent`);
+  await selectNode('a3');
+  out.a3Chip = await chips();
+}
+
 if (mode === 'words' && ready) {
+  await expandAll();
   out.header = await page.ev(`document.querySelector('.hmeta').textContent`);
   out.unknown = await page.ev(`document.querySelector('#unknown').textContent`);
   out.titles = await page.ev(`[...document.querySelectorAll('[title]')].map(e => e.title)`);
   out.claudeRow = await page.ev(`document.querySelector('#sources .sr[data-source="CLAUDE.md"] .sw').textContent`);
+  await click('.card[data-group="main:a1"]');
   await click('.card[data-node="a1"]');
   out.returned = await page.ev(`document.querySelector('#inspector').textContent`);
   await click('.card[data-node="a6"]');
@@ -130,6 +230,7 @@ if (mode === 'words' && ready) {
 }
 
 if (mode === 'absent' && ready) {
+  await expandAll();
   out.absent = await page.ev(`[...document.querySelectorAll('#sources .nk')].map(e => e.textContent)`);
   out.typeButtons = await page.ev(`[...document.querySelectorAll('[data-type]')].map(e => e.dataset.type)`);
   out.untypedCard = await page.ev(`!!document.querySelector('.card[data-node="a9"]')`);
@@ -145,6 +246,59 @@ if (mode === 'autocheck' && ready) {
 if (mode === 'calls' && ready) {
   out.bracket = await page.until(`(document.querySelector('.blabel')||{}).textContent && document.querySelector('.blabel').textContent.includes('npm test')`) ? await page.ev(`document.querySelector('.blabel').textContent`) : '';
   await new Promise(r => setTimeout(r, 7000));
+}
+
+if (mode === 'groups' && ready) {
+  const snap = () => page.ev(`[...document.querySelectorAll('#sources .ssec')].map(s => ({
+    kind: s.dataset.kind, open: s.querySelector('.sh').getAttribute('aria-expanded') === 'true',
+    rows: [...s.querySelectorAll('.sr')].map(r => r.dataset.source),
+    head: s.querySelector('.sh').textContent,
+    more: (s.querySelector('.smore') || {}).textContent || null,
+    note: (s.querySelector('.snote') || {}).textContent || null,
+  }))`);
+  out.initial = await snap();
+  await click('[data-groups="open"]');
+  out.expanded = await snap();
+  await click('[data-groups="closed"]');
+  out.collapsed = await snap();
+  await click('.sh[data-source-group="agent"]');
+  out.agentOpen = await snap();
+  await click('.smore');
+  out.agentAll = await snap();
+  await click('.smore');
+  out.agentFewer = await snap();
+  await click('.sh[data-source-group="agent"]');
+  out.closedAgain = await snap();
+  // focus a source past the first four of a group the user collapsed
+  await page.ev(`document.querySelector('.station[data-source=\".claude/agents/auditor.md\"]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); 0`);
+  out.focused = await page.until(`!!document.querySelector('#sources .sr[data-source=".claude/agents/auditor.md"]')`) ? await snap() : null;
+}
+
+if (mode === 'agents' && ready) {
+  await click('.sh[data-source-group="agent"]');
+  await click('.smore');
+  const rows = await page.ev(`Object.fromEntries([...document.querySelectorAll('#sources .ssec[data-kind="agent"] .sr')].map(r => [r.dataset.source, { name: r.querySelector('.sn').textContent, who: r.querySelector('.sw').textContent, pill: !!r.querySelector('.pill') }]))`);
+  out.rows = rows;
+  out.lit = {};
+  for (const id of ['.claude/agents/reviewer.md', '.claude/agents/idle.md']) {
+    await click('[data-clear]');
+    await click(`#sources .sr[data-source="${id}"]`);
+    out.lit[id] = (await cardsState()).filter(c => c.ring).map(c => c.id);
+    out.lit[id + ' top'] = await page.ev(`document.querySelector('.card.top').classList.contains('ring')`);
+  }
+  await click('[data-clear]');
+  // Fan-out groups start collapsed; open them so every card shows its chips.
+  while (await page.ev(`!!document.querySelector('.card[data-group][aria-expanded="false"]')`)) await click('.card[data-group][aria-expanded="false"]');
+  out.chips = await page.ev(`Object.fromEntries([...document.querySelectorAll('.card[data-node]')].map(c => { const a = c.querySelector('.chip[data-kind="agent"]'); return [c.dataset.node, a ? a.className : null]; }))`);
+  out.note = await page.ev(`(document.querySelector('#sources .ssec[data-kind="agent"] .snote')||{}).textContent`);
+  out.toggles = await page.ev(`[...document.querySelectorAll('[data-layer]')].map(e => e.dataset.layer + ':' + e.querySelector('.chip').textContent)`);
+}
+
+if (mode === 'cost' && ready) {
+  out.claude = await page.ev(`document.querySelector('#sources .sr[data-source="CLAUDE.md"] .sw').textContent`);
+  out.other = await page.ev(`document.querySelector('#sources .sr[data-source="~/.claude/CLAUDE.md"] .sw').textContent`);
+  await expandAll();
+  out.rule = await page.ev(`document.querySelector('#sources .sr[data-source=".claude/rules/rules-engine.md"] .sw').textContent`);
 }
 
 console.log(JSON.stringify(out));

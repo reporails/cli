@@ -152,6 +152,8 @@ class XraySource(SourceFacts):
     actionable: bool
     # How many agents ran from an agent definition (None for any other kind).
     launches: int | None
+    # What the source cost across every reply that carried it, an estimate; None when no priced reply carried it.
+    cost_usd_est: float | None
 
     def to_json(self) -> JsonObject:
         """The source as a JSON object."""
@@ -166,6 +168,7 @@ class XraySource(SourceFacts):
             "had_by": list(self.had_by),
             "actionable": self.actionable,
             "launches": self.launches,
+            "cost_usd_est": self.cost_usd_est,
         }
 
 
