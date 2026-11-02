@@ -37,7 +37,6 @@ export function slotChips(node, env) {
 }
 
 function card(node, env) {
-  const t = typeOf(env.ix, node);
   const d = node.detail;
   const box = el('div', 'nc');
   const head = el('div', 'nh');
@@ -49,8 +48,8 @@ function card(node, env) {
     head.append(badge);
   }
   const sub = env.top
-    ? `${t.label} · ${k1(d.context_start)} → ${k1(d.peak)}`
-    : `${t.label} · ${dur(node.end - node.start)}`;
+    ? `${k1(d.context_start)} → ${k1(d.peak)}`
+    : dur(node.end - node.start);
   box.append(head, el('span', 'sub mono', sub), slotChips(node, env));
   return box;
 }

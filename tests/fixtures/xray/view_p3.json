@@ -5098,7 +5098,7 @@
         },
         {
           "source": ".claude/agents/auditor.md",
-          "t": 30.0,
+          "t": 4000.0,
           "tokens_est": 420,
           "trigger": "session_start",
           "event": null,

@@ -92,7 +92,7 @@ a.pill:hover{background:rgba(240,136,62,.3)}
 .bracket{position:absolute;width:4px;border:1px solid var(--find);border-right:0;border-radius:4px 0 0 4px;opacity:.75}
 .blabel{position:absolute;font-size:10px;color:var(--find);white-space:nowrap}
 .selband{position:absolute;border-radius:6px;background:rgba(165,148,255,.08);border:1px solid rgba(165,148,255,.35)}
-.card{position:absolute;background:var(--surface);border:1px solid var(--hair);border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.35);padding:8px 9px;display:flex;flex-direction:column;justify-content:space-between;z-index:2;cursor:pointer;color:var(--t1)}
+.card{position:absolute;background:var(--surface);border:1px solid var(--hair);border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.35);padding:6px 9px;display:flex;flex-direction:column;justify-content:space-between;z-index:2;cursor:pointer;color:var(--t1)}
 .card.top{cursor:default}
 .card.sel{background:#22242A;border-color:rgba(236,236,236,.55);box-shadow:0 0 0 4px rgba(165,148,255,.14),0 10px 28px rgba(0,0,0,.5)}
 .card.ring{border-color:rgba(236,236,236,.7)}
@@ -100,16 +100,19 @@ a.pill:hover{background:rgba(240,136,62,.3)}
 .card.stackcard{box-shadow:4px 4px 0 -1px #1D1E24,4px 4px 0 0 rgba(255,255,255,.08),0 6px 18px rgba(0,0,0,.35)}
 .card.bottom{flex-direction:row;align-items:center;justify-content:center;font-size:11px;color:var(--t2);cursor:default;text-align:center}
 .card .hd{position:absolute;width:8px;height:8px;border-radius:50%;background:var(--surface);border:1.5px solid var(--off)}
-.nc,.nc-fallback{display:flex;flex-direction:column;gap:3px;min-width:0}
+.nc,.nc-fallback{display:flex;flex-direction:column;gap:2px;min-width:0}
 .nh{display:flex;align-items:center;gap:7px;min-width:0}
 .nm{font-size:11.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.sub{font-size:10px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nh .nm{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;line-height:1.2;overflow-wrap:anywhere}
+.sub{font-size:10px;line-height:1.2;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile{display:inline-flex;align-items:center;justify-content:center;flex:none}
 .badge{margin-left:auto;font:600 9px 'JetBrains Mono',monospace;padding:0 5px;border-radius:999px;background:var(--chip);color:var(--chip-t)}
-.chips{display:flex;gap:3px;margin-top:2px}
+.chips{display:flex;gap:3px}
 .station{position:absolute;z-index:3;transform:translate(-50%,-50%);display:inline-flex;align-items:center;gap:5px;height:18px;padding:0 8px 0 3px;border-radius:999px;border:1px solid #3A3C42;background:var(--chip);color:var(--chip-t);font:10px 'JetBrains Mono',monospace;cursor:pointer;white-space:nowrap}
 .station .kl{width:13px;height:13px;border-radius:50%;background:#3A3C42;display:inline-flex;align-items:center;justify-content:center;font-size:8px}
-.station.mcp{border-style:dashed}
+.station.mcp,.station.hook{border-style:dashed}
+.station.merged{padding:0 9px}
+.legend{display:flex;align-items:center;gap:4px;margin:0 0 6px;font-size:10.5px;color:var(--t3)} .legend .lg-text{margin-right:6px} .lg-sw{width:9px;height:9px;border-radius:2px;opacity:.7;display:inline-block}
 .station.dot{width:10px;height:10px;padding:0;border-radius:50%;background:var(--chip-t);border:2px solid var(--canvas)}
 .station.find{border-color:var(--find);background:rgba(240,136,62,.18);color:var(--find2)}
 .station.dot.find{background:var(--find)}

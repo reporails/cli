@@ -4,11 +4,11 @@ import { el, svg } from '../dom.js';
 import { clock, k1, range, tk } from '../format.js';
 import { callText } from '../api.js';
 import {
-  BOT_H, BOT_W, CH, COLX, CW, SPX, TOP_W, TRACK_STEP, TRACK_X0, W, Y0,
-  contextAt, layoutTime, lengthFor, spreadStations, tickMarks,
+  BAND_OPACITY, BOT_H, BOT_W, CH, COLX, CW, SPINE_HALF_MAX, SPINE_HALF_MIN, SPX, TOP_W, TRACK_STEP, TRACK_X0, W, Y0,
+  bandColour, layoutTime, lengthFor, mergeStations, replyAt, tickMarks,
 } from '../geometry.js';
 import { groupOpen } from '../state.js';
-import { childrenOf, kindOfSource, typeOf } from '../views.js';
+import { childrenOf, kindOfSource, replyParts, typeOf } from '../views.js';
 import { rendererFor } from './nodes/index.js';
 import { tile } from './nodes/agent.js';
 
@@ -45,15 +45,63 @@ function banner(env, cur, kids) {
   return box;
 }
 
-function spinePoints(cur, scale, cuts, series, isRoot, peak) {
+// The spine: its outline follows the exact total of the replies (SPINE_HALF_MIN at zero up to SPINE_HALF_MAX at the agent's
+// own peak) and the categories stack inside it, left to right in the adapter's order. A band's share of the width is its
+// value over the reply's total; a negative remainder counts as 0, and when the estimates overshoot the total the shares are
+// taken over their own sum so the bands never leave the spine. Each shape is sampled at the same times, so a band's points
+// sit on the outline's.
+function spineShapes(cur, scale, cuts, order) {
+  const comp = cur.detail.composition;
+  const rows = comp && comp.replies ? comp.replies : [];
+  const peak = Math.max(1, ...rows.map(r => r[1]));
   const times = [];
   for (let i = 0; i <= 60; i++) times.push(cur.start + (cur.end - cur.start) * i / 60);
   for (const c of cuts) times.push(c - 0.001, c);
+  for (const r of rows) if (r[0] >= cur.start && r[0] <= cur.end) times.push(r[0]);
   times.sort((a, b) => a - b);
-  const half = t => Math.min(11, 1 + 10 * contextAt(series, cuts, t) / peak * (isRoot ? 1 : 2.4));
-  const left = times.map(t => `${(SPX - half(t)).toFixed(1)},${scale.y(t).toFixed(1)}`);
-  const right = times.map(t => `${(SPX + half(t)).toFixed(1)},${scale.y(t).toFixed(1)}`).reverse();
+  const samples = times.map(t => {
+    const row = rows.length ? replyAt(rows, cuts, t) : null;
+    const total = row ? row[1] : 0;
+    const half = SPINE_HALF_MIN + (SPINE_HALF_MAX - SPINE_HALF_MIN) * total / peak;
+    const parts = row ? replyParts(comp, row).map(v => Math.max(0, v)) : [];
+    const denom = Math.max(1e-9, total, parts.reduce((a, b) => a + b, 0));
+    return { y: scale.y(t), half, parts, denom };
+  });
+  const outline = ptsOf(samples, () => 0, () => 1);
+  const bands = [];
+  for (const c of order) {
+    const i = comp ? comp.keys.indexOf(c.key) : -1;
+    if (i < 0) continue;
+    const before = sm => sm.parts.slice(0, i).reduce((a, b) => a + b, 0) / sm.denom;
+    bands.push({ key: c.key, index: i, points: ptsOf(samples, before, sm => before(sm) + (sm.parts[i] || 0) / sm.denom) });
+  }
+  return { outline, bands };
+}
+
+// The polygon between two fractions of the spine's width at every sample, down the left edge and back up the right.
+function ptsOf(samples, from, to) {
+  const x = (sm, f) => (SPX - sm.half + 2 * sm.half * f).toFixed(1);
+  const left = samples.map(sm => `${x(sm, from(sm))},${sm.y.toFixed(1)}`);
+  const right = samples.map(sm => `${x(sm, to(sm))},${sm.y.toFixed(1)}`).reverse();
   return [...left, ...right].join(' ');
+}
+
+// The line under the header that says what the width and the bands mean, with one swatch per category.
+function legend(cur, order) {
+  const comp = cur.detail.composition;
+  const box = el('div', 'legend');
+  box.append(el('span', 'lg-text', 'spine width = context (exact) · bands = composition (estimated)'));
+  if (comp) {
+    for (const c of order) {
+      const i = comp.keys.indexOf(c.key);
+      if (i < 0) continue;
+      const sw = el('i', 'lg-sw');
+      sw.style.background = bandColour(i);
+      sw.title = c.label;
+      box.append(sw);
+    }
+  }
+  return box;
 }
 
 function ticks(cur, scale) {
@@ -90,6 +138,7 @@ function breaks(scale) {
 function topNode(env, cur, focus) {
   const box = abs('card top' + (hasIt(focus, cur) ? '' : ' dim') + (focus && hasIt(focus, cur) ? ' ring' : ''), SPX - TOP_W / 2, 24);
   box.dataset.node = cur.id;
+  box.title = cur.name;
   box.style.width = `${TOP_W}px`;
   box.style.height = `${CH}px`;
   box.append(rendererFor(cur.kind).card(cur, { ...env, top: true }));
@@ -100,6 +149,7 @@ function childCard(env, c, p, match, selected) {
   const focus = env.focus;
   const box = abs('card', p.left, p.top);
   box.dataset.node = c.id;
+  box.title = c.name;
   if (p.launchY !== undefined) box.dataset.launchY = p.launchY.toFixed(1);
   box.dataset.kind = c.kind;
   box.tabIndex = 0;
@@ -244,12 +294,11 @@ function stationItems(env, cur, scale) {
     const s = ix.sources.get(l.source);
     const k = kindOfSource(ix, l.source);
     items.push({
-      type: 'load', source: l.source, y: scale.y(l.t ?? cur.start), small: l.small, letter: k ? k.letter : '?',
+      type: 'load', source: l.source, name: s ? s.name : l.source, when: ix.triggers.get(l.trigger) || l.trigger, y: scale.y(l.t ?? cur.start), small: l.small, letter: k ? k.letter : '?',
       tokens: l.tokens_est, find: !!(s && s.findings && s.findings.count > 0),
       title: `${k ? k.label : 'Source'} · ${s ? s.name : l.source} · ${l.tokens_est == null ? 'size unknown' : k1(l.tokens_est) + ' loaded'}` +
         ` · ${l.t == null ? 'time unknown, shown at the start' : 'at ' + clock(l.t)} · ${ix.triggers.get(l.trigger) || l.trigger}${l.event ? ' ' + l.event : ''}` +
         `${s && s.findings && s.findings.count ? ' · has findings' : ''}`,
-      gap: l.small ? 12 : 22,
     });
   }
   for (const m of st.mcp) {
@@ -258,30 +307,58 @@ function stationItems(env, cur, scale) {
     const s = ix.sources.get(m.server);
     const big = m.calls > 50;
     items.push({
-      type: 'mcp', source: m.server, y: scale.y((m.first + m.last) / 2), letter: k ? k.letter : '?', calls: m.calls, big,
+      type: 'mcp', source: m.server, name: s ? s.name : m.server, y: scale.y((m.first + m.last) / 2), letter: k ? k.letter : '?', calls: m.calls, big,
       tokens: m.back_tokens_est,
       title: `${s ? s.name : m.server} · ${m.calls} call${m.calls === 1 ? '' : 's'} ${clock(m.first)}–${clock(m.last)} · ${tk(m.back_tokens_est, true)} came back`,
-      gap: 22,
+    });
+  }
+  // A stretch of repeated hook firings is one pill at the middle of the stretch.
+  for (const h of st.hooks || []) {
+    if (!shown(h.source)) continue;
+    const k = kindOfSource(ix, h.source);
+    const s = ix.sources.get(h.source);
+    items.push({
+      type: 'hook', source: h.source, y: scale.y((h.first + h.last) / 2), letter: k ? k.letter : '?', calls: h.count, tokens: h.tokens_est,
+      name: s ? s.name : h.source,
+      title: `${s ? s.name : h.source} · ${h.count} firing${h.count === 1 ? '' : 's'} ${clock(h.first)}–${clock(h.last)} · ${tk(h.tokens_est, true)} loaded`,
     });
   }
   return items;
 }
 
-function stations(env, cur, scale) {
-  const out = [];
-  for (const it of spreadStations(stationItems(env, cur, scale))) {
-    const hot = env.focus && env.focus.id === it.source;
-    const dim = env.focus && !hot;
-    const b = abs('station' + (it.type === 'mcp' ? ' mcp' : '') + (it.small && it.type === 'load' ? ' dot' : '') + (it.find ? ' find' : '') + (hot ? ' hot' : '') + (dim ? ' dim' : ''), SPX, it.drawY, 'button');
-    b.dataset.source = it.source;
-    b.dataset.station = it.type;
-    b.title = it.title;
-    if (!(it.small && it.type === 'load')) {
-      const body = it.type === 'mcp' ? `⇄ ${it.calls}${it.big ? '' : ' · ' + tk(it.tokens, true)}` : `↓ ${tk(it.tokens, true)}`.trim();
-      b.append(el('span', 'kl', it.letter), body);
-    }
-    out.push(b);
+// One pill for a lone station; for a run of stations that fall within MERGE_GAP, one button naming how many, whose tooltip
+// lists each member and whose click and hover focus the first.
+function stationPill(env, cl) {
+  const [it] = cl.members;
+  const many = cl.members.length > 1;
+  const hot = env.focus && cl.members.some(m => m.source === env.focus.id);
+  const dim = env.focus && !hot;
+  const lone = !many && it.small && it.type === 'load';
+  const cls = 'station' + (many ? ' merged' : it.type === 'mcp' ? ' mcp' : it.type === 'hook' ? ' hook' : '') + (lone ? ' dot' : '')
+    + (cl.members.some(m => m.find) ? ' find' : '') + (hot ? ' hot' : '') + (dim ? ' dim' : '');
+  const b = abs(cls, SPX, cl.y, 'button');
+  b.dataset.source = it.source;
+  b.dataset.sources = cl.members.map(m => m.source).join(' ');
+  b.dataset.station = many ? 'merged' : it.type;
+  if (many) {
+    const word = cl.members.every(m => m.type === 'load') ? 'loads' : 'stations';
+    const label = `${cl.members.length} ${word}`;
+    b.title = cl.members.map(m => [m.name, m.tokens == null ? 'size unknown' : tk(m.tokens, true), m.when].filter(Boolean).join(' · ')).join('\n');
+    b.setAttribute('aria-label', `${label}: ${cl.members.map(m => m.name).join(', ')}`);
+    b.append(label);
+    return b;
   }
+  b.title = it.title;
+  if (!lone) {
+    const body = it.type === 'mcp' ? `⇄ ${it.calls}${it.big ? '' : ' · ' + tk(it.tokens, true)}`
+      : it.type === 'hook' ? `×${it.calls} · ${tk(it.tokens, true)}` : `↓ ${tk(it.tokens, true)}`.trim();
+    b.append(el('span', 'kl', it.letter), body);
+  }
+  return b;
+}
+
+function stations(env, cur, scale) {
+  const out = mergeStations(stationItems(env, cur, scale)).map(cl => stationPill(env, cl));
   for (const c of (env.ix.stations.get(cur.id) || { compactions: [] }).compactions) {
     const m = abs('compact', 0, scale.y(c.t));
     const sizes = c.before != null && c.after != null ? ` · ${k1(c.before)} → ${k1(c.after)}` : '';
@@ -390,7 +467,9 @@ export function render(box, env) {
   cv.style.width = `${W}px`;
   cv.style.height = `${height}px`;
   const s = svg('svg', { width: W, height, class: 'cvg' });
-  s.append(svg('polygon', { points: spinePoints(cur, scale, cuts, cur.detail.series || [], isRoot, ix.peak), fill: typeOf(ix, cur).colour, 'fill-opacity': 0.1, class: 'band' }));
+  const shapes = spineShapes(cur, scale, cuts, ix.view.adapter.composition || []);
+  s.append(svg('polygon', { points: shapes.outline, fill: typeOf(ix, cur).colour, 'fill-opacity': 0.1, class: 'band' }));
+  for (const b of shapes.bands) s.append(svg('polygon', { points: b.points, fill: bandColour(b.index), 'fill-opacity': BAND_OPACITY, class: 'cband', 'data-category': b.key }));
   s.append(svg('line', { x1: SPX, x2: SPX, y1: Y0, y2: scale.end, class: 'spine' }));
   const drawn = arches(env, shownKids, placedMap, scale, matchOf, groups);
   s.append(drawn.arches, drawn.marks);
@@ -414,5 +493,5 @@ export function render(box, env) {
     none.textContent = 'No subagents.';
     cv.append(none);
   }
-  box.replaceChildren(banner(env, cur, kids), cv);
+  box.replaceChildren(banner(env, cur, kids), legend(cur, ix.view.adapter.composition || []), cv);
 }

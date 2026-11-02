@@ -163,3 +163,23 @@ Feature: ails xray serves a session's context window on the loopback address thr
   Scenario: A source row shows its estimated cost
     Given the bundled page is served over the "view_sample" fixture view
     Then an instructions source row shows its cost as an estimate and a source without one shows none
+
+  @page @browser
+  Scenario: The spine's width follows the exact context and its bands follow the composition
+    Given the bundled page is served over the "view_sample" fixture view
+    Then the spine is about 18 pixels wide each side at the peak reply, narrower at the first, its bands fill it in the adapter's order and the legend says so
+
+  @page @browser
+  Scenario: A hook stretch is one pill and stations within 14 pixels merge into one
+    Given the bundled page is served over the "view_p4" fixture view
+    Then a hook stretch draws one pill with its count and tokens, and three close loads draw one pill naming all three
+
+  @page @browser
+  Scenario: Handoff pills show only for the selected agent
+    Given the bundled page is served over the "view_sample" fixture view
+    Then no handoff pill exists until an agent is selected, then its two show
+
+  @page @browser
+  Scenario: A long task name wraps to two lines, with no type label and its full text in the tooltip
+    Given the bundled page is served over the "view_p4" fixture view
+    Then a long card title wraps to two lines, the subtitle has no type label and the title attribute holds the full name

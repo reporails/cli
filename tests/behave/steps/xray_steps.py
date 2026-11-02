@@ -774,3 +774,87 @@ def step_source_cost(context):
         return
     assert "~$0.01 estimated" in seen["claude"] and "~$0.01 estimated" in seen["other"], seen
     assert "$" not in seen["rule"], seen
+
+
+def _points(text: str) -> list[tuple[float, float]]:
+    return [(float(a), float(b)) for a, b in (pair.split(",") for pair in text.split())]
+
+
+@then(
+    "the spine is about 18 pixels wide each side at the peak reply, narrower at the first, "
+    "its bands fill it in the adapter's order and the legend says so"
+)
+def step_spine_bands(context):
+    seen = _page(context, "p4spine")
+    if seen is None:
+        return
+    assert seen["legend"] == "spine width = context (exact) \u00b7 bands = composition (estimated)", seen["legend"]
+    outline = _points(seen["outline"])
+    n = len(outline) // 2
+    width = [outline[2 * n - 1 - k][0] - outline[k][0] for k in range(n)]  # the right edge is stored reversed
+    main = next(node for node in context.fixture["nodes"] if node["id"] == "main")
+    replies = main["detail"]["composition"]["replies"]
+    peak = max(r[1] for r in replies)
+    assert abs(max(width) / 2 - 18) < 0.2, max(width)
+    assert abs(width[0] / 2 - (2 + 16 * replies[0][1] / peak)) < 0.2, (width[0], replies[0][1], peak)
+    order = [c["key"] for c in context.fixture["adapter"]["composition"]]
+    assert [b["key"] for b in seen["bands"]] == order, seen["bands"]
+    shapes = [_points(b["points"]) for b in seen["bands"]]
+    for k in range(n):
+        total = sum(pts[2 * n - 1 - k][0] - pts[k][0] for pts in shapes)
+        assert abs(total - width[k]) <= 1.0, (k, total, width[k])
+    for left, right in itertools.pairwise(shapes):  # stacked left to right, each starting where the last ended
+        assert all(abs(right[k][0] - left[2 * n - 1 - k][0]) <= 0.2 for k in range(n))
+    assert {b["opacity"] for b in seen["bands"]} == {"0.5"}, seen["bands"]
+
+
+@then("a hook stretch draws one pill with its count and tokens, and three close loads draw one pill naming all three")
+def step_hook_and_merge(context):
+    seen = _page(context, "p4stations")
+    if seen is None:
+        return
+    hooks = [s for s in seen["stations"] if s["kind"] == "hook"]
+    assert len(hooks) == 1, seen["stations"]
+    assert re.fullmatch(r"H\u00d7120 \u00b7 ~58k", hooks[0]["text"]), hooks[0]
+    assert not [s for s in seen["stations"] if s["source"].startswith("hook:") and s["kind"] != "hook"], seen[
+        "stations"
+    ]
+    merged = [s for s in seen["stations"] if s["kind"] == "merged"]
+    assert len(merged) == 1 and merged[0]["tag"] == "BUTTON", seen["stations"]
+    assert merged[0]["text"] == "3 loads", merged[0]
+    lines = merged[0]["title"].split("\n")
+    assert len(lines) == 3 and all(" \u00b7 ~" in line for line in lines), merged[0]
+    assert merged[0]["label"].startswith("3 loads: "), merged[0]
+    members = merged[0]["sources"].split()
+    assert len(members) == 3 and merged[0]["source"] == members[0], merged[0]
+    assert seen["pinned"], seen  # a click focuses the first member: the focus banner names it
+
+
+@then("no handoff pill exists until an agent is selected, then its two show")
+def step_handoff_pills(context):
+    seen = _page(context, "p4pills")
+    if seen is None:
+        return
+    assert seen["none"] == [], seen
+    assert len(seen["selected"]) == 2 and seen["selected"][0].startswith("\u2193"), seen
+    assert seen["selected"][1].startswith("\u2191"), seen
+    assert len(seen["member"]) == 2, seen
+    assert seen["cleared"] == [], seen
+
+
+@then(
+    "a long card title wraps to two lines, the subtitle has no type label and the title attribute holds the full name"
+)
+def step_card_title(context):
+    seen = _page(context, "p4cards")
+    if seen is None:
+        return
+    names = {node["id"]: node["name"] for node in context.fixture["nodes"]}
+    cards = {c["id"]: c for c in seen["cards"]}
+    long = cards["a2"]
+    assert long["title"] == names["a2"] and long["name"] == names["a2"], long
+    assert long["lines"] == 2, long  # an 80-character task wraps to two lines and ends there
+    for card in cards.values():
+        assert card["lines"] <= 2 and card["fits"] is True, card
+        assert card["title"] == names[card["id"]], card
+        assert re.fullmatch(r"\d+[ms]( \d+s)?", card["sub"]), card  # a duration, no type label

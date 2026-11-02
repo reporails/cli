@@ -110,7 +110,7 @@ if (mode === 'layer' && ready) {
   const count = () => page.ev(`({
     chips: document.querySelectorAll('.card .chip[data-kind="skill"]').length,
     sections: document.querySelectorAll('#sources .ssec[data-kind="skill"]').length,
-    stations: document.querySelectorAll('.station[data-source^=".claude/skills"]').length,
+    stations: document.querySelectorAll('.station[data-sources*=".claude/skills"]').length,
     other: document.querySelectorAll('.card .chip[data-kind="rule"]').length,
   })`);
   out.before = await count();
@@ -289,7 +289,7 @@ if (mode === 'agents' && ready) {
   await click('[data-clear]');
   // Fan-out groups start collapsed; open them so every card shows its chips.
   while (await page.ev(`!!document.querySelector('.card[data-group][aria-expanded="false"]')`)) await click('.card[data-group][aria-expanded="false"]');
-  out.chips = await page.ev(`Object.fromEntries([...document.querySelectorAll('.card[data-node]')].map(c => { const a = c.querySelector('.chip[data-kind="agent"]'); return [c.dataset.node, a ? a.className : null]; }))`);
+  out.chips = await page.ev(`Object.fromEntries([...document.querySelectorAll('.card[data-node]:not(.top)')].map(c => { const a = c.querySelector('.chip[data-kind="agent"]'); return [c.dataset.node, a ? a.className : null]; }))`);
   out.note = await page.ev(`(document.querySelector('#sources .ssec[data-kind="agent"] .snote')||{}).textContent`);
   out.toggles = await page.ev(`[...document.querySelectorAll('[data-layer]')].map(e => e.dataset.layer + ':' + e.querySelector('.chip').textContent)`);
 }
@@ -299,6 +299,40 @@ if (mode === 'cost' && ready) {
   out.other = await page.ev(`document.querySelector('#sources .sr[data-source="~/.claude/CLAUDE.md"] .sw').textContent`);
   await expandAll();
   out.rule = await page.ev(`document.querySelector('#sources .sr[data-source=".claude/rules/rules-engine.md"] .sw').textContent`);
+}
+
+if (mode === 'p4spine' && ready) {
+  Object.assign(out, await page.ev(`({
+    outline: document.querySelector('polygon.band').getAttribute('points'),
+    bands: [...document.querySelectorAll('polygon.cband')].map(e => ({ key: e.dataset.category, points: e.getAttribute('points'), opacity: e.getAttribute('fill-opacity') })),
+    legend: (document.querySelector('.legend .lg-text') || {}).textContent || null,
+  })`));
+}
+
+if (mode === 'p4stations' && ready) {
+  out.stations = await page.ev(`[...document.querySelectorAll('.station')].map(e => ({ kind: e.dataset.station, source: e.dataset.source, sources: e.dataset.sources, text: e.textContent, title: e.title, label: e.getAttribute('aria-label'), tag: e.tagName }))`);
+  await click('.station.merged');
+  out.pinned = await page.ev(`(document.querySelector('.fbanner b') || {}).textContent || null`);
+}
+
+if (mode === 'p4pills' && ready) {
+  const pills = () => page.ev(`[...document.querySelectorAll('.pill-arch')].map(e => e.textContent)`);
+  out.none = await pills();
+  await click('.card[data-group="main:a1"]');
+  await click('.card[data-node="a1"]');
+  out.selected = await pills();
+  await click('.card[data-node="a2"]');
+  out.member = await pills();
+  await click('.card.top');
+  out.cleared = await pills();
+}
+
+if (mode === 'p4cards' && ready) {
+  await click('.card[data-group="main:a1"]');
+  out.cards = await page.ev(`[...document.querySelectorAll('.card[data-node]:not(.top)')].map(c => {
+    const nm = c.querySelector('.nm');
+    return { id: c.dataset.node, title: c.title, name: nm.textContent, lines: Math.round(nm.getBoundingClientRect().height / parseFloat(getComputedStyle(nm).lineHeight)), sub: c.querySelector('.sub').textContent, fits: c.scrollHeight <= c.clientHeight + 1 };
+  })`);
 }
 
 console.log(JSON.stringify(out));

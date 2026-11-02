@@ -2,15 +2,11 @@
 import { el, nk } from '../dom.js';
 import { clock, k1, plural, range } from '../format.js';
 import { hashFor } from '../state.js';
-import { childrenOf, typeOf } from '../views.js';
+import { bandColour } from '../geometry.js';
+import { childrenOf, replyParts, typeOf } from '../views.js';
 import { rendererFor } from './nodes/index.js';
 import { tile } from './nodes/agent.js';
 import { pane, tag } from './pane.js';
-
-// Band colours for the composition bar, taken in the view's category order; a longer list wraps.
-const BAND_COLOURS = ['#8A8C92', '#A9C2FF', '#A594FF', '#6EA8FF', '#7FD4B4', '#F2A66E', '#E6C86E', '#C79BE0'];
-const bandColour = i => BAND_COLOURS[i % BAND_COLOURS.length];
-const FIRST_PART = 5; // a reply row is [t, total, input, cache write, cache read, ...one value per category, over_estimate]
 
 // The source kind the view marks as launched-from-a-definition: its sources carry a launch count (or the adapter notes
 // what the kind leaves out).
@@ -64,7 +60,7 @@ function contextPane(node, env) {
   const title = el('b', null, 'Context at peak');
   const reply = comp && comp.peak != null ? comp.replies[comp.peak] : null;
   if (!reply) return pane('context', [title, el('span', 'note', 'not known here')], [note('Not known here: no replies were recorded for this agent.')]);
-  const total = reply[1], parts = reply.slice(FIRST_PART, FIRST_PART + comp.keys.length), over = reply[reply.length - 1];
+  const total = reply[1], parts = replyParts(comp, reply), over = reply[reply.length - 1];
   const remainder = view.adapter.composition_remainder;
   const labels = view.adapter.composition;
   const head = [title, el('span', 'big', k1(total)), tag('exact', 'exact'), stackBar(parts, total)];

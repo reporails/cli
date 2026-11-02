@@ -12,9 +12,8 @@ export function index(view) {
   const kinds = new Map(ad.source_kinds.map(k => [k.key, k]));
   const types = new Map(ad.agent_types.map(t => [t.key, t]));
   const nodeKinds = new Map(ad.node_kinds.map(k => [k.key, k]));
-  const peak = Math.max(1, ...view.nodes.map(n => (n.detail && n.detail.peak) || 0));
   const triggers = new Map((ad.triggers || []).map(t => [t.key, t.label]));
-  return { view, triggers, nodes, sources, edges, stations, track, kinds, types, nodeKinds, peak };
+  return { view, triggers, nodes, sources, edges, stations, track, kinds, types, nodeKinds };
 }
 
 // The type's colour, icon and short label; a type the adapter does not list is grey with its raw name.
@@ -37,3 +36,6 @@ export function focusSource(ix, state) {
 }
 
 export const childrenOf = (ix, node) => node.children.map(id => ix.nodes.get(id)).filter(Boolean);
+
+// A reply row is [t, total, input, cache write, cache read, ...one value per category key, over_estimate].
+export const replyParts = (comp, row) => row.slice(5, 5 + comp.keys.length);
