@@ -26,6 +26,7 @@ from reporails_cli.core.heal.apply import heal_bound
 from reporails_cli.core.pipeline.mapping import (
     apply_generic_scan,
     discover_scope,
+    is_listed_file,
 )
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.dto.platform import CombinedResult
@@ -34,6 +35,7 @@ from reporails_cli.interfaces.cli.check_notices import (
     _emit_empty_run,
     _emit_heal_scope_refusal,
     _emit_heal_withheld,
+    _emit_unlisted_file,
     _notify_heal_scope_skips,
 )
 from reporails_cli.interfaces.cli.check_orchestration import (
@@ -259,6 +261,9 @@ def _resolve_scope_at_target(state: CheckState, capability_paths: frozenset[Path
 def _flow_scope(state: CheckState) -> bool:
     """Detect agents, discover instruction files, narrow to scope. False = nothing in scope."""
     _resolve_scope_at_target(state)
+    single = state.targets.single_file
+    if single is not None and not is_listed_file(safe_resolve(single), state.targets.target):
+        _emit_unlisted_file(single, state.targets.target, state.targets.output_format)
     # A scope-to-subtree run keeps the project scan root, so its narrowing runs here
     # with the capability/multi-path narrowing rather than through the re-root branch.
     narrows = state.targets.single_path is None or state.targets.subtree_scoped

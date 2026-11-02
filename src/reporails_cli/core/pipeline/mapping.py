@@ -214,6 +214,12 @@ def _claimed_by_other(path: Path, agent: str, target: Path) -> bool:
     return any(_claims(path, other, target) for other in get_known_agents() if other != agent)
 
 
+def is_listed_file(path: Path, target: Path) -> bool:
+    """True when some known agent's file types classify `path` as an instruction, rule or config file under `target`."""
+
+    return any(_claims(path, agent, target) for agent in get_known_agents())
+
+
 def _claims(path: Path, agent: str, target: Path) -> bool:
     """True when the file types of `agent` classify `path`; False when they cannot be read."""
 

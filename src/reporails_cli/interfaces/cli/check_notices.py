@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from reporails_cli.core.heal.apply import heal_withheld_for_run
@@ -55,6 +56,17 @@ def _emit_heal_withheld(output_format: str, *, funnel_error: object, tier: str |
         print(json.dumps({"error": code, "message": message}), file=sys.stderr)
         return
     console.print(f"[yellow]{message}[/yellow]")
+
+
+def _emit_unlisted_file(file: Path, root: Path, output_format: str) -> None:
+    """Say that a named file is checked outside any project listing, in the active output format.
+
+    Under json/github the diagnosis owns stdout, so the notice goes to stderr."""
+    message = f"{file} is not an instruction file in the project at {root}; run ails check in that project's folder."
+    if output_format in MACHINE_READABLE_CHECK_FORMATS:
+        print(message, file=sys.stderr)
+        return
+    console.print(f"[yellow]{message}[/yellow]", soft_wrap=True)
 
 
 def _emit_heal_scope_refusal(output_format: str) -> None:

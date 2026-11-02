@@ -48,3 +48,10 @@ Feature: `ails check` scores and validates instruction files end-to-end
     And the json files map contains only "CLAUDE.md"
     When I run "ails check" on "proj/docs/CLAUDE.md" from the folder beside it
     Then the json files map contains only "CLAUDE.md"
+
+  @e2e @regression
+  Scenario: A rule file checked from outside its project says it is not listed there
+    Given a git project "proj" elsewhere with a ".claude/rules/x.md" rule file
+    When I run "ails check" on "proj/.claude/rules/x.md" from the folder beside it
+    Then the check exits 0
+    And the notice names "proj/.claude/rules/x.md" and says to run ails check in the project's folder

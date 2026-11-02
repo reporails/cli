@@ -160,3 +160,23 @@ def step_json_files_only(context, name):
 @then("that file carries no finding")
 def step_file_no_finding(context):
     assert not findings(context.result), [f["rule"] for f in findings(context.result)]
+
+
+@given('a git project "proj" elsewhere with a ".claude/rules/x.md" rule file')
+def step_other_project_with_rule(context):
+    context.elsewhere = context.tmpdir / "elsewhere"
+    proj = context.elsewhere / "proj"
+    (proj / ".claude" / "rules").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=proj, check=True)
+    (proj / "CLAUDE.md").write_text(_SPARSE, encoding="utf-8")
+    (proj / ".claude" / "rules" / "x.md").write_text(_SPARSE, encoding="utf-8")
+    context.project = context.tmpdir / "cwd"
+    context.project.mkdir()
+
+
+@then('the notice names "{name}" and says to run ails check in the project\'s folder')
+def step_unlisted_file_notice(context, name):
+    output = context.result.stdout + context.result.stderr
+    file = str(context.elsewhere / name)
+    assert f"{file} is not an instruction file in the project at " in output, output
+    assert "run ails check in that project's folder." in output, output
