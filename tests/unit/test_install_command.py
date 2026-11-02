@@ -12,7 +12,6 @@ from unittest.mock import MagicMock
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.discovery.project_root import git_root
 from reporails_cli.core.platform.adapters import programs as programs_module
 from reporails_cli.core.platform.utils.version import installed_version
 from reporails_cli.interfaces.cli import install as install_module
@@ -691,33 +690,6 @@ def test_relative_plugin_source_becomes_an_absolute_path(monkeypatch: pytest.Mon
     assert install_module._plugin_source() == str(tmp_path / "repo" / "plugin")
     monkeypatch.setenv("AILS_PLUGIN_SOURCE", "owner/repo")
     assert install_module._plugin_source() == "owner/repo"
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_cli_ux
-def test_git_root_never_accepts_the_home_folder(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """A dotfiles repository at home is not a project root; the start folder is."""
-    home = tmp_path / "home"
-    nested = home / "work" / "proj" / "sub"
-    nested.mkdir(parents=True)
-    (home / ".git").mkdir()
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-
-    assert git_root(nested) is None
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_cli_ux
-def test_git_root_still_finds_a_repository_below_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    home = tmp_path / "home"
-    repo = home / "work" / "proj"
-    nested = repo / "sub"
-    nested.mkdir(parents=True)
-    (home / ".git").mkdir()
-    (repo / ".git").mkdir()
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-
-    assert git_root(nested) == repo
 
 
 def _path_install(

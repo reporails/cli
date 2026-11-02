@@ -14,7 +14,7 @@ from reporails_cli.interfaces.mcp.tools import refusal_payload
 from reporails_cli.interfaces.mcp.validate_targets import named_files, resolve_validate_targets, target_tokens
 
 
-def prepare_for_path(path: str, targets: list[str] | None = None) -> JsonObject:
+def prepare_for_path(path: str, targets: list[str] | None, project_root: Path) -> JsonObject:
     """Map the files `validate(path, targets)` checks; `{"files": n}` is how many are ready.
 
     Answers `validate`'s own payload for every condition that stops it (model not ready,
@@ -29,12 +29,11 @@ def prepare_for_path(path: str, targets: list[str] | None = None) -> JsonObject:
         tokens = target_tokens(targets)
         target = Path(path).resolve()
         if tokens and target.exists():
-            # project folder: set by the MCP layer
-            resolved = resolve_validate_targets(tokens, resolve_scan_target(target, Path.cwd().resolve())[0])
+            resolved = resolve_validate_targets(tokens, resolve_scan_target(target, project_root)[0])
             if isinstance(resolved, dict):
                 return resolved
             named = named_files(resolved)
-        scope = scope_for_path(path, named)
+        scope = scope_for_path(path, named, project_root)
         if isinstance(scope, Refusal):
             return {"files": 0} if scope.kind == "empty_project" else refusal_payload(scope)
         ruleset_map, mapper_error = build_map(scope.scan_root, scope.instruction_files, scope.filter_agents)

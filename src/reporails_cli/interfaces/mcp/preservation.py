@@ -16,7 +16,7 @@ def with_preservation(
 
     Runs entirely off the event loop (the caller wraps this whole function in
     `asyncio.to_thread`). `ruleset_map` / `score` are the file's own, reused from the
-    `_CircuitState` cache on a cache-hit reply — this never re-runs the pipeline itself;
+    `CircuitState` cache on a cache-hit reply — this never re-runs the pipeline itself;
     a caller that has no map to hand it (an unusual, defensively-guarded case) sees no
     preservation block rather than paying a second pipeline run here. `scan_root` is the
     project root the preservation `invented_named` check resolves a path-shaped named token

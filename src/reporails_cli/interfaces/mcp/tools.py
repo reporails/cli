@@ -143,15 +143,15 @@ def format_run(run: CheckRun, *, full: bool) -> JsonObject:
 
 
 def run_pipeline_for_path(
-    path: str, full: bool = False, named: frozenset[Path] = frozenset()
+    path: str, full: bool = False, named: frozenset[Path] = frozenset(), *, project_root: Path
 ) -> tuple[JsonObject, RulesetMap | None, float | None]:
     """Check `path` (directory or file); returns `(payload, ruleset_map, file_score)`. `ruleset_map` and
     `file_score` are `None` on a structured error/needs-install payload — the caller checks `"error"` /
     `"needs_install"` in the payload. A file `path` narrows the validated set to that single file;
     `file_score` is that single file's own display score (`None` for a directory or an unscored file).
-    `named` is read as in `core.pipeline.check_one.scope_for_path`.
+    `named` and `project_root` are read as in `core.pipeline.check_one.scope_for_path`.
     """
-    run = check_path(path, named)
+    run = check_path(path, named, project_root)
     if isinstance(run, Refusal):
         return refusal_payload(run), None, None
     return format_run(run, full=full), run.ruleset_map, run.file_score

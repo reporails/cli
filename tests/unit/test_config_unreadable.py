@@ -110,10 +110,10 @@ def test_mcp_validate_returns_the_structured_error(tmp_path: Path, global_path: 
     from reporails_cli.interfaces.mcp.server import _run_heal_apply, _run_validate
 
     root = _project(tmp_path, "config.yml")
-    payload = asyncio.run(_run_validate(str(root), False))
+    payload = asyncio.run(_run_validate(str(root), False, None, root))
     assert payload["error"] == "config_unreadable"
     assert str(root / ".ails" / "config.yml") in payload["message"]
-    healed = asyncio.run(_run_heal_apply(str(root)))
+    healed = asyncio.run(_run_heal_apply(str(root), None, root))
     assert healed.startswith("heal_apply: ") and str(root / ".ails" / "config.yml") in healed
 
 
@@ -258,12 +258,12 @@ def test_mcp_remedy_brief_returns_the_structured_error(
         raise problem
 
     monkeypatch.setattr(server, "build_remedy_brief", unreadable)
-    server._validate_states.clear()
-    server._validate_states[str(root.resolve())] = server._CircuitState(
+    server.validate_states.clear()
+    server.validate_states[str(root.resolve())] = server.CircuitState(
         full_payload={"workflow": {"locations": [{"order": 1}]}}, scan_root=root
     )
     reply = server._serve_remedy_brief(str(root), 1, None, True)
-    server._validate_states.clear()
+    server.validate_states.clear()
     assert reply == {"error": "config_unreadable", "message": str(problem)}
 
 

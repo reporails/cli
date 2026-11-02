@@ -98,7 +98,7 @@ def _build_file(rel: str, scan_root: Path) -> _BuiltFile | str:
     cause, never a bare sentinel."""
 
     abs_file = resolve_from_root(rel, scan_root)
-    payload, ruleset_map, score = run_pipeline_for_path(str(abs_file), True)
+    payload, ruleset_map, score = run_pipeline_for_path(str(abs_file), True, project_root=scan_root)
     if ruleset_map is None:
         return _pipeline_failure_reason(payload)
     try:

@@ -80,7 +80,7 @@ def _bounded_reply(path: Path) -> dict[str, Any]:
     the text view, so the wiring tests read the payload the view is rendered from."""
     from reporails_cli.interfaces.mcp.server import _run_validate
 
-    return _run_async(_run_validate(str(path), False))
+    return _run_async(_run_validate(str(path), False, None, path if path.is_dir() else path.parent))
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +97,7 @@ class TestStructuredOutput:
 
         # Use a unique path so the circuit-breaker memoization never pollutes another
         # test keyed on the shared "." cwd.
-        server._validate_states.clear()
+        server.validate_states.clear()
         payload = {
             "level": "L2",
             "tier": "free",
@@ -105,7 +105,9 @@ class TestStructuredOutput:
             "files": {"CLAUDE.md": {"count": 1, "findings": [{"rule": "CORE:C:0001", "line": 1}]}},
         }
         monkeypatch.setattr(
-            server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(): (dict(payload), None, None)
+            server,
+            "run_pipeline_for_path",
+            lambda path, full=False, named=frozenset(), **_k: (dict(payload), None, None),
         )
 
         result = _run_async(server.server.call_tool("validate", {"path": str(tmp_path)}))
@@ -142,12 +144,12 @@ class TestListTools:
     @pytest.mark.subsys_cli_ux
     @pytest.mark.subsys_api
     def test_all_tools_present(self) -> None:
-        """list_tools returns the current surface: validate, prepare, remedy_brief, heal_apply, preflight, explain."""
+        """list_tools returns the current surface, `xray` included."""
         from reporails_cli.interfaces.mcp.server import server as mcp_server
 
         tools = _run_async(mcp_server.list_tools())
         names = {t.name for t in tools}
-        assert names == {"validate", "prepare", "remedy_brief", "heal_apply", "preflight", "explain"}
+        assert names == {"validate", "prepare", "remedy_brief", "heal_apply", "preflight", "explain", "xray"}
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
@@ -277,12 +279,12 @@ class TestValidateTool:
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @pytest.mark.subsys_api
-    def test_missing_rules_folder_names_what_is_missing_and_what_to_do(self) -> None:
+    def test_missing_rules_folder_names_what_is_missing_and_what_to_do(self, tmp_path: Path) -> None:
         """When the rules folder holds no `core` rules, validate returns a structured
         `needs_install` payload that names the folder and says to reinstall the package or fix
         `framework_path`, and does not point at a rules download."""
         with patch("reporails_cli.core.pipeline.check_one.is_initialized", return_value=False):
-            text = _call_tool("validate", {"path": "."})
+            text = _call_tool("validate", {"path": str(tmp_path)})
         data = json.loads(text)
         assert data.get("needs_install") is True
         assert "reinstall reporails-cli" in data["message"]
@@ -365,9 +367,11 @@ class TestValidateTargets:
     def project(self, monkeypatch, tmp_path: Path) -> Path:
         from reporails_cli.interfaces.mcp import server
 
-        server._validate_states.clear()
+        server.validate_states.clear()
         monkeypatch.setattr(
-            server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(): (self._PAYLOAD, None, None)
+            server,
+            "run_pipeline_for_path",
+            lambda path, full=False, named=frozenset(), **_k: (self._PAYLOAD, None, None),
         )
         return _skills_project(tmp_path)
 
@@ -377,7 +381,7 @@ class TestValidateTargets:
     def test_a_capability_target_keeps_only_its_locations(self, project: Path) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        data = _run_async(server._run_validate(str(project), True, ["skills"]))
+        data = _run_async(server._run_validate(str(project), True, ["skills"], project))
         wf = data["workflow"]
         assert [(loc["order"], loc["element"]) for loc in wf["locations"]] == [
             (1, "the `backlog` skill"),
@@ -393,9 +397,9 @@ class TestValidateTargets:
     def test_one_element_and_a_typed_word_read_like_ails_check(self, project: Path) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        one = _run_async(server._run_validate(str(project), True, ["skill:release"]))
+        one = _run_async(server._run_validate(str(project), True, ["skill:release"], project))
         assert [loc["element"] for loc in one["workflow"]["locations"]] == ["the `release` skill"]
-        path = _run_async(server._run_validate(str(project), True, [".claude/agents"]))
+        path = _run_async(server._run_validate(str(project), True, [".claude/agents"], project))
         assert [loc["element"] for loc in path["workflow"]["locations"]] == ["the `reviewer` agent"]
 
     @pytest.mark.e2e
@@ -405,11 +409,11 @@ class TestValidateTargets:
     def test_remedy_brief_reads_the_targeted_view_and_the_whole_view_keeps_its_numbering(self, project: Path) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        _run_async(server._run_validate(str(project), True, ["skills"]))
+        _run_async(server._run_validate(str(project), True, ["skills"], project))
         brief = server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True)
         assert brief["location"]["element"] == "the `backlog` skill"
         assert server._serve_remedy_brief(str(project), 1, has_guide=True)["error"] == "no_workflow"
-        _run_async(server._run_validate(str(project), True))
+        _run_async(server._run_validate(str(project), True, None, project))
         assert server._serve_remedy_brief(str(project), 1, has_guide=True)["location"]["element"] == "CLAUDE.md"
         assert (
             server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True)["location"]["element"]
@@ -422,7 +426,7 @@ class TestValidateTargets:
     def test_a_target_that_names_nothing_is_a_structured_error(self, project: Path) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        missing = _run_async(server._run_validate(str(project), True, ["skills:nope"]))
+        missing = _run_async(server._run_validate(str(project), True, ["skills:nope"], project))
         assert missing["error"] == "target_not_found"
         assert "nope" in missing["message"]
 
@@ -443,7 +447,7 @@ class TestHealExcludeComposed:
         )
         from reporails_cli.interfaces.mcp import server
 
-        server._validate_states.clear()
+        server.validate_states.clear()
         (tmp_path / ".ails").mkdir()
         (tmp_path / ".ails" / "config.yml").write_text("heal_exclude: [CLAUDE.md]\n", encoding="utf-8")
         places = ("CLAUDE.md", "pkg/CLAUDE.md")
@@ -636,7 +640,7 @@ class TestCircuitBreaker:
     def _reset_states(self) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        server._validate_states.clear()
+        server.validate_states.clear()
 
     def setup_method(self) -> None:
         self._reset_states()
@@ -703,8 +707,8 @@ class TestCircuitBreaker:
     def test_four_iterations_with_content_changing_each_time_never_trip_the_breaker(self, level2_project: Path) -> None:
         """The rewrite -> validate -> revise -> validate loop an agent runs on one file: up to
         4 validates, the content changing between every one, must never see `circuit_breaker`
-        — `_MAX_CALLS = 10` alone already clears 4, and each edit resets `consecutive_unchanged`
-        before it could reach `_MAX_UNCHANGED`. A validate with no content change in between
+        — `MAX_CALLS = 10` alone already clears 4, and each edit resets `consecutive_unchanged`
+        before it could reach `MAX_UNCHANGED`. A validate with no content change in between
         still counts as unchanged — `test_third_unchanged_triggers_breaker` above pins that
         half of the contract."""
         claude_md = level2_project / "CLAUDE.md"
@@ -770,7 +774,7 @@ class TestCircuitBreaker:
         claude_md = level2_project / "CLAUDE.md"
         original = claude_md.read_text()
         # Make MAX_CALLS calls, editing file each time to avoid unchanged breaker
-        for i in range(server._MAX_CALLS):
+        for i in range(server.MAX_CALLS):
             claude_md.write_text(original + f"\n## Edit {i}\n")
             _call_tool("validate", {"path": str(level2_project)})
         # Next call should be blocked by absolute ceiling
@@ -784,7 +788,7 @@ class TestCircuitBreaker:
     @pytest.mark.subsys_api
     @pytest.mark.requires_model
     def test_eleven_validates_across_two_rounds_survive_a_brief_between_them(self, monkeypatch, tmp_path: Path) -> None:
-        """A heal pass makes up to 6 `validate` calls; `_MAX_CALLS = 10` used to trip the
+        """A heal pass makes up to 6 `validate` calls; `MAX_CALLS = 10` used to trip the
         breaker during a "continue" (second-tier) pass. A served `remedy_brief` between rounds
         resets `call_count` — the agent is still working the loop — so 11 validates across two
         rounds, with a brief and a file edit between them, must not trip."""
@@ -812,13 +816,13 @@ class TestCircuitBreaker:
             },
         }
         monkeypatch.setattr(
-            server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(): (payload, None, None)
+            server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(), **_k: (payload, None, None)
         )
         claude_md = tmp_path / "CLAUDE.md"
         claude_md.write_text("# Project\n")
 
         def validate() -> dict:
-            return _run_async(server._run_validate(str(tmp_path), False))
+            return _run_async(server._run_validate(str(tmp_path), False, None, tmp_path))
 
         # Round 1: 6 validate calls, each with a file edit so no unchanged-repeat trips first.
         for i in range(6):
@@ -851,7 +855,7 @@ class TestFullMemoization:
     def _reset_states(self) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        server._validate_states.clear()
+        server.validate_states.clear()
 
     def setup_method(self) -> None:
         self._reset_states()
@@ -869,9 +873,11 @@ class TestFullMemoization:
         calls = {"n": 0}
         real_run_pipeline_for_path = server.run_pipeline_for_path
 
-        def counting_run_pipeline_for_path(path: str, full: bool = False, named: frozenset[Path] = frozenset()):
+        def counting_run_pipeline_for_path(
+            path: str, full: bool = False, named: frozenset[Path] = frozenset(), **kwargs: Path
+        ):
             calls["n"] += 1
-            return real_run_pipeline_for_path(path, full, named)
+            return real_run_pipeline_for_path(path, full, named, **kwargs)
 
         monkeypatch.setattr(server, "run_pipeline_for_path", counting_run_pipeline_for_path)
 
@@ -1051,7 +1057,7 @@ class TestRemedyBrief:
     def setup_method(self) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        server._validate_states.clear()
+        server.validate_states.clear()
 
     teardown_method = setup_method
 
@@ -1100,7 +1106,9 @@ class TestRemedyBrief:
         from reporails_cli.interfaces.mcp import server
 
         monkeypatch.setattr(
-            server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(): (self._payload(), None, None)
+            server,
+            "run_pipeline_for_path",
+            lambda path, full=False, named=frozenset(), **_k: (self._payload(), None, None),
         )
         (tmp_path / "CLAUDE.md").write_text("# Project\n")
         _call_tool("validate", {"path": str(tmp_path)})
@@ -1120,20 +1128,22 @@ class TestRemedyBrief:
 
         fake_map = SimpleNamespace(atoms=(), files=())
         monkeypatch.setattr(
-            server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(): (self._payload(), None, None)
+            server,
+            "run_pipeline_for_path",
+            lambda path, full=False, named=frozenset(), **_k: (self._payload(), None, None),
         )
         monkeypatch.setattr(
-            remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None)
+            remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"files": {}}, fake_map, None)
         )
         (tmp_path / "CLAUDE.md").write_text("# Project\n")
         _call_tool("validate", {"path": str(tmp_path)})
-        state_before = server._validate_states[str(tmp_path.resolve())]
+        state_before = server.validate_states[str(tmp_path.resolve())]
         unchanged_before = state_before.consecutive_unchanged
 
         for _ in range(5):
             reply = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 1, "has_guide": True}))
             assert "error" not in reply, reply
-            state_after = server._validate_states[str(tmp_path.resolve())]
+            state_after = server.validate_states[str(tmp_path.resolve())]
             assert (state_after.call_count, state_after.consecutive_unchanged) == (0, unchanged_before)
 
     @pytest.mark.e2e
@@ -1148,10 +1158,12 @@ class TestRemedyBrief:
 
         fake_map = SimpleNamespace(atoms=(), files=())
         monkeypatch.setattr(
-            server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(): (self._payload(), None, None)
+            server,
+            "run_pipeline_for_path",
+            lambda path, full=False, named=frozenset(), **_k: (self._payload(), None, None),
         )
         monkeypatch.setattr(
-            remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None)
+            remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"files": {}}, fake_map, None)
         )
         (tmp_path / "CLAUDE.md").write_text("# Project\n")
         _call_tool("validate", {"path": str(tmp_path)})
@@ -1183,7 +1195,7 @@ class TestPreservationWiring:
     def setup_method(self) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        server._validate_states.clear()
+        server.validate_states.clear()
 
     teardown_method = setup_method
 
@@ -1250,9 +1262,11 @@ class TestPreservationWiring:
         calls = {"n": 0}
         real_run_pipeline_for_path = server.run_pipeline_for_path
 
-        def counting_run_pipeline_for_path(path: str, full: bool = False, named: frozenset[Path] = frozenset()):
+        def counting_run_pipeline_for_path(
+            path: str, full: bool = False, named: frozenset[Path] = frozenset(), **kwargs: Path
+        ):
             calls["n"] += 1
-            return real_run_pipeline_for_path(path, full, named)
+            return real_run_pipeline_for_path(path, full, named, **kwargs)
 
         monkeypatch.setattr(server, "run_pipeline_for_path", counting_run_pipeline_for_path)
 
@@ -1357,7 +1371,7 @@ class TestFileFeedback:
     def setup_method(self) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        server._validate_states.clear()
+        server.validate_states.clear()
 
     teardown_method = setup_method
 
@@ -1523,7 +1537,7 @@ class TestFeedbackWiring:
     def setup_method(self) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        server._validate_states.clear()
+        server.validate_states.clear()
 
     teardown_method = setup_method
 
@@ -1573,7 +1587,7 @@ class TestFeedbackNewKinds:
     def setup_method(self) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        server._validate_states.clear()
+        server.validate_states.clear()
 
     teardown_method = setup_method
 
@@ -1617,7 +1631,9 @@ class TestFeedbackNewKinds:
         }
         replies = iter([(project_payload, None, 5.0), (file_payload, None, 5.0)])
         monkeypatch.setattr(server, "model_not_ready_error", lambda: None)
-        monkeypatch.setattr(server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(): next(replies))
+        monkeypatch.setattr(
+            server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(), **_k: next(replies)
+        )
         monkeypatch.setattr(snapshots, "has_snapshot", lambda p: True)
 
         _call_tool("validate", {"path": str(tmp_path)})
@@ -1691,7 +1707,7 @@ class TestFeedbackFiredBefore:
     def setup_method(self) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        server._validate_states.clear()
+        server.validate_states.clear()
 
     teardown_method = setup_method
 
@@ -1702,7 +1718,9 @@ class TestFeedbackFiredBefore:
         target.write_text("# Project\n\nNever commit secrets.\n")
         replies = iter([(project_payload, None, 5.0), (file_payload, None, 5.0)])
         monkeypatch.setattr(server, "model_not_ready_error", lambda: None)
-        monkeypatch.setattr(server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(): next(replies))
+        monkeypatch.setattr(
+            server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(), **_k: next(replies)
+        )
         monkeypatch.setattr(snapshots, "has_snapshot", lambda p: True)
         _call_tool("validate", {"path": str(tmp_path)})
         target.write_text("# Project\n\nNever commit secrets.\n\nedited\n")
@@ -1776,3 +1794,47 @@ class TestFeedbackFiredBefore:
         }
         reply = self._run(tmp_path, monkeypatch, project, after)
         assert [f["rule"] for f in reply["feedback"]] == ["CORE:G:0002", "LOCAL"]
+
+
+class TestProjectFolder:
+    """The server never reads its own working folder: an agent that names no folder is refused."""
+
+    @pytest.mark.e2e
+    @pytest.mark.subsys_server
+    @pytest.mark.parametrize("tool", ["validate", "prepare", "heal_apply", "xray"])
+    def test_a_call_that_names_no_folder_is_refused(self, tool: str, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.delenv("AILS_PROJECT_DIR", raising=False)
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "CLAUDE.md").write_text("# P\n\nRun tests.\n")
+        for arguments in ({}, {"path": "."}, {"path": "CLAUDE.md"}):
+            text = _call_tool(tool, arguments)
+            if tool == "heal_apply":  # a text reply, like every `heal_apply` refusal
+                assert "Pass the project folder as path" in text, (arguments, text)
+                continue
+            data = json.loads(text)
+            assert data["error"] == "no_project", (tool, arguments, data)
+
+    @pytest.mark.e2e
+    @pytest.mark.subsys_server
+    def test_remedy_brief_with_no_folder_is_refused(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.delenv("AILS_PROJECT_DIR", raising=False)
+        data = json.loads(_call_tool("remedy_brief", {"path": ".", "location": 1}))
+        assert data["error"] == "no_project"
+
+    @pytest.mark.e2e
+    @pytest.mark.subsys_server
+    def test_the_env_folder_serves_a_call_with_no_path(self, tmp_path: Path, monkeypatch) -> None:
+        from reporails_cli.interfaces.mcp import server
+
+        server.validate_states.clear()
+        seen: list[str] = []
+
+        def fake(path: str, full: bool = False, named=frozenset(), **_k):
+            seen.append(path)
+            return {"files": {}}, None, None
+
+        monkeypatch.setenv("AILS_PROJECT_DIR", str(tmp_path))
+        monkeypatch.setattr(server, "model_not_ready_error", lambda: None)
+        monkeypatch.setattr(server, "run_pipeline_for_path", fake)
+        _call_tool("validate", {})
+        assert seen == [str(tmp_path.resolve())]

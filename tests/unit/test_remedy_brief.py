@@ -95,7 +95,7 @@ def test_a_file_with_no_map_makes_the_whole_brief_a_structured_error(monkeypatch
     The message also names the underlying cause (here the payload's own `error` field, since
     there is no `mapper_error`), so a caller can tell WHY, not just THAT."""
     monkeypatch.setattr(
-        remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"error": "offline"}, None, None)
+        remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"error": "offline"}, None, None)
     )
     location = _main_location(["CLAUDE.md"])
 
@@ -117,7 +117,7 @@ def test_no_map_names_the_mapper_s_own_swallowed_exception(monkeypatch, tmp_path
     monkeypatch.setattr(
         remedy_brief,
         "run_pipeline_for_path",
-        lambda path, full=False: (
+        lambda path, full=False, **_k: (
             {"error": "offline", "mapper_error": "RuntimeError: dictionary changed size during iteration"},
             None,
             None,
@@ -143,7 +143,7 @@ def test_a_second_file_with_no_map_also_makes_the_whole_brief_an_error(monkeypat
     whole brief is still the structured error, not a partial reply."""
     calls = {"n": 0}
 
-    def fake_run(path: str, full: bool = False) -> tuple[dict[str, Any], Any, float | None]:
+    def fake_run(path: str, full: bool = False, **_k: Any) -> tuple[dict[str, Any], Any, float | None]:
         calls["n"] += 1
         if calls["n"] == 1:
             return {"files": {}}, _fake_map(), None
@@ -169,7 +169,7 @@ def test_a_directory_in_files_still_briefs_the_locations_real_skill_files(monkey
     (skill_dir / "writing").mkdir(parents=True)
     (skill_dir / "writing" / "SKILL.md").write_text("# writing\n", encoding="utf-8")
 
-    def fake_run(path: str, full: bool = False) -> tuple[dict[str, Any], Any, float | None]:
+    def fake_run(path: str, full: bool = False, **_k: Any) -> tuple[dict[str, Any], Any, float | None]:
         return {"files": {}}, _fake_map(), None
 
     monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", fake_run)
@@ -283,7 +283,9 @@ def test_a_dilution_finding_does_not_make_its_line_deletable(monkeypatch, tmp_pa
         imported_from="",
     )
     fake_map = SimpleNamespace(atoms=(trimmable, control), files=())
-    monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None))
+    monkeypatch.setattr(
+        remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"files": {}}, fake_map, None)
+    )
 
     location = _main_location(["CLAUDE.md"])
     location["relations"] = []
@@ -332,7 +334,7 @@ def test_brief_unavailable_leaves_an_earlier_file_s_snapshot_untouched(monkeypat
 
     calls = {"n": 0}
 
-    def fake_run(path: str, full: bool = False) -> tuple[dict[str, Any], Any, float | None]:
+    def fake_run(path: str, full: bool = False, **_k: Any) -> tuple[dict[str, Any], Any, float | None]:
         calls["n"] += 1
         if calls["n"] == 1:
             return {"files": {}}, _fake_map(), 9.0
@@ -353,7 +355,7 @@ def test_brief_unavailable_leaves_an_earlier_file_s_snapshot_untouched(monkeypat
 @requires_rules
 def test_the_brief_carries_the_fixed_preservation_contract_and_a_next_step(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
-        remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, _fake_map(), None)
+        remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"files": {}}, _fake_map(), None)
     )
     location = _main_location(["CLAUDE.md"])
 
@@ -376,7 +378,7 @@ def test_the_brief_carries_the_root_and_each_file_s_absolute_path(monkeypatch, t
     abs_file = project_root / "CLAUDE.md"
     abs_file.write_text("# Project\n", encoding="utf-8")
     monkeypatch.setattr(
-        remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, _fake_map(), None)
+        remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"files": {}}, _fake_map(), None)
     )
     location = _main_location(["CLAUDE.md"])
 
@@ -401,17 +403,17 @@ def test_resolve_from_root_handles_relative_and_home_paths(tmp_path: Path) -> No
 
 
 def setup_module() -> None:
-    server._validate_states.clear()
+    server.validate_states.clear()
 
 
 def teardown_module() -> None:
-    server._validate_states.clear()
+    server.validate_states.clear()
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_no_workflow_before_any_validate(tmp_path: Path) -> None:
-    server._validate_states.clear()
+    server.validate_states.clear()
     reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
     assert reply == {
         "error": "no_workflow",
@@ -427,8 +429,8 @@ def test_workflow_requires_pro_when_the_last_validate_carried_no_workflow(tmp_pa
     (`workflow_requires_pro`) — never the `no_workflow` / "Call validate ... first" message,
     which sends the agent straight back into the `validate` it just ran and never tells it the
     brief itself is the Pro feature it lacks."""
-    server._validate_states.clear()
-    server._validate_states[str(tmp_path.resolve())] = server._CircuitState(
+    server.validate_states.clear()
+    server.validate_states[str(tmp_path.resolve())] = server.CircuitState(
         full_payload={"files": {}}, scan_root=tmp_path
     )
     reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
@@ -443,8 +445,8 @@ def test_no_workflow_when_the_last_validate_carried_workflow_none(tmp_path: Path
     """A distinct edge from `workflow_requires_pro`: the `workflow` key is present but not a
     dict (a malformed or null value) — still `no_workflow`, since a `workflow` key that IS
     present, just unusable, is not the tier-gated absence `workflow_requires_pro` names."""
-    server._validate_states.clear()
-    server._validate_states[str(tmp_path.resolve())] = server._CircuitState(
+    server.validate_states.clear()
+    server.validate_states[str(tmp_path.resolve())] = server.CircuitState(
         full_payload={"files": {}, "workflow": None}, scan_root=tmp_path
     )
     reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
@@ -460,7 +462,7 @@ def test_a_caller_without_the_rewrite_guide_is_told_to_update_and_nothing_runs(
     """A caller that does not carry the rewrite guide (the reporails plugin before 0.6.2) gets
     `plugin_update_required` before any work: no pipeline run, no snapshot, and the circuit
     breaker counters stay as they were."""
-    server._validate_states.clear()
+    server.validate_states.clear()
     target = tmp_path / "CLAUDE.md"
     target.write_text("# T\n\nAlways run the tests.\n", encoding="utf-8")
 
@@ -469,8 +471,8 @@ def test_a_caller_without_the_rewrite_guide_is_told_to_update_and_nothing_runs(
 
     monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", _boom)
     payload = {"workflow": {"locations": [{"order": 1, "kind": "main", "files": ["CLAUDE.md"]}]}}
-    state = server._CircuitState(full_payload=payload, scan_root=tmp_path, call_count=3, consecutive_unchanged=1)
-    server._validate_states[str(tmp_path.resolve())] = state
+    state = server.CircuitState(full_payload=payload, scan_root=tmp_path, call_count=3, consecutive_unchanged=1)
+    server.validate_states[str(tmp_path.resolve())] = state
 
     reply = server._serve_remedy_brief(str(tmp_path), 1, **kwargs)
 
@@ -484,12 +486,12 @@ def test_a_caller_without_the_rewrite_guide_is_told_to_update_and_nothing_runs(
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_a_caller_with_the_rewrite_guide_gets_the_brief(monkeypatch, tmp_path: Path) -> None:
-    server._validate_states.clear()
+    server.validate_states.clear()
     monkeypatch.setattr(
-        remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, _fake_map(), None)
+        remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"files": {}}, _fake_map(), None)
     )
     payload = {"workflow": {"locations": [{"order": 1, "kind": "other", "files": []}]}}
-    server._validate_states[str(tmp_path.resolve())] = server._CircuitState(full_payload=payload, scan_root=tmp_path)
+    server.validate_states[str(tmp_path.resolve())] = server.CircuitState(full_payload=payload, scan_root=tmp_path)
 
     reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
 
@@ -500,9 +502,9 @@ def test_a_caller_with_the_rewrite_guide_gets_the_brief(monkeypatch, tmp_path: P
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_location_not_found_names_the_count(tmp_path: Path) -> None:
-    server._validate_states.clear()
+    server.validate_states.clear()
     payload = {"workflow": {"locations": [{"order": 1, "kind": "main", "files": []}]}}
-    server._validate_states[str(tmp_path.resolve())] = server._CircuitState(full_payload=payload, scan_root=tmp_path)
+    server.validate_states[str(tmp_path.resolve())] = server.CircuitState(full_payload=payload, scan_root=tmp_path)
 
     reply = server._serve_remedy_brief(str(tmp_path), 9, has_guide=True)
 
@@ -517,18 +519,18 @@ def test_location_not_found_names_the_count(tmp_path: Path) -> None:
 def test_serve_remedy_brief_resets_call_count_but_leaves_consecutive_unchanged(monkeypatch, tmp_path: Path) -> None:
     """A served brief resets `call_count` (the agent is still working the loop) every
     time it is served; `consecutive_unchanged` — the actual no-progress guard — is untouched."""
-    server._validate_states.clear()
+    server.validate_states.clear()
     monkeypatch.setattr(
-        remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, _fake_map(), None)
+        remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"files": {}}, _fake_map(), None)
     )
     payload = {"workflow": {"locations": [{"order": 1, "kind": "other", "files": []}]}}
-    state = server._CircuitState(full_payload=payload, scan_root=tmp_path, call_count=3, consecutive_unchanged=1)
-    server._validate_states[str(tmp_path.resolve())] = state
+    state = server.CircuitState(full_payload=payload, scan_root=tmp_path, call_count=3, consecutive_unchanged=1)
+    server.validate_states[str(tmp_path.resolve())] = state
 
     for _ in range(4):
         reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
         assert "error" not in reply
-        after = server._validate_states[str(tmp_path.resolve())]
+        after = server.validate_states[str(tmp_path.resolve())]
         assert (after.call_count, after.consecutive_unchanged) == (0, 1)
 
 
@@ -592,7 +594,9 @@ def _op_location(op: str, line: int, expect: dict[str, Any]) -> dict[str, Any]:
 def _brief_with(monkeypatch, tmp_path: Path, text: str, atoms: list[Any], location: dict[str, Any]) -> dict[str, Any]:
     (tmp_path / "CLAUDE.md").write_text(text, encoding="utf-8")
     fake_map = SimpleNamespace(atoms=tuple(atoms), files=())
-    monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None))
+    monkeypatch.setattr(
+        remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"files": {}}, fake_map, None)
+    )
     return remedy_brief.build_remedy_brief(location, tmp_path, fake_map)
 
 
@@ -704,10 +708,12 @@ def test_a_brief_after_a_project_validate_takes_a_fresh_baseline(monkeypatch, tm
     file.write_text(edited, encoding="utf-8")
     monkeypatch.setattr(server, "model_not_ready_error", lambda: None)
     monkeypatch.setattr(
-        server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(): ({"files": {}}, fake_map, None)
+        server,
+        "run_pipeline_for_path",
+        lambda path, full=False, named=frozenset(), **_k: ({"files": {}}, fake_map, None),
     )
-    server._validate_states.clear()
-    asyncio.run(server._run_validate(str(tmp_path), True))
+    server.validate_states.clear()
+    asyncio.run(server._run_validate(str(tmp_path), True, None, tmp_path))
     remedy_brief.build_remedy_brief(location, tmp_path, fake_map)
     snap = snapshots.get_snapshot(file)
     assert snap is not None and snap.text == edited

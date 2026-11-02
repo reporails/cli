@@ -85,4 +85,4 @@ def test_mcp_does_not_swallow_a_formatter_error(project: Path, monkeypatch: pyte
 
     monkeypatch.setattr(tools, "format_run", bad)
     with pytest.raises(ValueError, match="formatter bug"):
-        tools.run_pipeline_for_path(str(project))
+        tools.run_pipeline_for_path(str(project), project_root=project)

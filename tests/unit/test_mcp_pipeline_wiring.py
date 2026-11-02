@@ -68,7 +68,7 @@ def test_run_pipeline_for_path_scopes_a_single_file_target(monkeypatch, tmp_path
     )
     monkeypatch.setattr("reporails_cli.formatters.json.format_combined_result", lambda *_a, **_k: {"files": {}})
 
-    tools.run_pipeline_for_path(str(single_file), full=True)
+    tools.run_pipeline_for_path(str(single_file), full=True, project_root=tmp_path)
 
     assert captured.get("scoped") is True
 
@@ -97,7 +97,7 @@ def test_run_pipeline_for_path_does_not_scope_a_directory_target(monkeypatch, tm
     )
     monkeypatch.setattr("reporails_cli.formatters.json.format_combined_result", lambda *_a, **_k: {"files": {}})
 
-    tools.run_pipeline_for_path(str(tmp_path), full=True)
+    tools.run_pipeline_for_path(str(tmp_path), full=True, project_root=tmp_path)
 
     assert captured.get("scoped") is False
 

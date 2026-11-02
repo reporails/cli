@@ -36,18 +36,6 @@ def home_folder() -> Path | None:
         return None
 
 
-def git_root(start: Path) -> Path | None:
-    """Nearest ancestor of `start` (itself included) with a `.git` entry, below home; None when none."""
-    home = home_folder()
-    for candidate in (start, *start.parents):
-        # The home folder, or a folder above it, is never a project root.
-        if home and (candidate == home or home.is_relative_to(candidate)):
-            break
-        if (candidate / ".git").exists():
-            return candidate
-    return None
-
-
 @functools.lru_cache(maxsize=1)
 def root_markers() -> tuple[tuple[tuple[str, ...], frozenset[str]], ...]:
     """Per supported agent: `(main-instruction relative paths, config directory names)`.

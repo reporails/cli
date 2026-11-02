@@ -66,7 +66,7 @@ def _apply(file: Path, reply: dict[str, Any]) -> None:
 
 
 def _conformance(file: Path, root: Path) -> dict[str, Any]:
-    payload, ruleset_map, score = tools.run_pipeline_for_path(str(file), True)
+    payload, ruleset_map, score = tools.run_pipeline_for_path(str(file), True, project_root=root)
     return with_preservation(payload, file, ruleset_map, score, root)["conformance"]
 
 

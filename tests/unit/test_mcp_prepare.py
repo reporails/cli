@@ -37,7 +37,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_prepare_answers_the_number_of_mapped_files(project, monkeypatch):
     monkeypatch.setattr(check_one, "map_instruction_files", lambda *_a, **_k: _map(3))
-    assert prepare_for_path(str(project)) == {"files": 3}
+    assert prepare_for_path(str(project), None, project) == {"files": 3}
 
 
 def test_prepare_builds_no_api_client_and_leaves_the_validate_state_alone(project, monkeypatch):
@@ -47,13 +47,13 @@ def test_prepare_builds_no_api_client_and_leaves_the_validate_state_alone(projec
     monkeypatch.setattr(check_one, "AilsClient", refuse)
     monkeypatch.setattr(tools, "has_api_key", refuse)
     monkeypatch.setattr(check_one, "map_instruction_files", lambda *_a, **_k: _map(1))
-    server._validate_states.clear()
+    server.validate_states.clear()
 
-    result = asyncio.run(server.prepare(str(project)))
+    result = asyncio.run(server.prepare(None, str(project)))
 
     assert json.loads(result.content[0].text) == {"files": 1}
     assert result.structured_content == {"files": 1}
-    assert server._validate_states == {}
+    assert server.validate_states == {}
 
 
 def test_prepare_passes_model_downloading_through_without_mapping(project, monkeypatch):
@@ -64,19 +64,19 @@ def test_prepare_passes_model_downloading_through_without_mapping(project, monke
         raise AssertionError("no map while the model downloads")
 
     monkeypatch.setattr(check_one, "map_instruction_files", refuse)
-    assert prepare_for_path(str(project)) == reply
+    assert prepare_for_path(str(project), None, project) == reply
 
 
 def test_prepare_answers_target_not_found_as_validate_does(project, monkeypatch):
     monkeypatch.setattr(check_one, "map_instruction_files", lambda *_a, **_k: _map(1))
-    reply = prepare_for_path(str(project), ["nope/missing.md"])
+    reply = prepare_for_path(str(project), ["nope/missing.md"], project)
     assert reply["error"] == "target_not_found"
 
 
 def test_prepare_answers_config_unreadable_as_validate_does(project):
     (project / ".ails").mkdir()
     (project / ".ails" / "config.yml").write_text("disabled_rules: [CORE:E:0003\n", encoding="utf-8")
-    reply = json.loads(asyncio.run(server.prepare(str(project))).content[0].text)
+    reply = json.loads(asyncio.run(server.prepare(None, str(project))).content[0].text)
     assert reply["error"] == "config_unreadable"
     assert str(project / ".ails" / "config.yml") in reply["message"]
 
@@ -87,11 +87,11 @@ def test_prepare_on_a_project_with_nothing_to_map_answers_zero(tmp_path, monkeyp
     clear_agent_cache()
     monkeypatch.setattr(check_one, "is_initialized", lambda: True)
     monkeypatch.setattr(check_one, "model_refusal", lambda: None)
-    assert prepare_for_path(str(empty)) == {"files": 0}
+    assert prepare_for_path(str(empty), None, empty) == {"files": 0}
 
 
 def test_prepare_names_a_missing_path(project):
-    assert prepare_for_path(str(project / "gone"))["error"].startswith("Path not found")
+    assert prepare_for_path(str(project / "gone"), None, project)["error"].startswith("Path not found")
 
 
 def test_prepare_answers_mapper_unavailable_when_no_map_comes_back(project, monkeypatch):
@@ -99,7 +99,10 @@ def test_prepare_answers_mapper_unavailable_when_no_map_comes_back(project, monk
         raise RuntimeError("no model")
 
     monkeypatch.setattr(check_one, "map_instruction_files", broken)
-    assert prepare_for_path(str(project)) == {"error": "mapper_unavailable", "mapper_error": "RuntimeError: no model"}
+    assert prepare_for_path(str(project), None, project) == {
+        "error": "mapper_unavailable",
+        "mapper_error": "RuntimeError: no model",
+    }
 
 
 def test_prepare_maps_a_file_added_since_the_last_call(project, monkeypatch):
@@ -110,10 +113,10 @@ def test_prepare_maps_a_file_added_since_the_last_call(project, monkeypatch):
         return _map(len(files))
 
     monkeypatch.setattr(check_one, "map_instruction_files", record)
-    prepare_for_path(str(project))
+    prepare_for_path(str(project), None, project)
     rules = project / ".claude" / "rules"
     rules.mkdir(parents=True)
     (rules / "style.md").write_text("# Style\n\nUse snake_case for functions.\n", encoding="utf-8")
-    prepare_for_path(str(project))
+    prepare_for_path(str(project), None, project)
     assert "style.md" not in mapped[0]
     assert "style.md" in mapped[1]

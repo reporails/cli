@@ -83,7 +83,7 @@ def _cli_payload(project: Path, *args: str) -> dict:
 
 
 def _mcp_payload(project: Path) -> dict:
-    return tools.run_pipeline_for_path(str(project), full=True)[0]
+    return tools.run_pipeline_for_path(str(project), full=True, project_root=project)[0]
 
 
 @requires_model

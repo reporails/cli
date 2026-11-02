@@ -182,21 +182,23 @@ def model_refusal() -> Refusal | None:
     return None
 
 
-def scope_for_path(path: str, named: frozenset[Path] = frozenset()) -> Scope | Refusal:
+def scope_for_path(
+    path: str, named: frozenset[Path] = frozenset(), project_root: Path | None = None
+) -> Scope | Refusal:
     """The files a check at `path` covers, or why there is nothing to check.
 
-    A `path` inside the current folder is checked in that folder's project, a directory narrowing it to the
-    files under it. A `path` outside it roots at itself (a directory) or at its own folder (a file). For a
-    directory `path`, `named` holds files the caller named, which are checked whatever is excluded; for a
-    file `path` it is ignored. The refusal is `rules_missing`, `path_not_found`, `unknown_agent`,
-    `empty_project` or a model set that is not ready.
+    A `path` inside `project_root` (the current folder when none is given) is checked in that folder's
+    project, a directory narrowing it to the files under it. A `path` outside it roots at itself (a
+    directory) or at its own folder (a file). For a directory `path`, `named` holds files the caller named,
+    which are checked whatever is excluded; for a file `path` it is ignored. The refusal is `rules_missing`,
+    `path_not_found`, `unknown_agent`, `empty_project` or a model set that is not ready.
     """
     if not is_initialized():
         return Refusal("rules_missing", rules_missing_message())
     target = Path(path).resolve()
     if not target.exists():
         return Refusal("path_not_found", f"Path not found: {target}")
-    scan_root, single_file = resolve_scan_target(target, Path.cwd().resolve())
+    scan_root, single_file = resolve_scan_target(target, project_root or Path.cwd().resolve())
     discovery = discover_files(scan_root, single_file=single_file, named=named)
     if isinstance(discovery, Refusal):
         return discovery
@@ -394,14 +396,14 @@ def file_findings(run: CheckRun, file: Path) -> tuple[FindingItem, ...]:
     return tuple(f for f in run.result.findings if normalize_finding_path(f.file, run.scope.scan_root) == key)
 
 
-def check_path(path: str, named: frozenset[Path] = frozenset()) -> CheckRun | Refusal:
+def check_path(path: str, named: frozenset[Path] = frozenset(), project_root: Path | None = None) -> CheckRun | Refusal:
     """Check `path` (directory or file): the `CheckRun`, or the `Refusal` saying why nothing was checked.
 
     A file `path` narrows the checked set to that single file. `named` is read as in `scope_for_path`. A
     missing file, a bad value or a runtime failure while checking is a `failed` refusal carrying its text.
     """
     try:
-        scope = scope_for_path(path, named)
+        scope = scope_for_path(path, named, project_root)
         if isinstance(scope, Refusal):
             return scope
         return check_scope(scope)

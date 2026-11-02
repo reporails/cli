@@ -14,7 +14,7 @@ from reporails_cli.formatters.mcp_view import render_heal_apply
 from reporails_cli.interfaces.mcp import snapshots
 
 if TYPE_CHECKING:
-    from reporails_cli.interfaces.mcp.server import _CircuitState
+    from reporails_cli.interfaces.mcp.validate_state import CircuitState
 
 
 def heal_apply_message(payload: JsonObject, *, mapped: bool = True) -> str:
@@ -45,7 +45,7 @@ def heal_apply_write(ruleset_map: RulesetMap, workflow: JsonObject, target: Path
     return render_heal_apply(result.fixes, result.decisions, result.put_back, scan_root)
 
 
-def release_written(scan_root: Path, states: Mapping[str, _CircuitState]) -> None:
+def release_written(scan_root: Path, states: Mapping[str, CircuitState]) -> None:
     """The next `validate` / `remedy_brief` read the written files as the new baseline: release the held
     snapshots and drop the stored reply of each validate state under `scan_root`."""
     snapshots.release_holds(scan_root)
