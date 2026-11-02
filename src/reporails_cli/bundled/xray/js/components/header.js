@@ -1,6 +1,7 @@
 // The header: logo, breadcrumb of the agent path, the session's date and length, and the adapter chip.
 import { el, tpl, slot } from '../dom.js';
-import { dur, k1 } from '../format.js';
+import { dur, k1, plural, startedAt } from '../format.js';
+import { xrayFetch, text, sessionsUrl, firstPromptUrl } from '../api.js';
 import { hashFor } from '../state.js';
 
 const MAX_SHOWN = 3;
@@ -28,14 +29,67 @@ export function crumbs(ix, path) {
   return out;
 }
 
+// The session switcher: its list is fetched when opened, a session's first prompt only when its toggle is clicked.
+const sw = { open: false, list: null, current: null, prompts: new Set(), box: null, env: null };
+
+const lengthOf = e => (e.length_s != null ? dur(e.length_s) : '');
+const facts = e => [startedAt(e.started_at), lengthOf(e), plural(e.subagents || 0, 'subagent')].filter(Boolean).join(' · ');
+
+async function loadSessions() {
+  const res = await xrayFetch(sessionsUrl());
+  if (res && res.ok && res.j && Array.isArray(res.j.sessions)) { sw.list = res.j.sessions; sw.current = res.j.session; }
+  if (sw.box) render(sw.box, sw.env);
+}
+
+function renderSwitch(box, v) {
+  const btn = slot(box, 'swbtn'), list = slot(box, 'swlist');
+  const cur = sw.list && sw.list.find(e => e.session === sw.current);
+  btn.textContent = cur ? facts(cur) : [startedAt(v.started_at), lengthOf(v)].filter(Boolean).join(' · ') || 'sessions';
+  btn.setAttribute('aria-expanded', String(sw.open));
+  list.hidden = !sw.open;
+  if (!sw.open || !sw.list) return;
+  for (const e of sw.list) {
+    const row = tpl('t-session-item');
+    const pick = slot(row, 'pick'), fp = slot(row, 'fp'), body = slot(row, 'fptext');
+    slot(row, 'label').textContent = facts(e);
+    pick.dataset.session = e.session;
+    if (e.session === sw.current) pick.setAttribute('aria-current', 'true');
+    fp.dataset.session = e.session;
+    const shown = sw.prompts.has(e.session);
+    fp.setAttribute('aria-expanded', String(shown));
+    if (shown) {
+      const t = text('first:' + e.session, firstPromptUrl(e.session), true);
+      body.hidden = false;
+      body.textContent = t.loading ? 'loading…' : t.error ? t.error : t.text;
+    }
+    list.append(row);
+  }
+}
+
+document.addEventListener('click', e => {
+  if (!sw.box) return;
+  const t = e.target;
+  const pick = t.closest('.swpick'), fp = t.closest('.swfp');
+  if (pick) { location.search = '?session=' + encodeURIComponent(pick.dataset.session); return; }
+  if (fp) { const id = fp.dataset.session; if (!sw.prompts.delete(id)) sw.prompts.add(id); render(sw.box, sw.env); return; }
+  if (t.closest('.swbtn')) { sw.open = !sw.open; if (sw.open) loadSessions(); render(sw.box, sw.env); return; }
+  if (sw.open && !t.closest('.swlist')) { sw.open = false; render(sw.box, sw.env); }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && sw.open && sw.box) { sw.open = false; render(sw.box, sw.env); }
+});
+
 export function render(box, env) {
   const { ix, state } = env;
   const v = ix.view;
   box.replaceChildren(tpl('t-header'));
-  const d = v.started_at ? new Date(v.started_at) : null;
-  const when = d && !isNaN(d) ? d.toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '';
+  const first = !sw.box;
+  sw.box = box; sw.env = env;
+  renderSwitch(box, v);
+  if (first) loadSessions();
   slot(box, 'crumbs').replaceChildren(...crumbs(ix, state.path));
-  slot(box, 'session').textContent = [v.project, when, v.length_s != null ? dur(v.length_s) : ''].filter(Boolean).join(' · ');
+  slot(box, 'session').textContent = [v.project].filter(Boolean).join(' · ');
   const win = v.window && v.window.size ? `${k1(v.window.size)} window${v.window.basis === 'observed' ? '' : ' (' + v.window.basis + ')'}` : '';
   slot(box, 'model').textContent = [v.model, win].filter(Boolean).join(' · ');
   const n = v.adapter.nesting;

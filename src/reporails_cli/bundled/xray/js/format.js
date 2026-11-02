@@ -19,3 +19,9 @@ export const plural = (n, w, ws) => `${n} ${n === 1 ? w : (ws || w + 's')}`;
 // A template whose {names} are filled from `values`; an unknown name stays visible as written.
 export const fill = (template, values) => template.replace(/\{(\w+)\}/g, (m, k) => (k in values ? String(values[k]) : m));
 export const range = (a, b) => `${clock(a)}–${clock(b)}`;
+
+// An ISO instant as `YYYY-MM-DD HH:MM UTC`; empty when it is missing or not a date.
+export const startedAt = iso => {
+  const d = iso ? new Date(iso) : null;
+  return d && !isNaN(d) ? d.toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '';
+};

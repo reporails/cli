@@ -300,6 +300,13 @@ STUB_NODE = Path(__file__).resolve().parents[1] / "xray_stub_node.js"
 TOKEN = "fixture-token"
 TYPES = {".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".html": "text/html"}
 CALLS = {"toolu_fail0": "npm test -- --runInBand"}
+STUB_SESSIONS = [
+    {"session": "sess-aaa", "started_at": "2026-10-28T09:14:02Z", "length_s": 7200.0, "subagents": 5},
+    {"session": "sess-bbb", "started_at": "2026-10-27T16:40:00Z", "length_s": 95.0, "subagents": 0},
+    {"session": "sess-ccc", "started_at": "2026-10-26T08:05:30Z", "length_s": 3725.0, "subagents": 1},
+]
+STUB_PROMPTS = {s["session"]: f"first prompt of {s['session']}" for s in STUB_SESSIONS}
+SESSION_ROUTES = ("/view", "/peek", "/brief", "/prompt", "/call", "/sessions", "/first-prompt")
 
 
 class _FixtureHandler(BaseHTTPRequestHandler):
@@ -309,6 +316,7 @@ class _FixtureHandler(BaseHTTPRequestHandler):
     bump_version = False
     requests: ClassVar[list[str]] = []
     views_served = 0
+    overrides: ClassVar[dict] = {}
 
     def log_message(self, *_args) -> None:  # silence the per-request log
         return
@@ -339,10 +347,22 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             return self._send(200, STUB_NODE.read_bytes(), "text/javascript")
         if self.headers.get("X-Xray-Token") != TOKEN:
             return self._json(403, {"error": "token"})
+        if url.path == "/test/requests":
+            return self._json(200, type(self).requests)
         type(self).requests.append(self.path)
+        if url.path == "/sessions":
+            return self._json(200, {"session": query.get("session", [STUB_SESSIONS[0]["session"]])[0], "sessions": STUB_SESSIONS})
+        if url.path == "/first-prompt":
+            wanted = query.get("session", [""])[0]
+            return self._json(200, {"id": wanted, "text": STUB_PROMPTS.get(wanted, "")})
         if url.path == "/view":
             type(self).views_served += 1
             body = self.view_text
+            if self.overrides or "session" in query:
+                shown = {**json.loads(body), **self.overrides}
+                if "session" in query:
+                    shown["session"] = query["session"][0]
+                body = json.dumps(shown)
             if self.bump_version:  # a session that keeps growing: every poll carries a new version
                 body = json.dumps({**json.loads(body), "version": 1000 + self.views_served})
             return self._send(200, body.encode(), "application/json")
@@ -376,13 +396,23 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         self._json(200, {"lines": lines})
 
 
+@given('the served view says it picked "{picked}"')
+def step_view_picked(context, picked):
+    context.view_overrides = {"picked": picked}
+
+
 @given('the bundled page is served over the "{name}" fixture view')
 def step_serve_fixture(context, name):
     text = (FIXTURES / f"{name}.json").read_text(encoding="utf-8")
     handler = type(
         "Handler",
         (_FixtureHandler,),
-        {"view_text": text, "requests": [], "bump_version": getattr(context, "bump_version", False)},
+        {
+            "view_text": text,
+            "requests": [],
+            "bump_version": getattr(context, "bump_version", False),
+            "overrides": getattr(context, "view_overrides", {}),
+        },
     )
     context.handler = handler
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -928,3 +958,61 @@ def step_unpriced_wording(context):
         return
     assert seen["main"] == ["2 replies not priced (no model named)"], seen
     assert seen["member"] == ["1 reply not priced: claude-unlisted-1"], seen
+
+
+@then("the switcher lists the stub's sessions with start time, length and subagent count and marks the current one")
+def step_switcher_lists(context):
+    seen = _page(context, "switcher")
+    if seen is None:
+        return
+    assert seen["button"] == "2026-10-28 09:14 UTC · 2h 0m · 5 subagents", seen["button"]
+    assert seen["rows"] == [
+        "2026-10-28 09:14 UTC · 2h 0m · 5 subagents",
+        "2026-10-27 16:40 UTC · 1m 35s · 0 subagents",
+        "2026-10-26 08:05 UTC · 1h 2m · 1 subagent",
+    ], seen["rows"]
+    assert seen["current"] == [seen["rows"][0]], seen["current"]
+
+
+@then("no first prompt is requested until an entry's toggle is clicked, and then its text shows as text")
+def step_first_prompt_lazy(context):
+    seen = _page(context, "switcher")
+    if seen is None:
+        return
+    assert seen["promptsBefore"] == [], seen["promptsBefore"]
+    assert seen["promptsAfter"] == ["/first-prompt?session=sess-bbb"], seen["promptsAfter"]
+    assert seen["promptText"] == "first prompt of sess-bbb", seen["promptText"]
+    assert seen["promptAsText"] is True, "the first prompt must be a text node, not markup"
+    assert seen["escapeClosed"] is True, "Escape must close the list"
+
+
+@then("picking another entry reloads the page with that session and every session route it then calls carries it")
+def step_pick_reloads(context):
+    seen = _page(context, "switcher")
+    if seen is None:
+        return
+    assert seen["search"] == "?session=sess-bbb", seen["search"]
+    after = [r for r in seen["after"] if urlparse(r).path in SESSION_ROUTES]
+    paths = {urlparse(r).path for r in after}
+    assert {"/view", "/sessions", "/peek"} <= paths, paths
+    missing = [r for r in after if parse_qs(urlparse(r).query).get("session") != ["sess-bbb"]]
+    assert not missing, missing
+    assert seen["footer"].startswith("Session sess-bbb."), seen["footer"]
+
+
+@then("a notice names the view's adapter tool as the agent that did not say which session it is")
+def step_notice_shows(context):
+    seen = _page(context, "notice")
+    if seen is None:
+        return
+    tool = context.fixture["adapter"]["tool"]
+    assert seen["hidden"] is False and tool in seen["text"], seen
+    assert "newest session" in seen["text"], seen
+
+
+@then("no session notice is shown")
+def step_notice_absent(context):
+    seen = _page(context, "notice")
+    if seen is None:
+        return
+    assert seen["hidden"] is True and seen["text"] == "", seen

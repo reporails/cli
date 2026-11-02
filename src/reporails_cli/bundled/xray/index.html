@@ -11,6 +11,7 @@
 <div class="wrap">
   <header id="header"></header>
   <div class="banner" id="banner" hidden></div>
+  <div class="banner" id="picked" hidden></div>
   <div class="banner nk" id="chk" hidden></div>
   <div class="panel pstrip" id="parentstrip" hidden></div>
   <div class="toolbar" id="toolbar"></div>
@@ -30,8 +31,9 @@
 <template id="t-header"><div class="hdr">
   <div class="brand"><span class="mark" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 7h8M5 12h14M5 17h10"/></svg></span><span>reporails</span><span>x-ray</span></div>
   <nav class="crumbs" aria-label="Agent path" data-slot="crumbs"></nav>
-  <div class="hmeta"><span data-slot="session"></span><span data-slot="model"></span><span class="achip" data-slot="adapter"></span></div>
+  <div class="hmeta"><span data-slot="session"></span><div class="switch" data-slot="switch"><button class="swbtn" type="button" data-slot="swbtn" aria-haspopup="true" aria-expanded="false"></button><ul class="swlist" data-slot="swlist" hidden></ul></div><span data-slot="model"></span><span class="achip" data-slot="adapter"></span></div>
 </div></template>
+<template id="t-session-item"><li class="swrow"><button class="swpick" type="button" data-slot="pick"><span data-slot="label"></span></button><button class="swfp" type="button" data-slot="fp" aria-expanded="false">first prompt</button><pre class="swtext" data-slot="fptext" hidden></pre></li></template>
 <template id="t-parentstrip">
   <a class="up" data-slot="up" href="#">↑ parent</a>
   <span class="pn"><span data-slot="parent"></span></span>

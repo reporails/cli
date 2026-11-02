@@ -1,5 +1,5 @@
 import { el } from './dom.js';
-import { text, viewHeaders, xrayFetch, onTextArrived, forgetTexts } from './api.js';
+import { text, viewUrl, viewHeaders, xrayFetch, onTextArrived, forgetTexts } from './api.js';
 import { index, focusSource } from './views.js';
 import { state, applyHash, hashFor } from './state.js';
 import * as header from './components/header.js';
@@ -25,6 +25,9 @@ function renderNotices() {
     b.textContent = `${v.adapter.tool} wrote rows this reporails version does not read; parts of this page may be missing.`;
     b.title = v.refusals.join('\n');
   }
+  const u = $('#picked');
+  u.hidden = v.picked !== 'current_unknown';
+  u.textContent = u.hidden ? '' : `Showing the folder's newest session because ${v.adapter.tool} did not say which session it is.`;
   const c = v.check, chk = $('#chk');
   chk.hidden = !c || c.state === 'done';
   chk.textContent = !c ? '' : c.state === 'running' ? 'checking the project…' : (c.message || 'The project check was refused.');
@@ -158,7 +161,7 @@ async function poll() {
   if (document.hidden || inflight) return;
   inflight = true;
   try {
-    const r = await fetch('view', { headers: viewHeaders(etag), cache: 'no-store' });
+    const r = await fetch(viewUrl(), { headers: viewHeaders(etag), cache: 'no-store' });
     if (r.status === 304) return;
     if (!r.ok) throw new Error(String(r.status));
     const j = await r.json();

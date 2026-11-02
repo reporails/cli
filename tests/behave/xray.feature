@@ -213,3 +213,30 @@ Feature: ails xray serves a session's context window on the loopback address thr
   Scenario: Unpriced replies with no model named say so
     Given the bundled page is served over the "view_fxpage" fixture view
     Then the cost pane says replies were not priced because no model was named, and lists the models when there are some
+
+  @page @browser
+  Scenario: The session switcher lists the project's sessions and marks the current one
+    Given the bundled page is served over the "view_sample" fixture view
+    Then the switcher lists the stub's sessions with start time, length and subagent count and marks the current one
+
+  @page @browser
+  Scenario: A session's first prompt is fetched only when its toggle is clicked
+    Given the bundled page is served over the "view_sample" fixture view
+    Then no first prompt is requested until an entry's toggle is clicked, and then its text shows as text
+
+  @page @browser
+  Scenario: Picking a session reloads the page with it and every session route carries it
+    Given the bundled page is served over the "view_sample" fixture view
+    Then picking another entry reloads the page with that session and every session route it then calls carries it
+
+  @page @browser
+  Scenario: A view whose session was not named says the newest session is shown
+    Given the served view says it picked "current_unknown"
+    And the bundled page is served over the "view_sample" fixture view
+    Then a notice names the view's adapter tool as the agent that did not say which session it is
+
+  @page @browser
+  Scenario: A view whose newest session was picked shows no notice
+    Given the served view says it picked "newest"
+    And the bundled page is served over the "view_sample" fixture view
+    Then no session notice is shown

@@ -1,6 +1,6 @@
 // usage: node xray_page.mjs <page-url> <mode> [width]
 // Drives the bundled page, served over a fixture view, in headless Chrome and prints one JSON object per mode.
-import { openPage } from './xray_cdp.mjs';
+import { openPage, sleep as sleepMs } from './xray_cdp.mjs';
 
 const [url, mode, width] = [process.argv[2], process.argv[3], Number(process.argv[4] || 1440)];
 const page = await openPage(url, width);
@@ -382,6 +382,41 @@ if (mode === 'p4cards' && ready) {
     const nm = c.querySelector('.nm');
     return { id: c.dataset.node, title: c.title, name: nm.textContent, lines: Math.round(nm.getBoundingClientRect().height / parseFloat(getComputedStyle(nm).lineHeight)), sub: c.querySelector('.sub').textContent, fits: c.scrollHeight <= c.clientHeight + 1 };
   })`);
+}
+
+if (mode === 'notice' && ready) {
+  out.hidden = await page.ev(`document.querySelector('#picked').hidden`);
+  out.text = await page.ev(`document.querySelector('#picked').textContent`);
+}
+
+if (mode === 'switcher' && ready) {
+  const requests = async () => (await fetch(new URL('test/requests', url), { headers: { 'X-Xray-Token': 'fixture-token' } })).json();
+  await page.until(`document.querySelector('.swbtn').textContent.includes('subagent')`);
+  out.button = await page.ev(`document.querySelector('.swbtn').textContent`);
+  await click('.swbtn');
+  await page.until(`document.querySelectorAll('.swrow').length === 3`);
+  out.rows = await page.ev(`[...document.querySelectorAll('.swrow .swpick')].map(b => b.textContent)`);
+  out.current = await page.ev(`[...document.querySelectorAll('.swpick[aria-current="true"]')].map(b => b.textContent)`);
+  out.promptsBefore = (await requests()).filter(r => r.startsWith('/first-prompt'));
+  await click('.swrow:nth-child(2) .swfp');
+  await page.until(`!document.querySelector('.swrow:nth-child(2) .swtext').hidden && document.querySelector('.swrow:nth-child(2) .swtext').textContent.startsWith('first prompt')`);
+  out.promptsAfter = (await requests()).filter(r => r.startsWith('/first-prompt'));
+  out.promptText = await page.ev(`document.querySelector('.swrow:nth-child(2) .swtext').textContent`);
+  out.promptAsText = await page.ev(`document.querySelector('.swrow:nth-child(2) .swtext').children.length === 0`);
+  await page.ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); 0`);
+  out.escapeClosed = await page.ev(`document.querySelector('.swlist').hidden`);
+  await click('.swbtn');
+  await page.until(`document.querySelectorAll('.swrow').length === 3`);
+  const mark = (await requests()).length;
+  await click('.swrow:nth-child(2) .swpick');
+  await page.until(`location.search === '?session=sess-bbb'`);
+  await page.until(`!!document.querySelector('.card.top') && document.querySelector('.swbtn').textContent.includes('subagent')`);
+  await go('#/file/CLAUDE.md');
+  await page.until(`!document.querySelector('#view-file').hidden`);
+  await sleepMs(1500);
+  out.search = await page.ev(`location.search`);
+  out.footer = await page.ev(`document.querySelector('#src').textContent`);
+  out.after = (await requests()).slice(mark);
 }
 
 console.log(JSON.stringify(out));

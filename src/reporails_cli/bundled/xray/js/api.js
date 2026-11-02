@@ -32,8 +32,20 @@ export function text(key, url, keep = false) {
   return e;
 }
 
-export const callUrl = id => 'call?id=' + encodeURIComponent(id);
+// The page's own `?session=` and `?pick=`: read once, and added to every session route by this one helper (an explicit `session` in `params` wins).
+const own = new URLSearchParams(location.search);
+export function sessionUrl(route, params = {}) {
+  const q = new URLSearchParams(params);
+  for (const k of ['session', 'pick']) if (own.get(k) && !q.has(k)) q.set(k, own.get(k));
+  const s = q.toString();
+  return s ? `${route}?${s}` : route;
+}
+
+export const viewUrl = () => sessionUrl('view');
+export const callUrl = id => sessionUrl('call', { id });
 export const callText = id => text('call:' + id, callUrl(id), true);
-export const briefUrl = id => 'brief?subagent=' + encodeURIComponent(id);
-export const promptUrl = id => 'prompt?id=' + encodeURIComponent(id);
-export const peekUrl = path => 'peek?path=' + encodeURIComponent(path);
+export const briefUrl = id => sessionUrl('brief', { subagent: id });
+export const promptUrl = id => sessionUrl('prompt', { id });
+export const peekUrl = path => sessionUrl('peek', { path });
+export const sessionsUrl = () => sessionUrl('sessions');
+export const firstPromptUrl = id => sessionUrl('first-prompt', { session: id });
