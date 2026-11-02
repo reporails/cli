@@ -9,7 +9,7 @@ last_updated: 2026-09-20
 
 ## Quick start
 
-From the root of any repository that has at least one instruction file (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.github/copilot-instructions.md`, or `GEMINI.md`) — no install, no account:
+From a folder that has at least one instruction file (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.github/copilot-instructions.md`, or `GEMINI.md`) — no install, no account:
 
 ```bash
 npx @reporails/cli check
@@ -120,6 +120,8 @@ The JSON output groups findings under `files{path: {findings: [...], count: N}}`
 
 ## Focus on one file or capability
 
+The folder you run `ails check` in is the project. A file or folder inside it is checked as part of that project; a folder outside it is checked as its own project, and a file outside it at its own folder (a file under `~/.claude` at `~/.claude`). Nothing looks in the folders above for `.git`, `.ails/backbone.yml` or an editor or agent folder. When you name a file that is not an instruction file of that project, the check says so and points you to run `ails check` in the project's folder.
+
 When the whole-repo view is too noisy, name the target. Each positional is `capability:name`, `@capability` (all of capability), or a path:
 
 ```bash
@@ -155,9 +157,9 @@ ails xray --background         # start the page detached, print its address and 
 
 ### Open any session
 
-- **From a terminal**, `ails xray` opens the newest session of the folder and keeps serving until Ctrl-C, or until it has had no request for 30 minutes; an open page keeps it running (set `AILS_XRAY_IDLE_S` to another number of seconds, `0` to never stop). Run in a subfolder, it opens the sessions of the nearest folder above it that Claude Code was started in, within the subfolder's repository (outside a repository, any folder below the home folder). `--session <id>` opens one by its id. To choose without an id, open the session button in the page header: it lists the folder's recent sessions with their start time, length and subagent count, a "first prompt" toggle shows a session's first prompt only when clicked, and picking a session opens it on the same page. `--session` and `--current` cannot be combined, and an id that is not a session of the folder is refused.
+- **From a terminal**, `ails xray` opens the newest session of the folder and keeps serving until Ctrl-C, or until it has had no request for 30 minutes; an open page keeps it running (set `AILS_XRAY_IDLE_S` to another number of seconds, `0` to never stop). It reads the sessions of the folder it runs in, so run it in the folder Claude Code was started in; with none there it exits with code 2 and names the folder. `--session <id>` opens one by its id. To choose without an id, open the session button in the page header: it lists the folder's recent sessions with their start time, length and subagent count, a "first prompt" toggle shows a session's first prompt only when clicked, and picking a session opens it on the same page. `--session` and `--current` cannot be combined, and an id that is not a session of the folder is refused.
 - **From inside an agent**, ask for the x-ray and the page opens in the background, so the agent's call returns at once with the address to show you. In the reporails plugin that is `/reporails:ails xray`; any agent connected to the reporails MCP server can call its `xray` tool, optionally with a `session`. Without a terminal tool, `ails xray --current --background` prints the same address. A page already running for the project is reused, and a page started with `ails xray` in a terminal is reused too. A page stops by itself after 30 minutes with no request, so an agent's calls leave no servers running.
-- **Which session opens.** From inside Claude Code, `--current` and the `xray` tool open the session you are running in, even when a newer session of the folder exists. When the agent does not tell the command which session it is, the newest session opens and the page says that it is only the newest.
+- **Which session opens.** From inside Claude Code, `--current` and the `xray` tool find the session you are running in by its id, whichever project it ran in, and open it even when a newer session of that folder exists. When the agent does not tell the command which session it is, the newest session opens and the page says that it is only the newest.
 
 The page uses the names your coding agent gives its agents, tools and files, so only what that agent has appears. It updates while the session runs, checks the project's files once when it opens, and reads the session transcript Claude Code keeps under `~/.claude/projects/` and, with the reporails plugin installed, the session's recorded events. Nothing is sent off the machine except the check and fix calls `ails check` makes; a part of the page with no source shows "not known here".
 
