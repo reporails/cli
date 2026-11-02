@@ -183,3 +183,5 @@ async function poll() {
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 poll();
 setInterval(poll, 2000);
+// A hidden tab does not read the view; it still tells the server once a minute that the page is open.
+setInterval(() => { if (document.hidden) fetch('/launch', { cache: 'no-store' }).catch(() => {}); }, 60000);

@@ -22,6 +22,8 @@
 
 ### Fixed
 
+- `ails xray` and the agent's `xray` tool run in a subfolder of the project now open the sessions of the nearest folder above it that Claude Code was started in, instead of exiting with no session found; with none, the error says to run it in that folder.
+- An x-ray page stops by itself once no page has been open for 30 minutes (`AILS_XRAY_IDLE_S` seconds; `0` never stops), so a page an agent started in the background no longer runs until it is killed by hand. A page left open in a background browser tab stays up.
 - `ails xray` opens its page even when `~/.reporails` cannot be written (the page is then not reused by a later call), and the agent's `xray` tool answers `page_not_started` naming the folder instead of failing.
 - A `heal_exclude` entry that is a bare file name now matches only at the project root, as documented, and the findings listed as `excluded` name the files they sit in.
 - The hook event-type check for Antigravity, Codex and Copilot now accepts each agent's current hook events — Antigravity's `SessionStart` and Codex's `PreModelRequest` / `PostModelRequest` among them — instead of reporting them as unrecognized.

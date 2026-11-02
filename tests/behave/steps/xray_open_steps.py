@@ -8,6 +8,7 @@ import os
 import re
 import selectors
 import shutil
+import socket
 import subprocess
 import time
 import urllib.request
@@ -186,16 +187,16 @@ def step_mcp_same_port(context):
     assert sorted([first["reused"], second["reused"]]) == [False, True], context.mcp
 
 
-def _run_current(context, session_env: str) -> None:
+def _run_current(context, session_env: str, *, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
     context.result = run_ails(
-        context.project,
+        cwd or context.project,
         "xray",
         "--current",
         "--background",
         "--no-open",
         home=context.home,
         timeout=120,
-        env={SESSION_ENV: session_env},
+        env={SESSION_ENV: session_env, **(env or {})},
     )
     assert context.result.returncode == 0, context.result.stderr
     found = ADDRESS.search(context.result.stdout)
@@ -211,6 +212,33 @@ def step_current_known(context):
 @when('"ails xray --current --background --no-open" is run in the project by an agent that does not say its session')
 def step_current_unknown(context):
     _run_current(context, "")
+
+
+@when('"ails xray --current --background --no-open" is run in a project subfolder as the agent of the older session')
+def step_current_in_subfolder(context):
+    subfolder = context.project / "src" / "pkg"
+    subfolder.mkdir(parents=True)
+    _run_current(context, OLDER, cwd=subfolder)
+
+
+@when('"ails xray --current --background --no-open" is run in the project with a 2 second idle window')
+def step_current_idle_window(context):
+    _run_current(context, "", env={"AILS_XRAY_IDLE_S": "2"})
+
+
+@then("within 15 seconds the page no longer answers and the project has no page record")
+def step_page_stopped(context):
+    records = context.home / ".reporails" / "xray-pages"
+    port = int(_base(context.url).rsplit(":", 1)[1].rstrip("/"))
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        try:  # a bare connect sends no request, so it does not keep the page in use
+            socket.create_connection(("127.0.0.1", port), timeout=1).close()
+        except OSError:
+            if not list(records.glob("*.json")):
+                return
+        time.sleep(0.5)
+    raise AssertionError(f"the page still answers or left its record: {list(records.glob('*.json'))}")
 
 
 @then("the printed address names the older session")

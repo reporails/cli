@@ -8,6 +8,7 @@ A view never holds prompt, tool or file text. A value with no source is `None`, 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, TypeGuard, get_args
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
@@ -265,6 +266,15 @@ class XrayWindow:
 
 
 SessionPick = Literal["named", "current", "current_unknown", "newest"]
+
+
+@dataclass(frozen=True)
+class PickedSession:
+    """The session the x-ray shows: the folder Claude Code holds it under, its transcript and how it was chosen."""
+
+    root: Path
+    transcript: Path
+    picked: SessionPick
 
 
 @dataclass(frozen=True)

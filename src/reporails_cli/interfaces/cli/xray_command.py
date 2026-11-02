@@ -58,21 +58,23 @@ def xray_command(
         pick_session,
     )
 
-    root = Path.cwd().resolve()
+    here = Path.cwd().resolve()
     if session is not None and current:
         typer.echo("Error: --session and --current name the session twice; use one of them", err=True)
         raise typer.Exit(2)
-    picked = pick_session(root, session, current=current)
+    picked = pick_session(here, session, current=current)
     if picked is None:
-        missing = f"no Claude Code session found for {root}" if session is None else f"no session {session} in {root}"
-        typer.echo(f"Error: {missing}", err=True)
+        missing = "no Claude Code session found" if session is None else f"no session {session}"
+        typer.echo(
+            f"Error: {missing} for {here} or a folder above it; run it in the folder Claude Code was started in",
+            err=True,
+        )
         raise typer.Exit(2)
-    transcript, how = picked
     if background:
-        _show_in_background(root, transcript.stem, how, open_page=not no_open)
+        _show_in_background(picked.root, picked.transcript.stem, picked.picked, open_page=not no_open)
         return
     from reporails_cli.interfaces.cli.xray_server import (  # pylint: disable=import-outside-toplevel  # startup: the web server loads when the command runs
         serve,
     )
 
-    serve(root, transcript, how, open_page=not no_open)
+    serve(picked.root, picked.transcript, picked.picked, open_page=not no_open)

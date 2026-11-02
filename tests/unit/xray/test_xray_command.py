@@ -36,9 +36,12 @@ def test_an_unknown_session_names_the_id_and_the_folder(project: Path) -> None:
     transcript.parent.mkdir(parents=True)
     shutil.copy(FIXTURE, transcript)
     result = CliRunner().invoke(app, ["xray", "--session", "nosuch", "--no-open"])
-    assert result.exit_code == 2 and f"Error: no session nosuch in {project}" in result.output
+    assert result.exit_code == 2 and f"Error: no session nosuch for {project} or a folder above it" in result.output
 
 
 def test_a_folder_without_sessions_says_so(project: Path) -> None:
     result = CliRunner().invoke(app, ["xray", "--no-open"])
-    assert result.exit_code == 2 and f"Error: no Claude Code session found for {project}" in result.output
+    assert (
+        result.exit_code == 2
+        and f"Error: no Claude Code session found for {project} or a folder above it" in result.output
+    )

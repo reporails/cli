@@ -84,7 +84,13 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
 @pytest.fixture
 def client(project: Path, tmp_path: Path) -> TestClient:
     app = xray_server.build_app(
-        project, tmp_path / "session" / "session.jsonl", picked="newest", token=TOKEN, launch=LAUNCH, port=PORT
+        project,
+        tmp_path / "session" / "session.jsonl",
+        picked="newest",
+        token=TOKEN,
+        launch=LAUNCH,
+        port=PORT,
+        requests=xray_server.RequestClock(),
     )
     return TestClient(app, base_url=ORIGIN)
 
@@ -206,7 +212,13 @@ def test_the_launch_check_fills_every_files_tally_and_moves_the_version(
     )
     monkeypatch.setattr(xray_server, "check_path", lambda path: run)
     app = xray_server.build_app(
-        project, tmp_path / "session" / "session.jsonl", picked="newest", token=TOKEN, launch=LAUNCH, port=PORT
+        project,
+        tmp_path / "session" / "session.jsonl",
+        picked="newest",
+        token=TOKEN,
+        launch=LAUNCH,
+        port=PORT,
+        requests=xray_server.RequestClock(),
     )
     with TestClient(app, base_url=ORIGIN) as client:
         view = _settled_view(client)
@@ -226,7 +238,13 @@ def test_the_view_says_running_until_the_launch_check_lands_and_the_version_move
 
     monkeypatch.setattr(xray_server, "check_path", slow_check)
     app = xray_server.build_app(
-        project, tmp_path / "session" / "session.jsonl", picked="newest", token=TOKEN, launch=LAUNCH, port=PORT
+        project,
+        tmp_path / "session" / "session.jsonl",
+        picked="newest",
+        token=TOKEN,
+        launch=LAUNCH,
+        port=PORT,
+        requests=xray_server.RequestClock(),
     )
     with TestClient(app, base_url=ORIGIN) as client:
         first = _view_of(client)
@@ -471,7 +489,15 @@ def test_brief_replies_with_the_refusal_when_the_subagent_file_opens_with_no_use
 def prompt_client(project: Path, tmp_path: Path) -> TestClient:
     copy = tmp_path / "prompts"
     shutil.copytree(FIXTURES.parent / "2.1.309-turns", copy)
-    app = xray_server.build_app(project, copy / "session.jsonl", picked="newest", token=TOKEN, launch=LAUNCH, port=PORT)
+    app = xray_server.build_app(
+        project,
+        copy / "session.jsonl",
+        picked="newest",
+        token=TOKEN,
+        launch=LAUNCH,
+        port=PORT,
+        requests=xray_server.RequestClock(),
+    )
     return TestClient(app, base_url=ORIGIN)
 
 
@@ -565,7 +591,15 @@ def test_file_level_is_the_whole_file_sentinel_line_zero_never_line_one() -> Non
 def handoff_client(project: Path, tmp_path: Path) -> TestClient:
     copy = tmp_path / "handoffs"
     shutil.copytree(FIXTURES.parent / "2.1.309-handoffs", copy)
-    app = xray_server.build_app(project, copy / "session.jsonl", picked="newest", token=TOKEN, launch=LAUNCH, port=PORT)
+    app = xray_server.build_app(
+        project,
+        copy / "session.jsonl",
+        picked="newest",
+        token=TOKEN,
+        launch=LAUNCH,
+        port=PORT,
+        requests=xray_server.RequestClock(),
+    )
     client = TestClient(app, base_url=ORIGIN)
     client.get("/view", headers={"X-Xray-Token": TOKEN})
     return client
@@ -615,7 +649,15 @@ def two_sessions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     newer = claude_project_dir(root) / "newer.jsonl"
     shutil.copy(FIXTURES / "session.jsonl", newer)
     os.utime(older, (1_000_000, 1_000_000))
-    app = xray_server.build_app(root, newer, picked="current_unknown", token=TOKEN, launch=LAUNCH, port=PORT)
+    app = xray_server.build_app(
+        root,
+        newer,
+        picked="current_unknown",
+        token=TOKEN,
+        launch=LAUNCH,
+        port=PORT,
+        requests=xray_server.RequestClock(),
+    )
     return TestClient(app, base_url=ORIGIN)
 
 
@@ -671,7 +713,13 @@ def test_launch_answers_its_id_without_the_token_and_sessions_does_not(two_sessi
 
 def test_the_launch_pick_is_kept_only_for_a_request_that_names_no_session(project: Path, tmp_path: Path) -> None:
     app = xray_server.build_app(
-        project, tmp_path / "session" / "session.jsonl", picked="current_unknown", token=TOKEN, launch=LAUNCH, port=PORT
+        project,
+        tmp_path / "session" / "session.jsonl",
+        picked="current_unknown",
+        token=TOKEN,
+        launch=LAUNCH,
+        port=PORT,
+        requests=xray_server.RequestClock(),
     )
     client = TestClient(app, base_url=ORIGIN)
 

@@ -12,6 +12,7 @@ import secrets
 import shlex
 import socket
 import threading
+import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from reporails_cli.bundled import get_xray_path
 from reporails_cli.core.discovery.walk import safe_resolve
@@ -38,6 +40,7 @@ from reporails_cli.core.pipeline.check_one import check_path, file_findings
 from reporails_cli.core.platform.adapters.programs import open_in_browser
 from reporails_cli.core.platform.adapters.registry import file_level_check_ids
 from reporails_cli.core.platform.adapters.rules_query import rule_category, rule_title
+from reporails_cli.core.platform.config.bootstrap import parse_idle_timeout_env
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.pipeline import Refusal
@@ -60,6 +63,8 @@ PAGE_HEADERS = {
     "Cache-Control": "no-store",
 }
 NO_STORE = {"Cache-Control": "no-store"}
+# Seconds with no request after which a page stops: an open tab asks at least once a minute, a closed one never.
+_DEFAULT_IDLE_S = 1800
 _PICKS: tuple[SessionPick, ...] = get_args(SessionPick)
 
 logger = logging.getLogger(__name__)
@@ -372,9 +377,44 @@ def _line(finding: FindingItem) -> JsonObject:
     }
 
 
-def build_app(root: Path, session_file: Path, *, picked: SessionPick, token: str, launch: str, port: int) -> Starlette:
+class RequestClock:
+    """When the page last received a request."""
+
+    def __init__(self) -> None:
+        self._last = time.monotonic()
+
+    def mark(self) -> None:
+        """Record a request now."""
+        self._last = time.monotonic()
+
+    def quiet_s(self) -> float:
+        """Seconds since the last request."""
+        return time.monotonic() - self._last
+
+
+def _mark_requests(app: ASGIApp, requests: RequestClock) -> ASGIApp:
+    """`app` with every HTTP request marked on the clock before it is passed on."""
+
+    async def marked(scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            requests.mark()
+        await app(scope, receive, send)
+
+    return marked
+
+
+def build_app(
+    root: Path,
+    session_file: Path,
+    *,
+    picked: SessionPick,
+    token: str,
+    launch: str,
+    port: int,
+    requests: RequestClock,
+) -> Starlette:
     """The page server, opening on `session_file` chosen as `picked`: the fixed routes behind the host, origin,
-    token and path guards."""
+    token and path guards, each request marked on `requests`."""
     server = XrayServer(safe_resolve(root), session_file, picked=picked, token=token, launch=launch, port=port)
     page = get_xray_path()
 
@@ -399,7 +439,10 @@ def build_app(root: Path, session_file: Path, *, picked: SessionPick, token: str
             Route("/heal", server.heal, methods=["POST"]),
             Mount("/static", StaticFiles(directory=page)),
         ],
-        middleware=[Middleware(TrustedHostMiddleware, allowed_hosts=[HOST])],
+        middleware=[
+            Middleware(TrustedHostMiddleware, allowed_hosts=[HOST]),
+            Middleware(_mark_requests, requests=requests),
+        ],
     )
 
 
@@ -411,14 +454,38 @@ def bound_socket() -> socket.socket:
     return sock
 
 
+def _stop_when_idle(server: uvicorn.Server, requests: RequestClock, idle_s: int) -> None:
+    """Tell the server to stop once no request has come for `idle_s` seconds."""
+    while (left := idle_s - requests.quiet_s()) > 0:
+        time.sleep(left)
+    server.should_exit = True
+
+
+def _span(seconds: int) -> str:
+    return f"{seconds // 60} minutes" if seconds % 60 == 0 else f"{seconds} seconds"
+
+
 def serve(root: Path, session_file: Path, picked: SessionPick, *, open_page: bool) -> None:
-    """Serve the page opening on `session_file` until interrupted; print its address and open it unless told not to.
+    """Serve the page opening on `session_file` until interrupted, or until no request has come for
+    `AILS_XRAY_IDLE_S` seconds (30 minutes by default; 0 never stops); print its address and open it unless told
+    not to.
 
     The project's page record names this process while it serves."""
     sock = bound_socket()
     port = sock.getsockname()[1]
     launch = secrets.token_urlsafe(16)
-    app = build_app(root, session_file, picked=picked, token=secrets.token_urlsafe(32), launch=launch, port=port)
+    requests = RequestClock()
+    app = build_app(
+        root,
+        session_file,
+        picked=picked,
+        token=secrets.token_urlsafe(32),
+        launch=launch,
+        port=port,
+        requests=requests,
+    )
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+    idle_s = parse_idle_timeout_env("AILS_XRAY_IDLE_S", _DEFAULT_IDLE_S)
     url = f"http://{HOST}:{port}/"
     recorded = False
     try:
@@ -427,10 +494,13 @@ def serve(root: Path, session_file: Path, picked: SessionPick, *, open_page: boo
     except OSError as exc:
         logger.warning("the x-ray page will not be reused by a later `ails xray` or agent call: %s", exc)
     try:
-        typer.echo(f"{xray_line(session_file.stem, url, picked)}  (Ctrl-C to stop)")
+        stops = "" if idle_s is None else f"; it stops after {_span(idle_s)} with no page open"
+        typer.echo(f"{xray_line(session_file.stem, url, picked)}  (Ctrl-C to stop{stops})")
         if open_page:
             open_in_browser(url)
-        uvicorn.Server(uvicorn.Config(app, log_level="warning")).run(sockets=[sock])
+        if idle_s is not None:
+            threading.Thread(target=_stop_when_idle, args=(server, requests, idle_s), daemon=True).start()
+        server.run(sockets=[sock])
     finally:
         if recorded:
             forget_page(safe_resolve(root), launch)

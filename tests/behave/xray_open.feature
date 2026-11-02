@@ -44,6 +44,20 @@ Feature: Any session of a project opens in x-ray without typing an id, from a te
     And the page at that address shows the newest session marked as not known to be the agent's own
 
   @e2e
+  Scenario: Run in a subfolder of the project, the page opens on the project's sessions
+    Given a project with two recorded Claude Code sessions, the older one written first
+    When "ails xray --current --background --no-open" is run in a project subfolder as the agent of the older session
+    Then the printed address names the older session
+    And the page at that address shows the older session as the current one
+
+  @e2e
+  Scenario: A page started in the background stops by itself once no request has come for its idle window
+    Given a project with two recorded Claude Code sessions, the older one written first
+    When "ails xray --current --background --no-open" is run in the project with a 2 second idle window
+    Then the printed address answers as the x-ray page
+    And within 15 seconds the page no longer answers and the project has no page record
+
+  @e2e
   Scenario: The page starts even when the project holds modules named like the page's own dependencies
     Given a project with two recorded Claude Code sessions, the older one written first
     And the project root holds "typer.py" and "httpx.py" that print a marker and exit non-zero

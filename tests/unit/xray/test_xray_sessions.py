@@ -14,7 +14,7 @@ from reporails_cli.core.discovery.agent_discovery import claude_project_dir
 from reporails_cli.core.eventbus.transcript import first_prompt_text, session_transcript
 from reporails_cli.core.platform.config import bootstrap
 from reporails_cli.core.platform.contract.errors import XrayPageError
-from reporails_cli.core.platform.dto.xray import XrayPage
+from reporails_cli.core.platform.dto.xray import PickedSession, XrayPage
 from reporails_cli.core.xray import pages
 from reporails_cli.core.xray.pages import forget_page, register_page, running_page, start_page
 from reporails_cli.core.xray.sessions import pick_session, session_entries
@@ -61,7 +61,7 @@ def _session(root: Path, name: str, age_s: int, *, rows: list[dict[str, object]]
 def test_no_flags_open_the_newest_session(project: Path) -> None:
     _session(project, "old", 100)
     newest = _session(project, "new", 0)
-    assert pick_session(project, None, current=False) == (newest, "newest")
+    assert pick_session(project, None, current=False) == PickedSession(project, newest, "newest")
 
 
 def test_a_project_without_sessions_has_nothing_to_pick(project: Path) -> None:
@@ -73,7 +73,7 @@ def test_a_named_session_of_the_project_is_picked_and_an_unknown_or_unsafe_one_i
     old = _session(project, "old", 100)
     _session(project, "new", 0)
     claude_project_dir(project).parent.joinpath("x.jsonl").write_text("{}\n", encoding="utf-8")
-    assert pick_session(project, "old", current=False) == (old, "named")
+    assert pick_session(project, "old", current=False) == PickedSession(project, old, "named")
     assert pick_session(project, "missing", current=False) is None
     assert pick_session(project, "../x", current=False) is None
     assert pick_session(project, "", current=False) is None
@@ -85,7 +85,7 @@ def test_current_opens_the_calling_session_even_when_a_newer_one_exists(
     mine = _session(project, "mine", 100)
     _session(project, "newer", 0)
     monkeypatch.setenv(SESSION_ENV, "mine")
-    assert pick_session(project, None, current=True) == (mine, "current")
+    assert pick_session(project, None, current=True) == PickedSession(project, mine, "current")
 
 
 @pytest.mark.parametrize("value", [None, "someone-elses", "../x"])
@@ -96,7 +96,26 @@ def test_current_without_a_session_of_this_folder_shows_the_newest_and_says_so(
     newest = _session(project, "newer", 0)
     if value is not None:
         monkeypatch.setenv(SESSION_ENV, value)
-    assert pick_session(project, None, current=True) == (newest, "current_unknown")
+    assert pick_session(project, None, current=True) == PickedSession(project, newest, "current_unknown")
+
+
+def test_a_subfolder_finds_the_sessions_of_the_folder_above_it(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    mine = _session(project, "mine", 100)
+    newest = _session(project, "newer", 0)
+    deep = project / "src" / "pkg"
+    deep.mkdir(parents=True)
+    assert pick_session(deep, None, current=False) == PickedSession(project, newest, "newest")
+    assert pick_session(deep, "mine", current=False) == PickedSession(project, mine, "named")
+    monkeypatch.setenv(SESSION_ENV, "mine")
+    assert pick_session(deep, None, current=True) == PickedSession(project, mine, "current")
+
+
+def test_the_nearest_folder_with_a_session_wins_over_one_further_up(project: Path) -> None:
+    _session(project, "outer", 0)
+    inner = project / "sub"
+    inner.mkdir()
+    own = _session(inner, "inner", 100)
+    assert pick_session(inner / "deeper", None, current=False) == PickedSession(inner, own, "newest")
 
 
 def test_the_switcher_lists_each_session_with_its_start_length_and_subagents(project: Path) -> None:

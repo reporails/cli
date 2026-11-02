@@ -15,34 +15,45 @@ from reporails_cli.core.eventbus.transcript import (
 )
 from reporails_cli.core.pipeline.expected_loads import AGENT
 from reporails_cli.core.platform.config.bootstrap import env_text
-from reporails_cli.core.platform.dto.xray import SessionPick, XraySessionEntry
+from reporails_cli.core.platform.dto.xray import PickedSession, SessionPick, XraySessionEntry
 from reporails_cli.core.xray.derive import epoch
 
 
-def _calling_session(root: Path) -> Path | None:
-    """The transcript of the session the agent's own env var names, when it is a session of the project."""
+def _calling_id() -> str:
+    """The id of the session the calling agent's own env var names; empty when it names none."""
     adapter = get_transcript_adapter(AGENT)
-    session_id = env_text(adapter.session_env) if adapter is not None else ""
-    return known_session(root, session_id) if session_id else None
+    return env_text(adapter.session_env) if adapter is not None else ""
 
 
-def pick_session(root: Path, named: str | None, *, current: bool) -> tuple[Path, SessionPick] | None:
-    """The transcript to show and how it was chosen.
+def _holding(folders: tuple[Path, ...], session_id: str, picked: SessionPick) -> PickedSession | None:
+    """The nearest of `folders` that holds session `session_id`, picked as `picked`; None when none does."""
+    for folder in folders:
+        transcript = known_session(folder, session_id)
+        if transcript is not None:
+            return PickedSession(folder, transcript, picked)
+    return None
 
-    A named session must be one of the project's, else None. `current` takes the session the calling agent's
-    env var names, else the newest one, picked as `current_unknown`. With neither, the newest. None when the
-    project has no session."""
+
+def pick_session(start: Path, named: str | None, *, current: bool) -> PickedSession | None:
+    """The session to show, the folder Claude Code holds it under and how it was chosen.
+
+    The folder is `start` or the nearest folder above it with a session, so a command run in a subfolder of the
+    folder Claude Code was started in finds its sessions. A named session must be held by one of them, else None.
+    `current` takes the session the calling agent's env var names, else the newest one, picked as
+    `current_unknown`. With neither, the newest. None when no such folder has a session."""
+    folders = (start, *start.parents)
     if named is not None:
-        path = known_session(root, named)
-        return None if path is None else (path, "named")
-    if current:
-        calling = _calling_session(root)
-        if calling is not None:
-            return calling, "current"
-    newest = newest_session(root)
-    if newest is None:
-        return None
-    return newest, "current_unknown" if current else "newest"
+        return _holding(folders, named, "named")
+    calling = _calling_id() if current else ""
+    if calling:
+        mine = _holding(folders, calling, "current")
+        if mine is not None:
+            return mine
+    for folder in folders:
+        newest = newest_session(folder)
+        if newest is not None:
+            return PickedSession(folder, newest, "current_unknown" if current else "newest")
+    return None
 
 
 def _entry(session_file: Path) -> XraySessionEntry:
