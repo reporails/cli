@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import re
+import selectors
 import shutil
 import subprocess
 import time
@@ -13,7 +14,7 @@ import urllib.request
 from pathlib import Path
 
 from behave import given, then, when  # type: ignore[import-untyped]
-from support import MCP_BIN, build_project, run_ails  # behave puts features/ on sys.path
+from support import AILS_BIN, MCP_BIN, build_project, run_ails  # behave puts features/ on sys.path
 
 from reporails_cli.core.discovery.agent_discovery import claude_project_folder_name
 from reporails_cli.core.xray.pages import PAGE_START_S
@@ -23,6 +24,7 @@ FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "eventbus" / "trans
 OLDER, NEWER = "older-session", "newer-session"
 SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
 ADDRESS = re.compile(r"http://127\.0\.0\.1:\d+/\?session=\S+")
+PAGE_ADDRESS = re.compile(r"http://127\.0\.0\.1:\d+/")
 
 
 def _get(url: str, token: str | None = None) -> str:
@@ -107,8 +109,8 @@ def step_pick_in_header(context):
     assert seen["search"] == f"?session={OLDER}" and f"Session {OLDER}." in seen["src"], seen
 
 
-def _mcp_env(context) -> dict[str, str]:
-    return {**suite_env(os.environ), "HOME": str(context.home), "USERPROFILE": str(context.home), SESSION_ENV: ""}
+def _mcp_env(context, session: str = "") -> dict[str, str]:
+    return {**suite_env(os.environ), "HOME": str(context.home), "USERPROFILE": str(context.home), SESSION_ENV: session}
 
 
 async def _xray_calls(project: Path, env: dict[str, str], *, together: bool) -> list[tuple[dict, float]]:
@@ -132,9 +134,11 @@ async def _xray_calls(project: Path, env: dict[str, str], *, together: bool) -> 
             return [await call(session), await call(session)]
 
 
-def _mcp_calls(context, *, together: bool) -> None:
+def _mcp_calls(context, *, together: bool, session: str = "") -> None:
     context.mcp = asyncio.run(
-        asyncio.wait_for(_xray_calls(context.project, _mcp_env(context), together=together), timeout=PAGE_START_S * 3)
+        asyncio.wait_for(
+            _xray_calls(context.project, _mcp_env(context, session), together=together), timeout=PAGE_START_S * 3
+        )
     )
 
 
@@ -217,7 +221,7 @@ def step_names_older(context):
 @then("the page at that address shows the older session as the current one")
 def step_older_current(context):
     view = _view_of(context.url)
-    assert (view["session"], view["picked"]) == (OLDER, "named"), view
+    assert (view["session"], view["picked"]) == (OLDER, "current"), view
 
 
 @then("the printed address names the newest session and says the agent did not say which session it is")
@@ -230,3 +234,74 @@ def step_names_newest(context):
 def step_newest_unknown(context):
     view = _view_of(context.url)
     assert (view["session"], view["picked"]) == (NEWER, "current_unknown"), view
+
+
+MARKER = "PROJECT CODE RAN"
+
+
+@given('the project root holds "typer.py" and "httpx.py" that print a marker and exit non-zero')
+def step_hostile_modules(context):
+    for name in ("typer.py", "httpx.py"):
+        (context.project / name).write_text(f'print("{MARKER}")\nraise SystemExit(3)\n', encoding="utf-8")
+
+
+@then("the printed address answers as the x-ray page")
+def step_address_answers(context):
+    assert json.loads(_get(_base(context.url) + "launch"))["launch"]
+
+
+@then("the project's marker was never printed")
+def step_no_marker(context):
+    assert MARKER not in context.result.stdout + context.result.stderr
+
+
+@when('"ails xray --current --no-open" is left running in the project with the session variable unset')
+def step_foreground_page(context):
+    assert AILS_BIN is not None, "`ails` console script not on PATH (run via `uv run behave`)"
+    env = {**_mcp_env(context), "PYTHONUNBUFFERED": "1", "NO_COLOR": "1", "COLUMNS": "200"}
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with  # stopped by the cleanup below
+        [str(AILS_BIN), "xray", "--current", "--no-open"],
+        cwd=str(context.project),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=env,
+    )
+
+    def stop() -> None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+    context.add_cleanup(stop)
+    assert proc.stdout is not None
+    selector = selectors.DefaultSelector()
+    selector.register(proc.stdout, selectors.EVENT_READ)
+    deadline, seen = time.monotonic() + PAGE_START_S, ""
+    while time.monotonic() < deadline and not PAGE_ADDRESS.search(seen):
+        if selector.select(timeout=0.5):
+            seen += proc.stdout.readline()
+    found = PAGE_ADDRESS.search(seen)
+    assert found, f"no page address printed: {seen!r}"
+    context.foreground_url = found.group(0)
+
+
+@when("the MCP server's xray tool is called by the agent of the newest session")
+def step_mcp_newest(context):
+    _mcp_calls(context, together=False, session=NEWER)
+    context.url = context.mcp[0][0]["url"]
+
+
+@then("the returned address is on the running page's port")
+def step_same_page(context):
+    assert _port(context.mcp[0][0]) == _port({"url": context.foreground_url}), (context.mcp, context.foreground_url)
+    assert context.mcp[0][0]["reused"] is True
+
+
+@then("the page at the returned address shows the newest session as the current one")
+def step_newest_current(context):
+    view = _view_of(context.url)
+    assert (view["session"], view["picked"]) == (NEWER, "current"), view

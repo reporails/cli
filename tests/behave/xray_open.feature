@@ -42,3 +42,19 @@ Feature: Any session of a project opens in x-ray without typing an id, from a te
     When "ails xray --current --background --no-open" is run in the project by an agent that does not say its session
     Then the printed address names the newest session and says the agent did not say which session it is
     And the page at that address shows the newest session marked as not known to be the agent's own
+
+  @e2e
+  Scenario: The page starts even when the project holds modules named like the page's own dependencies
+    Given a project with two recorded Claude Code sessions, the older one written first
+    And the project root holds "typer.py" and "httpx.py" that print a marker and exit non-zero
+    When "ails xray --current --background --no-open" is run in the project by an agent that does not say its session
+    Then the printed address answers as the x-ray page
+    And the project's marker was never printed
+
+  @e2e
+  Scenario: A page started from a terminal is reused by an agent that knows its session and shows it as the current one
+    Given a project with two recorded Claude Code sessions, the older one written first
+    When "ails xray --current --no-open" is left running in the project with the session variable unset
+    And the MCP server's xray tool is called by the agent of the newest session
+    Then the returned address is on the running page's port
+    And the page at the returned address shows the newest session as the current one

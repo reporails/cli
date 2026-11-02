@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -170,3 +171,27 @@ def test_a_stale_start_lock_is_replaced(project: Path, monkeypatch: pytest.Monke
     assert pages._take_lock(project)  # pylint: disable=protected-access
     monkeypatch.setattr(pages, "PAGE_START_S", -1.0)
     assert pages._take_lock(project)  # pylint: disable=protected-access
+
+
+@pytest.fixture(name="read_only_pages")
+def _read_only_pages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    """A pages folder whose parent cannot be written."""
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    locked.chmod(0o500)
+    monkeypatch.setattr(pages, "get_xray_pages_dir", lambda: locked / "xray-pages")
+    yield locked
+    locked.chmod(0o700)
+
+
+def test_a_start_in_an_unwritable_settings_folder_is_a_page_error_naming_the_folder(
+    project: Path, read_only_pages: Path
+) -> None:
+    with pytest.raises(XrayPageError, match=str(read_only_pages / "xray-pages")):
+        start_page(project, "any")
+
+
+def test_the_page_address_always_carries_how_the_session_was_chosen() -> None:
+    page = XrayPage(1, 2, "launch-a")
+    assert pages.page_url(page, "s", "current").endswith("/?session=s&pick=current")
+    assert pages.page_url(page, "s", "named").endswith("/?session=s&pick=named")

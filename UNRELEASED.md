@@ -22,6 +22,7 @@
 
 ### Fixed
 
+- `ails xray` opens its page even when `~/.reporails` cannot be written (the page is then not reused by a later call), and the agent's `xray` tool answers `page_not_started` naming the folder instead of failing.
 - A `heal_exclude` entry that is a bare file name now matches only at the project root, as documented, and the findings listed as `excluded` name the files they sit in.
 - The hook event-type check for Antigravity, Codex and Copilot now accepts each agent's current hook events — Antigravity's `SessionStart` and Codex's `PreModelRequest` / `PostModelRequest` among them — instead of reporting them as unrecognized.
 - An `@import` that resolves outside the current project is left as a literal reference instead of pulling that file's content into the check.

@@ -667,3 +667,42 @@ def test_launch_answers_its_id_without_the_token_and_sessions_does_not(two_sessi
     assert _get(two_sessions, "/launch", {}, token=None).json() == {"launch": LAUNCH}
     assert _get(two_sessions, "/sessions", {}, token=None).status_code == 403
     assert _get(two_sessions, "/first-prompt", {"session": "older"}, token=None).status_code == 403
+
+
+def test_the_launch_pick_is_kept_only_for_a_request_that_names_no_session(project: Path, tmp_path: Path) -> None:
+    app = xray_server.build_app(
+        project, tmp_path / "session" / "session.jsonl", picked="current_unknown", token=TOKEN, launch=LAUNCH, port=PORT
+    )
+    client = TestClient(app, base_url=ORIGIN)
+
+    def picked(query: str) -> str:
+        return client.get(f"/view{query}", headers={"X-Xray-Token": TOKEN}).json()["picked"]
+
+    assert picked("") == "current_unknown"
+    assert picked("?session=session") == "named"
+    assert picked("?session=session&pick=current") == "current"
+
+
+def test_a_page_whose_record_cannot_be_written_still_serves_and_forgets_nothing(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    served: list[bool] = []
+    forgotten: list[str] = []
+
+    def refuse(*_: object) -> None:
+        raise PermissionError("read-only")
+
+    class FakeServer:
+        def __init__(self, _config: object) -> None:
+            pass
+
+        def run(self, **_: object) -> None:
+            served.append(True)
+
+    monkeypatch.setattr(xray_server, "register_page", refuse)
+    monkeypatch.setattr(xray_server, "forget_page", lambda *_: forgotten.append("x"))
+    monkeypatch.setattr(xray_server.uvicorn, "Server", FakeServer)
+    with caplog.at_level("WARNING"):
+        xray_server.serve(project, tmp_path / "session" / "session.jsonl", "newest", open_page=False)
+    assert served == [True] and forgotten == []
+    assert any("will not be reused" in r.getMessage() for r in caplog.records)

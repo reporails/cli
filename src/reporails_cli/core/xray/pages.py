@@ -16,8 +16,9 @@ from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.platform.adapters.programs import launch_detached
 from reporails_cli.core.platform.config.bootstrap import get_xray_pages_dir
 from reporails_cli.core.platform.contract.errors import XrayPageError
-from reporails_cli.core.platform.contract.json_value import as_object, as_str, opt_int
+from reporails_cli.core.platform.contract.json_value import JsonValue, as_object, as_str, opt_int
 from reporails_cli.core.platform.dto.xray import SessionPick, XrayPage
+from reporails_cli.core.platform.utils.utils import write_json_atomic
 
 HOST = "127.0.0.1"
 # Seconds a started page has to answer, and the age after which a start lock is taken to be stale.
@@ -36,18 +37,6 @@ def _lock_path(root: Path) -> Path:
     return _record_path(root).with_suffix(".lock")
 
 
-def _write_private(path: Path, text: str) -> None:
-    """Write `text` to `path` through a private temporary file (folder 0700, file 0600)."""
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    temporary = path.with_suffix(f".{os.getpid()}.tmp")
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        os.write(fd, text.encode())
-    finally:
-        os.close(fd)
-    temporary.replace(path)
-
-
 def _read_record(root: Path) -> XrayPage | None:
     """The page the project's record names; None when there is no record or it is not the pinned shape."""
     try:
@@ -60,8 +49,10 @@ def _read_record(root: Path) -> XrayPage | None:
 
 def register_page(root: Path, port: int, launch: str) -> None:
     """Record this process as the one serving the project's page on `port` under `launch`. Raises `OSError`."""
-    record = {"pid": os.getpid(), "port": port, "launch": launch}
-    _write_private(_record_path(root), json.dumps(record))
+    record: JsonValue = {"pid": os.getpid(), "port": port, "launch": launch}
+    path = _record_path(root)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    write_json_atomic(path, record, mode=0o600)
 
 
 def forget_page(root: Path, launch: str) -> None:
@@ -123,6 +114,11 @@ def _wait_for_page(root: Path, pid: int | None) -> XrayPage:
     raise XrayPageError(f"the x-ray page did not answer within {PAGE_START_S:.0f} seconds")
 
 
+def _unwritable(exc: OSError) -> XrayPageError:
+    """The error for a page that could not start; it names the folder the page's record lives in."""
+    return XrayPageError(f"the x-ray page could not start; its folder is {get_xray_pages_dir()}: {exc}")
+
+
 def start_page(root: Path, session_id: str) -> tuple[XrayPage, bool]:
     """The project's page and whether it was already running; with none running, start one on `session_id`,
     detached, and wait for it to answer.
@@ -132,17 +128,21 @@ def start_page(root: Path, session_id: str) -> tuple[XrayPage, bool]:
     page = running_page(root)
     if page is not None:
         return page, True
-    if not _take_lock(root):
+    try:
+        locked = _take_lock(root)
+    except OSError as exc:
+        raise _unwritable(exc) from exc
+    if not locked:
         return _wait_for_page(root, None), True
     try:
         page = running_page(root)
         if page is not None:
             return page, True
-        command = [sys.executable, "-m", "reporails_cli", "xray", "--no-open", "--session", session_id]
+        command = [sys.executable, "-I", "-m", "reporails_cli", "xray", "--no-open", "--session", session_id]
         try:
             pid = launch_detached(command, cwd=root)
         except OSError as exc:
-            raise XrayPageError(f"the x-ray page could not start: {exc}") from exc
+            raise _unwritable(exc) from exc
         return _wait_for_page(root, pid), False
     finally:
         with contextlib.suppress(OSError):
@@ -152,5 +152,4 @@ def start_page(root: Path, session_id: str) -> tuple[XrayPage, bool]:
 def page_url(page: XrayPage, session_id: str, picked: SessionPick) -> str:
     """The address of `session_id` on the running page; a session the agent did not name carries a mark the
     page says so by."""
-    suffix = "&pick=current_unknown" if picked == "current_unknown" else ""
-    return f"http://{HOST}:{page.port}/?session={session_id}{suffix}"
+    return f"http://{HOST}:{page.port}/?session={session_id}&pick={picked}"

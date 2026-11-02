@@ -155,10 +155,10 @@ class XrayServer:
 
     async def _session_of(self, request: Request) -> tuple[str, XraySession, SessionPick] | JSONResponse:
         """The session a request names with `?session=` (the launch session without it), and how it was chosen:
-        `?pick=` when sent, else the launch pick for the launch session and `named` for another."""
-        launch_session = self._launch_file.stem
-        session_id = request.query_params.get("session") or launch_session
-        picked: SessionPick = self._launch_pick if session_id == launch_session else "named"
+        `?pick=` when sent, else the launch pick for a request naming no session and `named` for one that does."""
+        named_session = request.query_params.get("session")
+        session_id = named_session or self._launch_file.stem
+        picked: SessionPick = "named" if named_session else self._launch_pick
         sent = request.query_params.get("pick")
         if sent is not None:
             named = next((member for member in _PICKS if member == sent), None)
@@ -420,11 +420,17 @@ def serve(root: Path, session_file: Path, picked: SessionPick, *, open_page: boo
     launch = secrets.token_urlsafe(16)
     app = build_app(root, session_file, picked=picked, token=secrets.token_urlsafe(32), launch=launch, port=port)
     url = f"http://{HOST}:{port}/"
-    register_page(safe_resolve(root), port, launch)
+    recorded = False
+    try:
+        register_page(safe_resolve(root), port, launch)
+        recorded = True
+    except OSError as exc:
+        logger.warning("the x-ray page will not be reused by a later `ails xray` or agent call: %s", exc)
     try:
         typer.echo(f"{xray_line(session_file.stem, url, picked)}  (Ctrl-C to stop)")
         if open_page:
             open_in_browser(url)
         uvicorn.Server(uvicorn.Config(app, log_level="warning")).run(sockets=[sock])
     finally:
-        forget_page(safe_resolve(root), launch)
+        if recorded:
+            forget_page(safe_resolve(root), launch)

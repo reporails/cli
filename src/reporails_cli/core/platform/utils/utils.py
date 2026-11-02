@@ -341,17 +341,21 @@ def json_object(text: str) -> JsonObject:
     return body if isinstance(body, dict) else {}
 
 
-def write_json_atomic(path: Path, data: JsonValue) -> None:
+def write_json_atomic(path: Path, data: JsonValue, *, mode: int = 0o666) -> None:
     """Write `data` as JSON to `path` in one step (I/O).
 
     The JSON goes to a temp file beside `path` and `os.replace` swaps it in, so a
-    reader sees the old file or the new one, never a half-written one. Creates the
-    parent directory. Raises `OSError` when the write fails; the temp file is removed.
+    reader sees the old file or the new one, never a half-written one. The temp file is
+    created with permission bits `mode` (less the process umask), so a private file is
+    never readable by others, even briefly. Creates the parent directory. Raises
+    `OSError` when the write fails; the temp file is removed.
     """
     tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(json.dumps(data), encoding="utf-8")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(data))
         os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
