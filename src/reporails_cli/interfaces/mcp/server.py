@@ -66,16 +66,18 @@ from reporails_cli.interfaces.mcp.xray_tool import xray_page
 
 
 def _serve_remedy_brief(
-    path: str, location: int, targets: list[str] | None = None, has_guide: bool = False
+    path: str, location: int, targets: list[str] | None = None, has_guide: bool = False, *, project_root: Path
 ) -> JsonObject:
     """`remedy_brief`'s reply; an unreadable config file answers `config_unreadable` naming the file and line."""
     try:
-        return _remedy_brief_reply(path, location, targets, has_guide)
+        return _remedy_brief_reply(path, location, targets, has_guide, project_root)
     except ConfigUnreadableError as exc:
         return _config_unreadable(exc)
 
 
-def _remedy_brief_reply(path: str, location: int, targets: list[str] | None, has_guide: bool) -> JsonObject:
+def _remedy_brief_reply(
+    path: str, location: int, targets: list[str] | None, has_guide: bool, project_root: Path
+) -> JsonObject:
     """`remedy_brief(path, location, targets, has_guide)`'s body: a caller without the rewrite
     guide (`has_guide` false) is refused with `plugin_update_required` before anything else. Reads
     the last `validate(path, targets)`'s stored workflow and scan root and builds the location's
@@ -95,7 +97,7 @@ def _remedy_brief_reply(path: str, location: int, targets: list[str] | None, has
                 "Update the plugin, then run heal again."
             ),
         }
-    state = validate_states.get(state_key(path, target_tokens(targets)))
+    state = validate_states.get(state_key(path, project_root, target_tokens(targets)))
     if state is None or not state.full_payload:
         return {
             "error": "no_workflow",
@@ -129,7 +131,7 @@ def _remedy_brief_reply(path: str, location: int, targets: list[str] | None, has
     return reply
 
 
-def _with_feedback(payload: JsonObject, target: Path, scan_root: Path) -> JsonObject:
+def _with_feedback(payload: JsonObject, target: Path, scan_root: Path, project_root: Path) -> JsonObject:
     """Add the `feedback` block to `payload` when `target` is a file `remedy_brief`
     snapshotted — same gate as `with_preservation`, so the two blocks always ride together on
     a snapshotted file's reply."""
@@ -137,7 +139,7 @@ def _with_feedback(payload: JsonObject, target: Path, scan_root: Path) -> JsonOb
         return payload
     if not target.is_file() or not snapshots.has_snapshot(target):
         return payload
-    state = validate_states.get(state_key(str(scan_root), ()))
+    state = validate_states.get(state_key(str(scan_root), project_root, ()))
     stored = state.full_payload if state is not None else None
     return {**payload, "feedback": [*file_feedback(payload, target, scan_root, stored)]}
 
@@ -170,12 +172,12 @@ async def _fresh_validate_payload(
 
 
 async def _begin_validate_call(
-    path: str, tokens: tuple[str, ...], full: bool, target: Path, scan_root: Path
+    path: str, tokens: tuple[str, ...], full: bool, target: Path, scan_root: Path, project_root: Path
 ) -> tuple[CircuitState, bool, str]:
     """Fingerprint the scan inputs, then count this `validate` call on its `(path, targets)` state.
     Returns `(state, unchanged, base_hash)`: whether the content matches the last call's, and the
     fingerprint base the fresh run later extends with the files it mapped."""
-    path_key = state_key(path, tokens)
+    path_key = state_key(path, project_root, tokens)
     # The input walk is blocking file IO: run it off the event loop, before the state read, so
     # the read-modify-write below stays free of any `await`.
     prior = validate_states.get(path_key)
@@ -245,7 +247,7 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None, proj
     scan_root = resolve_scan_target(target, project_root)[0]
 
     tokens = target_tokens(targets)
-    state, unchanged, base_hash = await _begin_validate_call(path, tokens, full, target, scan_root)
+    state, unchanged, base_hash = await _begin_validate_call(path, tokens, full, target, scan_root, project_root)
 
     if state.call_count > MAX_CALLS or state.consecutive_unchanged >= MAX_UNCHANGED:
         return {
@@ -290,7 +292,7 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None, proj
 
     # `with_preservation` is CPU/IO work: run it off the event loop so it never blocks a concurrent tool call.
     payload = await asyncio.to_thread(with_preservation, payload, target, ruleset_map, score, scan_root)
-    payload = await asyncio.to_thread(_with_feedback, payload, target, scan_root)
+    payload = await asyncio.to_thread(_with_feedback, payload, target, scan_root, project_root)
     return with_rule_labels(payload) if full else bound_validate_payload(payload)
 
 
@@ -402,7 +404,7 @@ async def validate(
         payload = await _run_validate(key, bool(full), targets, folder.root)
         if not has_text_view(payload, full=bool(full)):
             return _result(payload)
-        state = validate_states.setdefault(state_key(key, target_tokens(targets)), CircuitState())
+        state = validate_states.setdefault(state_key(key, folder.root, target_tokens(targets)), CircuitState())
         return _text_result(render_text_view(unseen_notices(payload, state.shown_notices)))
 
 
@@ -457,7 +459,12 @@ async def remedy_brief(
         if not isinstance(folder, ProjectFolder):
             return _result(folder)
         brief = await asyncio.to_thread(
-            _serve_remedy_brief, str(folder.target), int(location), targets, bool(has_guide)
+            _serve_remedy_brief,
+            str(folder.target),
+            int(location),
+            targets,
+            bool(has_guide),
+            project_root=folder.root,
         )
         return _result(brief)
 

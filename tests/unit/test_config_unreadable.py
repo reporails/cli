@@ -259,10 +259,10 @@ def test_mcp_remedy_brief_returns_the_structured_error(
 
     monkeypatch.setattr(server, "build_remedy_brief", unreadable)
     server.validate_states.clear()
-    server.validate_states[str(root.resolve())] = server.CircuitState(
+    server.validate_states[server.state_key(str(root), root, ())] = server.CircuitState(
         full_payload={"workflow": {"locations": [{"order": 1}]}}, scan_root=root
     )
-    reply = server._serve_remedy_brief(str(root), 1, None, True)
+    reply = server._serve_remedy_brief(str(root), 1, None, True, project_root=root)
     server.validate_states.clear()
     assert reply == {"error": "config_unreadable", "message": str(problem)}
 

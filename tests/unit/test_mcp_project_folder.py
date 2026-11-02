@@ -46,10 +46,65 @@ def test_an_absolute_path_is_the_target(tmp_path: Path) -> None:
     assert _resolve(str(tmp_path)) == ProjectFolder(tmp_path.resolve(), tmp_path.resolve())
 
 
-def test_a_file_path_without_any_folder_roots_at_its_own_folder(tmp_path: Path) -> None:
+def test_a_file_path_without_any_agent_folder_is_refused(tmp_path: Path) -> None:
     f = tmp_path / "CLAUDE.md"
     f.write_text("x")
-    assert _resolve(str(f)) == ProjectFolder(f.resolve(), tmp_path.resolve())
+    got = _resolve(str(f))
+    assert got == NO_PROJECT
+    assert "file in targets" in got["message"]
+
+
+def test_a_file_path_is_read_against_the_agent_folder(tmp_path: Path) -> None:
+    f = tmp_path / "CLAUDE.md"
+    f.write_text("x")
+    assert _resolve(str(f), _ctx(tmp_path.as_uri())) == ProjectFolder(f.resolve(), tmp_path.resolve())
+
+
+def test_the_root_holding_an_absolute_path_is_the_project_folder(tmp_path: Path) -> None:
+    for name in "ab":
+        (tmp_path / name).mkdir()
+    ctx = _ctx((tmp_path / "a").as_uri(), (tmp_path / "b").as_uri())
+    got = _resolve(str(tmp_path / "b" / "sub" / "CLAUDE.md"), ctx)
+    assert got.root == (tmp_path / "b").resolve()
+    outside = _resolve(str(tmp_path / "other"), ctx)
+    assert outside.root == (tmp_path / "a").resolve()
+
+
+def test_roots_are_converted_with_the_platform_url_converter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from reporails_cli.interfaces.mcp import project_folder
+
+    seen: list[str] = []
+
+    def fake(text: str) -> str:
+        seen.append(text)
+        return str(tmp_path)
+
+    monkeypatch.setattr(project_folder, "url2pathname", fake)
+    _resolve(".", _ctx("file:///C:/x", "file://host/share/x", "file://localhost/y", "https://example.com/z"))
+    assert seen == ["/C:/x", "//host/share/x", "/y"]
+
+
+def test_a_roots_request_that_never_answers_counts_as_no_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from reporails_cli.interfaces.mcp import project_folder
+
+    async def hangs() -> Any:
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(project_folder, "ROOTS_TIMEOUT_S", 0.05)
+    ctx = _ctx(tmp_path.as_uri())
+    ctx.session.list_roots = hangs
+    assert _resolve(".", ctx) == NO_PROJECT
+
+
+def test_a_failing_roots_request_is_logged_at_debug(caplog: pytest.LogCaptureFixture, tmp_path: Path) -> None:
+    async def fails() -> Any:
+        raise RuntimeError("channel closed")
+
+    ctx = _ctx(tmp_path.as_uri())
+    ctx.session.list_roots = fails
+    with caplog.at_level("DEBUG", logger="reporails_cli.interfaces.mcp.project_folder"):
+        _resolve(".", ctx)
+    assert any("channel closed" in r.getMessage() and r.levelname == "DEBUG" for r in caplog.records)
 
 
 def test_a_path_wins_over_roots_and_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

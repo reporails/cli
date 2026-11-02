@@ -52,3 +52,5 @@
 - Tests: architecture checks guard the package boundaries, replacing two narrower checks they cover, and `poe hexagon` renders the package dependency view.
 - Checking or fixing one file runs through one shared path for every interface; MCP replies are unchanged, and an architecture check stops one interface importing another; a test shows the page's fix button writing every fix and putting back a file that departs.
 - Checking one file always reads the project folder its caller names, never the folder the process happens to run in.
+- An MCP tool given a file as `path` with no project folder from the agent or `AILS_PROJECT_DIR` now answers `no_project` and asks for the folder as `path` and the file in `targets`, instead of treating the file's own folder as the project.
+- With several project folders listed by the agent, an MCP tool uses the one that holds the `path`; Windows and network-share `file://` folders are read correctly, an agent that never answers the folder request no longer stalls the tool (it waits 2 s), and one path under two project folders keeps separate repeat-call counters.

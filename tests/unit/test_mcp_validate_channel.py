@@ -93,6 +93,7 @@ def test_preservation_reply_is_one_text_block(tmp_path: Path, monkeypatch) -> No
     preservation = {"ok": True, "score_before": 7.0, "score_after": 8.0, "kept": {"instructions": 1}}
     monkeypatch.setattr(server, "with_preservation", lambda payload, *a: {**payload, "preservation": preservation})
     monkeypatch.setattr(server, "_with_feedback", lambda payload, *a: {**payload, "feedback": []})
+    monkeypatch.setenv("AILS_PROJECT_DIR", str(tmp_path))
     result = _call(target, monkeypatch, {"tier": "free", "files": {}, "level": "L2"})
     assert len(result.content) == 1 and result.structured_content is None
     assert "preservation.ok: true" in result.content[0].text

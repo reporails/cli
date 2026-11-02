@@ -410,13 +410,13 @@ class TestValidateTargets:
         from reporails_cli.interfaces.mcp import server
 
         _run_async(server._run_validate(str(project), True, ["skills"], project))
-        brief = server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True)
+        brief = server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True, project_root=project)
         assert brief["location"]["element"] == "the `backlog` skill"
-        assert server._serve_remedy_brief(str(project), 1, has_guide=True)["error"] == "no_workflow"
+        assert server._serve_remedy_brief(str(project), 1, has_guide=True, project_root=project)["error"] == "no_workflow"
         _run_async(server._run_validate(str(project), True, None, project))
-        assert server._serve_remedy_brief(str(project), 1, has_guide=True)["location"]["element"] == "CLAUDE.md"
+        assert server._serve_remedy_brief(str(project), 1, has_guide=True, project_root=project)["location"]["element"] == "CLAUDE.md"
         assert (
-            server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True)["location"]["element"]
+            server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True, project_root=project)["location"]["element"]
             == "the `backlog` skill"
         )
 
@@ -831,7 +831,7 @@ class TestCircuitBreaker:
             assert data.get("error") != "circuit_breaker", data
 
         # A served remedy_brief resets call_count for this path before the next tier's round.
-        brief = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
+        brief = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True, project_root=tmp_path)
         assert "error" not in brief, brief
 
         # Round 2: 5 more validate calls (11 total across the run) must not trip.
@@ -1137,13 +1137,13 @@ class TestRemedyBrief:
         )
         (tmp_path / "CLAUDE.md").write_text("# Project\n")
         _call_tool("validate", {"path": str(tmp_path)})
-        state_before = server.validate_states[str(tmp_path.resolve())]
+        state_before = server.validate_states[server.state_key(str(tmp_path), tmp_path, ())]
         unchanged_before = state_before.consecutive_unchanged
 
         for _ in range(5):
             reply = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 1, "has_guide": True}))
             assert "error" not in reply, reply
-            state_after = server.validate_states[str(tmp_path.resolve())]
+            state_after = server.validate_states[server.state_key(str(tmp_path), tmp_path, ())]
             assert (state_after.call_count, state_after.consecutive_unchanged) == (0, unchanged_before)
 
     @pytest.mark.e2e
@@ -1572,8 +1572,8 @@ class TestFeedbackWiring:
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Project\n")
         monkeypatch.setattr(snapshots, "has_snapshot", lambda p: True)
-        assert "feedback" not in server._with_feedback({"error": "x"}, target, tmp_path)
-        assert "feedback" not in server._with_feedback({"needs_install": True}, target, tmp_path)
+        assert "feedback" not in server._with_feedback({"error": "x"}, target, tmp_path, tmp_path)
+        assert "feedback" not in server._with_feedback({"needs_install": True}, target, tmp_path, tmp_path)
 
 
 def _wf_finding(rule: str, line: int, tier: str = "cosmetic", message: str = "m") -> dict[str, Any]:

@@ -414,7 +414,7 @@ def teardown_module() -> None:
 @pytest.mark.subsys_server
 def test_no_workflow_before_any_validate(tmp_path: Path) -> None:
     server.validate_states.clear()
-    reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
+    reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True, project_root=tmp_path)
     assert reply == {
         "error": "no_workflow",
         "message": "Call validate for this path (and these targets) first; remedy_brief reads its workflow.",
@@ -430,10 +430,10 @@ def test_workflow_requires_pro_when_the_last_validate_carried_no_workflow(tmp_pa
     which sends the agent straight back into the `validate` it just ran and never tells it the
     brief itself is the Pro feature it lacks."""
     server.validate_states.clear()
-    server.validate_states[str(tmp_path.resolve())] = server.CircuitState(
+    server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = server.CircuitState(
         full_payload={"files": {}}, scan_root=tmp_path
     )
-    reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
+    reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True, project_root=tmp_path)
     assert reply["error"] == "workflow_requires_pro"
     assert "call validate" not in reply["message"].lower()
     assert "pro" in reply["message"].lower()
@@ -446,10 +446,10 @@ def test_no_workflow_when_the_last_validate_carried_workflow_none(tmp_path: Path
     dict (a malformed or null value) — still `no_workflow`, since a `workflow` key that IS
     present, just unusable, is not the tier-gated absence `workflow_requires_pro` names."""
     server.validate_states.clear()
-    server.validate_states[str(tmp_path.resolve())] = server.CircuitState(
+    server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = server.CircuitState(
         full_payload={"files": {}, "workflow": None}, scan_root=tmp_path
     )
-    reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
+    reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True, project_root=tmp_path)
     assert reply["error"] == "no_workflow"
 
 
@@ -472,9 +472,9 @@ def test_a_caller_without_the_rewrite_guide_is_told_to_update_and_nothing_runs(
     monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", _boom)
     payload = {"workflow": {"locations": [{"order": 1, "kind": "main", "files": ["CLAUDE.md"]}]}}
     state = server.CircuitState(full_payload=payload, scan_root=tmp_path, call_count=3, consecutive_unchanged=1)
-    server.validate_states[str(tmp_path.resolve())] = state
+    server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = state
 
-    reply = server._serve_remedy_brief(str(tmp_path), 1, **kwargs)
+    reply = server._serve_remedy_brief(str(tmp_path), 1, **kwargs, project_root=tmp_path)
 
     assert reply["error"] == "plugin_update_required"
     assert "reporails plugin 0.6.2 or later" in reply["message"]
@@ -491,9 +491,9 @@ def test_a_caller_with_the_rewrite_guide_gets_the_brief(monkeypatch, tmp_path: P
         remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"files": {}}, _fake_map(), None)
     )
     payload = {"workflow": {"locations": [{"order": 1, "kind": "other", "files": []}]}}
-    server.validate_states[str(tmp_path.resolve())] = server.CircuitState(full_payload=payload, scan_root=tmp_path)
+    server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = server.CircuitState(full_payload=payload, scan_root=tmp_path)
 
-    reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
+    reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True, project_root=tmp_path)
 
     assert "error" not in reply
     assert reply["location"]["root"] == str(tmp_path)
@@ -504,9 +504,9 @@ def test_a_caller_with_the_rewrite_guide_gets_the_brief(monkeypatch, tmp_path: P
 def test_location_not_found_names_the_count(tmp_path: Path) -> None:
     server.validate_states.clear()
     payload = {"workflow": {"locations": [{"order": 1, "kind": "main", "files": []}]}}
-    server.validate_states[str(tmp_path.resolve())] = server.CircuitState(full_payload=payload, scan_root=tmp_path)
+    server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = server.CircuitState(full_payload=payload, scan_root=tmp_path)
 
-    reply = server._serve_remedy_brief(str(tmp_path), 9, has_guide=True)
+    reply = server._serve_remedy_brief(str(tmp_path), 9, has_guide=True, project_root=tmp_path)
 
     assert reply == {
         "error": "location_not_found",
@@ -525,12 +525,12 @@ def test_serve_remedy_brief_resets_call_count_but_leaves_consecutive_unchanged(m
     )
     payload = {"workflow": {"locations": [{"order": 1, "kind": "other", "files": []}]}}
     state = server.CircuitState(full_payload=payload, scan_root=tmp_path, call_count=3, consecutive_unchanged=1)
-    server.validate_states[str(tmp_path.resolve())] = state
+    server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = state
 
     for _ in range(4):
-        reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
+        reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True, project_root=tmp_path)
         assert "error" not in reply
-        after = server.validate_states[str(tmp_path.resolve())]
+        after = server.validate_states[server.state_key(str(tmp_path), tmp_path, ())]
         assert (after.call_count, after.consecutive_unchanged) == (0, 1)
 
 

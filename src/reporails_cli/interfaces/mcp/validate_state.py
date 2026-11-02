@@ -43,8 +43,9 @@ class CircuitState:
 validate_states: dict[str, CircuitState] = {}
 
 
-def state_key(path: str, tokens: tuple[str, ...]) -> str:
-    """The circuit-breaker / workflow key: the resolved path, plus the targets when any — a
-    targeted `validate` and a whole-project one keep separate counters and workflows."""
-    key = str(Path(path).resolve())
+def state_key(path: str, root: Path, tokens: tuple[str, ...]) -> str:
+    """The circuit-breaker / workflow key: the resolved path under the resolved project folder, plus the
+    targets when any — a targeted `validate` and a whole-project one keep separate counters and workflows,
+    and one path read under two project folders keeps two."""
+    key = f"{Path(path).resolve()}|root={root.resolve()}"
     return f"{key}|targets={','.join(tokens)}" if tokens else key
