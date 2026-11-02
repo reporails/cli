@@ -705,7 +705,7 @@ def test_git_root_never_accepts_the_home_folder(monkeypatch: pytest.MonkeyPatch,
     (home / ".git").mkdir()
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
 
-    assert git_root(nested) == nested
+    assert git_root(nested) is None
 
 
 @pytest.mark.unit

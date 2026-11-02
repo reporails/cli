@@ -29,19 +29,24 @@ def resolve_project_root(target: Path) -> Path:
     return target if target.is_dir() else target.parent
 
 
-def git_root(start: Path) -> Path:
-    """Nearest ancestor of `start` (itself included) with a `.git` entry, below home; `start` when none."""
+def home_folder() -> Path | None:
+    """The user's home folder, resolved; None when it cannot be determined."""
     try:
-        home: Path | None = Path.home().resolve()
+        return Path.home().resolve()
     except (RuntimeError, OSError):
-        home = None
+        return None
+
+
+def git_root(start: Path) -> Path | None:
+    """Nearest ancestor of `start` (itself included) with a `.git` entry, below home; None when none."""
+    home = home_folder()
     for candidate in (start, *start.parents):
         # The home folder, or a folder above it, is never a project root.
         if home and (candidate == home or home.is_relative_to(candidate)):
             break
         if (candidate / ".git").exists():
             return candidate
-    return start
+    return None
 
 
 @functools.lru_cache(maxsize=1)
@@ -146,10 +151,7 @@ def resolve_project_root_for_file(target: Path) -> Path:
     first_marker: Path | None = None
     outermost_agent_dir: Path | None = None
     agent_dirs = agent_dir_names()
-    try:
-        home: Path | None = Path.home().resolve()
-    except (RuntimeError, OSError):
-        home = None
+    home = home_folder()
     while current != current.parent:
         if (current / ".ails" / "backbone.yml").exists():
             return current
@@ -182,8 +184,5 @@ def user_level_agent_dir(target: Path) -> Path | None:
             outermost = ancestor
     if outermost is None:
         return None
-    try:
-        home = Path.home().resolve()
-    except (RuntimeError, OSError):
-        return None
-    return outermost if outermost.parent.resolve() == home else None
+    home = home_folder()
+    return outermost if home is not None and outermost.parent.resolve() == home else None

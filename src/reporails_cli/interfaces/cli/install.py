@@ -388,7 +388,7 @@ def _install_agent_plugin(agent: str, project: bool = False) -> bool:
         console.print(f"  [dim]Run by hand: {manual}[/dim]")
         return False
     scoped = project and agent == "claude"
-    root = git_root(Path.cwd()) if scoped else None
+    root = (git_root(Path.cwd()) or Path.cwd()) if scoped else None
     where = f" for this project ({root})" if root else ""
     console.print(f"  Installing the plugin into {label}{where}...")
     source = _plugin_source()

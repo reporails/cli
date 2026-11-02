@@ -124,6 +124,16 @@ def test_a_session_folder_above_the_repository_is_never_used(project: Path) -> N
     assert pick_session(project / "src", "started-above", current=False) is None
 
 
+def test_outside_a_repository_a_subfolder_finds_its_folder_but_never_the_home_folder(project: Path) -> None:
+    home = Path.home()
+    plain = home / "work" / "plain"
+    (plain / "sub").mkdir(parents=True)
+    own = _session(plain, "plain-session", 100)
+    _session(home, "home-session", 0)
+    assert pick_session(plain / "sub", None, current=False) == PickedSession(plain, own, "newest")
+    assert pick_session(home / "work", None, current=False) is None
+
+
 def test_the_switcher_lists_each_session_with_its_start_length_and_subagents(project: Path) -> None:
     _session(project, "plain", 0, rows=[PROMPT_ROW])
     (project_dir := claude_project_dir(project) / "plain" / "subagents").mkdir(parents=True)
