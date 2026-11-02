@@ -111,7 +111,7 @@ def _index_file(index: SuppressionIndex, rel: str, path: Path, boundary: Path) -
 
 def build_index(
     finding_files: Iterable[str],
-    project_root: Path | None,
+    project_root: Path,
 ) -> SuppressionIndex:
     """Scan each finding-bearing file for directives and key them by (file, line).
 
@@ -127,13 +127,13 @@ def build_index(
     for rel in set(finding_files):
         path = resolve_finding_path(rel, project_root)
         if path is not None:
-            _index_file(index, rel, path, project_root or path.parent)
+            _index_file(index, rel, path, project_root)
     return index
 
 
 def suppressed_lines(
     finding_files: Iterable[str],
-    project_root: Path | None,
+    project_root: Path,
 ) -> dict[str, set[int]]:
     """Per-file set of lines carrying any suppression directive (for the heal write path).
 
@@ -395,7 +395,7 @@ def _workflow_files(workflow: RemediationWorkflow, norm: Callable[[str], str]) -
 
 def apply_suppressions(
     result: CombinedResult,
-    project_root: Path | None = None,
+    project_root: Path,
     imported: ImportedPlaces | None = None,
 ) -> CombinedResult:
     """Return `result` with directive-suppressed findings removed and stats rebuilt.

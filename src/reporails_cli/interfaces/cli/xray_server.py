@@ -293,7 +293,7 @@ class XrayServer:
 
     def _check(self, target: Path) -> JSONResponse:
         with self._work_lock:
-            run = check_path(str(target))
+            run = check_path(str(target), self._root)
             if isinstance(run, Refusal):
                 return _refused(400, run.text)
             found = file_findings(run, target)
@@ -320,7 +320,7 @@ class XrayServer:
     def _launch_outcome(self) -> tuple[XrayCheck, dict[str, FindingTally]]:
         """The launch check's state and the tally of every file it covers; a failed check is refused with its text."""
         try:
-            run = check_path(str(self._root))
+            run = check_path(str(self._root), self._root)
             if isinstance(run, Refusal):
                 return XrayCheck("refused", run.text), {}
             return XrayCheck("done", None), tallies_by_file(run)
@@ -337,7 +337,7 @@ class XrayServer:
 
     def _heal(self, target: Path) -> JSONResponse:
         with self._work_lock:
-            outcome = heal_one(str(target))
+            outcome = heal_one(str(target), self._root)
             with self._view_lock:
                 self._findings.pop(self._key(target), None)
             if outcome.written is None:

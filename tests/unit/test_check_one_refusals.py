@@ -27,7 +27,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _refused(path: Path) -> Refusal:
-    refusal = check_path(str(path))
+    refusal = check_path(str(path), path if path.is_dir() else path.parent)
     assert isinstance(refusal, Refusal)
     return refusal
 

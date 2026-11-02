@@ -33,7 +33,7 @@ def prepare_for_path(path: str, targets: list[str] | None, project_root: Path) -
             if isinstance(resolved, dict):
                 return resolved
             named = named_files(resolved)
-        scope = scope_for_path(path, named, project_root)
+        scope = scope_for_path(path, project_root, named)
         if isinstance(scope, Refusal):
             return {"files": 0} if scope.kind == "empty_project" else refusal_payload(scope)
         ruleset_map, mapper_error = build_map(scope.scan_root, scope.instruction_files, scope.filter_agents)

@@ -48,6 +48,7 @@ class Calls:
     def __init__(self) -> None:
         self.checked: list[str] = []
         self.healed: list[str] = []
+        self.roots: list[Path] = []
 
 
 @pytest.fixture
@@ -68,12 +69,14 @@ def project(tmp_path: Path) -> Path:
 def calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
     seen = Calls()
 
-    def fake_check(path: str) -> Refusal:
+    def fake_check(path: str, root: Path) -> Refusal:
         seen.checked.append(path)
+        seen.roots.append(root)
         return Refusal("failed", "fake refusal")
 
-    def fake_heal(path: str) -> HealOutcome:
+    def fake_heal(path: str, root: Path) -> HealOutcome:
         seen.healed.append(path)
+        seen.roots.append(root)
         return HealOutcome(KeyedResult(), "", Path(path).parent)
 
     monkeypatch.setattr(xray_server, "check_path", fake_check)
@@ -161,6 +164,15 @@ def test_a_project_file_the_page_does_not_list_is_refused_before_the_core(
     assert calls.checked == [] and calls.healed == []
 
 
+def test_check_and_heal_read_the_project_the_server_was_opened_on(
+    client: TestClient, project: Path, calls: Calls
+) -> None:
+    headers = {"X-Xray-Token": TOKEN, "Origin": ORIGIN}
+    client.post("/check", json={"path": "CLAUDE.md"}, headers=headers)
+    client.post("/heal", json={"path": "CLAUDE.md"}, headers=headers)
+    assert calls.roots == [project, project]
+
+
 def test_check_reports_a_refusal_as_400_and_a_file_as_its_findings(
     client: TestClient, project: Path, calls: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -172,7 +184,7 @@ def test_check_reports_a_refusal_as_400_and_a_file_as_its_findings(
         pass
 
     finding = FindingItem(file="CLAUDE.md", line=3, severity="warning", rule="CORE:C:0053", message="Say it plainly")
-    monkeypatch.setattr(xray_server, "check_path", lambda path: Run())
+    monkeypatch.setattr(xray_server, "check_path", lambda path, root: Run())
     monkeypatch.setattr(xray_server, "file_findings", lambda run, file: (finding,))
     reply = client.post("/check", json={"path": "CLAUDE.md"}, headers={"X-Xray-Token": TOKEN, "Origin": ORIGIN})
     assert reply.json()["findings"] == 1
@@ -210,7 +222,7 @@ def test_the_launch_check_fills_every_files_tally_and_moves_the_version(
         result=SimpleNamespace(findings=[finding, other]),
         scope=SimpleNamespace(scan_root=project.resolve(), instruction_files=[project / "CLAUDE.md"]),
     )
-    monkeypatch.setattr(xray_server, "check_path", lambda path: run)
+    monkeypatch.setattr(xray_server, "check_path", lambda path, root: run)
     app = xray_server.build_app(
         project,
         tmp_path / "session" / "session.jsonl",
@@ -232,7 +244,7 @@ def test_the_view_says_running_until_the_launch_check_lands_and_the_version_move
 ) -> None:
     release = threading.Event()
 
-    def slow_check(path: str) -> Refusal:
+    def slow_check(path: str, root: Path) -> Refusal:
         release.wait(5)
         return Refusal("failed", "no model")
 
@@ -262,7 +274,7 @@ def test_heal_replies_with_the_receipt_or_the_reason_nothing_was_written(
     reply = client.post("/heal", json={"path": "CLAUDE.md"}, headers=headers).json()
     assert reply["receipt"][0].startswith("heal_apply: 0 fixed")
     monkeypatch.setattr(
-        xray_server, "heal_one", lambda path: HealOutcome(None, "Applying fixes needs a Pro account.", Path())
+        xray_server, "heal_one", lambda path, root: HealOutcome(None, "Applying fixes needs a Pro account.", Path())
     )
     reply = client.post("/heal", json={"path": "CLAUDE.md"}, headers=headers).json()
     assert reply["receipt"] == ["Applying fixes needs a Pro account."]
@@ -277,7 +289,7 @@ def _real_heal(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     reply = SimpleNamespace(workflow=deserialize_workflow({"workflow": wire}), tier="pro")
     result = SimpleNamespace(reply=reply, offline=False)
     run = SimpleNamespace(ruleset_map=m, result=result, funnel_error=None, scope=SimpleNamespace(scan_root=project))
-    monkeypatch.setattr("reporails_cli.core.heal.apply.check_path", lambda _path: run)
+    monkeypatch.setattr("reporails_cli.core.heal.apply.check_path", lambda _path, _root: run)
 
 
 @pytest.mark.requires_model
@@ -539,7 +551,7 @@ def _server(project: Path, tmp_path: Path) -> xray_server.XrayServer:
 def test_a_launch_check_that_fails_unexpectedly_lands_as_refused_with_the_error_text(
     project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    def boom(path: str) -> None:
+    def boom(path: str, root: Path) -> None:
         raise PermissionError("no read access")
 
     monkeypatch.setattr(xray_server, "check_path", boom)
@@ -560,8 +572,8 @@ def test_a_heal_ordered_after_the_launch_check_keeps_its_dropped_tally(
         result=SimpleNamespace(findings=[]),
         scope=SimpleNamespace(scan_root=project.resolve(), instruction_files=[project / "CLAUDE.md"]),
     )
-    monkeypatch.setattr(xray_server, "check_path", lambda path: run)
-    monkeypatch.setattr(xray_server, "heal_one", lambda path: HealOutcome(KeyedResult(), "", project))
+    monkeypatch.setattr(xray_server, "check_path", lambda path, root: run)
+    monkeypatch.setattr(xray_server, "heal_one", lambda path, root: HealOutcome(KeyedResult(), "", project))
     server = _server(project, tmp_path)
     tallies_of = xray_server.tallies_by_file
     healers: list[threading.Thread] = []

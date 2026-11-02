@@ -150,13 +150,13 @@ def heal_workflow_within(
     )
 
 
-def heal_one(path: str) -> HealOutcome:
+def heal_one(path: str, project_root: Path) -> HealOutcome:
     """Check one file and write the fixes the reply carries for it, as `heal_apply` does.
 
     A refused check, a run with no map or no workflow writes nothing and says why in the words
     `ails check --heal` uses.
     """
-    run = check_path(path)
+    run = check_path(path, project_root)
     target = Path(path)
     if isinstance(run, Refusal):
         return HealOutcome(None, run.text, target.parent)

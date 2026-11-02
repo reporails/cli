@@ -151,7 +151,7 @@ def run_pipeline_for_path(
     `file_score` is that single file's own display score (`None` for a directory or an unscored file).
     `named` and `project_root` are read as in `core.pipeline.check_one.scope_for_path`.
     """
-    run = check_path(path, named, project_root)
+    run = check_path(path, project_root, named)
     if isinstance(run, Refusal):
         return refusal_payload(run), None, None
     return format_run(run, full=full), run.ruleset_map, run.file_score

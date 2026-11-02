@@ -51,3 +51,4 @@
 - The torch import blocker is removed; nothing the cli installs imports torch.
 - Tests: architecture checks guard the package boundaries, replacing two narrower checks they cover, and `poe hexagon` renders the package dependency view.
 - Checking or fixing one file runs through one shared path for every interface; MCP replies are unchanged, and an architecture check stops one interface importing another; a test shows the page's fix button writing every fix and putting back a file that departs.
+- Checking one file always reads the project folder its caller names, never the folder the process happens to run in.
