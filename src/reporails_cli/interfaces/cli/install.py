@@ -12,6 +12,7 @@ from pathlib import Path, PureWindowsPath
 
 import typer
 
+from reporails_cli.core.discovery.project_root import git_root
 from reporails_cli.core.platform.adapters.programs import ProgramRun, run_program, run_uv_tool
 from reporails_cli.core.platform.config.bootstrap import env_text, environment_without
 from reporails_cli.core.platform.config.credentials import effective_tier
@@ -161,21 +162,6 @@ def _plugin_source() -> str:
     if _is_local_path(value):
         return os.path.abspath(os.path.expanduser(value))
     return value
-
-
-def _git_root(start: Path) -> Path:
-    """Nearest ancestor of `start` (itself included) with a `.git` entry, below home; `start` when none."""
-    try:
-        home: Path | None = Path.home().resolve()
-    except (RuntimeError, OSError):
-        home = None
-    for candidate in (start, *start.parents):
-        # The home folder, or a folder above it, is never a project root.
-        if home and (candidate == home or home.is_relative_to(candidate)):
-            break
-        if (candidate / ".git").exists():
-            return candidate
-    return start
 
 
 def _codex_home() -> Path:
@@ -402,7 +388,7 @@ def _install_agent_plugin(agent: str, project: bool = False) -> bool:
         console.print(f"  [dim]Run by hand: {manual}[/dim]")
         return False
     scoped = project and agent == "claude"
-    root = _git_root(Path.cwd()) if scoped else None
+    root = git_root(Path.cwd()) if scoped else None
     where = f" for this project ({root})" if root else ""
     console.print(f"  Installing the plugin into {label}{where}...")
     source = _plugin_source()

@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.discovery.project_root import git_root
 from reporails_cli.core.platform.adapters import programs as programs_module
 from reporails_cli.core.platform.utils.version import installed_version
 from reporails_cli.interfaces.cli import install as install_module
@@ -704,7 +705,7 @@ def test_git_root_never_accepts_the_home_folder(monkeypatch: pytest.MonkeyPatch,
     (home / ".git").mkdir()
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
 
-    assert install_module._git_root(nested) == nested
+    assert git_root(nested) == nested
 
 
 @pytest.mark.unit
@@ -718,7 +719,7 @@ def test_git_root_still_finds_a_repository_below_home(monkeypatch: pytest.Monkey
     (repo / ".git").mkdir()
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
 
-    assert install_module._git_root(nested) == repo
+    assert git_root(nested) == repo
 
 
 def _path_install(

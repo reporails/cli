@@ -462,7 +462,9 @@ def _stop_when_idle(server: uvicorn.Server, requests: RequestClock, idle_s: int)
 
 
 def _span(seconds: int) -> str:
-    return f"{seconds // 60} minutes" if seconds % 60 == 0 else f"{seconds} seconds"
+    """`seconds` in whole minutes when it is one, else in seconds."""
+    count, unit = (seconds // 60, "minute") if seconds % 60 == 0 else (seconds, "second")
+    return f"{count} {unit}{'' if count == 1 else 's'}"
 
 
 def serve(root: Path, session_file: Path, picked: SessionPick, *, open_page: bool) -> None:
@@ -494,13 +496,15 @@ def serve(root: Path, session_file: Path, picked: SessionPick, *, open_page: boo
     except OSError as exc:
         logger.warning("the x-ray page will not be reused by a later `ails xray` or agent call: %s", exc)
     try:
-        stops = "" if idle_s is None else f"; it stops after {_span(idle_s)} with no page open"
+        stops = "" if idle_s is None else f"; it stops after {_span(idle_s)} with no request"
         typer.echo(f"{xray_line(session_file.stem, url, picked)}  (Ctrl-C to stop{stops})")
         if open_page:
             open_in_browser(url)
         if idle_s is not None:
             threading.Thread(target=_stop_when_idle, args=(server, requests, idle_s), daemon=True).start()
         server.run(sockets=[sock])
+        if idle_s is not None and requests.quiet_s() >= idle_s:
+            typer.echo(f"The x-ray page stopped: no request for {_span(idle_s)}.")
     finally:
         if recorded:
             forget_page(safe_resolve(root), launch)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from reporails_cli.core.discovery.project_root import git_root
 from reporails_cli.core.eventbus.port import get_transcript_adapter
 from reporails_cli.core.eventbus.transcript import (
     known_session,
@@ -37,11 +38,13 @@ def _holding(folders: tuple[Path, ...], session_id: str, picked: SessionPick) ->
 def pick_session(start: Path, named: str | None, *, current: bool) -> PickedSession | None:
     """The session to show, the folder Claude Code holds it under and how it was chosen.
 
-    The folder is `start` or the nearest folder above it with a session, so a command run in a subfolder of the
-    folder Claude Code was started in finds its sessions. A named session must be held by one of them, else None.
-    `current` takes the session the calling agent's env var names, else the newest one, picked as
-    `current_unknown`. With neither, the newest. None when no such folder has a session."""
-    folders = (start, *start.parents)
+    The folder is `start` or the nearest folder above it with a session, up to the repository `start` is in (never
+    the home folder or above it), so a command run in a subfolder of the folder Claude Code was started in finds its
+    sessions. A named session must be held by one of them, else None. `current` takes the session the calling
+    agent's env var names, else the newest one, picked as `current_unknown`. With neither, the newest. None when no
+    such folder has a session."""
+    top = git_root(start)
+    folders = (start, *(folder for folder in start.parents if folder.is_relative_to(top)))
     if named is not None:
         return _holding(folders, named, "named")
     calling = _calling_id() if current else ""

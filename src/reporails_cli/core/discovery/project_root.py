@@ -29,6 +29,21 @@ def resolve_project_root(target: Path) -> Path:
     return target if target.is_dir() else target.parent
 
 
+def git_root(start: Path) -> Path:
+    """Nearest ancestor of `start` (itself included) with a `.git` entry, below home; `start` when none."""
+    try:
+        home: Path | None = Path.home().resolve()
+    except (RuntimeError, OSError):
+        home = None
+    for candidate in (start, *start.parents):
+        # The home folder, or a folder above it, is never a project root.
+        if home and (candidate == home or home.is_relative_to(candidate)):
+            break
+        if (candidate / ".git").exists():
+            return candidate
+    return start
+
+
 @functools.lru_cache(maxsize=1)
 def root_markers() -> tuple[tuple[tuple[str, ...], frozenset[str]], ...]:
     """Per supported agent: `(main-instruction relative paths, config directory names)`.

@@ -41,7 +41,7 @@ def _project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(bootstrap, "REPORAILS_HOME", tmp_path / "home" / ".reporails")
     monkeypatch.delenv(SESSION_ENV, raising=False)
     root = tmp_path / "proj"
-    root.mkdir()
+    (root / ".git").mkdir(parents=True)
     return root
 
 
@@ -116,6 +116,12 @@ def test_the_nearest_folder_with_a_session_wins_over_one_further_up(project: Pat
     inner.mkdir()
     own = _session(inner, "inner", 100)
     assert pick_session(inner / "deeper", None, current=False) == PickedSession(inner, own, "newest")
+
+
+def test_a_session_folder_above_the_repository_is_never_used(project: Path) -> None:
+    _session(project.parent, "started-above", 0)
+    assert pick_session(project / "src", None, current=False) is None
+    assert pick_session(project / "src", "started-above", current=False) is None
 
 
 def test_the_switcher_lists_each_session_with_its_start_length_and_subagents(project: Path) -> None:
