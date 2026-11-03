@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Literal, get_args
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
-from reporails_cli.core.platform.dto.events import TokenUsage
+from reporails_cli.core.platform.dto.events import RequestSize, TokenUsage
 
 CompositionKey = Literal[
     "system_tools",
@@ -36,6 +36,10 @@ ESTIMATED_KEYS: tuple[CompositionKey, ...] = tuple(key for key in COMPOSITION_KE
 SPOKEN_KEYS: tuple[CompositionKey, ...] = ("conversation", "tool_results")
 
 
+# A recorded request and the factor that scales its characters to the exact total of the reply it answered.
+type RequestMeasure = tuple[RequestSize, float]
+
+
 @dataclass(frozen=True)
 class CarriedReply:
     """One reply's usage and the estimated tokens each source (by source id) carried in its context."""
@@ -56,7 +60,8 @@ class XrayCompositionLabel:
 class ReplyComposition:
     """One reply: when, its exact context total and cache split, its categories in `COMPOSITION_KEYS` order and
     whether the estimates overshoot the total (the remainder is then negative). A measured reply was split by the
-    request Claude Code recorded for it, so its parts add up to the total with no remainder."""
+    request Claude Code recorded for it (`measure`, set only for a request with no unresolved message), so its
+    parts add up to the total with no remainder."""
 
     t: float
     total: int
@@ -65,7 +70,12 @@ class ReplyComposition:
     cache_read: int
     parts: tuple[int, ...]
     over_estimate: bool
-    measured: bool
+    measure: RequestMeasure | None
+
+    @property
+    def measured(self) -> bool:
+        """Whether the reply was split by its recorded request."""
+        return self.measure is not None
 
     def to_row(self) -> list[JsonValue]:
         """The reply as one row of the composition's columns."""

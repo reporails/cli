@@ -133,11 +133,14 @@ _CLAUDE_CONTEXT_TEXTS = (
     ),
     XrayContextText("tool_io", "Tool calls and results", "a measured share of the request Claude Code recorded"),
     XrayContextText(
+        "skill_listing", "Skills listing", "an estimate from the listing's size, not part of the measured request"
+    ),
+    XrayContextText(
         "conversation",
         "Conversation",
         "what the exact total leaves after every other row: what you and the agent wrote",
     ),
-    XrayContextText("estimated", "Estimated", "Estimated: this Claude Code version does not record its requests."),
+    XrayContextText("estimated", "Estimated", "Estimated: no complete recorded request for this reply."),
 )
 
 _CLAUDE_BURST = XrayBurstSettings(window_s=90.0, window_share=0.013, min_size=3)

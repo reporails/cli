@@ -271,7 +271,7 @@ class MessageSize:
 @dataclass(frozen=True)
 class RequestSize:
     """One API request: its id, the characters of its system blocks and its tool definitions, the tool count, the
-    summed parts of its messages, the message count and how many of the tail hashes named no known message."""
+    summed parts of its messages and how many of the tail hashes named no known message."""
 
     request_id: str
     system_chars: int
@@ -283,7 +283,6 @@ class RequestSize:
     thinking: int
     tool_calls: int
     tool_results: int
-    messages: int
     unresolved: int
 
 

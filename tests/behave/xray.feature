@@ -248,6 +248,7 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Then the printed address is on 127.0.0.1
     And the main agent's In context rows are measured, add up to its peak reply and name the system prompt and tools
     And the subagent's In context rows add up to the peak reply of its own file
+    And each agent's system, tool definition and tool call rows are the shares of its request's own characters
     And the page's In context list for each agent shows no remainder text and no asterisk
 
   @e2e @browser

@@ -30,6 +30,7 @@ ContextKey = Literal[
     "system_prompt",
     "tool_definitions",
     "tool_io",
+    "skill_listing",
     "estimated",
     "conversation",
 ]

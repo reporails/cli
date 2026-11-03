@@ -11,11 +11,11 @@ from reporails_cli.core.platform.dto.events import EventRecord, RequestSize, Tok
 from reporails_cli.core.platform.dto.xray_composition import COMPOSITION_KEYS, REMAINDER_KEY
 from reporails_cli.core.platform.dto.xray_graph import XrayInContext
 from tests.unit.xray.test_xray_composition import _files, _rows
-from tests.unit.xray.test_xray_graph import _agent, _graph, _node, launch, load, rec, reply
+from tests.unit.xray.test_xray_graph import _agent, _graph, _node, harness, launch, load, rec, reply
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 
-NOT_RECORDED = "Estimated: this Claude Code version does not record its requests."
+NOT_RECORDED = "Estimated: no complete recorded request for this reply."
 
 
 def _size(request_id: str = "req", **fields: int) -> RequestSize:
@@ -30,7 +30,6 @@ def _size(request_id: str = "req", **fields: int) -> RequestSize:
         "thinking": 0,
         "tool_calls": 800,
         "tool_results": 3200,
-        "messages": 4,
         "unresolved": 0,
     }
     return RequestSize(request_id, **{**base, **fields})  # type: ignore[arg-type]
@@ -130,6 +129,37 @@ def test_a_request_with_no_characters_is_unmeasured(tmp_path: Path) -> None:
     assert not _context(tmp_path, [_request(0.5, empty), _answer(1, 1000, "req")]).measured
 
 
-def test_a_request_with_unresolved_messages_is_still_measured(tmp_path: Path) -> None:
-    ic = _context(tmp_path, [_request(0.5, _size(unresolved=3)), _answer(1, 17200, "req")])
-    assert ic.measured and sum(r.tokens_est for r in ic.rows) == 17200
+def test_a_request_with_unresolved_messages_is_not_measured(tmp_path: Path) -> None:
+    records = [_request(0.5, _size(unresolved=3)), _answer(1, 17200, "req")]
+    ic = _context(tmp_path, records)
+    assert not ic.measured and ic.note == NOT_RECORDED
+    (row,) = _rows(tmp_path, records)
+    assert row["measured"] is False
+    assert not any(item.key == "tool_definitions" for item in _graph(tmp_path, records, _files(tmp_path)).builtin)
+
+
+def test_the_builtin_items_read_the_request_of_the_peak_reply_not_one_with_the_same_total(tmp_path: Path) -> None:
+    peak_request, other_request = _size("a"), _size("b", system_chars=6000, tools_chars=6000)
+    records = [
+        _request(0.5, other_request),
+        _answer(2, 17200, "b"),
+        _request(0.4, peak_request),
+        _answer(1, 17200, "a"),
+    ]
+    items = {item.key: item for item in _graph(tmp_path, records, _files(tmp_path)).builtin}
+    assert items["system_prompt"].tokens_est == 4000 and items["tool_definitions"].tokens_est == 8000
+    assert _by_key(_context(tmp_path, records))["system_prompt"] == 4000
+
+
+def test_a_measured_peak_lists_the_skills_listing_apart_from_the_conversation(tmp_path: Path) -> None:
+    records = [harness(0.2, "skill_list", "skills", 4000), _request(0.5, _size()), _answer(1, 17200, "req")]
+    ic = _context(tmp_path, records)
+    keys = [row.key for row in ic.rows]
+    assert keys[-2:] == ["skill_listing", "rest"] and ic.measured and not ic.over
+    values = _by_key(ic)
+    assert values["skill_listing"] == 1000 and values["tool_io"] == 4000
+    assert values["rest"] == 17200 - 4000 - 8000 - 4000 - 1000 == 200
+    label = next(row.label for row in ic.rows if row.key == "skill_listing")
+    assert label == "Skills listing" and sum(r.tokens_est for r in ic.rows) == 17200
+    (row,) = _rows(tmp_path, records)
+    assert row["skill_listing"] == 1000 and row["conversation"] == 200

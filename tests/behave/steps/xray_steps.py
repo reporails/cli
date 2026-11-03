@@ -130,12 +130,32 @@ def _reply(second: int, version: str, project: Path, mid: str, content: list, us
     return _row("assistant", second, version, project, message=message, requestRef=ref)
 
 
+FIXTURE_TOOLS = [{"name": f"Tool{n}", "description": "d" * 400} for n in range(6)]
+
+
 def _shape_row(shape: str, system: str) -> dict:
-    tools = [{"name": f"Tool{n}", "description": "d" * 400} for n in range(6)]
     return {
         "type": "api-request-shape",
         "shapeHash": shape,
-        "shape": {"system": [{"type": "text", "text": system}], "tools": tools},
+        "shape": {"system": [{"type": "text", "text": system}], "tools": FIXTURE_TOOLS},
+    }
+
+
+def _chars(value: object) -> int:
+    """The characters of `value` written as compact JSON."""
+    return len(json.dumps(value, separators=(",", ":"), ensure_ascii=False))
+
+
+def _expected_shares(peak: int, *, system: int, other: int, calls: int) -> dict[str, int]:
+    """The rows a measured peak must show: the request's characters scaled to the reply's exact `peak` total, the
+    system blocks, the tool definitions and the tool calls and results each taking their own share. `other` is the
+    characters of the messages that are neither tool calls nor tool results."""
+    tools = sum(_chars(tool) for tool in FIXTURE_TOOLS)
+    scale = peak / (system + tools + calls + other)
+    return {
+        "system_prompt": round(system * scale),
+        "tool_definitions": round(tools * scale),
+        "tool_io": round(calls * scale),
     }
 
 
@@ -243,6 +263,14 @@ def _write_session(context, recorded: bool) -> None:
         ]
         sub = [{**row, "isSidechain": True, "agentId": SUB_ID} for row in sub]
     context.peaks = {"main": _peak(main), "sub": _peak(sub)}
+    # the characters of the peak request of each agent, from the fixture's own texts
+    main_calls = len("Agent") + _chars(launch[0]["input"]) + len("launched")
+    main_other = len(ask) + len(note["content"]) + len(hello[0]["text"])
+    sub_other = len(listed) + len("a b c")
+    context.expected = {
+        "main": _expected_shares(context.peaks["main"], system=2000, other=main_other, calls=main_calls),
+        "sub": _expected_shares(context.peaks["sub"], system=500, other=sub_other, calls=0),
+    }
     write = lambda path, rows: path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")  # noqa: E731
     write(folder / "session.jsonl", main)
     write(folder / "session" / "subagents" / f"agent-{SUB_ID}.jsonl", sub)
@@ -301,6 +329,15 @@ def step_sub_measured(context):
     assert {"system_prompt", "tool_definitions"} <= {row["key"] for row in sub["rows"]}
 
 
+@then("each agent's system, tool definition and tool call rows are the shares of its request's own characters")
+def step_measured_shares(context):
+    main, sub = _context_of(_session_view(context))
+    for name, ic in (("main", main), ("sub", sub)):
+        rows = {row["key"]: row["tokens_est"] for row in ic["rows"]}
+        got = {key: rows[key] for key in context.expected[name]}
+        assert got == context.expected[name], (name, got, context.expected[name])
+
+
 @then("the page's In context list for each agent shows no remainder text and no asterisk")
 def step_page_no_remainder(context):
     seen = _page(context, "inctx")
@@ -315,7 +352,7 @@ def step_page_no_remainder(context):
 def step_estimated_view(context):
     main, _ = _context_of(_session_view(context))
     assert main["measured"] is False, main
-    assert main["note"] == "Estimated: this Claude Code version does not record its requests.", main["note"]
+    assert main["note"] == "Estimated: no complete recorded request for this reply.", main["note"]
     assert "rest" in [row["key"] for row in main["rows"]] and "system_prompt" not in [
         row["key"] for row in main["rows"]
     ]
@@ -327,7 +364,7 @@ def step_estimated_page(context):
     if seen is None:
         return
     text = seen["main"]["text"]
-    assert "Estimated: this Claude Code version does not record its requests." in text, text
+    assert "Estimated: no complete recorded request for this reply." in text, text
     assert "remainder" in text.lower(), text
 
 

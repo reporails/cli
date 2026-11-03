@@ -36,6 +36,7 @@ from reporails_cli.core.platform.dto.xray_composition import (
     CarriedReply,
     CompositionKey,
     ReplyComposition,
+    RequestMeasure,
     XrayComposition,
 )
 from reporails_cli.core.platform.dto.xray_graph import (
@@ -209,11 +210,11 @@ def _request_sizes(records: Sequence[EventRecord]) -> dict[str, RequestSize]:
     return {record.request.request_id: record.request for record in records if record.request is not None}
 
 
-def _measure(usage: TokenUsage, sizes: dict[str, RequestSize]) -> tuple[RequestSize, float] | None:
+def _measure(usage: TokenUsage, sizes: dict[str, RequestSize]) -> RequestMeasure | None:
     """The recorded request `usage` answered and the factor that scales its characters to the reply's exact total;
-    None when the request was not recorded or measured no characters."""
+    None when the request was not recorded, names a message the file never recorded, or measured no characters."""
     size = None if usage.request_ref is None else sizes.get(usage.request_ref)
-    if size is None:
+    if size is None or size.unresolved:
         return None
     chars = (
         size.system_chars
@@ -234,13 +235,12 @@ def _share(chars: int, scale: float) -> int:
 
 
 def _reply_row(
-    moment: float, usage: TokenUsage, held: dict[CompositionKey, int], sizes: dict[str, RequestSize]
+    moment: float, usage: TokenUsage, held: dict[CompositionKey, int], measured: RequestMeasure | None
 ) -> ReplyComposition:
     """One reply's row: its exact total and cache split and its categories. A reply whose request was recorded takes
     its system, tools and tool-result shares from the request and the conversation from what the rest leave; any
     other keeps the remainder in its own category."""
     total = context_of(usage)
-    measured = _measure(usage, sizes)
     if measured is None:
         remainder = total - sum(held.values())
         parts = tuple(remainder if key == REMAINDER_KEY else held[key] for key in COMPOSITION_KEYS)
@@ -252,7 +252,7 @@ def _reply_row(
             usage.cache_read_input_tokens,
             parts,
             remainder < 0,
-            False,
+            None,
         )
     size, scale = measured
     fixed: dict[CompositionKey, int] = {
@@ -270,7 +270,7 @@ def _reply_row(
         usage.cache_read_input_tokens,
         tuple(fixed[key] for key in COMPOSITION_KEYS),
         conversation < 0,
-        True,
+        measured,
     )
 
 
@@ -286,7 +286,7 @@ def composition_series(
     carried: list[CarriedReply] = []
     for moment, usage, held, by_source in _sweep(added, spoken, _usages(own.records, frame)):
         carried.append(CarriedReply(usage, by_source))
-        replies.append(_reply_row(moment, usage, held, sizes))
+        replies.append(_reply_row(moment, usage, held, _measure(usage, sizes)))
     peak = max(range(len(replies)), key=lambda index: replies[index].total) if replies else None
     return XrayComposition(tuple(replies), peak), tuple(carried)
 
@@ -306,21 +306,6 @@ def _in_remainder(kind: HarnessKind) -> bool:
     return kind not in (_LISTED_KIND, "system_prompt") and not is_note_kind(kind)
 
 
-def _peak_measure(composition: XrayComposition, records: Sequence[EventRecord]) -> tuple[RequestSize, float] | None:
-    """The recorded request behind the peak reply and its scale; None when the peak was not measured."""
-    if composition.peak is None or not composition.replies[composition.peak].measured:
-        return None
-    total = composition.replies[composition.peak].total
-    sizes = _request_sizes(records)
-    for record in records:
-        usage = record.usage if record.event == "assistant_usage" else None
-        if usage is None or context_of(usage) != total:
-            continue
-        if (measured := _measure(usage, sizes)) is not None:
-            return measured
-    return None
-
-
 def builtin_items(
     main: ProducedNode, records: Sequence[EventRecord], vocabulary: AdapterVocabulary
 ) -> tuple[XrayBuiltin, ...]:
@@ -331,7 +316,7 @@ def builtin_items(
     is no tool definitions item."""
     composition = main.detail.usage.composition
     held = {item.kind: item for item in build_harness(records, replies_of(records)) or ()}
-    measured = _peak_measure(composition, records)
+    measured = None if composition.peak is None else composition.replies[composition.peak].measure
     system: int | None = None
     if measured is None and composition.peak is not None:
         reply = composition.replies[composition.peak]
@@ -483,14 +468,15 @@ def _closing_rows(
 
 
 def _measured_rows(
-    measured: tuple[RequestSize, float],
-    total: int,
+    measured: RequestMeasure,
+    reply: ReplyComposition,
     opening: Sequence[XrayContextRow],
     taken: tuple[int, int],
     texts: dict[ContextKey, XrayContextText],
 ) -> list[XrayContextRow]:
     """The rows after the opening ones for a measured peak: the system prompt without the agent definition, the tool
-    definitions without the MCP servers (both already listed above), the tool calls and results, and the
+    definitions without the MCP servers (both already listed above), the tool calls and results, the skills listing
+    when the reply held one (the composition's estimate, not part of the request's measured shares), and the
     conversation, which takes what is left of the total, at 0 when the rest overshoots it."""
     size, scale = measured
     mcp, defined = taken
@@ -499,11 +485,14 @@ def _measured_rows(
         ("tool_definitions", max(0, _share(size.tools_chars, scale) - mcp)),
         ("tool_io", _share(size.tool_calls + size.tool_results, scale)),
     ]
+    listing = reply.parts[COMPOSITION_KEYS.index("skill_listing")]
+    if listing > 0:
+        shares.append(("skill_listing", listing))
     rows = [
         XrayContextRow(key, None, None, texts[key].label, texts[key].reason, tokens, None, None)
         for key, tokens in shares
     ]
-    left = total - sum(row.tokens_est for row in (*opening, *rows))
+    left = reply.total - sum(row.tokens_est for row in (*opening, *rows))
     rest = texts["conversation"]
     return [*rows, XrayContextRow("rest", None, None, rest.label, rest.reason, max(0, left), None, None)]
 
@@ -535,12 +524,12 @@ def build_in_context(
         texts=texts,
         world=world,
     )
-    measured = _measure(carried[composition.peak].usage, _request_sizes(own.records))
+    measured = reply.measure
     if measured is None:
         shown = (*rows, *_closing_rows(reply, rows, (mcp, defined), texts))
         note = texts["estimated"].reason
     else:
-        shown = (*rows, *_measured_rows(measured, reply.total, rows, (mcp, defined), texts))
+        shown = (*rows, *_measured_rows(measured, reply, rows, (mcp, defined), texts))
         note = None
     return XrayInContext(
         reply.total, shown, sum(row.tokens_est for row in shown) != reply.total, measured is not None, note

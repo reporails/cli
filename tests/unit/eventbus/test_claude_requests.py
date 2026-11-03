@@ -13,7 +13,14 @@ from reporails_cli.core.eventbus.adapters.claude_requests import feed_row, messa
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.eventbus.transcript import read_transcript
 from reporails_cli.core.platform.contract.json_value import JsonObject
-from reporails_cli.core.platform.dto.events import EventRecord, RequestChain, RequestSize, TranscriptCursor
+from reporails_cli.core.platform.dto.events import (
+    EventRecord,
+    MessageSize,
+    RequestChain,
+    RequestSize,
+    TranscriptCursor,
+)
+from reporails_cli.core.platform.utils.utils import compact_json
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_eventbus]
 
@@ -96,11 +103,11 @@ def test_fixture_rebuilds_each_request_by_part(tmp_path: Path) -> None:
     path = tmp_path / "s1.jsonl"
     _write(path, _fixture_rows())
     first, second = _sizes(_read(path)[0])
-    assert first == RequestSize("req_1", 6, 13, 1, 5, 5, 0, 0, 0, 0, 2, 0)
+    assert first == RequestSize("req_1", 6, 12, 1, 5, 5, 0, 0, 0, 0, 0)
     # keep=2 holds the system note and "hello"; the tail adds the assistant response (the hash of the response
     # without `caller`), the tool result and one unknown hash that counts as unresolved.
-    expected_calls = len("Read") + len(json.dumps({"file_path": "/x"}))
-    assert second == RequestSize("req_2", 6, 13, 1, 5, 5, 0, 5, expected_calls, 4, 5, 1)
+    expected_calls = len("Read") + len('{"file_path":"/x"}')
+    assert second == RequestSize("req_2", 6, 12, 1, 5, 5, 0, 5, expected_calls, 4, 1)
 
 
 def test_assistant_merge_is_registered_with_and_without_caller() -> None:
@@ -197,6 +204,76 @@ def test_malformed_request_rows_are_refused(row: JsonObject, reason: str) -> Non
     feed_row(chain, _shape())
     with pytest.raises(PayloadRefused, match=reason):
         feed_row(chain, row)
+
+
+def test_a_lone_surrogate_in_a_message_is_hashed_not_refused() -> None:
+    chain = RequestChain()
+    feed_row(chain, _user("abc\ud83d"))
+    feed_row(chain, _assistant({"type": "text", "text": "x\ude00"}))
+    assert message_hash("user", "abc\ud83d") in chain.pool
+    assert len(chain.pool) >= 3
+
+
+def _blob_of(content: object, role: str = "user") -> JsonObject:
+    return {"type": "api-request-blob", "hash": "h", "message": {"role": role, "content": content}}
+
+
+@pytest.mark.parametrize(
+    ("row", "reason"),
+    [
+        (_blob_of(42), "api-request-blob message content"),
+        ({"type": "api-request-blob", "hash": "h", "message": {"role": "user"}}, "api-request-blob message content"),
+        (_blob_of([{"type": "text", "text": 5}]), "api-request-blob text block text"),
+        (_blob_of([{"type": "text"}], "assistant"), "api-request-blob text block text"),
+        (_blob_of([{"type": "text", "text": None}], "system"), "api-request-blob text block text"),
+        (_blob_of([{"type": "tool_use", "input": {}}], "assistant"), "api-request-blob tool_use block name"),
+        (_blob_of([{"type": "tool_result", "tool_use_id": "t"}]), "tool_result content"),
+        (_blob_of([{"type": "tool_result", "content": "x"}]), "tool_result block has no string tool_use_id"),
+        (_blob_of([{"type": "thinking"}], "assistant"), "api-request-blob thinking block signature"),
+        (_blob_of([{"type": "mystery"}]), "api-request-blob content has a block of unknown type 'mystery'"),
+        (_blob_of(["text"]), "api-request-blob content has a block that is not an object"),
+        (_blob_of([{"type": "tool_addition", "tool": "x"}], "system"), "api-request-blob tool_addition block tool"),
+        (_assistant({"type": "tool_use", "id": "t", "input": {}}), "assistant row tool_use block name"),
+        (_assistant({"type": "text", "text": 3}), "assistant row text block text"),
+        (_user([{"type": "text", "text": 3}]), "user row text block text"),
+        (_user(12), "user row message content"),
+        (
+            {"type": "api-request-shape", "shapeHash": "h", "shape": {"system": [{"type": "text"}], "tools": []}},
+            "api-request-shape shape.system block text",
+        ),
+    ],
+)
+def test_request_content_that_is_not_the_pinned_shape_is_refused(row: JsonObject, reason: str) -> None:
+    with pytest.raises(PayloadRefused, match=reason):
+        feed_row(RequestChain(), row)
+
+
+def test_every_block_type_that_occurs_is_sized() -> None:
+    chain = RequestChain()
+    feed_row(
+        chain, {**_blob_of([{"type": "image", "source": {"data": "z" * 900}}, {"type": "document"}]), "hash": "im"}
+    )
+    feed_row(chain, {**_blob_of([{"type": "redacted_thinking", "data": "abc"}], "assistant"), "hash": "rt"})
+    addition = {"type": "tool_addition", "tool": {"type": "tool_definition", "definition": {"name": "é"}}}
+    feed_row(chain, {**_blob_of([addition], "system"), "hash": "ta"})
+    nested = [
+        {"type": "tool_result", "tool_use_id": "t", "content": [{"type": "image"}, {"type": "text", "text": "ab"}]}
+    ]
+    feed_row(chain, {**_blob_of(nested), "hash": "tr"})
+    assert chain.pool["im"] == MessageSize()
+    assert chain.pool["rt"] == MessageSize(thinking=3)
+    assert chain.pool["ta"] == MessageSize(notes=len('{"type":"tool_definition","definition":{"name":"é"}}'))
+    assert chain.pool["tr"] == MessageSize(tool_results=2)
+
+
+def test_tool_definitions_and_inputs_are_sized_as_compact_json() -> None:
+    chain = RequestChain()
+    tools = [{"name": "A", "input_schema": {"type": "object", "properties": {}}}]
+    feed_row(chain, {"type": "api-request-shape", "shapeHash": "s", "shape": {"system": [], "tools": tools}})
+    assert chain.shapes["s"][1] == len(compact_json(tools[0], ensure_ascii=False))
+    feed_row(chain, _assistant({"type": "tool_use", "id": "t", "name": "Tool", "input": {"a": [1, 2], "b": "é"}}))
+    (size,) = chain.pool.values()
+    assert size.tool_calls == len("Tool") + len('{"a":[1,2],"b":"é"}')
 
 
 @pytest.mark.skipif(not REAL.is_file(), reason="set AILS_TEST_TRANSCRIPT to a session transcript")

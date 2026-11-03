@@ -20,16 +20,13 @@ response as it stands after each row is known under its hash, and under the hash
 from __future__ import annotations
 
 import hashlib
-import json
 
-from reporails_cli.core.eventbus.adapters.claude_calls import blocks_text
+from reporails_cli.core.eventbus.adapters.claude_calls import tool_result
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
     JsonValue,
-    as_list,
     as_object,
-    as_str,
     opt_int,
     opt_str,
     strict_str_list,
@@ -40,15 +37,24 @@ from reporails_cli.core.platform.utils.utils import compact_json
 _MERGE_OPEN = b'{"content":['
 _MERGE_CLOSE = b'],"role":"assistant"}'
 _CALLER = "caller"
+# Block types that carry no characters of their own.
+_EMPTY_BLOCKS = ("image", "document")
+# The field that holds the characters of each kind of thinking block.
+_THINKING_FIELDS = {"thinking": "signature", "redacted_thinking": "data"}
 
 
 def _canonical(value: JsonValue) -> str:
     return compact_json(value, ensure_ascii=False, sort_keys=True)
 
 
+def _encode(text: str) -> bytes:
+    """`text` as bytes for hashing; a lone surrogate in a message keeps its own bytes."""
+    return text.encode("utf-8", errors="surrogatepass")
+
+
 def message_hash(role: JsonValue, content: JsonValue) -> str:
     """The hash a message is known under: the sha256 of its role and content object."""
-    return hashlib.sha256(_canonical({"role": role, "content": content}).encode()).hexdigest()
+    return hashlib.sha256(_encode(_canonical({"role": role, "content": content}))).hexdigest()
 
 
 def _text_part(role: str, chars: int) -> MessageSize:
@@ -59,30 +65,55 @@ def _text_part(role: str, chars: int) -> MessageSize:
     return MessageSize(user_text=chars)
 
 
-def _block_size(role: str, block: JsonObject) -> MessageSize:
+def _string_field(block: JsonObject, field: str, what: str) -> str:
+    value = block.get(field)
+    if not isinstance(value, str):
+        raise PayloadRefused(f"{what} {block.get('type')} block {field} is not a string")
+    return value
+
+
+def _tool_use_size(block: JsonObject, what: str) -> MessageSize:
+    name = _string_field(block, "name", what)
+    return MessageSize(tool_calls=len(name) + len(compact_json(block.get("input"), ensure_ascii=False)))
+
+
+def _tool_addition_size(block: JsonObject, what: str) -> MessageSize:
+    tool = block.get("tool")
+    if not isinstance(tool, dict):
+        raise PayloadRefused(f"{what} tool_addition block tool is not an object")
+    return MessageSize(notes=len(compact_json(tool, ensure_ascii=False)))
+
+
+def _block_size(role: str, block: JsonValue, what: str) -> MessageSize:
+    if not isinstance(block, dict):
+        raise PayloadRefused(f"{what} content has a block that is not an object")
     kind = block.get("type")
     if kind == "text":
-        return _text_part(role, len(as_str(block.get("text"))))
+        return _text_part(role, len(_string_field(block, "text", what)))
     if kind == "tool_use":
-        call = len(as_str(block.get("name"))) + len(json.dumps(block.get("input"), ensure_ascii=False))
-        return MessageSize(tool_calls=call)
+        return _tool_use_size(block, what)
     if kind == "tool_result":
-        texts = blocks_text(block.get("content"), "tool_result") or []
-        return MessageSize(tool_results=sum(len(text) for text in texts))
-    if kind == "thinking":
-        return MessageSize(thinking=len(as_str(block.get("signature"))))
-    if kind == "redacted_thinking":
-        return MessageSize(thinking=len(as_str(block.get("data"))))
-    return MessageSize()
+        return MessageSize(tool_results=tool_result(block).chars or 0)
+    field = _THINKING_FIELDS.get(kind) if isinstance(kind, str) else None
+    if field is not None:
+        return MessageSize(thinking=len(_string_field(block, field, what)))
+    if kind == "tool_addition":
+        return _tool_addition_size(block, what)
+    if kind in _EMPTY_BLOCKS:
+        return MessageSize()
+    raise PayloadRefused(f"{what} content has a block of unknown type {kind!r}")
 
 
-def content_size(role: str, content: JsonValue) -> MessageSize:
-    """The size of a message's content by part: a string counts as text of the role, a list by block."""
+def content_size(role: str, content: JsonValue, what: str) -> MessageSize:
+    """The size of a message's content by part: a string counts as text of the role, a list by block. Refuses
+    content that is neither, naming the row type `what`."""
     if isinstance(content, str):
         return _text_part(role, len(content))
+    if not isinstance(content, list):
+        raise PayloadRefused(f"{what} message content is neither a string nor a list")
     total = MessageSize()
-    for block in as_list(content):
-        total = total + _block_size(role, as_object(block))
+    for block in content:
+        total = total + _block_size(role, block, what)
     return total
 
 
@@ -91,7 +122,7 @@ def _register_user(chain: RequestChain, row: JsonObject) -> None:
     role, content = message.get("role"), message.get("content")
     if not isinstance(role, str) or content is None:
         return
-    size = content_size(role, content)
+    size = content_size(role, content, "user row")
     chain.pool[message_hash(role, content)] = size
     if isinstance(content, str):
         chain.pool[message_hash(role, [{"type": "text", "text": content}])] = size
@@ -119,11 +150,11 @@ def _register_assistant(chain: RequestChain, row: JsonObject) -> None:
     with_caller, without_caller = chain.merge_with_caller, chain.merge_without_caller
     for block in content:
         separator = b"," if chain.merge_blocks else b""
-        with_caller.update(separator + _canonical(block).encode())
+        with_caller.update(separator + _encode(_canonical(block)))
         bare = {key: value for key, value in block.items() if key != _CALLER} if isinstance(block, dict) else block
-        without_caller.update(separator + _canonical(bare).encode())
+        without_caller.update(separator + _encode(_canonical(bare)))
         chain.merge_blocks += 1
-        chain.merge_size = chain.merge_size + _block_size("assistant", as_object(block))
+        chain.merge_size = chain.merge_size + _block_size("assistant", block, "assistant row")
     for running in (with_caller, without_caller):
         closed = running.copy()
         closed.update(_MERGE_CLOSE)
@@ -141,7 +172,16 @@ def _register_blob(chain: RequestChain, row: JsonObject) -> None:
     role = message.get("role")
     if not isinstance(role, str):
         raise PayloadRefused(f"{what} message role is not a string")
-    chain.pool[digest] = content_size(role, message.get("content"))
+    chain.pool[digest] = content_size(role, message.get("content"), what)
+
+
+def _system_text(block: JsonValue, what: str) -> str:
+    if not isinstance(block, dict):
+        raise PayloadRefused(f"{what} shape.system has a block that is not an object")
+    text = block.get("text")
+    if not isinstance(text, str):
+        raise PayloadRefused(f"{what} shape.system block text is not a string")
+    return text
 
 
 def _register_shape(chain: RequestChain, row: JsonObject) -> None:
@@ -157,8 +197,8 @@ def _register_shape(chain: RequestChain, row: JsonObject) -> None:
         raise PayloadRefused(f"{what} shape.system is not a list")
     if not isinstance(tools, list):
         raise PayloadRefused(f"{what} shape.tools is not a list")
-    system_chars = sum(len(as_str(as_object(block).get("text"))) for block in system)
-    tools_chars = sum(len(json.dumps(tool, ensure_ascii=False)) for tool in tools)
+    system_chars = sum(len(_system_text(block, what)) for block in system)
+    tools_chars = sum(len(compact_json(tool, ensure_ascii=False)) for tool in tools)
     chain.shapes[shape_hash] = (system_chars, tools_chars, len(tools))
 
 
@@ -195,7 +235,6 @@ def _request(chain: RequestChain, row: JsonObject) -> RequestSize:
         total.thinking,
         total.tool_calls,
         total.tool_results,
-        kept + len(tail),
         unresolved,
     )
 
