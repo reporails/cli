@@ -9,15 +9,15 @@ from pathlib import Path
 from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.dto.events import EventRecord, is_note_kind
-from reporails_cli.core.platform.dto.xray import (
+from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
+from reporails_cli.core.platform.dto.xray_graph import SourceKind
+from reporails_cli.core.platform.dto.xray_sources import (
     AGENT_ARTIFACT_KINDS,
     SOURCE_KIND_OF_ARTIFACT,
     MemoryRole,
     SourceEntry,
     XrayArtifact,
 )
-from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
-from reporails_cli.core.platform.dto.xray_graph import SourceKind
 from reporails_cli.core.xray.artifacts import winners
 from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path, tokens_of
 

@@ -28,9 +28,6 @@ from reporails_cli.core.platform.dto.events import (
 )
 from reporails_cli.core.platform.dto.xray import (
     AdapterVocabulary,
-    ArtifactFile,
-    ArtifactKind,
-    FindingTally,
     Graph,
     XrayBurstSettings,
     XrayCheck,
@@ -55,12 +52,14 @@ from reporails_cli.core.platform.dto.xray_graph import (
     LoadEvent,
     NodeKind,
     XrayAgentDetail,
+    XrayBack,
     XrayCompaction,
     XrayDown,
     XrayEdge,
     XrayNode,
     XrayUsage,
 )
+from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, ArtifactKind, FindingTally
 from reporails_cli.core.xray.artifacts import build_artifacts
 from reporails_cli.core.xray.cost import agent_cost, load_price_list
 from reporails_cli.core.xray.derive import epoch
@@ -262,7 +261,7 @@ def test_a_subagent_is_handed_its_task_prompt_and_what_it_started_with_and_hands
         ("CLAUDE.md", 100, "CLAUDE.md"),
         ("system prompt", 200, None),
     ]
-    assert detail.back_tokens_est == 200 and detail.outcome == "returned"
+    assert detail.back.tokens_est == 200 and detail.outcome == "returned"
     edge = _edge(graph, "A")
     assert (edge.down, edge.back, edge.out_t, edge.back_t, edge.outcome) == (700, 200, 5.0, 100.0, "returned")
 
@@ -279,7 +278,7 @@ def test_a_foreground_subagent_comes_back_with_the_parents_result_when_it_hands_
     graph = _graph(tmp_path, records)
     edge = _edge(graph, "D")
     assert (edge.back, edge.back_t, edge.outcome) == (100, 60.0, "returned")
-    assert _agent(_node(graph, "D")).back_tokens_est == 100
+    assert _agent(_node(graph, "D")).back.tokens_est == 100
 
 
 @pytest.mark.parametrize(
@@ -623,8 +622,7 @@ class _Widget:
             None,
             (),
             XrayDown(None, 0),
-            None,
-            None,
+            XrayBack(None, None),
             None,
             (),
             (),
@@ -806,7 +804,7 @@ def test_only_a_returned_or_failed_agent_has_a_size_coming_back_whatever_the_lau
     graph = _graph(tmp_path, session)
     edge = _edge(graph, "X")
     assert (edge.outcome, edge.back) == (kind, back)
-    assert _agent(_node(graph, "X")).back_tokens_est == back
+    assert _agent(_node(graph, "X")).back.tokens_est == back
     assert (edge.back_t is None) == (back is None)
 
 
@@ -874,9 +872,9 @@ def test_how_many_times_the_peak_is_what_came_back_is_known_only_for_a_returned_
         reply(1000),
     ]
     detail = _agent(_node(_graph(tmp_path, session), "X"))
-    assert (detail.outcome, detail.back_tokens_est, detail.back_ratio) == ("returned", 200, 200)
+    assert (detail.outcome, detail.back.tokens_est, detail.back.ratio) == ("returned", 200, 200)
     failed = _agent(_node(_graph(tmp_path, [*session[:4], result(300, "tuX", chars=800, error=True)]), "X"))
-    assert failed.back_ratio is None
+    assert failed.back.ratio is None
 
 
 def test_a_node_counts_how_many_of_its_children_had_each_source(tmp_path: Path) -> None:
@@ -1080,7 +1078,7 @@ def test_the_builtin_items_follow_the_vocabulary_order_and_the_system_prompt_car
     }
     notes = {item.key: item.note for item in graph.builtin}
     assert notes["agent_list"] == "3 agent descriptions" and notes["session_context"] is not None
-    assert [item.visible for item in graph.builtin][:2] == ["no", "partial"]
+    assert [item.visible for item in graph.builtin][:2] == ["hidden", "partial"]
 
 
 def test_a_system_prompt_is_never_negative_when_the_estimates_overshoot_the_reply(tmp_path: Path) -> None:

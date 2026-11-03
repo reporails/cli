@@ -22,19 +22,17 @@ from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadab
 from reporails_cli.core.platform.dto.events import CallDetail, EventRecord, TranscriptCursor
 from reporails_cli.core.platform.dto.xray import (
     AdapterVocabulary,
-    ArtifactFile,
-    FindingTally,
     Graph,
     SessionPick,
     XrayCheck,
     XrayGaps,
-    XrayPeek,
     XraySessionInfo,
     XrayVerdict,
     XrayView,
     XrayWindow,
 )
 from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
+from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayPeek
 from reporails_cli.core.xray.artifacts import (
     advertised_files,
     agent_file_tokens,

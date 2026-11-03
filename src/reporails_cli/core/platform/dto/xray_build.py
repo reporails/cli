@@ -7,11 +7,12 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from reporails_cli.core.platform.dto.events import EventRecord, HarnessEntry, HarnessKind, ToolCategory
-from reporails_cli.core.platform.dto.xray import AdapterVocabulary, FindingTally, SourceEntry
+from reporails_cli.core.platform.dto.events import EventRecord, HarnessEntry, HarnessKind
+from reporails_cli.core.platform.dto.xray import AdapterVocabulary
 from reporails_cli.core.platform.dto.xray_cost import PriceList
 from reporails_cli.core.platform.dto.xray_graph import (
     AgentOutcome,
+    CallFacts,
     LoadEvent,
     NodeKind,
     XrayCompaction,
@@ -19,6 +20,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayDown,
     XrayEdge,
 )
+from reporails_cli.core.platform.dto.xray_sources import FindingTally, SourceEntry
 
 
 @dataclass(frozen=True)
@@ -101,22 +103,13 @@ class SourceTable:
 
 
 @dataclass(frozen=True)
-class ProducedCall:
-    """One call a node made: when, its category, tool and label, the source its file is, the MCP server source it
-    went to, whether it failed, its id, the fingerprint of its command, the size of its result in tokens and the
-    seconds the result took."""
+class ProducedCall(CallFacts):
+    """One call a node made: its facts, the MCP server source it went to, the fingerprint of its command and the
+    size of its result in tokens."""
 
-    t: float
-    category: ToolCategory
-    tool: str
-    label: str
-    source: str | None
     mcp_source: str | None
-    failed: bool
-    use_id: str
     fingerprint: str | None
     back_tokens_est: int | None
-    duration_s: float | None
 
 
 @dataclass(frozen=True)

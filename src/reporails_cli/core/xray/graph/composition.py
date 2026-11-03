@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessKind, TokenUsage
-from reporails_cli.core.platform.dto.xray import AdapterVocabulary, SourceEntry, XrayBuiltin
+from reporails_cli.core.platform.dto.xray import AdapterVocabulary
 from reporails_cli.core.platform.dto.xray_build import (
     AgentRecords,
     AgentWorld,
@@ -36,6 +36,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayDown,
     XrayInContext,
 )
+from reporails_cli.core.platform.dto.xray_sources import SourceEntry, XrayBuiltin, XrayContextText
 from reporails_cli.core.xray.derive import build_harness, context_of, frame_time, replies_of, tokens_of
 from reporails_cli.core.xray.graph.sources import source_label
 
@@ -238,7 +239,7 @@ def builtin_items(
         mcp = _mcp_tokens(main.spine.loads, sources, reply.t)
         system = max(0, reply.parts[COMPOSITION_KEYS.index(REMAINDER_KEY)] - inside - mcp)
     found: list[XrayBuiltin] = []
-    for info in vocabulary.builtin:
+    for info in vocabulary.context.builtin:
         item = held.get(info.key)
         if info.key == "system_prompt":
             if system is not None:
@@ -279,7 +280,7 @@ def _source_rows(
     the hooks among them, and the tokens of the MCP servers among the first."""
     vocabulary = world.context.vocabulary
     triggers = {item.key: item.label for item in vocabulary.triggers}
-    hook_reason = next(item.reason for item in vocabulary.context_texts if item.key == "hooks")
+    hook_reason = next(item.reason for item in vocabulary.context.texts if item.key == "hooks")
     fires: dict[str, int] = {}
     for load in own.loads:
         if load.t is not None and load.t <= reply_t:
@@ -312,6 +313,49 @@ def _definition_row(run_type: str | None, own: AgentRecords, world: AgentWorld) 
     return XrayContextRow("source", entry.id, entry.kind, source_label(entry), reason, size, own.start, None)
 
 
+def _opening_rows(
+    own: AgentRecords,
+    run_type: str | None,
+    task_tokens: int | None,
+    *,
+    reply_t: float,
+    by_source: dict[str, int],
+    texts: dict[ContextKey, XrayContextText],
+    world: AgentWorld,
+) -> tuple[list[XrayContextRow], int, int]:
+    """The rows before the coding agent's own context: the task prompt (a subagent), the agent definition, the
+    sources loaded by the reply (inherited first, then by time) and the hooks that fired; with the tokens of the MCP
+    servers among the sources and of the definition."""
+    sources, hooks, mcp = _source_rows(own, reply_t, by_source, world)
+    definition = _definition_row(run_type, own, world)
+    rows: list[XrayContextRow] = []
+    if task_tokens is not None:
+        task = texts["task"]
+        rows.append(XrayContextRow("task", None, None, task.label, task.reason, task_tokens, own.start, None))
+    rows.extend([] if definition is None else [definition])
+    rows.extend([*sources, *hooks])
+    return rows, mcp, 0 if definition is None else definition.tokens_est
+
+
+def _closing_rows(
+    reply: ReplyComposition,
+    opening: Sequence[XrayContextRow],
+    taken: tuple[int, int],
+    texts: dict[ContextKey, XrayContextText],
+) -> tuple[list[XrayContextRow], int]:
+    """The coding agent's own context and the conversation with the tool results, which take what the estimates
+    leave of the measured total; with what is left, negative when the estimates overshoot it. `taken` is the tokens
+    of the MCP servers and of the definition, which the coding agent's own context does not count."""
+    built = reply.parts[COMPOSITION_KEYS.index(REMAINDER_KEY)] + reply.parts[COMPOSITION_KEYS.index("skill_listing")]
+    builtin = texts["builtin"]
+    own_row = XrayContextRow(
+        "builtin", None, None, builtin.label, builtin.reason, max(0, built - sum(taken)), None, None
+    )
+    left = reply.total - sum(row.tokens_est for row in opening) - own_row.tokens_est
+    rest = texts["rest"]
+    return [own_row, XrayContextRow("rest", None, None, rest.label, rest.reason, max(0, left), None, None)], left
+
+
 def build_in_context(
     own: AgentRecords,
     run_type: str | None,
@@ -327,20 +371,15 @@ def build_in_context(
     if composition.peak is None:
         return None
     reply = composition.replies[composition.peak]
-    texts = {item.key: item for item in world.context.vocabulary.context_texts}
-    sources, hooks, mcp = _source_rows(own, reply.t, carried[composition.peak].by_source, world)
-    definition = _definition_row(run_type, own, world)
-    rows: list[XrayContextRow] = []
-    if down.task_tokens_est is not None:
-        task = texts["task"]
-        rows.append(XrayContextRow("task", None, None, task.label, task.reason, down.task_tokens_est, own.start, None))
-    rows.extend([] if definition is None else [definition])
-    rows.extend([*sources, *hooks])
-    built = reply.parts[COMPOSITION_KEYS.index(REMAINDER_KEY)] + reply.parts[COMPOSITION_KEYS.index("skill_listing")]
-    own_context = max(0, built - mcp - (0 if definition is None else definition.tokens_est))
-    builtin = texts["builtin"]
-    rows.append(XrayContextRow("builtin", None, None, builtin.label, builtin.reason, own_context, None, None))
-    left = reply.total - sum(row.tokens_est for row in rows)
-    rest = texts["rest"]
-    rows.append(XrayContextRow("rest", None, None, rest.label, rest.reason, max(0, left), None, None))
-    return XrayInContext(reply.total, tuple(rows), left < 0)
+    texts = {item.key: item for item in world.context.vocabulary.context.texts}
+    rows, mcp, defined = _opening_rows(
+        own,
+        run_type,
+        down.task_tokens_est,
+        reply_t=reply.t,
+        by_source=carried[composition.peak].by_source,
+        texts=texts,
+        world=world,
+    )
+    closing, left = _closing_rows(reply, rows, (mcp, defined), texts)
+    return XrayInContext(reply.total, (*rows, *closing), left < 0)

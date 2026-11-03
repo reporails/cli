@@ -149,20 +149,25 @@ class XrayStation:
 
 
 @dataclass(frozen=True)
-class XrayCall:
-    """One call of a node: when, its category, tool and label, the source its file is, the MCP server it went to,
-    whether it failed, the id the page asks the call's text by, the seconds its result took and the size of its
-    result in tokens."""
+class CallFacts:
+    """What every record of a call carries: when, its category, tool and label, the source its file is, whether it
+    failed, its id (the one the page asks the call's text by) and the seconds its result took."""
 
     t: float
     category: ToolCategory
     tool: str
     label: str
     source: str | None
-    server: str | None
     failed: bool
     use_id: str
     duration_s: float | None
+
+
+@dataclass(frozen=True)
+class XrayCall(CallFacts):
+    """One call of a node: its facts, the MCP server it went to and the size of its result in tokens."""
+
+    server: str | None
     result_tokens_est: int | None
 
     def to_json(self) -> JsonObject:
@@ -330,17 +335,24 @@ class XrayUsage:
 
 
 @dataclass(frozen=True)
+class XrayBack:
+    """What an agent handed back: its size and how many times the context peak is that."""
+
+    tokens_est: int | None
+    ratio: int | None
+
+
+@dataclass(frozen=True)
 class XrayAgentDetail:
     """What the page shows of an agent beyond the generic node: its context line, what it was handed, what it
-    handed back (and how many times the context peak is that), how it ended, the prompts a person typed to it and
+    handed back, how it ended, the prompts a person typed to it and
     what its context held at its peak reply (None for an agent with no reply)."""
 
     context_start: int | None
     peak: int | None
     series: tuple[tuple[float, int], ...]
     down: XrayDown
-    back_tokens_est: int | None
-    back_ratio: int | None
+    back: XrayBack
     outcome: AgentOutcome | None
     given: tuple[XrayGiven, ...]
     prompts: tuple[XrayPrompt, ...]
@@ -357,8 +369,8 @@ class XrayAgentDetail:
             "peak": self.peak,
             "series": series_json(self.series),
             "down": self.down.to_json(),
-            "back_tokens_est": self.back_tokens_est,
-            "back_ratio": self.back_ratio,
+            "back_tokens_est": self.back.tokens_est,
+            "back_ratio": self.back.ratio,
             "outcome": self.outcome,
             "given": objects(item.to_json() for item in self.given),
             "prompts": objects(item.to_json() for item in self.prompts),

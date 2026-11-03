@@ -8,10 +8,10 @@ from reporails_cli.core.platform.dto.xray import (
     AdapterVocabulary,
     FactKind,
     XrayAgentTypeInfo,
-    XrayBuiltinInfo,
     XrayBurstSettings,
     XrayCategoryInfo,
-    XrayContextText,
+    XrayCompositionVocabulary,
+    XrayContextVocabulary,
     XrayNesting,
     XrayNodeKindInfo,
     XrayRoot,
@@ -19,6 +19,7 @@ from reporails_cli.core.platform.dto.xray import (
     XrayTriggerInfo,
 )
 from reporails_cli.core.platform.dto.xray_composition import REMAINDER_KEY, XrayCompositionLabel
+from reporails_cli.core.platform.dto.xray_sources import XrayBuiltinInfo, XrayContextText
 
 # Colours handed to the agent types found on disk, in order, cycling.
 DISK_TYPE_COLOURS = ("#7FD4A8", "#E8C27A", "#5FC4E8", "#C9A0F0", "#D4B483", "#8FB8A8", "#E89AB8", "#B8C77F")
@@ -87,12 +88,12 @@ _CLAUDE_COMPOSITION = (
 # the reply total leaves.
 _CLAUDE_BUILTIN = (
     XrayBuiltinInfo(
-        "system_prompt", "System prompt", "no", "Not in the transcript; its size is what the reply total leaves."
+        "system_prompt", "System prompt", "hidden", "Not in the transcript; its size is what the reply total leaves."
     ),
     XrayBuiltinInfo("deferred_tools", "Tool definitions", "partial", "{count} tools loaded on demand"),
-    XrayBuiltinInfo("agent_list", "Agent listing", "yes", "{count} agent descriptions"),
-    XrayBuiltinInfo("skill_list", "Skills listing", "yes", "{count} skill descriptions"),
-    XrayBuiltinInfo("session_context", "Session context", "yes", "Working folder, git state and date"),
+    XrayBuiltinInfo("agent_list", "Agent listing", "shown", "{count} agent descriptions"),
+    XrayBuiltinInfo("skill_list", "Skills listing", "shown", "{count} skill descriptions"),
+    XrayBuiltinInfo("session_context", "Session context", "shown", "Working folder, git state and date"),
 )
 
 _CLAUDE_CONTEXT_TEXTS = (
@@ -123,11 +124,9 @@ def _claude(disk_types: Sequence[str]) -> AdapterVocabulary:
         nesting=XrayNesting(True, None),
         triggers=_CLAUDE_TRIGGERS,
         fact_notes=_CLAUDE_FACT_NOTES,
-        composition=_CLAUDE_COMPOSITION,
-        composition_remainder=REMAINDER_KEY,
+        composition=XrayCompositionVocabulary(_CLAUDE_COMPOSITION, REMAINDER_KEY),
         burst=_CLAUDE_BURST,
-        builtin=_CLAUDE_BUILTIN,
-        context_texts=_CLAUDE_CONTEXT_TEXTS,
+        context=XrayContextVocabulary(_CLAUDE_BUILTIN, _CLAUDE_CONTEXT_TEXTS),
     )
 
 

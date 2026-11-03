@@ -87,6 +87,16 @@ from __future__ import annotations
 import hashlib
 from dataclasses import replace
 
+from reporails_cli.core.eventbus.adapters.claude_calls import (
+    blocks_text,
+    call_command,
+    call_input,
+    command_of,
+    content_blocks,
+    holds_call,
+    holds_result,
+    result_text,
+)
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
@@ -150,21 +160,6 @@ def tool_category(name: str) -> ToolCategory:
     return TOOL_CATEGORY.get(name, "other")
 
 
-def _content_blocks(row: JsonObject, block_type: str) -> list[JsonObject]:
-    """The blocks of the given type in a row's `message.content`; none when the content is not a list."""
-    content = as_object(row.get("message")).get("content")
-    if not isinstance(content, list):
-        return []
-    return [block for block in map(as_object, content) if block.get("type") == block_type]
-
-
-def _command(tool_input: JsonObject, name: str) -> str:
-    command = tool_input.get("command")
-    if not isinstance(command, str):
-        raise PayloadRefused(f"{name} call has no string command")
-    return command
-
-
 def _call_path(tool_input: JsonObject) -> str | None:
     for key in PATH_KEYS:
         value = tool_input.get(key)
@@ -190,7 +185,7 @@ def _tool_call(block: JsonObject) -> ToolUse:
             raise PayloadRefused("SubagentHandback call has no string message")
         chars = len(message)
     elif category == "run":
-        fingerprint = hashlib.sha256(_command(tool_input, name).encode()).hexdigest()[:FINGERPRINT_CHARS]
+        fingerprint = hashlib.sha256(command_of(tool_input, name).encode()).hexdigest()[:FINGERPRINT_CHARS]
     return ToolUse(name, use_id, path, server=mcp_server(name), category=category, chars=chars, fingerprint=fingerprint)
 
 
@@ -201,7 +196,7 @@ def _tool_result(block: JsonObject) -> ToolUse:
         raise PayloadRefused("tool_result block has no string tool_use_id")
     if failed is not None and not isinstance(failed, bool):
         raise PayloadRefused("tool_result is_error is not a boolean")
-    texts = _blocks_text(block.get("content"), "tool_result")
+    texts = blocks_text(block.get("content"), "tool_result")
     if texts is None:
         raise PayloadRefused("tool_result content is neither text nor a list of blocks")
     return ToolUse(use_id=use_id, chars=sum(len(text) for text in texts), error=bool(failed))
@@ -262,18 +257,6 @@ def _text(row: JsonObject, key: str, what: str) -> str:
     return value
 
 
-def _blocks_text(content: JsonValue, what: str) -> list[str] | None:
-    """The texts of a message's content: the string itself, or each `text` block's; None when it is neither."""
-    if isinstance(content, str):
-        return [content]
-    if not isinstance(content, list):
-        return None
-    texts = [as_object(block).get("text") for block in content if as_object(block).get("type") == "text"]
-    if not all(isinstance(text, str) for text in texts):
-        raise PayloadRefused(f"{what} has a text block with no text")
-    return [text for text in texts if isinstance(text, str)]
-
-
 def _brief_text(first_row: JsonObject) -> str | None:
     """The text of a subagent file's first row, None when it holds none; refuses a first row that is not a user row."""
     if first_row.get("type") != "user":
@@ -281,7 +264,7 @@ def _brief_text(first_row: JsonObject) -> str | None:
     content = as_object(first_row.get("message")).get("content")
     if isinstance(content, str):
         return content or None
-    texts = _blocks_text(content, "subagent first row")
+    texts = blocks_text(content, "subagent first row")
     return BRIEF_BLOCK_SEPARATOR.join(texts) if texts else None
 
 
@@ -331,33 +314,19 @@ class ClaudeTranscriptAdapter:
     def resolve_call(self, row: JsonObject, use_id: str) -> str:
         """The command of the tool call `use_id` in an assistant row, for the route that shows it; refuses a row
         with no such call or a call with no string command."""
-        for block in _content_blocks(row, "tool_use"):
-            if block.get("id") == use_id:
-                return _command(as_object(block.get("input")), str(block.get("name")))
-        raise PayloadRefused(f"row holds no tool call {use_id}")
+        return call_command(row, use_id)
 
     def resolve_call_input(self, row: JsonObject, use_id: str) -> JsonObject:
         """The input of the tool call `use_id` in an assistant row, for the route that shows it."""
-        for block in _content_blocks(row, "tool_use"):
-            if block.get("id") == use_id:
-                return as_object(block.get("input"))
-        raise PayloadRefused(f"row holds no tool call {use_id}")
+        return call_input(row, use_id)
 
     def holds_result(self, row: JsonObject, use_id: str) -> bool:
         """Whether `row` is a user row holding the result of the tool call `use_id`."""
-        return row.get("type") == "user" and any(
-            block.get("tool_use_id") == use_id for block in _content_blocks(row, "tool_result")
-        )
+        return holds_result(row, use_id)
 
     def resolve_result(self, row: JsonObject, use_id: str) -> str:
         """The text of the result of the tool call `use_id` in a user row, for the route that shows it."""
-        for block in _content_blocks(row, "tool_result"):
-            if block.get("tool_use_id") == use_id:
-                texts = _blocks_text(block.get("content"), "tool_result")
-                if texts is None:
-                    raise PayloadRefused("tool_result content is neither text nor a list of blocks")
-                return "".join(texts)
-        raise PayloadRefused(f"row holds no result of tool call {use_id}")
+        return result_text(row, use_id)
 
     def resolve_brief(self, first_row: JsonObject) -> str:
         """The brief a subagent was given, the text of its first row; refuses a first row that is not a user
@@ -371,9 +340,7 @@ class ClaudeTranscriptAdapter:
 
     def holds_call(self, row: JsonObject, use_id: str) -> bool:
         """Whether `row` is an assistant row holding the tool call `use_id`."""
-        return row.get("type") == "assistant" and any(
-            block.get("id") == use_id for block in _content_blocks(row, "tool_use")
-        )
+        return holds_call(row, use_id)
 
     def resolve_prompt(self, row: JsonObject) -> str:
         """The text of a typed prompt row, for the route that shows it; refuses a row that is not one."""
@@ -403,12 +370,12 @@ class ClaudeTranscriptAdapter:
     def _tool_calls(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         return [
             replace(self._record(row, "tool_call", subagent_id), tool=_tool_call(block))
-            for block in _content_blocks(row, "tool_use")
+            for block in content_blocks(row, "tool_use")
         ]
 
     def _reply_text(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         """One record sizing the text blocks of an assistant row; none when the row holds no text block."""
-        blocks = _content_blocks(row, "text")
+        blocks = content_blocks(row, "text")
         if not blocks:
             return []
         texts = [block.get("text") for block in blocks]
@@ -421,7 +388,7 @@ class ClaudeTranscriptAdapter:
     def _tool_results(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         return [
             replace(self._record(row, "tool_result", subagent_id), tool=_tool_result(block))
-            for block in _content_blocks(row, "tool_result")
+            for block in content_blocks(row, "tool_result")
         ]
 
     def _record(self, row: JsonObject, event: EventKind, subagent_id: str | None) -> EventRecord:
@@ -438,7 +405,7 @@ class ClaudeTranscriptAdapter:
         if row.get("type") == "user":
             if row.get("promptSource") != "typed" or as_object(row.get("origin")).get("kind") != "human":
                 return None
-            texts = _blocks_text(as_object(row.get("message")).get("content"), "user row")
+            texts = blocks_text(as_object(row.get("message")).get("content"), "user row")
             if texts is None:
                 raise PayloadRefused("user row message content is neither text nor a list of blocks")
             return "".join(texts)
@@ -447,7 +414,7 @@ class ClaudeTranscriptAdapter:
             return None
         if as_object(attachment.get("origin")).get("kind") != "human":
             return None
-        texts = _blocks_text(attachment.get("prompt"), "queued_command attachment prompt")
+        texts = blocks_text(attachment.get("prompt"), "queued_command attachment prompt")
         if texts is None:
             raise PayloadRefused("queued_command attachment prompt is neither text nor a list of blocks")
         return "".join(texts)

@@ -9,15 +9,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, TypeGuard, get_args
+from typing import Literal
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
-from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
 from reporails_cli.core.platform.dto.events import HarnessKind, ToolCategory
 from reporails_cli.core.platform.dto.xray_composition import CompositionKey, XrayCompositionLabel
 from reporails_cli.core.platform.dto.xray_cost import PriceListInfo
 from reporails_cli.core.platform.dto.xray_graph import (
-    ContextKey,
     LoadTrigger,
     NodeKind,
     SourceKind,
@@ -27,79 +25,11 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayTrack,
     objects,
 )
+from reporails_cli.core.platform.dto.xray_sources import XrayBuiltin, XrayBuiltinInfo, XrayContextText, XraySource
 
-ArtifactKind = Literal["instructions", "rule", "memory", "skill", "agent", "command", "hook"]
-ArtifactScope = Literal["project", "user", "managed", "local", "plugin", "auto", "synced"]
 CheckState = Literal["running", "done", "refused"]
 FactKind = Literal["memory_unlinked", "repeated_instructions", "kind_absent"]
 TargetKind = Literal["path", "node", "kind"]
-Availability = Literal["loaded", "listed", "on_disk"]
-MemoryRole = Literal["index", "item"]
-# Whether a built-in context item's text can be read in the transcript.
-Visibility = Literal["no", "partial", "yes"]
-
-# The kind of artifact a config file type is shown as; a file type not listed is an instruction file.
-ARTIFACT_KIND_OF_FILE_TYPE: dict[str, ArtifactKind] = {
-    "memory": "memory",
-    "subagent_memory": "memory",
-    "rules": "rule",
-    "skills": "skill",
-    "agents": "agent",
-    "commands": "command",
-    "hooks": "hook",
-}
-
-# The kinds a session invokes: each such artifact is the one `invocable` entry of its file, never a loaded file.
-INVOCABLE_ARTIFACT_KINDS: frozenset[ArtifactKind] = frozenset({"skill", "agent", "command", "hook"})
-
-# The kinds a person or the agent runs by name: a run of one is the file loading into context.
-RUNNABLE_ARTIFACT_KINDS: frozenset[ArtifactKind] = frozenset({"skill", "command"})
-
-# The kind of artifact that defines a subagent type.
-AGENT_ARTIFACT_KINDS: frozenset[ArtifactKind] = frozenset({"agent"})
-
-# Which scope wins when two listed files share a label, highest first. The skills page ranks managed over user over
-# project, the sub-agents page managed over project over user; a plugin's file carries its plugin's name in its
-# label and never competes.
-SCOPE_PRECEDENCE: dict[ArtifactKind, tuple[ArtifactScope, ...]] = {
-    "skill": ("managed", "user", "project"),
-    "command": ("managed", "user", "project"),
-    "agent": ("managed", "project", "user"),
-}
-
-# The source kind an artifact kind is shown as; hook configs are no source.
-SOURCE_KIND_OF_ARTIFACT: dict[ArtifactKind, SourceKind] = {
-    "instructions": "instructions",
-    "rule": "rule",
-    "memory": "memory",
-    "skill": "skill",
-    "command": "skill",
-    "agent": "agent",
-}
-
-
-def is_artifact_scope(precedence: str) -> TypeGuard[ArtifactScope]:
-    """Whether a config scope's precedence is one of the scopes the view shows."""
-    return precedence in get_args(ArtifactScope)
-
-
-@dataclass(frozen=True)
-class FindingTally:
-    """The findings of one file: how many, and how many of each severity."""
-
-    count: int
-    by_severity: dict[FindingSeverity, int]
-
-    def to_json(self) -> JsonObject:
-        """The tally as a JSON object."""
-        by_severity: dict[str, JsonValue] = {
-            severity: self.by_severity[severity] for severity in get_args(FindingSeverity)
-        }
-        return {"count": self.count, "by_severity": by_severity}
-
-
-def _tally_json(tally: FindingTally | None) -> JsonValue:
-    return None if tally is None else tally.to_json()
 
 
 @dataclass(frozen=True)
@@ -122,129 +52,6 @@ class XrayHarnessItem:
     label: str
     count: int | None
     tokens_est: int | None
-
-
-@dataclass(frozen=True)
-class XrayBuiltin:
-    """One item of the coding agent's own context: its key, label, estimated size, a note on what it holds, whether
-    its text can be read in the transcript and whether its size carries what the estimates leave of the total."""
-
-    key: HarnessKind
-    label: str
-    tokens_est: int
-    note: str | None
-    visible: Visibility
-    remainder: bool
-
-    def to_json(self) -> JsonObject:
-        """The item as a JSON object."""
-        return {
-            "key": self.key,
-            "label": self.label,
-            "tokens_est": self.tokens_est,
-            "note": self.note,
-            "visible": self.visible,
-            "remainder": self.remainder,
-        }
-
-
-@dataclass(frozen=True)
-class SourceFacts:
-    """What a source is before any node's context is known: its id, kind, name, path (None for an MCP server or a
-    hook), size and findings."""
-
-    id: str
-    kind: SourceKind
-    name: str
-    path: str | None
-    tokens_est: int | None
-    findings: FindingTally | None
-
-
-@dataclass(frozen=True)
-class SourceEntry(SourceFacts):
-    """A source with whether the page may check or fix it, whether the harness listed it by name (None when no
-    listing names its kind) and whether the memory index links it (None for any other kind)."""
-
-    actionable: bool
-    advertised: bool | None
-    linked: bool | None
-    # A rule's path patterns, and an MCP server's tools with the calls each received.
-    scopes: tuple[str, ...] = ()
-    tools: tuple[tuple[str, int], ...] = ()
-
-
-@dataclass(frozen=True)
-class XraySource(SourceFacts):
-    """One thing that can enter a context: its source facts, whether it loaded, was only listed or sat on disk, the
-    nodes whose context it entered, and whether the page may check or fix it."""
-
-    availability: Availability
-    had_by: tuple[str, ...]
-    actionable: bool
-    # How many agents ran from an agent definition (None for any other kind).
-    launches: int | None
-    # What the source cost across every reply that carried it, an estimate; None when no priced reply carried it.
-    cost_usd_est: float | None
-    # The name the page shows the source by.
-    label: str
-    # A rule's path patterns (empty for any other kind), an MCP server's tools with their call counts (likewise).
-    scopes: tuple[str, ...] = ()
-    tools: tuple[tuple[str, int], ...] = ()
-    # The type key of an agent source; `builtin` marks a type the coding agent ships with no definition file.
-    agent_type: str | None = None
-    builtin: bool = False
-    # Whether a memory file is the memory index or an item (None for any other kind).
-    memory_role: MemoryRole | None = None
-
-    def to_json(self) -> JsonObject:
-        """The source as a JSON object."""
-        return {
-            "id": self.id,
-            "kind": self.kind,
-            "name": self.name,
-            "path": self.path,
-            "tokens_est": self.tokens_est,
-            "findings": _tally_json(self.findings),
-            "availability": self.availability,
-            "had_by": list(self.had_by),
-            "actionable": self.actionable,
-            "launches": self.launches,
-            "cost_usd_est": self.cost_usd_est,
-            "label": self.label,
-            "scopes": list(self.scopes),
-            "tools": [[tool, calls] for tool, calls in self.tools],
-            "agent_type": self.agent_type,
-            "builtin": self.builtin,
-            "memory_role": self.memory_role,
-        }
-
-
-@dataclass(frozen=True)
-class ArtifactFile:
-    """One file the session could load: its absolute path, what kind of file it is, where it comes from
-    (`scope`, and `plugin` for an installed plugin's file) and its display `label`; a memory topic file
-    also carries its type and whether the memory index links it."""
-
-    path: str
-    kind: ArtifactKind
-    scope: ArtifactScope
-    plugin: str | None
-    label: str
-    memory_type: str | None
-    linked: bool | None
-
-
-@dataclass(frozen=True)
-class XrayArtifact(ArtifactFile):
-    """A file the session could load with its size, its findings, whether the harness listed it by name
-    (`advertised`, None when no listing names its kind) and whether the page may check or fix it."""
-
-    findings: FindingTally | None
-    actionable: bool
-    tokens_est: int | None
-    advertised: bool | None
-    scopes: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -311,17 +118,6 @@ class XrayWindow:
     def to_json(self) -> JsonObject:
         """The window as a JSON object."""
         return {"size": self.size, "basis": self.basis}
-
-
-@dataclass(frozen=True)
-class XrayPeek:
-    """A listed file's text cut at the peek limit, whether it was cut, its frontmatter block's text (None when it
-    has none) and the text after that block."""
-
-    text: str
-    truncated: bool
-    frontmatter: str | None
-    body: str
 
 
 SessionPick = Literal["named", "current", "current_unknown", "newest"]
@@ -414,28 +210,6 @@ class XraySourceKindInfo:
 
 
 @dataclass(frozen=True)
-class XrayBuiltinInfo:
-    """One built-in context item of the coding agent: its harness kind, label, whether its text can be read in the
-    transcript and a note template filled from the item's count (`{count}`); a template that needs a count the
-    item lacks gives no note."""
-
-    key: HarnessKind
-    label: str
-    visible: Visibility
-    note: str | None
-
-
-@dataclass(frozen=True)
-class XrayContextText:
-    """The label and reason the coding agent words one kind of "in context" row with; a reason may hold the
-    fire count as `{count}`."""
-
-    key: ContextKey
-    label: str
-    reason: str
-
-
-@dataclass(frozen=True)
 class XrayAgentTypeInfo:
     """One agent type the page can draw: its key as the transcript names it, a short label, a colour and an icon
     path in a 24-unit box."""
@@ -502,6 +276,23 @@ class XrayBurstSettings:
 
 
 @dataclass(frozen=True)
+class XrayCompositionVocabulary:
+    """The categories a context is split into, in row order, and the one that takes what the estimates leave."""
+
+    labels: tuple[XrayCompositionLabel, ...]
+    remainder: CompositionKey
+
+
+@dataclass(frozen=True)
+class XrayContextVocabulary:
+    """The built-in items of the coding agent's context in display order, and the words of the "in context" rows
+    that are no source."""
+
+    builtin: tuple[XrayBuiltinInfo, ...]
+    texts: tuple[XrayContextText, ...]
+
+
+@dataclass(frozen=True)
 class AdapterVocabulary:
     """What a coding agent calls things: its tool name, its root, source kinds, agent types, node kinds, tool
     categories, nesting, load triggers and fact notes."""
@@ -516,14 +307,9 @@ class AdapterVocabulary:
     triggers: tuple[XrayTriggerInfo, ...]
     # A sentence template per annotated fact kind, filled from the fact's numbers and the source kind's label.
     fact_notes: dict[FactKind, str]
-    # The categories a context is split into, in row order, and the one that takes what the estimates leave.
-    composition: tuple[XrayCompositionLabel, ...]
-    composition_remainder: CompositionKey
+    composition: XrayCompositionVocabulary
     burst: XrayBurstSettings
-    # The built-in items of the coding agent's context in display order, and the words of the "in context" rows
-    # that are no source.
-    builtin: tuple[XrayBuiltinInfo, ...]
-    context_texts: tuple[XrayContextText, ...]
+    context: XrayContextVocabulary
 
     def to_json(self) -> JsonObject:
         """The vocabulary as a JSON object."""
@@ -559,8 +345,8 @@ class AdapterVocabulary:
             "nesting": {"enabled": self.nesting.enabled, "max_depth": self.nesting.max_depth},
             "triggers": objects({"key": item.key, "label": item.label} for item in self.triggers),
             "fact_notes": notes,
-            "composition": objects({"key": item.key, "label": item.label} for item in self.composition),
-            "composition_remainder": self.composition_remainder,
+            "composition": objects({"key": item.key, "label": item.label} for item in self.composition.labels),
+            "composition_remainder": self.composition.remainder,
             "burst": {
                 "window_s": self.burst.window_s,
                 "window_share": self.burst.window_share,

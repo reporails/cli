@@ -9680,7 +9680,7 @@
       "label": "System prompt",
       "tokens_est": 2800,
       "note": "Not in the transcript; its size is what the reply total leaves.",
-      "visible": "no",
+      "visible": "hidden",
       "remainder": true
     },
     {
@@ -9688,7 +9688,7 @@
       "label": "Skills listing",
       "tokens_est": 5100,
       "note": "49 skill descriptions",
-      "visible": "yes",
+      "visible": "shown",
       "remainder": false
     }
   ]

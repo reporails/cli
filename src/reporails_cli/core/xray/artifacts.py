@@ -9,7 +9,7 @@ from reporails_cli.core.pipeline.expected_loads import expected_loads
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object, as_str, pattern_list
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessKind
-from reporails_cli.core.platform.dto.xray import (
+from reporails_cli.core.platform.dto.xray_sources import (
     AGENT_ARTIFACT_KINDS,
     ARTIFACT_KIND_OF_FILE_TYPE,
     INVOCABLE_ARTIFACT_KINDS,

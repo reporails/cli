@@ -12,7 +12,8 @@ import pytest
 
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list
-from reporails_cli.core.platform.dto.xray import ArtifactFile, FindingTally, XrayCheck, XrayView
+from reporails_cli.core.platform.dto.xray import XrayCheck, XrayView
+from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally
 from reporails_cli.core.xray.artifacts import PEEK_LIMIT, agent_file_tokens, artifact_files, build_artifacts
 from reporails_cli.core.xray.derive import BYTES_PER_TOKEN
 from reporails_cli.core.xray.session import XraySession

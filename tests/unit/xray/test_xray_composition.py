@@ -10,8 +10,8 @@ import pytest
 
 from reporails_cli.core.platform.contract.json_value import as_list
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessEntry, PromptEntry, ReplyText, TokenUsage
-from reporails_cli.core.platform.dto.xray import ArtifactFile
 from reporails_cli.core.platform.dto.xray_composition import COMPOSITION_KEYS, REMAINDER_KEY
+from reporails_cli.core.platform.dto.xray_sources import ArtifactFile
 from reporails_cli.core.xray.vocabulary import vocabulary_for
 from tests.unit.xray.test_xray_graph import _agent, _file, _graph, _node, launch, load, rec, reply, result
 
@@ -182,5 +182,5 @@ def test_the_skills_listing_sums_its_delta_rows_and_an_agent_without_a_reply_has
 
 def test_the_vocabulary_names_every_category_and_the_remainder() -> None:
     vocabulary = vocabulary_for("claude", [])
-    assert [item.key for item in vocabulary.composition] == list(COMPOSITION_KEYS)
-    assert vocabulary.composition_remainder == REMAINDER_KEY
+    assert [item.key for item in vocabulary.composition.labels] == list(COMPOSITION_KEYS)
+    assert vocabulary.composition.remainder == REMAINDER_KEY

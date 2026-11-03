@@ -89,16 +89,16 @@ def track_calls(node: ProducedNode) -> tuple[XrayCall, ...]:
     """Every call of the node, in time order."""
     return tuple(
         XrayCall(
-            call.t,
-            call.category,
-            call.tool,
-            call.label,
-            call.source,
-            call.mcp_source,
-            call.failed,
-            call.use_id,
-            call.duration_s,
-            call.back_tokens_est,
+            t=call.t,
+            category=call.category,
+            tool=call.tool,
+            label=call.label,
+            source=call.source,
+            failed=call.failed,
+            use_id=call.use_id,
+            duration_s=call.duration_s,
+            server=call.mcp_source,
+            result_tokens_est=call.back_tokens_est,
         )
         for call in sorted(node.spine.calls, key=lambda item: item.t)
     )

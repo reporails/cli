@@ -6,14 +6,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from reporails_cli.core.platform.dto.events import EventRecord
-from reporails_cli.core.platform.dto.xray import (
-    AdapterVocabulary,
-    Availability,
-    Graph,
-    SourceEntry,
-    XrayBuiltin,
-    XraySource,
-)
+from reporails_cli.core.platform.dto.xray import AdapterVocabulary, Graph
 from reporails_cli.core.platform.dto.xray_build import (
     BuildContext,
     Frame,
@@ -32,6 +25,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayTrack,
     XrayTree,
 )
+from reporails_cli.core.platform.dto.xray_sources import Availability, SourceEntry, XrayBuiltin, XraySource
 from reporails_cli.core.xray.graph import spine
 from reporails_cli.core.xray.graph.agents import MAIN_ID, main_records
 from reporails_cli.core.xray.graph.bursts import bursts

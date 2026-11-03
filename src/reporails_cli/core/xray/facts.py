@@ -4,14 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from reporails_cli.core.platform.dto.xray import (
-    SourceEntry,
-    XrayFact,
-    XrayFunnelRow,
-    XraySource,
-    XrayTarget,
-)
+from reporails_cli.core.platform.dto.xray import XrayFact, XrayFunnelRow, XrayTarget
 from reporails_cli.core.platform.dto.xray_graph import SourceKind
+from reporails_cli.core.platform.dto.xray_sources import SourceEntry, XraySource
 
 
 def _memory_unlinked(entries: Sequence[SourceEntry]) -> tuple[XrayFact, ...]:

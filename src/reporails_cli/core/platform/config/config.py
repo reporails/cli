@@ -103,7 +103,7 @@ def _hook_fact(raw: object) -> HookFact:
     value = str(raw.get("value", "unconfirmed"))
     fields = raw.get("fields")
     return HookFact(
-        value=value if value == "yes" or value == "no" else "unconfirmed",
+        value=value if value in ("yes", "no") else "unconfirmed",
         source=str(raw.get("source", "")),
         fields=tuple(str(f) for f in fields) if isinstance(fields, list) else (),
     )
