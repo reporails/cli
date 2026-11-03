@@ -3,6 +3,7 @@ import { el, tpl, slot } from '../dom.js';
 import { dur, k1, plural, startedAt } from '../format.js';
 import { xrayFetch, text, sessionsUrl, firstPromptUrl } from '../api.js';
 import { hashFor } from '../state.js';
+import { keepFocus } from '../focus.js';
 import { TABS, tabCounts } from '../views.js';
 
 const MAX_SHOWN = 3;
@@ -24,7 +25,12 @@ export function crumbs(ix, path) {
     if (out.length) out.push(el('span', 'sep', '/'));
     if (i !== -1) { out.push(crumb(nodes[i], path.slice(0, i + 1), i === last)); continue; }
     const gap = el('span', 'crumb gap', '…');
-    gap.title = nodes.slice(1, -1).map(n => n.name).join(' / ');
+    const hidden = nodes.slice(1, -1).map(n => n.name).join(' / ');
+    gap.title = hidden;
+    gap.tabIndex = 0;
+    gap.dataset.names = hidden;
+    gap.setAttribute('role', 'note');
+    gap.setAttribute('aria-label', `Hidden agents: ${hidden}`);
     out.push(gap);
   }
   return out;
@@ -36,10 +42,13 @@ const sw = { open: false, list: null, current: null, prompts: new Set(), box: nu
 const lengthOf = e => (e.length_s != null ? dur(e.length_s) : '');
 const facts = e => [startedAt(e.started_at), lengthOf(e), plural(e.subagents || 0, 'subagent')].filter(Boolean).join(' · ');
 
+// The switcher draws the header again; the focused control stays focused.
+const redraw = () => keepFocus(() => render(sw.box, sw.env));
+
 async function loadSessions() {
   const res = await xrayFetch(sessionsUrl());
   if (res && res.ok && res.j && Array.isArray(res.j.sessions)) { sw.list = res.j.sessions; sw.current = res.j.session; }
-  if (sw.box) render(sw.box, sw.env);
+  if (sw.box) redraw();
 }
 
 function renderSwitch(box, v) {
@@ -72,15 +81,16 @@ document.addEventListener('click', e => {
   const t = e.target;
   const pick = t.closest('.swpick'), fp = t.closest('.swfp');
   if (pick) { location.search = '?session=' + encodeURIComponent(pick.dataset.session); return; }
-  if (fp) { const id = fp.dataset.session; if (!sw.prompts.delete(id)) sw.prompts.add(id); render(sw.box, sw.env); return; }
-  if (t.closest('.swbtn')) { sw.open = !sw.open; if (sw.open) loadSessions(); render(sw.box, sw.env); return; }
-  if (sw.open && !t.closest('.swlist')) { sw.open = false; render(sw.box, sw.env); }
+  if (fp) { const id = fp.dataset.session; if (!sw.prompts.delete(id)) sw.prompts.add(id); redraw(); return; }
+  if (t.closest('.swbtn')) { sw.open = !sw.open; if (sw.open) loadSessions(); redraw(); return; }
+  if (sw.open && !t.closest('.swlist')) { sw.open = false; redraw(); }
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && sw.open && sw.box) { sw.open = false; e.preventDefault(); render(sw.box, sw.env); }
+  if (e.key === 'Escape' && sw.open && sw.box) { sw.open = false; e.preventDefault(); redraw(); sw.box.querySelector('.swbtn').focus(); }
 });
 
+const PANELS = { graph: 'view-graph', calls: 'view-calls-body', sources: 'view-sources-body' };
 const TAB_LABELS = { graph: 'Graph', calls: 'Tool calls', sources: 'Sources' };
 
 function renderTabs(box, env) {
@@ -92,6 +102,7 @@ function renderTabs(box, env) {
     b.type = 'button';
     b.dataset.tab = key;
     b.id = `tab-${key}`;
+    b.setAttribute('aria-controls', PANELS[key]);
     b.setAttribute('role', 'tab');
     b.setAttribute('aria-selected', String(on));
     b.tabIndex = on ? 0 : -1;

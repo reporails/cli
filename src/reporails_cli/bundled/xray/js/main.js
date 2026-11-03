@@ -2,6 +2,7 @@ import { el, nk } from './dom.js';
 import { text, viewUrl, viewHeaders, xrayFetch, onTextArrived, forgetTexts } from './api.js';
 import { index, focusSource, activeTab, TABS } from './views.js';
 import { state, applyHash, hashFor } from './state.js';
+import { keepFocus, redrawing } from './focus.js';
 import * as header from './components/header.js';
 import * as parentstrip from './components/parentstrip.js';
 import * as sources from './components/sources.js';
@@ -54,6 +55,7 @@ function renderTab(e) {
     details.renderOverlay($('#overlay'), e);
   } else {
     $('#overlay').hidden = true;
+    $('.canvaswrap').inert = false;
     if (e.tab === 'calls') calls.render($('#view-calls'), e);
     else sourcestable.render($('#view-sources'), e);
     // With nothing open the side panel describes the agent, as the Graph tab's right column does.
@@ -63,7 +65,9 @@ function renderTab(e) {
   details.settle(e, $(BODIES[e.tab]), hadFocus);
 }
 
-function render() {
+function render() { keepFocus(draw); }
+
+function draw() {
   if (!ix) return;
   const e = env();
   renderNotices();
@@ -83,7 +87,9 @@ function render() {
   renderTab(e);
 }
 
-function renderFocus() {
+function renderFocus() { keepFocus(drawFocus); }
+
+function drawFocus() {
   if (!ix || state.file != null) return;
   const e = env();
   if (e.tab === 'graph') canvas.render($('#canvas'), e);
@@ -192,16 +198,19 @@ document.addEventListener('click', e => {
   if (card) { state.sel = null; render(); }
 });
 
+// An element that acts like a button without being one: Enter and Space click it (a native button does that itself).
+const isFakeButton = t => t.getAttribute('role') === 'button' && !['BUTTON', 'A', 'INPUT', 'SUMMARY'].includes(t.tagName);
+
 document.addEventListener('keydown', e => {
   if (!ix) return;
   const target = e.target.closest ? e.target : document.body;
-  const card = target.closest('.card[data-node]');
-  if (e.key === 'Enter' && card && !card.classList.contains('top')) { state.sel = card.dataset.node; render(); }
-  if ((e.key === 'Enter' || e.key === ' ') && target.matches('[data-source], [data-peek]')) { e.preventDefault(); target.click(); return; }
+  if ((e.key === 'Enter' || e.key === ' ') && isFakeButton(target)) { e.preventDefault(); target.click(); return; }
   const tab = target.closest('[role="tab"]');
-  if (tab && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
-    const at = TABS.indexOf(tab.dataset.tab) + (e.key === 'ArrowRight' ? 1 : -1);
-    state.tab = TABS[(at + TABS.length) % TABS.length];
+  if (tab && ['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) {
+    const at = TABS.indexOf(tab.dataset.tab);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : (at + (e.key === 'ArrowRight' ? 1 : -1) + TABS.length) % TABS.length;
+    e.preventDefault();
+    state.tab = TABS[next];
     render();
     document.getElementById(`tab-${state.tab}`).focus();
     return;
@@ -233,7 +242,7 @@ document.addEventListener('focusin', e => {
 
 document.addEventListener('focusout', e => {
   const next = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('[data-source]');
-  if (e.target.closest && e.target.closest('[data-source]') && !next) lightSource(null);
+  if (!redrawing() && e.target.closest && e.target.closest('[data-source]') && !next) lightSource(null);
 });
 
 window.addEventListener('hashchange', () => {

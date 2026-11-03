@@ -7,7 +7,7 @@ import { bandColour } from '../geometry.js';
 import { peakOf, replyParts, typeOf } from '../views.js';
 import { sessionCost } from './inspector.js';
 import { render as renderFindings } from './findings.js';
-import { registerPeek } from './details.js';
+import { registerPeek, scrollable } from './details.js';
 
 const section = (title, ...nodes) => {
   const box = el('section', 'pk-sec');
@@ -34,7 +34,7 @@ function fetched(entry, pick) {
   if (entry.loading) return nk('Loading…');
   if (entry.error) return err(entry.error);
   const out = document.createDocumentFragment();
-  out.append(el('pre', 'peek', pick(entry)));
+  out.append(scrollable(el('pre', 'peek', pick(entry)), 'File text'));
   if (entry.truncated) out.append(nk('text truncated'));
   return out;
 }

@@ -18,11 +18,11 @@
   <div class="banner nk" id="chk" hidden></div>
   <div class="panel pstrip" id="parentstrip" hidden></div>
   <div class="cols">
-    <aside class="panel sources" id="sources" aria-label="Sources"></aside>
+    <aside class="panel sources" id="sources" aria-label="Sources inventory"></aside>
     <main>
       <div id="view-agent">
         <div class="hint" id="hint" role="note">Hover to highlight · click an agent to inspect · click a source for details · Esc closes</div>
-        <div class="tabbody graphview" id="view-graph" role="tabpanel" tabindex="-1" aria-label="Graph" data-tabbody="graph">
+        <div class="tabbody graphview" id="view-graph" role="tabpanel" tabindex="-1" aria-labelledby="tab-graph" data-tabbody="graph">
           <div class="graphcol" id="graphcol">
             <div class="canvaswrap"><div id="canvas"></div></div>
             <div class="overlay" id="overlay" hidden></div>
@@ -30,13 +30,13 @@
           <div class="rail" id="rail"></div>
           <aside class="panel inspector" id="inspector" aria-label="Inspector"></aside>
         </div>
-        <div class="tabbody tabletab" id="view-calls-body" role="tabpanel" tabindex="-1" aria-label="Tool calls" data-tabbody="calls">
+        <div class="tabbody tabletab" id="view-calls-body" role="tabpanel" tabindex="-1" aria-labelledby="tab-calls" data-tabbody="calls">
           <div class="tablecol" id="view-calls"></div>
-          <aside class="panel sidepanel" id="side-calls" aria-label="Details"></aside>
+          <aside class="panel sidepanel" id="side-calls" aria-label="Tool call details"></aside>
         </div>
-        <div class="tabbody tabletab" id="view-sources-body" role="tabpanel" tabindex="-1" aria-label="Sources" data-tabbody="sources">
+        <div class="tabbody tabletab" id="view-sources-body" role="tabpanel" tabindex="-1" aria-labelledby="tab-sources" data-tabbody="sources">
           <div class="tablecol" id="view-sources"></div>
-          <aside class="panel sidepanel" id="side-sources" aria-label="Details"></aside>
+          <aside class="panel sidepanel" id="side-sources" aria-label="Source details"></aside>
         </div>
       </div>
       <section class="panel filecard" id="view-file" hidden></section>
@@ -49,7 +49,7 @@
   <div class="brand"><span class="mark" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 7h8M5 12h14M5 17h10"/></svg></span><span>reporails</span><span>x-ray</span></div>
   <nav class="crumbs" aria-label="Agent path" data-slot="crumbs"></nav>
   <div class="tabs" role="tablist" aria-label="View" data-slot="tabs"></div>
-  <div class="hmeta"><span class="proj" data-slot="session"></span><div class="switch" data-slot="switch"><button class="swbtn" type="button" data-slot="swbtn" aria-haspopup="true" aria-expanded="false"></button><ul class="swlist" data-slot="swlist" hidden></ul></div><span data-slot="model"></span><span class="achip" data-slot="adapter"></span></div>
+  <div class="hmeta"><span class="proj" data-slot="session"></span><div class="switch" data-slot="switch"><button class="swbtn" type="button" data-slot="swbtn" aria-expanded="false"></button><ul class="swlist" data-slot="swlist" hidden></ul></div><span data-slot="model"></span><span class="achip" data-slot="adapter"></span></div>
 </div></template>
 <template id="t-session-item"><li class="swrow"><button class="swpick" type="button" data-slot="pick"><span data-slot="label"></span></button><button class="swfp" type="button" data-slot="fp" aria-expanded="false">first prompt</button><pre class="swtext" data-slot="fptext" hidden></pre></li></template>
 <template id="t-parentstrip">

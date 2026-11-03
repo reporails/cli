@@ -4,7 +4,7 @@ import { el, nk, err } from '../dom.js';
 import { clock, k1 } from '../format.js';
 import { typeOf, callIndex, subtreeIds } from '../views.js';
 import { callDetail } from '../api.js';
-import { registerPeek } from './details.js';
+import { registerPeek, scrollable } from './details.js';
 import { vlist, viewHeight } from './vlist.js';
 
 const ROW_H = 34;
@@ -143,7 +143,7 @@ function skeleton(box) {
   strip.append(canvas, ticks);
   const head = el('div', 'tb-head tb-calls');
   for (const h of ['Time', 'Agent', 'Tool', 'Call', 'Result', 'Result after', 'Status']) head.append(el('span', h === 'Result' || h === 'Result after' ? 'tb-r' : '', h));
-  const list = vlist(ROW_H, 'Tool calls');
+  const list = vlist(ROW_H, 'Tool calls', head);
   const empty = nk('No call matches these filters.');
   empty.hidden = true;
   const more = el('button', 'seg tb-more');
@@ -163,10 +163,9 @@ export function render(box, env) {
   const rows = filteredCalls(env);
   const subject = subjectOf(env);
   const total = callIndex(env.ix).list.length;
-  p.summary.textContent = `${rows.length} of ${total} calls · ${rows.filter(r => r.call.failed).length} failed`;
-  const active = document.activeElement && p.filters.contains(document.activeElement) ? Object.entries(document.activeElement.dataset)[0] : null;
+  const summary = `${rows.length} of ${total} calls · ${rows.filter(r => r.call.failed).length} failed`;
+  if (p.summary.textContent !== summary) p.summary.textContent = summary;
   p.filters.replaceChildren(...filterButtons(env, subject));
-  if (active) [...p.filters.querySelectorAll('button')].find(b => b.dataset[active[0]] === active[1])?.focus();
   const span = drawStrip(p.canvas, env, rows);
   p.canvas.setAttribute('aria-label', `Timeline of ${rows.length} tool calls`);
   p.ticks.replaceChildren(...[0, 1, 2, 3, 4].map(i => {
@@ -191,7 +190,7 @@ const block = (title, node) => {
   return d;
 };
 
-const pre = (text, bad) => el('pre', `tb-pre${bad ? ' bad' : ''}`, text);
+const pre = (text, bad) => scrollable(el('pre', `tb-pre${bad ? ' bad' : ''}`, text), bad ? 'Result excerpt' : 'Call text');
 
 function inContext(env, r) {
   const { ix } = env, st = ix.stations.get(r.node.id);

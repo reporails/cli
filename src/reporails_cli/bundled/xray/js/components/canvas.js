@@ -159,6 +159,9 @@ function childCard(env, c, p, match, selected) {
     box.append(h);
   }
   box.append(rendererFor(c.kind).card(c, { ...env, top: false }));
+  // The name carries what the card shows: its duration and what each slot chip says.
+  const facts = [box.querySelector('.sub'), ...box.querySelectorAll('.chip[aria-label]')].filter(Boolean).map(n => n.getAttribute('aria-label') || n.textContent);
+  box.setAttribute('aria-label', [box.getAttribute('aria-label'), ...facts].join(', '));
   return box;
 }
 
@@ -415,6 +418,7 @@ function stationPill(env, cl) {
     return b;
   }
   b.title = it.title;
+  b.setAttribute('aria-label', it.title);
   if (!lone) {
     const body = it.type === 'hook' ? `↓×${it.calls}` : `↓ ${tk(it.tokens, true)}`.trim();
     b.append(el('span', 'kl', it.letter), body);
@@ -427,8 +431,7 @@ function stations(env, cur, scale) {
   for (const c of (env.ix.stations.get(cur.id) || { compactions: [] }).compactions) {
     const m = abs('compact', 0, scale.y(c.t));
     const sizes = c.before != null && c.after != null ? ` · ${k1(c.before)} → ${k1(c.after)}` : '';
-    m.append(el('span', null, `compacted${sizes}`));
-    m.title = `context compacted at ${clock(c.t)}${c.trigger ? ' (' + c.trigger + ')' : ''}`;
+    m.append(el('span', null, `compacted${sizes} · at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`));
     out.push(m);
   }
   return out;
@@ -441,7 +444,6 @@ function settleStations(cv, rects) {
     if (where === 'right') { e.style.left = `${SPX + STATION_EDGE}px`; e.classList.add('side-r'); }
     else if (where === 'left') { e.style.left = `${SPX - STATION_EDGE}px`; e.classList.add('side-l'); }
     else if (where === 'dot') {
-      if (!e.getAttribute('aria-label')) e.setAttribute('aria-label', e.title);
       e.replaceChildren();
       e.classList.add('dot', 'squeezed');
     }

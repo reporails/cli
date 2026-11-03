@@ -22,6 +22,8 @@ export function render(box, env) {
     a.href = hashFor([...state.path.slice(0, -1), sib.id]);
     a.dataset.node = sib.id;
     a.title = `${sib.name} · ${range(sib.start, sib.end)}`;
+    a.setAttribute('aria-label', a.title);
+    a.dataset.name = sib.name;
     a.style.left = `${(sib.start - parent.start) / span * 100}%`;
     a.style.width = `${Math.max(0.6, (sib.end - sib.start) / span * 100)}%`;
     a.style.background = typeOf(ix, sib).colour;

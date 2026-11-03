@@ -43,7 +43,7 @@ export function render(box, env) {
   if (!p || !box.contains(p.list.root)) {
     const head = el('div', 'tb-head tb-src-grid');
     for (const h of ['', 'Name', 'Kind', 'In context', 'Tokens', 'Findings']) head.append(el('span', h === 'Tokens' || h === 'Findings' ? 'tb-r' : '', h));
-    p = { list: vlist(ROW_H, 'Sources') };
+    p = { list: vlist(ROW_H, 'Sources', head) };
     const table = el('div', 'tb-table');
     table.append(head, p.list.root);
     box.replaceChildren(table);

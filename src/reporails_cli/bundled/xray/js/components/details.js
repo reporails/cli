@@ -1,6 +1,7 @@
 // The details frame: one open item ({kind, id}) drawn by the renderer registered for its kind. On the Graph tab the frame
 // is a dialog over the canvas column; on the other tabs the same output fills a one-column side panel.
 import { el, nk } from '../dom.js';
+import { find, keyOf, restore } from '../focus.js';
 
 const renderers = new Map();
 const listeners = [];
@@ -19,7 +20,7 @@ export function parsePeek(value) {
   return at < 0 ? null : { kind: value.slice(0, at), id: value.slice(at + 1) };
 }
 
-const keyOf = peek => (peek ? `${peek.kind}:${peek.id}` : '');
+const peekKey = peek => (peek ? `${peek.kind}:${peek.id}` : '');
 
 const asNode = (v, cls) => (typeof v === 'string' ? el('span', cls, v) : v);
 
@@ -50,6 +51,14 @@ function head(out, side) {
   return { h, titleId: title.id };
 }
 
+// A scrolling box the keyboard can reach: focusable, named, and a region so a screen reader says what it scrolls.
+export function scrollable(box, label) {
+  box.tabIndex = 0;
+  box.setAttribute('role', 'region');
+  box.setAttribute('aria-label', label);
+  return box;
+}
+
 function section(cls, nodes) {
   const d = el('div', cls);
   d.append(...(nodes || []));
@@ -69,6 +78,8 @@ function content(env, side) {
 export function renderOverlay(box, env) {
   const c = env.state.peek ? content(env, false) : null;
   box.hidden = !c;
+  // The overlay covers the canvas only; behind it the canvas takes no focus and no clicks.
+  document.querySelector('.canvaswrap').inert = !!c;
   if (!c) { box.replaceChildren(); return; }
   const back = el('div', 'pk-back');
   back.dataset.closePeek = '1';
@@ -76,7 +87,7 @@ export function renderOverlay(box, env) {
   dlg.setAttribute('role', 'dialog');
   dlg.setAttribute('aria-modal', 'false');
   dlg.setAttribute('aria-labelledby', c.titleId);
-  const body = el('div', 'pk-body');
+  const body = scrollable(el('div', 'pk-body'), 'Details content');
   body.append(section('pk-main', c.out.main), section('pk-side', c.out.side));
   dlg.append(c.h, body);
   box.replaceChildren(back, dlg);
@@ -98,29 +109,26 @@ export function renderPanel(box, env) {
 // Focus: it goes to the × when details open, and back to the element that opened them when they close.
 const focus = { shown: '', opener: null };
 
-// What opened the details: the element and the attribute that finds its twin after a redraw.
+// What opened the details: its region and identity, which find its twin after a redraw.
 export function remember(from) {
-  if (!from) { focus.opener = null; return; }
-  const attr = ['data-source', 'data-peek', 'data-node'].find(a => from.hasAttribute(a));
-  focus.opener = { el: from, attr, value: attr ? from.getAttribute(attr) : null };
+  focus.opener = keyOf(from);
 }
 
 export const hasFocusIn = () => !!document.activeElement && !!document.activeElement.closest('.pk-dialog, .pk-panel');
 
 // Called after every draw. `fallback` takes focus when the opener is gone.
 export function settle(env, fallback, hadFocusIn) {
-  const key = keyOf(env.state.peek);
+  const key = peekKey(env.state.peek);
   const was = focus.shown;
   focus.shown = key;
   if (key === was && !(key && hadFocusIn)) return;
   if (key) {
+    if (key === was && restore()) return;
     const x = document.querySelector('.pk-x');
     if (x) x.focus();
     return;
   }
   const o = focus.opener;
   focus.opener = null;
-  let target = o && o.el.isConnected ? o.el : null;
-  if (!target && o && o.attr) target = [...document.querySelectorAll(`[${o.attr}]`)].find(n => n.getAttribute(o.attr) === o.value) || null;
-  (target || fallback).focus();
+  (find(o) || fallback).focus();
 }
