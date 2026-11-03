@@ -389,7 +389,7 @@ function sourceEdges(env, items, placed, scale) {
         d: `M${p.inner.toFixed(1)},${(ny + 6).toFixed(1)} C${mx.toFixed(1)},${(ny + 6).toFixed(1)} ${mx.toFixed(1)},${yt.toFixed(1)} ${SPX},${yt.toFixed(1)}`,
         fill: 'none', stroke: hot ? WHITE : dim ? 'rgba(236,236,236,0.04)' : 'rgba(180,156,255,0.4)', 'stroke-width': (0.8 + Math.min(2, m.calls / 6)).toFixed(2), class: 'srctrip', 'data-source': it.source,
       }));
-      g.append(svg('circle', { cx: SPX, cy: yt.toFixed(1), r: 3, fill: '#0D0E10', stroke: callIndex(env.ix).serverColour(it.source), 'stroke-width': 1.5, opacity: dim ? 0.2 : 0.9, class: 'tripmark' }));
+      g.append(svg('circle', { cx: SPX, cy: yt.toFixed(1), r: 3, fill: '#0D0E10', stroke: callIndex(env.ix).serverColour(it.source), 'stroke-width': 1.5, opacity: dim ? 0.2 : 0.9, class: 'tripmark', 'data-source': it.source }));
     }
   }
   return g;

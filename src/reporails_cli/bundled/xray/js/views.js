@@ -32,9 +32,14 @@ export const kindOfSource = (ix, id) => {
 
 export const visibleKinds = (ix, state) => ix.view.adapter.source_kinds.filter(k => state.layers[k.key]);
 
-// The source whose focus is on: hover wins over a pin. A kind's eye hides it on the graph only, so the list still highlights it.
+// The source whose focus is on: a pin holds until cleared, hover lights a source only while nothing is pinned. A kind's eye hides it on the graph only, so the list still highlights it.
 export function focusSource(ix, state) {
-  return ix.sources.get(state.hover || state.pinned) || null;
+  return ix.sources.get(state.pinned || state.hover) || null;
+}
+
+// The source the Sources panel scrolls and opens to: the one keyboard focus is on, else the pinned one. Hover never counts.
+export function revealedSource(ix, state) {
+  return ix.sources.get(state.lit || state.pinned) || null;
 }
 
 export const childrenOf = (ix, node) => node.children.map(id => ix.nodes.get(id)).filter(Boolean);

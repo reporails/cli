@@ -55,3 +55,23 @@ Feature: The x-ray Sources panel and right column list everything and describe o
   Scenario: A subagent with no replies never reads 0 of work
     Given the bundled page is served over the "view_sample" fixture view changed so the first subagent has no replies
     Then the subagent's Output line says the size of its work is not known and never reads 0 of work
+
+  @page @browser
+  Scenario: Hovering the graph or a Sources group changes nothing in the right column and a click shows the details
+    Given the bundled page is served over the "view_sample" fixture view
+    Then hovering spine items and groups changes nothing, and clicking a spine item opens its details
+
+  @page @browser
+  Scenario: A pinned source stays pinned across a view update until it is cleared
+    Given the bundled page is served over the "view_sample" fixture view
+    Then a source pinned on the graph stays pinned after the view changes and until it is cleared
+
+  @page @browser
+  Scenario: Each group's eye toggle sits on the group's title line
+    Given the bundled page is served over the "view_sample" fixture view
+    Then every group's eye toggle lies within its title line, also with a second line under it
+
+  @page @browser
+  Scenario: A subagent shows its cost and the main agent's session line is the sum of the agents
+    Given the bundled page is served over the "view_sample" fixture view
+    Then a subagent's cost tile shows dollars and the main tile's session figure is the sum of the agents

@@ -115,7 +115,7 @@ registerPeek('src', (env, id) => {
   const tags = [unrecorded ? UNRECORDED : holders.length ? 'in context' : 'never loaded'];
   if (count) tags.push(`${plural(count, 'finding')}`);
   if (s.tokens_est != null) tags.push(`${tk(s.tokens_est, true)} each · estimated`);
-  const actions = [action('Pin on graph', { closePeek: '1' })];
+  const actions = [action('Pin on graph', { pin: s.id })];
   if (count && s.path) {
     const a = el('a', 'pk-act primary', 'Open findings page');
     a.href = hashFor(env.state.path, s.path);

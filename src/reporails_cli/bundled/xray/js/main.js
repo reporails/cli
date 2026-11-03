@@ -175,6 +175,8 @@ document.addEventListener('click', e => {
   const eye = t.closest('[data-eye]');
   if (eye) { state.layers[eye.dataset.eye] = !state.layers[eye.dataset.eye]; return render(); }
   if (t.closest('[data-close-peek]')) { closePeek(); return render(); }
+  const pin = t.closest('[data-pin]');
+  if (pin) { state.pinned = pin.dataset.pin; closePeek(); return render(); }
   const peek = t.closest('[data-peek]');
   const want = peek && details.parsePeek(peek.dataset.peek);
   if (want) { openPeek(want.kind, want.id, peek); return render(); }
@@ -190,7 +192,7 @@ document.addEventListener('click', e => {
     return render();
   }
   const src = t.closest('[data-source]');
-  if (src) { state.pinned = src.dataset.source; openPeek('src', src.dataset.source, src); return render(); }
+  if (src) { openPeek('src', src.dataset.source, src); return render(); }
   const group = t.closest('[data-group]');
   if (group) { state.groups[group.dataset.group] = group.getAttribute('aria-expanded') !== 'true'; return render(); }
   const card = t.closest('.card[data-node]');
@@ -223,26 +225,28 @@ document.addEventListener('keydown', e => {
   render();
 });
 
-// Hover and keyboard focus on a source highlight it; neither moves anything.
-function lightSource(id) {
-  if (id === state.hover) return;
+// Hover and keyboard focus on a source highlight it; neither moves anything. Only keyboard focus also brings the source
+// into the Sources panel: hovering never opens a group.
+function lightSource(id, focused) {
+  if (id === state.hover && (!focused || id === state.lit)) return;
   state.hover = id;
+  if (focused) state.lit = id;
   renderFocus();
 }
 
 document.addEventListener('mouseover', e => {
   const src = e.target.closest && e.target.closest('[data-source]');
-  lightSource(src ? src.dataset.source : null);
+  lightSource(src ? src.dataset.source : null, false);
 });
 
 document.addEventListener('focusin', e => {
   const src = e.target.closest && e.target.closest('[data-source]');
-  if (src) lightSource(src.dataset.source);
+  if (src) lightSource(src.dataset.source, true);
 });
 
 document.addEventListener('focusout', e => {
   const next = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('[data-source]');
-  if (!redrawing() && e.target.closest && e.target.closest('[data-source]') && !next) lightSource(null);
+  if (!redrawing() && e.target.closest && e.target.closest('[data-source]') && !next) { state.lit = null; lightSource(null, false); }
 });
 
 window.addEventListener('hashchange', () => {

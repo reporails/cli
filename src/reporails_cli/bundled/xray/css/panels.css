@@ -2,13 +2,14 @@
 
 /* Sources panel */
 .sx-hd{display:flex;align-items:flex-start;gap:2px}
-.sx-hd .sh{flex:1;min-width:0;flex-wrap:wrap;row-gap:0}
+.sx-hd .sh{flex:1;min-width:0;flex-wrap:wrap;row-gap:0;padding-top:0;padding-bottom:0}
+.sx-hd .sx-title{line-height:24px}
 .sx-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ssec.hidden .sx-title{color:var(--t3)}
 .sh .ct .used{color:var(--t1);font-weight:600} .sh .ct .tot{color:var(--t3)}
 .sx-sub{flex-basis:100%;padding-left:34px;font-size:10.5px;font-weight:400;text-align:left}
 .sx-sub.gf{color:var(--find2);font-family:inherit;font-weight:400} .sx-sub.off{color:var(--t3)}
-.sx-eye{width:30px;height:30px;margin-top:1px;flex:none;border:0;border-radius:7px;background:none;color:var(--t3);cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.sx-eye{width:24px;height:24px;margin-top:0;flex:none;border:0;border-radius:7px;background:none;color:var(--t3);cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
 .sx-eye:hover{background:var(--chip);color:var(--t1)} .sx-eye[aria-pressed=false]{color:var(--t3);opacity:.8}
 .sr .stx{display:flex;flex-direction:column;min-width:0;flex:1}
 .sr .sline{display:flex;align-items:center;gap:6px;min-width:0}

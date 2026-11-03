@@ -136,3 +136,57 @@ def step_eye_hover(context):
         return
     assert seen["eyePressed"] == "false", seen
     assert seen["hovered"] is True, seen
+
+
+@then("hovering spine items and groups changes nothing, and clicking a spine item opens its details")
+def step_hover_calm(context):
+    seen = _panels(context, "hover_calm")
+    if seen is None:
+        return
+    assert seen["hovered"] > 0, seen
+    assert seen["columnAfter"] == seen["columnBefore"], (seen["columnBefore"], seen["columnAfter"])
+    assert seen["openAfter"] == seen["openBefore"], (seen["openBefore"], seen["openAfter"])
+    assert seen["station"] and seen["dialog"] and seen["title"], seen
+
+
+@then("a source pinned on the graph stays pinned after the view changes and until it is cleared")
+def step_pin(context):
+    seen = _panels(context, "pin")
+    if seen is None:
+        return
+    assert seen["pinnedByClick"] is False, seen
+    assert seen["pinned"] and seen["clearAtOnce"] is True, seen
+    assert seen["whileHovering"] == seen["pinned"], seen
+    assert seen["afterUpdate"] == seen["pinned"] and seen["clearAfterUpdate"] is True, seen
+    assert seen["clearAfterClear"] is False, seen
+
+
+@then("every group's eye toggle lies within its title line, also with a second line under it")
+def step_eye_line(context):
+    seen = _panels(context, "eye_line")
+    if seen is None:
+        return
+    rows = [*seen["rows"], seen["hiddenRow"]]
+    assert seen["hiddenRow"]["subTop"] is not None, seen
+    for r in rows:
+        assert r["titleTop"] - 0.5 <= r["eyeTop"] and r["eyeBottom"] <= r["titleBottom"] + 0.5, r
+        assert r["subTop"] is None or r["eyeBottom"] <= r["subTop"] + 0.5, r
+
+
+def _dollars(text: str) -> list[float]:
+    return [float(m) for m in re.findall(r"\$([\d.]+)", text.replace(",", ""))]
+
+
+@then("a subagent's cost tile shows dollars and the main tile's session figure is the sum of the agents")
+def step_sub_cost(context):
+    seen = _panels(context, "sub_cost")
+    if seen is None:
+        return
+    sub = _dollars(" ".join(seen["subTile"]))
+    assert sub, seen["subTile"]
+    main = _dollars(" ".join(seen["mainTile"]))
+    assert len(main) >= 3, seen["mainTile"]
+    own, session, subs = main[0], main[1], main[2]
+    assert abs(session - (own + subs)) <= 0.011, seen["mainTile"]
+    cost = context.fixture["session_cost"]
+    assert abs(session - cost["total_usd"]) <= 0.011, (session, cost)

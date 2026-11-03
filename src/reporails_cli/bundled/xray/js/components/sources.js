@@ -3,7 +3,7 @@
 import { el, svg, sync } from '../dom.js';
 import { costEst, fill, tk, plural } from '../format.js';
 import { SOURCES_SHOWN } from '../geometry.js';
-import { UNRECORDED } from '../views.js';
+import { UNRECORDED, revealedSource } from '../views.js';
 
 const BUILTIN = 'builtin';
 const EYE = 'M2 12s4-7 10-7s10 7 10 7s-4 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z';
@@ -97,7 +97,8 @@ const isOpen = (state, ix, key) => (key in state.sourceGroups ? state.sourceGrou
 
 // The focused source's group opens, and its list grows to reach it, once per change of focus.
 function reveal(env, lists) {
-  const { state, focus } = env;
+  const { state } = env;
+  const focus = revealedSource(env.ix, state);
   const id = focus ? focus.id : null;
   if (id !== null && state.revealed !== id) {
     state.sourceGroups[focus.kind] = true;
@@ -109,7 +110,8 @@ function reveal(env, lists) {
 
 // Called as focus moves: redraws only when the focused source is not on the panel yet.
 export function follow(box, env) {
-  const id = env.focus ? env.focus.id : null;
+  const shown = revealedSource(env.ix, env.state);
+  const id = shown ? shown.id : null;
   if (id === null || env.state.revealed === id) { env.state.revealed = id; return; }
   const on = [...box.querySelectorAll('.sr')].some(r => r.dataset.source === id);
   if (on) env.state.revealed = id;
