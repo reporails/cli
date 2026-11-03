@@ -235,12 +235,13 @@ class XrayPeek:
 class XrayBuiltinInfo:
     """One built-in context item of the coding agent: its harness kind, label, whether its text can be read in the
     transcript and a note template filled from the item's count (`{count}`); a template that needs a count the
-    item lacks gives no note."""
+    item lacks gives no note; `note_once` words a count of one."""
 
     key: HarnessKind
     label: str
     visible: Visibility
     note: str | None
+    note_once: str | None = None
 
 
 @dataclass(frozen=True)

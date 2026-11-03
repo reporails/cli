@@ -942,6 +942,19 @@ def test_a_tool_result_that_only_acknowledges_a_background_launch_says_so(text: 
     assert record.tool is not None and record.tool.launch_ack is acknowledges
 
 
+def test_the_launch_ack_is_read_from_the_first_text_block_with_text() -> None:
+    def acknowledges(blocks: list[str]) -> bool | None:
+        row = _tool_result({})
+        content = [{"type": "text", "text": text} for text in blocks]
+        as_object(row["message"])["content"] = [{"type": "tool_result", "tool_use_id": "toolu_1", "content": content}]
+        (record,) = _of(ClaudeTranscriptAdapter().resolve_row(row, None), "tool_result")
+        assert record.tool is not None
+        return record.tool.launch_ack
+
+    assert acknowledges(["", "Async agent launched successfully.\nagentId: a1"]) is True
+    assert acknowledges(["Async agent ", "launched successfully.\nagentId: a1"]) is False
+
+
 def test_a_call_is_read_back_in_one_pass_over_the_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     session = _copy_session(tmp_path)
     opened: list[Path] = []

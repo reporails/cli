@@ -199,3 +199,49 @@ def test_the_vocabulary_names_every_category_and_the_remainder() -> None:
     vocabulary = vocabulary_for("claude", [])
     assert [item.key for item in vocabulary.composition.labels] == list(COMPOSITION_KEYS)
     assert vocabulary.composition.remainder == REMAINDER_KEY
+
+
+def _hook_row(root: Path, records: Sequence[EventRecord]) -> tuple[str, int, float | None]:
+    """The reason, tokens and time of the main agent's hook row at its peak reply."""
+    shown = _agent(_node(_graph(root, records, _files(root)), "main")).in_context
+    assert shown is not None
+    row = next(item for item in shown.rows if item.key == "hooks")
+    return row.reason, row.tokens_est, row.t
+
+
+def _peak(seconds: float) -> EventRecord:
+    return rec("assistant_usage", seconds, usage=TokenUsage(f"m{seconds}", 1, 0, 9999, "claude-opus-4-8"))
+
+
+def test_a_hook_note_stamped_with_a_compactions_instant_builds_the_view_and_is_the_rows_firing(tmp_path: Path) -> None:
+    claude, _, _ = _files(tmp_path)
+    records = [load(0.1, claude), _note(5), rec("post_compact", 10, source="auto"), _note(10), _peak(15)]
+    reason, tokens, moment = _hook_row(tmp_path, records)
+    assert (reason, tokens) == ("fired once", 20)
+    assert (
+        moment
+        == _hook_row(tmp_path, [load(0.1, claude), rec("post_compact", 10, source="auto"), _note(10), _peak(15)])[2]
+    )
+    assert moment is not None and moment > _hook_row(tmp_path, [load(0.1, claude), _note(5), _peak(15)])[2]
+
+
+def test_the_hook_row_words_one_firing_and_several(tmp_path: Path) -> None:
+    claude, _, _ = _files(tmp_path)
+    assert _hook_row(tmp_path, [load(0.1, claude), _note(5), _peak(15)])[0] == "fired once"
+    assert _hook_row(tmp_path, [load(0.1, claude), _note(5), _note(6), _peak(15)])[0] == "fired 2 times"
+
+
+def test_a_built_in_note_words_a_count_of_one_in_the_singular(tmp_path: Path) -> None:
+    def notes(count: int) -> list[str | None]:
+        records = [
+            rec("harness", 0.2, item=HarnessEntry("skill_list", "skills", count, 400)),
+            rec("harness", 0.3, item=HarnessEntry("agent_list", "agents", count, 400)),
+            rec("harness", 0.4, item=HarnessEntry("deferred_tools", "tools", count, 400)),
+            _peak(5),
+        ]
+        return [
+            item.note for item in _graph(tmp_path, records, _files(tmp_path)).builtin if item.key != "system_prompt"
+        ]
+
+    assert notes(1) == ["1 tool loaded on demand", "1 agent description", "1 skill description"]
+    assert notes(2) == ["2 tools loaded on demand", "2 agent descriptions", "2 skill descriptions"]

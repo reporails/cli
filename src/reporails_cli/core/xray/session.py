@@ -207,7 +207,7 @@ class XraySession:
     ) -> XrayVerdict:
         """The funnel and headline facts over the sources and the graph, with the state of the launch check."""
         kinds = [item.key for item in vocabulary.source_kinds]
-        funnel = build_funnel(table.entries, graph.sources, kinds, ran_sources(records, table))
+        funnel = build_funnel(table, graph.sources, kinds, ran_sources(records, table))
         definitions = frozenset(item.key for item in vocabulary.source_kinds if item.definitions)
         facts = build_facts(table.entries, graph.sources, funnel, kinds, definitions)
         return XrayVerdict(funnel, facts, self._check)

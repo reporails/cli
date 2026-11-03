@@ -757,7 +757,7 @@ def test_a_skill_that_ran_is_used_a_forked_one_is_used_but_not_loaded_and_a_comm
     files = [plain, forked, command, idle]
     table = build_sources(build_artifacts(files, {}, tmp_path, advertised={}), records, frame)
     graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
-    (row,) = build_funnel(table.entries, graph.sources, ["skill"], ran_sources(records, table))
+    (row,) = build_funnel(table, graph.sources, ["skill"], ran_sources(records, table))
     assert (row.kind, row.on_disk, row.loaded, row.used) == ("skill", 4, 2, 3)
 
 
@@ -1379,7 +1379,21 @@ def test_the_funnel_does_not_count_an_unrecorded_kind_as_zero_loaded(tmp_path: P
     frame = Frame(epoch(at(0)) or 0.0, tmp_path, {}, {}, {}, False)
     table = build_sources(build_artifacts([claude], {}, tmp_path, advertised={}), records, frame)
     graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
-    (row,) = build_funnel(table.entries, graph.sources, ["instructions"], set())
+    (row,) = build_funnel(table, graph.sources, ["instructions"], set())
+    assert (row.on_disk, row.loaded, row.used) == (1, None, None)
+
+
+def test_the_funnel_takes_the_unrecorded_kinds_from_the_source_table(tmp_path: Path) -> None:
+    claude = _file(tmp_path, "CLAUDE.md", 400)
+    records = [load(0.1, claude), _priced(1)]
+    frame = Frame(epoch(at(0)) or 0.0, tmp_path, {}, {}, {}, False)
+    table = build_sources(build_artifacts([claude], {}, tmp_path, advertised={}), records, frame)
+    graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
+    (row,) = build_funnel(table, graph.sources, ["instructions"], set())
+    assert row.loaded == 1
+    (row,) = build_funnel(
+        replace(table, unrecorded=frozenset({"instructions"})), graph.sources, ["instructions"], set()
+    )
     assert (row.on_disk, row.loaded, row.used) == (1, None, None)
 
 
@@ -1389,5 +1403,5 @@ def test_the_agents_funnel_row_counts_the_built_in_agent_types_a_session_launche
     frame = Frame(epoch(at(0)) or 0.0, tmp_path, {}, {}, {}, False)
     table = build_sources(build_artifacts([definition], {}, tmp_path, advertised={}), records, frame)
     graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
-    (row,) = build_funnel(table.entries, graph.sources, ["agent"], set())
+    (row,) = build_funnel(table, graph.sources, ["agent"], set())
     assert (row.on_disk, row.loaded) == (2, 1)

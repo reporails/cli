@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from reporails_cli.core.platform.dto.xray import XrayFunnelRow
+from reporails_cli.core.platform.dto.xray_build import SourceTable
 from reporails_cli.core.platform.dto.xray_graph import SourceKind
 from reporails_cli.core.platform.dto.xray_sources import SourceEntry, XraySource
 
@@ -18,13 +19,14 @@ def _used(kind: SourceKind, items: Sequence[SourceEntry], had: set[str], ran: se
 
 
 def build_funnel(
-    entries: Sequence[SourceEntry], sources: Sequence[XraySource], kinds: Sequence[SourceKind], ran: set[str]
+    table: SourceTable, sources: Sequence[XraySource], kinds: Sequence[SourceKind], ran: set[str]
 ) -> tuple[XrayFunnelRow, ...]:
     """One row per source kind in `kinds` that has a source, in that order, the built-in agent types counted; `ran`
     holds the ids of the skill and command sources that ran. A kind whose loads the session does not record has
     no loaded or used count."""
     had = {source.id for source in sources if source.had_by}
-    unrecorded = {source.kind for source in sources if source.availability == "unrecorded"}
+    entries = table.entries
+    unrecorded = table.unrecorded
     rows: list[XrayFunnelRow] = []
     for kind in kinds:
         items = [item for item in entries if item.kind == kind]

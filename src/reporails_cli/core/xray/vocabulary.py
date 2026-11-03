@@ -90,9 +90,15 @@ _CLAUDE_BUILTIN = (
     XrayBuiltinInfo(
         "system_prompt", "System prompt", "hidden", "Not in the transcript; its size is what the reply total leaves."
     ),
-    XrayBuiltinInfo("deferred_tools", "Tool definitions", "partial", "{count} tools loaded on demand"),
-    XrayBuiltinInfo("agent_list", "Agent listing", "shown", "{count} agent descriptions"),
-    XrayBuiltinInfo("skill_list", "Skills listing", "shown", "{count} skill descriptions"),
+    XrayBuiltinInfo(
+        "deferred_tools",
+        "Tool definitions",
+        "partial",
+        "{count} tools loaded on demand",
+        "{count} tool loaded on demand",
+    ),
+    XrayBuiltinInfo("agent_list", "Agent listing", "shown", "{count} agent descriptions", "{count} agent description"),
+    XrayBuiltinInfo("skill_list", "Skills listing", "shown", "{count} skill descriptions", "{count} skill description"),
     XrayBuiltinInfo("session_context", "Session context", "shown", "Working folder, git state and date"),
 )
 

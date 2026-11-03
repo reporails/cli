@@ -7,7 +7,7 @@ leave of the total is the system prompt and tool definitions.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessKind, TokenUsage, is_note_kind
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary
@@ -226,8 +226,10 @@ def composition_series(
     return XrayComposition(tuple(replies), peak), tuple(carried)
 
 
-def _count_note(template: str | None, count: int | None) -> str | None:
-    """The note `template` gives for an item of `count` entries; None when it needs a count the item lacks."""
+def _count_text(many: str | None, once: str | None, count: int | None) -> str | None:
+    """The wording of a vocabulary entry for `count` entries: `once` for a count of one when the entry has one,
+    else `many`, with `{count}` filled in; None when the wording needs a count that is missing."""
+    template = once if count == 1 and once is not None else many
     if template is None or "{count}" not in template:
         return template
     return None if count is None else template.format(count=count)
@@ -259,7 +261,7 @@ def builtin_items(
             if system is not None:
                 found.append(XrayBuiltin(info.key, info.label, system, info.note, info.visible, True))
         elif item is not None:
-            note = _count_note(info.note, item.count)
+            note = _count_text(info.note, info.note_once, item.count)
             found.append(XrayBuiltin(info.key, info.label, item.tokens_est or 0, note, info.visible, False))
     return tuple(found)
 
@@ -269,11 +271,18 @@ def _row(key: ContextKey, entry: SourceEntry, load: LoadEvent, tokens: int, reas
     return XrayContextRow(key, entry.id, entry.kind, source_label(entry), reason, tokens, load.t, findings)
 
 
+def _dropped_at(own: AgentRecords, reply_t: float) -> float:
+    """The time of the last compaction before `reply_t`, which empties the hook notes; a load stamped with that
+    very instant is what the compaction's aftermath loads, so it is carried."""
+    return max((item.t for item in own.compactions if item.t < reply_t), default=float("-inf"))
+
+
 def _first_loads(
     own: AgentRecords, reply_t: float, carried: dict[str, int], sources: SourceTable
 ) -> list[tuple[LoadEvent, SourceEntry]]:
     """The first load by `reply_t` of each source that was in the agent's context at the reply: a carried source
-    or an MCP server."""
+    or an MCP server. A hook counts from its first firing after the last compaction."""
+    dropped = _dropped_at(own, reply_t)
     seen: set[str] = set()
     found: list[tuple[LoadEvent, SourceEntry]] = []
     for load in sorted(
@@ -282,15 +291,17 @@ def _first_loads(
         entry = sources.get(load.source)
         if entry is None or load.source in seen or not (entry.kind == "mcp" or load.source in carried):
             continue
+        if entry.kind == "hook" and (load.t or 0.0) < dropped:
+            continue
         seen.add(load.source)
         found.append((load, entry))
     return found
 
 
-def _hook_reason(vocabulary: AdapterVocabulary, count: int) -> str:
-    """The reason a hook row gives for `count` firings, in the vocabulary's wording for one firing or several."""
+def _hook_reason(vocabulary: AdapterVocabulary) -> Callable[[int], str]:
+    """The reason a hook row gives for a number of firings, in the vocabulary's wording for one firing or several."""
     text = next(item for item in vocabulary.context.texts if item.key == "hooks")
-    return (text.reason_once if count == 1 and text.reason_once else text.reason).format(count=count)
+    return lambda count: _count_text(text.reason, text.reason_once, count) or text.reason
 
 
 def _source_rows(
@@ -300,10 +311,11 @@ def _source_rows(
     the hooks among them, and the tokens of the MCP servers among the first."""
     vocabulary = world.context.vocabulary
     triggers = {item.key: item.label for item in vocabulary.triggers}
-    dropped = max((item.t for item in own.compactions if item.t < reply_t), default=float("-inf"))
+    dropped = _dropped_at(own, reply_t)
+    reason = _hook_reason(vocabulary)
     fires: dict[str, int] = {}
     for load in own.loads:
-        if load.t is not None and dropped < load.t <= reply_t:
+        if load.t is not None and dropped <= load.t <= reply_t:
             fires[load.source] = fires.get(load.source, 0) + 1
     loaded: list[tuple[LoadEvent, XrayContextRow]] = []
     hooks: list[XrayContextRow] = []
@@ -313,7 +325,7 @@ def _source_rows(
         if entry.kind == "mcp":
             mcp += tokens
         if entry.kind == "hook":
-            hooks.append(_row("hooks", entry, load, tokens, _hook_reason(vocabulary, fires[entry.id])))
+            hooks.append(_row("hooks", entry, load, tokens, reason(fires[entry.id])))
         else:
             loaded.append((load, _row("source", entry, load, tokens, triggers.get(load.trigger, ""))))
     loaded.sort(key=lambda item: (item[0].trigger != "inherited", item[0].t or 0.0))

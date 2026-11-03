@@ -205,7 +205,7 @@ def _tool_result(block: JsonObject) -> ToolUse:
         use_id=use_id,
         chars=sum(len(text) for text in texts),
         error=bool(failed),
-        launch_ack="".join(texts).startswith(LAUNCH_ACK_PREFIX),
+        launch_ack=next((text for text in texts if text), "").startswith(LAUNCH_ACK_PREFIX),
     )
 
 
