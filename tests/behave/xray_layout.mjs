@@ -64,6 +64,7 @@ if (mode === 'agent' && ready) {
   out.row = await openRow('general');
   out.text = out.row ? await peekText() : '';
   out.tools = out.row ? await page.ev(`(document.querySelector('.pk-pre') || {}).textContent || ''`) : '';
+  out.dialog = await page.ev(`(document.querySelector('.pk-dialog') || {}).textContent || ''`);
 }
 
 if (mode === 'compactions' && ready) {

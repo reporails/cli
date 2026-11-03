@@ -194,11 +194,15 @@ def _tool_name(tool: JsonValue, what: str) -> str:
     return name
 
 
-def _register_shape(chain: RequestChain, row: JsonObject) -> None:
-    what = "api-request-shape"
+def _shape_hash(row: JsonObject, what: str) -> str:
     shape_hash = row.get("shapeHash")
     if not isinstance(shape_hash, str):
         raise PayloadRefused(f"{what} shapeHash is not a string")
+    return shape_hash
+
+
+def _shape_parts(row: JsonObject, what: str) -> tuple[list[JsonValue], list[JsonValue]]:
+    """The system blocks and the tool definitions of a shape row, refusing a shape that holds neither as a list."""
     shape = row.get("shape")
     if not isinstance(shape, dict):
         raise PayloadRefused(f"{what} shape is not an object")
@@ -207,7 +211,18 @@ def _register_shape(chain: RequestChain, row: JsonObject) -> None:
         raise PayloadRefused(f"{what} shape.system is not a list")
     if not isinstance(tools, list):
         raise PayloadRefused(f"{what} shape.tools is not a list")
-    system_chars = sum(len(_system_text(block, what)) for block in system)
+    return system, tools
+
+
+def _system_texts(row: JsonObject, what: str) -> list[str]:
+    return [_system_text(block, what) for block in _shape_parts(row, what)[0]]
+
+
+def _register_shape(chain: RequestChain, row: JsonObject) -> None:
+    what = "api-request-shape"
+    shape_hash = _shape_hash(row, what)
+    tools = _shape_parts(row, what)[1]
+    system_chars = sum(len(text) for text in _system_texts(row, what))
     tools_chars = sum(len(compact_json(tool, ensure_ascii=False)) for tool in tools)
     chain.shapes[shape_hash] = (system_chars, tools_chars, len(tools))
     chain.tool_names[shape_hash] = tuple(_tool_name(tool, what) for tool in tools)
@@ -216,12 +231,7 @@ def _register_shape(chain: RequestChain, row: JsonObject) -> None:
 def request_shape_hash(row: JsonObject) -> str | None:
     """The `shapeHash` an `api-request` row names; None for any other row, a refusal for one whose hash is not a
     string."""
-    if row.get("type") != "api-request":
-        return None
-    shape_hash = row.get("shapeHash")
-    if not isinstance(shape_hash, str):
-        raise PayloadRefused("api-request shapeHash is not a string")
-    return shape_hash
+    return _shape_hash(row, "api-request") if row.get("type") == "api-request" else None
 
 
 def shape_system_text(row: JsonObject, shape_hash: str) -> str | None:
@@ -229,21 +239,15 @@ def shape_system_text(row: JsonObject, shape_hash: str) -> str | None:
     for any other row. The text is returned, never stored."""
     if row.get("type") != "api-request-shape" or row.get("shapeHash") != shape_hash:
         return None
-    what = "api-request-shape"
-    shape = row.get("shape")
-    system = shape.get("system") if isinstance(shape, dict) else None
-    if not isinstance(system, list):
-        raise PayloadRefused(f"{what} shape.system is not a list")
-    return BLOCK_SEPARATOR.join(_system_text(block, what) for block in system)
+    return BLOCK_SEPARATOR.join(_system_texts(row, "api-request-shape"))
 
 
 def _request(chain: RequestChain, row: JsonObject) -> RequestSize:
     what = "api-request"
-    request_id, shape_hash = row.get("id"), row.get("shapeHash")
+    request_id = row.get("id")
     if not isinstance(request_id, str):
         raise PayloadRefused(f"{what} id is not a string")
-    if not isinstance(shape_hash, str):
-        raise PayloadRefused(f"{what} shapeHash is not a string")
+    shape_hash = _shape_hash(row, what)
     keep = opt_int(row.get("keep"))
     if keep is None or keep < 0:
         raise PayloadRefused(f"{what} keep is not a non-negative whole number")

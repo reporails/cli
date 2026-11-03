@@ -6,12 +6,14 @@ import json
 import os
 import shutil
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list
+from reporails_cli.core.platform.dto.events import InstructionLoad
 from reporails_cli.core.platform.dto.xray import XrayCheck, XrayView
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally
 from reporails_cli.core.xray.artifacts import PEEK_LIMIT, agent_file_tokens, artifact_files, build_artifacts
@@ -466,3 +468,17 @@ def test_a_peek_refuses_an_unlisted_file_the_session_never_loaded(tmp_path: Path
 def test_a_file_recorded_as_loaded_but_unlisted_is_no_file_to_check_or_fix(tmp_path: Path) -> None:
     session = _excluding_sub(tmp_path)
     assert session.acts_on("sub/CLAUDE.md") is False
+
+
+def test_a_recorded_auto_memory_file_the_listing_leaves_out_is_a_memory_file(tmp_path: Path) -> None:
+    session = _excluding_sub(tmp_path)
+    (session._root / "sub" / "AUTO.md").write_text("note\n")
+    session._transcript.append(
+        replace(
+            session._transcript[0],
+            event="instruction_load",
+            item=InstructionLoad(str(session._root / "sub" / "AUTO.md"), "AutoMem"),
+        )
+    )
+    item = session._recorded("sub/AUTO.md")
+    assert item is not None and item.kind == "memory"

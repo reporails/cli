@@ -32,7 +32,7 @@ def _size(request_id: str = "req", **fields: int) -> RequestSize:
         "tool_results": 3200,
         "unresolved": 0,
     }
-    return RequestSize(request_id, **{**base, **fields})  # type: ignore[arg-type]
+    return RequestSize(request_id, **{**base, **fields}, tool_names=())  # type: ignore[arg-type]
 
 
 def _request(seconds: float, size: RequestSize, sub: str | None = None) -> EventRecord:

@@ -148,6 +148,15 @@ class SourceEntry(SourceFacts):
 
 
 @dataclass(frozen=True)
+class AgentLaunch:
+    """What the first launch of an agent type that recorded a request was sent with: its system prompt size in
+    tokens, and each tool the type's launches were sent with and how many launches had it."""
+
+    system_tokens_est: int
+    tools: tuple[tuple[str, int], ...]
+
+
+@dataclass(frozen=True)
 class XraySource(SourceFacts):
     """One thing that can enter a context: its source facts, whether it loaded, was only listed or sat on disk, the
     nodes whose context it entered, and whether the page may check or fix it."""
@@ -161,8 +170,7 @@ class XraySource(SourceFacts):
     cost_usd_est: float | None
     # The name the page shows the source by.
     label: str
-    # A rule's path patterns (empty for any other kind), an MCP server's tools with their call counts (likewise) and
-    # an agent's tools with their launch counts.
+    # A rule's path patterns (empty for any other kind) and an MCP server's tools with their call counts (likewise).
     scopes: tuple[str, ...] = ()
     tools: tuple[tuple[str, int], ...] = ()
     # The type key of an agent source; `builtin` marks a type the coding agent ships with no definition file.
@@ -170,9 +178,8 @@ class XraySource(SourceFacts):
     builtin: bool = False
     # Whether a memory file is the memory index or an item (None for any other kind).
     memory_role: MemoryRole | None = None
-    # An agent source's system prompt size in tokens, from the first launch that recorded a request (None when no
-    # launch did); its `tools` then hold each tool the launches were sent with and how many launches had it.
-    system_tokens_est: int | None = None
+    # What an agent source's launches were sent with (None when no launch recorded a request).
+    launch: AgentLaunch | None = None
 
     def to_json(self) -> JsonObject:
         """The source as a JSON object."""
@@ -191,10 +198,11 @@ class XraySource(SourceFacts):
             "label": self.label,
             "scopes": list(self.scopes),
             "tools": [[tool, calls] for tool, calls in self.tools],
+            "launch_tools": [[tool, launches] for tool, launches in (self.launch.tools if self.launch else ())],
             "agent_type": self.agent_type,
             "builtin": self.builtin,
             "memory_role": self.memory_role,
-            "system_tokens_est": self.system_tokens_est,
+            "system_tokens_est": self.launch.system_tokens_est if self.launch else None,
         }
 
 

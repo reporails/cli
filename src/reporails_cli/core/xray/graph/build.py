@@ -210,7 +210,6 @@ def _builtin_agents(
 def _builtin_agent(
     agent_type: str, ids: list[str], labels: dict[str, str], first: dict[str, RequestSize]
 ) -> XraySource:
-    system_tokens, tools = launched_with(ids, first)
     return XraySource(
         id=builtin_agent_id(agent_type),
         kind="agent",
@@ -226,8 +225,7 @@ def _builtin_agent(
         label=labels.get(agent_type, agent_type),
         agent_type=agent_type,
         builtin=True,
-        system_tokens_est=system_tokens,
-        tools=tools,
+        launch=launched_with(ids, first),
     )
 
 
@@ -239,7 +237,6 @@ def _sources(
     costs = _source_costs(nodes)
     for entry in sources.entries:
         had_by = _had_by(entry, nodes, had, launched)
-        system_tokens, launch_tools = launched_with(had_by, first) if entry.kind == "agent" else (None, ())
         out.append(
             XraySource(
                 id=entry.id,
@@ -255,10 +252,10 @@ def _sources(
                 cost_usd_est=costs.get(entry.id),
                 label=source_label(entry),
                 scopes=entry.scopes,
-                tools=launch_tools or entry.tools,
+                tools=entry.tools,
                 agent_type=entry.name if entry.kind == "agent" else None,
                 memory_role=memory_role(entry),
-                system_tokens_est=system_tokens,
+                launch=launched_with(had_by, first) if entry.kind == "agent" else None,
             )
         )
     defined = {entry.name for entry in sources.entries if entry.kind == "agent"}

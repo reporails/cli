@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 
 from reporails_cli.core.pipeline.expected_loads import expected_loads
@@ -29,6 +29,9 @@ from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path
 # The most characters of a file the page may ask for.
 PEEK_LIMIT = 200_000
 
+# The memory type an auto-memory file is loaded as.
+AUTO_MEMORY_TYPE = "AutoMem"
+
 # The frontmatter key a rule file lists the path patterns it applies to under.
 RULE_SCOPE_KEY = "paths"
 
@@ -53,12 +56,25 @@ def _loaded_file(item: JsonObject, kind: ArtifactKind) -> ArtifactFile:
     )
 
 
-def recorded_file(path: str, memory_type: str | None) -> ArtifactFile:
-    """The instruction or memory file a transcript recorded as loaded at `path`, listed or not."""
-    return _loaded_file(
-        {"path": path, "precedence": "project", "label": Path(path).name, "memory_type": memory_type},
-        "instructions",
-    )
+def unlisted_loads(records: Sequence[EventRecord], known: Collection[str], root: Path) -> list[ArtifactFile]:
+    """The instruction and memory files the records show loaded that the listing leaves out, first load of each,
+    with the kind the load's memory type gives; `known` holds the real paths of the files already listed."""
+    seen = set(known)
+    found: list[ArtifactFile] = []
+    for record in records:
+        if record.event != "instruction_load" or record.load is None:
+            continue
+        resolved = real_path(record.load.path, root)
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        kind: ArtifactKind = "memory" if record.load.memory_type == AUTO_MEMORY_TYPE else "instructions"
+        found.append(
+            ArtifactFile(
+                record.load.path, kind, "project", None, Path(record.load.path).name, record.load.memory_type, None
+            )
+        )
+    return found
 
 
 def _invocable_file(item: JsonObject) -> ArtifactFile:

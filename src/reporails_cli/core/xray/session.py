@@ -41,15 +41,16 @@ from reporails_cli.core.xray.artifacts import (
     build_artifacts,
     is_actionable,
     peek_text,
-    recorded_file,
     runnable_paths,
+    unlisted_loads,
 )
 from reporails_cli.core.xray.cost import load_price_list
-from reporails_cli.core.xray.derive import epoch, latest_model, replies_of, window_of
+from reporails_cli.core.xray.derive import epoch, latest_model, real_path, replies_of, window_of
 from reporails_cli.core.xray.facts import build_facts
 from reporails_cli.core.xray.funnel import build_funnel
 from reporails_cli.core.xray.graph.agents import main_records
 from reporails_cli.core.xray.graph.build import build_graph
+from reporails_cli.core.xray.graph.shapes import first_launch, first_requests
 from reporails_cli.core.xray.graph.sources import build_sources, ran_sources
 from reporails_cli.core.xray.vocabulary import vocabulary_for
 
@@ -106,12 +107,11 @@ class XraySession:
         return item is not None and is_actionable(item, self._root)
 
     def _recorded(self, path: str) -> ArtifactFile | None:
-        """The instruction or memory file the transcript recorded as loaded and the page shows as `path`."""
-        for record in self._transcript:
-            load = record.load
-            if load is not None and relative_wire_path(load.path, self._root) == path:
-                return recorded_file(load.path, load.memory_type)
-        return None
+        """The instruction or memory file the transcript recorded as loaded, the listing leaves out and the page
+        shows as `path`."""
+        known = {real_path(item.path, self._root) for item in self._listing()}
+        loads = unlisted_loads(self._transcript, known, self._root)
+        return next((item for item in loads if relative_wire_path(item.path, self._root) == path), None)
 
     def peek(self, path: str) -> XrayPeek | None:
         """The text of the file shown as `path`, whether it was cut and its frontmatter split from its body; None
@@ -131,20 +131,13 @@ class XraySession:
         """The system prompt the first launch of an agent type that recorded a request was sent with; None when the
         session launched no such type or none of its launches recorded one. Raises `PayloadRefused` when the
         subagent file does not record it as the adapter is pinned to. The text is not kept."""
-        launched = sorted(
+        launched = {
             record.subagent_id
             for record in self._transcript
             if record.event == "subagent_run" and record.subagent_type == agent_type and record.subagent_id
-        )
-        recorded = {record.subagent_id for record in self._transcript if record.request is not None}
-        return next(
-            (
-                text
-                for subagent_id in launched
-                if subagent_id in recorded and (text := subagent_system(AGENT, self._file, subagent_id)) is not None
-            ),
-            None,
-        )
+        }
+        chosen = first_launch(launched, first_requests(self._transcript))
+        return None if chosen is None else subagent_system(AGENT, self._file, chosen)
 
     def prompt(self, prompt_id: str) -> str | None:
         """The text of a typed prompt the records name; None for any other id. Raises `PayloadRefused` when the

@@ -285,7 +285,7 @@ class RequestSize:
     tool_results: int
     unresolved: int
     # The names of the tools the request was sent with, in the order the shape lists them.
-    tool_names: tuple[str, ...] = ()
+    tool_names: tuple[str, ...]
 
 
 @dataclass

@@ -802,7 +802,7 @@ def test_system_replies_with_the_system_prompt_a_launched_agent_type_was_sent(
     view = client.get("/view", headers={"X-Xray-Token": TOKEN})
     assert "SYSTEM_ONE" not in view.text
     (source,) = [item for item in view.json()["sources"] if item["agent_type"] == "general-purpose"]
-    assert source["tools"] == [["Read", 1]] and source["system_tokens_est"] is not None
+    assert source["launch_tools"] == [["Read", 1]] and source["system_tokens_est"] is not None
     reply = _get(client, "/system", {"type": "general-purpose"})
     assert reply.status_code == 200 and reply.headers["Cache-Control"] == "no-store"
     assert reply.json() == {"id": "general-purpose", "text": "SYSTEM_ONE\n\nSYSTEM_TWO"}

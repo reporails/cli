@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.eventbus.adapters.claude_requests import feed_row, message_hash
+from reporails_cli.core.eventbus.adapters.claude_requests import feed_row, message_hash, shape_system_text
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.eventbus.transcript import read_transcript
 from reporails_cli.core.platform.contract.json_value import JsonObject
@@ -303,3 +303,9 @@ def test_a_tool_with_no_string_name_refuses_its_shape() -> None:
     row = {"type": "api-request-shape", "shapeHash": "s", "shape": {"system": [], "tools": [{"name": 3}]}}
     with pytest.raises(PayloadRefused, match=r"shape\.tools"):
         feed_row(RequestChain(), row)
+
+
+def test_a_shape_that_is_not_an_object_refuses_its_system_text() -> None:
+    row = {"type": "api-request-shape", "shapeHash": "s", "shape": []}
+    with pytest.raises(PayloadRefused, match="shape is not an object"):
+        shape_system_text(row, "s")

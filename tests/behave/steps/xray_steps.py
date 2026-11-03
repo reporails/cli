@@ -376,6 +376,8 @@ def step_agent_shape_on_page(context):
     assert seen["ready"] and seen["row"], seen
     assert seen["text"] == "t" * 500, seen
     assert seen["tools"].splitlines() == [f"Tool{n} · 1 launch" for n in range(6)], seen
+    assert "Comes from the coding agent" not in seen["dialog"], seen
+    assert "launchs" not in seen["dialog"], seen
 
 
 @then("the system prompt route returns that text only for a type the session launched")

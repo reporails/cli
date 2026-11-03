@@ -18,11 +18,8 @@ from reporails_cli.core.platform.dto.xray_sources import (
     SourceEntry,
     XrayArtifact,
 )
-from reporails_cli.core.xray.artifacts import winners
+from reporails_cli.core.xray.artifacts import unlisted_loads, winners
 from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path, tokens_of
-
-# The memory type an auto-memory file is loaded as.
-AUTO_MEMORY_TYPE = "AutoMem"
 
 
 def mcp_id(server: str) -> str:
@@ -68,31 +65,20 @@ def for_path(table: SourceTable, path: str) -> str | None:
 
 def _unlisted_loads(records: Sequence[EventRecord], known: Mapping[str, str], frame: Frame) -> list[SourceEntry]:
     """A source for each loaded instruction file the listing does not hold."""
-    seen = set(known)
-    found: list[SourceEntry] = []
-    for record in records:
-        if record.event != "instruction_load" or record.load is None:
-            continue
-        resolved = real_path(record.load.path, frame.root)
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        wire = relative_wire_path(record.load.path, frame.root)
-        kind: SourceKind = "memory" if record.load.memory_type == AUTO_MEMORY_TYPE else "instructions"
-        found.append(
-            SourceEntry(
-                wire,
-                kind,
-                wire,
-                wire,
-                file_tokens_est(record.load.path),
-                count_for(frame.findings, record.load.path, frame.root),
-                False,
-                None,
-                None,
-            )
+    return [
+        SourceEntry(
+            wire := relative_wire_path(item.path, frame.root),
+            SOURCE_KIND_OF_ARTIFACT[item.kind],
+            wire,
+            wire,
+            file_tokens_est(item.path),
+            count_for(frame.findings, item.path, frame.root),
+            False,
+            None,
+            None,
         )
-    return found
+        for item in unlisted_loads(records, known, frame.root)
+    ]
 
 
 def _harness_sources(records: Sequence[EventRecord]) -> list[SourceEntry]:

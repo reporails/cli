@@ -6,6 +6,7 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 
 from reporails_cli.core.platform.dto.events import EventRecord, RequestSize
+from reporails_cli.core.platform.dto.xray_sources import AgentLaunch
 from reporails_cli.core.xray.derive import tokens_of
 
 
@@ -18,14 +19,20 @@ def first_requests(records: Sequence[EventRecord]) -> dict[str, RequestSize]:
     return first
 
 
-def launched_with(
-    launch_ids: Iterable[str], first: dict[str, RequestSize]
-) -> tuple[int | None, tuple[tuple[str, int], ...]]:
+def first_launch(launch_ids: Iterable[str], first: dict[str, RequestSize]) -> str | None:
+    """The lowest id among `launch_ids` whose file recorded a request; None when none did."""
+    return next((node_id for node_id in sorted(launch_ids) if node_id in first), None)
+
+
+def launched_with(launch_ids: Iterable[str], first: dict[str, RequestSize]) -> AgentLaunch | None:
     """The system prompt size in tokens of the first launch (lowest id) that recorded a request, and each tool the
-    launches were sent with and how many launches had it, most launches first then by name; None and no tools when
-    no launch recorded one."""
-    sizes = [first[node_id] for node_id in sorted(launch_ids) if node_id in first]
-    if not sizes:
-        return None, ()
-    counts = Counter(name for size in sizes for name in set(size.tool_names))
-    return tokens_of(sizes[0].system_chars), tuple(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+    launches were sent with and how many launches had it, most launches first then by name; None when no launch
+    recorded one."""
+    ids = list(launch_ids)
+    chosen = first_launch(ids, first)
+    if chosen is None:
+        return None
+    counts = Counter(name for node_id in ids if node_id in first for name in set(first[node_id].tool_names))
+    return AgentLaunch(
+        tokens_of(first[chosen].system_chars), tuple(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+    )
