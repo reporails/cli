@@ -245,7 +245,7 @@ def _read_file(
     last_id = before.last_message_id
     for row in rows:
         try:
-            resolved = adapter.resolve_row(row, before.subagent_id)
+            resolved = adapter.resolve_row(row, before.subagent_id, before.requests)
         except PayloadRefused as err:
             records.append(_refusal(agent, session_id, err.reason))
             continue
@@ -256,7 +256,11 @@ def _read_file(
                 last_id = record.usage.message_id
             records.append(record)
     return records, FileCursor(
-        before.subagent_id, offset, last_id, before.run_settled or before.subagent_id is None or run is not None
+        before.subagent_id,
+        offset,
+        last_id,
+        before.run_settled or before.subagent_id is None or run is not None,
+        before.requests,
     )
 
 

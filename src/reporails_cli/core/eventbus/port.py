@@ -8,7 +8,7 @@ from typing import Protocol
 
 from reporails_cli.core.eventbus.store import append
 from reporails_cli.core.platform.contract.json_value import JsonObject
-from reporails_cli.core.platform.dto.events import EventRecord
+from reporails_cli.core.platform.dto.events import EventRecord, RequestChain
 
 
 class PayloadRefused(Exception):  # noqa: N818  # named for the decision it carries, not a fault
@@ -35,8 +35,11 @@ class TranscriptAdapter(Protocol):
     # The env var that names the calling session of this agent.
     session_env: str
 
-    def resolve_row(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
-        """The records one row carries (none for a row type it does not read); raises `PayloadRefused`
+    def resolve_row(
+        self, row: JsonObject, subagent_id: str | None, requests: RequestChain | None = None
+    ) -> list[EventRecord]:
+        """The records one row carries (none for a row type it does not read); with `requests`, the row is also fed
+        to that chain and a request row yields its sized request; raises `PayloadRefused`
         on a row of a known type whose fields do not have the shape it is pinned to."""
 
     def resolve_subagent(self, subagent_id: str, meta: JsonObject, first_row: JsonObject) -> EventRecord:

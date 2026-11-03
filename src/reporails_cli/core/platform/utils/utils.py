@@ -361,9 +361,10 @@ def write_json_atomic(path: Path, data: JsonValue, *, mode: int = 0o666) -> None
         tmp.unlink(missing_ok=True)
 
 
-def compact_json(value: JsonValue, *, ensure_ascii: bool = True) -> str:
+def compact_json(value: JsonValue, *, ensure_ascii: bool = True, sort_keys: bool = False) -> str:
     """`value` as JSON text with no whitespace between items.
 
-    Non-ASCII characters are written as `\\uXXXX` escapes unless `ensure_ascii` is False.
+    Non-ASCII characters are written as `\\uXXXX` escapes unless `ensure_ascii` is False; object keys are written
+    in sorted order when `sort_keys` is True.
     """
-    return json.dumps(value, separators=(",", ":"), ensure_ascii=ensure_ascii)
+    return json.dumps(value, separators=(",", ":"), ensure_ascii=ensure_ascii, sort_keys=sort_keys)

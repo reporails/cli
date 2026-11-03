@@ -75,7 +75,10 @@ the adapter refuses any other shape of a row type it reads:
 - a subagent file: its first row's `timestamp`, the `agentType` of `agent-<id>.meta.json` and, when present, the
   meta fields `description`, `parentAgentId`, `toolUseId`, `requestShape` (strings; `background` marks a background
   run), `spawnDepth` (a whole number) and `stoppedByUser` (a boolean).
-- a request blob: `type: "api-request-blob"` repeats request content; not read (tool calls come from `assistant` rows).
+- API request rows, recorded on Claude Code 2.1.309 and later: `api-request-shape`, `api-request-blob` and
+  `api-request`, sized and dropped by `claude_requests` when `resolve_row` is given a request chain, ignored
+  otherwise; their fields are listed there.
+- an assistant row's `requestRef`: a string naming the API request that produced the reply, when present.
 
 Never read, except for the sizes (a reply's text included), the brief and the prompts above: message content,
 tool output, `content`, `displayPath`. Tool input is read only for the path, the MCP server, a hand-back message's
@@ -84,19 +87,20 @@ size and a command's hash, and a command's text on request. The meta `descriptio
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import replace
 
 from reporails_cli.core.eventbus.adapters.claude_calls import (
     blocks_text,
     call_command,
     call_input,
-    command_of,
     content_blocks,
     holds_call,
     holds_result,
     result_text,
+    tool_call,
+    tool_result,
 )
+from reporails_cli.core.eventbus.adapters.claude_requests import feed_row
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
@@ -108,7 +112,6 @@ from reporails_cli.core.platform.contract.json_value import (
     strict_str_list,
 )
 from reporails_cli.core.platform.dto.events import (
-    TARGETS_FILE,
     EventKind,
     EventRecord,
     HarnessAttachment,
@@ -116,11 +119,10 @@ from reporails_cli.core.platform.dto.events import (
     InstructionLoad,
     PromptEntry,
     ReplyText,
+    RequestChain,
     SkillRun,
     SubagentMeta,
     TokenUsage,
-    ToolCategory,
-    ToolUse,
 )
 
 # The `message.model` Claude Code writes on a reply it made itself, for an API error or an interrupt.
@@ -130,83 +132,7 @@ BRIEF_BLOCK_SEPARATOR = "\n\n"
 HOOK_NOTE_ATTACHMENTS = ("hook_additional_context", "hook_success", "hook_blocking_error")
 # The hook events whose plain-text stdout Claude Code adds to the context.
 HOOK_STDOUT_CONTEXT_EVENTS = ("UserPromptSubmit", "UserPromptExpansion", "SessionStart", "PostModelSwitch")
-MCP_PREFIX = "mcp__"
-MCP_SEPARATOR = "__"
-FINGERPRINT_CHARS = 16
 BACKGROUND_SHAPE = "background"
-# How the result of a launched background agent opens: an acknowledgement, not the agent's answer.
-LAUNCH_ACK_PREFIX = "Async agent launched"
-# The tool names of each category the side track and the inspector group by; an MCP tool is told by its prefix.
-TOOL_CATEGORY: dict[str, ToolCategory] = {
-    **dict.fromkeys(("Read", "Grep", "Glob", "LS", "NotebookRead", "WebFetch", "WebSearch"), "read"),
-    **dict.fromkeys(("Edit", "MultiEdit", "Write", "NotebookEdit"), "edit"),
-    **dict.fromkeys(("Bash", "PowerShell"), "run"),
-    **dict.fromkeys(("Agent", "Task"), "agent"),
-    "SubagentHandback": "handback",
-}
-PATH_KEYS = ("file_path", "notebook_path", "path")
-
-
-def mcp_server(name: str) -> str | None:
-    """The server of an `mcp__<server>__<tool>` tool name; None for any other name."""
-    if not name.startswith(MCP_PREFIX):
-        return None
-    server = name.removeprefix(MCP_PREFIX).split(MCP_SEPARATOR, 1)[0]
-    return server or None
-
-
-def tool_category(name: str) -> ToolCategory:
-    """The category a tool name falls in."""
-    if mcp_server(name) is not None:
-        return "mcp"
-    return TOOL_CATEGORY.get(name, "other")
-
-
-def _call_path(tool_input: JsonObject) -> str | None:
-    for key in PATH_KEYS:
-        value = tool_input.get(key)
-        if isinstance(value, str):
-            return value
-    return None
-
-
-def _tool_call(block: JsonObject) -> ToolUse:
-    """The call one `tool_use` block makes; refuses a block without string `id` and `name` or an object `input`."""
-    use_id, name, tool_input = block.get("id"), block.get("name"), block.get("input")
-    if not isinstance(use_id, str) or not isinstance(name, str):
-        raise PayloadRefused("tool_use block has no string id and name")
-    if not isinstance(tool_input, dict):
-        raise PayloadRefused(f"{name} call input is not an object")
-    category = tool_category(name)
-    path = _call_path(tool_input) if TARGETS_FILE[category] else None
-    chars: int | None = None
-    fingerprint: str | None = None
-    if category == "handback":
-        message = tool_input.get("message")
-        if not isinstance(message, str):
-            raise PayloadRefused("SubagentHandback call has no string message")
-        chars = len(message)
-    elif category == "run":
-        fingerprint = hashlib.sha256(command_of(tool_input, name).encode()).hexdigest()[:FINGERPRINT_CHARS]
-    return ToolUse(name, use_id, path, server=mcp_server(name), category=category, chars=chars, fingerprint=fingerprint)
-
-
-def _tool_result(block: JsonObject) -> ToolUse:
-    """The result one `tool_result` block reports: its call id, the size of its content and whether it failed."""
-    use_id, failed = block.get("tool_use_id"), block.get("is_error")
-    if not isinstance(use_id, str):
-        raise PayloadRefused("tool_result block has no string tool_use_id")
-    if failed is not None and not isinstance(failed, bool):
-        raise PayloadRefused("tool_result is_error is not a boolean")
-    texts = blocks_text(block.get("content"), "tool_result")
-    if texts is None:
-        raise PayloadRefused("tool_result content is neither text nor a list of blocks")
-    return ToolUse(
-        use_id=use_id,
-        chars=sum(len(text) for text in texts),
-        error=bool(failed),
-        launch_ack=next((text for text in texts if text), "").startswith(LAUNCH_ACK_PREFIX),
-    )
 
 
 def _meta_field[Field: (str, int, bool)](meta: JsonObject, key: str, kind: type[Field]) -> Field | None:
@@ -295,19 +221,24 @@ class ClaudeTranscriptAdapter:
     agent = "claude"
     session_env = "CLAUDE_CODE_SESSION_ID"  # https://code.claude.com/docs/en/env-vars
 
-    def resolve_row(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
-        """The records one row carries; refuses a known row type whose fields are not the pinned shape."""
+    def resolve_row(
+        self, row: JsonObject, subagent_id: str | None, requests: RequestChain | None = None
+    ) -> list[EventRecord]:
+        """The records one row carries; refuses a known row type whose fields are not the pinned shape. With
+        `requests`, every row is also fed to that chain and an `api-request` row yields its sized request."""
         kind = row.get("type")
+        if requests is not None:
+            size = feed_row(requests, row)
+            if size is not None:
+                return [replace(self._record(row, "api_request", subagent_id), item=size)]
         if kind == "assistant":
             return [
                 self._usage(row, subagent_id),
                 *self._reply_text(row, subagent_id),
                 *self._tool_calls(row, subagent_id),
             ]
-        if kind == "system" and row.get("subtype") == "turn_duration":
-            return [self._record(row, "turn_end", subagent_id)]
-        if kind == "system" and row.get("subtype") == "compact_boundary":
-            return [self._compaction(row, subagent_id)]
+        if kind == "system":
+            return self._system(row, subagent_id)
         if kind == "attachment":
             return self._attachment(row, subagent_id)
         if kind == "user":
@@ -316,6 +247,14 @@ class ClaudeTranscriptAdapter:
                 *self._skill_run(row, subagent_id),
                 *self._tool_results(row, subagent_id),
             ]
+        return []
+
+    def _system(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
+        subtype = row.get("subtype")
+        if subtype == "turn_duration":
+            return [self._record(row, "turn_end", subagent_id)]
+        if subtype == "compact_boundary":
+            return [self._compaction(row, subagent_id)]
         return []
 
     def resolve_call(self, row: JsonObject, use_id: str) -> str:
@@ -376,7 +315,7 @@ class ClaudeTranscriptAdapter:
 
     def _tool_calls(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         return [
-            replace(self._record(row, "tool_call", subagent_id), tool=_tool_call(block))
+            replace(self._record(row, "tool_call", subagent_id), tool=tool_call(block))
             for block in content_blocks(row, "tool_use")
         ]
 
@@ -394,7 +333,7 @@ class ClaudeTranscriptAdapter:
 
     def _tool_results(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         return [
-            replace(self._record(row, "tool_result", subagent_id), tool=_tool_result(block))
+            replace(self._record(row, "tool_result", subagent_id), tool=tool_result(block))
             for block in content_blocks(row, "tool_result")
         ]
 
@@ -460,7 +399,13 @@ class ClaudeTranscriptAdapter:
         if model is not None and not isinstance(model, str):
             raise PayloadRefused("assistant message model is not a string")
         named = None if model == SYNTHETIC_MODEL else model
-        return replace(self._record(row, "assistant_usage", subagent_id), usage=replace(usage, model=named))
+        request_ref = row.get("requestRef")
+        if request_ref is not None and not isinstance(request_ref, str):
+            raise PayloadRefused("assistant row requestRef is not a string")
+        return replace(
+            self._record(row, "assistant_usage", subagent_id),
+            usage=replace(usage, model=named, request_ref=request_ref),
+        )
 
     def _attachment(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         attachment = as_object(row.get("attachment"))

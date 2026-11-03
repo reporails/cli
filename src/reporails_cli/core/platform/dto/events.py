@@ -5,8 +5,8 @@ A record never holds prompt text, tool input text or tool output.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal, TypeGuard, get_args
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Literal, TypeGuard, get_args
 
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
@@ -17,6 +17,9 @@ from reporails_cli.core.platform.contract.json_value import (
     opt_str,
     str_list,
 )
+
+if TYPE_CHECKING:
+    from hashlib import _Hash
 
 EventKind = Literal[
     "session_start",
@@ -38,6 +41,7 @@ EventKind = Literal[
     "tool_call",
     "tool_result",
     "assistant_text",
+    "api_request",
 ]
 
 # What a tool call does, as the side track and the inspector group it; `handback` is a subagent handing its result
@@ -107,6 +111,8 @@ class TokenUsage:
     output_tokens: int | None = None
     cache_write_5m_tokens: int | None = None
     cache_write_1h_tokens: int | None = None
+    # The id of the API request this reply answers; None when the row names none.
+    request_ref: str | None = None
 
     def counts_json(self) -> JsonObject:
         """The counts and the model as a JSON object."""
@@ -118,6 +124,7 @@ class TokenUsage:
             "output_tokens": self.output_tokens,
             "cache_write_5m_tokens": self.cache_write_5m_tokens,
             "cache_write_1h_tokens": self.cache_write_1h_tokens,
+            "request_ref": self.request_ref,
         }
 
     @classmethod
@@ -141,6 +148,7 @@ class TokenUsage:
             output_tokens=optional[0],
             cache_write_5m_tokens=optional[1],
             cache_write_1h_tokens=optional[2],
+            request_ref=opt_str(counts.get("request_ref")),
         )
 
 
@@ -238,6 +246,63 @@ class PromptEntry:
 
 
 @dataclass(frozen=True)
+class MessageSize:
+    """The size in characters of one message of an API request, by part; never its text."""
+
+    user_text: int = 0
+    notes: int = 0
+    assistant_text: int = 0
+    thinking: int = 0
+    tool_calls: int = 0
+    tool_results: int = 0
+
+    def __add__(self, other: MessageSize) -> MessageSize:
+        return MessageSize(
+            self.user_text + other.user_text,
+            self.notes + other.notes,
+            self.assistant_text + other.assistant_text,
+            self.thinking + other.thinking,
+            self.tool_calls + other.tool_calls,
+            self.tool_results + other.tool_results,
+        )
+
+
+@dataclass(frozen=True)
+class RequestSize:
+    """One API request: its id, the characters of its system blocks and its tool definitions, the tool count, the
+    summed parts of its messages, the message count and how many of the tail hashes named no known message."""
+
+    request_id: str
+    system_chars: int
+    tools_chars: int
+    tool_count: int
+    user_text: int
+    notes: int
+    assistant_text: int
+    thinking: int
+    tool_calls: int
+    tool_results: int
+    messages: int
+    unresolved: int
+
+
+@dataclass
+class RequestChain:
+    """What a read of one transcript file knows to size its API requests: each recorded shape as its system
+    characters, tool characters and tool count, each known message's size under its hash, the messages of the
+    previous request and the assistant message being merged from its rows. Sizes only, no message text."""
+
+    shapes: dict[str, tuple[int, int, int]] = field(default_factory=dict)
+    pool: dict[str, MessageSize] = field(default_factory=dict)
+    previous: list[MessageSize] = field(default_factory=list)
+    merge_id: str | None = None
+    merge_with_caller: _Hash | None = None
+    merge_without_caller: _Hash | None = None
+    merge_size: MessageSize = field(default_factory=MessageSize)
+    merge_blocks: int = 0
+
+
+@dataclass(frozen=True)
 class FileCursor:
     """Where a transcript read stopped in one file: the byte offset, the last assistant message id and, for a
     subagent file, whether its run record is settled (emitted, or refused for its meta file)."""
@@ -246,6 +311,7 @@ class FileCursor:
     offset: int = 0
     last_message_id: str | None = None
     run_settled: bool = False
+    requests: RequestChain = field(default_factory=RequestChain, compare=False)
 
 
 @dataclass(frozen=True)
@@ -285,8 +351,9 @@ class EventRecord:
     subagent_type: str | None = None
     # The file of an `instruction_load` record, the piece of the harness's context a `harness` record names, the
     # prompt a transcript's `prompt_submit` record sizes, the skill a `skill_run` record names, or the launch a
-    # `subagent_run` record describes, or the size of the text an `assistant_text` record carries.
-    item: InstructionLoad | HarnessEntry | PromptEntry | SkillRun | SubagentMeta | ReplyText | None = None
+    # `subagent_run` record describes, the size of the text an `assistant_text` record carries, or the sizes of
+    # an `api_request` record's request.
+    item: InstructionLoad | HarnessEntry | PromptEntry | SkillRun | SubagentMeta | ReplyText | RequestSize | None = None
 
     @property
     def load(self) -> InstructionLoad | None:
