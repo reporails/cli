@@ -180,9 +180,12 @@ def _request(chain: RequestChain, row: JsonObject) -> RequestSize:
         raise PayloadRefused(f"{what} shapeHash names no recorded shape")
     unresolved = sum(1 for digest in tail if digest not in chain.pool)
     # An unknown message keeps its place as an empty size, so the next request's `keep` still counts it.
-    messages = chain.previous[:keep] + [chain.pool.get(digest, MessageSize()) for digest in tail]
-    chain.previous = messages
-    total = sum(messages, MessageSize())
+    kept = min(keep, len(chain.prefix) - 1)
+    del chain.prefix[kept + 1 :]
+    total = chain.prefix[kept]
+    for digest in tail:
+        total += chain.pool.get(digest, MessageSize())
+        chain.prefix.append(total)
     return RequestSize(
         request_id,
         *shape,
@@ -192,7 +195,7 @@ def _request(chain: RequestChain, row: JsonObject) -> RequestSize:
         total.thinking,
         total.tool_calls,
         total.tool_results,
-        len(messages),
+        kept + len(tail),
         unresolved,
     )
 

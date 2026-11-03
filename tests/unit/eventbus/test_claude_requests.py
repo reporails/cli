@@ -144,7 +144,9 @@ def test_unknown_shape_is_a_refusal_naming_the_field(tmp_path: Path) -> None:
     path = tmp_path / "s1.jsonl"
     _write(path, [_request("req_1", 0, [], "nope")])
     records, _ = _read(path)
-    assert [r.refusal for r in records if r.event == "refusal"] == ["api-request shapeHash names no recorded shape"]
+    assert [r.refusal for r in records if r.event == "refusal"] == [
+        "s1.jsonl: api-request shapeHash names no recorded shape"
+    ]
     assert not _sizes(records)
 
 

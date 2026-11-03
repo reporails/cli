@@ -290,12 +290,13 @@ class RequestSize:
 @dataclass
 class RequestChain:
     """What a read of one transcript file knows to size its API requests: each recorded shape as its system
-    characters, tool characters and tool count, each known message's size under its hash, the messages of the
-    previous request and the assistant message being merged from its rows. Sizes only, no message text."""
+    characters, tool characters and tool count, each known message's size under its hash, the running sums of the
+    previous request's messages (`prefix[i]` is the size of its first `i` messages) and
+    the assistant message being merged from its rows. Sizes only, no message text."""
 
     shapes: dict[str, tuple[int, int, int]] = field(default_factory=dict)
     pool: dict[str, MessageSize] = field(default_factory=dict)
-    previous: list[MessageSize] = field(default_factory=list)
+    prefix: list[MessageSize] = field(default_factory=lambda: [MessageSize()])
     merge_id: str | None = None
     merge_with_caller: _Hash | None = None
     merge_without_caller: _Hash | None = None

@@ -247,7 +247,7 @@ def _read_file(
         try:
             resolved = adapter.resolve_row(row, before.subagent_id, before.requests)
         except PayloadRefused as err:
-            records.append(_refusal(agent, session_id, err.reason))
+            records.append(_refusal(agent, session_id, f"{path.name}: {err.reason}"))
             continue
         for record in resolved:
             if record.usage is not None:
