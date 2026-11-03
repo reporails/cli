@@ -2458,7 +2458,8 @@
     "a9",
     "a10"
    ],
-   "actionable": true
+   "actionable": true,
+   "label": "CLAUDE.md"
   },
   {
    "id": "~/.claude/CLAUDE.md",
@@ -2483,7 +2484,8 @@
     "a9",
     "a10"
    ],
-   "actionable": false
+   "actionable": false,
+   "label": "~/.claude/CLAUDE.md"
   },
   {
    "id": "packages/cli/CLAUDE.md",
@@ -2501,7 +2503,8 @@
    },
    "availability": "on_disk",
    "had_by": [],
-   "actionable": true
+   "actionable": true,
+   "label": "packages/cli/CLAUDE.md"
   },
   {
    "id": ".claude/rules/rules-engine.md",
@@ -2522,7 +2525,8 @@
     "main",
     "a2"
    ],
-   "actionable": true
+   "actionable": true,
+   "label": ".claude/rules/rules-engine.md"
   },
   {
    "id": ".claude/rules/style.md",
@@ -2540,7 +2544,8 @@
    },
    "availability": "on_disk",
    "had_by": [],
-   "actionable": true
+   "actionable": true,
+   "label": ".claude/rules/style.md"
   },
   {
    "id": ".claude/skills/orient/SKILL.md",
@@ -2553,7 +2558,8 @@
    "had_by": [
     "main"
    ],
-   "actionable": true
+   "actionable": true,
+   "label": "orient"
   },
   {
    "id": ".claude/skills/agents-sdk/SKILL.md",
@@ -2566,7 +2572,8 @@
    "had_by": [
     "main"
    ],
-   "actionable": true
+   "actionable": true,
+   "label": "agents-sdk"
   },
   {
    "id": ".claude/skills/cloudflare/SKILL.md",
@@ -2577,7 +2584,8 @@
    "findings": null,
    "availability": "listed",
    "had_by": [],
-   "actionable": true
+   "actionable": true,
+   "label": "cloudflare"
   },
   {
    "id": "~/.claude/projects/-work-demo/memory/MEMORY.md",
@@ -2597,7 +2605,8 @@
    "had_by": [
     "main"
    ],
-   "actionable": true
+   "actionable": true,
+   "label": "MEMORY.md"
   },
   {
    "id": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
@@ -2608,7 +2617,8 @@
    "findings": null,
    "availability": "on_disk",
    "had_by": [],
-   "actionable": false
+   "actionable": false,
+   "label": "feedback_orphan.md"
   },
   {
    "id": "mcp:docs-server",
@@ -2624,7 +2634,8 @@
     "a2",
     "a5b"
    ],
-   "actionable": false
+   "actionable": false,
+   "label": "docs-server"
   },
   {
    "id": "hook:PreToolUse:Edit",
@@ -2637,7 +2648,8 @@
    "had_by": [
     "main"
    ],
-   "actionable": false
+   "actionable": false,
+   "label": "PreToolUse:Edit"
   }
  ],
  "stations": [

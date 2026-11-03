@@ -46,7 +46,7 @@ if (mode === 'cards' && ready) {
 
 // The boxes of the page's landmarks, so a hover or a focus can be shown to move none of them.
 const BOXES = `(() => {
-  const sels = ['#header', '.hdr *', '#hint', '#sources', '#sources .sr', '#sources .ssec', '.graphcol', '#canvas', '#canvas .cv', '#canvas .legend', '#canvas .fbanner', '.card', '.station', '#inspector', '#rail'];
+  const sels = ['#header', '.hdr *', '#hint', '#sources', '#sources .sr', '#sources .ssec', '.graphcol', '#canvas', '#canvas .cv', '#canvas .fbanner', '.card', '.station', '#inspector', '#rail'];
   return Object.fromEntries(sels.map(s => [s, [...document.querySelectorAll(s)].map(e => { const r = e.getBoundingClientRect(); return [Math.round(r.left * 10) / 10, Math.round(r.top * 10) / 10, Math.round(r.width * 10) / 10, Math.round(r.height * 10) / 10]; })]));
 })()`;
 const moved = (a, b) => Object.keys(a).filter(k => JSON.stringify(a[k]) !== JSON.stringify(b[k]));

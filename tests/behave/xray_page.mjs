@@ -81,7 +81,7 @@ if (mode === 'fxbare' && ready) {
   out.rows = await page.ev(`[...document.querySelectorAll('#sources .sr .sw')].map(e => e.textContent).filter(t => /\\beach\\b/.test(t))`);
   await page.ev(`(() => { const r = [...document.querySelectorAll('#sources .sr')].find(r => /\\beach\\b/.test(r.querySelector('.sw').textContent)); r.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return 0; })()`);
   out.focus = await page.ev(`(document.querySelector('.fbanner') || {}).textContent || ''`);
-  out.titles = await page.ev(`[...document.querySelectorAll('.station')].map(e => e.title).filter(t => /\\d[kM]? loaded/.test(t))`);
+  out.titles = await page.ev(`[...document.querySelectorAll('.snode')].map(e => e.title).filter(t => /\\d[kM]? loaded/.test(t))`);
 }
 
 if (mode === 'fxcost' && ready) {
@@ -163,7 +163,7 @@ if (mode === 'layer' && ready) {
   const count = () => page.ev(`({
     chips: document.querySelectorAll('.card .chip[data-kind="skill"]').length,
     sections: document.querySelectorAll('#sources .ssec[data-kind="skill"]').length,
-    stations: document.querySelectorAll('.station[data-sources*=".claude/skills"]').length,
+    nodes: document.querySelectorAll('.snode[data-source*=".claude/skills"]').length,
     other: document.querySelectorAll('.card .chip[data-kind="rule"]').length,
   })`);
   out.before = await count();
@@ -323,7 +323,7 @@ if (mode === 'groups' && ready) {
   await click('.sh[data-source-group="agent"]');
   out.closedAgain = await snap();
   // focus a source past the first four of a group the user collapsed
-  await page.ev(`document.querySelector('.station[data-source=\".claude/agents/auditor.md\"]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); 0`);
+  await page.ev(`document.querySelector('.snode[data-source=\".claude/agents/auditor.md\"]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); 0`);
   out.focused = await page.until(`!!document.querySelector('#sources .sr[data-source=".claude/agents/auditor.md"]')`) ? await snap() : null;
 }
 

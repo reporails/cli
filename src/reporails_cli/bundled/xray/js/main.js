@@ -6,6 +6,7 @@ import * as header from './components/header.js';
 import * as parentstrip from './components/parentstrip.js';
 import * as sources from './components/sources.js';
 import * as canvas from './components/canvas.js';
+import * as rail from './components/rail.js';
 import * as inspector from './components/inspector.js';
 import * as filepane from './components/filepane.js';
 import * as details from './components/details.js';
@@ -149,6 +150,8 @@ document.addEventListener('click', e => {
     if (state.file != null) location.hash = lastAgentHash;
     return render();
   }
+  const jump = t.closest('[data-jump]');
+  if (jump) return rail.jump(jump.dataset.jump);
   if (t.closest('a[href]')) return;
   if (t.closest('[data-back]')) { location.hash = lastAgentHash; return; }
   const open = t.closest('[data-open]');

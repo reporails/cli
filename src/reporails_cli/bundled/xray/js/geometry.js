@@ -1,6 +1,9 @@
 // Canvas geometry: where times, cards, ticks and breaks sit. Pure functions of the view's numbers.
-export const W = 780, SPX = 466, Y0 = 108, CW = 132, CH = 76, TOP_W = 148, BOT_W = 180, BOT_H = 48;
-export const COLX = { L1: SPX - 26 - CW, L2: SPX - 26 - CW - 8 - CW, R1: SPX + 26, R2: SPX + 26 + CW + 8 };
+export const W = 720, SPX = 410, Y0 = 130, CW = 132, CH = 76, TOP_W = 148, BOT_W = 180, BOT_H = 48;
+// Agent columns sit right of the spine; source nodes (SW x SH) sit left of it.
+export const COLX = { R1: SPX + 26, R2: SPX + 26 + CW + 8 };
+export const SW = 124, SH = 46, SOURCE_GAP = 6;
+export const SCOLX = { L1: SPX - 26 - SW, L2: SPX - 26 - SW - 8 - SW };
 // The top card's y, and the most tiles a group card shows (more members show one fewer and "+N").
 export const TOP_Y = 24, GROUP_TILES = 6;
 export const TRACK_X0 = 52, TRACK_STEP = 15;
@@ -13,7 +16,7 @@ export const lengthFor = isRoot => (isRoot ? BASE_PX_ROOT : BASE_PX_SUB);
 export const STRETCH_MARK = 1.6, TICK_GAP = 18;
 // Space an expanded fan-out group keeps above its first row of members for its header, and around its box.
 export const GROUP_HEAD = 30, GROUP_PAD = 8;
-const CARD_RISE = 18, KNOT_STEP_S = 0.5, ROW_ORDER = ['L1', 'R1', 'L2', 'R2'];
+const CARD_RISE = 18, KNOT_STEP_S = 0.5, ROW_ORDER = ['R1', 'R2'];
 
 // Time to y before any stretching. Idle breaks keep their linear length until the node is longer than the cap, then each
 // shrinks to a fixed gap so the active stretches keep their scale.
@@ -44,11 +47,7 @@ function baseScale(node, breaks, len) {
   return { y: at, marks };
 }
 
-const cardSlot = (col, top) => {
-  const side = col[0] === 'L' ? -1 : 1;
-  const left = COLX[col];
-  return { col, top, left, side, inner: side < 0 ? left + CW : left };
-};
+const cardSlot = (col, top) => ({ col, top, left: COLX[col], side: 1, inner: COLX[col] });
 
 // The one time mapping of a node's canvas, and where its cards sit on it.
 // `units` are the single child cards and the fan-out groups: { key, t, members, expanded } (members is the member count of
@@ -74,10 +73,10 @@ export function layoutTime(node, breaks, len, units) {
   const bottoms = Object.fromEntries(ROW_ORDER.map(c => [c, topSpans(c) ? TOP_Y + CH : -Infinity]));
   const placed = [];
   let lowest = 0;
-  [...units].sort((a, b) => a.t - b.t).forEach((u, idx) => {
+  [...units].sort((a, b) => a.t - b.t).forEach(u => {
     const te = Math.max(u.t, knots[knots.length - 1].t + KNOT_STEP_S);
     let top = y(te) - CARD_RISE;
-    const pref = idx % 2 === 0 ? ['R1', 'L1', 'R2', 'L2'] : ['L1', 'R1', 'L2', 'R2'];
+    const pref = ROW_ORDER;
     let col = null;
     if (u.expanded) {
       top = Math.max(top, Math.max(...Object.values(bottoms)) + LANE_GAP + GROUP_HEAD);
@@ -94,7 +93,7 @@ export function layoutTime(node, breaks, len, units) {
       const rows = Math.ceil(u.members / ROW_ORDER.length);
       unit.slots = Array.from({ length: u.members }, (_, i) => cardSlot(ROW_ORDER[i % ROW_ORDER.length], top + Math.floor(i / ROW_ORDER.length) * (CH + LANE_GAP)));
       const bottom = top + rows * (CH + LANE_GAP) - LANE_GAP + GROUP_PAD;
-      unit.box = { left: COLX.L2 - GROUP_PAD, top: top - GROUP_HEAD, width: COLX.R2 + CW - COLX.L2 + 2 * GROUP_PAD, height: bottom - top + GROUP_HEAD };
+      unit.box = { left: COLX.R1 - GROUP_PAD, top: top - GROUP_HEAD, width: COLX.R2 + CW - COLX.R1 + 2 * GROUP_PAD, height: bottom - top + GROUP_HEAD };
       for (const c of ROW_ORDER) bottoms[c] = bottom;
       lowest = Math.max(lowest, bottom);
     } else {
@@ -113,6 +112,22 @@ export function layoutTime(node, breaks, len, units) {
   }
   const marks = base.marks.map(m => ({ ...m, y0: y(m.start), y1: y(m.end) }));
   return { y, end: y(node.end), marks, stretches, placed, lowest };
+}
+
+// Source nodes (each { key, y }, y the load time's y) stacked in the two left columns: a node is centred on its load and
+// pushed down when no column has room. Returns { key, col, left, top, inner } per node, in load order.
+export function placeSources(items) {
+  const last = { L1: -Infinity, L2: -Infinity };
+  return [...items].sort((a, b) => a.y - b.y).map(it => {
+    let top = it.y - SH / 2;
+    let col = ['L1', 'L2'].find(c => last[c] + SOURCE_GAP <= top);
+    if (!col) {
+      col = last.L1 <= last.L2 ? 'L1' : 'L2';
+      top = last[col] + SOURCE_GAP;
+    }
+    last[col] = top + SH;
+    return { key: it.key, col, left: SCOLX[col], top, inner: SCOLX[col] + SW };
+  });
 }
 
 // Tick times with their y, leaving out any tick closer than TICK_GAP to the one drawn before it.

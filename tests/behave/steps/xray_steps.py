@@ -486,8 +486,7 @@ def step_no_displaced_card(context):
 
 
 @then(
-    "the bursts are collapsed group cards, a click expands one into rows of four members "
-    "and a second click collapses it"
+    "the bursts are collapsed group cards, a click expands one into rows of two members and a second click collapses it"
 )
 def step_group_toggle(context):
     seen = _page(context, "p1groups")
@@ -501,9 +500,9 @@ def step_group_toggle(context):
     members = seen["membersOpen"]
     assert len(members) == 6, seen
     tops = sorted({m["top"] for m in members})
-    assert len(tops) == 2, members
-    assert [sum(1 for m in members if m["top"] == t) for t in tops] == [4, 2], members
-    assert len({m["left"] for m in members if m["top"] == tops[0]}) == 4, members
+    assert len(tops) == 3, members
+    assert [sum(1 for m in members if m["top"] == t) for t in tops] == [2, 2, 2], members
+    assert len({m["left"] for m in members if m["top"] == tops[0]}) == 2, members
     assert "⇉ fan-out · 6 subagents in parallel · " in seen["head"], seen["head"]
     assert seen["box"] is True and seen["groupCardsOpen"] == ["main:c1"], seen
     assert seen["arches"] == 6, seen
@@ -565,13 +564,13 @@ def step_focus_source(context):
     assert seen["neverRow"] is True, seen
 
 
-@then("toggling a layer removes that kind's slot chips, Sources section and stations at once")
+@then("toggling a layer removes that kind's slot chips, Sources section and source nodes at once")
 def step_toggle_layer(context):
     seen = _page(context, "layer")
     if seen is None:
         return
-    assert all(seen["before"][key] > 0 for key in ("chips", "sections", "stations", "other")), seen
-    assert seen["after"]["chips"] == seen["after"]["sections"] == seen["after"]["stations"] == 0, seen
+    assert all(seen["before"][key] > 0 for key in ("chips", "sections", "nodes", "other")), seen
+    assert seen["after"]["chips"] == seen["after"]["sections"] == seen["after"]["nodes"] == 0, seen
     assert seen["after"]["other"] == seen["before"]["other"], seen
     assert seen["again"] == seen["before"], seen
 
@@ -830,13 +829,13 @@ def _points(text: str) -> list[tuple[float, float]]:
 
 @then(
     "the spine is about 18 pixels wide each side at the peak reply, narrower at the first, "
-    "its bands fill it in the adapter's order and the legend says so"
+    "its bands fill it in the adapter's order and no legend is drawn"
 )
 def step_spine_bands(context):
     seen = _page(context, "p4spine")
     if seen is None:
         return
-    assert seen["legend"] == "spine width = context (exact) \u00b7 bands = composition (estimated)", seen["legend"]
+    assert seen["legend"] is None, seen["legend"]
     outline = _points(seen["outline"])
     n = len(outline) // 2
     width = [outline[2 * n - 1 - k][0] - outline[k][0] for k in range(n)]  # the right edge is stored reversed
@@ -856,23 +855,23 @@ def step_spine_bands(context):
     assert {b["opacity"] for b in seen["bands"]} == {"0.5"}, seen["bands"]
 
 
-@then("a hook stretch draws one pill with its count and tokens, and three close loads draw one pill naming all three")
+@then("a hook stretch draws one pill with its count, and three close hook loads draw one pill naming all three")
 def step_hook_and_merge(context):
     seen = _page(context, "p4stations")
     if seen is None:
         return
     hooks = [s for s in seen["stations"] if s["kind"] == "hook"]
     assert len(hooks) == 1, seen["stations"]
-    assert re.fullmatch(r"H\u00d7120 \u00b7 ~58k", hooks[0]["text"]), hooks[0]
-    assert not [s for s in seen["stations"] if s["source"].startswith("hook:") and s["kind"] != "hook"], seen[
-        "stations"
-    ]
+    assert hooks[0]["text"] == "H\u2193\u00d7120", hooks[0]
+    assert not [
+        s for s in seen["stations"] if s["source"].startswith("hook:") and s["kind"] not in ("hook", "merged")
+    ], seen["stations"]
     merged = [s for s in seen["stations"] if s["kind"] == "merged"]
     assert len(merged) == 1 and merged[0]["tag"] == "BUTTON", seen["stations"]
-    assert merged[0]["text"] == "3 loads", merged[0]
+    assert merged[0]["text"] == "3 hook loads", merged[0]
     lines = merged[0]["title"].split("\n")
     assert len(lines) == 3 and all(" \u00b7 ~" in line for line in lines), merged[0]
-    assert merged[0]["label"].startswith("3 loads: "), merged[0]
+    assert merged[0]["label"].startswith("3 hook loads: "), merged[0]
     members = merged[0]["sources"].split()
     assert len(members) == 3 and merged[0]["source"] == members[0], merged[0]
     assert seen["pinned"], seen  # a click focuses the first member: the focus banner names it

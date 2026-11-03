@@ -4818,7 +4818,8 @@
         "main"
       ],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "label": "CLAUDE.md"
     },
     {
       "id": "~/.claude/CLAUDE.md",
@@ -4832,7 +4833,8 @@
         "main"
       ],
       "actionable": false,
-      "launches": null
+      "launches": null,
+      "label": "~/.claude/CLAUDE.md"
     },
     {
       "id": "packages/cli/CLAUDE.md",
@@ -4851,7 +4853,8 @@
       "availability": "on_disk",
       "had_by": [],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "label": "packages/cli/CLAUDE.md"
     },
     {
       "id": ".claude/rules/rules-engine.md",
@@ -4872,7 +4875,8 @@
         "main"
       ],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "label": ".claude/rules/rules-engine.md"
     },
     {
       "id": ".claude/rules/style.md",
@@ -4891,7 +4895,8 @@
       "availability": "on_disk",
       "had_by": [],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "label": ".claude/rules/style.md"
     },
     {
       "id": ".claude/skills/orient/SKILL.md",
@@ -4905,7 +4910,8 @@
         "main"
       ],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "label": "orient"
     },
     {
       "id": ".claude/skills/agents-sdk/SKILL.md",
@@ -4919,7 +4925,8 @@
         "main"
       ],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "label": "agents-sdk"
     },
     {
       "id": ".claude/skills/cloudflare/SKILL.md",
@@ -4931,7 +4938,8 @@
       "availability": "listed",
       "had_by": [],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "label": "cloudflare"
     },
     {
       "id": "~/.claude/projects/-work-demo/memory/MEMORY.md",
@@ -4952,7 +4960,8 @@
         "main"
       ],
       "actionable": true,
-      "launches": null
+      "launches": null,
+      "label": "MEMORY.md"
     },
     {
       "id": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
@@ -4964,7 +4973,8 @@
       "availability": "on_disk",
       "had_by": [],
       "actionable": false,
-      "launches": null
+      "launches": null,
+      "label": "feedback_orphan.md"
     },
     {
       "id": "mcp:docs-server",
@@ -4978,7 +4988,8 @@
         "main"
       ],
       "actionable": false,
-      "launches": null
+      "launches": null,
+      "label": "docs-server"
     },
     {
       "id": "hook:PreToolUse:Edit",
@@ -4992,7 +5003,8 @@
         "main"
       ],
       "actionable": false,
-      "launches": null
+      "launches": null,
+      "label": "PreToolUse:Edit"
     },
     {
       "id": ".claude/agents/test-runner.md",
@@ -5011,7 +5023,8 @@
       "availability": "loaded",
       "had_by": [],
       "actionable": true,
-      "launches": 2
+      "launches": 2,
+      "label": "test-runner"
     },
     {
       "id": ".claude/agents/reviewer.md",
@@ -5030,7 +5043,8 @@
       "availability": "loaded",
       "had_by": [],
       "actionable": true,
-      "launches": 2
+      "launches": 2,
+      "label": "reviewer"
     }
   ],
   "stations": [

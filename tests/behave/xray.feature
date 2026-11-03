@@ -74,9 +74,9 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Then at 1440 and at 925 pixels no card overlaps another and every card sits 18 pixels above its launch on the spine
 
   @page @browser
-  Scenario: A burst of parallel subagents is one group card that expands into rows of four and collapses again
+  Scenario: A burst of parallel subagents is one group card that expands into rows of two and collapses again
     Given the bundled page is served over the "view_p1" fixture view
-    Then the bursts are collapsed group cards, a click expands one into rows of four members and a second click collapses it
+    Then the bursts are collapsed group cards, a click expands one into rows of two members and a second click collapses it
 
   @page @browser
   Scenario: A selected member opens its group, and an explicit choice wins
@@ -101,7 +101,7 @@ Feature: ails xray serves a session's context window on the loopback address thr
   @page @browser
   Scenario: Toggling a layer removes its chips, section and stations together
     Given the bundled page is served over the "view_sample" fixture view
-    Then toggling a layer removes that kind's slot chips, Sources section and stations at once
+    Then toggling a layer removes that kind's slot chips, Sources section and source nodes at once
 
   @page @browser
   Scenario: An adapter that declares fewer source kinds gets no empty slot, toggle or section
@@ -167,12 +167,12 @@ Feature: ails xray serves a session's context window on the loopback address thr
   @page @browser
   Scenario: The spine's width follows the exact context and its bands follow the composition
     Given the bundled page is served over the "view_sample" fixture view
-    Then the spine is about 18 pixels wide each side at the peak reply, narrower at the first, its bands fill it in the adapter's order and the legend says so
+    Then the spine is about 18 pixels wide each side at the peak reply, narrower at the first, its bands fill it in the adapter's order and no legend is drawn
 
   @page @browser
   Scenario: A hook stretch is one pill and stations within 14 pixels merge into one
     Given the bundled page is served over the "view_p4" fixture view
-    Then a hook stretch draws one pill with its count and tokens, and three close loads draw one pill naming all three
+    Then a hook stretch draws one pill with its count, and three close hook loads draw one pill naming all three
 
   @page @browser
   Scenario: Handoff pills show only for the selected agent

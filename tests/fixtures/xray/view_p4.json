@@ -4871,7 +4871,8 @@
    ],
    "actionable": true,
    "launches": null,
-   "cost_usd_est": 0.0123
+   "cost_usd_est": 0.0123,
+   "label": "CLAUDE.md"
   },
   {
    "id": "~/.claude/CLAUDE.md",
@@ -4898,7 +4899,8 @@
    ],
    "actionable": false,
    "launches": null,
-   "cost_usd_est": 0.0123
+   "cost_usd_est": 0.0123,
+   "label": "~/.claude/CLAUDE.md"
   },
   {
    "id": "packages/cli/CLAUDE.md",
@@ -4918,7 +4920,8 @@
    "had_by": [],
    "actionable": true,
    "launches": null,
-   "cost_usd_est": 0.0123
+   "cost_usd_est": 0.0123,
+   "label": "packages/cli/CLAUDE.md"
   },
   {
    "id": ".claude/rules/rules-engine.md",
@@ -4941,7 +4944,8 @@
    ],
    "actionable": true,
    "launches": null,
-   "cost_usd_est": null
+   "cost_usd_est": null,
+   "label": ".claude/rules/rules-engine.md"
   },
   {
    "id": ".claude/rules/style.md",
@@ -4961,7 +4965,8 @@
    "had_by": [],
    "actionable": true,
    "launches": null,
-   "cost_usd_est": null
+   "cost_usd_est": null,
+   "label": ".claude/rules/style.md"
   },
   {
    "id": ".claude/skills/orient/SKILL.md",
@@ -4976,7 +4981,8 @@
    ],
    "actionable": true,
    "launches": null,
-   "cost_usd_est": null
+   "cost_usd_est": null,
+   "label": "orient"
   },
   {
    "id": ".claude/skills/agents-sdk/SKILL.md",
@@ -4991,7 +4997,8 @@
    ],
    "actionable": true,
    "launches": null,
-   "cost_usd_est": null
+   "cost_usd_est": null,
+   "label": "agents-sdk"
   },
   {
    "id": ".claude/skills/cloudflare/SKILL.md",
@@ -5004,7 +5011,8 @@
    "had_by": [],
    "actionable": true,
    "launches": null,
-   "cost_usd_est": null
+   "cost_usd_est": null,
+   "label": "cloudflare"
   },
   {
    "id": "~/.claude/projects/-work-demo/memory/MEMORY.md",
@@ -5026,7 +5034,8 @@
    ],
    "actionable": true,
    "launches": null,
-   "cost_usd_est": null
+   "cost_usd_est": null,
+   "label": "MEMORY.md"
   },
   {
    "id": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
@@ -5039,7 +5048,8 @@
    "had_by": [],
    "actionable": false,
    "launches": null,
-   "cost_usd_est": null
+   "cost_usd_est": null,
+   "label": "feedback_orphan.md"
   },
   {
    "id": "mcp:docs-server",
@@ -5057,7 +5067,8 @@
    ],
    "actionable": false,
    "launches": null,
-   "cost_usd_est": null
+   "cost_usd_est": null,
+   "label": "docs-server"
   },
   {
    "id": "hook:PreToolUse:Edit",
@@ -5072,7 +5083,8 @@
    ],
    "actionable": false,
    "launches": null,
-   "cost_usd_est": null
+   "cost_usd_est": null,
+   "label": "PreToolUse:Edit"
   },
   {
    "id": ".claude/agents/test-runner.md",
@@ -5095,7 +5107,8 @@
    ],
    "actionable": true,
    "launches": 2,
-   "cost_usd_est": null
+   "cost_usd_est": null,
+   "label": "test-runner"
   },
   {
    "id": ".claude/agents/reviewer.md",
@@ -5118,7 +5131,40 @@
    ],
    "actionable": true,
    "launches": 2,
-   "cost_usd_est": null
+   "cost_usd_est": null,
+   "label": "reviewer"
+  },
+  {
+   "id": "hook:PostToolUse:Edit",
+   "kind": "hook",
+   "name": "PostToolUse:Edit",
+   "path": null,
+   "tokens_est": 210,
+   "findings": null,
+   "availability": "loaded",
+   "had_by": [
+    "main"
+   ],
+   "actionable": false,
+   "launches": null,
+   "cost_usd_est": null,
+   "label": "PostToolUse:Edit"
+  },
+  {
+   "id": "hook:Stop",
+   "kind": "hook",
+   "name": "Stop",
+   "path": null,
+   "tokens_est": 210,
+   "findings": null,
+   "availability": "loaded",
+   "had_by": [
+    "main"
+   ],
+   "actionable": false,
+   "launches": null,
+   "cost_usd_est": null,
+   "label": "Stop"
   }
  ],
  "stations": [
@@ -5149,6 +5195,33 @@
      "tokens_est": 700,
      "trigger": "session_start",
      "event": null,
+     "small": false,
+     "on_spine": true
+    },
+    {
+     "source": "hook:PreToolUse:Edit",
+     "t": 5000.0,
+     "tokens_est": 210,
+     "trigger": "hook",
+     "event": "PreToolUse",
+     "small": false,
+     "on_spine": true
+    },
+    {
+     "source": "hook:PostToolUse:Edit",
+     "t": 5004.0,
+     "tokens_est": 210,
+     "trigger": "hook",
+     "event": "PostToolUse",
+     "small": false,
+     "on_spine": true
+    },
+    {
+     "source": "hook:Stop",
+     "t": 5008.0,
+     "tokens_est": 210,
+     "trigger": "hook",
+     "event": "Stop",
      "small": false,
      "on_spine": true
     }

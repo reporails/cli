@@ -2041,7 +2041,8 @@
     "a9",
     "a10"
    ],
-   "actionable": true
+   "actionable": true,
+   "label": "CLAUDE.md"
   },
   {
    "id": "~/.claude/CLAUDE.md",
@@ -2066,7 +2067,8 @@
     "a9",
     "a10"
    ],
-   "actionable": false
+   "actionable": false,
+   "label": "~/.claude/CLAUDE.md"
   },
   {
    "id": "packages/cli/CLAUDE.md",
@@ -2084,7 +2086,8 @@
    },
    "availability": "on_disk",
    "had_by": [],
-   "actionable": true
+   "actionable": true,
+   "label": "packages/cli/CLAUDE.md"
   },
   {
    "id": "~/.claude/projects/-work-demo/memory/MEMORY.md",
@@ -2104,7 +2107,8 @@
    "had_by": [
     "main"
    ],
-   "actionable": true
+   "actionable": true,
+   "label": "MEMORY.md"
   },
   {
    "id": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
@@ -2115,7 +2119,8 @@
    "findings": null,
    "availability": "on_disk",
    "had_by": [],
-   "actionable": false
+   "actionable": false,
+   "label": "feedback_orphan.md"
   }
  ],
  "stations": [
