@@ -16,7 +16,11 @@ const fetched = new Map();
 let redraw = () => {};
 export const onTextArrived = fn => { redraw = fn; };
 const kept = new Set();
-export const forgetTexts = () => { for (const k of [...fetched.keys()]) if (!kept.has(k)) fetched.delete(k); };
+export const forgetTexts = () => {
+  for (const k of [...fetched.keys()]) if (!kept.has(k)) fetched.delete(k);
+  // A call whose result had not landed, or whose request failed, is asked again on the next view version.
+  for (const [k, e] of [...callDetails.entries()]) if (e.error || (e.data && e.data.result == null)) callDetails.delete(k);
+};
 
 // The text behind a key (`keep`: fetched once per page life, e.g. a recorded call that never changes): {loading}, {error} or {text, truncated, frontmatter, body}; the page draws again when it arrives.
 export function text(key, url, keep = false) {
@@ -43,19 +47,18 @@ export function sessionUrl(route, params = {}) {
 
 export const viewUrl = () => sessionUrl('view');
 export const callUrl = id => sessionUrl('call', { id });
-// A call's full reply ({loading}, {error} or {data: {tool, text, input, result, truncated}}): fetched once; the page draws again when it arrives.
+// A call's full reply ({loading}, {error} or {data: {tool, text, input, result, truncated}, text}): fetched once per view version; the page draws again when it arrives.
 const callDetails = new Map();
 export function callDetail(id) {
   if (callDetails.has(id)) return callDetails.get(id);
   const e = { loading: true };
   callDetails.set(id, e);
   xrayFetch(callUrl(id)).then(res => {
-    if (res && res.ok && res.j) callDetails.set(id, { data: res.j });
+    if (res && res.ok && res.j) callDetails.set(id, { data: res.j, text: typeof res.j.text === 'string' ? res.j.text : null });
     else callDetails.set(id, { error: (res && res.j && res.j.error) || (res ? `request refused (${res.status})` : 'The x-ray server did not answer.') });
   }).then(redraw);
   return e;
 }
-export const callText = id => text('call:' + id, callUrl(id), true);
 export const briefUrl = id => sessionUrl('brief', { subagent: id });
 export const promptUrl = id => sessionUrl('prompt', { id });
 export const peekUrl = path => sessionUrl('peek', { path });

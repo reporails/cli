@@ -11,8 +11,6 @@ const ROW_H = 34;
 const LIMIT = 150;
 const STRIP_W = 1000;
 const STRIP_H = 30;
-// Source kinds whose files count as "instructions in context" for a call.
-const INSTRUCTION_KINDS = new Set(['instructions', 'rule']);
 
 // The agent the scope filters speak of: the selected one, else the one the page is looking at.
 const subjectOf = env => env.ix.nodes.get(env.state.sel) || env.ix.nodes.get(env.state.path[env.state.path.length - 1]) || env.ix.view.nodes[0];
@@ -32,8 +30,9 @@ function filteredCalls(env) {
 
 const took = s => (s == null ? '–' : s < 1 ? `${Math.round(s * 1000)}ms` : `${s.toFixed(1)}s`);
 
-function seg(attr, value, label, on, colour) {
+function seg(attr, value, label, on, colour, title) {
   const b = el('button', 'seg');
+  if (title) b.title = title;
   b.type = 'button';
   b.dataset[attr] = value;
   b.setAttribute('aria-pressed', String(on));
@@ -42,7 +41,7 @@ function seg(attr, value, label, on, colour) {
     d.style.background = colour;
     b.append(d);
   }
-  b.append(label);
+  b.append(...[].concat(label));
   return b;
 }
 
@@ -52,8 +51,12 @@ function filterButtons(env, subject) {
   const scopes = el('div', 'seggrp');
   scopes.setAttribute('role', 'group');
   scopes.setAttribute('aria-label', 'Agents');
-  scopes.append(seg('callsScope', 'all', 'All agents', scope === 'all'), seg('callsScope', 'one', `${subject.name} only`, scope === 'one'));
-  if (subject.children.length) scopes.append(seg('callsScope', 'sub', '+ its subagents', scope === 'sub'));
+  // With one agent there is nothing to scope.
+  if (ix.view.nodes.length > 1) {
+    const only = el('span', 'segname', subject.name);
+    scopes.append(seg('callsScope', 'all', 'All agents', scope === 'all'), seg('callsScope', 'one', [only, ' only'], scope === 'one', null, `${subject.name} only`));
+    if (subject.children.length) scopes.append(seg('callsScope', 'sub', '+ its subagents', scope === 'sub'));
+  }
   const tools = el('div', 'seggrp');
   tools.setAttribute('role', 'group');
   tools.setAttribute('aria-label', 'Tools');
@@ -139,7 +142,7 @@ function skeleton(box) {
   const ticks = el('div', 'tb-ticks');
   strip.append(canvas, ticks);
   const head = el('div', 'tb-head tb-calls');
-  for (const h of ['Time', 'Agent', 'Tool', 'Call', 'Result', 'Took', 'Status']) head.append(el('span', h === 'Result' || h === 'Took' ? 'tb-r' : '', h));
+  for (const h of ['Time', 'Agent', 'Tool', 'Call', 'Result', 'Result after', 'Status']) head.append(el('span', h === 'Result' || h === 'Result after' ? 'tb-r' : '', h));
   const list = vlist(ROW_H, 'Tool calls');
   const empty = nk('No call matches these filters.');
   empty.hidden = true;
@@ -195,12 +198,12 @@ function inContext(env, r) {
   const seen = new Set(), out = [];
   for (const l of st ? st.loads : []) {
     const s = ix.sources.get(l.source);
-    if (!s || l.t > r.call.t || !INSTRUCTION_KINDS.has(s.kind) || seen.has(s.id)) continue;
+    if (!s || l.t > r.call.t || !(ix.kinds.get(s.kind) || {}).instructions || seen.has(s.id)) continue;
     seen.add(s.id);
     const b = el('button', 'tb-src');
     b.type = 'button';
     b.dataset.source = s.id;
-    b.append(el('span', 'tb-trunc', s.label || s.name), el('span', 'tb-find', s.findings ? `${s.findings} findings` : ''));
+    b.append(el('span', 'tb-trunc', s.label || s.name), el('span', 'tb-find', s.findings && s.findings.count ? `${s.findings.count} findings` : ''));
     out.push(b);
   }
   return out;
@@ -220,7 +223,7 @@ registerPeek('call', (env, id) => {
   const { call, node } = r, ty = typeOf(env.ix, node);
   const kv = el('div', 'tb-kv');
   const then = contextThen(r);
-  for (const [k, v] of [['Agent', `${node.name} · ${ty.label}`], ['At', clock(call.t)], ['Took', took(call.duration_s)], ['Context then', then == null ? '–' : `${k1(then)} · exact total that turn`]]) kv.append(el('span', 'tb-lb', k), el('span', 'tb-v', v));
+  for (const [k, v] of [['Agent', `${node.name} · ${ty.label}`], ['At', clock(call.t)], ['Result after', took(call.duration_s)], ['Context then', then == null ? '–' : `${k1(then)} · exact total that turn`]]) kv.append(el('span', 'tb-lb', k), el('span', 'tb-v', v));
   const d = callDetail(id);
   const main = [kv];
   if (d.loading) main.push(nk('Loading the call…'));

@@ -317,6 +317,8 @@ class _FixtureHandler(BaseHTTPRequestHandler):
     requests: ClassVar[list[str]] = []
     views_served = 0
     overrides: ClassVar[dict] = {}
+    swaps = 0
+    call_result = True
 
     def log_message(self, *_args) -> None:  # silence the per-request log
         return
@@ -339,9 +341,26 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             if "session" in query:
                 shown["session"] = query["session"][0]
             body = json.dumps(shown)
+        if self.swaps:  # a test changed the session: it is a new version of it
+            body = json.dumps({**json.loads(body), "version": 5000 + self.swaps})
         if self.bump_version:  # a session that keeps growing: every poll carries a new version
             body = json.dumps({**json.loads(body), "version": 1000 + self.views_served})
         self._send(200, body.encode(), "application/json")
+
+    def _test_route(self, path: str, query: dict[str, list[str]]) -> None:
+        """The test-only routes: the stub node renderer, and the session moving on (another view, a landed result)."""
+        if path == "/test/stub_node.js":
+            return self._send(200, STUB_NODE.read_bytes(), "text/javascript")
+        cls = type(self)
+        if "view" in query:
+            cls.view_text = (FIXTURES / f"{query['view'][0]}.json").read_text(encoding="utf-8")
+        if "result" in query:
+            cls.call_result = query["result"][0] == "1"
+        cls.swaps += 1
+        self._json(200, {"swaps": cls.swaps})
+
+    def _call_result(self, key: str) -> str | None:
+        return f"result of {key}" if self.call_result else None
 
     def do_GET(self) -> None:  # http.server's name
         url = urlparse(self.path)
@@ -355,8 +374,8 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             if not target.is_file() or root.resolve() not in target.parents:
                 return self._json(404, {"error": "no such file"})
             return self._send(200, target.read_bytes(), TYPES.get(target.suffix, "application/octet-stream"))
-        if url.path == "/test/stub_node.js":
-            return self._send(200, STUB_NODE.read_bytes(), "text/javascript")
+        if url.path in ("/test/swap", "/test/stub_node.js"):
+            return self._test_route(url.path, query)
         if self.headers.get("X-Xray-Token") != TOKEN:
             return self._json(403, {"error": "token"})
         if url.path == "/test/requests":
@@ -386,7 +405,7 @@ class _FixtureHandler(BaseHTTPRequestHandler):
                     "tool": "Bash",
                     "text": texts[url.path],
                     "input": f'{{"command": "{texts[url.path]}"}}',
-                    "result": f"result of {key}",
+                    "result": self._call_result(key),
                     "truncated": False,
                 },
             )
@@ -429,6 +448,7 @@ def step_serve_fixture(context, name):
             "requests": [],
             "bump_version": getattr(context, "bump_version", False),
             "overrides": getattr(context, "view_overrides", {}),
+            "call_result": getattr(context, "call_result", True),
         },
     )
     context.handler = handler
@@ -700,7 +720,7 @@ def step_inspector_panes(context):
     comp = nodes["main"]["detail"]["composition"]
     reply = comp["replies"][comp["peak"]]
     total = reply[1]
-    assert [t["label"] for t in seen["mainTiles"]] == ["Peak context", "Est. cost"], seen["mainTiles"]
+    assert [t["label"] for t in seen["mainTiles"]] == ["Peak context", "Est. cost \u00b7 this agent"], seen["mainTiles"]
     peak_tile = seen["mainTiles"][0]
     assert peak_tile["value"] == _k1(total) and peak_tile["peek"] == "peak:main", peak_tile
     assert seen["mainTiles"][1]["peek"] == "cost:main", seen["mainTiles"]

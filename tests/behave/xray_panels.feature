@@ -19,3 +19,24 @@ Feature: The x-ray Sources panel and right column list everything and describe o
   Scenario: A source and the peak context open their details
     Given the bundled page is served over the "view_panels" fixture view
     Then a source opens its text from the file route and the peak legend adds up to the whole
+
+  @page @browser
+  Scenario: The main agent's cost shows the whole session
+    Given the bundled page is served over the "view_sample" fixture view
+    Then the main agent's cost tile and details list the session total, the subagents' share and the costliest subagents
+
+  @page @browser
+  Scenario: Details word their numbers as they are measured
+    Given the bundled page is served over the "view_sample" fixture view changed so the first subagent loaded CLAUDE.md late
+    Then the details word the cache figures, the work size, the load time and the exact total as the numbers mean
+
+  @page @browser
+  Scenario: Estimates that overshoot the exact total say so
+    Given the bundled page is served over the "view_sample" fixture view changed so the main agent's estimates overshoot
+    Then the peak details say the estimates overshoot and no percentage passes 100
+
+  @page @browser
+  Scenario: Memory the transcript did not record is not called never loaded
+    Given the bundled page is served over the "view_sample" fixture view changed so its memory was not recorded
+    Then the Sources table says the memory files were not recorded in this session, not that they were never loaded
+    And the subagent's Output line says its hand-back size is not known and shows no ratio

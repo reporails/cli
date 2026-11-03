@@ -25,7 +25,9 @@
         "note": null,
         "definitions": false,
         "verb": "loaded",
-        "graph_label": "instruction files"
+        "graph_label": "instruction files",
+        "instructions": true,
+        "spine": false
       },
       {
         "key": "rule",
@@ -35,7 +37,9 @@
         "note": null,
         "definitions": false,
         "verb": "loaded",
-        "graph_label": "rules"
+        "graph_label": "rules",
+        "instructions": true,
+        "spine": false
       },
       {
         "key": "skill",
@@ -45,7 +49,9 @@
         "note": null,
         "definitions": false,
         "verb": "loaded",
-        "graph_label": "skills"
+        "graph_label": "skills",
+        "instructions": false,
+        "spine": false
       },
       {
         "key": "agent",
@@ -55,7 +61,9 @@
         "note": "Built-in agent types are not listed.",
         "definitions": true,
         "verb": "launched",
-        "graph_label": "subagents"
+        "graph_label": "subagents",
+        "instructions": false,
+        "spine": false
       },
       {
         "key": "memory",
@@ -65,7 +73,9 @@
         "note": null,
         "definitions": false,
         "verb": "read",
-        "graph_label": "memory"
+        "graph_label": "memory",
+        "instructions": false,
+        "spine": false
       },
       {
         "key": "mcp",
@@ -75,7 +85,9 @@
         "note": null,
         "definitions": false,
         "verb": "connected",
-        "graph_label": "MCP servers"
+        "graph_label": "MCP servers",
+        "instructions": false,
+        "spine": false
       },
       {
         "key": "hook",
@@ -85,7 +97,9 @@
         "note": null,
         "definitions": false,
         "verb": "fired",
-        "graph_label": "hooks"
+        "graph_label": "hooks",
+        "instructions": false,
+        "spine": true
       }
     ],
     "agent_types": [
@@ -820,7 +834,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -1166,7 +1180,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -1520,7 +1534,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -1874,7 +1888,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -2236,7 +2250,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -2577,7 +2591,7 @@
       ],
       "withheld": {
         "sources": [],
-        "context_tokens": 30000
+        "conversation_tokens": 30000
       },
       "detail": {
         "kind": "agent",
@@ -2908,7 +2922,7 @@
             "tokens_est": 473
           }
         ],
-        "context_tokens": 30000
+        "conversation_tokens": 30000
       },
       "detail": {
         "kind": "agent",
@@ -3262,7 +3276,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -3616,7 +3630,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -3964,7 +3978,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -4318,7 +4332,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -4672,7 +4686,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -5307,7 +5321,7 @@
       "tools": [],
       "agent_type": null,
       "builtin": false,
-      "memory_role": "item"
+      "memory_role": "index"
     },
     {
       "id": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
@@ -5468,8 +5482,7 @@
           "tokens_est": 2500,
           "trigger": "session_start",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5477,8 +5490,7 @@
           "tokens_est": 1640,
           "trigger": "session_start",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/projects/-work-demo/memory/MEMORY.md",
@@ -5486,8 +5498,7 @@
           "tokens_est": 3100,
           "trigger": "session_start",
           "event": null,
-          "small": false,
-          "on_spine": true
+          "small": false
         },
         {
           "source": "mcp:docs-server",
@@ -5495,8 +5506,7 @@
           "tokens_est": 473,
           "trigger": "session_start",
           "event": null,
-          "small": true,
-          "on_spine": true
+          "small": true
         },
         {
           "source": "hook:PreToolUse:Edit",
@@ -5504,8 +5514,7 @@
           "tokens_est": 210,
           "trigger": "hook",
           "event": "PreToolUse",
-          "small": true,
-          "on_spine": true
+          "small": true
         },
         {
           "source": ".claude/rules/rules-engine.md",
@@ -5513,8 +5522,7 @@
           "tokens_est": 1200,
           "trigger": "path_match",
           "event": null,
-          "small": false,
-          "on_spine": true
+          "small": false
         },
         {
           "source": ".claude/skills/orient/SKILL.md",
@@ -5522,8 +5530,7 @@
           "tokens_est": 2700,
           "trigger": "agent",
           "event": null,
-          "small": false,
-          "on_spine": true
+          "small": false
         },
         {
           "source": ".claude/skills/agents-sdk/SKILL.md",
@@ -5531,8 +5538,7 @@
           "tokens_est": null,
           "trigger": "agent",
           "event": null,
-          "small": false,
-          "on_spine": true
+          "small": false
         }
       ],
       "mcp": [
@@ -5578,8 +5584,7 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5587,8 +5592,7 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "mcp:docs-server",
@@ -5596,8 +5600,7 @@
           "tokens_est": 473,
           "trigger": "inherited",
           "event": null,
-          "small": true,
-          "on_spine": true
+          "small": true
         }
       ],
       "mcp": [
@@ -5621,8 +5624,7 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5630,8 +5632,7 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "mcp:docs-server",
@@ -5639,8 +5640,7 @@
           "tokens_est": 473,
           "trigger": "inherited",
           "event": null,
-          "small": true,
-          "on_spine": true
+          "small": true
         },
         {
           "source": ".claude/rules/rules-engine.md",
@@ -5648,8 +5648,7 @@
           "tokens_est": 1200,
           "trigger": "path_match",
           "event": null,
-          "small": false,
-          "on_spine": true
+          "small": false
         }
       ],
       "mcp": [
@@ -5673,8 +5672,7 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5682,8 +5680,7 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         }
       ],
       "mcp": [],
@@ -5699,8 +5696,7 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5708,8 +5704,7 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         }
       ],
       "mcp": [],
@@ -5725,8 +5720,7 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5734,8 +5728,7 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         }
       ],
       "mcp": [],
@@ -5751,8 +5744,7 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5760,8 +5752,7 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "mcp:docs-server",
@@ -5769,8 +5760,7 @@
           "tokens_est": 473,
           "trigger": "inherited",
           "event": null,
-          "small": true,
-          "on_spine": true
+          "small": true
         }
       ],
       "mcp": [],
@@ -5786,8 +5776,7 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5795,8 +5784,7 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         }
       ],
       "mcp": [],
@@ -5812,8 +5800,7 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5821,8 +5808,7 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         }
       ],
       "mcp": [],
@@ -5838,8 +5824,7 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5847,8 +5832,7 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         }
       ],
       "mcp": [],
@@ -5864,8 +5848,7 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5873,8 +5856,7 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         }
       ],
       "mcp": [],
@@ -5890,8 +5872,7 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5899,8 +5880,7 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         }
       ],
       "mcp": [],
@@ -5916,8 +5896,7 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5925,8 +5904,7 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         }
       ],
       "mcp": [],
@@ -9835,5 +9813,63 @@
       "visible": "shown",
       "remainder": false
     }
-  ]
+  ],
+  "session_cost": {
+    "total_usd": 9.52,
+    "unpriced": 0,
+    "by_agent": [
+      [
+        "main",
+        1.69
+      ],
+      [
+        "a5",
+        0.83
+      ],
+      [
+        "a6",
+        0.79
+      ],
+      [
+        "a2",
+        0.69
+      ],
+      [
+        "a4",
+        0.66
+      ],
+      [
+        "a1",
+        0.65
+      ],
+      [
+        "a7",
+        0.64
+      ],
+      [
+        "a5b",
+        0.62
+      ],
+      [
+        "a9",
+        0.62
+      ],
+      [
+        "a3",
+        0.59
+      ],
+      [
+        "a10",
+        0.59
+      ],
+      [
+        "a5c",
+        0.58
+      ],
+      [
+        "a8",
+        0.57
+      ]
+    ]
+  }
 }

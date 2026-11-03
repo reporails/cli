@@ -22,7 +22,9 @@
         "letter": "I",
         "small": false,
         "note": null,
-        "definitions": false
+        "definitions": false,
+        "instructions": true,
+        "spine": false
       },
       {
         "key": "rule",
@@ -30,7 +32,9 @@
         "letter": "R",
         "small": false,
         "note": null,
-        "definitions": false
+        "definitions": false,
+        "instructions": true,
+        "spine": false
       },
       {
         "key": "skill",
@@ -38,7 +42,9 @@
         "letter": "S",
         "small": false,
         "note": null,
-        "definitions": false
+        "definitions": false,
+        "instructions": false,
+        "spine": false
       },
       {
         "key": "agent",
@@ -46,7 +52,9 @@
         "letter": "A",
         "small": true,
         "note": "Built-in agent types are not listed.",
-        "definitions": true
+        "definitions": true,
+        "instructions": false,
+        "spine": false
       },
       {
         "key": "memory",
@@ -54,7 +62,9 @@
         "letter": "M",
         "small": false,
         "note": null,
-        "definitions": false
+        "definitions": false,
+        "instructions": false,
+        "spine": false
       },
       {
         "key": "mcp",
@@ -62,7 +72,9 @@
         "letter": "C",
         "small": false,
         "note": null,
-        "definitions": false
+        "definitions": false,
+        "instructions": false,
+        "spine": false
       },
       {
         "key": "hook",
@@ -70,7 +82,9 @@
         "letter": "H",
         "small": false,
         "note": null,
-        "definitions": false
+        "definitions": false,
+        "instructions": false,
+        "spine": true
       }
     ],
     "agent_types": [
@@ -763,7 +777,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -1096,7 +1110,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -1429,7 +1443,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -1762,7 +1776,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -2095,7 +2109,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -2428,7 +2442,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -2761,7 +2775,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -3094,7 +3108,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -3427,7 +3441,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -3760,7 +3774,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -4093,7 +4107,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -4426,7 +4440,7 @@
             "tokens_est": 210
           }
         ],
-        "context_tokens": 51200
+        "conversation_tokens": 51200
       },
       "detail": {
         "kind": "agent",
@@ -4961,7 +4975,8 @@
       ],
       "actionable": true,
       "launches": null,
-      "label": "MEMORY.md"
+      "label": "MEMORY.md",
+      "memory_role": "index"
     },
     {
       "id": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
@@ -5057,8 +5072,7 @@
           "tokens_est": 2500,
           "trigger": "session_start",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5066,8 +5080,7 @@
           "tokens_est": 1640,
           "trigger": "session_start",
           "event": null,
-          "small": false,
-          "on_spine": false
+          "small": false
         },
         {
           "source": "~/.claude/projects/-work-demo/memory/MEMORY.md",
@@ -5075,8 +5088,7 @@
           "tokens_est": 3100,
           "trigger": "session_start",
           "event": null,
-          "small": false,
-          "on_spine": true
+          "small": false
         },
         {
           "source": "mcp:docs-server",
@@ -5084,8 +5096,7 @@
           "tokens_est": 473,
           "trigger": "session_start",
           "event": null,
-          "small": true,
-          "on_spine": true
+          "small": true
         },
         {
           "source": "hook:PreToolUse:Edit",
@@ -5093,8 +5104,7 @@
           "tokens_est": 210,
           "trigger": "hook",
           "event": "PreToolUse",
-          "small": true,
-          "on_spine": true
+          "small": true
         },
         {
           "source": ".claude/rules/rules-engine.md",
@@ -5102,8 +5112,7 @@
           "tokens_est": 1200,
           "trigger": "path_match",
           "event": null,
-          "small": false,
-          "on_spine": true
+          "small": false
         },
         {
           "source": ".claude/skills/orient/SKILL.md",
@@ -5111,8 +5120,7 @@
           "tokens_est": 2700,
           "trigger": "agent",
           "event": null,
-          "small": false,
-          "on_spine": true
+          "small": false
         },
         {
           "source": ".claude/skills/agents-sdk/SKILL.md",
@@ -5120,8 +5128,7 @@
           "tokens_est": null,
           "trigger": "agent",
           "event": null,
-          "small": false,
-          "on_spine": true
+          "small": false
         }
       ],
       "mcp": [
@@ -5686,5 +5693,63 @@
     "as_of": "2026-11-02",
     "source": "https://platform.claude.com/docs/en/about-claude/pricing",
     "unit": "usd_per_mtok"
+  },
+  "session_cost": {
+    "total_usd": 9.49,
+    "unpriced": 0,
+    "by_agent": [
+      [
+        "main",
+        1.69
+      ],
+      [
+        "b1",
+        0.65
+      ],
+      [
+        "b2",
+        0.65
+      ],
+      [
+        "b3",
+        0.65
+      ],
+      [
+        "b4",
+        0.65
+      ],
+      [
+        "b5",
+        0.65
+      ],
+      [
+        "b6",
+        0.65
+      ],
+      [
+        "d1",
+        0.65
+      ],
+      [
+        "d2",
+        0.65
+      ],
+      [
+        "d3",
+        0.65
+      ],
+      [
+        "c1",
+        0.65
+      ],
+      [
+        "c2",
+        0.65
+      ],
+      [
+        "c3",
+        0.65
+      ]
+    ]
   }
 }

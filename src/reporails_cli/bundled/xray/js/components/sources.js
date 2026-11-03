@@ -11,9 +11,10 @@ const EYE = 'M2 12s4-7 10-7s10 7 10 7s-4 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6a3
 function counts(ix, key, list) {
   const row = (ix.view.funnel || []).find(f => f.kind === key);
   if (!row) return { used: list.filter(s => s.availability === 'loaded').length, total: list.length };
-  return { used: row.loaded ?? 0, total: row.on_disk };
+  return { used: row.loaded ?? null, total: row.on_disk };
 }
 
+const UNRECORDED = 'not recorded in this session';
 const findingsText = n => `${n} finding${n === 1 ? '' : 's'}`;
 const findingsOf = s => (s.findings && s.findings.count) || 0;
 
@@ -22,7 +23,8 @@ function facts(s, kind) {
   if (s.builtin) return [`built in · launched as ${plural(s.launches || 0, 'subagent')}`];
   const bits = [];
   const finds = findingsOf(s);
-  if (s.availability !== 'loaded') bits.push(kind.definitions ? 'never launched' : 'not loaded');
+  if (s.availability === 'unrecorded') bits.push(UNRECORDED);
+  else if (s.availability !== 'loaded') bits.push(kind.definitions ? 'never launched' : 'not loaded');
   else {
     if (s.tokens_est != null) bits.push(`${tk(s.tokens_est, true)} tok`);
     const c = costEst(s.cost_usd_est);
@@ -51,7 +53,7 @@ function row(env, s) {
   r.setAttribute('role', 'button');
   const label = s.label || s.name;
   const finds = findingsOf(s);
-  r.setAttribute('aria-label', `${label}${never ? ', not loaded' : ''}${finds ? `, ${findingsText(finds)}` : ''}. Open details.`);
+  r.setAttribute('aria-label', `${label}${never ? `, ${s.availability === 'unrecorded' ? UNRECORDED : 'not loaded'}` : ''}${finds ? `, ${findingsText(finds)}` : ''}. Open details.`);
   r.append(dot(ix, s));
   const text = el('span', 'stx');
   const top = el('span', 'sline');
@@ -72,9 +74,23 @@ function builtinRow(item) {
   const text = el('span', 'stx');
   const top = el('span', 'sline');
   top.append(el('b', 'sn', item.label));
-  text.append(top, el('span', 'sw', [`${tk(item.tokens_est, true)} tok`, item.visible === 'hidden' ? 'not in transcript' : null].filter(Boolean).join(' · ')));
+  text.append(top, el('span', 'sw', [`${tk(item.tokens_est, true)} tok`, item.remainder ? 'remainder' : null, item.visible === 'hidden' ? 'not in transcript' : null].filter(Boolean).join(' · ')));
   r.append(text);
   return r;
+}
+
+// A kind whose sources carry a role (the memory index, items read on demand) is split under one label per role.
+const roleRank = s => (s.memory_role === 'index' ? 0 : s.memory_role === 'item' ? 1 : 2);
+const ROLES = { index: 'Index', item: 'Read on demand' };
+function roleHeads(list) {
+  const heads = new Map();
+  let at = null;
+  list.forEach((s, i) => {
+    if (!s.memory_role || s.memory_role === at) return;
+    at = s.memory_role;
+    heads.set(i, ROLES[at] || at);
+  });
+  return heads;
 }
 
 const isOpen = (state, ix, key) => (key in state.sourceGroups ? state.sourceGroups[key] : key === ix.view.adapter.source_kinds[0].key);
@@ -156,7 +172,7 @@ function group(env, spec) {
   button.append(el('span', 'chev', open ? '▾' : '▸'), el('span', 'chip on', spec.letter), el('span', 'sx-title', spec.label));
   const ct = el('span', 'ct');
   ct.title = spec.usage;
-  ct.append(el('b', 'used', String(spec.used)));
+  ct.append(el('b', 'used', spec.used == null ? '–' : String(spec.used)));
   if (spec.total != null) ct.append(el('span', 'tot', `/${spec.total}`));
   button.append(ct);
   if (spec.finds) button.append(el('span', 'sx-sub gf', findingsText(spec.finds)));
@@ -169,7 +185,10 @@ function group(env, spec) {
   if (open) {
     if (spec.absent) body.append(el('div', 'nk', spec.absent));
     const all = state.more.has(spec.key);
-    for (const r of all ? spec.rows : spec.rows.slice(0, SOURCES_SHOWN)) body.append(r);
+    (all ? spec.rows : spec.rows.slice(0, SOURCES_SHOWN)).forEach((r, i) => {
+      if (spec.heads && spec.heads.has(i)) body.append(el('div', 'sx-role', spec.heads.get(i)));
+      body.append(r);
+    });
     if (spec.rows.length > SOURCES_SHOWN) {
       const b = el('button', 'slink smore', all ? 'Show fewer' : `Show ${spec.rows.length - SOURCES_SHOWN} more`);
       b.dataset.more = spec.key;
@@ -184,7 +203,7 @@ export function render(box, env) {
   const { ix, state } = env;
   const templates = ix.view.adapter.fact_notes || {};
   // Loaded items first, each group in the view's own order otherwise.
-  const lists = new Map(ix.view.adapter.source_kinds.map(k => [k.key, ix.view.sources.filter(s => s.kind === k.key).sort((a, b) => (a.availability !== 'loaded') - (b.availability !== 'loaded'))]));
+  const lists = new Map(ix.view.adapter.source_kinds.map(k => [k.key, ix.view.sources.filter(s => s.kind === k.key).sort((a, b) => roleRank(a) - roleRank(b) || (a.availability !== 'loaded') - (b.availability !== 'loaded'))]));
   reveal(env, lists);
   box.replaceChildren(controls());
   const builtin = ix.view.builtin || [];
@@ -199,10 +218,10 @@ export function render(box, env) {
     const { used, total } = counts(ix, k.key, list);
     const absent = ix.view.facts.find(f => f.kind === 'kind_absent' && f.target && f.target.value === k.key);
     box.append(group(env, {
-      key: k.key, label: k.label, letter: k.letter, used, total, usage: `${used} of ${total} ${k.verb}`,
+      key: k.key, label: k.label, letter: k.letter, used, total, usage: used == null ? `not recorded in this session, ${total} on disk` : `${used} of ${total} ${k.verb}`,
       finds: list.reduce((n, s) => n + findingsOf(s), 0), hidden: !state.layers[k.key], graphLabel: k.graph_label, eye: k,
       absent: absent && templates.kind_absent ? fill(templates.kind_absent, { ...absent.numbers, label: k.label.toLowerCase() }) : null,
-      rows: list.map(s => row(env, s)),
+      rows: list.map(s => row(env, s)), heads: roleHeads(list),
     }));
   }
 }

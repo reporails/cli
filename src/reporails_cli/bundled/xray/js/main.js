@@ -44,6 +44,7 @@ const SIDES = { calls: '#side-calls', sources: '#side-sources' };
 
 function renderTab(e) {
   for (const k of TABS) $(BODIES[k]).hidden = e.tab !== k;
+  $('#hint').hidden = e.tab !== 'graph';
   const hadFocus = details.hasFocusIn();
   if (e.tab === 'graph') {
     canvas.render($('#canvas'), e);
@@ -55,7 +56,9 @@ function renderTab(e) {
     $('#overlay').hidden = true;
     if (e.tab === 'calls') calls.render($('#view-calls'), e);
     else sourcestable.render($('#view-sources'), e);
-    details.renderPanel($(SIDES[e.tab]), e);
+    // With nothing open the side panel describes the agent, as the Graph tab's right column does.
+    if (state.peek) details.renderPanel($(SIDES[e.tab]), e);
+    else inspector.render($(SIDES[e.tab]), e);
   }
   details.settle(e, $(BODIES[e.tab]), hadFocus);
 }
@@ -132,10 +135,11 @@ function showInGraph(id) {
   location.hash = hashFor(here);
 }
 
+// A changed filter starts the list at its first rows again.
 const CALLS = {
-  callsScope: (c, v) => { c.scope = v; },
-  callsTool: (c, v) => { c.tool = v; },
-  callsFailed: c => { c.failed = !c.failed; },
+  callsScope: (c, v) => { c.scope = v; c.all = false; },
+  callsTool: (c, v) => { c.tool = v; c.all = false; },
+  callsFailed: c => { c.failed = !c.failed; c.all = false; },
   callsAll: c => { c.all = !c.all; },
 };
 
@@ -246,6 +250,8 @@ details.onPeekRegister(render);
 
 function adopt(view) {
   ix = index(view);
+  // The tab the page first opened on stays: a subagent showing up on a later poll does not move the user.
+  if (state.tab == null) state.tab = activeTab(ix, state);
   if (!state.layers) state.layers = {};
   for (const k of view.adapter.source_kinds) if (!(k.key in state.layers)) state.layers[k.key] = true;
   applyHash(location.hash, ix.nodes);

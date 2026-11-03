@@ -73,3 +73,4 @@
 .pk-lg{display:flex;align-items:center;gap:8px;font-size:12px}
 .pk-lg .lb{flex:1} .pk-lg .v{color:var(--t1)} .pk-lg .pct{min-width:36px;text-align:right;color:#8F9197}
 .pk-lg .swatch{display:inline-block;width:9px;height:9px;border-radius:2px;flex:none}
+.sx-role{margin:6px 8px 2px;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:#8F9197}

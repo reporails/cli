@@ -24,3 +24,31 @@ Feature: The Tool calls and Sources tables list every call and source, agree wit
   Scenario: The Sources table lists every source and the built-in items
     Given the bundled page is served over the "view_sample" fixture view
     Then the Sources table lists every source and every built-in item
+
+  @page @browser
+  Scenario: The Sources table prints finding counts and hidden built-in items as they are
+    Given the bundled page is served over the "view_sample" fixture view
+    Then the Sources table prints each count of findings, a dash for none, and "not visible" for a built-in item the transcript hides
+
+  @page @browser
+  Scenario: A call's details list the instruction files by the vocabulary's flag
+    Given the bundled page is served over the "view_sample" fixture view
+    Then a call's details list the files of the kinds the view flags as instructions
+    Given the bundled page is served over the "view_sample" fixture view changed so only memory files count as instructions
+    Then a call's details list the files of the kinds the view flags as instructions
+
+  @page @browser
+  Scenario: The scope button names its agent with an ellipsis for a long name
+    Given the bundled page is served over the "view_fxpage" fixture view
+    Then the scope button of a long agent name is cut with an ellipsis and carries the full name
+
+  @page @browser
+  Scenario: Show all closes when a filter changes
+    Given the bundled page is served over a view holding 2400 calls
+    Then "Show all" closes when a filter changes
+
+  @page @browser
+  Scenario: A call opened before its result landed shows the result after the next view
+    Given the server has not recorded the call's result yet
+    And the bundled page is served over the "view_sample" fixture view
+    Then a call opened before its result landed shows the result after the view changes

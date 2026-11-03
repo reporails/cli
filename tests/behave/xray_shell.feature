@@ -36,3 +36,13 @@ Feature: The x-ray page's shell keeps its tabs, hint bar, details frame and layo
   Scenario: No text is smaller than 10.5 pixels or below 4.5 to 1 contrast
     Given the bundled page is served over the "view_sample" fixture view
     Then every visible text on the Graph tab, with details open, and on the Tool calls tab is at least 10.5 pixels with 4.5 to 1 contrast
+
+  @page @browser
+  Scenario: A solo session's Tool calls tab describes its agent and keeps the hint bar for the Graph
+    Given the bundled page is served over the "view_solo" fixture view
+    Then the page opens on Tool calls with the agent summary beside the table, no scope buttons and a hint bar only on the Graph tab
+
+  @page @browser
+  Scenario: The tab the page opened on stays when a subagent appears on a later poll
+    Given the bundled page is served over the "view_solo" fixture view
+    Then the page stays on Tool calls when a subagent appears on a later poll

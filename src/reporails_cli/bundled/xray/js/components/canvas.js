@@ -2,7 +2,7 @@
 // the side track of everyday calls. Card placement, scale, arches and ticks are geometry; every fact comes from the view.
 import { el, svg } from '../dom.js';
 import { clock, k1, range, tk } from '../format.js';
-import { callText } from '../api.js';
+import { callDetail } from '../api.js';
 import {
   BAND_OPACITY, BOT_H, BOT_W, CH, COLX, CW, GROUP_TILES, SH, SPINE_HALF_MAX, SPINE_HALF_MIN, SPX, STATION_EDGE, SW, TOP_W, TOP_Y, TRACK_STEP, TRACK_X0, W, Y0,
   bandColour, layoutTime, lengthFor, mergeStations, placeSources, replyAt, stationSide, tickMarks,
@@ -103,6 +103,7 @@ function ticks(cur, scale) {
 function stretches(scale) {
   const link = abs('callslink', 0, 24, 'button');
   link.dataset.tab = 'calls';
+  link.dataset.callsScope = 'one';
   link.textContent = 'open in Tool calls →';
   if (!scale.stretches.length) return [link];
   const out = scale.stretches.map(s => {
@@ -277,6 +278,8 @@ function selectedPills(c, p, edge, ys, ye, outcome) {
   return out;
 }
 
+// A load of a kind the vocabulary keeps on the spine is a station there.
+const isSpine = (ix, sid) => { const k = kindOfSource(ix, sid); return !!(k && k.spine); };
 const shownSource = (env, sid) => { const k = kindOfSource(env.ix, sid); return !k || env.state.layers[k.key]; };
 
 // Hooks stay on the spine: a one-off hook load is a station and a repeated stretch of firings is one pill at its middle.
@@ -286,7 +289,7 @@ function stationItems(env, cur, scale) {
   if (!st) return [];
   const items = [];
   for (const l of st.loads) {
-    if (l.event == null || !shownSource(env, l.source)) continue;
+    if (!isSpine(ix, l.source) || !shownSource(env, l.source)) continue;
     const s = ix.sources.get(l.source);
     const k = kindOfSource(ix, l.source);
     items.push({
@@ -318,7 +321,7 @@ function sourceItems(env, cur, scale) {
   if (!st) return [];
   const first = new Map();
   for (const l of st.loads) {
-    if (l.event != null || !shownSource(env, l.source)) continue;
+    if (isSpine(ix, l.source) || !shownSource(env, l.source)) continue;
     const t = l.t ?? cur.start;
     const prev = first.get(l.source);
     if (!prev || t < prev.t) first.set(l.source, { t, load: l });
@@ -446,7 +449,7 @@ function settleStations(cv, rects) {
 }
 
 function failureLabel(run) {
-  const e = callText(run.call_id);
+  const e = callDetail(run.call_id);
   const cmd = e.text ? e.text.split('\n')[0].slice(0, 44) : '';
   return `${cmd ? cmd + ' ' : ''}×${run.count} · failed every time${e.error ? ' (command text unavailable)' : ''}`;
 }

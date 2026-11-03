@@ -1,8 +1,9 @@
 export const k1 = n => {
   if (n == null) return '';
   const a = Math.abs(n), s = n < 0 ? '−' : '';
-  if (a >= 1e6) return s + (a / 1e6).toFixed(a >= 1e7 ? 0 : 2).replace(/\.?0+$/, '') + 'M';
-  return s + (a >= 1000 ? (a / 1000).toFixed(a >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k' : String(a));
+  const trim = (x, digits) => String(Number(x.toFixed(digits)));
+  if (a >= 1e6 || Math.round(a / 1000) >= 1000) return s + trim(a / 1e6, a >= 1e7 ? 0 : 2) + 'M';
+  return s + (a >= 1000 ? trim(a / 1000, a >= 10000 ? 0 : 1) + 'k' : String(a));
 };
 export const tk = (n, est) => n == null ? '' : (est ? '~' : '') + k1(n);
 export const clock = t => {

@@ -5,6 +5,7 @@ import { briefUrl, peekUrl } from '../api.js';
 import { hashFor } from '../state.js';
 import { bandColour } from '../geometry.js';
 import { peakOf, replyParts, typeOf } from '../views.js';
+import { sessionCost } from './inspector.js';
 import { render as renderFindings } from './findings.js';
 import { registerPeek } from './details.js';
 
@@ -48,6 +49,15 @@ function whyLoaded(view, id) {
   return null;
 }
 
+const UNRECORDED = 'not recorded in this session';
+
+// When the agent had the source: its first load into that agent, else the agent's start.
+function loadTime(ix, node, s) {
+  const st = ix.stations.get(node.id);
+  const times = (st ? st.loads : []).filter(l => l.source === s.id && l.t != null).map(l => l.t);
+  return times.length ? Math.min(...times) : node.start;
+}
+
 function findingsBlock(s, env) {
   const count = (s.findings && s.findings.count) || 0;
   const box = el('div');
@@ -69,6 +79,7 @@ registerPeek('src', (env, id) => {
   const view = ix.view;
   const k = ix.kinds.get(s.kind);
   const count = (s.findings && s.findings.count) || 0;
+  const unrecorded = s.availability === 'unrecorded';
   const entry = s.path ? env.text('p:' + s.path, peekUrl(s.path)) : null;
   const main = [];
   if (count || (s.actionable && s.path)) main.push(findingsBlock(s, env));
@@ -80,8 +91,8 @@ registerPeek('src', (env, id) => {
   const holders = s.had_by.map(h => ix.nodes.get(h)).filter(Boolean);
   const loaded = s.kind && (ix.kinds.get(s.kind) || {}).definitions
     ? (s.launches > 0 ? `launched as ${plural(s.launches, 'subagent')}` : 'never launched')
-    : holders.length ? `${holders.length} of ${view.nodes.length} agents` : 'no agent';
-  const why = whyLoaded(view, s.id);
+    : unrecorded ? UNRECORDED : holders.length ? `${holders.length} of ${view.nodes.length} agents` : 'no agent';
+  const why = unrecorded ? null : whyLoaded(view, s.id);
   const side = [kv([['Path', s.path], ['Loaded by', loaded], ['Why', why]])];
   const price = costEst(s.cost_usd_est);
   if (price && holders.length) side.push(kv([['Est. cost', `${price} across this session`], ['Method', view.price_list.source_method]]));
@@ -91,13 +102,13 @@ registerPeek('src', (env, id) => {
       const b = el('button', 'pk-li');
       b.type = 'button';
       b.dataset.showInGraph = n.id;
-      b.append(el('span', 'lb', n.parent === null ? 'main agent' : n.name), el('span', 'mono v', clock(n.start)));
+      b.append(el('span', 'lb', n.parent === null ? 'main agent' : n.name), el('span', 'mono v', clock(loadTime(ix, n, s))));
       list.append(b);
     }
     if (holders.length > 8) list.append(nk(`and ${holders.length - 8} more agents`));
     side.push(section('Loaded in', list));
   }
-  const tags = [holders.length ? 'in context' : 'never loaded'];
+  const tags = [unrecorded ? UNRECORDED : holders.length ? 'in context' : 'never loaded'];
   if (count) tags.push(`${plural(count, 'finding')}`);
   if (s.tokens_est != null) tags.push(`${tk(s.tokens_est, true)} each · estimated`);
   const actions = [action('Pin on graph', { closePeek: '1' })];
@@ -115,7 +126,7 @@ const VISIBLE = { hidden: 'not visible in transcript', partial: 'partly visible 
 registerPeek('builtin', (env, id) => {
   const item = (env.ix.view.builtin || []).find(b => b.key === id);
   if (!item) return null;
-  const tags = [`${tk(item.tokens_est, true)} · ${item.remainder ? 'est. + remainder' : 'estimated'}`, VISIBLE[item.visible] || item.visible];
+  const tags = [`${tk(item.tokens_est, true)} · ${item.remainder ? 'remainder' : 'estimated'}`, VISIBLE[item.visible] || item.visible];
   return {
     chip: '·', kicker: 'Built in', title: item.label, tags,
     main: [section('What it contains', pre(item.note || ''))],
@@ -173,15 +184,17 @@ registerPeek('peak', (env, id) => {
     line.dataset.category = c.key;
     const sw = el('span', 'swatch');
     sw.style.background = bandColour(i);
-    line.append(sw, el('span', 'lb', rest ? `${c.label}*` : c.label), el('span', 'v mono', `~${k1(parts[i])}`), el('span', 'pct mono', `${Math.round(parts[i] / base * 100)}%`));
+    line.append(sw, el('span', 'lb', rest ? `${c.label}*` : c.label), el('span', 'v mono', `~${k1(parts[i])}`), el('span', 'pct mono', `${Math.min(100, Math.round(parts[i] / base * 100))}%`));
     legend.append(line);
   }
   const cached = Math.round(reply[4] / total * 100);
+  const over = reply[reply.length - 1] === true;
   const remLabel = (adapter.composition.find(c => c.key === adapter.composition_remainder) || {}).label || adapter.composition_remainder;
   return {
     chip: '∑', kicker: `Peak context · ${node.parent === null ? 'main agent' : node.name} at ${clock(reply[0])}`, title: `${total.toLocaleString('en-US')} tokens`, tags: [],
     main: [bar(cats.map(x => [x.i, parts[x.i]]), base), legend],
-    side: [kv([['Read from cache', `${cached}%`], ['New this turn', `${(reply[2] + reply[3]).toLocaleString('en-US')} tokens`]]),
+    side: [kv([['Read from cache at this turn', `${cached}%`], ['New this turn', `${(reply[2] + reply[3]).toLocaleString('en-US')} tokens`]]),
+      ...(over ? [nk('These estimates add up to more than the exact total, so the split is approximate and the percentages are shares of what was estimated.')] : []),
       nk(`The total is measured. How it splits into parts is estimated, so parts show ~. *Includes whatever could not be attributed, folded into ${remLabel}, so the parts add up to the total.`)],
     actions: [],
   };
@@ -196,13 +209,31 @@ registerPeek('cost', (env, id) => {
   const pairs = [['Over', plural(cost.turns, 'turn')]];
   if (cost.peak_turn_usd != null) pairs.push(['Most expensive turn', `${usd(cost.peak_turn_usd)}${cost.peak_turn_t != null ? ` at ${clock(cost.peak_turn_t)}` : ''}`]);
   if (cost.instructions_usd_est != null) pairs.push(['Your instruction files', `~${usd(cost.instructions_usd_est)} of it`]);
-  if (cost.cache_hit_rate != null) pairs.push(['Read from cache', `${Math.round(cost.cache_hit_rate * 100)}% (cheaper)`]);
+  if (cost.cache_hit_rate != null) pairs.push(['Read from cache across all replies', `${Math.round(cost.cache_hit_rate * 100)}% (cheaper)`]);
+  const session = sessionCost(ix.view, node);
+  const main = [];
+  if (session) {
+    const { sc, subs, n, others } = session;
+    pairs.unshift(['Session', `~${usd(sc.total_usd)}`], ['This agent', `~${usd(cost.total_usd)}`], [plural(n, 'subagent'), `~${usd(subs)}`]);
+    if (sc.unpriced > 0) pairs.push(['Not priced', plural(sc.unpriced, 'agent')]);
+    const list = el('div', 'pk-list');
+    for (const [id, usdEst] of others.slice(0, 5)) {
+      const kid = ix.nodes.get(id);
+      if (!kid) continue;
+      const b = el('button', 'pk-li');
+      b.type = 'button';
+      b.dataset.showInGraph = id;
+      b.append(el('span', 'lb', kid.name), el('span', 'mono v', `~${usd(usdEst)}`));
+      list.append(b);
+    }
+    main.push(kv(pairs), section('Costliest subagents', list));
+  }
   const notes = [];
   if (cost.unpriced > 0) notes.push(nk(`${plural(cost.unpriced, 'reply', 'replies')} not priced${cost.unpriced_models.length ? `: ${cost.unpriced_models.join(', ')}` : ' (no model named)'}.`));
   if (cost.split_assumed > 0) notes.push(nk(`${plural(cost.split_assumed, 'reply', 'replies')} had no 5-minute / 1-hour cache split and ${cost.split_assumed === 1 ? 'was' : 'were'} priced at the 5-minute rate.`));
   notes.push(nk(`Token counts are measured; the price is list price (${list.name}, ${list.as_of}). On a subscription you don't pay per token, so read this as API-equivalent.`));
   return {
     chip: '$', kicker: `Est. cost · ${node.parent === null ? 'main agent' : node.name}`, title: usd(cost.total_usd), tags: [],
-    main: [kv(pairs)], side: notes, actions: [],
+    main: main.length ? main : [kv(pairs)], side: notes, actions: [],
   };
 });

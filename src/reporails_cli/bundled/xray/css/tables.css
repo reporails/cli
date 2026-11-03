@@ -15,7 +15,8 @@
 .tb-tick:last-child{transform:translateX(-100%)}
 .tb-table{border-radius:14px;background:var(--panel);border:1px solid var(--hair);overflow:hidden}
 .tb-head{display:grid;gap:10px;align-items:center;min-height:30px;padding:0 14px;border-bottom:1px solid var(--hair);font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em}
-.tb-calls{grid-template-columns:56px 140px 80px minmax(0,1fr) 64px 58px 50px}
+.tb-calls{grid-template-columns:56px 140px 80px minmax(0,1fr) 64px 84px 50px}
+.segname{display:inline-block;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tb-src-grid{grid-template-columns:22px minmax(0,1fr) 110px 150px 70px 64px}
 .vl{position:relative;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#3A3C42 transparent}
 .vl-sizer{position:relative;width:100%}

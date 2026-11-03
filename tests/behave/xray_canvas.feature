@@ -29,3 +29,13 @@ Feature: The x-ray graph draws agents right of the spine, what entered context l
   Scenario: The jump rail marks fan-outs, failures and the end, and a click scrolls the graph there
     Given the bundled page is served over the "view_p1" fixture view
     Then the rail holds one marker per fan-out group and failure run plus the end and clicking the end marker scrolls the graph to it
+
+  @page @browser
+  Scenario: The vocabulary's spine flag decides which loads are stations on the spine
+    Given the bundled page is served over the "view_sample" fixture view changed so memory loads stay on the spine and hook loads do not
+    Then only the memory loads and the hook firings are stations on the spine
+
+  @page @browser
+  Scenario: The link to Tool calls opens the agent on screen
+    Given the bundled page is served over the "view_sample" fixture view
+    Then the link to Tool calls opens it for the agent on screen only

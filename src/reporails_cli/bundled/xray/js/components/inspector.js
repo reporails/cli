@@ -63,16 +63,30 @@ function expand(peek, label) {
   return b;
 }
 
-function stat(cls, label, value, line, peek, open) {
+function stat(cls, label, value, lines, peek, open) {
   const box = el('div', `ix-tile ${cls}`);
   const top = el('div', 'ix-tl');
   top.append(el('span', 'lb', label));
   if (peek) top.append(expand(peek, open));
-  box.append(top, el('b', 'big mono', value), el('span', 'ix-line', line));
+  box.append(top, el('b', 'big mono', value));
+  for (const line of [].concat(lines)) box.append(el('span', 'ix-line', line));
   return box;
 }
 
-function tiles(node) {
+// The whole session's estimated cost against this agent's own: the lines the main agent's cost tile adds.
+export function sessionCost(view, node) {
+  const sc = view.session_cost;
+  if (!sc || sc.total_usd == null || node.parent !== null || view.nodes.length < 2) return null;
+  const others = sc.by_agent.filter(([id]) => id !== node.id);
+  return { sc, subs: others.reduce((n, [, usd]) => n + usd, 0), n: view.nodes.length - 1, others };
+}
+
+const sessionLines = (view, node) => {
+  const s = sessionCost(view, node);
+  return s ? [`Session ~${usd(s.sc.total_usd)} · ${plural(s.n, 'subagent')} ~${usd(s.subs)}`] : [];
+};
+
+function tiles(node, env) {
   const box = el('div', 'ix-tiles');
   const hit = peakOf(node);
   const cost = node.detail && node.detail.cost;
@@ -80,9 +94,10 @@ function tiles(node) {
     ? stat('peak', 'Peak context', k1(hit.reply[1]), `at ${clock(hit.reply[0])}`, `peak:${node.id}`, 'Open peak context details')
     : stat('peak', 'Peak context', '–', 'not known here', null));
   const known = cost && cost.total_usd != null;
+  const costLabel = env.ix.view.nodes.length > 1 ? 'Est. cost · this agent' : 'Est. cost';
   box.append(known
-    ? stat('cost', 'Est. cost', usd(cost.total_usd), [plural(cost.turns, 'turn'), cost.cache_hit_rate == null ? null : `${Math.round(cost.cache_hit_rate * 100)}% cached`].filter(Boolean).join(' · '), `cost:${node.id}`, 'Open est. cost details')
-    : stat('cost', 'Est. cost', '–', 'not known here', null));
+    ? stat('cost', costLabel, usd(cost.total_usd), [[plural(cost.turns, 'turn'), cost.cache_hit_rate == null ? null : `${Math.round(cost.cache_hit_rate * 100)}% cached`].filter(Boolean).join(' · '), ...sessionLines(env.ix.view, node)], `cost:${node.id}`, 'Open est. cost details')
+    : stat('cost', costLabel, '–', 'not known here', null));
   return box;
 }
 
@@ -105,8 +120,9 @@ function contextRow(row, node, env) {
   const go = opener(row, node, env);
   if (go && go.source) b.dataset.source = go.source;
   else if (go) b.dataset.peek = go.peek;
-  const time = row.t != null ? clock(row.t) : row.key === 'rest' ? 'at peak' : 'always';
-  b.setAttribute('aria-label', `${row.label}, ${row.reason}${row.findings ? `, ${row.findings} findings` : ''}, ${tk(row.tokens_est, true)}. Open details.`);
+  const rem = row.key === 'rest' || (row.key === 'builtin' && (env.ix.view.builtin || []).some(b => b.remainder && b.label === row.label));
+  const time = row.t != null ? clock(row.t) : rem ? 'remainder' : 'always';
+  b.setAttribute('aria-label', `${row.label}, ${row.reason}${row.findings ? `, ${row.findings} findings` : ''}, ${tk(row.tokens_est, true)}${rem ? ' remainder' : ''}. Open details.`);
   const text = el('span', 'ic-t');
   text.append(el('span', 'ic-n', row.label), el('span', 'ic-w', row.reason));
   b.append(el('span', 'chip on', kind ? kind.letter : '·'), text);
@@ -130,7 +146,7 @@ function inContext(node, env) {
   const ic = node.detail && node.detail.in_context;
   const head = el('div', 'ix-sh');
   head.append(el('h4', null, 'In context'));
-  if (ic) head.append(el('span', 'ix-total mono', `~${k1(ic.total)} at peak`));
+  if (ic) head.append(el('span', 'ix-total mono', `${k1(ic.total)} at peak`));
   sec.append(head);
   if (!ic) { sec.append(quiet('Not known here: no replies were recorded for this agent.')); return sec; }
   for (const r of ic.rows) sec.append(contextRow(r, node, env));
@@ -141,7 +157,7 @@ function inContext(node, env) {
       const src = env.ix.sources.get(s.source);
       return src ? src.label || src.name : s.source;
     });
-    if (w.context_tokens) names.push(`conversation (~${k1(w.context_tokens)})`);
+    if (w.conversation_tokens) names.push(`conversation (~${k1(w.conversation_tokens)})`);
     if (names.length) sec.append(quiet(`Parent had but didn't pass on: ${names.join(', ')}`));
   }
   return sec;
@@ -217,8 +233,8 @@ function output(node, env) {
   const edge = env.ix.edges.get(node.id);
   const parent = env.ix.nodes.get(node.parent);
   const at = edge && edge.back_t != null ? ` at ${clock(edge.back_t)}` : '';
-  const back = d.back_tokens_est == null ? '' : `, summarised in ${k1(d.back_tokens_est)}${d.back_ratio ? ` (${Math.round(d.back_ratio)}× smaller)` : ''}`;
-  sec.append(el('p', 'ix-line', `Returned to ${parent ? nodeLabel(parent) : 'its parent'}${at}. ${k1(d.peak)} of work${back}.`));
+  const back = d.back_tokens_est == null ? '; the size of its hand-back is not known' : `, summarised in ${k1(d.back_tokens_est)}${d.back_ratio ? ` (${Math.round(d.back_ratio)}× smaller)` : ''}`;
+  sec.append(el('p', 'ix-line', `Returned to ${parent ? nodeLabel(parent) : 'its parent'}${at}. ${k1(d.peak - (d.context_start || 0))} of work${back}.`));
   return sec;
 }
 
@@ -227,7 +243,7 @@ export function render(box, env) {
   const here = ix.nodes.get(state.path[state.path.length - 1]);
   const selected = !!state.sel && ix.nodes.has(state.sel);
   const node = selected ? ix.nodes.get(state.sel) : here;
-  const parts = [header(node, env, selected, here), tiles(node), inContext(node, env), activity(node, env)];
+  const parts = [header(node, env, selected, here), tiles(node, env), inContext(node, env), activity(node, env)];
   if (node.parent !== null) parts.push(output(node, env));
   const kind = ix.nodeKinds.get(node.kind);
   if (selected && kind && kind.opens) {
