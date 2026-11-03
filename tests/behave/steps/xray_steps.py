@@ -22,6 +22,7 @@ from support import AILS_BIN, build_project, run_ails  # behave puts features/ o
 
 from reporails_cli.bundled import get_xray_path
 from reporails_cli.core.discovery.agent_discovery import claude_project_folder_name
+from reporails_cli.core.eventbus.adapters.claude_requests import message_hash
 from tests.suite_env import suite_env
 
 FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "eventbus" / "transcript" / "2.1.308"
@@ -98,6 +99,236 @@ def step_typed_prompt(context, text):
     first["origin"] = {"kind": "human"}
     first["message"]["content"] = text
     session.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+
+SESSION_ID = "11111111-2222-3333-4444-555555555555"
+SUB_ID = "aaaa0000000000001"
+
+
+def _row(kind: str, second: int, version: str, project: Path, **fields: object) -> dict:
+    return {
+        "type": kind,
+        "timestamp": f"2026-10-31T10:00:{second:02d}.000Z",
+        "sessionId": SESSION_ID,
+        "version": version,
+        "cwd": str(project),
+        **fields,
+    }
+
+
+def _usage(read: int, created: int) -> dict:
+    return {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": created,
+        "cache_read_input_tokens": read,
+        "output_tokens": 5,
+    }
+
+
+def _reply(second: int, version: str, project: Path, mid: str, content: list, usage: dict, ref: str) -> dict:
+    message = {"id": mid, "role": "assistant", "model": "claude-sonnet-5-5", "content": content, "usage": usage}
+    return _row("assistant", second, version, project, message=message, requestRef=ref)
+
+
+def _shape_row(shape: str, system: str) -> dict:
+    tools = [{"name": f"Tool{n}", "description": "d" * 400} for n in range(6)]
+    return {
+        "type": "api-request-shape",
+        "shapeHash": shape,
+        "shape": {"system": [{"type": "text", "text": system}], "tools": tools},
+    }
+
+
+def _request_row(rid: str, shape: str, keep: int, tail: list[str], second: int, project: Path) -> dict:
+    """An `api-request` row: the messages it keeps from the previous request and the hashes of those it appends."""
+    return _row("api-request", second, "2.1.309", project, id=rid, shapeHash=shape, keep=keep, tail=tail)
+
+
+def _peak(rows: list[dict]) -> int:
+    totals = [
+        row["message"]["usage"]["input_tokens"]
+        + row["message"]["usage"]["cache_read_input_tokens"]
+        + row["message"]["usage"]["cache_creation_input_tokens"]
+        for row in rows
+        if row["type"] == "assistant"
+    ]
+    return max(totals)
+
+
+def _write_session(context, recorded: bool) -> None:
+    """A fixture session of a main agent and one subagent. `recorded` adds the request rows Claude Code 2.1.309
+    writes and the `requestRef` of each reply; an older Claude Code writes neither. Keeps the highest total of each
+    agent's own replies, from its own file, in `context.peaks`."""
+    version = "2.1.309" if recorded else "2.1.308"
+    project = context.project
+    folder = context.home / ".claude" / "projects" / claude_project_folder_name(project)
+    (folder / "session" / "subagents").mkdir(parents=True)
+    ask, hello, listed = (
+        "please summarise the layout",
+        [{"type": "text", "text": "the layout is flat"}],
+        "list the files",
+    )
+    launch = [
+        {
+            "type": "tool_use",
+            "id": "toolu_sub1",
+            "name": "Agent",
+            "input": {
+                "description": "look around",
+                "subagent_type": "general-purpose",
+                "prompt": listed,
+                "run_in_background": True,
+            },
+        }
+    ]
+    done = [{"type": "tool_result", "tool_use_id": "toolu_sub1", "content": "launched"}]
+    note = {"role": "user", "content": "and the tests"}
+    main = [
+        _row(
+            "user",
+            1,
+            version,
+            project,
+            uuid="p-one",
+            promptSource="typed",
+            origin={"kind": "human"},
+            message={"role": "user", "content": ask},
+        ),
+        _reply(2, version, project, "msg_1", hello, _usage(1000, 300), "req-main-1"),
+        _row("user", 3, version, project, message=note),
+        _reply(4, version, project, "msg_2", launch, _usage(1000, 800), "req-main-2"),
+        _row("user", 5, version, project, message={"role": "user", "content": done}),
+        _reply(6, version, project, "msg_3", [{"type": "text", "text": "all done"}], _usage(2000, 400), "req-main-3"),
+    ]
+    sub = [
+        _row("user", 10, version, project, message={"role": "user", "content": listed}),
+        _reply(11, version, project, "msg_s1", [{"type": "text", "text": "a b c"}], _usage(500, 200), "req-sub-1"),
+        _reply(12, version, project, "msg_s2", [{"type": "text", "text": "d e f"}], _usage(900, 100), "req-sub-2"),
+    ]
+    for row in sub:
+        row.update({"isSidechain": True, "agentId": SUB_ID})
+    if not recorded:
+        for row in (*main, *sub):
+            row.pop("requestRef", None)
+    if recorded:
+        # each request row follows the rows its tail names; the note is known only as a blob
+        u1, u2, u3, a1, a2, a3 = main[0], main[2], main[4], main[1], main[3], main[5]
+        blob = {"type": "api-request-blob", "hash": "blob-note", "message": note}
+        hashes = {
+            "ask": message_hash("user", ask),
+            "a1": message_hash("assistant", hello),
+            "a2": message_hash("assistant", launch),
+        }
+        main = [
+            _shape_row("shape-main", "s" * 2000),
+            u1,
+            _request_row("req-main-1", "shape-main", 0, [hashes["ask"]], 1, project),
+            a1,
+            blob,
+            u2,
+            _request_row("req-main-2", "shape-main", 1, [hashes["a1"], "blob-note"], 3, project),
+            a2,
+            u3,
+            _request_row("req-main-3", "shape-main", 3, [hashes["a2"], message_hash("user", done)], 5, project),
+            a3,
+        ]
+        sub_hash = message_hash("assistant", [{"type": "text", "text": "a b c"}])
+        sub = [
+            _shape_row("shape-sub", "t" * 500),
+            sub[0],
+            _request_row("req-sub-1", "shape-sub", 0, [message_hash("user", listed)], 10, project),
+            sub[1],
+            _request_row("req-sub-2", "shape-sub", 1, [sub_hash], 11, project),
+            sub[2],
+        ]
+        sub = [{**row, "isSidechain": True, "agentId": SUB_ID} for row in sub]
+    context.peaks = {"main": _peak(main), "sub": _peak(sub)}
+    write = lambda path, rows: path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")  # noqa: E731
+    write(folder / "session.jsonl", main)
+    write(folder / "session" / "subagents" / f"agent-{SUB_ID}.jsonl", sub)
+    meta = {
+        "agentType": "general-purpose",
+        "description": "look around",
+        "toolUseId": "toolu_sub1",
+        "spawnDepth": 1,
+        "finished": True,
+    }
+    (folder / "session" / "subagents" / f"agent-{SUB_ID}.meta.json").write_text(json.dumps(meta), encoding="utf-8")
+
+
+@given("a project with a session whose Claude Code recorded each request it made, with a subagent")
+def step_session_with_requests(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    _write_session(context, True)
+
+
+@given("a project with a session from an older Claude Code that did not record its requests, with a subagent")
+def step_session_without_requests(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    _write_session(context, False)
+
+
+def _session_view(context) -> dict:
+    status, page = _get(context.url)
+    token = re.search(r'name="xray-token" content="([^"]+)"', page)
+    assert status == 200 and token, "the page carries no launch token"
+    status, body = _get(context.url + "view", token.group(1))
+    assert status == 200, status
+    return json.loads(body)
+
+
+def _context_of(view: dict) -> tuple[dict, dict]:
+    nodes = {node["id"]: node for node in view["nodes"]}
+    (sub_id,) = [key for key in nodes if key != "main"]
+    return nodes["main"]["detail"]["in_context"], nodes[sub_id]["detail"]["in_context"]
+
+
+@then("the main agent's In context rows are measured, add up to its peak reply and name the system prompt and tools")
+def step_main_measured(context):
+    main, _ = _context_of(_session_view(context))
+    keys = [row["key"] for row in main["rows"]]
+    assert main["total"] == context.peaks["main"], (main["total"], context.peaks)
+    assert sum(row["tokens_est"] for row in main["rows"]) == context.peaks["main"], main["rows"]
+    assert main["measured"] is True, main
+    assert {"system_prompt", "tool_definitions"} <= set(keys) and keys[-1] == "rest", keys
+
+
+@then("the subagent's In context rows add up to the peak reply of its own file")
+def step_sub_measured(context):
+    _, sub = _context_of(_session_view(context))
+    assert sub["measured"] is True and sub["total"] == context.peaks["sub"], (sub["total"], context.peaks)
+    assert sum(row["tokens_est"] for row in sub["rows"]) == context.peaks["sub"], sub["rows"]
+    assert {"system_prompt", "tool_definitions"} <= {row["key"] for row in sub["rows"]}
+
+
+@then("the page's In context list for each agent shows no remainder text and no asterisk")
+def step_page_no_remainder(context):
+    seen = _page(context, "inctx")
+    if seen is None:
+        return
+    for name in ("main", "sub"):
+        assert seen[name]["rows"] >= 3, seen
+        assert "remainder" not in seen[name]["text"].lower() and "*" not in seen[name]["text"], seen[name]
+
+
+@then("the main agent's In context list is not measured, keeps its remainder row and says it is an estimate")
+def step_estimated_view(context):
+    main, _ = _context_of(_session_view(context))
+    assert main["measured"] is False, main
+    assert main["note"] == "Estimated: this Claude Code version does not record its requests.", main["note"]
+    assert "rest" in [row["key"] for row in main["rows"]] and "system_prompt" not in [
+        row["key"] for row in main["rows"]
+    ]
+
+
+@then("the page shows the estimate note and a remainder row in the main agent's In context list")
+def step_estimated_page(context):
+    seen = _page(context, "inctx")
+    if seen is None:
+        return
+    text = seen["main"]["text"]
+    assert "Estimated: this Claude Code version does not record its requests." in text, text
+    assert "remainder" in text.lower(), text
 
 
 @given("a project with no recorded Claude Code session")

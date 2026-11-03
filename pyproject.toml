@@ -198,7 +198,7 @@ test_lint = "ails test --lint --rules-root framework/rules"
 # binary via subprocess. A separate first-class suite, NOT in the unit pytest pile.
 # The enforcement floor for composed multi-step behavior; new composed coverage
 # goes here, not into more isolated unit tests. See tests/behave/.
-test_behave = "behave"
+test_behave = "python scripts/behave_parallel.py"
 # Mutation probe — measures whether a suite CATCHES bugs (kill-rate), not just that it
 # passes. Diagnostic, not a gate: it names where tests miss real bugs so the catching
 # test can be added. Usage: uv run poe test_mutation src/<module>.py tests/unit/<test>.py [max]

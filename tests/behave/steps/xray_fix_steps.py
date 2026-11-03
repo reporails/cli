@@ -70,7 +70,8 @@ def _late_load(view: dict) -> None:
 
 def _over(view: dict) -> None:
     comp = _node(view, "main")["detail"]["composition"]
-    comp["replies"][comp["peak"]][-1] = True
+    # A reply row ends with its over-estimate flag, then whether it was measured.
+    comp["replies"][comp["peak"]][-2] = True
 
 
 def _no_replies(view: dict) -> None:

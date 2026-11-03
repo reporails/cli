@@ -156,4 +156,4 @@ if (mode === 'type' && ready) {
 }
 
 console.log(JSON.stringify(out));
-page.close();
+await page.close();

@@ -240,3 +240,20 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Given the served view says it picked "newest"
     And the bundled page is served over the "view_sample" fixture view
     Then no session notice is shown
+
+  @e2e @browser
+  Scenario: An agent's In context list is the measured request when Claude Code recorded it
+    Given a project with a session whose Claude Code recorded each request it made, with a subagent
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the main agent's In context rows are measured, add up to its peak reply and name the system prompt and tools
+    And the subagent's In context rows add up to the peak reply of its own file
+    And the page's In context list for each agent shows no remainder text and no asterisk
+
+  @e2e @browser
+  Scenario: A session from an older Claude Code shows the estimated split, labelled as an estimate
+    Given a project with a session from an older Claude Code that did not record its requests, with a subagent
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the main agent's In context list is not measured, keeps its remainder row and says it is an estimate
+    And the page shows the estimate note and a remainder row in the main agent's In context list

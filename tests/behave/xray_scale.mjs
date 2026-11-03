@@ -114,4 +114,4 @@ if (mode === 'narrow') {
 }
 
 console.log(JSON.stringify(out));
-page.close();
+await page.close();

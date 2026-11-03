@@ -7,14 +7,25 @@ and the real `ails` binary scans) torn down after. No state leaks between scenar
 
 from __future__ import annotations
 
+import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # `tests.suite_env`, shared with pytest
 
-from support import LOCAL_API_ENV, LOCAL_API_URL, local_api_answers, run_ails, scenario_home, stop_xray_pages
+from support import (
+    LOCAL_API_ENV,
+    LOCAL_API_URL,
+    daemon_started,
+    local_api_answers,
+    run_ails,
+    scenario_home,
+    start_shared_chrome,
+    stop_xray_pages,
+)
 
 
 def before_all(context) -> None:
@@ -29,6 +40,10 @@ def before_all(context) -> None:
     context.real_models = Path.home() / ".reporails" / "cache" / "models"
     context.api_up = local_api_answers()
     context.api_skipped = []
+    # One browser serves every x-ray page script of this process (each opens its own tab in it).
+    context.chrome = None if os.environ.get("XRAY_CDP_URL") else start_shared_chrome()
+    if context.chrome is not None:
+        os.environ["XRAY_CDP_URL"] = context.chrome[2]
 
 
 def before_scenario(context, scenario) -> None:
@@ -45,6 +60,15 @@ def before_scenario(context, scenario) -> None:
 
 
 def after_all(context) -> None:
+    if context.chrome is not None:
+        process, profile, _ = context.chrome
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        shutil.rmtree(profile, ignore_errors=True)
+        os.environ.pop("XRAY_CDP_URL", None)
     if context.api_skipped:
         banner = "!" * 78
         print(
@@ -61,7 +85,7 @@ def after_scenario(context, scenario) -> None:
     tmpdir = getattr(context, "tmpdir", None)
     if tmpdir is not None and tmpdir.exists():
         stop_xray_pages(context.home)  # a detached x-ray page the scenario started must not outlive it
-    if tmpdir is not None and tmpdir.exists():
+    if tmpdir is not None and tmpdir.exists() and daemon_started(context.home):
         # A check starts a mapper daemon under the scenario's own home; stop it before the home goes.
         run_ails(tmpdir, "daemon", "stop", home=context.home, timeout=30)
     if tmpdir is not None and tmpdir.exists():

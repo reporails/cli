@@ -86,5 +86,5 @@ if (mode === 'eye_hover' && ready) {
   out.hovered = await page.ev(`document.querySelector(${JSON.stringify(sel)}).classList.contains('on')`);
 }
 
-page.close();
+await page.close();
 console.log(JSON.stringify(out));

@@ -267,6 +267,18 @@ if (mode === 'panes' && ready) {
   out.withheld = await page.ev(`[...document.querySelectorAll('#inspector .ix-quiet')].map(e => e.textContent)`);
 }
 
+if (mode === 'inctx' && ready) {
+  // The In context list of the main agent, then of the first subagent, as the page draws them.
+  const listed = () => page.ev(`(() => { const s = document.querySelector('#inspector .ix-ctx'); return { rows: s ? s.querySelectorAll('.ic').length : 0, text: s ? s.textContent : '' }; })()`);
+  await page.until(`!!document.querySelector('#inspector .ix-ctx .ic')`);
+  out.main = await listed();
+  const before = await page.ev(`document.querySelector('#inspector .nm').textContent`);
+  await click('.card[data-node]:not(.top):not(.bottom)');
+  await page.until(`document.querySelector('#inspector .nm').textContent !== ${JSON.stringify(before)}`);
+  await page.until(`!!document.querySelector('#inspector .ix-ctx .ic')`);
+  out.sub = await listed();
+}
+
 if (mode === 'words' && ready) {
   await expandAll();
   out.header = await page.ev(`document.querySelector('.hmeta').textContent`);
@@ -441,4 +453,4 @@ if (mode === 'pickother' && ready) {
 }
 
 console.log(JSON.stringify(out));
-page.close();
+await page.close();

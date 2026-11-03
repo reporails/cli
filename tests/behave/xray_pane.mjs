@@ -17,4 +17,4 @@ await new Promise(r => createInterface({ input: process.stdin }).once('line', r)
 let after = shown;
 for (let i = 0; i < 40 && (after === shown || after === ''); i++) { await sleep(500); after = await peek(); }
 console.log('AFTER ' + JSON.stringify(after));
-page.close();
+await page.close();

@@ -71,4 +71,4 @@ if (mode === 'rail' && ready) {
 }
 
 console.log(JSON.stringify(out));
-page.close();
+await page.close();

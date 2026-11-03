@@ -165,4 +165,4 @@ if (mode === 'canvas' && ready) {
 }
 
 console.log(JSON.stringify(out));
-page.close();
+await page.close();

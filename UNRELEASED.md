@@ -59,4 +59,5 @@
 - `AILS_STAGE_TIMING=1` also prints the time of heal and of each MCP tool call.
 - The torch import blocker is removed; nothing the cli installs imports torch.
 - Tests: architecture checks guard the package boundaries, replacing two narrower checks they cover, and `poe hexagon` renders the package dependency view.
+- Tests: `poe test_behave` runs the behavioral scenarios in parallel processes that share one headless browser each, waits on page state instead of fixed pauses, and holds the performance power profile while it runs where `powerprofilesctl` offers one (`BEHAVE_POWER=keep` skips that); two scenarios check that each agent's context adds up to its exact total from the recorded request, and that an older session is labelled as an estimate.
 - Checking or fixing one file runs through one shared path for every interface; MCP replies are unchanged, and an architecture check stops one interface importing another; a test shows the page's fix button writing every fix and putting back a file that departs.

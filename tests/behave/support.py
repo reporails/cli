@@ -24,6 +24,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from urllib.parse import unquote
 
+from reporails_cli.core.mapper.daemon import pid_path, socket_path
+from reporails_cli.core.platform.config.bootstrap import get_reporails_home
 from tests.suite_env import suite_env
 
 # The real console script (`[project.scripts] ails = …:app`), installed in the
@@ -39,6 +41,15 @@ FIXTURE_PROJECTS = Path(__file__).resolve().parents[1] / "fixtures" / "projects"
 # The local dev stack the api-backed scenarios run against; never a hosted address.
 LOCAL_API_URL = os.environ.get("AILS_LOCAL_API_URL", "http://localhost:8001")
 LOCAL_API_ENV = {"AILS_SERVER_URL": LOCAL_API_URL, "AILS_DEV_MODE": "true", "AILS_TIER": "pro"}
+
+
+def _encode_budget() -> dict[str, str]:
+    """The encode-pool size a parallel run grants each `ails` (`BEHAVE_ENCODE_WORKERS`, set by the parallel runner).
+
+    `suite_env` strips every ambient `AILS_*` key, so the budget travels under a name of its own.
+    """
+    workers = os.environ.get("BEHAVE_ENCODE_WORKERS")
+    return {"AILS_MAP_ENCODE_WORKERS": workers} if workers else {}
 
 
 def scenario_home(tmpdir: Path, real_models: Path) -> Path:
@@ -60,6 +71,12 @@ def stop_xray_pages(home: Path) -> None:
     for record in (home / ".reporails" / "xray-pages").glob("*.json"):
         with contextlib.suppress(OSError, ValueError, KeyError):
             os.kill(int(json.loads(record.read_text(encoding="utf-8"))["pid"]), signal.SIGKILL)
+
+
+def daemon_started(home: Path) -> bool:
+    """True when a mapper daemon left its pid or socket file under the scenario's own home."""
+    real = get_reporails_home()
+    return any((home / ".reporails" / p.relative_to(real)).exists() for p in (pid_path(), socket_path()))
 
 
 def build_project(root: Path) -> Path:
@@ -99,6 +116,7 @@ def run_ails(
     assert AILS_BIN is not None, "`ails` console script not on PATH (run via `uv run behave`)"
     run_env = {
         **suite_env(os.environ),
+        **_encode_budget(),
         "HOME": str(home),
         "USERPROFILE": str(home),
         "COLUMNS": "200",
@@ -191,7 +209,14 @@ async def _mcp_validate(project: Path, env: dict[str, str]) -> dict:
 
 def run_mcp_validate(project: Path, *, home: Path, env: dict[str, str] | None = None) -> dict:
     """The full `validate` payload the MCP server returns for ``project`` — same environment rules as `run_ails`."""
-    run_env = {**suite_env(os.environ), "HOME": str(home), "USERPROFILE": str(home), "NO_COLOR": "1", **(env or {})}
+    run_env = {
+        **suite_env(os.environ),
+        **_encode_budget(),
+        "HOME": str(home),
+        "USERPROFILE": str(home),
+        "NO_COLOR": "1",
+        **(env or {}),
+    }
     return asyncio.run(asyncio.wait_for(_mcp_validate(project, run_env), timeout=180))
 
 
@@ -245,3 +270,47 @@ def text_finding_rules(stdout: str) -> list[str]:
         for raw in stdout.splitlines()
         if (match := re.match(r"^\s*│\s+.*\s(?P<rule>[A-Z]+:[A-Z]:\d{4})\s*$", raw))
     )
+
+
+# ---------------------------------------------------------------------------
+# One headless Chrome per behave process, shared by every x-ray page script
+# ---------------------------------------------------------------------------
+
+
+def start_shared_chrome() -> tuple[subprocess.Popen[bytes], Path, str] | None:
+    """Start one headless Chrome on a free port; return (process, profile dir, CDP url), None without Chrome."""
+    import socket as _socket
+    import tempfile
+    import time
+
+    chrome = shutil.which(os.environ.get("CHROME_BIN", "google-chrome")) or shutil.which("chromium")
+    if chrome is None:
+        return None
+    with _socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    profile = Path(tempfile.mkdtemp(prefix="ails-behave-chrome-"))
+    process = subprocess.Popen(
+        [
+            chrome,
+            "--headless=new",
+            "--no-sandbox",
+            "--disable-gpu",
+            f"--remote-debugging-port={port}",
+            f"--user-data-dir={profile}",
+            "about:blank",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    url = f"http://127.0.0.1:{port}"
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(f"{url}/json/version", timeout=1):
+                return process, profile, url
+        except (urllib.error.URLError, OSError):
+            time.sleep(0.05)
+    process.kill()
+    shutil.rmtree(profile, ignore_errors=True)
+    return None

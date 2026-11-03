@@ -236,4 +236,4 @@ if (mode === 'reflow' && ready) {
 }
 
 console.log(JSON.stringify(out));
-page.close();
+await page.close();
