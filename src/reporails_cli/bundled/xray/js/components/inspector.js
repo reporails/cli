@@ -110,17 +110,18 @@ function opener(row, node, env) {
     const item = (view.builtin || []).find(b => b.remainder) || (view.builtin || [])[0];
     return item ? { peek: `builtin:${item.key}` } : null;
   }
+  if (row.key === 'system_prompt' || row.key === 'tool_definitions') return { peek: `builtin:${row.key}` };
   return { peek: `peak:${node.id}` };
 }
 
-function contextRow(row, node, env) {
+function contextRow(row, node, env, measured) {
   const kind = row.kind ? env.ix.kinds.get(row.kind) : null;
   const b = el('button', 'ic');
   b.type = 'button';
   const go = opener(row, node, env);
   if (go && go.source) b.dataset.source = go.source;
   else if (go) b.dataset.peek = go.peek;
-  const rem = row.key === 'rest' || row.key === 'builtin';
+  const rem = !measured && (row.key === 'rest' || row.key === 'builtin');
   const time = row.t != null ? clock(row.t) : rem ? 'remainder' : 'always';
   b.setAttribute('aria-label', `${row.label}, ${row.reason}${row.findings ? `, ${row.findings} findings` : ''}, ${tk(row.tokens_est, true)}${rem ? ' remainder' : ''}. Open details.`);
   const text = el('span', 'ic-t');
@@ -149,7 +150,8 @@ function inContext(node, env) {
   if (ic) head.append(el('span', 'ix-total mono', `${k1(ic.total)} at peak`));
   sec.append(head);
   if (!ic) { sec.append(quiet('Not known here: no replies were recorded for this agent.')); return sec; }
-  for (const r of ic.rows) sec.append(contextRow(r, node, env));
+  for (const r of ic.rows) sec.append(contextRow(r, node, env, ic.measured));
+  if (ic.note) sec.append(quiet(ic.note));
   if (ic.over) sec.append(quiet(`These estimates add up to more than the exact ${k1(ic.total)}, so the split is approximate.`));
   const w = node.withheld;
   if (node.parent !== null && w) {

@@ -21,7 +21,18 @@ SourceKind = Literal["instructions", "rule", "skill", "agent", "memory", "mcp", 
 LoadTrigger = Literal["session_start", "path_match", "agent", "inherited", "hook"]
 AgentOutcome = Literal["returned", "failed", "stopped", "no_handback", "running"]
 # What one row of an agent's "in context" list stands for.
-ContextKey = Literal["task", "source", "hooks", "builtin", "rest"]
+ContextKey = Literal[
+    "task",
+    "source",
+    "hooks",
+    "builtin",
+    "rest",
+    "system_prompt",
+    "tool_definitions",
+    "tool_io",
+    "estimated",
+    "conversation",
+]
 # The outcomes in which an agent's parent received something back.
 HANDED_BACK_OUTCOMES: frozenset[AgentOutcome] = frozenset({"returned", "failed"})
 
@@ -305,10 +316,20 @@ class XrayInContext:
     total: int
     rows: tuple[XrayContextRow, ...]
     over: bool
+    # Whether the rows are shares of the request Claude Code recorded, not estimates.
+    measured: bool
+    # What to tell the reader when the rows are estimates; None when they are measured.
+    note: str | None
 
     def to_json(self) -> JsonObject:
         """The list as a JSON object."""
-        return {"total": self.total, "rows": objects(row.to_json() for row in self.rows), "over": self.over}
+        return {
+            "total": self.total,
+            "rows": objects(row.to_json() for row in self.rows),
+            "over": self.over,
+            "measured": self.measured,
+            "note": self.note,
+        }
 
 
 @dataclass(frozen=True)

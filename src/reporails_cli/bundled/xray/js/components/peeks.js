@@ -4,7 +4,7 @@ import { clock, costEst, k1, plural, tk, usd } from '../format.js';
 import { briefUrl, peekUrl } from '../api.js';
 import { hashFor } from '../state.js';
 import { bandColour } from '../geometry.js';
-import { peakOf, replyParts, typeOf, UNRECORDED } from '../views.js';
+import { peakOf, replyMeasured, replyOver, replyParts, typeOf, UNRECORDED } from '../views.js';
 import { sessionCost } from './inspector.js';
 import { render as renderFindings } from './findings.js';
 import { registerPeek, scrollable } from './details.js';
@@ -125,7 +125,8 @@ const VISIBLE = { hidden: 'not visible in transcript', partial: 'partly visible 
 registerPeek('builtin', (env, id) => {
   const item = (env.ix.view.builtin || []).find(b => b.key === id);
   if (!item) return null;
-  const tags = [`${tk(item.tokens_est, true)} · ${item.remainder ? 'remainder' : 'estimated'}`, VISIBLE[item.visible] || item.visible];
+  const measured = !item.remainder && (item.key === 'system_prompt' || item.key === 'tool_definitions');
+  const tags = [`${tk(item.tokens_est, true)} · ${item.remainder ? 'remainder' : measured ? 'measured' : 'estimated'}`, VISIBLE[item.visible] || item.visible];
   return {
     chip: '·', kicker: 'Built in', title: item.label, tags,
     main: [section('What it contains', pre(item.note || ''))],
@@ -172,29 +173,31 @@ registerPeek('peak', (env, id) => {
   const hit = node && peakOf(node);
   if (!hit) return null;
   const { comp, reply } = hit;
-  const total = reply[1], parts = replyParts(comp, reply);
+  const total = reply[1], parts = replyParts(comp, reply), measured = replyMeasured(reply);
   const adapter = ix.view.adapter;
   const base = Math.max(total, parts.reduce((a, b) => a + b, 0));
   const cats = adapter.composition.map(c => ({ c, i: comp.keys.indexOf(c.key) })).filter(x => x.i >= 0 && parts[x.i] > 0);
   const legend = el('div', 'pk-legend');
   for (const { c, i } of cats) {
-    const rest = c.key === adapter.composition_remainder;
+    const rest = !measured && c.key === adapter.composition_remainder;
     const line = el('div', 'pk-lg');
     line.dataset.category = c.key;
     const sw = el('span', 'swatch');
     sw.style.background = bandColour(i);
-    line.append(sw, el('span', 'lb', rest ? `${c.label}*` : c.label), el('span', 'v mono', `~${k1(parts[i])}`), el('span', 'pct mono', `${Math.min(100, Math.round(parts[i] / base * 100))}%`));
+    line.append(sw, el('span', 'lb', rest ? `${c.label}*` : c.label), el('span', 'v mono', `${measured ? '' : '~'}${k1(parts[i])}`), el('span', 'pct mono', `${Math.min(100, Math.round(parts[i] / base * 100))}%`));
     legend.append(line);
   }
   const cached = Math.round(reply[4] / total * 100);
-  const over = reply[reply.length - 1] === true;
+  const over = replyOver(reply);
   const remLabel = (adapter.composition.find(c => c.key === adapter.composition_remainder) || {}).label || adapter.composition_remainder;
   return {
     chip: '∑', kicker: `Peak context · ${node.parent === null ? 'main agent' : node.name} at ${clock(reply[0])}`, title: `${total.toLocaleString('en-US')} tokens`, tags: [],
     main: [bar(cats.map(x => [x.i, parts[x.i]]), base), legend],
     side: [kv([['Read from cache at this turn', `${cached}%`], ['New this turn', `${(reply[2] + reply[3]).toLocaleString('en-US')} tokens`]]),
       ...(over ? [nk('These estimates add up to more than the exact total, so the split is approximate and the percentages are shares of what was estimated.')] : []),
-      nk(`The total is measured. How it splits into parts is estimated, so parts show ~. *Includes whatever could not be attributed, folded into ${remLabel}, so the parts add up to the total.`)],
+      measured
+        ? nk('The total and the parts are measured: each part is its share of the request Claude Code recorded for this turn, scaled to the exact total. Instruction files, rules, memory, the skills listing and hook notes are estimated from their sizes.')
+        : nk(`The total is measured. How it splits into parts is estimated, so parts show ~. *Includes whatever could not be attributed, folded into ${remLabel}, so the parts add up to the total.`)],
     actions: [],
   };
 });

@@ -68,6 +68,7 @@ HarnessKind = (
         "agent_list",
         "mcp_instructions",
         "deferred_tools",
+        "tool_definitions",
         "session_context",
     ]
     | NoteKind
@@ -384,6 +385,11 @@ class EventRecord:
     def reply(self) -> ReplyText | None:
         """The text size an `assistant_text` record carries."""
         return self.item if isinstance(self.item, ReplyText) else None
+
+    @property
+    def request(self) -> RequestSize | None:
+        """The sizes of the request an `api_request` record describes."""
+        return self.item if isinstance(self.item, RequestSize) else None
 
     def to_json(self) -> JsonObject:
         """The record as a JSON object."""

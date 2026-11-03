@@ -242,6 +242,8 @@ class XrayBuiltinInfo:
     visible: Visibility
     note: str | None
     note_once: str | None = None
+    # The note when the size is measured from the recorded request.
+    measured_note: str | None = None
 
 
 @dataclass(frozen=True)

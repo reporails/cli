@@ -55,7 +55,8 @@ class XrayCompositionLabel:
 @dataclass(frozen=True)
 class ReplyComposition:
     """One reply: when, its exact context total and cache split, its categories in `COMPOSITION_KEYS` order and
-    whether the estimates overshoot the total (the remainder is then negative)."""
+    whether the estimates overshoot the total (the remainder is then negative). A measured reply was split by the
+    request Claude Code recorded for it, so its parts add up to the total with no remainder."""
 
     t: float
     total: int
@@ -64,6 +65,7 @@ class ReplyComposition:
     cache_read: int
     parts: tuple[int, ...]
     over_estimate: bool
+    measured: bool
 
     def to_row(self) -> list[JsonValue]:
         """The reply as one row of the composition's columns."""
@@ -75,6 +77,7 @@ class ReplyComposition:
             self.cache_read,
             *self.parts,
             self.over_estimate,
+            self.measured,
         ]
 
 

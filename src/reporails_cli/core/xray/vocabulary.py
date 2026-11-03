@@ -84,15 +84,27 @@ _CLAUDE_COMPOSITION = (
 )
 
 
-# The coding agent's own context in display order; the system prompt is not in the transcript, so its size is what
-# the reply total leaves.
+# The coding agent's own context in display order; the system prompt and the tool definitions are not in the
+# transcript, so each is sized from the request Claude Code recorded, else the system prompt is what the reply total
+# leaves.
 _CLAUDE_BUILTIN = (
     XrayBuiltinInfo(
-        "system_prompt", "System prompt", "hidden", "Not in the transcript; its size is what the reply total leaves."
+        "system_prompt",
+        "System prompt",
+        "hidden",
+        "Not in the transcript; its size is what the reply total leaves.",
+        measured_note="Measured from the request Claude Code recorded.",
+    ),
+    XrayBuiltinInfo(
+        "tool_definitions",
+        "Tool definitions",
+        "hidden",
+        "{count} tools sent with every request",
+        "{count} tool sent with every request",
     ),
     XrayBuiltinInfo(
         "deferred_tools",
-        "Tool definitions",
+        "Deferred tools",
         "partial",
         "{count} tools loaded on demand",
         "{count} tool loaded on demand",
@@ -111,6 +123,21 @@ _CLAUDE_CONTEXT_TEXTS = (
         "Conversation and tool results",
         "the remainder of the exact total: conversation, tool results and anything not itemised",
     ),
+    XrayContextText(
+        "system_prompt", "System prompt", "a measured share of the request Claude Code recorded, sent every turn"
+    ),
+    XrayContextText(
+        "tool_definitions",
+        "Tool definitions",
+        "a measured share of the request Claude Code recorded: the tools sent every turn",
+    ),
+    XrayContextText("tool_io", "Tool calls and results", "a measured share of the request Claude Code recorded"),
+    XrayContextText(
+        "conversation",
+        "Conversation",
+        "what the exact total leaves after every other row: what you and the agent wrote",
+    ),
+    XrayContextText("estimated", "Estimated", "Estimated: this Claude Code version does not record its requests."),
 )
 
 _CLAUDE_BURST = XrayBurstSettings(window_s=90.0, window_share=0.013, min_size=3)

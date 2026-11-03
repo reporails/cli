@@ -491,6 +491,7 @@
        0,
        400,
        0,
+       false,
        false
       ],
       [
@@ -507,6 +508,7 @@
        600,
        1300,
        950,
+       false,
        false
       ],
       [
@@ -523,6 +525,7 @@
        600,
        2200,
        2200,
+       false,
        false
       ],
       [
@@ -539,6 +542,7 @@
        600,
        3100,
        3750,
+       false,
        false
       ],
       [
@@ -555,6 +559,7 @@
        600,
        4000,
        5600,
+       false,
        false
       ],
       [
@@ -571,6 +576,7 @@
        600,
        4900,
        7750,
+       false,
        false
       ],
       [
@@ -587,6 +593,7 @@
        600,
        5800,
        10200,
+       false,
        false
       ],
       [
@@ -603,6 +610,7 @@
        600,
        6700,
        12950,
+       false,
        false
       ],
       [
@@ -619,6 +627,7 @@
        600,
        7600,
        16000,
+       false,
        false
       ],
       [
@@ -635,6 +644,7 @@
        600,
        8500,
        19350,
+       false,
        false
       ],
       [
@@ -651,6 +661,7 @@
        600,
        9400,
        23000,
+       false,
        false
       ],
       [
@@ -667,6 +678,7 @@
        600,
        10300,
        26950,
+       false,
        false
       ],
       [
@@ -683,6 +695,7 @@
        600,
        11200,
        31200,
+       false,
        false
       ],
       [
@@ -699,6 +712,7 @@
        600,
        12100,
        35750,
+       false,
        false
       ],
       [
@@ -715,6 +729,7 @@
        600,
        13000,
        40600,
+       false,
        false
       ]
      ],
@@ -814,7 +829,9 @@
        "findings": null
       }
      ],
-     "over": false
+     "over": false,
+     "measured": false,
+     "note": null
     }
    },
    "child_sources": {
@@ -1033,6 +1050,7 @@
        0,
        400,
        0,
+       false,
        false
       ],
       [
@@ -1049,6 +1067,7 @@
        600,
        1300,
        950,
+       false,
        false
       ],
       [
@@ -1065,6 +1084,7 @@
        600,
        2200,
        2200,
+       false,
        false
       ],
       [
@@ -1081,6 +1101,7 @@
        600,
        3100,
        3750,
+       false,
        false
       ],
       [
@@ -1097,6 +1118,7 @@
        600,
        4000,
        5600,
+       false,
        false
       ],
       [
@@ -1113,6 +1135,7 @@
        600,
        4900,
        7750,
+       false,
        false
       ],
       [
@@ -1129,6 +1152,7 @@
        600,
        5800,
        10200,
+       false,
        false
       ],
       [
@@ -1145,6 +1169,7 @@
        600,
        6700,
        12950,
+       false,
        false
       ],
       [
@@ -1161,6 +1186,7 @@
        600,
        7600,
        16000,
+       false,
        false
       ]
      ],
@@ -1230,7 +1256,9 @@
        "findings": null
       }
      ],
-     "over": false
+     "over": false,
+     "measured": false,
+     "note": null
     }
    },
    "child_sources": {},
@@ -1429,6 +1457,7 @@
        0,
        400,
        0,
+       false,
        false
       ],
       [
@@ -1445,6 +1474,7 @@
        600,
        1300,
        950,
+       false,
        false
       ],
       [
@@ -1461,6 +1491,7 @@
        600,
        2200,
        2200,
+       false,
        false
       ],
       [
@@ -1477,6 +1508,7 @@
        600,
        3100,
        3750,
+       false,
        false
       ],
       [
@@ -1493,6 +1525,7 @@
        600,
        4000,
        5600,
+       false,
        false
       ],
       [
@@ -1509,6 +1542,7 @@
        600,
        4900,
        7750,
+       false,
        false
       ],
       [
@@ -1525,6 +1559,7 @@
        600,
        5800,
        10200,
+       false,
        false
       ],
       [
@@ -1541,6 +1576,7 @@
        600,
        6700,
        12950,
+       false,
        false
       ],
       [
@@ -1557,6 +1593,7 @@
        600,
        7600,
        16000,
+       false,
        false
       ]
      ],
@@ -1636,7 +1673,9 @@
        "findings": null
       }
      ],
-     "over": false
+     "over": false,
+     "measured": false,
+     "note": null
     }
    },
    "child_sources": {},
@@ -1843,6 +1882,7 @@
        0,
        400,
        0,
+       false,
        false
       ],
       [
@@ -1859,6 +1899,7 @@
        600,
        1300,
        950,
+       false,
        false
       ],
       [
@@ -1875,6 +1916,7 @@
        600,
        2200,
        2200,
+       false,
        false
       ],
       [
@@ -1891,6 +1933,7 @@
        600,
        3100,
        3750,
+       false,
        false
       ],
       [
@@ -1907,6 +1950,7 @@
        600,
        4000,
        5600,
+       false,
        false
       ],
       [
@@ -1923,6 +1967,7 @@
        600,
        4900,
        7750,
+       false,
        false
       ],
       [
@@ -1939,6 +1984,7 @@
        600,
        5800,
        10200,
+       false,
        false
       ],
       [
@@ -1955,6 +2001,7 @@
        600,
        6700,
        12950,
+       false,
        false
       ],
       [
@@ -1971,6 +2018,7 @@
        600,
        7600,
        16000,
+       false,
        false
       ]
      ],
@@ -2040,7 +2088,9 @@
        "findings": null
       }
      ],
-     "over": false
+     "over": false,
+     "measured": false,
+     "note": null
     }
    },
    "child_sources": {},
@@ -2247,6 +2297,7 @@
        0,
        400,
        0,
+       false,
        false
       ],
       [
@@ -2263,6 +2314,7 @@
        600,
        1300,
        950,
+       false,
        false
       ],
       [
@@ -2279,6 +2331,7 @@
        600,
        2200,
        2200,
+       false,
        false
       ],
       [
@@ -2295,6 +2348,7 @@
        600,
        3100,
        3750,
+       false,
        false
       ],
       [
@@ -2311,6 +2365,7 @@
        600,
        4000,
        5600,
+       false,
        false
       ],
       [
@@ -2327,6 +2382,7 @@
        600,
        4900,
        7750,
+       false,
        false
       ],
       [
@@ -2343,6 +2399,7 @@
        600,
        5800,
        10200,
+       false,
        false
       ],
       [
@@ -2359,6 +2416,7 @@
        600,
        6700,
        12950,
+       false,
        false
       ],
       [
@@ -2375,6 +2433,7 @@
        600,
        7600,
        16000,
+       false,
        false
       ]
      ],
@@ -2444,7 +2503,9 @@
        "findings": null
       }
      ],
-     "over": false
+     "over": false,
+     "measured": false,
+     "note": null
     }
    },
    "child_sources": {},
@@ -2659,6 +2720,7 @@
        0,
        400,
        0,
+       false,
        false
       ],
       [
@@ -2675,6 +2737,7 @@
        600,
        1300,
        950,
+       false,
        false
       ],
       [
@@ -2691,6 +2754,7 @@
        600,
        2200,
        2200,
+       false,
        false
       ],
       [
@@ -2707,6 +2771,7 @@
        600,
        3100,
        3750,
+       false,
        false
       ],
       [
@@ -2723,6 +2788,7 @@
        600,
        4000,
        5600,
+       false,
        false
       ],
       [
@@ -2739,6 +2805,7 @@
        600,
        4900,
        7750,
+       false,
        false
       ],
       [
@@ -2755,6 +2822,7 @@
        600,
        5800,
        10200,
+       false,
        false
       ],
       [
@@ -2771,6 +2839,7 @@
        600,
        6700,
        12950,
+       false,
        false
       ],
       [
@@ -2787,6 +2856,7 @@
        600,
        7600,
        16000,
+       false,
        false
       ]
      ],
@@ -2846,7 +2916,9 @@
        "findings": null
       }
      ],
-     "over": false
+     "over": false,
+     "measured": false,
+     "note": null
     }
    },
    "child_sources": {
@@ -3040,6 +3112,7 @@
        0,
        400,
        0,
+       false,
        false
       ],
       [
@@ -3056,6 +3129,7 @@
        600,
        1300,
        950,
+       false,
        false
       ],
       [
@@ -3072,6 +3146,7 @@
        600,
        2200,
        2200,
+       false,
        false
       ],
       [
@@ -3088,6 +3163,7 @@
        600,
        3100,
        3750,
+       false,
        false
       ],
       [
@@ -3104,6 +3180,7 @@
        600,
        4000,
        5600,
+       false,
        false
       ],
       [
@@ -3120,6 +3197,7 @@
        600,
        4900,
        7750,
+       false,
        false
       ],
       [
@@ -3136,6 +3214,7 @@
        600,
        5800,
        10200,
+       false,
        false
       ],
       [
@@ -3152,6 +3231,7 @@
        600,
        6700,
        12950,
+       false,
        false
       ],
       [
@@ -3168,6 +3248,7 @@
        600,
        7600,
        16000,
+       false,
        false
       ]
      ],
@@ -3237,7 +3318,9 @@
        "findings": null
       }
      ],
-     "over": false
+     "over": false,
+     "measured": false,
+     "note": null
     }
    },
    "child_sources": {
@@ -3421,6 +3504,7 @@
        0,
        400,
        0,
+       false,
        false
       ],
       [
@@ -3437,6 +3521,7 @@
        600,
        1300,
        950,
+       false,
        false
       ],
       [
@@ -3453,6 +3538,7 @@
        600,
        2200,
        2200,
+       false,
        false
       ],
       [
@@ -3469,6 +3555,7 @@
        600,
        3100,
        3750,
+       false,
        false
       ],
       [
@@ -3485,6 +3572,7 @@
        600,
        4000,
        5600,
+       false,
        false
       ],
       [
@@ -3501,6 +3589,7 @@
        600,
        4900,
        7750,
+       false,
        false
       ],
       [
@@ -3517,6 +3606,7 @@
        600,
        5800,
        10200,
+       false,
        false
       ],
       [
@@ -3533,6 +3623,7 @@
        600,
        6700,
        12950,
+       false,
        false
       ],
       [
@@ -3549,6 +3640,7 @@
        600,
        7600,
        16000,
+       false,
        false
       ]
      ],
@@ -3608,7 +3700,9 @@
        "findings": null
       }
      ],
-     "over": false
+     "over": false,
+     "measured": false,
+     "note": null
     }
    },
    "child_sources": {},
@@ -3815,6 +3909,7 @@
        0,
        400,
        0,
+       false,
        false
       ],
       [
@@ -3831,6 +3926,7 @@
        600,
        1300,
        950,
+       false,
        false
       ],
       [
@@ -3847,6 +3943,7 @@
        600,
        2200,
        2200,
+       false,
        false
       ],
       [
@@ -3863,6 +3960,7 @@
        600,
        3100,
        3750,
+       false,
        false
       ],
       [
@@ -3879,6 +3977,7 @@
        600,
        4000,
        5600,
+       false,
        false
       ],
       [
@@ -3895,6 +3994,7 @@
        600,
        4900,
        7750,
+       false,
        false
       ],
       [
@@ -3911,6 +4011,7 @@
        600,
        5800,
        10200,
+       false,
        false
       ],
       [
@@ -3927,6 +4028,7 @@
        600,
        6700,
        12950,
+       false,
        false
       ],
       [
@@ -3943,6 +4045,7 @@
        600,
        7600,
        16000,
+       false,
        false
       ]
      ],
@@ -4002,7 +4105,9 @@
        "findings": null
       }
      ],
-     "over": false
+     "over": false,
+     "measured": false,
+     "note": null
     }
    },
    "child_sources": {},
@@ -4209,6 +4314,7 @@
        0,
        400,
        0,
+       false,
        false
       ],
       [
@@ -4225,6 +4331,7 @@
        600,
        1300,
        950,
+       false,
        false
       ],
       [
@@ -4241,6 +4348,7 @@
        600,
        2200,
        2200,
+       false,
        false
       ],
       [
@@ -4257,6 +4365,7 @@
        600,
        3100,
        3750,
+       false,
        false
       ],
       [
@@ -4273,6 +4382,7 @@
        600,
        4000,
        5600,
+       false,
        false
       ],
       [
@@ -4289,6 +4399,7 @@
        600,
        4900,
        7750,
+       false,
        false
       ],
       [
@@ -4305,6 +4416,7 @@
        600,
        5800,
        10200,
+       false,
        false
       ],
       [
@@ -4321,6 +4433,7 @@
        600,
        6700,
        12950,
+       false,
        false
       ],
       [
@@ -4337,6 +4450,7 @@
        600,
        7600,
        16000,
+       false,
        false
       ]
      ],
@@ -4396,7 +4510,9 @@
        "findings": null
       }
      ],
-     "over": false
+     "over": false,
+     "measured": false,
+     "note": null
     }
    },
    "child_sources": {},
@@ -4597,6 +4713,7 @@
        0,
        400,
        0,
+       false,
        false
       ],
       [
@@ -4613,6 +4730,7 @@
        600,
        1300,
        950,
+       false,
        false
       ],
       [
@@ -4629,6 +4747,7 @@
        600,
        2200,
        2200,
+       false,
        false
       ],
       [
@@ -4645,6 +4764,7 @@
        600,
        3100,
        3750,
+       false,
        false
       ],
       [
@@ -4661,6 +4781,7 @@
        600,
        4000,
        5600,
+       false,
        false
       ],
       [
@@ -4677,6 +4798,7 @@
        600,
        4900,
        7750,
+       false,
        false
       ],
       [
@@ -4693,6 +4815,7 @@
        600,
        5800,
        10200,
+       false,
        false
       ],
       [
@@ -4709,6 +4832,7 @@
        600,
        6700,
        12950,
+       false,
        false
       ],
       [
@@ -4725,6 +4849,7 @@
        600,
        7600,
        16000,
+       false,
        false
       ]
      ],
@@ -4784,7 +4909,9 @@
        "findings": null
       }
      ],
-     "over": false
+     "over": false,
+     "measured": false,
+     "note": null
     }
    },
    "child_sources": {},
@@ -4991,6 +5118,7 @@
        0,
        400,
        0,
+       false,
        false
       ],
       [
@@ -5007,6 +5135,7 @@
        600,
        1300,
        950,
+       false,
        false
       ],
       [
@@ -5023,6 +5152,7 @@
        600,
        2200,
        2200,
+       false,
        false
       ],
       [
@@ -5039,6 +5169,7 @@
        600,
        3100,
        3750,
+       false,
        false
       ],
       [
@@ -5055,6 +5186,7 @@
        600,
        4000,
        5600,
+       false,
        false
       ],
       [
@@ -5071,6 +5203,7 @@
        600,
        4900,
        7750,
+       false,
        false
       ],
       [
@@ -5087,6 +5220,7 @@
        600,
        5800,
        10200,
+       false,
        false
       ],
       [
@@ -5103,6 +5237,7 @@
        600,
        6700,
        12950,
+       false,
        false
       ],
       [
@@ -5119,6 +5254,7 @@
        600,
        7600,
        16000,
+       false,
        false
       ]
      ],
@@ -5188,7 +5324,9 @@
        "findings": null
       }
      ],
-     "over": false
+     "over": false,
+     "measured": false,
+     "note": null
     }
    },
    "child_sources": {},
@@ -5395,6 +5533,7 @@
        0,
        400,
        0,
+       false,
        false
       ],
       [
@@ -5411,6 +5550,7 @@
        600,
        1300,
        950,
+       false,
        false
       ],
       [
@@ -5427,6 +5567,7 @@
        600,
        2200,
        2200,
+       false,
        false
       ],
       [
@@ -5443,6 +5584,7 @@
        600,
        3100,
        3750,
+       false,
        false
       ],
       [
@@ -5459,6 +5601,7 @@
        600,
        4000,
        5600,
+       false,
        false
       ],
       [
@@ -5475,6 +5618,7 @@
        600,
        4900,
        7750,
+       false,
        false
       ],
       [
@@ -5491,6 +5635,7 @@
        600,
        5800,
        10200,
+       false,
        false
       ],
       [
@@ -5507,6 +5652,7 @@
        600,
        6700,
        12950,
+       false,
        false
       ],
       [
@@ -5523,6 +5669,7 @@
        600,
        7600,
        16000,
+       false,
        false
       ]
      ],
@@ -5592,7 +5739,9 @@
        "findings": null
       }
      ],
-     "over": false
+     "over": false,
+     "measured": false,
+     "note": null
     }
    },
    "child_sources": {},
@@ -6590,7 +6739,7 @@
      "t": 144.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -6602,7 +6751,7 @@
      "t": 195.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -6626,7 +6775,7 @@
      "t": 348.4,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -6638,7 +6787,7 @@
      "t": 386.8,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -6650,7 +6799,7 @@
      "t": 452.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -6686,7 +6835,7 @@
      "t": 651.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -6698,7 +6847,7 @@
      "t": 698.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -6722,7 +6871,7 @@
      "t": 830.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -6734,7 +6883,7 @@
      "t": 918.0,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 docs/rules.md",
+     "label": "Edit · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -6746,7 +6895,7 @@
      "t": 986.2,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -6758,7 +6907,7 @@
      "t": 1034.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -6782,7 +6931,7 @@
      "t": 1135.8,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -6794,7 +6943,7 @@
      "t": 1237.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -6806,7 +6955,7 @@
      "t": 1273.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -6866,7 +7015,7 @@
      "t": 1348.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -6926,7 +7075,7 @@
      "t": 1397.3,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 tests/test_loader.py",
+     "label": "Edit · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -6950,7 +7099,7 @@
      "t": 1492.6,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -6962,7 +7111,7 @@
      "t": 1556.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -6974,7 +7123,7 @@
      "t": 1585.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -6986,7 +7135,7 @@
      "t": 1677.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7010,7 +7159,7 @@
      "t": 1793.0,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -7022,7 +7171,7 @@
      "t": 1837.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7034,7 +7183,7 @@
      "t": 1922.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -7046,7 +7195,7 @@
      "t": 1952.5,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7058,7 +7207,7 @@
      "t": 2041.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7070,7 +7219,7 @@
      "t": 2087.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7094,7 +7243,7 @@
      "t": 2214.8,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/loader.py",
+     "label": "Edit · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7106,7 +7255,7 @@
      "t": 2307.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7118,7 +7267,7 @@
      "t": 2361.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7130,7 +7279,7 @@
      "t": 2412.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7142,7 +7291,7 @@
      "t": 2485.5,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7154,7 +7303,7 @@
      "t": 2557.5,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 tests/test_loader.py",
+     "label": "Edit · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7166,7 +7315,7 @@
      "t": 2601.3,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7178,7 +7327,7 @@
      "t": 2677.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -7190,7 +7339,7 @@
      "t": 2751.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -7202,7 +7351,7 @@
      "t": 2770.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7214,7 +7363,7 @@
      "t": 2877.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7226,7 +7375,7 @@
      "t": 2930.2,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -7238,7 +7387,7 @@
      "t": 2983.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7250,7 +7399,7 @@
      "t": 3046.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -7274,7 +7423,7 @@
      "t": 3190.8,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 docs/rules.md",
+     "label": "Edit · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -7286,7 +7435,7 @@
      "t": 3207.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7298,7 +7447,7 @@
      "t": 3295.8,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 docs/rules.md",
+     "label": "Edit · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -7310,7 +7459,7 @@
      "t": 3353.0,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -7322,7 +7471,7 @@
      "t": 3414.6,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7334,7 +7483,7 @@
      "t": 3462.2,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7358,7 +7507,7 @@
      "t": 3618.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -7370,7 +7519,7 @@
      "t": 3654.0,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/loader.py",
+     "label": "Edit · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7382,7 +7531,7 @@
      "t": 3732.5,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -7394,7 +7543,7 @@
      "t": 3817.2,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 tests/test_loader.py",
+     "label": "Edit · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7406,7 +7555,7 @@
      "t": 3878.3,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 docs/rules.md",
+     "label": "Edit · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -7430,7 +7579,7 @@
      "t": 3988.0,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7442,7 +7591,7 @@
      "t": 4073.2,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7454,7 +7603,7 @@
      "t": 4104.4,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7466,7 +7615,7 @@
      "t": 4193.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7478,7 +7627,7 @@
      "t": 4244.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7490,7 +7639,7 @@
      "t": 4312.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 tests/test_loader.py",
+     "label": "Edit · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7502,7 +7651,7 @@
      "t": 4353.6,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7533,7 +7682,7 @@
      "t": 138.6,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 docs/rules.md",
+     "label": "Edit · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -7545,7 +7694,7 @@
      "t": 155.4,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7569,7 +7718,7 @@
      "t": 200.4,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -7581,7 +7730,7 @@
      "t": 208.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7605,7 +7754,7 @@
      "t": 253.3,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/loader.py",
+     "label": "Edit · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7617,7 +7766,7 @@
      "t": 276.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7629,7 +7778,7 @@
      "t": 304.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7641,7 +7790,7 @@
      "t": 329.1,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -7653,7 +7802,7 @@
      "t": 347.3,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7665,7 +7814,7 @@
      "t": 364.7,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7696,7 +7845,7 @@
      "t": 155.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -7708,7 +7857,7 @@
      "t": 190.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7720,7 +7869,7 @@
      "t": 222.7,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 docs/rules.md",
+     "label": "Edit · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -7744,7 +7893,7 @@
      "t": 276.0,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -7756,7 +7905,7 @@
      "t": 291.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7768,7 +7917,7 @@
      "t": 317.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7780,7 +7929,7 @@
      "t": 355.4,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7804,7 +7953,7 @@
      "t": 393.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7828,7 +7977,7 @@
      "t": 454.2,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7840,7 +7989,7 @@
      "t": 482.1,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 docs/rules.md",
+     "label": "Edit · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -7852,7 +8001,7 @@
      "t": 508.2,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7864,7 +8013,7 @@
      "t": 534.0,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -7876,7 +8025,7 @@
      "t": 560.0,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -7907,7 +8056,7 @@
      "t": 206.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7919,7 +8068,7 @@
      "t": 234.7,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 tests/test_loader.py",
+     "label": "Edit · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7931,7 +8080,7 @@
      "t": 270.5,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -7943,7 +8092,7 @@
      "t": 305.6,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -7955,7 +8104,7 @@
      "t": 326.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7967,7 +8116,7 @@
      "t": 361.2,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7979,7 +8128,7 @@
      "t": 405.6,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -7991,7 +8140,7 @@
      "t": 432.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8003,7 +8152,7 @@
      "t": 456.4,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -8015,7 +8164,7 @@
      "t": 498.0,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8027,7 +8176,7 @@
      "t": 512.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8039,7 +8188,7 @@
      "t": 541.0,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -8051,7 +8200,7 @@
      "t": 579.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8063,7 +8212,7 @@
      "t": 600.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8075,7 +8224,7 @@
      "t": 648.3,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8099,7 +8248,7 @@
      "t": 708.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 docs/rules.md",
+     "label": "Edit · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -8111,7 +8260,7 @@
      "t": 720.6,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8135,7 +8284,7 @@
      "t": 789.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8159,7 +8308,7 @@
      "t": 856.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8171,7 +8320,7 @@
      "t": 878.1,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/loader.py",
+     "label": "Edit · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8190,7 +8339,7 @@
      "t": 234.4,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8214,7 +8363,7 @@
      "t": 285.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -8226,7 +8375,7 @@
      "t": 313.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8238,7 +8387,7 @@
      "t": 339.7,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -8250,7 +8399,7 @@
      "t": 367.0,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8262,7 +8411,7 @@
      "t": 383.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -8286,7 +8435,7 @@
      "t": 445.6,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 tests/test_loader.py",
+     "label": "Edit · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8298,7 +8447,7 @@
      "t": 479.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -8310,7 +8459,7 @@
      "t": 503.6,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/loader.py",
+     "label": "Edit · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8334,7 +8483,7 @@
      "t": 545.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -8346,7 +8495,7 @@
      "t": 569.5,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8358,7 +8507,7 @@
      "t": 604.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8382,7 +8531,7 @@
      "t": 665.4,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -8394,7 +8543,7 @@
      "t": 688.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8413,7 +8562,7 @@
      "t": 271.6,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8425,7 +8574,7 @@
      "t": 313.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -8437,7 +8586,7 @@
      "t": 339.4,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/loader.py",
+     "label": "Edit · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8449,7 +8598,7 @@
      "t": 369.4,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8461,7 +8610,7 @@
      "t": 413.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -8473,7 +8622,7 @@
      "t": 437.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8485,7 +8634,7 @@
      "t": 462.3,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 docs/rules.md",
+     "label": "Edit · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -8497,7 +8646,7 @@
      "t": 505.7,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -8509,7 +8658,7 @@
      "t": 538.0,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8521,7 +8670,7 @@
      "t": 553.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8533,7 +8682,7 @@
      "t": 586.0,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8545,7 +8694,7 @@
      "t": 631.0,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -8557,7 +8706,7 @@
      "t": 668.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -8569,7 +8718,7 @@
      "t": 689.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8581,7 +8730,7 @@
      "t": 722.2,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8605,7 +8754,7 @@
      "t": 786.6,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8617,7 +8766,7 @@
      "t": 826.4,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 tests/test_loader.py",
+     "label": "Edit · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8629,7 +8778,7 @@
      "t": 855.8,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8665,7 +8814,7 @@
      "t": 964.5,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -8677,7 +8826,7 @@
      "t": 976.4,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8701,7 +8850,7 @@
      "t": 1051.6,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8713,7 +8862,7 @@
      "t": 1070.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -8725,7 +8874,7 @@
      "t": 1109.4,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 tests/test_loader.py",
+     "label": "Edit · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8737,7 +8886,7 @@
      "t": 1152.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -8749,7 +8898,7 @@
      "t": 1188.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -8768,7 +8917,7 @@
      "t": 405.1,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8780,7 +8929,7 @@
      "t": 433.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8816,7 +8965,7 @@
      "t": 506.8,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8828,7 +8977,7 @@
      "t": 519.0,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -8840,7 +8989,7 @@
      "t": 543.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8852,7 +9001,7 @@
      "t": 572.7,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -8864,7 +9013,7 @@
      "t": 601.2,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8876,7 +9025,7 @@
      "t": 608.0,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8888,7 +9037,7 @@
      "t": 637.2,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -8900,7 +9049,7 @@
      "t": 661.4,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -8912,7 +9061,7 @@
      "t": 674.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8931,7 +9080,7 @@
      "t": 461.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -8943,7 +9092,7 @@
      "t": 477.2,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -8979,7 +9128,7 @@
      "t": 518.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -8991,7 +9140,7 @@
      "t": 536.4,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9003,7 +9152,7 @@
      "t": 556.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -9027,7 +9176,7 @@
      "t": 582.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -9046,7 +9195,7 @@
      "t": 1515.0,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -9070,7 +9219,7 @@
      "t": 1580.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -9082,7 +9231,7 @@
      "t": 1613.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9094,7 +9243,7 @@
      "t": 1652.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9118,7 +9267,7 @@
      "t": 1704.2,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9130,7 +9279,7 @@
      "t": 1737.5,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9142,7 +9291,7 @@
      "t": 1789.4,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9154,7 +9303,7 @@
      "t": 1807.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -9166,7 +9315,7 @@
      "t": 1857.4,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9178,7 +9327,7 @@
      "t": 1882.1,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/loader.py",
+     "label": "Edit · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9190,7 +9339,7 @@
      "t": 1910.1,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9202,7 +9351,7 @@
      "t": 1960.2,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/loader.py",
+     "label": "Edit · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9226,7 +9375,7 @@
      "t": 2007.5,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9238,7 +9387,7 @@
      "t": 2057.7,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -9250,7 +9399,7 @@
      "t": 2067.5,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -9262,7 +9411,7 @@
      "t": 2123.8,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9274,7 +9423,7 @@
      "t": 2140.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9286,7 +9435,7 @@
      "t": 2182.6,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9298,7 +9447,7 @@
      "t": 2200.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -9310,7 +9459,7 @@
      "t": 2253.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9322,7 +9471,7 @@
      "t": 2270.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9334,7 +9483,7 @@
      "t": 2303.6,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9346,7 +9495,7 @@
      "t": 2341.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -9358,7 +9507,7 @@
      "t": 2367.3,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 docs/rules.md",
+     "label": "Edit · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -9370,7 +9519,7 @@
      "t": 2409.5,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9382,7 +9531,7 @@
      "t": 2441.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9394,7 +9543,7 @@
      "t": 2468.7,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9430,7 +9579,7 @@
      "t": 2565.0,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9449,7 +9598,7 @@
      "t": 2803.2,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 docs/rules.md",
+     "label": "Edit · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -9461,7 +9610,7 @@
      "t": 2839.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -9473,7 +9622,7 @@
      "t": 2872.8,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9485,7 +9634,7 @@
      "t": 2894.4,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9497,7 +9646,7 @@
      "t": 2930.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9521,7 +9670,7 @@
      "t": 2987.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -9533,7 +9682,7 @@
      "t": 3009.0,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9545,7 +9694,7 @@
      "t": 3023.8,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/loader.py",
+     "label": "Edit · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9557,7 +9706,7 @@
      "t": 3054.7,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9569,7 +9718,7 @@
      "t": 3077.6,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/loader.py",
+     "label": "Edit · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9581,7 +9730,7 @@
      "t": 3120.5,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9593,7 +9742,7 @@
      "t": 3136.2,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -9605,7 +9754,7 @@
      "t": 3180.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9617,7 +9766,7 @@
      "t": 3201.5,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9629,7 +9778,7 @@
      "t": 3220.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -9641,7 +9790,7 @@
      "t": 3245.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9653,7 +9802,7 @@
      "t": 3283.3,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/loader.py",
+     "label": "Edit · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9672,7 +9821,7 @@
      "t": 3404.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9684,7 +9833,7 @@
      "t": 3428.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9696,7 +9845,7 @@
      "t": 3446.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9708,7 +9857,7 @@
      "t": 3456.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9720,7 +9869,7 @@
      "t": 3479.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9732,7 +9881,7 @@
      "t": 3505.2,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -9744,7 +9893,7 @@
      "t": 3515.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9756,7 +9905,7 @@
      "t": 3539.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 tests/test_loader.py",
+     "label": "Read · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9768,7 +9917,7 @@
      "t": 3547.6,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -9780,7 +9929,7 @@
      "t": 3564.7,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9792,7 +9941,7 @@
      "t": 3581.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -9811,7 +9960,7 @@
      "t": 3726.6,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9823,7 +9972,7 @@
      "t": 3750.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9835,7 +9984,7 @@
      "t": 3770.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 docs/rules.md",
+     "label": "Edit · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -9847,7 +9996,7 @@
      "t": 3797.5,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -9871,7 +10020,7 @@
      "t": 3855.4,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9883,7 +10032,7 @@
      "t": 3892.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/loader.py",
+     "label": "Read · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9907,7 +10056,7 @@
      "t": 3952.0,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/xray/parse.py",
+     "label": "Edit · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9919,7 +10068,7 @@
      "t": 3998.2,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 CLAUDE.md",
+     "label": "Read · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -9931,7 +10080,7 @@
      "t": 4016.9,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -9955,7 +10104,7 @@
      "t": 4067.5,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9967,7 +10116,7 @@
      "t": 4103.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -9979,7 +10128,7 @@
      "t": 4143.4,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -9991,7 +10140,7 @@
      "t": 4156.0,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -10015,7 +10164,7 @@
      "t": 4228.3,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 CLAUDE.md",
+     "label": "Edit · CLAUDE.md",
      "source": "CLAUDE.md",
      "server": null,
      "failed": false,
@@ -10027,7 +10176,7 @@
      "t": 4258.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -10051,7 +10200,7 @@
      "t": 4320.6,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/rules/index.py",
+     "label": "Edit · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -10063,7 +10212,7 @@
      "t": 4338.8,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 docs/rules.md",
+     "label": "Edit · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -10075,7 +10224,7 @@
      "t": 4374.3,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/loader.py",
+     "label": "Edit · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -10094,7 +10243,7 @@
      "t": 7016.8,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 tests/test_loader.py",
+     "label": "Edit · tests/test_loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -10106,7 +10255,7 @@
      "t": 7027.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/xray/parse.py",
+     "label": "Read · src/xray/parse.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -10118,7 +10267,7 @@
      "t": 7043.8,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -10130,7 +10279,7 @@
      "t": 7063.0,
      "category": "edit",
      "tool": "Edit",
-     "label": "Edit \u00b7 src/loader.py",
+     "label": "Edit · src/loader.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -10154,7 +10303,7 @@
      "t": 7093.6,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -10166,7 +10315,7 @@
      "t": 7110.7,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 docs/rules.md",
+     "label": "Read · docs/rules.md",
      "source": null,
      "server": null,
      "failed": false,
@@ -10178,7 +10327,7 @@
      "t": 7127.3,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -10190,7 +10339,7 @@
      "t": 7153.1,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -10202,7 +10351,7 @@
      "t": 7170.4,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,
@@ -10214,7 +10363,7 @@
      "t": 7179.9,
      "category": "read",
      "tool": "Read",
-     "label": "Read \u00b7 src/rules/index.py",
+     "label": "Read · src/rules/index.py",
      "source": null,
      "server": null,
      "failed": false,

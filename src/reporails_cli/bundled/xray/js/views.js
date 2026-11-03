@@ -39,8 +39,10 @@ export function focusSource(ix, state) {
 
 export const childrenOf = (ix, node) => node.children.map(id => ix.nodes.get(id)).filter(Boolean);
 
-// A reply row is [t, total, input, cache write, cache read, ...one value per category key, over_estimate].
+// A reply row is [t, total, input, cache write, cache read, ...one value per category key, over_estimate, measured].
 export const replyParts = (comp, row) => row.slice(5, 5 + comp.keys.length);
+export const replyOver = row => row[row.length - 2] === true;
+export const replyMeasured = row => row[row.length - 1] === true;
 
 export const TABS = ['graph', 'calls', 'sources'];
 

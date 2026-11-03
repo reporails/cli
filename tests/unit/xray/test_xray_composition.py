@@ -17,7 +17,7 @@ from tests.unit.xray.test_xray_graph import _agent, _file, _graph, _node, launch
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 
-COLUMNS = ("t", "total", "input", "cache_write", "cache_read", *COMPOSITION_KEYS, "over_estimate")
+COLUMNS = ("t", "total", "input", "cache_write", "cache_read", *COMPOSITION_KEYS, "over_estimate", "measured")
 Row = dict[str, object]
 
 
