@@ -101,7 +101,7 @@ function tiles(node, env) {
   return box;
 }
 
-// The details a row of the in-context list opens: a source, the task prompt, a built-in item, or the composition at peak.
+// The details a row of the in-context list opens: a source, the task prompt, a built-in item, how a measured row was worked out for this agent, or the composition at peak.
 function opener(row, node, env) {
   const view = env.ix.view;
   if (row.key === 'source' || row.key === 'hooks') return row.source ? { source: row.source } : null;
@@ -110,7 +110,7 @@ function opener(row, node, env) {
     const item = (view.builtin || []).find(b => b.remainder) || (view.builtin || [])[0];
     return item ? { peek: `builtin:${item.key}` } : null;
   }
-  if (row.key === 'system_prompt' || row.key === 'tool_definitions') return { peek: `builtin:${row.key}` };
+  if (row.measure) return { peek: `measured:${row.key}:${node.id}` };
   return { peek: `peak:${node.id}` };
 }
 

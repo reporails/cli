@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import itertools
 import json
 import os
@@ -146,22 +147,37 @@ def _chars(value: object) -> int:
     return len(json.dumps(value, separators=(",", ":"), ensure_ascii=False))
 
 
-def _expected_shares(peak: int, *, system: int, other: int, calls: int) -> dict[str, int]:
+def _expected_shares(peak: int, *, system: int, other: int, calls: int, images: int = 0) -> dict[str, int]:
     """The rows a measured peak must show: the request's characters scaled to the reply's exact `peak` total, the
     system blocks, the tool definitions and the tool calls and results each taking their own share. `other` is the
-    characters of the messages that are neither tool calls nor tool results."""
+    characters of the messages that are neither tool calls nor tool results. The `images` tokens of a picture in a
+    tool result come off the total before the text is scaled, and sit in the tool row."""
     tools = sum(_chars(tool) for tool in FIXTURE_TOOLS)
-    scale = peak / (system + tools + calls + other)
+    scale = (peak - images) / (system + tools + calls + other)
     return {
         "system_prompt": round(system * scale),
         "tool_definitions": round(tools * scale),
-        "tool_io": round(calls * scale),
+        "tool_io": round(calls * scale) + images,
     }
 
 
 def _request_row(rid: str, shape: str, keep: int, tail: list[str], second: int, project: Path) -> dict:
-    """An `api-request` row: the messages it keeps from the previous request and the hashes of those it appends."""
-    return _row("api-request", second, "2.1.309", project, id=rid, shapeHash=shape, keep=keep, tail=tail)
+    """An `api-request` row: the messages it keeps from the previous request, the hashes of those it appends and
+    the model it was sent to."""
+    params = {"model": "claude-opus-5-5"}
+    return _row("api-request", second, "2.1.309", project, id=rid, shapeHash=shape, keep=keep, tail=tail, params=params)
+
+
+# A 1920x1080 picture costs 1560 visual tokens on a standard model and 2691 on a high-resolution one; only the PNG
+# header has to be real.
+_PNG_HEADER = (
+    b"\x89PNG\r\n\x1a\n" + (13).to_bytes(4, "big") + b"IHDR" + (1920).to_bytes(4, "big") + (1080).to_bytes(4, "big")
+)
+PICTURE = {
+    "type": "image",
+    "source": {"type": "base64", "media_type": "image/png", "data": base64.b64encode(_PNG_HEADER + bytes(9)).decode()},
+}
+PICTURE_TOKENS = 2691
 
 
 def _peak(rows: list[dict]) -> int:
@@ -175,7 +191,7 @@ def _peak(rows: list[dict]) -> int:
     return max(totals)
 
 
-def _write_session(context, recorded: bool) -> None:
+def _write_session(context, recorded: bool, *, picture: bool = False) -> None:
     """A fixture session of a main agent and one subagent. `recorded` adds the request rows Claude Code 2.1.309
     writes and the `requestRef` of each reply; an older Claude Code writes neither. Keeps the highest total of each
     agent's own replies, from its own file, in `context.peaks`."""
@@ -201,7 +217,8 @@ def _write_session(context, recorded: bool) -> None:
             },
         }
     ]
-    done = [{"type": "tool_result", "tool_use_id": "toolu_sub1", "content": "launched"}]
+    done_content = [{"type": "text", "text": "launched"}, PICTURE] if picture else "launched"
+    done = [{"type": "tool_result", "tool_use_id": "toolu_sub1", "content": done_content}]
     note = {"role": "user", "content": "and the tests"}
     main = [
         _row(
@@ -218,7 +235,15 @@ def _write_session(context, recorded: bool) -> None:
         _row("user", 3, version, project, message=note),
         _reply(4, version, project, "msg_2", launch, _usage(1000, 800), "req-main-2"),
         _row("user", 5, version, project, message={"role": "user", "content": done}),
-        _reply(6, version, project, "msg_3", [{"type": "text", "text": "all done"}], _usage(2000, 400), "req-main-3"),
+        _reply(
+            6,
+            version,
+            project,
+            "msg_3",
+            [{"type": "text", "text": "all done"}],
+            _usage(4000 if picture else 2000, 800 if picture else 400),
+            "req-main-3",
+        ),
     ]
     sub = [
         _row("user", 10, version, project, message={"role": "user", "content": listed}),
@@ -268,7 +293,13 @@ def _write_session(context, recorded: bool) -> None:
     main_other = len(ask) + len(note["content"]) + len(hello[0]["text"])
     sub_other = len(listed) + len("a b c")
     context.expected = {
-        "main": _expected_shares(context.peaks["main"], system=2000, other=main_other, calls=main_calls),
+        "main": _expected_shares(
+            context.peaks["main"],
+            system=2000,
+            other=main_other,
+            calls=main_calls,
+            images=PICTURE_TOKENS if picture else 0,
+        ),
         "sub": _expected_shares(context.peaks["sub"], system=500, other=sub_other, calls=0),
     }
     write = lambda path, rows: path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")  # noqa: E731
@@ -290,10 +321,21 @@ def step_session_with_requests(context):
     _write_session(context, True)
 
 
+@given("a project with a session whose peak request carries a picture inside a tool result, with a subagent")
+def step_session_with_picture(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    _write_session(context, True, picture=True)
+
+
 @given("a project with a session from an older Claude Code that did not record its requests, with a subagent")
 def step_session_without_requests(context):
     context.project = build_project(context.tmpdir / "proj").resolve()
     _write_session(context, False)
+
+
+def _k1(n: int) -> str:
+    """A token count as the page writes it (`format.js` `k1`) for counts under ten thousand."""
+    return str(n) if n < 1000 else f"{n / 1000:.1f}".rstrip("0").rstrip(".") + "k"
 
 
 def _session_view(context) -> dict:
@@ -336,6 +378,34 @@ def step_measured_shares(context):
         rows = {row["key"]: row["tokens_est"] for row in ic["rows"]}
         got = {key: rows[key] for key in context.expected[name]}
         assert got == context.expected[name], (name, got, context.expected[name])
+
+
+@then("the main agent's tool calls and results row holds the picture's tokens and its measure names them")
+def step_picture_row(context):
+    main, _ = _context_of(_session_view(context))
+    row = next(row for row in main["rows"] if row["key"] == "tool_io")
+    assert row["measure"]["images"] == PICTURE_TOKENS, row
+    assert row["tokens_est"] >= PICTURE_TOKENS, row
+    others = [r for r in main["rows"] if r["key"] in ("system_prompt", "tool_definitions")]
+    assert all(r["measure"]["images"] == 0 for r in others), others
+
+
+@then("each agent's measured System prompt row opens that agent's own figure and request")
+def step_measured_row_opens_own(context):
+    seen = _page(context, "measuredrow")
+    if seen is None:
+        return
+    main, sub = _context_of(_session_view(context))
+    for name, ic in (("main", main), ("sub", sub)):
+        row = next(row for row in ic["rows"] if row["key"] == "system_prompt")
+        text = seen[name]["text"]
+        assert seen[name]["peek"].startswith("measured:system_prompt:"), seen[name]
+        assert f"{_k1(row['tokens_est'])} · measured" in text, (name, row["tokens_est"], text)
+        assert ic["request_id"] in text, (name, ic["request_id"], text)
+        assert f"{row['measure']['chars']:,}" in text, (name, text)
+    assert main["request_id"] != sub["request_id"]
+    assert main["request_id"] not in seen["sub"]["text"], seen["sub"]
+    assert sub["request_id"] not in seen["main"]["text"], seen["main"]
 
 
 @then("the page's In context list for each agent shows no remainder text and no asterisk")

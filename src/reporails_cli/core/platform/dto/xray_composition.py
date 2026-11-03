@@ -36,8 +36,16 @@ ESTIMATED_KEYS: tuple[CompositionKey, ...] = tuple(key for key in COMPOSITION_KE
 SPOKEN_KEYS: tuple[CompositionKey, ...] = ("conversation", "tool_results")
 
 
-# A recorded request and the factor that scales its characters to the exact total of the reply it answered.
-type RequestMeasure = tuple[RequestSize, float]
+@dataclass(frozen=True)
+class RequestMeasure:
+    """A recorded request and what scales it to the exact total of the reply it answered: `scale`, the tokens per
+    character of its text (images left out), and the tokens of its images at its model's tier, `images` in the
+    conversation and `result_images` inside tool results."""
+
+    size: RequestSize
+    scale: float
+    images: int
+    result_images: int
 
 
 @dataclass(frozen=True)

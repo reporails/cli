@@ -46,6 +46,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayContextRow,
     XrayDown,
     XrayInContext,
+    XrayRowMeasure,
 )
 from reporails_cli.core.platform.dto.xray_sources import SourceEntry, XrayBuiltin, XrayContextText
 from reporails_cli.core.xray.derive import build_harness, context_of, frame_time, replies_of, tokens_of
@@ -211,22 +212,24 @@ def _request_sizes(records: Sequence[EventRecord]) -> dict[str, RequestSize]:
 
 
 def _measure(usage: TokenUsage, sizes: dict[str, RequestSize]) -> RequestMeasure | None:
-    """The recorded request `usage` answered and the factor that scales its characters to the reply's exact total;
-    None when the request was not recorded, names a message the file never recorded, or measured no characters."""
+    """The recorded request `usage` answered, with the tokens per character of its text and its images priced at
+    its model's tier. The images take their own tokens off the reply's exact total before the text is scaled to
+    the rest. None when the request was not recorded, names a message the file never recorded, holds an image that
+    could not be priced or one whose model's tier is unknown, or measured no characters."""
     size = None if usage.request_ref is None else sizes.get(usage.request_ref)
-    if size is None or size.unresolved:
+    if size is None or size.unresolved or size.parts.unpriced_images:
         return None
-    chars = (
-        size.system_chars
-        + size.tools_chars
-        + size.user_text
-        + size.notes
-        + size.assistant_text
-        + size.thinking
-        + size.tool_calls
-        + size.tool_results
-    )
-    return None if chars <= 0 else (size, context_of(usage) / chars)
+    parts = size.parts
+    held = parts.images + parts.result_images
+    if size.high_resolution is None and (held.standard or held.high):
+        return None
+    high = bool(size.high_resolution)
+    images, result_images = parts.images.at(high_resolution=high), parts.result_images.at(high_resolution=high)
+    chars = size.system_chars + size.tools_chars + parts.text_chars
+    text_tokens = context_of(usage) - images - result_images
+    if chars <= 0 or text_tokens <= 0:
+        return None
+    return RequestMeasure(size, text_tokens / chars, images, result_images)
 
 
 def _share(chars: int, scale: float) -> int:
@@ -254,11 +257,11 @@ def _reply_row(
             remainder < 0,
             None,
         )
-    size, scale = measured
+    size, scale = measured.size, measured.scale
     fixed: dict[CompositionKey, int] = {
         **{key: held[key] for key in ESTIMATED_KEYS if key not in SPOKEN_KEYS},
         REMAINDER_KEY: _share(size.system_chars + size.tools_chars, scale),
-        "tool_results": _share(size.tool_calls + size.tool_results, scale),
+        "tool_results": _share(size.parts.tool_calls + size.parts.tool_results, scale) + measured.result_images,
     }
     conversation = total - sum(fixed.values())
     fixed["conversation"] = max(0, conversation)
@@ -326,7 +329,7 @@ def builtin_items(
     for info in vocabulary.context.builtin:
         item = held.get(info.key)
         if info.key == "system_prompt" and measured is not None:
-            size, scale = measured
+            size, scale = measured.size, measured.scale
             note = info.measured_note or info.note
             found.append(XrayBuiltin(info.key, info.label, _share(size.system_chars, scale), note, info.visible, False))
         elif info.key == "system_prompt":
@@ -334,7 +337,7 @@ def builtin_items(
                 found.append(XrayBuiltin(info.key, info.label, system, info.note, info.visible, True))
         elif info.key == "tool_definitions":
             if measured is not None:
-                size, scale = measured
+                size, scale = measured.size, measured.scale
                 note = _count_text(info.note, info.note_once, size.tool_count)
                 found.append(
                     XrayBuiltin(info.key, info.label, _share(size.tools_chars, scale), note, info.visible, False)
@@ -467,6 +470,27 @@ def _closing_rows(
     return [own_row, XrayContextRow("rest", None, None, rest.label, rest.reason, max(0, left), None, None)]
 
 
+def _measured_shares(
+    measured: RequestMeasure, taken: tuple[int, int]
+) -> list[tuple[ContextKey, int, XrayRowMeasure | None]]:
+    """The system prompt, tool definitions and tool calls and results of a measured request as rows: each share
+    of the request's characters at its scale, the system prompt and tool definitions less what an earlier row
+    already lists, the tool row with the images of the tool results added."""
+    size, scale = measured.size, measured.scale
+    mcp, defined = taken
+    system, tools = _share(size.system_chars, scale), _share(size.tools_chars, scale)
+    io_chars = size.parts.tool_calls + size.parts.tool_results
+    return [
+        ("system_prompt", max(0, system - defined), XrayRowMeasure(size.system_chars, 0, min(defined, system))),
+        ("tool_definitions", max(0, tools - mcp), XrayRowMeasure(size.tools_chars, 0, min(mcp, tools))),
+        (
+            "tool_io",
+            _share(io_chars, scale) + measured.result_images,
+            XrayRowMeasure(io_chars, measured.result_images, 0),
+        ),
+    ]
+
+
 def _measured_rows(
     measured: RequestMeasure,
     reply: ReplyComposition,
@@ -478,19 +502,13 @@ def _measured_rows(
     definitions without the MCP servers (both already listed above), the tool calls and results, the skills listing
     when the reply held one (the composition's estimate, not part of the request's measured shares), and the
     conversation, which takes what is left of the total, at 0 when the rest overshoots it."""
-    size, scale = measured
-    mcp, defined = taken
-    shares: list[tuple[ContextKey, int]] = [
-        ("system_prompt", max(0, _share(size.system_chars, scale) - defined)),
-        ("tool_definitions", max(0, _share(size.tools_chars, scale) - mcp)),
-        ("tool_io", _share(size.tool_calls + size.tool_results, scale)),
-    ]
+    shares = _measured_shares(measured, taken)
     listing = reply.parts[COMPOSITION_KEYS.index("skill_listing")]
     if listing > 0:
-        shares.append(("skill_listing", listing))
+        shares.append(("skill_listing", listing, None))
     rows = [
-        XrayContextRow(key, None, None, texts[key].label, texts[key].reason, tokens, None, None)
-        for key, tokens in shares
+        XrayContextRow(key, None, None, texts[key].label, texts[key].reason, tokens, None, None, row_measure)
+        for key, tokens, row_measure in shares
     ]
     left = reply.total - sum(row.tokens_est for row in (*opening, *rows))
     rest = texts["conversation"]
@@ -532,5 +550,11 @@ def build_in_context(
         shown = (*rows, *_measured_rows(measured, reply, rows, (mcp, defined), texts))
         note = None
     return XrayInContext(
-        reply.total, shown, sum(row.tokens_est for row in shown) != reply.total, measured is not None, note
+        reply.total,
+        shown,
+        sum(row.tokens_est for row in shown) != reply.total,
+        measured is not None,
+        note,
+        None if measured is None else measured.size.request_id,
+        None if measured is None else measured.scale,
     )

@@ -279,6 +279,24 @@ if (mode === 'inctx' && ready) {
   out.sub = await listed();
 }
 
+if (mode === 'measuredrow' && ready) {
+  // The details a measured System prompt row opens, on the main agent and on the first subagent.
+  const open = async () => {
+    await page.until(`!!document.querySelector('#inspector .ix-ctx .ic[data-peek*="system_prompt"]')`);
+    const peek = await page.ev(`document.querySelector('#inspector .ix-ctx .ic[data-peek*="system_prompt"]').dataset.peek`);
+    await click('#inspector .ix-ctx .ic[data-peek*="system_prompt"]');
+    await page.until(`!!document.querySelector('.pk-dialog')`);
+    const text = await page.ev(`document.querySelector('.pk-dialog').textContent`);
+    await click('.pk-x');
+    return { peek, text };
+  };
+  out.main = await open();
+  const before = await page.ev(`document.querySelector('#inspector .nm').textContent`);
+  await click('.card[data-node]:not(.top):not(.bottom)');
+  await page.until(`document.querySelector('#inspector .nm').textContent !== ${JSON.stringify(before)}`);
+  out.sub = await open();
+}
+
 if (mode === 'words' && ready) {
   await expandAll();
   out.header = await page.ev(`document.querySelector('.hmeta').textContent`);

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -9,12 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.eventbus.adapters.claude_requests import feed_row, message_hash, shape_system_text
+from reporails_cli.core.eventbus.adapters.claude_requests import content_size, feed_row, message_hash, shape_system_text
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.eventbus.transcript import read_transcript
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.events import (
     EventRecord,
+    ImageTokens,
     MessageSize,
     RequestChain,
     RequestSize,
@@ -103,11 +105,20 @@ def test_fixture_rebuilds_each_request_by_part(tmp_path: Path) -> None:
     path = tmp_path / "s1.jsonl"
     _write(path, _fixture_rows())
     first, second = _sizes(_read(path)[0])
-    assert first == RequestSize("req_1", 6, 12, 1, 5, 5, 0, 0, 0, 0, 0, ("A",))
+    assert first == RequestSize("req_1", 6, 12, 1, MessageSize(user_text=5, notes=5), 0, ("A",), None)
     # keep=2 holds the system note and "hello"; the tail adds the assistant response (the hash of the response
     # without `caller`), the tool result and one unknown hash that counts as unresolved.
     expected_calls = len("Read") + len('{"file_path":"/x"}')
-    assert second == RequestSize("req_2", 6, 12, 1, 5, 5, 0, 5, expected_calls, 4, 1, ("A",))
+    assert second == RequestSize(
+        "req_2",
+        6,
+        12,
+        1,
+        MessageSize(user_text=5, notes=5, thinking=5, tool_calls=expected_calls, tool_results=4),
+        1,
+        ("A",),
+        None,
+    )
 
 
 def test_assistant_merge_is_registered_with_and_without_caller() -> None:
@@ -248,22 +259,71 @@ def test_request_content_that_is_not_the_pinned_shape_is_refused(row: JsonObject
         feed_row(RequestChain(), row)
 
 
+def _png(width: int, height: int) -> str:
+    header = (
+        b"\x89PNG\r\n\x1a\n" + (13).to_bytes(4, "big") + b"IHDR" + width.to_bytes(4, "big") + height.to_bytes(4, "big")
+    )
+    return base64.b64encode(header + bytes(9)).decode()
+
+
+def _image(data: str, media_type: str = "image/png", kind: str = "base64") -> JsonObject:
+    return {"type": "image", "source": {"type": kind, "media_type": media_type, "data": data}}
+
+
 def test_every_block_type_that_occurs_is_sized() -> None:
     chain = RequestChain()
-    feed_row(
-        chain, {**_blob_of([{"type": "image", "source": {"data": "z" * 900}}, {"type": "document"}]), "hash": "im"}
-    )
+    feed_row(chain, {**_blob_of([_image(_png(200, 200)), {"type": "document"}]), "hash": "im"})
     feed_row(chain, {**_blob_of([{"type": "redacted_thinking", "data": "abc"}], "assistant"), "hash": "rt"})
     addition = {"type": "tool_addition", "tool": {"type": "tool_definition", "definition": {"name": "é"}}}
     feed_row(chain, {**_blob_of([addition], "system"), "hash": "ta"})
     nested = [
-        {"type": "tool_result", "tool_use_id": "t", "content": [{"type": "image"}, {"type": "text", "text": "ab"}]}
+        {
+            "type": "tool_result",
+            "tool_use_id": "t",
+            "content": [_image(_png(1920, 1080)), {"type": "text", "text": "ab"}],
+        }
     ]
     feed_row(chain, {**_blob_of(nested), "hash": "tr"})
-    assert chain.pool["im"] == MessageSize()
+    assert chain.pool["im"] == MessageSize(images=ImageTokens(64, 64), unpriced_images=1)
     assert chain.pool["rt"] == MessageSize(thinking=3)
     assert chain.pool["ta"] == MessageSize(notes=len('{"type":"tool_definition","definition":{"name":"é"}}'))
-    assert chain.pool["tr"] == MessageSize(tool_results=2)
+    # An image inside a tool result is a result image, not one of the message's own.
+    assert chain.pool["tr"] == MessageSize(tool_results=2, result_images=ImageTokens(1560, 2691))
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        _image("http://x/y.png", kind="url"),
+        _image("!!!not base64!!!"),
+        _image(_png(10, 10), media_type="image/bmp"),
+        _image(_png(0, 10)),
+    ],
+    ids=["url source", "bad base64", "unknown media type", "zero width"],
+)
+def test_an_image_that_cannot_be_priced_is_counted_unpriced(block: JsonObject) -> None:
+    assert content_size("user", [block], "x") == MessageSize(unpriced_images=1)
+
+
+def test_an_image_whose_source_is_not_an_object_is_refused() -> None:
+    with pytest.raises(PayloadRefused, match="image block source is not an object"):
+        content_size("user", [{"type": "image", "source": "x"}], "x")
+
+
+@pytest.mark.parametrize(
+    ("params", "tier"),
+    [
+        ({"model": "claude-opus-5-5"}, True),
+        ({"model": "claude-sonnet-4-6"}, False),
+        ({"model": "gpt"}, None),
+        (None, None),
+    ],
+)
+def test_a_request_carries_the_tier_of_its_models_image_price(params: object, tier: bool | None) -> None:
+    chain = RequestChain()
+    feed_row(chain, _shape())
+    size = feed_row(chain, {**_request("r", 0, []), "params": params})
+    assert size is not None and size.high_resolution is tier
 
 
 def test_tool_definitions_and_inputs_are_sized_as_compact_json() -> None:

@@ -140,6 +140,29 @@ registerPeek('builtin', (env, id) => {
   };
 });
 
+// "<row key>:<node id>": a row has no colon, a node id may.
+registerPeek('measured', (env, id) => {
+  const at = id.indexOf(':');
+  const node = at < 0 ? null : env.ix.nodes.get(id.slice(at + 1));
+  const ic = node && node.detail && node.detail.in_context;
+  const row = ic && (ic.rows || []).find(r => r.key === id.slice(0, at));
+  if (!row || !row.measure) return null;
+  const m = row.measure;
+  const owner = node.parent === null ? 'main agent' : node.name;
+  return {
+    chip: '·', kicker: `Measured · ${owner}`, title: row.label, tags: [`${k1(row.tokens_est)} · measured`],
+    main: [section('How it was measured', kv([
+      ['Request', ic.request_id],
+      ['Characters', m.chars.toLocaleString('en-US')],
+      ['Tokens per character', Number(ic.tokens_per_char).toPrecision(3)],
+      ['Image tokens', m.images > 0 ? m.images.toLocaleString('en-US') : null],
+      ['Already listed above', m.listed_above > 0 ? k1(m.listed_above) : null],
+    ]), nk('The share is the row’s characters scaled to the reply’s exact total.'))],
+    side: [],
+    actions: [],
+  };
+});
+
 registerPeek('task', (env, id) => {
   const { ix } = env;
   const node = ix.nodes.get(id);

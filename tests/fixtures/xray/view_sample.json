@@ -746,12 +746,15 @@
               "reason": "grew during the run, estimated",
               "tokens_est": 596000,
               "t": null,
-              "findings": null
+              "findings": null,
+              "measure": null
             }
           ],
           "over": false,
           "measured": false,
-          "note": null
+          "note": null,
+          "request_id": null,
+          "tokens_per_char": null
         }
       },
       "child_sources": {
@@ -1123,12 +1126,15 @@
               "reason": "grew during the run, estimated",
               "tokens_est": 88000,
               "t": null,
-              "findings": null
+              "findings": null,
+              "measure": null
             }
           ],
           "over": false,
           "measured": false,
-          "note": null
+          "note": null,
+          "request_id": null,
+          "tokens_per_char": null
         }
       },
       "child_sources": {},
@@ -1480,12 +1486,15 @@
               "reason": "grew during the run, estimated",
               "tokens_est": 120000,
               "t": null,
-              "findings": null
+              "findings": null,
+              "measure": null
             }
           ],
           "over": false,
           "measured": false,
-          "note": null
+          "note": null,
+          "request_id": null,
+          "tokens_per_char": null
         }
       },
       "child_sources": {},
@@ -1845,12 +1854,15 @@
               "reason": "grew during the run, estimated",
               "tokens_est": 64000,
               "t": null,
-              "findings": null
+              "findings": null,
+              "measure": null
             }
           ],
           "over": false,
           "measured": false,
-          "note": null
+          "note": null,
+          "request_id": null,
+          "tokens_per_char": null
         }
       },
       "child_sources": {},
@@ -2210,12 +2222,15 @@
               "reason": "grew during the run, estimated",
               "tokens_est": 97000,
               "t": null,
-              "findings": null
+              "findings": null,
+              "measure": null
             }
           ],
           "over": false,
           "measured": false,
-          "note": null
+          "note": null,
+          "request_id": null,
+          "tokens_per_char": null
         }
       },
       "child_sources": {},
@@ -2583,12 +2598,15 @@
               "reason": "grew during the run, estimated",
               "tokens_est": 210000,
               "t": null,
-              "findings": null
+              "findings": null,
+              "measure": null
             }
           ],
           "over": false,
           "measured": false,
-          "note": null
+          "note": null,
+          "request_id": null,
+          "tokens_per_char": null
         }
       },
       "child_sources": {
@@ -2935,12 +2953,15 @@
               "reason": "grew during the run, estimated",
               "tokens_est": 72000,
               "t": null,
-              "findings": null
+              "findings": null,
+              "measure": null
             }
           ],
           "over": false,
           "measured": false,
-          "note": null
+          "note": null,
+          "request_id": null,
+          "tokens_per_char": null
         }
       },
       "child_sources": {
@@ -3277,12 +3298,15 @@
               "reason": "grew during the run, estimated",
               "tokens_est": 51000,
               "t": null,
-              "findings": null
+              "findings": null,
+              "measure": null
             }
           ],
           "over": false,
           "measured": false,
-          "note": null
+          "note": null,
+          "request_id": null,
+          "tokens_per_char": null
         }
       },
       "child_sources": {},
@@ -3642,12 +3666,15 @@
               "reason": "grew during the run, estimated",
               "tokens_est": 180000,
               "t": null,
-              "findings": null
+              "findings": null,
+              "measure": null
             }
           ],
           "over": false,
           "measured": false,
-          "note": null
+          "note": null,
+          "request_id": null,
+          "tokens_per_char": null
         }
       },
       "child_sources": {},
@@ -4007,12 +4034,15 @@
               "reason": "grew during the run, estimated",
               "tokens_est": 90000,
               "t": null,
-              "findings": null
+              "findings": null,
+              "measure": null
             }
           ],
           "over": false,
           "measured": false,
-          "note": null
+          "note": null,
+          "request_id": null,
+          "tokens_per_char": null
         }
       },
       "child_sources": {},
@@ -4366,12 +4396,15 @@
               "reason": "grew during the run, estimated",
               "tokens_est": 43000,
               "t": null,
-              "findings": null
+              "findings": null,
+              "measure": null
             }
           ],
           "over": false,
           "measured": false,
-          "note": null
+          "note": null,
+          "request_id": null,
+          "tokens_per_char": null
         }
       },
       "child_sources": {},
@@ -4731,12 +4764,15 @@
               "reason": "grew during the run, estimated",
               "tokens_est": 77000,
               "t": null,
-              "findings": null
+              "findings": null,
+              "measure": null
             }
           ],
           "over": false,
           "measured": false,
-          "note": null
+          "note": null,
+          "request_id": null,
+          "tokens_per_char": null
         }
       },
       "child_sources": {},
@@ -5096,12 +5132,15 @@
               "reason": "grew during the run, estimated",
               "tokens_est": 61000,
               "t": null,
-              "findings": null
+              "findings": null,
+              "measure": null
             }
           ],
           "over": false,
           "measured": false,
-          "note": null
+          "note": null,
+          "request_id": null,
+          "tokens_per_char": null
         }
       },
       "child_sources": {},

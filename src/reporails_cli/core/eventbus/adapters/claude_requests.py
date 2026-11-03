@@ -6,10 +6,11 @@ and `message`, `{role, content}` with role `system`, `user` or `assistant`), `ap
 `requestRef` of the assistant rows that answer it, `shapeHash`, `keep`, a non-negative whole number of the previous
 request's messages this one keeps, and `tail`, a list of the hashes of the messages it appends) and the `user` and
 `assistant` rows whose messages those hashes name; Claude Code records them from 2.1.309. The fields
-`querySource`, `params`, `cacheControl` and `requestDigest` are not read. A hash that names no known message
-counts as unresolved and keeps its place in the request as an empty size. `feed_row` takes every row of one file
-in order and keeps only the sizes of what it sees and the names of the tools a request was sent with; the text of a
-message is never stored.
+`querySource`, `cacheControl` and `requestDigest` are not read, and of `params` only `model` is. A hash that names no
+known message counts as unresolved and keeps its place in the request as an empty size. `feed_row` takes every row
+of one file in order and keeps only the sizes of what it sees and the names of the tools a request was sent with;
+the text of a message is never stored. An image costs the tokens its header's size works out to (`claude_images`),
+counted apart from the characters of the text.
 
 A message's hash is the sha256 of its `{role, content}` object written with sorted keys, compact separators and
 no ASCII escaping. A `user` row's message is known under that hash, and under the hash of its string content
@@ -23,6 +24,7 @@ from __future__ import annotations
 import hashlib
 
 from reporails_cli.core.eventbus.adapters.claude_calls import tool_result
+from reporails_cli.core.eventbus.adapters.claude_images import high_resolution, price_image
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
@@ -32,7 +34,7 @@ from reporails_cli.core.platform.contract.json_value import (
     opt_str,
     strict_str_list,
 )
-from reporails_cli.core.platform.dto.events import MessageSize, RequestChain, RequestSize
+from reporails_cli.core.platform.dto.events import ImageTokens, MessageSize, RequestChain, RequestSize
 from reporails_cli.core.platform.utils.utils import compact_json
 
 # What joins the text blocks of one message or system prompt.
@@ -40,8 +42,8 @@ BLOCK_SEPARATOR = "\n\n"
 _MERGE_OPEN = b'{"content":['
 _MERGE_CLOSE = b'],"role":"assistant"}'
 _CALLER = "caller"
-# Block types that carry no characters of their own.
-_EMPTY_BLOCKS = ("image", "document")
+# Block types that carry no characters of their own: priced in tokens, or counted as unpriced.
+_PICTURE_BLOCKS = ("image", "document")
 # The field that holds the characters of each kind of thinking block.
 _THINKING_FIELDS = {"thinking": "signature", "redacted_thinking": "data"}
 
@@ -87,6 +89,31 @@ def _tool_addition_size(block: JsonObject, what: str) -> MessageSize:
     return MessageSize(notes=len(compact_json(tool, ensure_ascii=False)))
 
 
+def _picture(block: JsonObject, what: str) -> tuple[ImageTokens, int]:
+    """The tokens an `image` or `document` block costs and how many blocks could not be priced (0 or 1). A
+    document is never priced; an image whose `source` is not an object is refused."""
+    if block.get("type") == "document":
+        return ImageTokens(), 1
+    source = block.get("source")
+    if not isinstance(source, dict):
+        raise PayloadRefused(f"{what} image block source is not an object")
+    priced = price_image(source)
+    return (ImageTokens(), 1) if priced is None else (priced, 0)
+
+
+def _result_pictures(block: JsonObject, what: str) -> MessageSize:
+    """The images inside the content of a `tool_result` block, as result images."""
+    content = block.get("content")
+    found = MessageSize()
+    if not isinstance(content, list):
+        return found
+    for item in content:
+        if isinstance(item, dict) and item.get("type") in _PICTURE_BLOCKS:
+            tokens, unpriced = _picture(item, what)
+            found = found + MessageSize(result_images=tokens, unpriced_images=unpriced)
+    return found
+
+
 def _block_size(role: str, block: JsonValue, what: str) -> MessageSize:
     if not isinstance(block, dict):
         raise PayloadRefused(f"{what} content has a block that is not an object")
@@ -96,14 +123,15 @@ def _block_size(role: str, block: JsonValue, what: str) -> MessageSize:
     if kind == "tool_use":
         return _tool_use_size(block, what)
     if kind == "tool_result":
-        return MessageSize(tool_results=tool_result(block).chars or 0)
+        return MessageSize(tool_results=tool_result(block).chars or 0) + _result_pictures(block, what)
     field = _THINKING_FIELDS.get(kind) if isinstance(kind, str) else None
     if field is not None:
         return MessageSize(thinking=len(_string_field(block, field, what)))
     if kind == "tool_addition":
         return _tool_addition_size(block, what)
-    if kind in _EMPTY_BLOCKS:
-        return MessageSize()
+    if kind in _PICTURE_BLOCKS:
+        tokens, unpriced = _picture(block, what)
+        return MessageSize(images=tokens, unpriced_images=unpriced)
     raise PayloadRefused(f"{what} content has a block of unknown type {kind!r}")
 
 
@@ -242,6 +270,14 @@ def shape_system_text(row: JsonObject, shape_hash: str) -> str | None:
     return BLOCK_SEPARATOR.join(_system_texts(row, "api-request-shape"))
 
 
+def _request_tier(row: JsonObject) -> bool | None:
+    """Whether the model the row's `params` names prices images at the high-resolution tier; None when the row
+    has no `params`, no string `model` or a model id that is not a Claude id."""
+    params = row.get("params")
+    model = params.get("model") if isinstance(params, dict) else None
+    return high_resolution(model) if isinstance(model, str) else None
+
+
 def _request(chain: RequestChain, row: JsonObject) -> RequestSize:
     what = "api-request"
     request_id = row.get("id")
@@ -268,14 +304,10 @@ def _request(chain: RequestChain, row: JsonObject) -> RequestSize:
     return RequestSize(
         request_id,
         *shape,
-        total.user_text,
-        total.notes,
-        total.assistant_text,
-        total.thinking,
-        total.tool_calls,
-        total.tool_results,
+        total,
         unresolved,
         chain.tool_names.get(shape_hash, ()),
+        _request_tier(row),
     )
 
 

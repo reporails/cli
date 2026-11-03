@@ -252,6 +252,22 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And the page's In context list for each agent shows no remainder text and no asterisk
 
   @e2e @browser
+  Scenario: A picture in a tool result is counted at its own token cost, not spread over the measured shares
+    Given a project with a session whose peak request carries a picture inside a tool result, with a subagent
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the main agent's In context rows are measured, add up to its peak reply and name the system prompt and tools
+    And each agent's system, tool definition and tool call rows are the shares of its request's own characters
+    And the main agent's tool calls and results row holds the picture's tokens and its measure names them
+
+  @e2e @browser
+  Scenario: A measured row opens its own agent's figure and request
+    Given a project with a session whose Claude Code recorded each request it made, with a subagent
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And each agent's measured System prompt row opens that agent's own figure and request
+
+  @e2e @browser
   Scenario: A built-in agent type shows the system prompt and tools its launch recorded
     Given a project with a session whose Claude Code recorded each request it made, with a subagent
     When "ails xray --no-open" is started in the project

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.dto.events import EventRecord, RequestSize, TokenUsage
+from reporails_cli.core.platform.dto.events import EventRecord, ImageTokens, MessageSize, RequestSize, TokenUsage
 from reporails_cli.core.platform.dto.xray_composition import COMPOSITION_KEYS, REMAINDER_KEY
-from reporails_cli.core.platform.dto.xray_graph import XrayInContext
+from reporails_cli.core.platform.dto.xray_graph import XrayInContext, XrayRowMeasure
 from tests.unit.xray.test_xray_composition import _files, _rows
 from tests.unit.xray.test_xray_graph import _agent, _graph, _node, harness, launch, load, rec, reply
 
@@ -18,21 +18,26 @@ pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 NOT_RECORDED = "Estimated: no complete recorded request for this reply."
 
 
-def _size(request_id: str = "req", **fields: int) -> RequestSize:
+NO_IMAGES = ImageTokens()
+
+
+def _size(
+    request_id: str = "req",
+    *,
+    system_chars: int = 4000,
+    tools_chars: int = 8000,
+    tool_count: int = 12,
+    unresolved: int = 0,
+    images: ImageTokens = NO_IMAGES,
+    result_images: ImageTokens = NO_IMAGES,
+    unpriced_images: int = 0,
+    high_resolution: bool | None = None,
+    **parts: int,
+) -> RequestSize:
     """A request of 4000 system characters, 8000 tool characters (12 tools) and 17200 characters in all."""
-    base = {
-        "system_chars": 4000,
-        "tools_chars": 8000,
-        "tool_count": 12,
-        "user_text": 800,
-        "notes": 0,
-        "assistant_text": 400,
-        "thinking": 0,
-        "tool_calls": 800,
-        "tool_results": 3200,
-        "unresolved": 0,
-    }
-    return RequestSize(request_id, **{**base, **fields}, tool_names=())  # type: ignore[arg-type]
+    text = {"user_text": 800, "assistant_text": 400, "tool_calls": 800, "tool_results": 3200, **parts}
+    message = MessageSize(images=images, result_images=result_images, unpriced_images=unpriced_images, **text)
+    return RequestSize(request_id, system_chars, tools_chars, tool_count, message, unresolved, (), high_resolution)
 
 
 def _request(seconds: float, size: RequestSize, sub: str | None = None) -> EventRecord:
@@ -163,3 +168,52 @@ def test_a_measured_peak_lists_the_skills_listing_apart_from_the_conversation(tm
     assert label == "Skills listing" and sum(r.tokens_est for r in ic.rows) == 17200
     (row,) = _rows(tmp_path, records)
     assert row["skill_listing"] == 1000 and row["conversation"] == 200
+
+
+def test_images_take_their_own_tokens_off_the_total_before_the_text_is_scaled(tmp_path: Path) -> None:
+    """A 1000-token image inside a tool result: the text shares scale to the 16200 tokens left of 17200."""
+    size = _size(result_images=ImageTokens(1000, 2000), high_resolution=False)
+    records = [_request(0.5, size), _answer(1, 17200, "req")]
+    ic = _context(tmp_path, records)
+    values = _by_key(ic)
+    ratio = (17200 - 1000) / 17200
+    assert values["system_prompt"] == round(4000 * ratio)
+    assert values["tool_definitions"] == round(8000 * ratio)
+    assert values["tool_io"] == round(4000 * ratio) + 1000
+    assert sum(r.tokens_est for r in ic.rows) == ic.total == 17200
+    (row,) = _rows(tmp_path, records)
+    assert sum(int(str(row[key])) for key in COMPOSITION_KEYS) == 17200
+    assert row["tool_results"] == round(4000 * ratio) + 1000
+
+
+def test_the_tier_of_the_requests_model_picks_the_image_price(tmp_path: Path) -> None:
+    size = _size(images=ImageTokens(1000, 2000), high_resolution=True)
+    ic = _context(tmp_path, [_request(0.5, size), _answer(1, 17200, "req")])
+    # 2000 image tokens stay in the conversation; the text shares scale to 15200.
+    assert _by_key(ic)["system_prompt"] == round(4000 * 15200 / 17200)
+    assert _by_key(ic)["tool_io"] == round(4000 * 15200 / 17200)
+
+
+@pytest.mark.parametrize(
+    "size",
+    [
+        _size(unpriced_images=1, high_resolution=True),
+        _size(images=ImageTokens(1000, 2000), high_resolution=None),
+        _size(result_images=ImageTokens(1000, 2000), high_resolution=None),
+    ],
+    ids=["unpriced image", "image and unknown model", "result image and unknown model"],
+)
+def test_a_request_whose_images_cannot_be_priced_is_unmeasured(tmp_path: Path, size: RequestSize) -> None:
+    ic = _context(tmp_path, [_request(0.5, size), _answer(1, 17200, "req")])
+    assert not ic.measured and ic.note == NOT_RECORDED
+
+
+def test_a_measured_row_says_how_its_share_was_worked_out(tmp_path: Path) -> None:
+    claude, _, _ = _files(tmp_path)
+    size = _size(result_images=ImageTokens(1000, 2000), high_resolution=False)
+    ic = _context(tmp_path, [load(0.1, claude), _request(0.5, size), _answer(1, 17200, "req")])
+    rows = {row.key: row for row in ic.rows}
+    assert ic.request_id == "req" and ic.tokens_per_char == pytest.approx(16200 / 17200)
+    assert rows["system_prompt"].measure == XrayRowMeasure(4000, 0, 0)
+    assert rows["tool_io"].measure == XrayRowMeasure(4000, 1000, 0)
+    assert rows["rest"].measure is None and rows["source"].measure is None

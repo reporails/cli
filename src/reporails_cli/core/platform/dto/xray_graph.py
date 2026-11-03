@@ -281,10 +281,25 @@ class XrayGiven:
 
 
 @dataclass(frozen=True)
+class XrayRowMeasure:
+    """How a measured row's share was worked out: the characters of the recorded request it comes from, the image
+    tokens added to it and the tokens already shown in an earlier row and taken off."""
+
+    chars: int
+    images: int
+    listed_above: int
+
+    def to_json(self) -> JsonObject:
+        """The measure as a JSON object."""
+        return {"chars": self.chars, "images": self.images, "listed_above": self.listed_above}
+
+
+@dataclass(frozen=True)
 class XrayContextRow:
     """One row of an agent's "in context" list: what it stands for, the source it is (None for a row that is no
     source) and that source's kind, its label and the reason it is there as the coding agent words it, its
-    estimated size, when it came in and its finding count."""
+    estimated size, when it came in and its finding count. A row measured from the recorded request carries how its
+    share was worked out in `measure`; an estimated row carries None."""
 
     key: ContextKey
     source: str | None
@@ -294,6 +309,7 @@ class XrayContextRow:
     tokens_est: int
     t: float | None
     findings: int | None
+    measure: XrayRowMeasure | None = None
 
     def to_json(self) -> JsonObject:
         """The row as a JSON object."""
@@ -306,6 +322,7 @@ class XrayContextRow:
             "tokens_est": self.tokens_est,
             "t": self.t,
             "findings": self.findings,
+            "measure": None if self.measure is None else self.measure.to_json(),
         }
 
 
@@ -321,6 +338,9 @@ class XrayInContext:
     measured: bool
     # What to tell the reader when the rows are estimates; None when they are measured.
     note: str | None
+    # The id of the recorded request the rows are shares of and its tokens per character; None when not measured.
+    request_id: str | None
+    tokens_per_char: float | None
 
     def to_json(self) -> JsonObject:
         """The list as a JSON object."""
@@ -330,6 +350,8 @@ class XrayInContext:
             "over": self.over,
             "measured": self.measured,
             "note": self.note,
+            "request_id": self.request_id,
+            "tokens_per_char": self.tokens_per_char,
         }
 
 
