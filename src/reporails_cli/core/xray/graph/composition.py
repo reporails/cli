@@ -229,12 +229,19 @@ def _measure(usage: TokenUsage, sizes: dict[str, RequestSize]) -> RequestMeasure
     text_tokens = context_of(usage) - images - result_images
     if chars <= 0 or text_tokens <= 0:
         return None
-    return RequestMeasure(size, text_tokens / chars, images, result_images)
+    return RequestMeasure(size, text_tokens / chars, result_images)
 
 
 def _share(chars: int, scale: float) -> int:
     """`chars` characters of a measured request as tokens of the reply's total."""
     return round(chars * scale)
+
+
+def _tool_share(measured: RequestMeasure) -> int:
+    """The tool calls and results of a measured request as tokens: their characters at its scale, with the
+    images of the tool results added."""
+    size = measured.size
+    return _share(size.parts.tool_calls + size.parts.tool_results, measured.scale) + measured.result_images
 
 
 def _reply_row(
@@ -261,7 +268,7 @@ def _reply_row(
     fixed: dict[CompositionKey, int] = {
         **{key: held[key] for key in ESTIMATED_KEYS if key not in SPOKEN_KEYS},
         REMAINDER_KEY: _share(size.system_chars + size.tools_chars, scale),
-        "tool_results": _share(size.parts.tool_calls + size.parts.tool_results, scale) + measured.result_images,
+        "tool_results": _tool_share(measured),
     }
     conversation = total - sum(fixed.values())
     fixed["conversation"] = max(0, conversation)
@@ -485,7 +492,7 @@ def _measured_shares(
         ("tool_definitions", max(0, tools - mcp), XrayRowMeasure(size.tools_chars, 0, min(mcp, tools))),
         (
             "tool_io",
-            _share(io_chars, scale) + measured.result_images,
+            _tool_share(measured),
             XrayRowMeasure(io_chars, measured.result_images, 0),
         ),
     ]

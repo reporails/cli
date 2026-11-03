@@ -16,7 +16,7 @@ const WHAT_HAPPENED = {
   running: 'It is still running; nothing has been handed back yet.',
 };
 
-const nodeLabel = node => (node.parent === null ? 'main agent' : node.name);
+export const nodeLabel = node => (node.parent === null ? 'main agent' : node.name);
 
 function chips(node, env) {
   const row = el('div', 'ix-chips');

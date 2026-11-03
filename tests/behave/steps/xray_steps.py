@@ -403,6 +403,8 @@ def step_measured_row_opens_own(context):
         assert f"{_k1(row['tokens_est'])} · measured" in text, (name, row["tokens_est"], text)
         assert ic["request_id"] in text, (name, ic["request_id"], text)
         assert f"{row['measure']['chars']:,}" in text, (name, text)
+    assert "What it contains" in seen["main"]["text"], seen["main"]
+    assert "What it contains" not in seen["sub"]["text"], seen["sub"]
     assert main["request_id"] != sub["request_id"]
     assert main["request_id"] not in seen["sub"]["text"], seen["sub"]
     assert sub["request_id"] not in seen["main"]["text"], seen["main"]

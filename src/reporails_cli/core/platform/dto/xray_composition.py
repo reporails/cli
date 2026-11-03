@@ -39,12 +39,11 @@ SPOKEN_KEYS: tuple[CompositionKey, ...] = ("conversation", "tool_results")
 @dataclass(frozen=True)
 class RequestMeasure:
     """A recorded request and what scales it to the exact total of the reply it answered: `scale`, the tokens per
-    character of its text (images left out), and the tokens of its images at its model's tier, `images` in the
-    conversation and `result_images` inside tool results."""
+    character of its text (images left out), and the tokens of the images inside tool results, `result_images`,
+    at its model's tier."""
 
     size: RequestSize
     scale: float
-    images: int
     result_images: int
 
 

@@ -6,7 +6,7 @@ import { textBlock } from './textblock.js';
 import { hashFor } from '../state.js';
 import { bandColour } from '../geometry.js';
 import { peakOf, replyMeasured, replyOver, replyParts, typeOf, UNRECORDED } from '../views.js';
-import { sessionCost } from './inspector.js';
+import { nodeLabel, sessionCost } from './inspector.js';
 import { render as renderFindings } from './findings.js';
 import { registerPeek, scrollable } from './details.js';
 
@@ -106,7 +106,7 @@ registerPeek('src', (env, id) => {
       const b = el('button', 'pk-li');
       b.type = 'button';
       b.dataset.showInGraph = n.id;
-      b.append(el('span', 'lb', n.parent === null ? 'main agent' : n.name), el('span', 'mono v', clock(loadTime(ix, n, s))));
+      b.append(el('span', 'lb', nodeLabel(n)), el('span', 'mono v', clock(loadTime(ix, n, s))));
       list.append(b);
     }
     if (holders.length > 8) list.append(nk(`and ${holders.length - 8} more agents`));
@@ -127,6 +127,11 @@ registerPeek('src', (env, id) => {
 
 const VISIBLE = { hidden: 'not visible in transcript', partial: 'partly visible in transcript', shown: 'visible in transcript' };
 
+// What a built-in item contains, and what is true of it wherever it is sent: shared by its own peek and the main
+// agent's measured System prompt and Tool definitions rows.
+const builtinContains = item => section('What it contains', pre(item.note || ''));
+const builtinFacts = item => kv([['Sent to', 'every agent, every turn'], ['Visibility', VISIBLE[item.visible] || item.visible], ['Source', 'the coding agent itself, not your files']]);
+
 registerPeek('builtin', (env, id) => {
   const item = (env.ix.view.builtin || []).find(b => b.key === id);
   if (!item) return null;
@@ -134,8 +139,8 @@ registerPeek('builtin', (env, id) => {
   const tags = [`${tk(item.tokens_est, true)} · ${item.remainder ? 'remainder' : measured ? 'measured' : 'estimated'}`, VISIBLE[item.visible] || item.visible];
   return {
     chip: '·', kicker: 'Built in', title: item.label, tags,
-    main: [section('What it contains', pre(item.note || ''))],
-    side: [kv([['Sent to', 'every agent, every turn'], ['Visibility', VISIBLE[item.visible] || item.visible], ['Source', 'the coding agent itself, not your files']])],
+    main: [builtinContains(item)],
+    side: [builtinFacts(item)],
     actions: [],
   };
 });
@@ -148,7 +153,9 @@ registerPeek('measured', (env, id) => {
   const row = ic && (ic.rows || []).find(r => r.key === id.slice(0, at));
   if (!row || !row.measure) return null;
   const m = row.measure;
-  const owner = node.parent === null ? 'main agent' : node.name;
+  const owner = nodeLabel(node);
+  // The built-in items describe the main agent's own system prompt and tool definitions.
+  const item = node.parent === null ? (env.ix.view.builtin || []).find(b => b.key === row.key) : null;
   return {
     chip: '·', kicker: `Measured · ${owner}`, title: row.label, tags: [`${k1(row.tokens_est)} · measured`],
     main: [section('How it was measured', kv([
@@ -157,8 +164,8 @@ registerPeek('measured', (env, id) => {
       ['Tokens per character', Number(ic.tokens_per_char).toPrecision(3)],
       ['Image tokens', m.images > 0 ? m.images.toLocaleString('en-US') : null],
       ['Already listed above', m.listed_above > 0 ? k1(m.listed_above) : null],
-    ]), nk('The share is the row’s characters scaled to the reply’s exact total.'))],
-    side: [],
+    ]), nk(`The share is the row’s characters times the tokens per character${m.images > 0 ? ', plus its image tokens' : ''}${m.listed_above > 0 ? ', less what is already listed above' : ''}.`)), ...(item ? [builtinContains(item)] : [])],
+    side: item ? [builtinFacts(item)] : [],
     actions: [],
   };
 });
@@ -170,7 +177,7 @@ registerPeek('task', (env, id) => {
   const parent = ix.nodes.get(node.parent);
   const row = ((node.detail.in_context || {}).rows || []).find(r => r.key === 'task');
   const body = node.detail.brief ? fetched(env.text('brief:' + id, briefUrl(id)), e => e.text) : nk('The prompt text was not recorded.');
-  const writer = parent && parent.parent === null ? 'main agent' : parent ? parent.name : 'its parent';
+  const writer = parent ? nodeLabel(parent) : 'its parent';
   const b = action('Show in graph', {});
   b.dataset.showInGraph = id;
   return {
@@ -219,7 +226,7 @@ registerPeek('peak', (env, id) => {
   const over = replyOver(reply);
   const remLabel = (adapter.composition.find(c => c.key === adapter.composition_remainder) || {}).label || adapter.composition_remainder;
   return {
-    chip: '∑', kicker: `Peak context · ${node.parent === null ? 'main agent' : node.name} at ${clock(reply[0])}`, title: `${total.toLocaleString('en-US')} tokens`, tags: [],
+    chip: '∑', kicker: `Peak context · ${nodeLabel(node)} at ${clock(reply[0])}`, title: `${total.toLocaleString('en-US')} tokens`, tags: [],
     main: [bar(cats.map(x => [x.i, parts[x.i]]), base), legend],
     side: [kv([['Read from cache at this turn', `${cached}%`], ['New this turn', `${(reply[2] + reply[3]).toLocaleString('en-US')} tokens`]]),
       ...(over ? [nk('These estimates add up to more than the exact total, so the split is approximate and the percentages are shares of what was estimated.')] : []),
@@ -263,7 +270,7 @@ registerPeek('cost', (env, id) => {
   if (cost.split_assumed > 0) notes.push(nk(`${plural(cost.split_assumed, 'reply', 'replies')} had no 5-minute / 1-hour cache split and ${cost.split_assumed === 1 ? 'was' : 'were'} priced at the 5-minute rate.`));
   notes.push(nk(`Token counts are measured; the price is list price (${list.name}, ${list.as_of}). On a subscription you don't pay per token, so read this as API-equivalent.`));
   return {
-    chip: '$', kicker: `Est. cost · ${node.parent === null ? 'main agent' : node.name}`, title: usd(cost.total_usd), tags: [],
+    chip: '$', kicker: `Est. cost · ${nodeLabel(node)}`, title: usd(cost.total_usd), tags: [],
     main: main.length ? main : [kv(pairs)], side: notes, actions: [],
   };
 });
