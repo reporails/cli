@@ -1,5 +1,5 @@
 // The header: logo, breadcrumb of the agent path, the tabs with their counts, the session's date and length, and the adapter chip.
-import { el, tpl, slot } from '../dom.js';
+import { el, tpl, slot, sync } from '../dom.js';
 import { dur, k1, plural, startedAt } from '../format.js';
 import { xrayFetch, text, sessionsUrl, firstPromptUrl } from '../api.js';
 import { hashFor } from '../state.js';
@@ -114,16 +114,18 @@ function renderTabs(box, env) {
 export function render(box, env) {
   const { ix, state } = env;
   const v = ix.view;
-  box.replaceChildren(tpl('t-header'));
+  const page = el('div');
+  page.append(tpl('t-header'));
   const first = !sw.box;
   sw.box = box; sw.env = env;
-  renderSwitch(box, v);
+  renderSwitch(page, v);
   if (first) loadSessions();
-  slot(box, 'crumbs').replaceChildren(...crumbs(ix, state.path));
-  renderTabs(box, env);
-  slot(box, 'session').textContent = [v.project].filter(Boolean).join(' · ');
+  slot(page, 'crumbs').replaceChildren(...crumbs(ix, state.path));
+  renderTabs(page, env);
+  slot(page, 'session').textContent = [v.project].filter(Boolean).join(' · ');
   const win = v.window && v.window.size ? `${k1(v.window.size)} window${v.window.basis === 'observed' ? '' : ' (' + v.window.basis + ')'}` : '';
-  slot(box, 'model').textContent = [v.model, win].filter(Boolean).join(' · ');
+  slot(page, 'model').textContent = [v.model, win].filter(Boolean).join(' · ');
   const n = v.adapter.nesting;
-  slot(box, 'adapter').textContent = `adapter: ${v.adapter.tool} · nesting ${n.enabled ? 'on' : 'off'}`;
+  slot(page, 'adapter').textContent = `adapter: ${v.adapter.tool} · nesting ${n.enabled ? 'on' : 'off'}`;
+  sync(box, ...page.childNodes);
 }

@@ -53,6 +53,14 @@ def _loaded_file(item: JsonObject, kind: ArtifactKind) -> ArtifactFile:
     )
 
 
+def recorded_file(path: str, memory_type: str | None) -> ArtifactFile:
+    """The instruction or memory file a transcript recorded as loaded at `path`, listed or not."""
+    return _loaded_file(
+        {"path": path, "precedence": "project", "label": Path(path).name, "memory_type": memory_type},
+        "instructions",
+    )
+
+
 def _invocable_file(item: JsonObject) -> ArtifactFile:
     return ArtifactFile(
         as_str(item.get("path")),

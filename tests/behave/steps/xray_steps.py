@@ -1305,3 +1305,89 @@ def step_notice_absent(context):
     if seen is None:
         return
     assert seen["hidden"] is True and seen["text"] == "", seen
+
+
+SHARED_FILE = "shared/docs/CLAUDE.md"
+
+
+@given(
+    "a project whose instruction file sits under a symlinked folder that its config leaves out and the session loaded"
+)
+def step_symlinked_excluded_file(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    outside = context.tmpdir / "shared" / "canon"
+    outside.mkdir(parents=True)
+    (outside / "CLAUDE.md").write_text("# Canon\n\nsymlinked canon text\n", encoding="utf-8")
+    (context.project / "shared").mkdir()
+    (context.project / "shared" / "docs").symlink_to(outside)
+    (context.project / ".ails").mkdir()
+    (context.project / ".ails" / "config.yml").write_text("exclude_dirs:\n  - shared\n", encoding="utf-8")
+    folder = context.home / ".claude" / "projects" / claude_project_folder_name(context.project)
+    folder.mkdir(parents=True)
+    shutil.copytree(FIXTURE / "session", folder / "session")
+    rows = (FIXTURE / "session.jsonl").read_text(encoding="utf-8").replace("/work/proj", str(context.project))
+    load = {
+        "type": "attachment",
+        "timestamp": "2026-10-30T20:11:30.000Z",
+        "sessionId": SESSION_ID,
+        "version": "2.1.308",
+        "cwd": str(context.project),
+        "attachment": {"type": "nested_memory", "path": str(context.project / SHARED_FILE), "displayPath": SHARED_FILE},
+    }
+    (folder / "session.jsonl").write_text(rows.rstrip("\n") + "\n" + json.dumps(load) + "\n", encoding="utf-8")
+
+
+@then("the page shows that file's text and offers no check or fix for it")
+def step_recorded_file_text(context):
+    seen = _layout_script(context, "recorded", SHARED_FILE)
+    if seen is None:
+        return
+    assert seen["ready"], "the page did not draw"
+    assert seen["opened"], f"the page lists no source {SHARED_FILE}"
+    assert "symlinked canon text" in seen["text"], seen
+    assert "not a file this page lists" not in seen["dialog"], seen
+    assert not [c for c in seen["controls"] if re.search(r"check|fix|finding", c, re.I)], seen["controls"]
+
+
+@then(
+    'with the details of "{source}" open on each tab, a session that grows redraws no panel whose content is unchanged'
+)
+def step_no_redraw_of_unchanged(context, source):
+    node, chrome = shutil.which("node"), shutil.which("google-chrome") or shutil.which("chromium")
+    if node is None or chrome is None:
+        context.scenario.skip("SKIPPED LOUDLY: no node or Chrome on PATH, the page was not driven")
+        return
+    script = Path(__file__).resolve().parents[1] / "xray_flicker.mjs"
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with  # stopped by the scenario cleanup
+        [node, str(script), context.url, source],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+        env={**os.environ, "CHROME_BIN": chrome},
+    )
+    context.add_cleanup(proc.kill)
+    session = next((context.home / ".claude" / "projects").rglob("session.jsonl"))
+    seen = []
+    for turn in range(3):
+        ready = proc.stdout.readline()
+        assert ready.startswith("READY "), ready
+        rows = session.read_text(encoding="utf-8").splitlines()
+        later = json.loads(rows[-1])
+        later["message"]["id"] = f"msg_grown_{turn}"
+        later["timestamp"] = f"2026-10-30T20:12:{10 + turn:02d}.000Z"
+        session.write_text("\n".join([*rows, json.dumps(later)]) + "\n", encoding="utf-8")
+        proc.stdin.write("go\n")
+        proc.stdin.flush()
+        line = proc.stdout.readline()
+        assert line.startswith("SEEN "), line
+        seen.append(json.loads(line[len("SEEN ") :]))
+    problems = []
+    for tab in seen:
+        assert tab["views"] > 0 and tab["text"], f"the page took no new view or showed no text on {tab['tab']}: {tab}"
+        if tab["replaced"]:
+            problems.append(f"{tab['tab']} tab: elements replaced with identical content: {tab['replaced']}")
+        if tab["loading"] or tab["emptied"]:
+            problems.append(
+                f"{tab['tab']} tab: a text block reloaded: loading {tab['loading']}, empty {tab['emptied']}"
+            )
+    assert not problems, "\n".join(problems)

@@ -35,6 +35,7 @@
 
 ### Fixed
 
+- On the x-ray page, a file the session loaded shows its text even when the project's config leaves its folder out of the checks (it had read "not a file this page lists"), with no check or fix offered for it; and when the page takes a new view of a growing session, a panel whose content did not change is left as it is and an open file text no longer flashes "Loading…", so the page no longer flickers.
 - An x-ray page stops by itself after 30 minutes with no request (`AILS_XRAY_IDLE_S` seconds; `0` never stops), so a page an agent started in the background no longer runs until it is killed by hand. A page left open in a browser tab stays up.
 - `ails xray` opens its page even when `~/.reporails` cannot be written (the page is then not reused by a later call), and the agent's `xray` tool answers `page_not_started` naming the folder instead of failing.
 - A `heal_exclude` entry that is a bare file name now matches only at the project root, as documented, and the findings listed as `excluded` name the files they sit in.

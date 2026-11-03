@@ -258,3 +258,18 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Then the printed address is on 127.0.0.1
     And the main agent's In context list is not measured, keeps its remainder row and says it is an estimate
     And the page shows the estimate note and a remainder row in the main agent's In context list
+
+  @e2e @browser
+  Scenario: A loaded file the project's config leaves out still shows its text
+    Given a project whose instruction file sits under a symlinked folder that its config leaves out and the session loaded
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the page shows that file's text and offers no check or fix for it
+
+  @e2e @browser
+  Scenario: A session that grows redraws no panel whose content did not change
+    Given a project with a recorded Claude Code session
+    And the project's instruction file reads "steady text"
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And with the details of "CLAUDE.md" open on each tab, a session that grows redraws no panel whose content is unchanged

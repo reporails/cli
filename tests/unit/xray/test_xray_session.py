@@ -440,3 +440,29 @@ def test_a_peek_splits_the_frontmatter_block_from_the_body(tmp_path: Path) -> No
     assert peeked is not None
     assert (peeked.frontmatter, peeked.body) == ("name: demo\npaths: [a]", "# Body\n\ntext\n")
     assert peeked.text.startswith("---\n")
+
+
+def _excluding_sub(tmp_path: Path) -> XraySession:
+    root = _project(tmp_path)
+    (root / ".ails").mkdir()
+    (root / ".ails" / "config.yml").write_text("exclude_dirs:\n  - sub\n")
+    session = _session(tmp_path, "2.1.301", root)
+    session.refresh()
+    return session
+
+
+def test_a_peek_serves_a_file_the_session_recorded_as_loaded_though_the_page_lists_none(tmp_path: Path) -> None:
+    session = _excluding_sub(tmp_path)
+    peeked = session.peek("sub/CLAUDE.md")
+    assert peeked is not None and peeked.text == "# Sub\n\nKeep `sub/` small.\n"
+
+
+def test_a_peek_refuses_an_unlisted_file_the_session_never_loaded(tmp_path: Path) -> None:
+    session = _excluding_sub(tmp_path)
+    (session._root / "sub" / "OTHER.md").write_text("other\n")
+    assert session.peek("sub/OTHER.md") is None
+
+
+def test_a_file_recorded_as_loaded_but_unlisted_is_no_file_to_check_or_fix(tmp_path: Path) -> None:
+    session = _excluding_sub(tmp_path)
+    assert session.acts_on("sub/CLAUDE.md") is False

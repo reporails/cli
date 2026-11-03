@@ -1,6 +1,6 @@
 // The Sources panel: an inventory of everything the session had, whatever the graph shows. Built in first, then one group
 // per source kind the adapter declares; each header says how many were used and carries the kind's eye for the graph.
-import { el, svg } from '../dom.js';
+import { el, svg, sync } from '../dom.js';
 import { costEst, fill, tk, plural } from '../format.js';
 import { SOURCES_SHOWN } from '../geometry.js';
 import { UNRECORDED } from '../views.js';
@@ -205,10 +205,10 @@ export function render(box, env) {
   // Loaded items first, each group in the view's own order otherwise.
   const lists = new Map(ix.view.adapter.source_kinds.map(k => [k.key, ix.view.sources.filter(s => s.kind === k.key).sort((a, b) => roleRank(a) - roleRank(b) || (a.availability !== 'loaded') - (b.availability !== 'loaded'))]));
   reveal(env, lists);
-  box.replaceChildren(controls());
+  const parts = [controls()];
   const builtin = ix.view.builtin || [];
   if (builtin.length) {
-    box.append(group(env, {
+    parts.push(group(env, {
       key: BUILTIN, label: 'Built in', letter: '·', used: builtin.length, total: null, usage: plural(builtin.length, 'item'),
       finds: 0, rows: builtin.map(builtinRow),
     }));
@@ -217,11 +217,12 @@ export function render(box, env) {
     const list = lists.get(k.key);
     const { used, total } = counts(ix, k.key, list);
     const absent = ix.view.facts.find(f => f.kind === 'kind_absent' && f.target && f.target.value === k.key);
-    box.append(group(env, {
+    parts.push(group(env, {
       key: k.key, label: k.label, letter: k.letter, used, total, usage: used == null ? `${UNRECORDED}, ${total} on disk` : `${used} of ${total} ${k.verb}`,
       finds: list.reduce((n, s) => n + findingsOf(s), 0), hidden: !state.layers[k.key], graphLabel: k.graph_label, eye: k,
       absent: absent && templates.kind_absent ? fill(templates.kind_absent, { ...absent.numbers, label: k.label.toLowerCase() }) : null,
       rows: list.map(s => row(env, s)), heads: roleHeads(list),
     }));
   }
+  sync(box, ...parts);
 }

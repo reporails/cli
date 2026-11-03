@@ -16,11 +16,18 @@ const fetched = new Map();
 let redraw = () => {};
 export const onTextArrived = fn => { redraw = fn; };
 const kept = new Set();
+// The texts the last view had fetched: a text shows as it was while the new view's copy is fetched, so it never goes back to loading.
+let shown = new Map();
 // `view` is the new view when one arrived: a call still running (no result yet) is kept until that view shows it with a result.
 export const forgetTexts = view => {
   const finished = new Set();
   for (const t of view ? view.track : []) for (const c of t.calls) if (c.result_tokens_est != null || c.duration_s != null) finished.add(c.use_id);
-  for (const k of [...fetched.keys()]) if (!kept.has(k)) fetched.delete(k);
+  shown = new Map();
+  for (const [k, e] of [...fetched.entries()]) {
+    if (kept.has(k)) continue;
+    if (e.text !== undefined) shown.set(k, e);
+    fetched.delete(k);
+  }
   // A call whose request failed is asked again after 30 s at the earliest; one whose result had not landed, once its result shows.
   const now = Date.now();
   for (const [k, e] of [...callDetails.entries()]) if ((e.error && now - e.at >= RETRY_MS) || (e.data && e.data.result == null && finished.has(k))) callDetails.delete(k);
@@ -30,13 +37,19 @@ export const forgetTexts = view => {
 export function text(key, url, keep = false) {
   if (fetched.has(key)) return fetched.get(key);
   if (keep) kept.add(key);
-  const e = { loading: true };
+  const before = shown.get(key);
+  shown.delete(key);
+  const e = before || { loading: true };
   fetched.set(key, e);
   xrayFetch(url).then(res => {
-    if (!res) fetched.set(key, { error: 'The x-ray server did not answer.' });
-    else if (res.ok && res.j && typeof res.j.text === 'string') fetched.set(key, { text: res.j.text, truncated: !!res.j.truncated, frontmatter: res.j.frontmatter ?? null, body: typeof res.j.body === 'string' ? res.j.body : res.j.text });
-    else fetched.set(key, { error: (res.j && res.j.error) || `request refused (${res.status})` });
-  }).then(redraw);
+    let now;
+    if (!res) now = { error: 'The x-ray server did not answer.' };
+    else if (res.ok && res.j && typeof res.j.text === 'string') now = { text: res.j.text, truncated: !!res.j.truncated, frontmatter: res.j.frontmatter ?? null, body: typeof res.j.body === 'string' ? res.j.body : res.j.text };
+    else now = { error: (res.j && res.j.error) || `request refused (${res.status})` };
+    const same = before && now.text === before.text && now.truncated === before.truncated && now.body === before.body;
+    fetched.set(key, same ? before : now);
+    if (!same) redraw();
+  });
   return e;
 }
 

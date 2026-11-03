@@ -40,6 +40,7 @@ from reporails_cli.core.xray.artifacts import (
     build_artifacts,
     is_actionable,
     peek_text,
+    recorded_file,
     runnable_paths,
 )
 from reporails_cli.core.xray.cost import load_price_list
@@ -103,11 +104,19 @@ class XraySession:
         item = self._listed(path)
         return item is not None and is_actionable(item, self._root)
 
+    def _recorded(self, path: str) -> ArtifactFile | None:
+        """The instruction or memory file the transcript recorded as loaded and the page shows as `path`."""
+        for record in self._transcript:
+            load = record.load
+            if load is not None and relative_wire_path(load.path, self._root) == path:
+                return recorded_file(load.path, load.memory_type)
+        return None
+
     def peek(self, path: str) -> XrayPeek | None:
-        """The text of the listed file shown as `path`, whether it was cut and its frontmatter split from its body;
-        None unless the page lists it as an instruction, memory, skill or agent file that exists. The text is not
-        kept."""
-        item = self._listed(path)
+        """The text of the file shown as `path`, whether it was cut and its frontmatter split from its body; None
+        unless the page lists it as an instruction, memory, skill or agent file that exists, or the session
+        recorded it as loaded. The text is not kept."""
+        item = self._listed(path) or self._recorded(path)
         return None if item is None or item.kind == "hook" else peek_text(item, self._root)
 
     def brief(self, subagent_id: str) -> str | None:

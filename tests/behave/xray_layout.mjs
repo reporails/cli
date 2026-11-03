@@ -1,4 +1,4 @@
-// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions>
+// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions|recorded> [source id]
 // Drives the real `ails xray` page in headless Chrome and prints one JSON object describing what it drew.
 import { openPage, toGraph } from './xray_cdp.mjs';
 
@@ -14,6 +14,14 @@ const openRow = needle => page.ev(`(() => {
   if (!row) return null;
   const label = row.querySelector('.sn').textContent; row.click(); return label;
 })()`);
+
+if (mode === 'recorded' && ready) {
+  await page.ev(`(() => { const all = document.querySelector('[data-groups="open"]'); if (all) all.click(); })()`);
+  out.opened = await page.ev(`(() => { const row = document.querySelector('#sources .sr[data-source=' + JSON.stringify(${JSON.stringify(process.argv[4])}) + ']'); if (!row) return false; row.click(); return true; })()`);
+  out.text = out.opened ? await peekText() : '';
+  out.dialog = await page.ev(`(document.querySelector('.pk-dialog') || {}).textContent || ''`);
+  out.controls = await page.ev(`[...document.querySelectorAll('.pk-dialog button')].map(b => b.textContent)`);
+}
 
 if (mode === 'memory' && ready) {
   out.row = await openRow('orphan');

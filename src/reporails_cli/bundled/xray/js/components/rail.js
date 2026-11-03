@@ -1,6 +1,6 @@
 // The jump rail: a thin column beside the canvas with the density of the agent's calls down the graph and one button per
 // landmark (repeated failures, fan-outs, the selection, the agent's end) that scrolls the graph to it.
-import { el, svg } from '../dom.js';
+import { el, svg, sync } from '../dom.js';
 
 export const BINS = 48;
 
@@ -26,7 +26,7 @@ export function render(box, plan) {
     b.style.top = `${Math.min(98, Math.max(1, m.y / plan.height * 100)).toFixed(2)}%`;
     return b;
   });
-  box.replaceChildren(strip, ...marks);
+  sync(box, strip, ...marks);
 }
 
 // Scrolls the graph so the anchor sits in the middle of the view.

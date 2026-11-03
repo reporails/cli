@@ -1,6 +1,6 @@
 // The canvas: the current agent's spine over time, its subagents as cards with arches, the stations on the spine and
 // the side track of everyday calls. Card placement, scale, arches and ticks are geometry; every fact comes from the view.
-import { el, svg } from '../dom.js';
+import { el, svg, sync } from '../dom.js';
 import { clock, k1, range, tk } from '../format.js';
 import { callDetail } from '../api.js';
 import {
@@ -626,14 +626,15 @@ export function render(box, env) {
     a.id = m.id;
     cv.append(a);
   }
-  box.replaceChildren(banner(env, cur, kids), cv);
+  sync(box, banner(env, cur, kids), cv);
+  const live = box.querySelector(':scope > .cv');
   const rects = [{ left: SPX - TOP_W / 2, top: TOP_Y, width: TOP_W, height: CH }];
   for (const p of placedMap.values()) {
     for (const q of p.slots || [p]) if (q.left !== undefined && q.side !== undefined) rects.push({ left: q.left, top: q.top, width: CW, height: CH });
   }
   for (const p of placedSources.values()) rects.push({ left: p.left, top: p.top, width: SW, height: SH });
   if (hand) rects.push({ left: SPX - BOT_W / 2, top: botY, width: BOT_W, height: BOT_H });
-  settleStations(cv, rects);
+  settleStations(live, rects);
   const railBox = document.getElementById('rail');
   if (railBox) rail.render(railBox, { height, ys: tr.calls.map(c => scale.y(c.t)), marks });
 }

@@ -1,4 +1,4 @@
-import { el, nk, err } from '../dom.js';
+import { el, nk, err, sync } from '../dom.js';
 
 // A file's findings as a compact count; errors, when there are any, show red beside it.
 export function tally(f) {
@@ -14,10 +14,10 @@ const safeLink = url => typeof url === 'string' && url.startsWith('https://');
 
 // A check or fix result: part is {running}, {error} or the server's reply ({lines} of a check, {receipt} of a fix).
 export function render(box, part) {
-  if (part.running) return box.replaceChildren(nk('Running…'));
-  if (part.error) return box.replaceChildren(err(part.error));
+  if (part.running) return sync(box, nk('Running…'));
+  if (part.error) return sync(box, err(part.error));
   if (Array.isArray(part.lines)) {
-    if (!part.lines.length) return box.replaceChildren(nk('no findings'));
+    if (!part.lines.length) return sync(box, nk('no findings'));
     const out = part.lines.map(l => {
       const d = el('div', 'fl');
       d.append(el('span', 'ln', l.file_level ? 'whole file' : `line ${l.line == null ? '—' : l.line}`));
@@ -36,11 +36,11 @@ export function render(box, part) {
       return d;
     });
     if (part.fix_command) out.push(el('code', 'cmd', part.fix_command));
-    return box.replaceChildren(...out);
+    return sync(box, ...out);
   }
   if (Array.isArray(part.receipt)) {
-    if (!part.receipt.length) return box.replaceChildren(nk('nothing to fix'));
-    return box.replaceChildren(...part.receipt.map(l => el('div', 'rc', l)));
+    if (!part.receipt.length) return sync(box, nk('nothing to fix'));
+    return sync(box, ...part.receipt.map(l => el('div', 'rc', l)));
   }
-  box.replaceChildren(err('The reply had no result.'));
+  sync(box, err('The reply had no result.'));
 }

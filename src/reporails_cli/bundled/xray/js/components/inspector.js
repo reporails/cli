@@ -1,6 +1,6 @@
 // The right column: one agent, always. Nothing selected shows the agent whose view this is; a selected card shows that agent.
 // Sections: header with slot chips, peak context and cost tiles, what was in context, activity, and the output of a subagent.
-import { el, svg } from '../dom.js';
+import { el, svg, sync } from '../dom.js';
 import { clock, k1, tk, usd, range, plural } from '../format.js';
 import { childrenOf, peakOf, typeOf } from '../views.js';
 import { promptUrl } from '../api.js';
@@ -254,5 +254,5 @@ export function render(box, env) {
     open.dataset.drill = node.id;
     parts.push(open);
   }
-  box.replaceChildren(...parts);
+  sync(box, ...parts);
 }

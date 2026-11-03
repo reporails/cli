@@ -1,6 +1,6 @@
 // The Tool calls tab: every call of every agent in one filterable, virtualised table with a timeline strip,
 // and the `call` details renderer.
-import { el, nk, err } from '../dom.js';
+import { el, nk, err, sync } from '../dom.js';
 import { clock, k1 } from '../format.js';
 import { typeOf, callIndex, subtreeIds } from '../views.js';
 import { callDetail } from '../api.js';
@@ -174,10 +174,10 @@ export function render(box, env) {
   const total = callIndex(env.ix).list.length;
   const summary = `${rows.length} of ${total} calls · ${rows.filter(r => r.call.failed).length} failed`;
   if (p.summary.textContent !== summary) p.summary.textContent = summary;
-  p.filters.replaceChildren(...filterButtons(env, subject));
+  sync(p.filters, ...filterButtons(env, subject));
   const span = drawStrip(p.canvas, env, rows);
   p.canvas.setAttribute('aria-label', `Timeline of ${rows.length} tool calls`);
-  p.ticks.replaceChildren(...[0, 1, 2, 3, 4].map(i => {
+  sync(p.ticks, ...[0, 1, 2, 3, 4].map(i => {
     const s = el('span', 'tb-tick', clock((span * i) / 4));
     s.style.left = `${i * 25}%`;
     return s;

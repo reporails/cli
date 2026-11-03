@@ -1,7 +1,7 @@
 // A virtualised list: fixed row height, only the rows in view plus a small overscan are in the DOM,
 // inside a scroll container sized to the whole list. It is a grid: its header row (when given) is owned by the grid,
 // every row carries its index, and the arrow keys move between rows whether or not the next one is drawn yet.
-import { el } from '../dom.js';
+import { el, sync } from '../dom.js';
 import { keepFocus } from '../focus.js';
 
 const OVERSCAN = 6;
@@ -43,7 +43,7 @@ export function vlist(rowH, label, head) {
       r.style.height = `${rowH}px`;
       rows.push(r);
     }
-    keepFocus(() => sizer.replaceChildren(...rows));
+    keepFocus(() => sync(sizer, ...rows));
   };
   // Moves focus to row `at`, scrolling it into view and drawing it first when it is outside the drawn window.
   const goTo = at => {

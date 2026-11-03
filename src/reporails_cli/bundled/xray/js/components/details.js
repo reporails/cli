@@ -1,6 +1,6 @@
 // The details frame: one open item ({kind, id}) drawn by the renderer registered for its kind. On the Graph tab the frame
 // is a dialog over the canvas column; on the other tabs the same output fills a one-column side panel.
-import { el, nk } from '../dom.js';
+import { el, nk, sync } from '../dom.js';
 import { find, keyOf, restore } from '../focus.js';
 
 const renderers = new Map();
@@ -80,7 +80,7 @@ export function renderOverlay(box, env) {
   box.hidden = !c;
   // The overlay covers the canvas only; behind it the canvas takes no focus and no clicks.
   document.querySelector('.canvaswrap').inert = !!c;
-  if (!c) { box.replaceChildren(); return; }
+  if (!c) { sync(box); return; }
   const back = el('div', 'pk-back');
   back.dataset.closePeek = '1';
   const dlg = el('section', 'pk-dialog');
@@ -90,20 +90,20 @@ export function renderOverlay(box, env) {
   const body = scrollable(el('div', 'pk-body'), 'Details content');
   body.append(section('pk-main', c.out.main), section('pk-side', c.out.side));
   dlg.append(c.h, body);
-  box.replaceChildren(back, dlg);
+  sync(box, back, dlg);
 }
 
 // Another tab's side panel: the same output in one column, or a line saying nothing is open.
 export function renderPanel(box, env) {
   const c = env.state.peek ? content(env, true) : null;
-  if (!c) { box.replaceChildren(nk('Click a row for its details.')); return; }
+  if (!c) { sync(box, nk('Click a row for its details.')); return; }
   const wrap = el('section', 'pk-panel');
   wrap.setAttribute('role', 'region');
   wrap.setAttribute('aria-labelledby', c.titleId);
   const body = el('div', 'pk-body');
   body.append(section('pk-main', c.out.main), section('pk-side', c.out.side));
   wrap.append(c.h, body);
-  box.replaceChildren(wrap);
+  sync(box, wrap);
 }
 
 // Focus: it goes to the × when details open, and back to the element that opened them when they close.
