@@ -156,6 +156,21 @@ def test_a_compaction_drops_the_hook_notes_and_the_hook_sources_attribution_and_
     assert spent["CLAUDE.md"] == pytest.approx(rate * 200)
 
 
+def test_a_hook_note_after_a_compaction_and_before_the_next_reply_stays_in_the_context(tmp_path: Path) -> None:
+    claude, _, _ = _files(tmp_path)
+    records = [
+        load(0.1, claude),
+        rec("post_compact", 10, source="auto"),
+        _note(12),
+        rec("assistant_usage", 15, usage=TokenUsage("m15", 1, 0, 9999, "claude-opus-4-8")),
+    ]
+    (row,) = _rows(tmp_path, records)
+    assert (row["hook_notes"], row["instructions"]) == (20, 100)
+    graph = _graph(tmp_path, records, _files(tmp_path))
+    spent = dict(_agent(_node(graph, "main")).usage.cost.by_source_usd_est)
+    assert spent[next(key for key in spent if key.startswith("hook:"))] > 0
+
+
 def test_a_compaction_zeroes_the_conversation_and_tool_results_after_it_and_keeps_the_loads(tmp_path: Path) -> None:
     claude, _, _ = _files(tmp_path)
     records = [

@@ -1329,7 +1329,6 @@ def test_a_hook_row_counts_only_the_firings_whose_tokens_the_context_still_holds
     records += [
         reply(4),
         rec("post_compact", 5),
-        reply(5.5),
         rec("harness", 6, item=_hook(firing, 400, "UserPromptSubmit")),
     ]
     records += [reply(7, context=5000)]

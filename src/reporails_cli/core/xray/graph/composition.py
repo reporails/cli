@@ -132,36 +132,57 @@ def _usages(records: Sequence[EventRecord], frame: Frame) -> list[tuple[float, T
     return sorted(found, key=lambda item: item[0])
 
 
+def _take_load(held: dict[CompositionKey, int], carried: dict[str, int], hooks: set[str], load: Added) -> None:
+    """Apply one load: its tokens join its category and, with an id, its source's carried tokens."""
+    _, category, tokens, source = load
+    held[category] += tokens
+    if source is None:
+        return
+    carried[source] = carried.get(source, 0) + tokens
+    if category == "hook_notes":
+        hooks.add(source)
+
+
+def _take_spoken(
+    held: dict[CompositionKey, int], carried: dict[str, int], hooks: set[str], item: Spoken
+) -> dict[str, int]:
+    """Apply one conversation, tool result or compaction entry; returns the carried tokens after it."""
+    _, grown, size = item
+    if grown is not None:
+        held[grown] += size
+        return carried
+    held["conversation"] = held["tool_results"] = held["hook_notes"] = 0
+    kept = {source: tokens for source, tokens in carried.items() if source not in hooks}
+    hooks.clear()
+    return kept
+
+
 def _sweep(
     added: Sequence[Added], spoken: Sequence[Spoken], usages: Sequence[tuple[float, TokenUsage]]
 ) -> Iterator[tuple[float, TokenUsage, dict[CompositionKey, int], dict[str, int]]]:
     """For each reply, what each estimated category holds at it: loads, hook notes and the skills
     listing up to and including the reply's time, conversation and tool results strictly before it; and the tokens
     each source that has an id contributed. A compaction empties the conversation, the tool results and the hook
-    notes with the hook sources' tokens; loaded files stay."""
+    notes with the hook sources' tokens; loaded files stay. The two streams are applied in time order, so a hook
+    note landing after a compaction survives it; at equal times the compaction goes first, because a note stamped
+    with the compaction's own instant is what the compaction's aftermath loads."""
     held: dict[CompositionKey, int] = dict.fromkeys(ESTIMATED_KEYS, 0)
     carried: dict[str, int] = {}
     hooks: set[str] = set()
     ahead = 0
     behind = 0
     for moment, usage in usages:
-        while ahead < len(added) and added[ahead][0] <= moment:
-            _, category, tokens, source = added[ahead]
-            held[category] += tokens
-            if source is not None:
-                carried[source] = carried.get(source, 0) + tokens
-                if category == "hook_notes":
-                    hooks.add(source)
-            ahead += 1
-        while behind < len(spoken) and spoken[behind][0] < moment:
-            _, grown, size = spoken[behind]
-            if grown is None:
-                held["conversation"] = held["tool_results"] = held["hook_notes"] = 0
-                carried = {source: size for source, size in carried.items() if source not in hooks}
-                hooks.clear()
+        while True:
+            load_due = ahead < len(added) and added[ahead][0] <= moment
+            spoken_due = behind < len(spoken) and spoken[behind][0] < moment
+            if not (load_due or spoken_due):
+                break
+            if spoken_due and not (load_due and added[ahead][0] < spoken[behind][0]):
+                carried = _take_spoken(held, carried, hooks, spoken[behind])
+                behind += 1
             else:
-                held[grown] += size
-            behind += 1
+                _take_load(held, carried, hooks, added[ahead])
+                ahead += 1
         yield moment, usage, held, dict(carried)
 
 
