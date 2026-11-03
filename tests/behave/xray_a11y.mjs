@@ -60,6 +60,16 @@ if (mode === 'canvas-focus' && ready) {
   out.afterLeave = await active();
 }
 
+if (mode === 'newline-focus' && ready) {
+  await toGraph(page);
+  await page.until(`!!document.querySelector('#canvas .snode')`);
+  out.focused = await page.ev(`(() => { const e = [...document.querySelectorAll('#canvas .snode')].find(x => (x.dataset.source || '').includes('\\n')); if (!e) return null; e.focus(); return e.dataset.source; })()`);
+  await page.ev(`fetch('/test/swap').then(() => 0)`);
+  await sleep(4500);
+  out.after = await page.ev(`document.activeElement.dataset.source || null`);
+  out.drawn = await page.ev(`!!document.querySelector('#canvas .snode')`);
+}
+
 if (mode === 'toggles' && ready) {
   await toGraph(page);
   await page.until(`!!document.querySelector('.sx-eye')`);

@@ -68,3 +68,19 @@ Feature: The Tool calls and Sources tables list every call and source, agree wit
     Given the server has not recorded the call's result yet
     And the bundled page is served over the "view_sample" fixture view
     Then a call opened before its result landed shows the result after the view changes
+
+  @page @browser
+  Scenario: Only shell calls ask for a command and a shell row's tooltip shows it
+    Given the bundled page is served over the "view_sample" fixture view
+    Then a non-shell call row sends no command request and a shell call row's tooltip shows its command
+
+  @page @browser
+  Scenario: A refused command request is not asked again on the next view versions
+    Given the server refuses the call route
+    And the bundled page is served over the "view_sample" fixture view
+    Then a call whose command request was refused is requested once across view versions
+
+  @page @browser
+  Scenario: Many command texts arriving together cause one redraw per frame
+    Given the bundled page is served over a view holding 2400 calls
+    Then many command texts arriving together are drawn in a few frames, not once per text

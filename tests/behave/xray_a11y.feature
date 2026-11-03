@@ -49,3 +49,8 @@ Feature: The x-ray page works by keyboard, keeps its focus, and stays readable t
   Scenario: At 700 pixels the page is one column and does not scroll sideways
     Given the bundled page is served over the "view_sample" fixture view
     Then at 700 pixels the page has one column and no sideways scroll
+
+  @page @browser
+  Scenario: Focus on a source whose id holds a line break survives a redraw
+    Given the bundled page is served over the "view_sample" fixture view changed so a source id holds a line break
+    Then focus on a canvas source node whose id holds a line break survives the redraw

@@ -40,3 +40,18 @@ Feature: The x-ray Sources panel and right column list everything and describe o
     Given the bundled page is served over the "view_sample" fixture view changed so its memory was not recorded
     Then the Sources table says the memory files were not recorded in this session, not that they were never loaded
     And the subagent's Output line says its hand-back size is not known and shows no ratio
+
+  @page @browser
+  Scenario: Unpriced replies are counted as replies
+    Given the bundled page is served over the "view_fxpage" fixture view
+    Then the session cost details count the replies that could not be priced as replies
+
+  @page @browser
+  Scenario: A Sources row highlights on hover while its kind's eye is off
+    Given the bundled page is served over the "view_sample" fixture view
+    Then hovering a Sources row of a kind whose eye is off still highlights that row
+
+  @page @browser
+  Scenario: A subagent with no replies never reads 0 of work
+    Given the bundled page is served over the "view_sample" fixture view changed so the first subagent has no replies
+    Then the subagent's Output line says the size of its work is not known and never reads 0 of work

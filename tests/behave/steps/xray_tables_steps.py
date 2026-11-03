@@ -200,3 +200,34 @@ def step_sources(context):
     assert {r["source"] for r in seen["rows"] if r["source"]} == {s["id"] for s in view["sources"]}
     assert {r["peek"] for r in seen["rows"] if r["peek"]} == {f"builtin:{b['key']}" for b in view["builtin"]}
     assert any("agents" in r["text"] or "never" in r["text"] for r in seen["rows"])
+
+
+@then("a non-shell call row sends no command request and a shell call row's tooltip shows its command")
+def step_shell_only(context):
+    seen = _drive(context, "summary")
+    if seen is None:
+        return
+    view = context.fixture
+    shell = {c["use_id"] for t in view["track"] for c in t["calls"] if c["category"] == "run"}
+    asked = [re.search(r"id=([^&]+)", r).group(1) for r in seen["requested"] if r.startswith("/call")]
+    assert asked and set(asked) <= shell, sorted(set(asked) - shell)
+    row = next(r for r in seen["failedRows"] if r["peek"] == "call:toolu_fail0")
+    assert "npm test -- --runInBand" in row["title"], row["title"]
+
+
+@then("a call whose command request was refused is requested once across view versions")
+def step_refused_once(context):
+    seen = _drive(context, "running_call")
+    if seen is None:
+        return
+    asked = [r for r in _asked_for_commands(context) if "id=toolu_main_0" in r]
+    assert len(asked) == 1, asked
+
+
+@then("many command texts arriving together are drawn in a few frames, not once per text")
+def step_burst(context):
+    seen = _drive(context, "text_burst")
+    if seen is None:
+        return
+    assert seen["held"] >= 4, seen
+    assert seen["draws"] <= 2, seen

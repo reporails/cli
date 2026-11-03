@@ -19,10 +19,11 @@ const kept = new Set();
 // `view` is the new view when one arrived: a call still running (no result yet) is kept until that view shows it with a result.
 export const forgetTexts = view => {
   const finished = new Set();
-  for (const t of view ? view.track : []) for (const c of t.calls) if (c.duration_s != null) finished.add(c.use_id);
+  for (const t of view ? view.track : []) for (const c of t.calls) if (c.result_tokens_est != null || c.duration_s != null) finished.add(c.use_id);
   for (const k of [...fetched.keys()]) if (!kept.has(k)) fetched.delete(k);
-  // A call whose request failed is asked again on the next view version; one whose result had not landed, once its result shows.
-  for (const [k, e] of [...callDetails.entries()]) if (e.error || (e.data && e.data.result == null && finished.has(k))) callDetails.delete(k);
+  // A call whose request failed is asked again after 30 s at the earliest; one whose result had not landed, once its result shows.
+  const now = Date.now();
+  for (const [k, e] of [...callDetails.entries()]) if ((e.error && now - e.at >= RETRY_MS) || (e.data && e.data.result == null && finished.has(k))) callDetails.delete(k);
 };
 
 // The text behind a key (`keep`: fetched once per page life, e.g. a recorded call that never changes): {loading}, {error} or {text, truncated, frontmatter, body}; the page draws again when it arrives.
@@ -52,13 +53,14 @@ export const viewUrl = () => sessionUrl('view');
 export const callUrl = id => sessionUrl('call', { id });
 // A call's full reply ({loading}, {error} or {data: {tool, text, input, result, truncated}, text}): fetched once per view version; the page draws again when it arrives.
 const callDetails = new Map();
+const RETRY_MS = 30000;
 export function callDetail(id) {
   if (callDetails.has(id)) return callDetails.get(id);
   const e = { loading: true };
   callDetails.set(id, e);
   xrayFetch(callUrl(id)).then(res => {
     if (res && res.ok && res.j) callDetails.set(id, { data: res.j, text: typeof res.j.text === 'string' ? res.j.text : null });
-    else callDetails.set(id, { error: (res && res.j && res.j.error) || (res ? `request refused (${res.status})` : 'The x-ray server did not answer.') });
+    else callDetails.set(id, { at: Date.now(), error: (res && res.j && res.j.error) || (res ? `request refused (${res.status})` : 'The x-ray server did not answer.') });
   }).then(redraw);
   return e;
 }

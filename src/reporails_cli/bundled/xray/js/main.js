@@ -21,7 +21,7 @@ let ix = null, version = null, etag = null, inflight = false, lastAgentHash = '#
 const run = { busy: false, res: null, autoChecked: new Set() };
 const opened = new Set();
 
-const env = () => ({ ix, state, tab: activeTab(ix, state), focus: focusSource(ix, state), text, opened, busy: run.busy, res: run.res });
+const env = () => { const focus = focusSource(ix, state); return { ix, state, tab: activeTab(ix, state), focus, graphFocus: focus && state.layers[focus.kind] ? focus : null, text, opened, busy: run.busy, res: run.res }; };
 
 function renderNotices() {
   const v = ix.view, b = $('#banner');
@@ -253,7 +253,9 @@ window.addEventListener('hashchange', () => {
   render();
 });
 
-onTextArrived(render);
+// Several texts landing together draw once, on the next frame.
+let textFrame = 0;
+onTextArrived(() => { if (!textFrame) textFrame = requestAnimationFrame(() => { textFrame = 0; render(); }); });
 onRegister(render);
 details.onPeekRegister(render);
 

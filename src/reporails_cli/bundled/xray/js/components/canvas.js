@@ -25,7 +25,7 @@ const abs = (cls, left, top, tag = 'div') => {
 const hasIt = (focus, node) => !focus || focus.had_by.includes(node.id);
 
 function banner(env, cur, kids) {
-  const f = env.focus;
+  const f = env.graphFocus;
   const box = el('div', 'fbanner');
   if (!f) { box.hidden = true; return box; }
   box.append(el('b', null, f.name), ' ');
@@ -137,7 +137,7 @@ function topNode(env, cur, focus) {
 }
 
 function childCard(env, c, p, match, selected) {
-  const focus = env.focus;
+  const focus = env.graphFocus;
   const box = abs('card', p.left, p.top);
   box.dataset.node = c.id;
   box.title = c.name;
@@ -197,7 +197,7 @@ function groupEdges(env, grp, p, scale, matchOf, g, marks) {
 
 function groupCard(env, grp, p, match) {
   const picked = grp.members.find(m => m.id === env.state.sel);
-  const box = abs('card group' + (match || picked ? '' : ' dim') + (env.focus && match ? ' ring' : '') + (picked ? ' picked' : ''), p.left, p.top, 'button');
+  const box = abs('card group' + (match || picked ? '' : ' dim') + (env.graphFocus && match ? ' ring' : '') + (picked ? ' picked' : ''), p.left, p.top, 'button');
   box.dataset.group = grp.key;
   box.dataset.launchY = p.launchY.toFixed(1);
   box.setAttribute('aria-expanded', 'false');
@@ -354,8 +354,8 @@ function sourceItems(env, cur, scale) {
 }
 
 function sourceNode(env, it, p) {
-  const hot = env.focus && env.focus.id === it.source;
-  const dim = env.focus && !hot;
+  const hot = env.graphFocus && env.graphFocus.id === it.source;
+  const dim = env.graphFocus && !hot;
   const b = abs('snode' + (it.find ? ' find' : '') + (hot ? ' hot' : '') + (dim ? ' dim' : ''), p.left, p.top, 'button');
   b.dataset.source = it.source;
   b.title = it.title;
@@ -374,8 +374,8 @@ function sourceEdges(env, items, placed, scale) {
   const g = svg('g', { class: 'srcedges' });
   for (const it of items) {
     const p = placed.get(it.source);
-    const hot = env.focus && env.focus.id === it.source;
-    const dim = env.focus && !hot;
+    const hot = env.graphFocus && env.graphFocus.id === it.source;
+    const dim = env.graphFocus && !hot;
     const colour = hot ? WHITE : dim ? 'rgba(236,236,236,0.05)' : it.find ? 'rgba(242,166,110,0.55)' : 'rgba(236,236,236,0.28)';
     const ny = p.top + SH / 2, mx = (p.inner + SPX) / 2;
     g.append(svg('path', {
@@ -400,8 +400,8 @@ function sourceEdges(env, items, placed, scale) {
 function stationPill(env, cl) {
   const [it] = cl.members;
   const many = cl.members.length > 1;
-  const hot = env.focus && cl.members.some(m => m.source === env.focus.id);
-  const dim = env.focus && !hot;
+  const hot = env.graphFocus && cl.members.some(m => m.source === env.graphFocus.id);
+  const dim = env.graphFocus && !hot;
   const lone = !many && it.small && it.type === 'load';
   const cls = 'station' + (many ? ' merged' : it.type === 'hook' ? ' hook' : '') + (lone ? ' dot' : '')
     + (cl.members.some(m => m.find) ? ' find' : '') + (hot ? ' hot' : '') + (dim ? ' dim' : '');

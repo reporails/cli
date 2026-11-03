@@ -2,18 +2,16 @@
 // the region it sits in and its identity attributes, and focus goes to its twin once the region is drawn again.
 const REGIONS = ['#overlay', '#canvas', '#inspector', '#sources', '#view-calls', '#view-sources', '#side-calls', '#side-sources', '#view-file', '#parentstrip', '#header'];
 
-const q = v => String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-
 const regionOf = e => REGIONS.find(r => e.closest(r)) || '';
 
 // What finds an element again: its tag plus its id or data-* attributes, or its first class when it has none.
 function selectorOf(e) {
   const tag = e.tagName.toLowerCase();
-  if (e.id) return `${tag}[id="${q(e.id)}"]`;
+  if (e.id) return `${tag}[id="${CSS.escape(e.id)}"]`;
   const data = [...e.attributes].filter(a => a.name.startsWith('data-') && a.name !== 'data-slot');
-  if (data.length) return tag + data.map(a => `[${a.name}="${q(a.value)}"]`).join('');
+  if (data.length) return tag + data.map(a => `[${a.name}="${CSS.escape(a.value)}"]`).join('');
   const slot = e.getAttribute('data-slot');
-  if (slot) return `${tag}[data-slot="${q(slot)}"]`;
+  if (slot) return `${tag}[data-slot="${CSS.escape(slot)}"]`;
   const cls = e.classList[0];
   return cls ? `${tag}.${CSS.escape(cls)}` : tag;
 }
@@ -26,7 +24,7 @@ export function keyOf(e) {
 export function find(key) {
   if (!key) return null;
   const root = key.region ? document.querySelector(key.region) : document;
-  return root ? root.querySelector(key.selector) : null;
+  try { return root ? root.querySelector(key.selector) : null; } catch (_) { return null; }
 }
 
 let pending = null, depth = 0;

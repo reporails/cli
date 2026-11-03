@@ -66,5 +66,25 @@ if (mode === 'details' && ready) {
   out.cost = await page.ev(`document.querySelector('.pk-dialog').textContent`);
 }
 
+if (mode === 'unpriced' && ready) {
+  await click('#inspector [data-peek="cost:main"]');
+  await page.until(`!!document.querySelector('.pk-dialog .pk-kv')`);
+  out.cost = await page.ev(`document.querySelector('.pk-dialog').textContent`);
+}
+
+if (mode === 'eye_hover' && ready) {
+  await click('[data-groups="open"]');
+  await sleep(100);
+  await click('.sx-eye[data-eye="agent"]');
+  await sleep(150);
+  const sel = '#sources .ssec[data-kind="agent"] .sr';
+  await page.ev(`document.querySelector(${JSON.stringify(sel)}).scrollIntoView({ block: 'center' }); 0`);
+  const p = await page.ev(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, button: 'none' });
+  await sleep(300);
+  out.eyePressed = await page.ev(`document.querySelector('.sx-eye[data-eye="agent"]').getAttribute('aria-pressed')`);
+  out.hovered = await page.ev(`document.querySelector(${JSON.stringify(sel)}).classList.contains('on')`);
+}
+
 page.close();
 console.log(JSON.stringify(out));

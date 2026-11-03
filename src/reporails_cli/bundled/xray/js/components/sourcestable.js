@@ -1,12 +1,13 @@
 // The Sources tab: every source and the coding agent's built-in context items in one virtualised table.
 import { el } from '../dom.js';
 import { k1 } from '../format.js';
+import { UNRECORDED } from '../views.js';
 import { vlist, viewHeight } from './vlist.js';
 
 const ROW_H = 36;
 
 const inContext = (env, s, verb) => {
-  if (s.availability === 'unrecorded') return 'not recorded in this session';
+  if (s.availability === 'unrecorded') return UNRECORDED;
   const n = s.had_by ? s.had_by.length : 0;
   return n ? `${n} of ${env.ix.view.nodes.length} agents` : `never ${verb}`;
 };

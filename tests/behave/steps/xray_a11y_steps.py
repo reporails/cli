@@ -164,3 +164,12 @@ def step_reflow(context):
     lay = seen["layout"]
     assert lay["scrollWidth"] <= lay["innerWidth"], lay
     assert lay["cols"] == 1 and lay["graphview"] == 1, lay
+
+
+@then("focus on a canvas source node whose id holds a line break survives the redraw")
+def step_newline_focus(context):
+    seen = _a11y(context, "newline-focus")
+    if seen is None:
+        return
+    assert seen["focused"], "no canvas source node carries the line-break id"
+    assert seen["after"] == seen["focused"] and seen["drawn"], seen

@@ -320,6 +320,7 @@ class _FixtureHandler(BaseHTTPRequestHandler):
     swaps = 0
     call_result = True
     landed = False
+    call_refused = False
 
     def log_message(self, *_args) -> None:  # silence the per-request log
         return
@@ -370,6 +371,21 @@ class _FixtureHandler(BaseHTTPRequestHandler):
     def _call_result(self, key: str) -> str | None:
         return f"result of {key}" if self.call_result else None
 
+    def _serve_call(self, key: str, text: str) -> None:
+        if self.call_refused:
+            return self._json(500, {"error": "the call route is refusing"})
+        self._json(
+            200,
+            {
+                "id": key,
+                "tool": "Bash",
+                "text": text,
+                "input": f'{{"command": "{text}"}}',
+                "result": self._call_result(key),
+                "truncated": False,
+            },
+        )
+
     def do_GET(self) -> None:  # http.server's name
         url = urlparse(self.path)
         query = parse_qs(url.query)
@@ -406,17 +422,7 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             "/peek": f"text of {key}",
         }
         if url.path == "/call":
-            return self._json(
-                200,
-                {
-                    "id": key,
-                    "tool": "Bash",
-                    "text": texts[url.path],
-                    "input": f'{{"command": "{texts[url.path]}"}}',
-                    "result": self._call_result(key),
-                    "truncated": False,
-                },
-            )
+            return self._serve_call(key, texts["/call"])
         if url.path in texts:
             return self._json(200, {"id": key, "text": texts[url.path]})
         return self._json(404, {"error": "no such route"})
@@ -457,6 +463,7 @@ def step_serve_fixture(context, name):
             "bump_version": getattr(context, "bump_version", False),
             "overrides": getattr(context, "view_overrides", {}),
             "call_result": getattr(context, "call_result", True),
+            "call_refused": getattr(context, "call_refused", False),
         },
     )
     context.handler = handler

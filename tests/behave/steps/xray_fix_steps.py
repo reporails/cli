@@ -73,7 +73,19 @@ def _over(view: dict) -> None:
     comp["replies"][comp["peak"]][-1] = True
 
 
+def _no_replies(view: dict) -> None:
+    _node(view, "a1")["detail"]["peak"] = None
+
+
+def _line_break_id(view: dict) -> None:
+    changed = json.loads(json.dumps(view).replace(".claude/rules/rules-engine.md", ".claude/rules/rules-\\nengine.md"))
+    view.clear()
+    view.update(changed)
+
+
 CHANGES = {
+    "the first subagent has no replies": _no_replies,
+    "a source id holds a line break": _line_break_id,
     "its memory was not recorded": _unrecorded_memory,
     "only memory files count as instructions": _instructions_are_memory,
     "memory loads stay on the spine and hook loads do not": _memory_on_the_spine,
@@ -90,6 +102,11 @@ def step_serve_changed(context, name, change):
     path.write_text(json.dumps(view), encoding="utf-8")
     context.add_cleanup(lambda: path.unlink(missing_ok=True))
     context.execute_steps(f'Given the bundled page is served over the "{str(path)[:-5]}" fixture view')
+
+
+@given("the server refuses the call route")
+def step_call_refused(context):
+    context.call_refused = True
 
 
 @given("the server has not recorded the call's result yet")
@@ -303,3 +320,11 @@ def step_calls_link(context):
     mine = len(next(t for t in view["track"] if t["node"] == "main")["calls"])
     total = sum(len(t["calls"]) for t in view["track"])
     assert seen["summary"].startswith(f"{mine} of {total} calls"), seen["summary"]
+
+
+@then("the subagent's Output line says the size of its work is not known and never reads 0 of work")
+def step_no_peak(context):
+    seen = _drive(context, "unrecorded")
+    if seen is None:
+        return
+    assert "0 of work" not in seen["output"] and "work is not known" in seen["output"], seen["output"]

@@ -118,3 +118,21 @@ def step_details(context):
     comp = next(n for n in context.fixture["nodes"] if n["id"] == "main")["detail"]["composition"]
     assert seen["peak"]["title"] == f"{comp['replies'][comp['peak']][1]:,} tokens", seen["peak"]
     assert "Most expensive turn" in seen["cost"] and "list price" in seen["cost"], seen["cost"]
+
+
+@then("the session cost details count the replies that could not be priced as replies")
+def step_unpriced(context):
+    seen = _panels(context, "unpriced")
+    if seen is None:
+        return
+    n = context.fixture["session_cost"]["unpriced"]
+    assert n > 0 and f"{n} replies not priced" in seen["cost"], seen["cost"]
+
+
+@then("hovering a Sources row of a kind whose eye is off still highlights that row")
+def step_eye_hover(context):
+    seen = _panels(context, "eye_hover")
+    if seen is None:
+        return
+    assert seen["eyePressed"] == "false", seen
+    assert seen["hovered"] is True, seen

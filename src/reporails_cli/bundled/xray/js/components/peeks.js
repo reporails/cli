@@ -4,7 +4,7 @@ import { clock, costEst, k1, plural, tk, usd } from '../format.js';
 import { briefUrl, peekUrl } from '../api.js';
 import { hashFor } from '../state.js';
 import { bandColour } from '../geometry.js';
-import { peakOf, replyParts, typeOf } from '../views.js';
+import { peakOf, replyParts, typeOf, UNRECORDED } from '../views.js';
 import { sessionCost } from './inspector.js';
 import { render as renderFindings } from './findings.js';
 import { registerPeek, scrollable } from './details.js';
@@ -49,7 +49,6 @@ function whyLoaded(view, id) {
   return null;
 }
 
-const UNRECORDED = 'not recorded in this session';
 
 // When the agent had the source: its first load into that agent, else the agent's start.
 function loadTime(ix, node, s) {
@@ -215,7 +214,7 @@ registerPeek('cost', (env, id) => {
   if (session) {
     const { sc, subs, n, others } = session;
     pairs.unshift(['Session', `~${usd(sc.total_usd)}`], ['This agent', `~${usd(cost.total_usd)}`], [plural(n, 'subagent'), `~${usd(subs)}`]);
-    if (sc.unpriced > 0) pairs.push(['Not priced', plural(sc.unpriced, 'agent')]);
+    if (sc.unpriced > 0) pairs.push(['Pricing', plural(sc.unpriced, 'reply', 'replies') + ' not priced']);
     const list = el('div', 'pk-list');
     for (const [id, usdEst] of others.slice(0, 5)) {
       const kid = ix.nodes.get(id);

@@ -3,6 +3,7 @@
 import { el, svg } from '../dom.js';
 import { costEst, fill, tk, plural } from '../format.js';
 import { SOURCES_SHOWN } from '../geometry.js';
+import { UNRECORDED } from '../views.js';
 
 const BUILTIN = 'builtin';
 const EYE = 'M2 12s4-7 10-7s10 7 10 7s-4 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z';
@@ -14,7 +15,6 @@ function counts(ix, key, list) {
   return { used: row.loaded ?? null, total: row.on_disk };
 }
 
-const UNRECORDED = 'not recorded in this session';
 const findingsText = n => `${n} finding${n === 1 ? '' : 's'}`;
 const findingsOf = s => (s.findings && s.findings.count) || 0;
 
@@ -218,7 +218,7 @@ export function render(box, env) {
     const { used, total } = counts(ix, k.key, list);
     const absent = ix.view.facts.find(f => f.kind === 'kind_absent' && f.target && f.target.value === k.key);
     box.append(group(env, {
-      key: k.key, label: k.label, letter: k.letter, used, total, usage: used == null ? `not recorded in this session, ${total} on disk` : `${used} of ${total} ${k.verb}`,
+      key: k.key, label: k.label, letter: k.letter, used, total, usage: used == null ? `${UNRECORDED}, ${total} on disk` : `${used} of ${total} ${k.verb}`,
       finds: list.reduce((n, s) => n + findingsOf(s), 0), hidden: !state.layers[k.key], graphLabel: k.graph_label, eye: k,
       absent: absent && templates.kind_absent ? fill(templates.kind_absent, { ...absent.numbers, label: k.label.toLowerCase() }) : null,
       rows: list.map(s => row(env, s)), heads: roleHeads(list),

@@ -104,7 +104,8 @@ if (mode === 'summary' && ready) {
   out.drawn = await rowCount();
   await click('[data-calls-failed]');
   await page.until(`/npm test/.test(document.querySelector('#view-calls .vl').textContent)`, 20);
-  out.failedRows = await page.ev(`[...document.querySelectorAll('#view-calls .vl-row')].map(r => ({ peek: r.dataset.peek, summary: r.children[3].textContent }))`);
+  out.failedRows = await page.ev(`[...document.querySelectorAll('#view-calls .vl-row')].map(r => ({ peek: r.dataset.peek, summary: r.children[3].textContent, title: r.title }))`);
+  out.requested = await page.ev(`fetch('/test/requests', { headers: { 'X-Xray-Token': document.querySelector('meta[name=xray-token]').content } }).then(r => r.json())`);
 }
 
 if (mode === 'summary_draw' && ready) {
@@ -120,6 +121,24 @@ if (mode === 'running_call' && ready) {
   await swap('');
   await swap('');
   await swap('?result=1');
+}
+
+// Every /call answer is held until all are asked for, then released at once: each arrival asks the page to draw again.
+if (mode === 'text_burst' && ready) {
+  await page.ev(`(() => {
+    window.__held = [];
+    const real = window.fetch;
+    window.fetch = (u, ...a) => /^\\/?call\\?/.test(String(u)) ? new Promise(res => window.__held.push(() => res(real(u, ...a)))) : real(u, ...a);
+    window.__draws = 0;
+    new MutationObserver(rs => { if (rs.some(r => r.addedNodes.length)) window.__draws++; }).observe(document.body, { childList: true, subtree: true });
+    return 0;
+  })()`);
+  await tab('calls');
+  await sleep(800);
+  out.held = await page.ev(`window.__held.length`);
+  await page.ev(`(() => { window.__draws = 0; window.__held.forEach(f => f()); return 0; })()`);
+  await sleep(1000);
+  out.draws = await page.ev(`window.__draws`);
 }
 
 if (mode === 'sources' && ready) {

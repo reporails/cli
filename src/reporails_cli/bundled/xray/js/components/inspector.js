@@ -120,7 +120,7 @@ function contextRow(row, node, env) {
   const go = opener(row, node, env);
   if (go && go.source) b.dataset.source = go.source;
   else if (go) b.dataset.peek = go.peek;
-  const rem = row.key === 'rest' || (row.key === 'builtin' && (env.ix.view.builtin || []).some(b => b.remainder && b.label === row.label));
+  const rem = row.key === 'rest' || row.key === 'builtin';
   const time = row.t != null ? clock(row.t) : rem ? 'remainder' : 'always';
   b.setAttribute('aria-label', `${row.label}, ${row.reason}${row.findings ? `, ${row.findings} findings` : ''}, ${tk(row.tokens_est, true)}${rem ? ' remainder' : ''}. Open details.`);
   const text = el('span', 'ic-t');
@@ -234,7 +234,7 @@ function output(node, env) {
   const parent = env.ix.nodes.get(node.parent);
   const at = edge && edge.back_t != null ? ` at ${clock(edge.back_t)}` : '';
   const back = d.back_tokens_est == null ? '; the size of its hand-back is not known' : `, summarised in ${k1(d.back_tokens_est)}${d.back_ratio ? ` (${Math.round(d.back_ratio)}× smaller)` : ''}`;
-  sec.append(el('p', 'ix-line', `Returned to ${parent ? nodeLabel(parent) : 'its parent'}${at}. ${k1(d.peak - (d.context_start || 0))} of work${back}.`));
+  sec.append(el('p', 'ix-line', `Returned to ${parent ? nodeLabel(parent) : 'its parent'}${at}. ${d.peak == null ? 'The size of its work is not known' : `${k1(d.peak - (d.context_start || 0))} of work`}${back}.`));
   return sec;
 }
 

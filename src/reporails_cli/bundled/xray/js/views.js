@@ -22,6 +22,9 @@ export function typeOf(ix, node) {
   return t ? { colour: t.colour, icon: t.icon, label: t.label } : { colour: NEUTRAL, icon: GENERIC_ICON, label: node.type };
 }
 
+// The one wording for a source the transcript does not show.
+export const UNRECORDED = 'not recorded in this session';
+
 export const kindOfSource = (ix, id) => {
   const s = ix.sources.get(id);
   return s ? ix.kinds.get(s.kind) || null : null;
@@ -29,10 +32,9 @@ export const kindOfSource = (ix, id) => {
 
 export const visibleKinds = (ix, state) => ix.view.adapter.source_kinds.filter(k => state.layers[k.key]);
 
-// The source whose focus is on: hover wins over a pin; a source of a hidden layer is no focus.
+// The source whose focus is on: hover wins over a pin. A kind's eye hides it on the graph only, so the list still highlights it.
 export function focusSource(ix, state) {
-  const s = ix.sources.get(state.hover || state.pinned);
-  return s && state.layers[s.kind] ? s : null;
+  return ix.sources.get(state.hover || state.pinned) || null;
 }
 
 export const childrenOf = (ix, node) => node.children.map(id => ix.nodes.get(id)).filter(Boolean);
