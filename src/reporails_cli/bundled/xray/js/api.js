@@ -16,10 +16,13 @@ const fetched = new Map();
 let redraw = () => {};
 export const onTextArrived = fn => { redraw = fn; };
 const kept = new Set();
-export const forgetTexts = () => {
+// `view` is the new view when one arrived: a call still running (no result yet) is kept until that view shows it with a result.
+export const forgetTexts = view => {
+  const finished = new Set();
+  for (const t of view ? view.track : []) for (const c of t.calls) if (c.duration_s != null) finished.add(c.use_id);
   for (const k of [...fetched.keys()]) if (!kept.has(k)) fetched.delete(k);
-  // A call whose result had not landed, or whose request failed, is asked again on the next view version.
-  for (const [k, e] of [...callDetails.entries()]) if (e.error || (e.data && e.data.result == null)) callDetails.delete(k);
+  // A call whose request failed is asked again on the next view version; one whose result had not landed, once its result shows.
+  for (const [k, e] of [...callDetails.entries()]) if (e.error || (e.data && e.data.result == null && finished.has(k))) callDetails.delete(k);
 };
 
 // The text behind a key (`keep`: fetched once per page life, e.g. a recorded call that never changes): {loading}, {error} or {text, truncated, frontmatter, body}; the page draws again when it arrives.

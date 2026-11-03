@@ -98,7 +98,7 @@ _CLAUDE_BUILTIN = (
 
 _CLAUDE_CONTEXT_TEXTS = (
     XrayContextText("task", "Task prompt", "written by the parent"),
-    XrayContextText("hooks", "Hook", "fired {count} times"),
+    XrayContextText("hooks", "Hook", "fired {count} times", "fired once"),
     XrayContextText("builtin", "System prompt, tools and listings", "from the coding agent"),
     XrayContextText(
         "rest",

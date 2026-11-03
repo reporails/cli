@@ -1335,7 +1335,7 @@ def test_a_hook_row_counts_only_the_firings_whose_tokens_the_context_still_holds
     shown = _agent(_node(_graph(tmp_path, records), "main")).in_context
     assert shown is not None
     hook = next(row for row in shown.rows if row.key == "hooks")
-    assert (hook.reason, hook.tokens_est) == ("fired 1 times", 100)
+    assert (hook.reason, hook.tokens_est) == ("fired once", 100)
 
 
 def test_the_launch_of_a_subagent_says_how_big_its_parents_conversation_was_not_the_whole_context(

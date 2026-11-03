@@ -16,6 +16,22 @@ Feature: The Tool calls and Sources tables list every call and source, agree wit
     Then a click on a call row fills the side panel with the call's input and result from the server
 
   @page @browser
+  Scenario: A shell call's summary shows its command, asked for the drawn rows only
+    Given the bundled page is served over the "view_sample" fixture view
+    Then a shell call's row shows its command and no more commands are requested than rows are drawn
+
+  @page @browser
+  Scenario: A call still running is asked for once however many views arrive, and again when its result lands
+    Given the server has not recorded the call's result yet
+    And the bundled page is served over the "view_sample" fixture view
+    Then a running call's command is requested once across view versions and once more after its result lands
+
+  @page @browser
+  Scenario: Thousands of calls request commands for the drawn rows only
+    Given the bundled page is served over a view holding 2400 calls
+    Then no more commands are requested than rows are drawn
+
+  @page @browser
   Scenario: Thousands of calls keep a few rows in the page and scrolling shows later ones
     Given the bundled page is served over a view holding 2400 calls
     Then fewer than 200 rows are in the page and scrolling the table shows the last call

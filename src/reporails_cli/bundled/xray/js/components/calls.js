@@ -106,6 +106,14 @@ function drawStrip(canvas, env, rows) {
   return span;
 }
 
+// What the Call column prints: the call's label; for a call with no file target (its label is its tool's name), the
+// first line of its shell command once the server has answered. Only drawn rows reach this, so only they ask.
+function summaryOf(c) {
+  if (c.label !== c.tool) return c.label;
+  const line = (callDetail(c.use_id).text || '').split('\n')[0].trim();
+  return line || c.label;
+}
+
 function callRow(env, r) {
   const { ix, state } = env, c = r.call;
   const open = state.peek && state.peek.kind === 'call' && state.peek.id === c.use_id;
@@ -120,7 +128,7 @@ function callRow(env, r) {
   const tool = el('span', 'tb-tool tb-trunc', c.tool);
   tool.style.color = callIndex(ix).colour(c.category);
   b.append(
-    el('span', 'tb-mono', clock(c.t)), agent, tool, el('span', 'tb-trunc', c.label),
+    el('span', 'tb-mono', clock(c.t)), agent, tool, el('span', 'tb-trunc', summaryOf(c)),
     el('span', 'tb-mono tb-r', c.result_tokens_est == null ? '–' : `~${k1(c.result_tokens_est)}`),
     el('span', 'tb-mono tb-r', took(c.duration_s)),
     el('span', c.failed ? 'tb-fail' : 'tb-ok', c.failed ? 'failed' : 'ok'),

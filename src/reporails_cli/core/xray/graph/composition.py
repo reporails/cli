@@ -287,6 +287,12 @@ def _first_loads(
     return found
 
 
+def _hook_reason(vocabulary: AdapterVocabulary, count: int) -> str:
+    """The reason a hook row gives for `count` firings, in the vocabulary's wording for one firing or several."""
+    text = next(item for item in vocabulary.context.texts if item.key == "hooks")
+    return (text.reason_once if count == 1 and text.reason_once else text.reason).format(count=count)
+
+
 def _source_rows(
     own: AgentRecords, reply_t: float, carried: dict[str, int], world: AgentWorld
 ) -> tuple[list[XrayContextRow], list[XrayContextRow], int]:
@@ -294,7 +300,6 @@ def _source_rows(
     the hooks among them, and the tokens of the MCP servers among the first."""
     vocabulary = world.context.vocabulary
     triggers = {item.key: item.label for item in vocabulary.triggers}
-    hook_reason = next(item.reason for item in vocabulary.context.texts if item.key == "hooks")
     dropped = max((item.t for item in own.compactions if item.t < reply_t), default=float("-inf"))
     fires: dict[str, int] = {}
     for load in own.loads:
@@ -308,7 +313,7 @@ def _source_rows(
         if entry.kind == "mcp":
             mcp += tokens
         if entry.kind == "hook":
-            hooks.append(_row("hooks", entry, load, tokens, hook_reason.format(count=fires[entry.id])))
+            hooks.append(_row("hooks", entry, load, tokens, _hook_reason(vocabulary, fires[entry.id])))
         else:
             loaded.append((load, _row("source", entry, load, tokens, triggers.get(load.trigger, ""))))
     loaded.sort(key=lambda item: (item[0].trigger != "inherited", item[0].t or 0.0))

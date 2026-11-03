@@ -279,7 +279,7 @@ async function poll() {
     if (j.version === version) return;
     etag = r.headers.get('ETag') || String(j.version);
     version = j.version;
-    forgetTexts();
+    forgetTexts(j);
     adopt(j);
     render();
   } catch (_) {

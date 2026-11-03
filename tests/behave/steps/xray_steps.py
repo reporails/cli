@@ -319,6 +319,7 @@ class _FixtureHandler(BaseHTTPRequestHandler):
     overrides: ClassVar[dict] = {}
     swaps = 0
     call_result = True
+    landed = False
 
     def log_message(self, *_args) -> None:  # silence the per-request log
         return
@@ -341,6 +342,12 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             if "session" in query:
                 shown["session"] = query["session"][0]
             body = json.dumps(shown)
+        if self.landed:  # a landed result: the view now times every call
+            shown = json.loads(body)
+            for track in shown["track"]:
+                for item in track["calls"]:
+                    item["duration_s"] = 1.0 if item["duration_s"] is None else item["duration_s"]
+            body = json.dumps(shown)
         if self.swaps:  # a test changed the session: it is a new version of it
             body = json.dumps({**json.loads(body), "version": 5000 + self.swaps})
         if self.bump_version:  # a session that keeps growing: every poll carries a new version
@@ -356,6 +363,7 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             cls.view_text = (FIXTURES / f"{query['view'][0]}.json").read_text(encoding="utf-8")
         if "result" in query:
             cls.call_result = query["result"][0] == "1"
+            cls.landed = cls.call_result
         cls.swaps += 1
         self._json(200, {"swaps": cls.swaps})
 

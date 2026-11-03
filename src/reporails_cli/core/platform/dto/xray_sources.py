@@ -246,8 +246,9 @@ class XrayBuiltinInfo:
 @dataclass(frozen=True)
 class XrayContextText:
     """The label and reason the coding agent words one kind of "in context" row with; a reason may hold the
-    fire count as `{count}`."""
+    fire count as `{count}`; `reason_once` words a count of one."""
 
     key: ContextKey
     label: str
     reason: str
+    reason_once: str | None = None

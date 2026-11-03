@@ -128,6 +128,43 @@ def step_peek(context):
     assert seen["instr"] >= 1, "no instruction file is listed for the call"
 
 
+def _asked_for_commands(context) -> list[str]:
+    return [r for r in context.handler.requests if r.startswith("/call")]
+
+
+@then("a shell call's row shows its command and no more commands are requested than rows are drawn")
+def step_shell_summary(context):
+    seen = _drive(context, "summary")
+    if seen is None:
+        return
+    row = next((r for r in seen["failedRows"] if r["peek"] == "call:toolu_fail0"), None)
+    assert row and row["summary"] == "npm test -- --runInBand", seen["failedRows"]
+    asked = _asked_for_commands(context)
+    assert len(asked) == len(set(asked)), asked
+    # Drawn rows before the filter, plus the failed rows drawn after it.
+    assert len(asked) <= seen["drawn"] + len(seen["failedRows"]), (len(asked), seen["drawn"])
+
+
+@then("a running call's command is requested once across view versions and once more after its result lands")
+def step_running_call(context):
+    # Two views with the call running, then the view that shows its result: one request each side of the landing.
+    seen = _drive(context, "running_call")
+    if seen is None:
+        return
+    asked = [r for r in _asked_for_commands(context) if "id=toolu_main_0" in r]
+    assert len(asked) == 2, asked
+
+
+@then("no more commands are requested than rows are drawn")
+def step_commands_for_drawn_rows(context):
+    seen = _drive(context, "summary_draw")
+    if seen is None:
+        return
+    asked = _asked_for_commands(context)
+    assert seen["drawn"] > 0 and len(asked) <= seen["drawn"], (len(asked), seen["drawn"])
+    assert len(asked) == len(set(asked)), asked
+
+
 @given("the bundled page is served over a view holding {n:d} calls")
 def step_big_view(context, n):
     source = json.loads((Path(__file__).resolve().parents[2] / "fixtures" / "xray" / "view_sample.json").read_text())

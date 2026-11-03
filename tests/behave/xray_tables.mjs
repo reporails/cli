@@ -98,6 +98,30 @@ if (mode === 'virtual' && ready) {
   out.lastPeek = await page.ev(`(() => { const rows = [...document.querySelectorAll('#view-calls .vl-row')]; return rows[rows.length - 1].dataset.peek; })()`);
 }
 
+if (mode === 'summary' && ready) {
+  await tab('calls');
+  await sleep(600);
+  out.drawn = await rowCount();
+  await click('[data-calls-failed]');
+  await page.until(`/npm test/.test(document.querySelector('#view-calls .vl').textContent)`, 20);
+  out.failedRows = await page.ev(`[...document.querySelectorAll('#view-calls .vl-row')].map(r => ({ peek: r.dataset.peek, summary: r.children[3].textContent }))`);
+}
+
+if (mode === 'summary_draw' && ready) {
+  await tab('calls');
+  await sleep(800);
+  out.drawn = await rowCount();
+}
+
+if (mode === 'running_call' && ready) {
+  await tab('calls');
+  await sleep(800);
+  const swap = async q => { await page.ev(`fetch('/test/swap${q}').then(() => 0)`); await sleep(4500); };
+  await swap('');
+  await swap('');
+  await swap('?result=1');
+}
+
 if (mode === 'sources' && ready) {
   await tab('sources');
   out.rows = await page.ev(`[...document.querySelectorAll('#view-sources .vl-row')].map(r => ({ source: r.dataset.source || null, peek: r.dataset.peek || null, text: r.textContent }))`);
