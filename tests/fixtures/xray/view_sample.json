@@ -320,7 +320,7 @@
           "tool": "Bash",
           "category": "run",
           "calls": 21,
-          "failed": 0
+          "failed": 9
         },
         {
           "tool": "Agents",
@@ -5939,6 +5939,18 @@
       "node": "main",
       "calls": [
         {
+          "t": 30.0,
+          "category": "agent",
+          "tool": "Agents",
+          "label": "Agents",
+          "source": null,
+          "server": null,
+          "failed": false,
+          "use_id": "toolu_main_agents_0",
+          "duration_s": null,
+          "result_tokens_est": null
+        },
+        {
           "t": 40.3,
           "category": "run",
           "tool": "Bash",
@@ -5947,6 +5959,30 @@
           "server": null,
           "failed": false,
           "use_id": "toolu_main_0",
+          "duration_s": null,
+          "result_tokens_est": null
+        },
+        {
+          "t": 47.3,
+          "category": "agent",
+          "tool": "Agents",
+          "label": "Agents",
+          "source": null,
+          "server": null,
+          "failed": false,
+          "use_id": "toolu_main_agents_1",
+          "duration_s": null,
+          "result_tokens_est": null
+        },
+        {
+          "t": 64.6,
+          "category": "agent",
+          "tool": "Agents",
+          "label": "Agents",
+          "source": null,
+          "server": null,
+          "failed": false,
+          "use_id": "toolu_main_agents_2",
           "duration_s": null,
           "result_tokens_est": null
         },
@@ -5963,6 +5999,54 @@
           "result_tokens_est": null
         },
         {
+          "t": 81.9,
+          "category": "agent",
+          "tool": "Agents",
+          "label": "Agents",
+          "source": null,
+          "server": null,
+          "failed": false,
+          "use_id": "toolu_main_agents_3",
+          "duration_s": null,
+          "result_tokens_est": null
+        },
+        {
+          "t": 99.2,
+          "category": "agent",
+          "tool": "Agents",
+          "label": "Agents",
+          "source": null,
+          "server": null,
+          "failed": false,
+          "use_id": "toolu_main_agents_4",
+          "duration_s": null,
+          "result_tokens_est": null
+        },
+        {
+          "t": 116.5,
+          "category": "agent",
+          "tool": "Agents",
+          "label": "Agents",
+          "source": null,
+          "server": null,
+          "failed": false,
+          "use_id": "toolu_main_agents_5",
+          "duration_s": null,
+          "result_tokens_est": null
+        },
+        {
+          "t": 133.8,
+          "category": "agent",
+          "tool": "Agents",
+          "label": "Agents",
+          "source": null,
+          "server": null,
+          "failed": false,
+          "use_id": "toolu_main_agents_6",
+          "duration_s": null,
+          "result_tokens_est": null
+        },
+        {
           "t": 144.9,
           "category": "read",
           "tool": "Read",
@@ -5971,6 +6055,42 @@
           "server": null,
           "failed": false,
           "use_id": "toolu_main_2",
+          "duration_s": null,
+          "result_tokens_est": null
+        },
+        {
+          "t": 151.1,
+          "category": "agent",
+          "tool": "Agents",
+          "label": "Agents",
+          "source": null,
+          "server": null,
+          "failed": false,
+          "use_id": "toolu_main_agents_7",
+          "duration_s": null,
+          "result_tokens_est": null
+        },
+        {
+          "t": 168.4,
+          "category": "agent",
+          "tool": "Agents",
+          "label": "Agents",
+          "source": null,
+          "server": null,
+          "failed": false,
+          "use_id": "toolu_main_agents_8",
+          "duration_s": null,
+          "result_tokens_est": null
+        },
+        {
+          "t": 185.7,
+          "category": "agent",
+          "tool": "Agents",
+          "label": "Agents",
+          "source": null,
+          "server": null,
+          "failed": false,
+          "use_id": "toolu_main_agents_9",
           "duration_s": null,
           "result_tokens_est": null
         },
@@ -7786,6 +7906,18 @@
       "node": "a5",
       "calls": [
         {
+          "t": 30.0,
+          "category": "agent",
+          "tool": "Agents",
+          "label": "Agents",
+          "source": null,
+          "server": null,
+          "failed": false,
+          "use_id": "toolu_a5_agents_0",
+          "duration_s": null,
+          "result_tokens_est": null
+        },
+        {
           "t": 271.6,
           "category": "read",
           "tool": "Read",
@@ -8140,6 +8272,18 @@
     {
       "node": "a5b",
       "calls": [
+        {
+          "t": 30.0,
+          "category": "agent",
+          "tool": "Agents",
+          "label": "Agents",
+          "source": null,
+          "server": null,
+          "failed": false,
+          "use_id": "toolu_a5b_agents_0",
+          "duration_s": null,
+          "result_tokens_est": null
+        },
         {
           "t": 405.1,
           "category": "edit",

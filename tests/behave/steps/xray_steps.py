@@ -378,6 +378,18 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             "/prompt": f"prompt text of {key}",
             "/peek": f"text of {key}",
         }
+        if url.path == "/call":
+            return self._json(
+                200,
+                {
+                    "id": key,
+                    "tool": "Bash",
+                    "text": texts[url.path],
+                    "input": f'{{"command": "{texts[url.path]}"}}',
+                    "result": f"result of {key}",
+                    "truncated": False,
+                },
+            )
         if url.path in texts:
             return self._json(200, {"id": key, "text": texts[url.path]})
         return self._json(404, {"error": "no such route"})

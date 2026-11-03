@@ -54,3 +54,32 @@ export function tabCounts(ix) {
     sources: v.sources.length + (v.builtin || []).length,
   };
 }
+
+// Every call of the session with the node that made it, in time order; looked up by use id; each category's colour.
+const callIndexes = new WeakMap();
+export function callIndex(ix) {
+  const have = callIndexes.get(ix);
+  if (have) return have;
+  const list = [];
+  for (const t of ix.view.track) {
+    const node = ix.nodes.get(t.node);
+    for (const call of t.calls) list.push({ call, node });
+  }
+  list.sort((a, b) => a.call.t - b.call.t);
+  const colours = new Map(ix.view.adapter.categories.map(c => [c.key, c.colour]));
+  const made = { list, byId: new Map(list.map(r => [r.call.use_id, r])), colour: key => colours.get(key) || NEUTRAL };
+  callIndexes.set(ix, made);
+  return made;
+}
+
+// The ids of a node and every agent below it.
+export function subtreeIds(ix, id) {
+  const out = new Set();
+  const walk = n => {
+    if (!n || out.has(n.id)) return;
+    out.add(n.id);
+    for (const c of n.children) walk(ix.nodes.get(c));
+  };
+  walk(ix.nodes.get(id));
+  return out;
+}

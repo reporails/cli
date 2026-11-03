@@ -9,6 +9,8 @@ import * as canvas from './components/canvas.js';
 import * as inspector from './components/inspector.js';
 import * as filepane from './components/filepane.js';
 import * as details from './components/details.js';
+import * as calls from './components/calls.js';
+import * as sourcestable from './components/sourcestable.js';
 import { onRegister } from './components/nodes/index.js';
 
 const $ = s => document.querySelector(s);
@@ -38,9 +40,6 @@ function renderNotices() {
 const BODIES = { graph: '#view-graph', calls: '#view-calls-body', sources: '#view-sources-body' };
 const SIDES = { calls: '#side-calls', sources: '#side-sources' };
 
-// The Tool calls and Sources bodies hold a placeholder line until their tables are drawn.
-const placeholder = (box, text) => box.replaceChildren(nk(text));
-
 function renderTab(e) {
   for (const k of TABS) $(BODIES[k]).hidden = e.tab !== k;
   const hadFocus = details.hasFocusIn();
@@ -52,7 +51,8 @@ function renderTab(e) {
     details.renderOverlay($('#overlay'), e);
   } else {
     $('#overlay').hidden = true;
-    placeholder($(e.tab === 'calls' ? '#view-calls' : '#view-sources'), e.tab === 'calls' ? 'The tool call table is not drawn yet.' : 'The sources table is not drawn yet.');
+    if (e.tab === 'calls') calls.render($('#view-calls'), e);
+    else sourcestable.render($('#view-sources'), e);
     details.renderPanel($(SIDES[e.tab]), e);
   }
   details.settle(e, $(BODIES[e.tab]), hadFocus);

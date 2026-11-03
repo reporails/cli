@@ -43,6 +43,18 @@ export function sessionUrl(route, params = {}) {
 
 export const viewUrl = () => sessionUrl('view');
 export const callUrl = id => sessionUrl('call', { id });
+// A call's full reply ({loading}, {error} or {data: {tool, text, input, result, truncated}}): fetched once; the page draws again when it arrives.
+const callDetails = new Map();
+export function callDetail(id) {
+  if (callDetails.has(id)) return callDetails.get(id);
+  const e = { loading: true };
+  callDetails.set(id, e);
+  xrayFetch(callUrl(id)).then(res => {
+    if (res && res.ok && res.j) callDetails.set(id, { data: res.j });
+    else callDetails.set(id, { error: (res && res.j && res.j.error) || (res ? `request refused (${res.status})` : 'The x-ray server did not answer.') });
+  }).then(redraw);
+  return e;
+}
 export const callText = id => text('call:' + id, callUrl(id), true);
 export const briefUrl = id => sessionUrl('brief', { subagent: id });
 export const promptUrl = id => sessionUrl('prompt', { id });
