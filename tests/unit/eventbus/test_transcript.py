@@ -926,3 +926,32 @@ def test_a_present_count_that_is_not_a_whole_number_refuses_the_row(bad: JsonObj
     as_object(row["message"])["usage"] = {**usage, **bad}
     with pytest.raises(PayloadRefused):
         ClaudeTranscriptAdapter().resolve_row(row, None)
+
+
+@pytest.mark.parametrize(
+    ("text", "acknowledges"),
+    [
+        ("Async agent launched successfully.\nagentId: a1 (internal ID)", True),
+        ("The findings are in the report.", False),
+    ],
+)
+def test_a_tool_result_that_only_acknowledges_a_background_launch_says_so(text: str, acknowledges: bool) -> None:
+    row = _tool_result({})
+    as_object(row["message"])["content"] = [{"type": "tool_result", "tool_use_id": "toolu_1", "content": text}]
+    (record,) = _of(ClaudeTranscriptAdapter().resolve_row(row, None), "tool_result")
+    assert record.tool is not None and record.tool.launch_ack is acknowledges
+
+
+def test_a_call_is_read_back_in_one_pass_over_the_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    session = _copy_session(tmp_path)
+    opened: list[Path] = []
+    original = Path.open
+
+    def counting(self: Path, *args: object, **kwargs: object) -> object:
+        opened.append(self)
+        return original(self, *args, **kwargs)  # type: ignore[call-overload]
+
+    monkeypatch.setattr(Path, "open", counting)
+    detail = call_detail("claude", session, None, "toolu_read1", "Read", shell=False)
+    assert detail is not None and detail.result == "PLACEHOLDER-FILE-TEXT" * 10
+    assert opened.count(session) == 1

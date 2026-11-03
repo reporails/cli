@@ -32,6 +32,9 @@ REMAINDER_KEY: CompositionKey = "system_tools"
 # The categories that are estimated, in row order.
 ESTIMATED_KEYS: tuple[CompositionKey, ...] = tuple(key for key in COMPOSITION_KEYS if key != REMAINDER_KEY)
 
+# The categories that hold what was said and what the tools returned.
+SPOKEN_KEYS: tuple[CompositionKey, ...] = ("conversation", "tool_results")
+
 
 @dataclass(frozen=True)
 class CarriedReply:

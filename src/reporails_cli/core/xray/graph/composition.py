@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 
-from reporails_cli.core.platform.dto.events import EventRecord, HarnessKind, TokenUsage
+from reporails_cli.core.platform.dto.events import EventRecord, HarnessKind, TokenUsage, is_note_kind
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary
 from reporails_cli.core.platform.dto.xray_build import (
     AgentRecords,
@@ -212,32 +212,25 @@ def _count_note(template: str | None, count: int | None) -> str | None:
     return None if count is None else template.format(count=count)
 
 
-def _mcp_tokens(loads: Sequence[LoadEvent], sources: SourceTable, until: float) -> int:
-    """The tokens of the MCP servers' instructions the agent had loaded by `until`, each server once."""
-    first: dict[str, int] = {}
-    for load in loads:
-        entry = sources.get(load.source)
-        if entry is not None and entry.kind == "mcp" and load.t is not None and load.t <= until:
-            first.setdefault(load.source, load.tokens_est or 0)
-    return sum(first.values())
+def _in_remainder(kind: HarnessKind) -> bool:
+    """Whether a harness item's size sits in the remainder category: every kind except the skills listing and the
+    hook notes, which have categories of their own, and the system prompt itself."""
+    return kind not in (_LISTED_KIND, "system_prompt") and not is_note_kind(kind)
 
 
 def builtin_items(
-    main: ProducedNode, records: Sequence[EventRecord], sources: SourceTable, vocabulary: AdapterVocabulary
+    main: ProducedNode, records: Sequence[EventRecord], vocabulary: AdapterVocabulary
 ) -> tuple[XrayBuiltin, ...]:
     """The coding agent's own context in the vocabulary's order. A harness item's size is read from its records;
     the system prompt is in no record, so its size is what the main agent's remainder category holds at its peak
-    reply after the other items inside that category and the MCP servers' instructions, never below 0."""
+    reply after the other harness items inside that category, never below 0."""
     composition = main.detail.usage.composition
     held = {item.kind: item for item in build_harness(records, replies_of(records)) or ()}
     system: int | None = None
     if composition.peak is not None:
         reply = composition.replies[composition.peak]
-        inside = sum(
-            (item.tokens_est or 0) for kind, item in held.items() if kind not in (_LISTED_KIND, "system_prompt")
-        )
-        mcp = _mcp_tokens(main.spine.loads, sources, reply.t)
-        system = max(0, reply.parts[COMPOSITION_KEYS.index(REMAINDER_KEY)] - inside - mcp)
+        inside = sum((item.tokens_est or 0) for kind, item in held.items() if _in_remainder(kind))
+        system = max(0, reply.parts[COMPOSITION_KEYS.index(REMAINDER_KEY)] - inside)
     found: list[XrayBuiltin] = []
     for info in vocabulary.context.builtin:
         item = held.get(info.key)
@@ -281,9 +274,10 @@ def _source_rows(
     vocabulary = world.context.vocabulary
     triggers = {item.key: item.label for item in vocabulary.triggers}
     hook_reason = next(item.reason for item in vocabulary.context.texts if item.key == "hooks")
+    dropped = max((item.t for item in own.compactions if item.t < reply_t), default=float("-inf"))
     fires: dict[str, int] = {}
     for load in own.loads:
-        if load.t is not None and load.t <= reply_t:
+        if load.t is not None and dropped < load.t <= reply_t:
             fires[load.source] = fires.get(load.source, 0) + 1
     loaded: list[tuple[LoadEvent, XrayContextRow]] = []
     hooks: list[XrayContextRow] = []
@@ -342,9 +336,9 @@ def _closing_rows(
     opening: Sequence[XrayContextRow],
     taken: tuple[int, int],
     texts: dict[ContextKey, XrayContextText],
-) -> tuple[list[XrayContextRow], int]:
+) -> list[XrayContextRow]:
     """The coding agent's own context and the conversation with the tool results, which take what the estimates
-    leave of the measured total; with what is left, negative when the estimates overshoot it. `taken` is the tokens
+    leave of the measured total, the conversation row at 0 when the estimates overshoot it. `taken` is the tokens
     of the MCP servers and of the definition, which the coding agent's own context does not count."""
     built = reply.parts[COMPOSITION_KEYS.index(REMAINDER_KEY)] + reply.parts[COMPOSITION_KEYS.index("skill_listing")]
     builtin = texts["builtin"]
@@ -353,7 +347,7 @@ def _closing_rows(
     )
     left = reply.total - sum(row.tokens_est for row in opening) - own_row.tokens_est
     rest = texts["rest"]
-    return [own_row, XrayContextRow("rest", None, None, rest.label, rest.reason, max(0, left), None, None)], left
+    return [own_row, XrayContextRow("rest", None, None, rest.label, rest.reason, max(0, left), None, None)]
 
 
 def build_in_context(
@@ -381,5 +375,6 @@ def build_in_context(
         texts=texts,
         world=world,
     )
-    closing, left = _closing_rows(reply, rows, (mcp, defined), texts)
-    return XrayInContext(reply.total, (*rows, *closing), left < 0)
+    closing = _closing_rows(reply, rows, (mcp, defined), texts)
+    shown = (*rows, *closing)
+    return XrayInContext(reply.total, shown, sum(row.tokens_est for row in shown) != reply.total)

@@ -40,15 +40,13 @@ def series_json(series: Iterable[tuple[float, int]]) -> JsonValue:
 
 @dataclass(frozen=True)
 class LoadEvent:
-    """A source entering a node's context: when, how big, what brought it there and the hook event behind it;
-    `on_spine` is false for an instruction file the node started with."""
+    """A source entering a node's context: when, how big, what brought it there and the hook event behind it."""
 
     source: str
     t: float | None
     tokens_est: int | None
     trigger: LoadTrigger
     event: str | None
-    on_spine: bool
 
 
 @dataclass(frozen=True)
@@ -66,7 +64,6 @@ class XrayLoad(LoadEvent):
             "trigger": self.trigger,
             "event": self.event,
             "small": self.small,
-            "on_spine": self.on_spine,
         }
 
 
@@ -403,16 +400,17 @@ class XrayWithheldSource:
 
 @dataclass(frozen=True)
 class XrayWithheld:
-    """What a child did not get: the sources its parent had at the launch and the parent's context then."""
+    """What a child did not get: the sources its parent had at the launch and the estimated size of the parent's
+    conversation and tool results then."""
 
     sources: tuple[XrayWithheldSource, ...]
-    context_tokens: int | None
+    conversation_tokens: int | None
 
     def to_json(self) -> JsonObject:
         """What was withheld as a JSON object."""
         return {
             "sources": objects({"source": item.source, "tokens_est": item.tokens_est} for item in self.sources),
-            "context_tokens": self.context_tokens,
+            "conversation_tokens": self.conversation_tokens,
         }
 
 

@@ -26,6 +26,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayTree,
 )
 from reporails_cli.core.platform.dto.xray_sources import Availability, SourceEntry, XrayBuiltin, XraySource
+from reporails_cli.core.xray.cost import session_cost
 from reporails_cli.core.xray.graph import spine
 from reporails_cli.core.xray.graph.agents import MAIN_ID, main_records
 from reporails_cli.core.xray.graph.bursts import bursts
@@ -80,12 +81,14 @@ def _load(load: LoadEvent, sources: SourceTable, small_kinds: set[SourceKind]) -
         if load.tokens_est is not None
         else entry is not None and entry.kind in small_kinds
     )
-    return XrayLoad(load.source, load.t, load.tokens_est, load.trigger, load.event, load.on_spine, small)
+    return XrayLoad(load.source, load.t, load.tokens_est, load.trigger, load.event, small)
 
 
-def _availability(entry: SourceEntry, had_by: Sequence[str]) -> Availability:
+def _availability(entry: SourceEntry, had_by: Sequence[str], unrecorded: frozenset[SourceKind]) -> Availability:
     if had_by:
         return "loaded"
+    if entry.kind in unrecorded:
+        return "unrecorded"
     return "listed" if entry.advertised else "on_disk"
 
 
@@ -156,16 +159,17 @@ def build_graph(
         tuple(
             XrayTrack(node.id, spine.track_calls(node), spine.failure_runs(node), spine.breaks(node)) for node in spined
         ),
-        _builtin(pnodes, records, sources, vocabulary),
+        _builtin(pnodes, records, vocabulary),
+        session_cost([(node.id, node.detail.usage.cost) for node in pnodes]),
     )
 
 
 def _builtin(
-    nodes: Sequence[ProducedNode], records: Sequence[EventRecord], sources: SourceTable, vocabulary: AdapterVocabulary
+    nodes: Sequence[ProducedNode], records: Sequence[EventRecord], vocabulary: AdapterVocabulary
 ) -> tuple[XrayBuiltin, ...]:
     """The coding agent's own context, read from the main agent's records; none when the graph has no main agent."""
     main = next((node for node in nodes if node.id == MAIN_ID), None)
-    return () if main is None else builtin_items(main, main_records(records), sources, vocabulary)
+    return () if main is None else builtin_items(main, main_records(records), vocabulary)
 
 
 def _had_by(
@@ -235,7 +239,7 @@ def _sources(
                 path=entry.path,
                 tokens_est=entry.tokens_est,
                 findings=entry.findings,
-                availability=_availability(entry, had_by),
+                availability=_availability(entry, had_by, sources.unrecorded),
                 had_by=had_by,
                 actionable=entry.actionable,
                 launches=len(had_by) if entry.kind == "agent" else None,

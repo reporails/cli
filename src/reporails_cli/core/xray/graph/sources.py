@@ -133,6 +133,12 @@ def _harness_sources(records: Sequence[EventRecord]) -> list[SourceEntry]:
     return found
 
 
+def _unrecorded_kinds(records: Sequence[EventRecord]) -> frozenset[SourceKind]:
+    """The kinds whose loads the records cannot show: instruction files when no record of the session is an
+    instruction load (an older transcript carries none)."""
+    return frozenset() if any(record.event == "instruction_load" for record in records) else frozenset({"instructions"})
+
+
 def build_sources(artifacts: Sequence[XrayArtifact], records: Sequence[EventRecord], frame: Frame) -> SourceTable:
     """The session's sources: each listed file that can enter a context, each loaded file the listing misses, each
     MCP server seen and each hook note label."""
@@ -168,7 +174,7 @@ def build_sources(artifacts: Sequence[XrayArtifact], records: Sequence[EventReco
         if real_path(path, frame.root) in by_real
     }
     entries.extend(_harness_sources(records))
-    return SourceTable(tuple(entries), frame.root, by_real, by_run)
+    return SourceTable(tuple(entries), frame.root, by_real, by_run, _unrecorded_kinds(records))
 
 
 def ran_sources(records: Sequence[EventRecord], table: SourceTable) -> set[str]:

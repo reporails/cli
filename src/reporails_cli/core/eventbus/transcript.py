@@ -215,12 +215,13 @@ def call_detail(
     path = (
         session_file if subagent_id is None else _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
     )
-    row = _find_row(path, use_id, lambda found: adapter.holds_call(found, use_id))
+    row, answer = _find_call_rows(
+        path, use_id, lambda found: adapter.holds_call(found, use_id), lambda found: adapter.holds_result(found, use_id)
+    )
     if row is None:
         return None
     text = adapter.resolve_call(row, use_id) if shell else None
     full_input = json.dumps(adapter.resolve_call_input(row, use_id), indent=2, ensure_ascii=False)
-    answer = _find_row(path, use_id, lambda found: adapter.holds_result(found, use_id))
     full_result = None if answer is None else adapter.resolve_result(answer, use_id)
     cut = len(full_input) > CALL_INPUT_CHARS or (full_result is not None and len(full_result) > CALL_RESULT_CHARS)
     shown_result = None if full_result is None else full_result[:CALL_RESULT_CHARS]
@@ -307,6 +308,29 @@ def _find_row(path: Path, needle: str, matches: Callable[[JsonObject], bool]) ->
     except OSError:
         return None
     return None
+
+
+def _find_call_rows(
+    path: Path, needle: str, is_call: Callable[[JsonObject], bool], is_result: Callable[[JsonObject], bool]
+) -> tuple[JsonObject | None, JsonObject | None]:
+    """The first row of a file that holds `needle` and `is_call` accepts, and the first row after it that `is_result`
+    accepts, found in one pass; either is None when the file holds none or cannot be read."""
+    raw = needle.encode()
+    call: JsonObject | None = None
+    try:
+        with path.open("rb") as handle:
+            for line in handle:
+                if raw not in line:
+                    continue
+                with contextlib.suppress(ValueError):
+                    row = as_object(json.loads(line))
+                    if call is None and is_call(row):
+                        call = row
+                    elif call is not None and is_result(row):
+                        return call, row
+    except OSError:
+        return None, None
+    return call, None
 
 
 def _meta(path: Path) -> JsonObject | None:

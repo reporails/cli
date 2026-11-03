@@ -20,22 +20,27 @@ def _used(kind: SourceKind, items: Sequence[SourceEntry], had: set[str], ran: se
 def build_funnel(
     entries: Sequence[SourceEntry], sources: Sequence[XraySource], kinds: Sequence[SourceKind], ran: set[str]
 ) -> tuple[XrayFunnelRow, ...]:
-    """One row per source kind in `kinds` that has a source, in that order; `ran` holds the ids of the skill and
-    command sources that ran."""
+    """One row per source kind in `kinds` that has a source, in that order, the built-in agent types counted; `ran`
+    holds the ids of the skill and command sources that ran. A kind whose loads the session does not record has
+    no loaded or used count."""
     had = {source.id for source in sources if source.had_by}
+    unrecorded = {source.kind for source in sources if source.availability == "unrecorded"}
     rows: list[XrayFunnelRow] = []
     for kind in kinds:
         items = [item for item in entries if item.kind == kind]
-        if not items:
+        builtin = [source for source in sources if source.kind == kind and source.builtin]
+        if not items and not builtin:
             continue
         marks = [item.advertised for item in items if item.advertised is not None]
         rows.append(
             XrayFunnelRow(
                 kind=kind,
-                on_disk=len(items),
+                on_disk=len(items) + len(builtin),
                 advertised=sum(marks) if marks else None,
-                loaded=sum(1 for item in items if item.id in had),
-                used=_used(kind, items, had, ran),
+                loaded=None
+                if kind in unrecorded
+                else sum(1 for item in items if item.id in had) + sum(1 for source in builtin if source.had_by),
+                used=None if kind in unrecorded else _used(kind, items, had, ran),
             )
         )
     return tuple(rows)

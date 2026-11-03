@@ -61,7 +61,9 @@ _KIND: NodeKind = "agent"
 def _results(group: Sequence[EventRecord], frame: Frame) -> dict[str, CallResult]:
     """The result of each call among `group`, by the call's id."""
     return {
-        record.tool.use_id: CallResult(frame_time(frame, record) or 0.0, record.tool.chars, record.tool.error is True)
+        record.tool.use_id: CallResult(
+            frame_time(frame, record) or 0.0, record.tool.chars, record.tool.error is True, record.tool.launch_ack
+        )
         for record in group
         if record.event == "tool_result" and record.tool is not None and record.tool.use_id is not None
     }
@@ -79,10 +81,11 @@ def _calls(
         category = tool.category or "other"
         path = relative_wire_path(tool.path, frame.root) if tool.path else None
         result = results.get(tool.use_id)
+        called = frame_time(frame, record)
         chars = tool.chars if category == "handback" else None if result is None else result.chars
         found.append(
             ProducedCall(
-                t=frame_time(frame, record) or 0.0,
+                t=called or 0.0,
                 category=category,
                 tool=tool.name or "tool",
                 label=f"{tool.name or 'tool'} · {path}" if path else tool.name or "tool",
@@ -92,7 +95,7 @@ def _calls(
                 use_id=tool.use_id,
                 fingerprint=tool.fingerprint,
                 back_tokens_est=None if chars is None else tokens_of(chars),
-                duration_s=None if result is None else result.t - (frame_time(frame, record) or 0.0),
+                duration_s=None if result is None or called is None else result.t - called,
             )
         )
     return tuple(found)
@@ -107,7 +110,7 @@ def _at_start(reading: LoadReading, record: EventRecord) -> bool:
 def _source_load(sid: str | None, t: float | None, reading: LoadReading) -> list[LoadEvent]:
     """A load by the agent's own doing (a run, a read) of the source `sid`; none when `sid` is no source."""
     entry = reading.sources.get(sid) if sid else None
-    return [] if entry is None else [LoadEvent(entry.id, t, entry.tokens_est, "agent", None, True)]
+    return [] if entry is None else [LoadEvent(entry.id, t, entry.tokens_est, "agent", None)]
 
 
 def _harness_loads(record: EventRecord, reading: LoadReading) -> list[LoadEvent]:
@@ -118,9 +121,9 @@ def _harness_loads(record: EventRecord, reading: LoadReading) -> list[LoadEvent]
     t = frame_time(reading.frame, record)
     if entry.kind == "mcp_instructions":
         trigger: LoadTrigger = "session_start" if reading.is_main else "inherited"
-        return [LoadEvent(mcp_id(name), t, tokens_of(chars), trigger, None, True) for name, chars in entry.added]
+        return [LoadEvent(mcp_id(name), t, tokens_of(chars), trigger, None) for name, chars in entry.added]
     if is_note_kind(entry.kind) and entry.event is not None:
-        return [LoadEvent(hook_id(entry.label), t, tokens_of(entry.chars), "hook", entry.event, True)]
+        return [LoadEvent(hook_id(entry.label), t, tokens_of(entry.chars), "hook", entry.event)]
     return []
 
 
@@ -148,10 +151,10 @@ def _instruction_load(record: EventRecord, reading: LoadReading) -> list[LoadEve
         return []
     t = frame_time(reading.frame, record)
     if load.memory_type == "nested":
-        return [LoadEvent(entry.id, t, entry.tokens_est, "path_match", None, True)]
+        return [LoadEvent(entry.id, t, entry.tokens_est, "path_match", None)]
     early = _at_start(reading, record)
     trigger: LoadTrigger = "session_start" if reading.is_main else "inherited" if early else "agent"
-    return [LoadEvent(entry.id, t, entry.tokens_est, trigger, None, not (early and entry.kind == "instructions"))]
+    return [LoadEvent(entry.id, t, entry.tokens_est, trigger, None)]
 
 
 def _final_reply(group: Sequence[EventRecord], frame: Frame) -> AgentReply | None:
@@ -263,10 +266,15 @@ def _parent_of(key: str, metas: dict[str, SubagentMeta | None]) -> str:
     return parent if parent is not None and parent in metas else MAIN_ID
 
 
+def _acknowledges_launch(meta: SubagentMeta | None, result: CallResult | None) -> bool:
+    """Whether the parent's result for the subagent only acknowledges a background launch."""
+    return (meta is not None and meta.background) or (result is not None and result.launch_ack)
+
+
 def _answered(meta: SubagentMeta | None, result: CallResult | None) -> bool:
     """Whether the parent's call for the subagent came back without an error and without the launch of a background
     run."""
-    return result is not None and not result.error and not (meta is not None and meta.background)
+    return result is not None and not result.error and not _acknowledges_launch(meta, result)
 
 
 def _outcome(meta: SubagentMeta | None, own: AgentRecords, result: CallResult | None, live: bool) -> AgentOutcome:
@@ -294,7 +302,7 @@ def _back(
         return handback.back_tokens_est, handback.t
     if outcome == "returned" and own.reply is not None and not _answered(meta, result):
         return tokens_of(own.reply.chars), own.reply.t
-    if result is not None and result.chars is not None and not (meta is not None and meta.background):
+    if result is not None and result.chars is not None and not _acknowledges_launch(meta, result):
         return tokens_of(result.chars), result.t
     return None, None
 

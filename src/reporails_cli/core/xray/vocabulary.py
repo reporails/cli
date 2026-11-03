@@ -32,13 +32,13 @@ _PLAN_ICON = "M9 3h6 M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"
 _FORK_ICON = "M2 12s4-7 10-7s10 7 10 7s-4 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z"
 
 _CLAUDE_SOURCE_KINDS = (
-    XraySourceKindInfo("instructions", "Instructions", "I", False, "loaded", "instruction files"),
-    XraySourceKindInfo("rule", "Rules", "R", False, "loaded", "rules"),
+    XraySourceKindInfo("instructions", "Instructions", "I", False, "loaded", "instruction files", instructions=True),
+    XraySourceKindInfo("rule", "Rules", "R", False, "loaded", "rules", instructions=True),
     XraySourceKindInfo("skill", "Skills", "S", False, "loaded", "skills"),
     XraySourceKindInfo("agent", "Agents", "A", True, "launched", "subagents", definitions=True),
     XraySourceKindInfo("memory", "Memory", "M", False, "read", "memory"),
     XraySourceKindInfo("mcp", "MCP servers", "C", False, "connected", "MCP servers"),
-    XraySourceKindInfo("hook", "Hooks", "H", False, "fired", "hooks"),
+    XraySourceKindInfo("hook", "Hooks", "H", False, "fired", "hooks", spine=True),
 )
 
 _CLAUDE_AGENT_TYPES = (
@@ -100,7 +100,11 @@ _CLAUDE_CONTEXT_TEXTS = (
     XrayContextText("task", "Task prompt", "written by the parent"),
     XrayContextText("hooks", "Hook", "fired {count} times"),
     XrayContextText("builtin", "System prompt, tools and listings", "from the coding agent"),
-    XrayContextText("rest", "Conversation and tool results", "grew during the run, estimated"),
+    XrayContextText(
+        "rest",
+        "Conversation and tool results",
+        "the remainder of the exact total: conversation, tool results and anything not itemised",
+    ),
 )
 
 _CLAUDE_BURST = XrayBurstSettings(window_s=90.0, window_share=0.013, min_size=3)

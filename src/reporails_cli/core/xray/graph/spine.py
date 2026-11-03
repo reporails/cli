@@ -8,6 +8,7 @@ from itertools import pairwise
 from reporails_cli.core.platform.dto.events import ToolCategory
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary
 from reporails_cli.core.platform.dto.xray_build import ProducedCall, ProducedNode, SourceTable
+from reporails_cli.core.platform.dto.xray_composition import COMPOSITION_KEYS, SPOKEN_KEYS
 from reporails_cli.core.platform.dto.xray_graph import (
     ClusterItem,
     LoadEvent,
@@ -191,15 +192,24 @@ def _held_tokens(source: str, loads: Sequence[LoadEvent], sources: SourceTable) 
     return sum(load.tokens_est or 0 for load in loads if load.source == source)
 
 
+def _conversation_at(node: ProducedNode, until: float) -> int | None:
+    """The estimated tokens of the node's conversation and tool results at its last reply by `until`; None when it
+    had not replied."""
+    replies = [reply for reply in node.detail.usage.composition.replies if reply.t <= until]
+    if not replies:
+        return None
+    parts = replies[-1].parts
+    return sum(parts[COMPOSITION_KEYS.index(key)] for key in SPOKEN_KEYS)
+
+
 def withheld(parent: ProducedNode, child: ProducedNode, out_t: float, sources: SourceTable) -> XrayWithheld:
     """What the parent had at the launch of `child` that the child never had, and the parent's context then."""
     child_had = set(had_sources(child))
     before = [load for load in parent.spine.loads if load.t is None or load.t <= out_t]
     missing = [source for source in dict.fromkeys(load.source for load in before) if source not in child_had]
-    context = [tokens for t, tokens in parent.spine.series if t <= out_t]
     return XrayWithheld(
         tuple(XrayWithheldSource(source, _held_tokens(source, before, sources)) for source in missing),
-        context[-1] if context else None,
+        _conversation_at(parent, out_t),
     )
 
 

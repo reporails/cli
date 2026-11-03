@@ -17,7 +17,8 @@ ArtifactKind = Literal["instructions", "rule", "memory", "skill", "agent", "comm
 ArtifactScope = Literal["project", "user", "managed", "local", "plugin", "auto", "synced"]
 
 
-Availability = Literal["loaded", "listed", "on_disk"]
+# `unrecorded`: the session holds no load record of the source's kind, so "not loaded" cannot be told.
+Availability = Literal["loaded", "listed", "on_disk", "unrecorded"]
 
 
 MemoryRole = Literal["index", "item"]

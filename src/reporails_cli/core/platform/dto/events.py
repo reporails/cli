@@ -161,6 +161,8 @@ class ToolUse:
     fingerprint: str | None = None
     # Whether a result reports an error; None on a call.
     error: bool | None = None
+    # Whether a result is only the acknowledgement that a background agent was launched.
+    launch_ack: bool = False
 
 
 @dataclass(frozen=True)

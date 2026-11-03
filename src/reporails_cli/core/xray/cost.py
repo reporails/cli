@@ -19,6 +19,7 @@ from reporails_cli.core.platform.dto.xray_cost import (
     PriceListInfo,
     Rate,
     XrayAgentCost,
+    XraySessionCost,
 )
 from reporails_cli.core.platform.utils.utils import load_yaml_file
 from reporails_cli.core.xray.derive import context_of, epoch
@@ -168,7 +169,8 @@ def attributed_cost(
             entry = sources.get(source)
             if entry is not None and entry.kind == "instructions":
                 instructions += usd
-    return (instructions if priced else None), tuple(per_source.items())
+    known = priced and "instructions" not in sources.unrecorded
+    return (instructions if known else None), tuple(per_source.items())
 
 
 def agent_cost(
@@ -178,6 +180,19 @@ def agent_cost(
     is what each source carried per reply."""
     instructions, by_source = attributed_cost(carried, sources, prices)
     return replace(_replies_cost(records, prices, t0), instructions_usd_est=instructions, by_source_usd_est=by_source)
+
+
+def session_cost(costs: Sequence[tuple[str, XrayAgentCost]]) -> XraySessionCost:
+    """The cost of every agent together, from each agent's node id and cost: the total of the priced agents (None
+    when none is priced), the replies no price covered and the priced agents dearest first."""
+    priced = sorted(
+        ((node, cost.total_usd) for node, cost in costs if cost.total_usd is not None), key=lambda item: -item[1]
+    )
+    return XraySessionCost(
+        total_usd=sum(usd for _, usd in priced) if priced else None,
+        unpriced=sum(cost.unpriced for _, cost in costs),
+        by_agent=tuple(priced),
+    )
 
 
 def _replies_cost(records: Sequence[EventRecord], prices: PriceList, t0: float) -> XrayAgentCost:

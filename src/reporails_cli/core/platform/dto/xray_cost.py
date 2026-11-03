@@ -69,6 +69,24 @@ class PriceList:
 
 
 @dataclass(frozen=True)
+class XraySessionCost:
+    """What every agent's replies cost together at list price: the total (None when no reply is priced), how many
+    replies could not be priced, and each agent's own total, dearest first."""
+
+    total_usd: float | None
+    unpriced: int
+    by_agent: tuple[tuple[str, float], ...]
+
+    def to_json(self) -> JsonObject:
+        """The session's cost as a JSON object."""
+        return {
+            "total_usd": self.total_usd,
+            "unpriced": self.unpriced,
+            "by_agent": [[node, usd] for node, usd in self.by_agent],
+        }
+
+
+@dataclass(frozen=True)
 class XrayAgentCost:
     """What an agent's replies cost at list price: the total, the dearest reply, the share of the context read from
     the cache, and how many replies could not be priced or were priced on an assumption."""

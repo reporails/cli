@@ -134,6 +134,8 @@ MCP_PREFIX = "mcp__"
 MCP_SEPARATOR = "__"
 FINGERPRINT_CHARS = 16
 BACKGROUND_SHAPE = "background"
+# How the result of a launched background agent opens: an acknowledgement, not the agent's answer.
+LAUNCH_ACK_PREFIX = "Async agent launched"
 # The tool names of each category the side track and the inspector group by; an MCP tool is told by its prefix.
 TOOL_CATEGORY: dict[str, ToolCategory] = {
     **dict.fromkeys(("Read", "Grep", "Glob", "LS", "NotebookRead", "WebFetch", "WebSearch"), "read"),
@@ -199,7 +201,12 @@ def _tool_result(block: JsonObject) -> ToolUse:
     texts = blocks_text(block.get("content"), "tool_result")
     if texts is None:
         raise PayloadRefused("tool_result content is neither text nor a list of blocks")
-    return ToolUse(use_id=use_id, chars=sum(len(text) for text in texts), error=bool(failed))
+    return ToolUse(
+        use_id=use_id,
+        chars=sum(len(text) for text in texts),
+        error=bool(failed),
+        launch_ack="".join(texts).startswith(LAUNCH_ACK_PREFIX),
+    )
 
 
 def _meta_field[Field: (str, int, bool)](meta: JsonObject, key: str, kind: type[Field]) -> Field | None:

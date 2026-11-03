@@ -123,9 +123,11 @@ def call(
     return rec("tool_call", seconds, sub, tool=ToolUse(name, use_id, path, server, category, chars, fingerprint))
 
 
-def result(seconds: float, use_id: str, sub: str | None = None, chars: int = 0, error: bool = False) -> EventRecord:
-    """The result of the call `use_id`."""
-    return rec("tool_result", seconds, sub, tool=ToolUse(use_id=use_id, chars=chars, error=error))
+def result(
+    seconds: float, use_id: str, sub: str | None = None, chars: int = 0, error: bool = False, *, ack: bool = False
+) -> EventRecord:
+    """The result of the call `use_id`; `ack` marks one that only acknowledges a background launch."""
+    return rec("tool_result", seconds, sub, tool=ToolUse(use_id=use_id, chars=chars, error=error, launch_ack=ack))
 
 
 def load(
@@ -549,15 +551,15 @@ def test_a_load_says_what_brought_it_and_whether_it_sits_on_the_spine(tmp_path: 
     ]
     graph = _graph(tmp_path, records, [claude, nested, skill, big], runnable={"demo": skill.path})
     station = next(item for item in graph.stations if item.node == "main")
-    shown = [(x.source, round(x.t or 0, 3), x.trigger, x.event, x.small, x.on_spine) for x in station.loads]
+    shown = [(x.source, round(x.t or 0, 3), x.trigger, x.event, x.small) for x in station.loads]
     assert shown == [
-        ("CLAUDE.md", 0.1, "session_start", None, True, False),
-        ("mcp:docs", 0.3, "session_start", None, True, True),
-        ("hook:SessionStart:startup", 0.4, "hook", "SessionStart", True, True),
-        ("sub/CLAUDE.md", 2.0, "path_match", None, True, True),
-        (".claude/skills/demo/SKILL.md", 3.0, "agent", None, False, True),
-        ("docs/big.md", 4.0, "agent", None, False, True),
-        ("CLAUDE.md", 5.0, "session_start", None, True, True),
+        ("CLAUDE.md", 0.1, "session_start", None, True),
+        ("mcp:docs", 0.3, "session_start", None, True),
+        ("hook:SessionStart:startup", 0.4, "hook", "SessionStart", True),
+        ("sub/CLAUDE.md", 2.0, "path_match", None, True),
+        (".claude/skills/demo/SKILL.md", 3.0, "agent", None, False),
+        ("docs/big.md", 4.0, "agent", None, False),
+        ("CLAUDE.md", 5.0, "session_start", None, True),
     ]
     sizes = {s.id: s.tokens_est for s in graph.sources if s.kind in {"mcp", "hook"}}
     assert sizes == {"mcp:docs": 200, "hook:SessionStart:startup": 30}
@@ -599,7 +601,7 @@ def test_the_sources_the_parent_had_at_a_launch_and_the_child_never_had_are_with
     withheld = _node(graph, "A").withheld
     assert withheld is not None
     assert [(item.source, item.tokens_est) for item in withheld.sources] == [(".claude/rules/style.md", 300)]
-    assert withheld.context_tokens == 51200
+    assert withheld.conversation_tokens == 0
     assert _node(graph, MAIN_ID).withheld is None
 
 
@@ -630,7 +632,7 @@ class _Widget:
             XrayUsage(_NO_COST, XrayComposition((), None)),
             None,
         )
-        loads = () if self.source is None else (LoadEvent(self.source, 1.0, None, "agent", None, True),)
+        loads = () if self.source is None else (LoadEvent(self.source, 1.0, None, "agent", None),)
         spine = ProducedSpine((), loads, (), (), (1.0,))
         node = ProducedNode("w1", self.kind, self.parent, "a widget", None, 1.0, 2.0, detail, spine)
         return Produced((node,), (XrayEdge(self.parent, "w1", 0, None, 1.0, None, None),))
@@ -722,6 +724,7 @@ def test_the_built_views_key_structure_matches_the_sample_the_page_is_built_agai
         stations=graph.stations,
         tracks=graph.tracks,
         builtin=graph.builtin,
+        session_cost=graph.session_cost,
         version=1,
         info=XraySessionInfo("s", "p", at(0), 20.0, "newest"),
         model=None,
@@ -1221,3 +1224,171 @@ def test_the_vocabulary_words_what_used_means_for_each_source_kind_and_the_price
     assert kinds["agent"] == ("launched", "subagents") and kinds["mcp"] == ("connected", "MCP servers")
     assert {verb for verb, _ in kinds.values()} == {"loaded", "launched", "read", "connected", "fired"}
     assert "reply" in load_price_list().info.source_method
+
+
+@pytest.mark.parametrize(
+    ("tail", "back"),
+    [
+        ([], None),
+        ([_text(250, "X", 90)], 22),
+    ],
+)
+def test_a_launch_acknowledgement_is_never_the_size_an_agent_handed_back(
+    tmp_path: Path, tail: list[EventRecord], back: int | None
+) -> None:
+    session = [
+        reply(1),
+        call(5, "tuX", "agent"),
+        launch(6, "X", None, "tuX"),
+        reply(7, "X"),
+        result(8, "tuX", chars=267, ack=True),
+        reply(251, "X"),
+        *tail,
+        reply(1000),
+    ]
+    graph = _graph(tmp_path, session)
+    detail = _agent(_node(graph, "X"))
+    assert detail.back.tokens_est == back
+    assert (detail.back.ratio is None) == (back is None)
+    assert _edge(graph, "X").back == back
+
+
+def test_the_vocabulary_flags_which_kinds_count_as_instructions_in_context_and_which_stay_on_the_spine() -> None:
+    kinds = vocabulary_for("claude", []).source_kinds
+    assert {item.key for item in kinds if item.instructions} == {"instructions", "rule"}
+    assert {item.key for item in kinds if item.spine} == {"hook"}
+    flagged = {
+        item["key"]: (item["instructions"], item["spine"])
+        for item in vocabulary_for("claude", []).to_json()["source_kinds"]
+    }  # type: ignore[index, union-attr]
+    assert flagged["hook"] == (False, True) and flagged["rule"] == (True, False)
+
+
+def _priced(seconds: float, sub: str | None = None, model: str = "claude-opus-4-8") -> EventRecord:
+    """A reply of `model` that cost 0.0075 USD at list price when the model is priced."""
+    usage = TokenUsage(f"m-{sub}-{seconds}", 1000, 0, 0, model=model, output_tokens=100)
+    return rec("assistant_usage", seconds, sub, usage=usage)
+
+
+def test_the_session_cost_sums_every_agent_counts_unpriced_replies_and_lists_agents_dearest_first(
+    tmp_path: Path,
+) -> None:
+    records = [
+        _priced(1),
+        call(5, "tuA", "agent"),
+        launch(6, "A", None, "tuA"),
+        _priced(7, "A"),
+        _priced(8, "A"),
+        _priced(9, "A", model="unknown-model"),
+        result(10, "tuA", chars=50),
+    ]
+    graph = _graph(tmp_path, records)
+    cost = graph.session_cost
+    assert cost.total_usd == pytest.approx(0.0225)
+    assert cost.unpriced == 1
+    assert [(node, round(usd, 4)) for node, usd in cost.by_agent] == [("A", 0.015), ("main", 0.0075)]
+    assert graph.session_cost.to_json() == {
+        "total_usd": cost.total_usd,
+        "unpriced": 1,
+        "by_agent": [["A", cost.by_agent[0][1]], ["main", cost.by_agent[1][1]]],
+    }
+
+
+def test_a_session_with_no_priced_reply_has_no_session_total(tmp_path: Path) -> None:
+    graph = _graph(tmp_path, [_priced(1, model="unknown-model")])
+    assert (graph.session_cost.total_usd, graph.session_cost.unpriced, graph.session_cost.by_agent) == (None, 1, ())
+
+
+def test_a_call_whose_time_is_unknown_has_no_duration(tmp_path: Path) -> None:
+    broken = replace(call(5, "t1", "read", name="Read"), time="not a time")
+    graph = _graph(tmp_path, [reply(1), broken, result(9, "t1", chars=10), reply(20)])
+    track = next(item for item in graph.tracks if item.node == "main")
+    assert [item.duration_s for item in track.calls] == [None]
+
+
+def test_the_system_prompt_size_leaves_out_the_mcp_instructions_and_hook_notes_the_context_counts_elsewhere(
+    tmp_path: Path,
+) -> None:
+    mcp = HarnessEntry("mcp_instructions", "MCP server instructions", 1, 800, added=(("docs", 800),))
+    records = [
+        _entry("deferred_tools", "deferred tools", 3, 400),
+        rec("harness", 0.3, item=mcp),
+        rec("harness", 0.4, item=HarnessEntry("hook_note", "SessionStart:startup", None, 120, event="SessionStart")),
+        reply(1, context=1000),
+    ]
+    sizes = {item.key: item.tokens_est for item in _graph(tmp_path, records).builtin}
+    # The total less the hook note (30, counted as a hook note), the tool definitions (100) and the MCP servers'
+    # instructions (200, once).
+    assert sizes["system_prompt"] == 1000 - 30 - 100 - 200
+
+
+def test_a_hook_row_counts_only_the_firings_whose_tokens_the_context_still_holds(tmp_path: Path) -> None:
+    firing = "UserPromptSubmit:hook"
+    records = [reply(0)]
+    records += [rec("harness", 1 + n, item=_hook(firing, 400, "UserPromptSubmit")) for n in range(3)]
+    records += [
+        reply(4),
+        rec("post_compact", 5),
+        reply(5.5),
+        rec("harness", 6, item=_hook(firing, 400, "UserPromptSubmit")),
+    ]
+    records += [reply(7, context=5000)]
+    shown = _agent(_node(_graph(tmp_path, records), "main")).in_context
+    assert shown is not None
+    hook = next(row for row in shown.rows if row.key == "hooks")
+    assert (hook.reason, hook.tokens_est) == ("fired 1 times", 100)
+
+
+def test_the_launch_of_a_subagent_says_how_big_its_parents_conversation_was_not_the_whole_context(
+    tmp_path: Path,
+) -> None:
+    claude = _file(tmp_path, "CLAUDE.md", 4000)
+    records = [
+        load(0.1, claude),
+        rec("assistant_text", 0.5, item=ReplyText(800, False)),
+        reply(1, context=10_000),
+        call(3, "tuA", "agent"),
+        launch(4, "A", None, "tuA"),
+        reply(5, "A"),
+        reply(6, context=10_500),
+    ]
+    withheld = _node(_graph(tmp_path, records, [claude]), "A").withheld
+    assert withheld is not None
+    # The conversation (the reply's 800 characters, 200 tokens) at the launch; nothing else the parent held.
+    assert withheld.conversation_tokens == 200
+    assert "conversation_tokens" in withheld.to_json() and "context_tokens" not in withheld.to_json()
+
+
+def test_a_session_with_no_instruction_load_records_reads_instruction_files_as_unrecorded_not_as_zero(
+    tmp_path: Path,
+) -> None:
+    claude = _file(tmp_path, "CLAUDE.md", 400)
+    records = [_priced(1)]
+    graph = _graph(tmp_path, records, [claude])
+    (source,) = [item for item in graph.sources if item.kind == "instructions"]
+    assert source.availability == "unrecorded"
+    main = _agent(_node(graph, "main"))
+    assert main.usage.cost.instructions_usd_est is None
+    session = _graph(tmp_path, [load(0.1, claude), _priced(1)], [claude])
+    assert [item.availability for item in session.sources if item.kind == "instructions"] == ["loaded"]
+    assert _agent(_node(session, "main")).usage.cost.instructions_usd_est is not None
+
+
+def test_the_funnel_does_not_count_an_unrecorded_kind_as_zero_loaded(tmp_path: Path) -> None:
+    claude = _file(tmp_path, "CLAUDE.md", 400)
+    records = [_priced(1)]
+    frame = Frame(epoch(at(0)) or 0.0, tmp_path, {}, {}, {}, False)
+    table = build_sources(build_artifacts([claude], {}, tmp_path, advertised={}), records, frame)
+    graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
+    (row,) = build_funnel(table.entries, graph.sources, ["instructions"], set())
+    assert (row.on_disk, row.loaded, row.used) == (1, None, None)
+
+
+def test_the_agents_funnel_row_counts_the_built_in_agent_types_a_session_launched(tmp_path: Path) -> None:
+    definition = _file(tmp_path, ".claude/agents/reviewer.md", 80, "agent")
+    records = [reply(1), call(5, "tuA", "agent"), launch(6, "A", None, "tuA"), reply(7, "A"), reply(1000)]
+    frame = Frame(epoch(at(0)) or 0.0, tmp_path, {}, {}, {}, False)
+    table = build_sources(build_artifacts([definition], {}, tmp_path, advertised={}), records, frame)
+    graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
+    (row,) = build_funnel(table.entries, graph.sources, ["agent"], set())
+    assert (row.on_disk, row.loaded) == (2, 1)

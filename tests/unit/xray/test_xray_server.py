@@ -37,7 +37,8 @@ PORT = 8765
 ORIGIN = f"http://127.0.0.1:{PORT}"
 TOP_KEYS = {
     "version", "session", "project", "started_at", "length_s", "picked", "model", "window", "adapter", "price_list",
-    "nodes", "edges", "sources", "stations", "track", "builtin", "funnel", "facts", "check", "refusals", "not_known",
+    "nodes", "edges", "sources", "stations", "track", "builtin", "session_cost", "funnel", "facts", "check", "refusals",
+    "not_known",
 }  # fmt: skip
 HEAVY = ("starlette", "uvicorn", "reporails_cli.core.mapper", "onnxruntime", "tokenizers", "numpy")
 

@@ -14,7 +14,7 @@ from typing import Literal
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.events import HarnessKind, ToolCategory
 from reporails_cli.core.platform.dto.xray_composition import CompositionKey, XrayCompositionLabel
-from reporails_cli.core.platform.dto.xray_cost import PriceListInfo
+from reporails_cli.core.platform.dto.xray_cost import PriceListInfo, XraySessionCost
 from reporails_cli.core.platform.dto.xray_graph import (
     LoadTrigger,
     NodeKind,
@@ -207,6 +207,10 @@ class XraySourceKindInfo:
     note: str | None = None
     # Its sources are definitions that subagents are launched from.
     definitions: bool = False
+    # Files of the kind count as "instructions in context" at a call.
+    instructions: bool = False
+    # The kind's loads stay on the spine as stations of their own.
+    spine: bool = False
 
 
 @dataclass(frozen=True)
@@ -327,6 +331,8 @@ class AdapterVocabulary:
                     "graph_label": item.graph_label,
                     "note": item.note,
                     "definitions": item.definitions,
+                    "instructions": item.instructions,
+                    "spine": item.spine,
                 }
                 for item in self.source_kinds
             ),
@@ -366,6 +372,7 @@ class Graph:
     stations: tuple[XrayStation, ...]
     tracks: tuple[XrayTrack, ...]
     builtin: tuple[XrayBuiltin, ...]
+    session_cost: XraySessionCost
 
 
 @dataclass(frozen=True)
@@ -401,6 +408,7 @@ class XrayView(Graph):
             "stations": objects(station.to_json() for station in self.stations),
             "track": objects(track.to_json() for track in self.tracks),
             "builtin": objects(item.to_json() for item in self.builtin),
+            "session_cost": self.session_cost.to_json(),
             "funnel": objects(row.to_json() for row in self.verdict.funnel),
             "facts": objects(fact.to_json() for fact in self.verdict.facts),
             "check": self.verdict.check.to_json(),

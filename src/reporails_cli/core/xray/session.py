@@ -183,6 +183,7 @@ class XraySession:
             stations=graph.stations,
             tracks=graph.tracks,
             builtin=graph.builtin,
+            session_cost=graph.session_cost,
             gaps=self._gaps(window),
             verdict=self._verdict(table, graph, records, vocabulary),
         )

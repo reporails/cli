@@ -15,6 +15,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     CallFacts,
     LoadEvent,
     NodeKind,
+    SourceKind,
     XrayCompaction,
     XrayDetail,
     XrayDown,
@@ -90,12 +91,15 @@ class HarnessSlot:
 
 @dataclass(frozen=True)
 class SourceTable:
-    """The sources in listing order, with the lookups from a file path or a skill or command name to its id."""
+    """The sources in listing order, with the lookups from a file path or a skill or command name to its id and the
+    kinds whose loads the session does not record."""
 
     entries: tuple[SourceEntry, ...]
     root: Path
     by_real: Mapping[str, str]
     by_run: Mapping[str, str]
+    # The kinds whose loads the session records nowhere: nothing can be said of whether a source of one loaded.
+    unrecorded: frozenset[SourceKind] = frozenset()
 
     def get(self, source_id: str) -> SourceEntry | None:
         """The source with id `source_id`, or None when the session has none."""
@@ -167,11 +171,13 @@ class NodeProducer:
 
 @dataclass(frozen=True)
 class CallResult:
-    """The result of a call: when it came, how big it was and whether it reported an error."""
+    """The result of a call: when it came, how big it was, whether it reported an error and whether it only
+    acknowledged the launch of a background agent."""
 
     t: float
     chars: int | None
     error: bool
+    launch_ack: bool = False
 
 
 @dataclass(frozen=True)
