@@ -18,6 +18,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayHookStretch,
     XrayMcpCluster,
     XraySlot,
+    XrayToolCount,
     XrayWithheld,
     XrayWithheldSource,
 )
@@ -73,20 +74,33 @@ def slots(
     return {kind: XraySlot(count, findings) for kind, (count, findings) in counts.items()}
 
 
-def tool_counts(node: ProducedNode, vocabulary: AdapterVocabulary) -> dict[ToolCategory, int]:
-    """For each tool category of the vocabulary, how many calls the node made."""
-    return {
-        info.key: sum(1 for call in node.spine.calls if call.category == info.key) for info in vocabulary.categories
-    }
+def tools(node: ProducedNode) -> tuple[XrayToolCount, ...]:
+    """The node's calls counted per tool with how many failed, the most called first and equals by tool name."""
+    counts: dict[tuple[str, ToolCategory], list[int]] = {}
+    for call in node.spine.calls:
+        entry = counts.setdefault((call.tool, call.category), [0, 0])
+        entry[0] += 1
+        entry[1] += call.failed
+    rows = [XrayToolCount(tool, category, calls, failed) for (tool, category), (calls, failed) in counts.items()]
+    return tuple(sorted(rows, key=lambda item: (-item.calls, item.tool)))
 
 
-def track_calls(node: ProducedNode, vocabulary: AdapterVocabulary) -> tuple[XrayCall, ...]:
-    """The node's calls whose category sits on the side track, in time order."""
-    tracked = {info.key for info in vocabulary.categories if info.track}
+def track_calls(node: ProducedNode) -> tuple[XrayCall, ...]:
+    """Every call of the node, in time order."""
     return tuple(
-        XrayCall(call.t, call.category, call.label, call.source, call.failed, call.use_id)
+        XrayCall(
+            call.t,
+            call.category,
+            call.tool,
+            call.label,
+            call.source,
+            call.mcp_source,
+            call.failed,
+            call.use_id,
+            call.duration_s,
+            call.back_tokens_est,
+        )
         for call in sorted(node.spine.calls, key=lambda item: item.t)
-        if call.category in tracked
     )
 
 

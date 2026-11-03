@@ -622,12 +622,26 @@ def test_call_replies_with_the_command_of_a_main_and_a_subagent_shell_call_and_i
 ) -> None:
     reply = _get(handoff_client, "/call", {"id": "toolu_bash1"})
     assert reply.status_code == 200 and reply.headers["Cache-Control"] == "no-store"
-    assert reply.json() == {"id": "toolu_bash1", "text": "PLACEHOLDER-COMMAND --flag"}
+    assert reply.json() == {
+        "id": "toolu_bash1",
+        "tool": "Bash",
+        "text": "PLACEHOLDER-COMMAND --flag",
+        "input": reply.json()["input"],
+        "result": "Exit code 1\nPLACEHOLDER-ERROR",
+        "truncated": False,
+    }
     assert _get(handoff_client, "/call", {"id": "toolu_bashD"}).json()["text"] == "PLACEHOLDER-SUB-COMMAND"
 
 
-@pytest.mark.parametrize("call_id", ["toolu_read1", "toolu_edit1", "toolu_agentA", "toolu_nosuch", "../x"])
-def test_call_refuses_an_id_that_is_not_a_shell_call_of_the_session(handoff_client: TestClient, call_id: str) -> None:
+def test_call_replies_with_the_input_and_result_of_a_call_that_is_not_a_shell_one(handoff_client: TestClient) -> None:
+    body = _get(handoff_client, "/call", {"id": "toolu_read1"}).json()
+    assert (body["tool"], body["text"], body["truncated"]) == ("Read", None, False)
+    assert json.loads(body["input"]) == {"file_path": "/work/proj/CLAUDE.md"}
+    assert body["result"] == "PLACEHOLDER-FILE-TEXT" * 10
+
+
+@pytest.mark.parametrize("call_id", ["toolu_nosuch", "../x"])
+def test_call_refuses_an_id_that_is_not_a_call_of_the_session(handoff_client: TestClient, call_id: str) -> None:
     reply = _get(handoff_client, "/call", {"id": call_id})
     assert reply.status_code == 400 and reply.json() == {"error": "not a call this page lists"}
     assert _get(handoff_client, "/call", {}).status_code == 400

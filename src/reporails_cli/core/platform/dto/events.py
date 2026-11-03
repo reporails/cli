@@ -384,3 +384,16 @@ class HarnessAttachment:
     chars_key: str
     chars_is_text: bool
     removed_key: str | None = None
+
+
+@dataclass(frozen=True)
+class CallDetail:
+    """What one tool call said when asked for: its tool, the shell command (None for a call that is not a shell
+    one), its input as indented JSON, an excerpt of its result (None without one) and whether any of the three
+    was cut."""
+
+    tool: str
+    text: str | None
+    input: str
+    result: str | None
+    truncated: bool

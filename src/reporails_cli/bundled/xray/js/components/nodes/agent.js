@@ -111,15 +111,17 @@ function worked(node, env) {
   const d = node.detail;
   const step = el('section', 'step');
   step.append(el('h4', null, 'Worked'));
-  const calls = Object.entries(node.tool_counts).filter(([k]) => k !== 'agent').reduce((s, [, n]) => s + n, 0);
+  const per = {};
+  for (const t of node.tools) per[t.category] = (per[t.category] || 0) + t.calls;
+  const calls = Object.entries(per).filter(([k]) => k !== 'agent').reduce((s, [, n]) => s + n, 0);
   step.append(el('p', 'line', `Peak context ${k1(d.peak)} · ${calls} tool calls`));
   const launched = node.children.length;
   const below = node.descendants > launched ? ` · ${node.descendants} in total below` : '';
   step.append(el('p', 'line', launched ? `${launched} subagent${launched === 1 ? '' : 's'} launched${below}` : 'No subagents launched.'));
-  const cats = env.ix.view.adapter.categories.filter(c => (node.tool_counts[c.key] || 0) > 0);
-  const most = Math.max(1, ...cats.map(c => node.tool_counts[c.key]));
+  const cats = env.ix.view.adapter.categories.filter(c => (per[c.key] || 0) > 0);
+  const most = Math.max(1, ...cats.map(c => per[c.key]));
   for (const c of cats) {
-    const n = node.tool_counts[c.key];
+    const n = per[c.key];
     const bar = el('div', 'bar');
     const fill = el('i');
     fill.style.width = `${Math.max(4, Math.round(n / most * 100))}%`;

@@ -374,7 +374,7 @@ def test_close_calls_to_one_mcp_server_make_one_pill_and_a_far_call_another(tmp_
         ("mcp:docs", 100.0, 200.0, 3, 600),
         ("mcp:docs", 500.0, 500.0, 1, 10),
     ]
-    assert _node(graph, "main").tool_counts["mcp"] == 4
+    assert [(t.tool, t.category, t.calls) for t in _node(graph, "main").tools] == [("mcp__docs__search", "mcp", 4)]
     # The server's results entered the node's context, so the server counts among its sources.
     assert next(source for source in graph.sources if source.id == "mcp:docs").had_by == ("main",)
 
@@ -417,7 +417,7 @@ def test_three_failing_runs_of_one_command_in_a_row_are_a_failure_run(
     assert _runs(tmp_path, shape) == expected
 
 
-def test_the_track_lists_read_edit_and_run_calls_with_their_label_source_and_failure(tmp_path: Path) -> None:
+def test_the_track_lists_every_call_of_every_category_with_their_label_source_and_failure(tmp_path: Path) -> None:
     claude = _file(tmp_path, "CLAUDE.md", 40)
     records = [
         reply(0),
@@ -429,11 +429,42 @@ def test_the_track_lists_read_edit_and_run_calls_with_their_label_source_and_fai
         call(10, "o1", "other", name="TodoWrite"),
     ]
     track = next(item for item in _graph(tmp_path, records, [claude]).tracks if item.node == "main")
-    assert [(c.t, c.category, c.label, c.source, c.failed, c.use_id) for c in track.calls] == [
-        (5.0, "read", "Read · CLAUDE.md", "CLAUDE.md", False, "r1"),
-        (6.0, "edit", "Edit · src/x.py", None, False, "e1"),
-        (7.0, "run", "Bash", None, True, "b1"),
+    assert [(c.t, c.category, c.tool, c.label, c.source, c.server, c.failed, c.use_id) for c in track.calls] == [
+        (5.0, "read", "Read", "Read · CLAUDE.md", "CLAUDE.md", None, False, "r1"),
+        (6.0, "edit", "Edit", "Edit · src/x.py", None, None, False, "e1"),
+        (7.0, "run", "Bash", "Bash", None, None, True, "b1"),
+        (9.0, "mcp", "mcp__a__b", "mcp__a__b", None, "mcp:a", False, "m1"),
+        (10.0, "other", "TodoWrite", "TodoWrite", None, None, False, "o1"),
     ]
+
+
+def test_a_call_lasts_from_the_call_to_its_result_and_without_a_result_has_no_duration_or_size(tmp_path: Path) -> None:
+    records = [
+        reply(0),
+        call(10, "r1", "read", name="Read"),
+        result(12.5, "r1", chars=400),
+        call(20, "r2", "read", name="Read"),
+    ]
+    track = next(item for item in _graph(tmp_path, records).tracks if item.node == "main")
+    done, open_call = track.calls
+    assert (done.duration_s, done.result_tokens_est) == (2.5, 100)
+    assert (open_call.duration_s, open_call.result_tokens_est) == (None, None)
+
+
+def test_a_node_counts_its_calls_per_tool_with_the_failed_ones_most_called_first(tmp_path: Path) -> None:
+    records = [reply(0)]
+    shape = [("Bash", "run", True), ("Read", "read", False), ("Bash", "run", False), ("Edit", "edit", False)]
+    shape.append(("Read", "read", False))
+    for number, (name, category, failed) in enumerate(shape):
+        use_id = f"c{number}"
+        records += [call(5 + number, use_id, category, name=name), result(6 + number, use_id, error=failed)]
+    node = _node(_graph(tmp_path, records), "main")
+    assert [(t.tool, t.category, t.calls, t.failed) for t in node.tools] == [
+        ("Bash", "run", 2, 1),
+        ("Read", "read", 2, 0),
+        ("Edit", "edit", 1, 0),
+    ]
+    assert as_list(node.to_json()["tools"])[0] == {"tool": "Bash", "category": "run", "calls": 2, "failed": 1}
 
 
 def test_a_gap_of_half_an_hour_without_a_record_is_a_break(tmp_path: Path) -> None:

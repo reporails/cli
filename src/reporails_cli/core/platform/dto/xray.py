@@ -382,11 +382,12 @@ class XrayNodeKindInfo:
 
 @dataclass(frozen=True)
 class XrayCategoryInfo:
-    """One tool category the page counts: its label and whether its calls sit on the side track."""
+    """One tool category the page counts: its label, whether its calls sit on the side track and its colour."""
 
     key: ToolCategory
     label: str
     track: bool
+    colour: str
 
 
 @dataclass(frozen=True)
@@ -461,7 +462,8 @@ class AdapterVocabulary:
                 for item in self.node_kinds
             ),
             "categories": objects(
-                {"key": item.key, "label": item.label, "track": item.track} for item in self.categories
+                {"key": item.key, "label": item.label, "track": item.track, "colour": item.colour}
+                for item in self.categories
             ),
             "nesting": {"enabled": self.nesting.enabled, "max_depth": self.nesting.max_depth},
             "triggers": objects({"key": item.key, "label": item.label} for item in self.triggers),

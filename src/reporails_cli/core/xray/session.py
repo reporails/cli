@@ -9,7 +9,7 @@ from pathlib import Path
 from reporails_cli.core.discovery.plugin_roots import installed_plugin_roots
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.eventbus.transcript import (
-    call_text,
+    call_detail,
     first_prompt_text,
     last_write,
     prompt_text,
@@ -19,7 +19,7 @@ from reporails_cli.core.eventbus.transcript import (
 from reporails_cli.core.pipeline.expected_loads import AGENT
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
-from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
+from reporails_cli.core.platform.dto.events import CallDetail, EventRecord, TranscriptCursor
 from reporails_cli.core.platform.dto.xray import (
     AdapterVocabulary,
     ArtifactFile,
@@ -131,23 +131,28 @@ class XraySession:
         """The text of the first typed prompt of the session; None when it has none. The text is not kept."""
         return first_prompt_text(AGENT, self._file)
 
-    def call(self, use_id: str) -> str | None:
-        """The command of a shell call the records name; None for any other id. Raises `PayloadRefused` when the
-        call is not the shape the adapter is pinned to. The text is not kept."""
+    def call(self, use_id: str) -> CallDetail | None:
+        """What a call the records name said: its tool, its shell command, its input and an excerpt of its
+        result; None for any other id. Raises `PayloadRefused` when the call is not the shape the adapter is
+        pinned to. The text is not kept."""
         named = next(
             (
                 record
                 for record in self._transcript
-                if record.event == "tool_call"
-                and record.tool is not None
-                and record.tool.category == "run"
-                and record.tool.use_id == use_id
+                if record.event == "tool_call" and record.tool is not None and record.tool.use_id == use_id
             ),
             None,
         )
-        if named is None:
+        if named is None or named.tool is None:
             return None
-        return call_text(AGENT, self._file, named.subagent_id, use_id)
+        return call_detail(
+            AGENT,
+            self._file,
+            named.subagent_id,
+            use_id,
+            named.tool.name or "tool",
+            shell=named.tool.category == "run",
+        )
 
     def view(self, findings: Mapping[str, FindingTally], check: XrayCheck, picked: SessionPick) -> XrayView:
         """The view of the records read so far; `findings` maps a file path to its finding tally and `check` is

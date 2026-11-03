@@ -102,11 +102,13 @@ class SourceTable:
 
 @dataclass(frozen=True)
 class ProducedCall:
-    """One call a node made: when, its category and label, the source its file is, the MCP server source it went to,
-    whether it failed, its id, the fingerprint of its command and the size of its result in tokens."""
+    """One call a node made: when, its category, tool and label, the source its file is, the MCP server source it
+    went to, whether it failed, its id, the fingerprint of its command, the size of its result in tokens and the
+    seconds the result took."""
 
     t: float
     category: ToolCategory
+    tool: str
     label: str
     source: str | None
     mcp_source: str | None
@@ -114,6 +116,7 @@ class ProducedCall:
     use_id: str
     fingerprint: str | None
     back_tokens_est: int | None
+    duration_s: float | None
 
 
 @dataclass(frozen=True)

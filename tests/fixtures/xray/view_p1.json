@@ -129,32 +129,38 @@
       {
         "key": "read",
         "label": "Read",
-        "track": true
+        "track": true,
+        "colour": "#8A8C92"
       },
       {
         "key": "edit",
         "label": "Edit",
-        "track": true
+        "track": true,
+        "colour": "#7FD4A8"
       },
       {
         "key": "run",
         "label": "Bash",
-        "track": true
+        "track": true,
+        "colour": "#E8C27A"
       },
       {
         "key": "mcp",
         "label": "MCP",
-        "track": false
+        "track": false,
+        "colour": "#B49CFF"
       },
       {
         "key": "agent",
         "label": "Agents",
-        "track": false
+        "track": false,
+        "colour": "#9A9CA2"
       },
       {
         "key": "other",
         "label": "Other",
-        "track": false
+        "track": false,
+        "colour": "#9A9CA2"
       }
     ],
     "nesting": {
@@ -284,14 +290,32 @@
           "findings": 4
         }
       },
-      "tool_counts": {
-        "read": 34,
-        "edit": 24,
-        "run": 21,
-        "mcp": 0,
-        "agent": 12,
-        "other": 0
-      },
+      "tools": [
+        {
+          "tool": "Read",
+          "category": "read",
+          "calls": 34,
+          "failed": 0
+        },
+        {
+          "tool": "Edit",
+          "category": "edit",
+          "calls": 24,
+          "failed": 0
+        },
+        {
+          "tool": "Bash",
+          "category": "run",
+          "calls": 21,
+          "failed": 0
+        },
+        {
+          "tool": "Agents",
+          "category": "agent",
+          "calls": 12,
+          "failed": 0
+        }
+      ],
       "withheld": null,
       "detail": {
         "kind": "agent",
@@ -696,14 +720,26 @@
           "findings": 0
         }
       },
-      "tool_counts": {
-        "read": 5,
-        "edit": 5,
-        "run": 3,
-        "mcp": 0,
-        "agent": 0,
-        "other": 0
-      },
+      "tools": [
+        {
+          "tool": "Edit",
+          "category": "edit",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Read",
+          "category": "read",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Bash",
+          "category": "run",
+          "calls": 3,
+          "failed": 0
+        }
+      ],
       "withheld": {
         "sources": [
           {
@@ -1017,14 +1053,26 @@
           "findings": 0
         }
       },
-      "tool_counts": {
-        "read": 5,
-        "edit": 5,
-        "run": 3,
-        "mcp": 0,
-        "agent": 0,
-        "other": 0
-      },
+      "tools": [
+        {
+          "tool": "Edit",
+          "category": "edit",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Read",
+          "category": "read",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Bash",
+          "category": "run",
+          "calls": 3,
+          "failed": 0
+        }
+      ],
       "withheld": {
         "sources": [
           {
@@ -1338,14 +1386,26 @@
           "findings": 0
         }
       },
-      "tool_counts": {
-        "read": 5,
-        "edit": 5,
-        "run": 3,
-        "mcp": 0,
-        "agent": 0,
-        "other": 0
-      },
+      "tools": [
+        {
+          "tool": "Edit",
+          "category": "edit",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Read",
+          "category": "read",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Bash",
+          "category": "run",
+          "calls": 3,
+          "failed": 0
+        }
+      ],
       "withheld": {
         "sources": [
           {
@@ -1659,14 +1719,26 @@
           "findings": 0
         }
       },
-      "tool_counts": {
-        "read": 5,
-        "edit": 5,
-        "run": 3,
-        "mcp": 0,
-        "agent": 0,
-        "other": 0
-      },
+      "tools": [
+        {
+          "tool": "Edit",
+          "category": "edit",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Read",
+          "category": "read",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Bash",
+          "category": "run",
+          "calls": 3,
+          "failed": 0
+        }
+      ],
       "withheld": {
         "sources": [
           {
@@ -1980,14 +2052,26 @@
           "findings": 0
         }
       },
-      "tool_counts": {
-        "read": 5,
-        "edit": 5,
-        "run": 3,
-        "mcp": 0,
-        "agent": 0,
-        "other": 0
-      },
+      "tools": [
+        {
+          "tool": "Edit",
+          "category": "edit",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Read",
+          "category": "read",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Bash",
+          "category": "run",
+          "calls": 3,
+          "failed": 0
+        }
+      ],
       "withheld": {
         "sources": [
           {
@@ -2301,14 +2385,26 @@
           "findings": 0
         }
       },
-      "tool_counts": {
-        "read": 5,
-        "edit": 5,
-        "run": 3,
-        "mcp": 0,
-        "agent": 0,
-        "other": 0
-      },
+      "tools": [
+        {
+          "tool": "Edit",
+          "category": "edit",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Read",
+          "category": "read",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Bash",
+          "category": "run",
+          "calls": 3,
+          "failed": 0
+        }
+      ],
       "withheld": {
         "sources": [
           {
@@ -2622,14 +2718,26 @@
           "findings": 0
         }
       },
-      "tool_counts": {
-        "read": 5,
-        "edit": 5,
-        "run": 3,
-        "mcp": 0,
-        "agent": 0,
-        "other": 0
-      },
+      "tools": [
+        {
+          "tool": "Edit",
+          "category": "edit",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Read",
+          "category": "read",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Bash",
+          "category": "run",
+          "calls": 3,
+          "failed": 0
+        }
+      ],
       "withheld": {
         "sources": [
           {
@@ -2943,14 +3051,26 @@
           "findings": 0
         }
       },
-      "tool_counts": {
-        "read": 5,
-        "edit": 5,
-        "run": 3,
-        "mcp": 0,
-        "agent": 0,
-        "other": 0
-      },
+      "tools": [
+        {
+          "tool": "Edit",
+          "category": "edit",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Read",
+          "category": "read",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Bash",
+          "category": "run",
+          "calls": 3,
+          "failed": 0
+        }
+      ],
       "withheld": {
         "sources": [
           {
@@ -3264,14 +3384,26 @@
           "findings": 0
         }
       },
-      "tool_counts": {
-        "read": 5,
-        "edit": 5,
-        "run": 3,
-        "mcp": 0,
-        "agent": 0,
-        "other": 0
-      },
+      "tools": [
+        {
+          "tool": "Edit",
+          "category": "edit",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Read",
+          "category": "read",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Bash",
+          "category": "run",
+          "calls": 3,
+          "failed": 0
+        }
+      ],
       "withheld": {
         "sources": [
           {
@@ -3585,14 +3717,26 @@
           "findings": 0
         }
       },
-      "tool_counts": {
-        "read": 5,
-        "edit": 5,
-        "run": 3,
-        "mcp": 0,
-        "agent": 0,
-        "other": 0
-      },
+      "tools": [
+        {
+          "tool": "Edit",
+          "category": "edit",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Read",
+          "category": "read",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Bash",
+          "category": "run",
+          "calls": 3,
+          "failed": 0
+        }
+      ],
       "withheld": {
         "sources": [
           {
@@ -3906,14 +4050,26 @@
           "findings": 0
         }
       },
-      "tool_counts": {
-        "read": 5,
-        "edit": 5,
-        "run": 3,
-        "mcp": 0,
-        "agent": 0,
-        "other": 0
-      },
+      "tools": [
+        {
+          "tool": "Edit",
+          "category": "edit",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Read",
+          "category": "read",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Bash",
+          "category": "run",
+          "calls": 3,
+          "failed": 0
+        }
+      ],
       "withheld": {
         "sources": [
           {
@@ -4227,14 +4383,26 @@
           "findings": 0
         }
       },
-      "tool_counts": {
-        "read": 5,
-        "edit": 5,
-        "run": 3,
-        "mcp": 0,
-        "agent": 0,
-        "other": 0
-      },
+      "tools": [
+        {
+          "tool": "Edit",
+          "category": "edit",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Read",
+          "category": "read",
+          "calls": 5,
+          "failed": 0
+        },
+        {
+          "tool": "Bash",
+          "category": "run",
+          "calls": 3,
+          "failed": 0
+        }
+      ],
       "withheld": {
         "sources": [
           {
@@ -4970,306 +5138,458 @@
         {
           "t": 40.3,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_0"
+          "use_id": "toolu_main_0",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 72.9,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_1"
+          "use_id": "toolu_main_1",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 144.9,
           "category": "read",
-          "label": "Read \u00b7 docs/rules.md",
+          "tool": "Read",
+          "label": "Read · docs/rules.md",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_2"
+          "use_id": "toolu_main_2",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 195.8,
           "category": "read",
-          "label": "Read \u00b7 src/xray/parse.py",
+          "tool": "Read",
+          "label": "Read · src/xray/parse.py",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_3"
+          "use_id": "toolu_main_3",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 279.7,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_4"
+          "use_id": "toolu_main_4",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 348.4,
           "category": "read",
-          "label": "Read \u00b7 src/loader.py",
+          "tool": "Read",
+          "label": "Read · src/loader.py",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_5"
+          "use_id": "toolu_main_5",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 386.8,
           "category": "edit",
-          "label": "Edit \u00b7 CLAUDE.md",
+          "tool": "Edit",
+          "label": "Edit · CLAUDE.md",
           "source": "CLAUDE.md",
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_6"
+          "use_id": "toolu_main_6",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 452.9,
           "category": "edit",
-          "label": "Edit \u00b7 CLAUDE.md",
+          "tool": "Edit",
+          "label": "Edit · CLAUDE.md",
           "source": "CLAUDE.md",
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_7"
+          "use_id": "toolu_main_7",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 533.3,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_8"
+          "use_id": "toolu_main_8",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 590.2,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_9"
+          "use_id": "toolu_main_9",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 651.7,
           "category": "read",
-          "label": "Read \u00b7 src/xray/parse.py",
+          "tool": "Read",
+          "label": "Read · src/xray/parse.py",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_10"
+          "use_id": "toolu_main_10",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 698.3,
           "category": "read",
-          "label": "Read \u00b7 docs/rules.md",
+          "tool": "Read",
+          "label": "Read · docs/rules.md",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_11"
+          "use_id": "toolu_main_11",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 797.7,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_12"
+          "use_id": "toolu_main_12",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 830.1,
           "category": "read",
-          "label": "Read \u00b7 src/rules/index.py",
+          "tool": "Read",
+          "label": "Read · src/rules/index.py",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_13"
+          "use_id": "toolu_main_13",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 918.0,
           "category": "edit",
-          "label": "Edit \u00b7 docs/rules.md",
+          "tool": "Edit",
+          "label": "Edit · docs/rules.md",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_14"
+          "use_id": "toolu_main_14",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 986.2,
           "category": "read",
-          "label": "Read \u00b7 src/rules/index.py",
+          "tool": "Read",
+          "label": "Read · src/rules/index.py",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_15"
+          "use_id": "toolu_main_15",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1034.3,
           "category": "read",
-          "label": "Read \u00b7 src/rules/index.py",
+          "tool": "Read",
+          "label": "Read · src/rules/index.py",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_16"
+          "use_id": "toolu_main_16",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1075.7,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_17"
+          "use_id": "toolu_main_17",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1135.8,
           "category": "edit",
-          "label": "Edit \u00b7 src/xray/parse.py",
+          "tool": "Edit",
+          "label": "Edit · src/xray/parse.py",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_18"
+          "use_id": "toolu_main_18",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1237.7,
           "category": "read",
-          "label": "Read \u00b7 src/loader.py",
+          "tool": "Read",
+          "label": "Read · src/loader.py",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_19"
+          "use_id": "toolu_main_19",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1273.8,
           "category": "read",
-          "label": "Read \u00b7 tests/test_loader.py",
+          "tool": "Read",
+          "label": "Read · tests/test_loader.py",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_20"
+          "use_id": "toolu_main_20",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1300.0,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": true,
-          "use_id": "toolu_fail0"
+          "use_id": "toolu_fail0",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1312.5,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": true,
-          "use_id": "toolu_fail1"
+          "use_id": "toolu_fail1",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1325.0,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": true,
-          "use_id": "toolu_fail2"
+          "use_id": "toolu_fail2",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1337.5,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": true,
-          "use_id": "toolu_fail3"
+          "use_id": "toolu_fail3",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1348.8,
           "category": "read",
-          "label": "Read \u00b7 tests/test_loader.py",
+          "tool": "Read",
+          "label": "Read · tests/test_loader.py",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_21"
+          "use_id": "toolu_main_21",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1350.0,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": true,
-          "use_id": "toolu_fail4"
+          "use_id": "toolu_fail4",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1362.5,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": true,
-          "use_id": "toolu_fail5"
+          "use_id": "toolu_fail5",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1375.0,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": true,
-          "use_id": "toolu_fail6"
+          "use_id": "toolu_fail6",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1387.5,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": true,
-          "use_id": "toolu_fail7"
+          "use_id": "toolu_fail7",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1397.3,
           "category": "edit",
-          "label": "Edit \u00b7 tests/test_loader.py",
+          "tool": "Edit",
+          "label": "Edit · tests/test_loader.py",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_22"
+          "use_id": "toolu_main_22",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1400.0,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": true,
-          "use_id": "toolu_fail8"
+          "use_id": "toolu_fail8",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1492.6,
           "category": "read",
-          "label": "Read \u00b7 CLAUDE.md",
+          "tool": "Read",
+          "label": "Read · CLAUDE.md",
           "source": "CLAUDE.md",
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_23"
+          "use_id": "toolu_main_23",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1556.9,
           "category": "edit",
-          "label": "Edit \u00b7 src/rules/index.py",
+          "tool": "Edit",
+          "label": "Edit · src/rules/index.py",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_24"
+          "use_id": "toolu_main_24",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1585.9,
           "category": "edit",
-          "label": "Edit \u00b7 src/rules/index.py",
+          "tool": "Edit",
+          "label": "Edit · src/rules/index.py",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_25"
+          "use_id": "toolu_main_25",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1677.9,
           "category": "read",
-          "label": "Read \u00b7 tests/test_loader.py",
+          "tool": "Read",
+          "label": "Read · tests/test_loader.py",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_26"
+          "use_id": "toolu_main_26",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1726.1,
           "category": "run",
+          "tool": "Bash",
           "label": "Bash",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_27"
+          "use_id": "toolu_main_27",
+          "duration_s": null,
+          "result_tokens_est": null
         },
         {
           "t": 1793.0,
           "category": "read",
-          "label": "Read \u00b7 docs/rules.md",
+          "tool": "Read",
+          "label": "Read · docs/rules.md",
           "source": null,
+          "server": null,
           "failed": false,
-          "use_id": "toolu_main_28"
+          "use_id": "toolu_main_28",
+          "duration_s": null,
+          "result_tokens_est": null
         }
       ],
       "failure_runs": [

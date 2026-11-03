@@ -115,7 +115,7 @@ def _xray_node(node: ProducedNode, build: BuildContext) -> XrayNode:
         start=node.start,
         end=node.end,
         slots=spine.slots(node, edge is not None, build.had[node.id], build.sources, build.vocabulary),
-        tool_counts=spine.tool_counts(node, build.vocabulary),
+        tools=spine.tools(node),
         withheld=withheld,
         child_sources=spine.child_sources(layout.children[node.id], build.had),
         detail=node.detail,
@@ -150,8 +150,7 @@ def build_graph(
         _sources(sources, pnodes, build.had, set(build.launch)),
         tuple(_station(node, sources, vocabulary) for node in spined),
         tuple(
-            XrayTrack(node.id, spine.track_calls(node, vocabulary), spine.failure_runs(node), spine.breaks(node))
-            for node in spined
+            XrayTrack(node.id, spine.track_calls(node), spine.failure_runs(node), spine.breaks(node)) for node in spined
         ),
     )
 

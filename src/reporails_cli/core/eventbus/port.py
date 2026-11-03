@@ -57,6 +57,17 @@ class TranscriptAdapter(Protocol):
         """The shell command of the tool call `use_id`, from its row; raises `PayloadRefused` when the row holds
         no such call or the call has no command."""
 
+    def resolve_call_input(self, row: JsonObject, use_id: str) -> JsonObject:
+        """The input of the tool call `use_id`, from its row; raises `PayloadRefused` when the row holds no such
+        call."""
+
+    def holds_result(self, row: JsonObject, use_id: str) -> bool:
+        """Whether the row holds the result of the tool call `use_id`."""
+
+    def resolve_result(self, row: JsonObject, use_id: str) -> str:
+        """The text of the result of the tool call `use_id`, from its row; raises `PayloadRefused` when the row
+        holds no such result or its content is neither text nor a list of blocks."""
+
 
 class EventSubscriber(Protocol):  # pylint: disable=too-few-public-methods  # a port of one method
     """A consumer of event records: called once per record."""

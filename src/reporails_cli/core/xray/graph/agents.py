@@ -83,6 +83,7 @@ def _calls(
             ProducedCall(
                 t=frame_time(frame, record) or 0.0,
                 category=category,
+                tool=tool.name or "tool",
                 label=f"{tool.name or 'tool'} · {path}" if path else tool.name or "tool",
                 source=for_path(sources, tool.path) if tool.path else None,
                 mcp_source=mcp_id(tool.server) if tool.server else None,
@@ -90,6 +91,7 @@ def _calls(
                 use_id=tool.use_id,
                 fingerprint=tool.fingerprint,
                 back_tokens_est=None if chars is None else tokens_of(chars),
+                duration_s=None if result is None else result.t - (frame_time(frame, record) or 0.0),
             )
         )
     return tuple(found)

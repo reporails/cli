@@ -19,11 +19,14 @@ from reporails_cli.core.eventbus.port import (
 from reporails_cli.core.eventbus.store import UNSAFE_ID_CHARS
 from reporails_cli.core.eventbus.tail import read_appended_lines
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
-from reporails_cli.core.platform.dto.events import EventRecord, FileCursor, TranscriptCursor
+from reporails_cli.core.platform.dto.events import CallDetail, EventRecord, FileCursor, TranscriptCursor
 
 _SUBAGENT_PREFIX = "agent-"
 # How many of a project's transcripts the session listing keeps.
 RECENT_SESSIONS = 20
+# How many characters of a call's input and of its result a call lookup returns.
+CALL_INPUT_CHARS = 4000
+CALL_RESULT_CHARS = 4000
 
 register_transcript(ClaudeTranscriptAdapter())
 
@@ -196,20 +199,32 @@ def prompt_text(agent: str, session_file: Path, prompt_id: str) -> str | None:
     return None if row is None else adapter.resolve_prompt(row)
 
 
-def call_text(agent: str, session_file: Path, subagent_id: str | None, use_id: str) -> str | None:
-    """The shell command of tool call `use_id`, written in the main transcript (`subagent_id` None) or in that
-    subagent's file; None when the file holds no assistant row with such a call.
+def call_detail(
+    agent: str, session_file: Path, subagent_id: str | None, use_id: str, tool: str, *, shell: bool
+) -> CallDetail | None:
+    """Tool call `use_id` as the page asks for it, from the main transcript (`subagent_id` None) or that
+    subagent's file: its input as indented JSON, its result as an excerpt, and for a `shell` call its command.
+    Input and result are cut at `CALL_INPUT_CHARS` and `CALL_RESULT_CHARS`. None when the file holds no
+    assistant row with such a call.
 
-    Raises `PayloadRefused` when the agent is unknown or the call is not the pinned shape. The text is
-    returned, never stored."""
+    Raises `PayloadRefused` when the agent is unknown or the call or its result is not the pinned shape. The text
+    is returned, never stored."""
     adapter = get_transcript_adapter(agent)
     if adapter is None:
         raise PayloadRefused(f"unknown agent: {agent}")
     path = (
         session_file if subagent_id is None else _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
     )
-    row = _find_row(path, use_id, lambda row: adapter.holds_call(row, use_id))
-    return None if row is None else adapter.resolve_call(row, use_id)
+    row = _find_row(path, use_id, lambda found: adapter.holds_call(found, use_id))
+    if row is None:
+        return None
+    text = adapter.resolve_call(row, use_id) if shell else None
+    full_input = json.dumps(adapter.resolve_call_input(row, use_id), indent=2, ensure_ascii=False)
+    answer = _find_row(path, use_id, lambda found: adapter.holds_result(found, use_id))
+    full_result = None if answer is None else adapter.resolve_result(answer, use_id)
+    cut = len(full_input) > CALL_INPUT_CHARS or (full_result is not None and len(full_result) > CALL_RESULT_CHARS)
+    shown_result = None if full_result is None else full_result[:CALL_RESULT_CHARS]
+    return CallDetail(tool, text, full_input[:CALL_INPUT_CHARS], shown_result, cut)
 
 
 def _read_file(

@@ -229,7 +229,7 @@ class XrayServer:
             return session.peek(path)
 
     async def _text_route(self, request: Request, route: _TextRoute) -> Response:
-        """Guard the request, read `?<query>=` and reply `{"id", "text"}` with what the route's lookup finds in the
+        """Guard the request, read `?<query>=` and reply `{"id", ...}` with the fields the route's lookup finds in the
         session the request is on."""
         refusal = await self._guard(request)
         if refusal is not None:
@@ -241,14 +241,16 @@ class XrayServer:
         if key is None:
             return _refused(400, route.hint)
         try:
-            text = await run_in_threadpool(self._locked, route.lookup, chosen[1], key)
+            fields = await run_in_threadpool(self._locked, route.lookup, chosen[1], key)
         except PayloadRefused as err:
             return _refused(400, err.reason)
-        if text is None:
+        if fields is None:
             return _refused(400, route.unknown)
-        return JSONResponse({"id": key, "text": text}, headers=NO_STORE)
+        return JSONResponse({"id": key, **fields}, headers=NO_STORE)
 
-    def _locked(self, lookup: Callable[[XraySession, str], str | None], session: XraySession, key: str) -> str | None:
+    def _locked(
+        self, lookup: Callable[[XraySession, str], JsonObject | None], session: XraySession, key: str
+    ) -> JsonObject | None:
         with self._view_lock:
             return lookup(session, key)
 
@@ -256,20 +258,27 @@ class XrayServer:
         """The brief one listed subagent was given."""
         return await self._text_route(
             request,
-            _TextRoute("subagent", "the query is ?subagent=<id>", XraySession.brief, "not a subagent this page lists"),
+            _TextRoute(
+                "subagent",
+                "the query is ?subagent=<id>",
+                _text_fields(XraySession.brief),
+                "not a subagent this page lists",
+            ),
         )
 
     async def prompt(self, request: Request) -> Response:
         """The text of one typed prompt of the session."""
         return await self._text_route(
             request,
-            _TextRoute("id", "the query is ?id=<prompt id>", XraySession.prompt, "not a prompt this page lists"),
+            _TextRoute(
+                "id", "the query is ?id=<prompt id>", _text_fields(XraySession.prompt), "not a prompt this page lists"
+            ),
         )
 
     async def call(self, request: Request) -> Response:
-        """The command of one shell call of the session."""
+        """One call of the session: its tool, command, input and result excerpt."""
         return await self._text_route(
-            request, _TextRoute("id", "the query is ?id=<call id>", XraySession.call, "not a call this page lists")
+            request, _TextRoute("id", "the query is ?id=<call id>", _call_fields, "not a call this page lists")
         )
 
     async def first_prompt(self, request: Request) -> Response:
@@ -279,7 +288,7 @@ class XrayServer:
             _TextRoute(
                 "session",
                 "the query is ?session=<id>",
-                lambda session, _key: session.first_prompt(),
+                _text_fields(lambda session, _key: session.first_prompt()),
                 "the session has no typed prompt",
             ),
         )
@@ -359,8 +368,32 @@ class _TextRoute:
 
     query: str
     hint: str
-    lookup: Callable[[XraySession, str], str | None]
+    lookup: Callable[[XraySession, str], JsonObject | None]
     unknown: str
+
+
+def _text_fields(lookup: Callable[[XraySession, str], str | None]) -> Callable[[XraySession, str], JsonObject | None]:
+    """A lookup that finds a text, as one that finds the reply's `text` field."""
+
+    def fields(session: XraySession, key: str) -> JsonObject | None:
+        text = lookup(session, key)
+        return None if text is None else {"text": text}
+
+    return fields
+
+
+def _call_fields(session: XraySession, key: str) -> JsonObject | None:
+    """The reply fields of a call the session names: its tool, command, input and result excerpt."""
+    detail = session.call(key)
+    if detail is None:
+        return None
+    return {
+        "tool": detail.tool,
+        "text": detail.text,
+        "input": detail.input,
+        "result": detail.result,
+        "truncated": detail.truncated,
+    }
 
 
 def _line(finding: FindingItem) -> JsonObject:

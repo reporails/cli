@@ -11,7 +11,14 @@ import pytest
 
 from reporails_cli.core.eventbus.adapters.claude_transcript import ClaudeTranscriptAdapter
 from reporails_cli.core.eventbus.port import PayloadRefused
-from reporails_cli.core.eventbus.transcript import call_text, prompt_text, read_transcript, subagent_brief
+from reporails_cli.core.eventbus.transcript import (
+    CALL_INPUT_CHARS,
+    CALL_RESULT_CHARS,
+    call_detail,
+    prompt_text,
+    read_transcript,
+    subagent_brief,
+)
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
 from reporails_cli.core.platform.dto.events import EventRecord, ReplyText, TranscriptCursor
 
@@ -603,20 +610,47 @@ def test_a_tool_result_sizes_a_text_list_by_its_text_blocks_only(tmp_path: Path)
     assert results["toolu_bash1"].error is True and results["toolu_bash4"].error is False
 
 
-def test_the_text_of_a_main_and_a_subagent_command_is_read_back_by_call_id(tmp_path: Path) -> None:
+def test_the_command_of_a_main_and_a_subagent_call_is_read_back_by_call_id(tmp_path: Path) -> None:
     session = _copy_session(tmp_path)
-    assert call_text("claude", session, None, "toolu_bash2") == "PLACEHOLDER-COMMAND --flag"
-    assert call_text("claude", session, SUB_D, "toolu_bashD") == "PLACEHOLDER-SUB-COMMAND"
-    assert call_text("claude", session, None, "toolu_bashD") is None
-    assert call_text("claude", session, SUB_D, "toolu_nosuch") is None
+    main = call_detail("claude", session, None, "toolu_bash2", "Bash", shell=True)
+    assert main is not None and main.text == "PLACEHOLDER-COMMAND --flag" and main.tool == "Bash"
+    sub = call_detail("claude", session, SUB_D, "toolu_bashD", "Bash", shell=True)
+    assert sub is not None and sub.text == "PLACEHOLDER-SUB-COMMAND"
+    assert call_detail("claude", session, None, "toolu_bashD", "Bash", shell=True) is None
+    assert call_detail("claude", session, SUB_D, "toolu_nosuch", "Bash", shell=True) is None
     with pytest.raises(PayloadRefused, match="unknown agent"):
-        call_text("nosuch", session, None, "toolu_bash2")
+        call_detail("nosuch", session, None, "toolu_bash2", "Bash", shell=True)
 
 
-def test_a_call_with_no_command_has_no_text_to_read_back(tmp_path: Path) -> None:
+def test_a_read_call_reads_back_its_input_and_result_with_no_command(tmp_path: Path) -> None:
+    detail = call_detail("claude", _copy_session(tmp_path), None, "toolu_read1", "Read", shell=False)
+    assert detail is not None and detail.text is None and detail.truncated is False
+    assert json.loads(detail.input) == {"file_path": "/work/proj/CLAUDE.md"} and "\n  " in detail.input
+    assert detail.result == "PLACEHOLDER-FILE-TEXT" * 10
+
+
+def test_a_call_with_no_result_reads_back_none_and_a_big_one_is_cut_at_the_bound(tmp_path: Path) -> None:
+    session = _copy_session(tmp_path)
+    big = "x" * (CALL_RESULT_CHARS + 50)
+    rows = [
+        _assistant_row(
+            content=[{"type": "tool_use", "id": "t_big", "name": "Read", "input": {"p": "y" * CALL_INPUT_CHARS}}]
+        ),
+        {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t_big", "content": big}]}},
+        _assistant_row(content=[{"type": "tool_use", "id": "t_open", "name": "Read", "input": {}}]),
+    ]
+    session.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    cut = call_detail("claude", session, None, "t_big", "Read", shell=False)
+    assert cut is not None and cut.truncated and len(cut.input) == CALL_INPUT_CHARS
+    assert cut.result == big[:CALL_RESULT_CHARS]
+    open_call = call_detail("claude", session, None, "t_open", "Read", shell=False)
+    assert open_call is not None and open_call.result is None and open_call.truncated is False
+
+
+def test_a_shell_call_with_no_command_has_no_text_to_read_back(tmp_path: Path) -> None:
     session = _copy_session(tmp_path)
     with pytest.raises(PayloadRefused, match="no string command"):
-        call_text("claude", session, None, "toolu_edit1")
+        call_detail("claude", session, None, "toolu_edit1", "Edit", shell=True)
 
 
 def _call_row(name: str, tool_input: object, use_id: str = "toolu_1") -> JsonObject:

@@ -148,26 +148,49 @@ class XrayStation:
 
 @dataclass(frozen=True)
 class XrayCall:
-    """One call on a node's side track: when, its category, its label, the source its file is, whether it failed
-    and the id the page asks the command text by."""
+    """One call of a node: when, its category, tool and label, the source its file is, the MCP server it went to,
+    whether it failed, the id the page asks the call's text by, the seconds its result took and the size of its
+    result in tokens."""
 
     t: float
     category: ToolCategory
+    tool: str
     label: str
     source: str | None
+    server: str | None
     failed: bool
     use_id: str
+    duration_s: float | None
+    result_tokens_est: int | None
 
     def to_json(self) -> JsonObject:
         """The call as a JSON object."""
         return {
             "t": self.t,
             "category": self.category,
+            "tool": self.tool,
             "label": self.label,
             "source": self.source,
+            "server": self.server,
             "failed": self.failed,
             "use_id": self.use_id,
+            "duration_s": self.duration_s,
+            "result_tokens_est": self.result_tokens_est,
         }
+
+
+@dataclass(frozen=True)
+class XrayToolCount:
+    """How many calls a node made with one tool and how many of them failed."""
+
+    tool: str
+    category: ToolCategory
+    calls: int
+    failed: int
+
+    def to_json(self) -> JsonObject:
+        """The count as a JSON object."""
+        return {"tool": self.tool, "category": self.category, "calls": self.calls, "failed": self.failed}
 
 
 @dataclass(frozen=True)
@@ -378,7 +401,7 @@ class XrayTree:
 @dataclass(frozen=True)
 class XrayNode:
     """One node of the session's graph: where it hangs, when it ran, the sources it had by kind, the calls it made by
-    category, what its parent withheld from it, how many of its children had each source, and its kind's own detail."""
+    tool, what its parent withheld from it, how many of its children had each source, and its kind's own detail."""
 
     id: str
     kind: NodeKind
@@ -388,7 +411,7 @@ class XrayNode:
     start: float
     end: float
     slots: dict[SourceKind, XraySlot]
-    tool_counts: dict[ToolCategory, int]
+    tools: tuple[XrayToolCount, ...]
     withheld: XrayWithheld | None
     child_sources: dict[str, int]
     detail: XrayDetail
@@ -398,7 +421,6 @@ class XrayNode:
         slots: dict[str, JsonValue] = {
             kind: {"count": slot.count, "findings": slot.findings} for kind, slot in self.slots.items()
         }
-        counts: dict[str, JsonValue] = {str(category): count for category, count in self.tool_counts.items()}
         child_sources: dict[str, JsonValue] = dict(self.child_sources)
         return {
             "id": self.id,
@@ -412,7 +434,7 @@ class XrayNode:
             "children": list(self.tree.children),
             "descendants": self.tree.descendants,
             "slots": slots,
-            "tool_counts": counts,
+            "tools": objects(item.to_json() for item in self.tools),
             "withheld": None if self.withheld is None else self.withheld.to_json(),
             "child_sources": child_sources,
             "detail": self.detail.to_json(),

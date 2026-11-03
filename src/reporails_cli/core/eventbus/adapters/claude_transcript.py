@@ -336,6 +336,29 @@ class ClaudeTranscriptAdapter:
                 return _command(as_object(block.get("input")), str(block.get("name")))
         raise PayloadRefused(f"row holds no tool call {use_id}")
 
+    def resolve_call_input(self, row: JsonObject, use_id: str) -> JsonObject:
+        """The input of the tool call `use_id` in an assistant row, for the route that shows it."""
+        for block in _content_blocks(row, "tool_use"):
+            if block.get("id") == use_id:
+                return as_object(block.get("input"))
+        raise PayloadRefused(f"row holds no tool call {use_id}")
+
+    def holds_result(self, row: JsonObject, use_id: str) -> bool:
+        """Whether `row` is a user row holding the result of the tool call `use_id`."""
+        return row.get("type") == "user" and any(
+            block.get("tool_use_id") == use_id for block in _content_blocks(row, "tool_result")
+        )
+
+    def resolve_result(self, row: JsonObject, use_id: str) -> str:
+        """The text of the result of the tool call `use_id` in a user row, for the route that shows it."""
+        for block in _content_blocks(row, "tool_result"):
+            if block.get("tool_use_id") == use_id:
+                texts = _blocks_text(block.get("content"), "tool_result")
+                if texts is None:
+                    raise PayloadRefused("tool_result content is neither text nor a list of blocks")
+                return "".join(texts)
+        raise PayloadRefused(f"row holds no result of tool call {use_id}")
+
     def resolve_brief(self, first_row: JsonObject) -> str:
         """The brief a subagent was given, the text of its first row; refuses a first row that is not a user
         row holding text."""
