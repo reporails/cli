@@ -134,37 +134,43 @@
     "key": "read",
     "label": "Read",
     "track": true,
-    "colour": "#8A8C92"
+    "colour": "#8A8C92",
+    "command": false
    },
    {
     "key": "edit",
     "label": "Edit",
     "track": true,
-    "colour": "#7FD4A8"
+    "colour": "#7FD4A8",
+    "command": false
    },
    {
     "key": "run",
     "label": "Bash",
     "track": true,
-    "colour": "#E8C27A"
+    "colour": "#E8C27A",
+    "command": true
    },
    {
     "key": "mcp",
     "label": "MCP",
     "track": false,
-    "colour": "#B49CFF"
+    "colour": "#B49CFF",
+    "command": false
    },
    {
     "key": "agent",
     "label": "Agents",
     "track": false,
-    "colour": "#9A9CA2"
+    "colour": "#9A9CA2",
+    "command": false
    },
    {
     "key": "other",
     "label": "Other",
     "track": false,
-    "colour": "#9A9CA2"
+    "colour": "#9A9CA2",
+    "command": false
    }
   ],
   "nesting": {

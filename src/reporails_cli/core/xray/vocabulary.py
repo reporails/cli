@@ -52,7 +52,7 @@ _CLAUDE_AGENT_TYPES = (
 _CLAUDE_CATEGORIES = (
     XrayCategoryInfo("read", "Read", True, "#8A8C92"),
     XrayCategoryInfo("edit", "Edit", True, "#7FD4A8"),
-    XrayCategoryInfo("run", "Bash", True, "#E8C27A"),
+    XrayCategoryInfo("run", "Bash", True, "#E8C27A", True),
     XrayCategoryInfo("mcp", "MCP", False, "#B49CFF"),
     XrayCategoryInfo("agent", "Agents", False, "#9A9CA2"),
     XrayCategoryInfo("other", "Other", False, "#9A9CA2"),

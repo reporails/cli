@@ -68,8 +68,11 @@ export function callIndex(ix) {
     for (const call of t.calls) list.push({ call, node });
   }
   list.sort((a, b) => a.call.t - b.call.t);
-  const colours = new Map(ix.view.adapter.categories.map(c => [c.key, c.colour]));
-  const made = { list, byId: new Map(list.map(r => [r.call.use_id, r])), colour: key => colours.get(key) || NEUTRAL };
+  const cats = new Map(ix.view.adapter.categories.map(c => [c.key, c]));
+  const serverColour = new Map();
+  for (const { call } of list) if (call.server && !serverColour.has(call.server) && cats.has(call.category)) serverColour.set(call.server, cats.get(call.category).colour);
+  const made = { list, byId: new Map(list.map(r => [r.call.use_id, r])), colour: key => (cats.get(key) || {}).colour || NEUTRAL,
+    hasCommand: key => !!(cats.get(key) || {}).command, serverColour: server => serverColour.get(server) || NEUTRAL };
   callIndexes.set(ix, made);
   return made;
 }

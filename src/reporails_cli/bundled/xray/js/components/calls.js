@@ -108,8 +108,8 @@ function drawStrip(canvas, env, rows) {
 
 // What the Call column prints: the call's label; for a call with no file target (its label is its tool's name), the
 // first line of its shell command once the server has answered. Only drawn rows reach this, so only they ask.
-export function summaryOf(c) {
-  if (c.category !== 'run' || c.label !== c.tool) return c.label;
+export function summaryOf(ix, c) {
+  if (!callIndex(ix).hasCommand(c.category) || c.label !== c.tool) return c.label;
   const line = (callDetail(c.use_id).text || '').split('\n').map(l => l.trim()).find(Boolean);
   return line || c.label;
 }
@@ -120,7 +120,7 @@ function callRow(env, r) {
   const b = el('button', `vl-row tb-row tb-calls${c.failed ? ' bad' : ''}${open ? ' on' : ''}`);
   b.type = 'button';
   b.dataset.peek = `call:${c.use_id}`;
-  const what = summaryOf(c);
+  const what = summaryOf(ix, c);
   b.title = `${clock(c.t)} ${c.tool} ${what}${c.failed ? ', failed' : ''}`;
   const agent = el('span', 'tb-agent');
   const dot = el('span', 'tb-adot');
@@ -248,5 +248,5 @@ registerPeek('call', (env, id) => {
   show.dataset.showInGraph = node.id;
   const tags = [call.failed ? 'failed' : 'ok'];
   if (call.result_tokens_est != null) tags.push(`~${k1(call.result_tokens_est)} result · estimated`);
-  return { chip: call.tool.charAt(0), kicker: `Tool call · ${node.name}`, title: summaryOf(call) || call.tool, tags, main, side, actions: [show] };
+  return { chip: call.tool.charAt(0), kicker: `Tool call · ${node.name}`, title: summaryOf(env.ix, call) || call.tool, tags, main, side, actions: [show] };
 });

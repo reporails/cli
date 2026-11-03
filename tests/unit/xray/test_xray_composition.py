@@ -245,3 +245,8 @@ def test_a_built_in_note_words_a_count_of_one_in_the_singular(tmp_path: Path) ->
 
     assert notes(1) == ["1 tool loaded on demand", "1 agent description", "1 skill description"]
     assert notes(2) == ["2 tools loaded on demand", "2 agent descriptions", "2 skill descriptions"]
+
+
+def test_only_the_shell_category_carries_a_command_to_fetch() -> None:
+    categories = vocabulary_for("claude", []).categories
+    assert [item.key for item in categories if item.command] == ["run"]
