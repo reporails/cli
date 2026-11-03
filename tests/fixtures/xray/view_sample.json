@@ -23,7 +23,9 @@
         "letter": "I",
         "small": false,
         "note": null,
-        "definitions": false
+        "definitions": false,
+        "verb": "loaded",
+        "graph_label": "instruction files"
       },
       {
         "key": "rule",
@@ -31,7 +33,9 @@
         "letter": "R",
         "small": false,
         "note": null,
-        "definitions": false
+        "definitions": false,
+        "verb": "loaded",
+        "graph_label": "rules"
       },
       {
         "key": "skill",
@@ -39,7 +43,9 @@
         "letter": "S",
         "small": false,
         "note": null,
-        "definitions": false
+        "definitions": false,
+        "verb": "loaded",
+        "graph_label": "skills"
       },
       {
         "key": "agent",
@@ -47,7 +53,9 @@
         "letter": "A",
         "small": true,
         "note": "Built-in agent types are not listed.",
-        "definitions": true
+        "definitions": true,
+        "verb": "launched",
+        "graph_label": "subagents"
       },
       {
         "key": "memory",
@@ -55,7 +63,9 @@
         "letter": "M",
         "small": false,
         "note": null,
-        "definitions": false
+        "definitions": false,
+        "verb": "read",
+        "graph_label": "memory"
       },
       {
         "key": "mcp",
@@ -63,7 +73,9 @@
         "letter": "C",
         "small": false,
         "note": null,
-        "definitions": false
+        "definitions": false,
+        "verb": "connected",
+        "graph_label": "MCP servers"
       },
       {
         "key": "hook",
@@ -71,7 +83,9 @@
         "letter": "H",
         "small": false,
         "note": null,
-        "definitions": false
+        "definitions": false,
+        "verb": "fired",
+        "graph_label": "hooks"
       }
     ],
     "agent_types": [
@@ -685,6 +699,22 @@
             ]
           ],
           "peak": 14
+        },
+        "in_context": {
+          "total": 596000,
+          "rows": [
+            {
+              "key": "rest",
+              "source": null,
+              "kind": null,
+              "label": "Conversation and tool results",
+              "reason": "grew during the run, estimated",
+              "tokens_est": 596000,
+              "t": null,
+              "findings": null
+            }
+          ],
+          "over": false
         }
       },
       "child_sources": {
@@ -1035,6 +1065,22 @@
             ]
           ],
           "peak": 8
+        },
+        "in_context": {
+          "total": 88000,
+          "rows": [
+            {
+              "key": "rest",
+              "source": null,
+              "kind": null,
+              "label": "Conversation and tool results",
+              "reason": "grew during the run, estimated",
+              "tokens_est": 88000,
+              "t": null,
+              "findings": null
+            }
+          ],
+          "over": false
         }
       },
       "child_sources": {},
@@ -1365,6 +1411,22 @@
             ]
           ],
           "peak": 8
+        },
+        "in_context": {
+          "total": 120000,
+          "rows": [
+            {
+              "key": "rest",
+              "source": null,
+              "kind": null,
+              "label": "Conversation and tool results",
+              "reason": "grew during the run, estimated",
+              "tokens_est": 120000,
+              "t": null,
+              "findings": null
+            }
+          ],
+          "over": false
         }
       },
       "child_sources": {},
@@ -1703,6 +1765,22 @@
             ]
           ],
           "peak": 8
+        },
+        "in_context": {
+          "total": 64000,
+          "rows": [
+            {
+              "key": "rest",
+              "source": null,
+              "kind": null,
+              "label": "Conversation and tool results",
+              "reason": "grew during the run, estimated",
+              "tokens_est": 64000,
+              "t": null,
+              "findings": null
+            }
+          ],
+          "over": false
         }
       },
       "child_sources": {},
@@ -2041,6 +2119,22 @@
             ]
           ],
           "peak": 8
+        },
+        "in_context": {
+          "total": 97000,
+          "rows": [
+            {
+              "key": "rest",
+              "source": null,
+              "kind": null,
+              "label": "Conversation and tool results",
+              "reason": "grew during the run, estimated",
+              "tokens_est": 97000,
+              "t": null,
+              "findings": null
+            }
+          ],
+          "over": false
         }
       },
       "child_sources": {},
@@ -2387,6 +2481,22 @@
             ]
           ],
           "peak": 8
+        },
+        "in_context": {
+          "total": 210000,
+          "rows": [
+            {
+              "key": "rest",
+              "source": null,
+              "kind": null,
+              "label": "Conversation and tool results",
+              "reason": "grew during the run, estimated",
+              "tokens_est": 210000,
+              "t": null,
+              "findings": null
+            }
+          ],
+          "over": false
         }
       },
       "child_sources": {
@@ -2712,6 +2822,22 @@
             ]
           ],
           "peak": 8
+        },
+        "in_context": {
+          "total": 72000,
+          "rows": [
+            {
+              "key": "rest",
+              "source": null,
+              "kind": null,
+              "label": "Conversation and tool results",
+              "reason": "grew during the run, estimated",
+              "tokens_est": 72000,
+              "t": null,
+              "findings": null
+            }
+          ],
+          "over": false
         }
       },
       "child_sources": {
@@ -3027,6 +3153,22 @@
             ]
           ],
           "peak": 8
+        },
+        "in_context": {
+          "total": 51000,
+          "rows": [
+            {
+              "key": "rest",
+              "source": null,
+              "kind": null,
+              "label": "Conversation and tool results",
+              "reason": "grew during the run, estimated",
+              "tokens_est": 51000,
+              "t": null,
+              "findings": null
+            }
+          ],
+          "over": false
         }
       },
       "child_sources": {},
@@ -3365,6 +3507,22 @@
             ]
           ],
           "peak": 8
+        },
+        "in_context": {
+          "total": 180000,
+          "rows": [
+            {
+              "key": "rest",
+              "source": null,
+              "kind": null,
+              "label": "Conversation and tool results",
+              "reason": "grew during the run, estimated",
+              "tokens_est": 180000,
+              "t": null,
+              "findings": null
+            }
+          ],
+          "over": false
         }
       },
       "child_sources": {},
@@ -3703,6 +3861,22 @@
             ]
           ],
           "peak": 8
+        },
+        "in_context": {
+          "total": 90000,
+          "rows": [
+            {
+              "key": "rest",
+              "source": null,
+              "kind": null,
+              "label": "Conversation and tool results",
+              "reason": "grew during the run, estimated",
+              "tokens_est": 90000,
+              "t": null,
+              "findings": null
+            }
+          ],
+          "over": false
         }
       },
       "child_sources": {},
@@ -4035,6 +4209,22 @@
             ]
           ],
           "peak": 8
+        },
+        "in_context": {
+          "total": 43000,
+          "rows": [
+            {
+              "key": "rest",
+              "source": null,
+              "kind": null,
+              "label": "Conversation and tool results",
+              "reason": "grew during the run, estimated",
+              "tokens_est": 43000,
+              "t": null,
+              "findings": null
+            }
+          ],
+          "over": false
         }
       },
       "child_sources": {},
@@ -4373,6 +4563,22 @@
             ]
           ],
           "peak": 8
+        },
+        "in_context": {
+          "total": 77000,
+          "rows": [
+            {
+              "key": "rest",
+              "source": null,
+              "kind": null,
+              "label": "Conversation and tool results",
+              "reason": "grew during the run, estimated",
+              "tokens_est": 77000,
+              "t": null,
+              "findings": null
+            }
+          ],
+          "over": false
         }
       },
       "child_sources": {},
@@ -4711,6 +4917,22 @@
             ]
           ],
           "peak": 8
+        },
+        "in_context": {
+          "total": 61000,
+          "rows": [
+            {
+              "key": "rest",
+              "source": null,
+              "kind": null,
+              "label": "Conversation and tool results",
+              "reason": "grew during the run, estimated",
+              "tokens_est": 61000,
+              "t": null,
+              "findings": null
+            }
+          ],
+          "over": false
         }
       },
       "child_sources": {},
@@ -4872,7 +5094,13 @@
       ],
       "actionable": true,
       "launches": null,
-      "cost_usd_est": 0.0123
+      "cost_usd_est": 0.0123,
+      "label": "CLAUDE.md",
+      "scopes": [],
+      "tools": [],
+      "agent_type": null,
+      "builtin": false,
+      "memory_role": null
     },
     {
       "id": "~/.claude/CLAUDE.md",
@@ -4899,7 +5127,13 @@
       ],
       "actionable": false,
       "launches": null,
-      "cost_usd_est": 0.0123
+      "cost_usd_est": 0.0123,
+      "label": "~/.claude/CLAUDE.md",
+      "scopes": [],
+      "tools": [],
+      "agent_type": null,
+      "builtin": false,
+      "memory_role": null
     },
     {
       "id": "packages/cli/CLAUDE.md",
@@ -4919,7 +5153,13 @@
       "had_by": [],
       "actionable": true,
       "launches": null,
-      "cost_usd_est": 0.0123
+      "cost_usd_est": 0.0123,
+      "label": "packages/cli/CLAUDE.md",
+      "scopes": [],
+      "tools": [],
+      "agent_type": null,
+      "builtin": false,
+      "memory_role": null
     },
     {
       "id": ".claude/rules/rules-engine.md",
@@ -4942,7 +5182,15 @@
       ],
       "actionable": true,
       "launches": null,
-      "cost_usd_est": null
+      "cost_usd_est": null,
+      "label": ".claude/rules/rules-engine.md",
+      "scopes": [
+        "src/**/*.py"
+      ],
+      "tools": [],
+      "agent_type": null,
+      "builtin": false,
+      "memory_role": null
     },
     {
       "id": ".claude/rules/style.md",
@@ -4962,7 +5210,15 @@
       "had_by": [],
       "actionable": true,
       "launches": null,
-      "cost_usd_est": null
+      "cost_usd_est": null,
+      "label": ".claude/rules/style.md",
+      "scopes": [
+        "src/**/*.py"
+      ],
+      "tools": [],
+      "agent_type": null,
+      "builtin": false,
+      "memory_role": null
     },
     {
       "id": ".claude/skills/orient/SKILL.md",
@@ -4977,7 +5233,13 @@
       ],
       "actionable": true,
       "launches": null,
-      "cost_usd_est": null
+      "cost_usd_est": null,
+      "label": "orient",
+      "scopes": [],
+      "tools": [],
+      "agent_type": null,
+      "builtin": false,
+      "memory_role": null
     },
     {
       "id": ".claude/skills/agents-sdk/SKILL.md",
@@ -4992,7 +5254,13 @@
       ],
       "actionable": true,
       "launches": null,
-      "cost_usd_est": null
+      "cost_usd_est": null,
+      "label": "agents-sdk",
+      "scopes": [],
+      "tools": [],
+      "agent_type": null,
+      "builtin": false,
+      "memory_role": null
     },
     {
       "id": ".claude/skills/cloudflare/SKILL.md",
@@ -5005,7 +5273,13 @@
       "had_by": [],
       "actionable": true,
       "launches": null,
-      "cost_usd_est": null
+      "cost_usd_est": null,
+      "label": "cloudflare",
+      "scopes": [],
+      "tools": [],
+      "agent_type": null,
+      "builtin": false,
+      "memory_role": null
     },
     {
       "id": "~/.claude/projects/-work-demo/memory/MEMORY.md",
@@ -5027,7 +5301,13 @@
       ],
       "actionable": true,
       "launches": null,
-      "cost_usd_est": null
+      "cost_usd_est": null,
+      "label": "MEMORY.md",
+      "scopes": [],
+      "tools": [],
+      "agent_type": null,
+      "builtin": false,
+      "memory_role": "item"
     },
     {
       "id": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
@@ -5040,7 +5320,13 @@
       "had_by": [],
       "actionable": false,
       "launches": null,
-      "cost_usd_est": null
+      "cost_usd_est": null,
+      "label": "feedback_orphan.md",
+      "scopes": [],
+      "tools": [],
+      "agent_type": null,
+      "builtin": false,
+      "memory_role": "item"
     },
     {
       "id": "mcp:docs-server",
@@ -5058,7 +5344,18 @@
       ],
       "actionable": false,
       "launches": null,
-      "cost_usd_est": null
+      "cost_usd_est": null,
+      "label": "docs-server",
+      "scopes": [],
+      "tools": [
+        [
+          "search",
+          3
+        ]
+      ],
+      "agent_type": null,
+      "builtin": false,
+      "memory_role": null
     },
     {
       "id": "hook:PreToolUse:Edit",
@@ -5073,7 +5370,13 @@
       ],
       "actionable": false,
       "launches": null,
-      "cost_usd_est": null
+      "cost_usd_est": null,
+      "label": "PreToolUse:Edit",
+      "scopes": [],
+      "tools": [],
+      "agent_type": null,
+      "builtin": false,
+      "memory_role": null
     },
     {
       "id": ".claude/agents/test-runner.md",
@@ -5096,7 +5399,13 @@
       ],
       "actionable": true,
       "launches": 2,
-      "cost_usd_est": null
+      "cost_usd_est": null,
+      "label": "test-runner",
+      "scopes": [],
+      "tools": [],
+      "agent_type": "test-runner",
+      "builtin": false,
+      "memory_role": null
     },
     {
       "id": ".claude/agents/reviewer.md",
@@ -5119,7 +5428,34 @@
       ],
       "actionable": true,
       "launches": 2,
-      "cost_usd_est": null
+      "cost_usd_est": null,
+      "label": "reviewer",
+      "scopes": [],
+      "tools": [],
+      "agent_type": "reviewer",
+      "builtin": false,
+      "memory_role": null
+    },
+    {
+      "id": "builtin-agent:Explore",
+      "kind": "agent",
+      "name": "Explore",
+      "path": null,
+      "tokens_est": null,
+      "findings": null,
+      "availability": "loaded",
+      "had_by": [
+        "a1"
+      ],
+      "actionable": false,
+      "launches": 1,
+      "cost_usd_est": null,
+      "label": "explore",
+      "scopes": [],
+      "tools": [],
+      "agent_type": "Explore",
+      "builtin": true,
+      "memory_role": null
     }
   ],
   "stations": [
@@ -9335,6 +9671,25 @@
     "name": "Claude API list prices",
     "as_of": "2026-11-02",
     "source": "https://platform.claude.com/docs/en/about-claude/pricing",
-    "unit": "usd_per_mtok"
-  }
+    "unit": "usd_per_mtok",
+    "source_method": "A source's cost is the tokens it carried in each reply times that reply's input-side price per context token, summed over every reply."
+  },
+  "builtin": [
+    {
+      "key": "system_prompt",
+      "label": "System prompt",
+      "tokens_est": 2800,
+      "note": "Not in the transcript; its size is what the reply total leaves.",
+      "visible": "no",
+      "remainder": true
+    },
+    {
+      "key": "skill_list",
+      "label": "Skills listing",
+      "tokens_est": 5100,
+      "note": "49 skill descriptions",
+      "visible": "yes",
+      "remainder": false
+    }
+  ]
 }

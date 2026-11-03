@@ -9,8 +9,16 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 
-from reporails_cli.core.platform.dto.events import EventRecord, TokenUsage
-from reporails_cli.core.platform.dto.xray_build import AgentRecords, Frame, HarnessSlot, SourceTable
+from reporails_cli.core.platform.dto.events import EventRecord, HarnessKind, TokenUsage
+from reporails_cli.core.platform.dto.xray import AdapterVocabulary, SourceEntry, XrayBuiltin
+from reporails_cli.core.platform.dto.xray_build import (
+    AgentRecords,
+    AgentWorld,
+    Frame,
+    HarnessSlot,
+    ProducedNode,
+    SourceTable,
+)
 from reporails_cli.core.platform.dto.xray_composition import (
     COMPOSITION_KEYS,
     ESTIMATED_KEYS,
@@ -20,8 +28,16 @@ from reporails_cli.core.platform.dto.xray_composition import (
     ReplyComposition,
     XrayComposition,
 )
-from reporails_cli.core.platform.dto.xray_graph import SourceKind
-from reporails_cli.core.xray.derive import context_of, frame_time, tokens_of
+from reporails_cli.core.platform.dto.xray_graph import (
+    ContextKey,
+    LoadEvent,
+    SourceKind,
+    XrayContextRow,
+    XrayDown,
+    XrayInContext,
+)
+from reporails_cli.core.xray.derive import build_harness, context_of, frame_time, replies_of, tokens_of
+from reporails_cli.core.xray.graph.sources import source_label
 
 # The category each source kind's loads count in; a kind not listed (an MCP server) falls in the remainder.
 _LOAD_CATEGORY: dict[SourceKind, CompositionKey] = {
@@ -31,6 +47,9 @@ _LOAD_CATEGORY: dict[SourceKind, CompositionKey] = {
     "memory": "memory",
     "hook": "hook_notes",
 }
+
+# The one harness kind a composition estimates as its own category; every other builtin kind is inside the remainder.
+_LISTED_KIND: HarnessKind = "skill_list"
 
 # (time, category, tokens, source id or None): a size that enters the context at a time and stays.
 type Added = tuple[float, CompositionKey, int, str | None]
@@ -183,3 +202,145 @@ def composition_series(
         replies.append(_reply_row(moment, usage, held))
     peak = max(range(len(replies)), key=lambda index: replies[index].total) if replies else None
     return XrayComposition(tuple(replies), peak), tuple(carried)
+
+
+def _count_note(template: str | None, count: int | None) -> str | None:
+    """The note `template` gives for an item of `count` entries; None when it needs a count the item lacks."""
+    if template is None or "{count}" not in template:
+        return template
+    return None if count is None else template.format(count=count)
+
+
+def _mcp_tokens(loads: Sequence[LoadEvent], sources: SourceTable, until: float) -> int:
+    """The tokens of the MCP servers' instructions the agent had loaded by `until`, each server once."""
+    first: dict[str, int] = {}
+    for load in loads:
+        entry = sources.get(load.source)
+        if entry is not None and entry.kind == "mcp" and load.t is not None and load.t <= until:
+            first.setdefault(load.source, load.tokens_est or 0)
+    return sum(first.values())
+
+
+def builtin_items(
+    main: ProducedNode, records: Sequence[EventRecord], sources: SourceTable, vocabulary: AdapterVocabulary
+) -> tuple[XrayBuiltin, ...]:
+    """The coding agent's own context in the vocabulary's order. A harness item's size is read from its records;
+    the system prompt is in no record, so its size is what the main agent's remainder category holds at its peak
+    reply after the other items inside that category and the MCP servers' instructions, never below 0."""
+    composition = main.detail.usage.composition
+    held = {item.kind: item for item in build_harness(records, replies_of(records)) or ()}
+    system: int | None = None
+    if composition.peak is not None:
+        reply = composition.replies[composition.peak]
+        inside = sum(
+            (item.tokens_est or 0) for kind, item in held.items() if kind not in (_LISTED_KIND, "system_prompt")
+        )
+        mcp = _mcp_tokens(main.spine.loads, sources, reply.t)
+        system = max(0, reply.parts[COMPOSITION_KEYS.index(REMAINDER_KEY)] - inside - mcp)
+    found: list[XrayBuiltin] = []
+    for info in vocabulary.builtin:
+        item = held.get(info.key)
+        if info.key == "system_prompt":
+            if system is not None:
+                found.append(XrayBuiltin(info.key, info.label, system, info.note, info.visible, True))
+        elif item is not None:
+            note = _count_note(info.note, item.count)
+            found.append(XrayBuiltin(info.key, info.label, item.tokens_est or 0, note, info.visible, False))
+    return tuple(found)
+
+
+def _row(key: ContextKey, entry: SourceEntry, load: LoadEvent, tokens: int, reason: str) -> XrayContextRow:
+    findings = None if entry.findings is None else entry.findings.count
+    return XrayContextRow(key, entry.id, entry.kind, source_label(entry), reason, tokens, load.t, findings)
+
+
+def _first_loads(
+    own: AgentRecords, reply_t: float, carried: dict[str, int], sources: SourceTable
+) -> list[tuple[LoadEvent, SourceEntry]]:
+    """The first load by `reply_t` of each source that was in the agent's context at the reply: a carried source
+    or an MCP server."""
+    seen: set[str] = set()
+    found: list[tuple[LoadEvent, SourceEntry]] = []
+    for load in sorted(
+        (item for item in own.loads if item.t is not None and item.t <= reply_t), key=lambda i: i.t or 0
+    ):
+        entry = sources.get(load.source)
+        if entry is None or load.source in seen or not (entry.kind == "mcp" or load.source in carried):
+            continue
+        seen.add(load.source)
+        found.append((load, entry))
+    return found
+
+
+def _source_rows(
+    own: AgentRecords, reply_t: float, carried: dict[str, int], world: AgentWorld
+) -> tuple[list[XrayContextRow], list[XrayContextRow], int]:
+    """The rows of the sources the agent had loaded by `reply_t`, inherited ones first then by time, the rows of
+    the hooks among them, and the tokens of the MCP servers among the first."""
+    vocabulary = world.context.vocabulary
+    triggers = {item.key: item.label for item in vocabulary.triggers}
+    hook_reason = next(item.reason for item in vocabulary.context_texts if item.key == "hooks")
+    fires: dict[str, int] = {}
+    for load in own.loads:
+        if load.t is not None and load.t <= reply_t:
+            fires[load.source] = fires.get(load.source, 0) + 1
+    loaded: list[tuple[LoadEvent, XrayContextRow]] = []
+    hooks: list[XrayContextRow] = []
+    mcp = 0
+    for load, entry in _first_loads(own, reply_t, carried, world.context.sources):
+        tokens = (load.tokens_est or 0) if entry.kind == "mcp" else carried[entry.id]
+        if entry.kind == "mcp":
+            mcp += tokens
+        if entry.kind == "hook":
+            hooks.append(_row("hooks", entry, load, tokens, hook_reason.format(count=fires[entry.id])))
+        else:
+            loaded.append((load, _row("source", entry, load, tokens, triggers.get(load.trigger, ""))))
+    loaded.sort(key=lambda item: (item[0].trigger != "inherited", item[0].t or 0.0))
+    return [row for _, row in loaded], hooks, mcp
+
+
+def _definition_row(run_type: str | None, own: AgentRecords, world: AgentWorld) -> XrayContextRow | None:
+    """The row of the agent definition a subagent was launched from; None for the main agent and for a type with
+    no readable definition file."""
+    size = world.frame.agent_files.get(run_type or "")
+    entry = next(
+        (item for item in world.context.sources.entries if item.kind == "agent" and item.name == run_type), None
+    )
+    if size is None or entry is None:
+        return None
+    reason = next((item.label for item in world.context.vocabulary.triggers if item.key == "inherited"), "")
+    return XrayContextRow("source", entry.id, entry.kind, source_label(entry), reason, size, own.start, None)
+
+
+def build_in_context(
+    own: AgentRecords,
+    run_type: str | None,
+    down: XrayDown,
+    series: tuple[XrayComposition, tuple[CarriedReply, ...]],
+    world: AgentWorld,
+) -> XrayInContext | None:
+    """What the agent's context held at its peak reply: its task prompt (a subagent), its definition, the sources
+    loaded by then (inherited first, then by time), the hooks that fired, the coding agent's own context and the
+    conversation and tool results, which take what the estimates leave of the measured total. The estimates may
+    overshoot the total; the last row is then 0 and `over` is set. None when the agent has no reply."""
+    composition, carried = series
+    if composition.peak is None:
+        return None
+    reply = composition.replies[composition.peak]
+    texts = {item.key: item for item in world.context.vocabulary.context_texts}
+    sources, hooks, mcp = _source_rows(own, reply.t, carried[composition.peak].by_source, world)
+    definition = _definition_row(run_type, own, world)
+    rows: list[XrayContextRow] = []
+    if down.task_tokens_est is not None:
+        task = texts["task"]
+        rows.append(XrayContextRow("task", None, None, task.label, task.reason, down.task_tokens_est, own.start, None))
+    rows.extend([] if definition is None else [definition])
+    rows.extend([*sources, *hooks])
+    built = reply.parts[COMPOSITION_KEYS.index(REMAINDER_KEY)] + reply.parts[COMPOSITION_KEYS.index("skill_listing")]
+    own_context = max(0, built - mcp - (0 if definition is None else definition.tokens_est))
+    builtin = texts["builtin"]
+    rows.append(XrayContextRow("builtin", None, None, builtin.label, builtin.reason, own_context, None, None))
+    left = reply.total - sum(row.tokens_est for row in rows)
+    rest = texts["rest"]
+    rows.append(XrayContextRow("rest", None, None, rest.label, rest.reason, max(0, left), None, None))
+    return XrayInContext(reply.total, tuple(rows), left < 0)

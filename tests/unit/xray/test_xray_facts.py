@@ -48,7 +48,7 @@ def test_no_memory_unlinked_when_every_memory_file_is_linked_or_unknown() -> Non
 
 
 def _source(path: str, tokens: int | None, had_by: tuple[str, ...]) -> XraySource:
-    return XraySource(path, "instructions", path, path, tokens, None, "loaded", had_by, False, None, None)
+    return XraySource(path, "instructions", path, path, tokens, None, "loaded", had_by, False, None, None, path)
 
 
 def test_repeated_instructions_point_at_the_file_with_the_largest_extra() -> None:
@@ -65,7 +65,7 @@ def test_repeated_instructions_point_at_the_file_with_the_largest_extra() -> Non
 
 def test_an_agent_definition_launched_twice_is_not_a_repeated_instruction() -> None:
     definition = XraySource(
-        "agent:x", "agent", "x", "x.md", 80, None, "loaded", ("main", "s0", "s1"), False, None, None
+        "agent:x", "agent", "x", "x.md", 80, None, "loaded", ("main", "s0", "s1"), False, None, None, "x"
     )
     assert not _of(build_facts((), (definition,), (), (), frozenset({"agent"})), "repeated_instructions")
     plain = _source("a.md", 10, ("main", "x"))
@@ -74,7 +74,7 @@ def test_an_agent_definition_launched_twice_is_not_a_repeated_instruction() -> N
 
 
 def test_an_mcp_server_in_two_contexts_is_not_a_repeated_instruction_file() -> None:
-    server = XraySource("mcp:n0", "mcp", "n0", None, 40, None, "loaded", ("main", "x"), False, None, None)
+    server = XraySource("mcp:n0", "mcp", "n0", None, 40, None, "loaded", ("main", "x"), False, None, None, "n0")
     assert not _of(build_facts((), (server,), (), (), frozenset()), "repeated_instructions")
 
 

@@ -4,12 +4,15 @@ path, run name, server or hook label into a source id."""
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
+from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.dto.events import EventRecord, is_note_kind
 from reporails_cli.core.platform.dto.xray import (
     AGENT_ARTIFACT_KINDS,
     SOURCE_KIND_OF_ARTIFACT,
+    MemoryRole,
     SourceEntry,
     XrayArtifact,
 )
@@ -30,6 +33,32 @@ def mcp_id(server: str) -> str:
 def hook_id(label: str) -> str:
     """The source id of a hook note label."""
     return f"hook:{label}"
+
+
+def builtin_agent_id(agent_type: str) -> str:
+    """The source id of a built-in agent type, which no agent definition's id can equal."""
+    return f"builtin-agent:{agent_type}"
+
+
+def memory_role(entry: SourceEntry) -> MemoryRole | None:
+    """Whether a memory source is the memory index or an item read on demand; None for any other kind."""
+    if entry.kind != "memory":
+        return None
+    return "index" if entry.path is not None and Path(entry.path).name == MEMORY_INDEX_FILENAME else "item"
+
+
+def source_label(entry: SourceEntry) -> str:
+    """The name the page shows a source by: an instruction file by its path, a rule by its file name, a memory
+    item without its folder or type prefix; any other source by its name."""
+    if entry.path is None:
+        return entry.name
+    if entry.kind == "instructions":
+        return entry.path
+    if entry.kind == "rule":
+        return Path(entry.path).name
+    if entry.kind == "memory" and entry.name == entry.path:
+        return Path(entry.path).name if memory_role(entry) == "index" else Path(entry.path).stem
+    return entry.name
 
 
 def for_path(table: SourceTable, path: str) -> str | None:
@@ -70,6 +99,7 @@ def _harness_sources(records: Sequence[EventRecord]) -> list[SourceEntry]:
     """A source for each MCP server the records name and each hook note label; a hook's size is that of its
     largest firing."""
     servers: dict[str, int | None] = {}
+    called: dict[str, dict[str, int]] = {}
     hooks: dict[str, int] = {}
     for record in records:
         entry = record.harness
@@ -80,8 +110,22 @@ def _harness_sources(records: Sequence[EventRecord]) -> list[SourceEntry]:
             hooks[entry.label] = max(hooks.get(entry.label, 0), tokens_of(entry.chars))
         elif record.event == "tool_call" and record.tool is not None and record.tool.server:
             servers.setdefault(record.tool.server, None)
+            counts = called.setdefault(record.tool.server, {})
+            counts[record.tool.name or "tool"] = counts.get(record.tool.name or "tool", 0) + 1
     found = [
-        SourceEntry(mcp_id(name), "mcp", name, None, size, None, False, None, None) for name, size in servers.items()
+        SourceEntry(
+            mcp_id(name),
+            "mcp",
+            name,
+            None,
+            size,
+            None,
+            False,
+            None,
+            None,
+            tools=tuple(sorted(called.get(name, {}).items(), key=lambda item: (-item[1], item[0]))),
+        )
+        for name, size in servers.items()
     ]
     found.extend(
         SourceEntry(hook_id(label), "hook", label, None, size, None, False, None, None) for label, size in hooks.items()
@@ -111,6 +155,7 @@ def build_sources(artifacts: Sequence[XrayArtifact], records: Sequence[EventReco
             item.actionable,
             item.advertised,
             item.linked,
+            item.scopes,
         )
         for item in listed
     ]

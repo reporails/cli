@@ -630,6 +630,7 @@ class _Widget:
             (),
             False,
             XrayUsage(_NO_COST, XrayComposition((), None)),
+            None,
         )
         loads = () if self.source is None else (LoadEvent(self.source, 1.0, None, "agent", None, True),)
         spine = ProducedSpine((), loads, (), (), (1.0,))
@@ -722,6 +723,7 @@ def test_the_built_views_key_structure_matches_the_sample_the_page_is_built_agai
         sources=graph.sources,
         stations=graph.stations,
         tracks=graph.tracks,
+        builtin=graph.builtin,
         version=1,
         info=XraySessionInfo("s", "p", at(0), 20.0, "newest"),
         model=None,
@@ -925,7 +927,7 @@ def test_an_agent_definition_is_a_source_had_by_every_launch_of_its_type_at_any_
         reply(30),
     ]
     graph = _graph(tmp_path, records, [reviewer, never], advertised={never.path: True})
-    by_name = {source.name: source for source in graph.sources if source.kind == "agent"}
+    by_name = {source.name: source for source in graph.sources if source.kind == "agent" and not source.builtin}
     assert set(by_name) == {"reviewer", "never"}
     assert (by_name["reviewer"].had_by, by_name["reviewer"].launches, by_name["reviewer"].availability) == (
         ("A", "B"),
@@ -934,6 +936,7 @@ def test_an_agent_definition_is_a_source_had_by_every_launch_of_its_type_at_any_
     )
     assert (by_name["never"].had_by, by_name["never"].launches, by_name["never"].availability) == ((), 0, "listed")
     assert all(source.launches is None for source in graph.sources if source.kind != "agent")
+    assert all(source.launches == 1 for source in graph.sources if source.builtin)
 
 
 def test_a_definition_nobody_listed_or_launched_is_on_disk(tmp_path: Path) -> None:
@@ -942,7 +945,7 @@ def test_a_definition_nobody_listed_or_launched_is_on_disk(tmp_path: Path) -> No
     assert (source.availability, source.launches) == ("on_disk", 0)
 
 
-def test_a_built_in_agent_type_is_no_source_and_the_slots_count_definitions(tmp_path: Path) -> None:
+def test_a_definition_backed_type_is_one_source_and_the_slots_count_definitions(tmp_path: Path) -> None:
     reviewer, helper = _definition(tmp_path, "reviewer"), _definition(tmp_path, "helper")
     records = [
         reply(1),
@@ -956,7 +959,9 @@ def test_a_built_in_agent_type_is_no_source_and_the_slots_count_definitions(tmp_
     ]
     tally = {reviewer.path: FindingTally(2, {"error": 0, "warning": 2, "info": 0})}
     graph = _graph(tmp_path, records, [reviewer, helper], findings=tally)
-    assert not any(source.name == "general-purpose" for source in graph.sources)
+    assert [(s.name, s.builtin) for s in graph.sources if s.kind == "agent" and s.name == "reviewer"] == [
+        ("reviewer", False)
+    ]
     assert _node(graph, "main").slots["agent"].count == 2
     assert (_node(graph, "A").slots["agent"].count, _node(graph, "A").slots["agent"].findings) == (1, 2)
     assert _node(graph, "B").slots["agent"].count == 0
@@ -1037,3 +1042,184 @@ def test_a_member_that_did_not_hand_back_ends_the_burst_at_its_own_end() -> None
     ]
     (found,) = bursts(edges, 600.0, settings, {"a": 5, "b": 40, "c": 30})
     assert found.last_return == 40
+
+
+def _entry(kind: HarnessKind, label: str, count: int | None, chars: int, seconds: float = 0.5) -> EventRecord:
+    return rec("harness", seconds, item=HarnessEntry(kind, label, count, chars))
+
+
+def test_the_builtin_items_follow_the_vocabulary_order_and_the_system_prompt_carries_the_remainder(
+    tmp_path: Path,
+) -> None:
+    claude = _file(tmp_path, "CLAUDE.md", 400)
+    records = [
+        _entry("session_context", "session context", None, 40),
+        _entry("skill_list", "skills", 5, 4000),
+        _entry("agent_list", "agents", 3, 400),
+        _entry("deferred_tools", "deferred tools", 7, 800),
+        load(0.4, claude),
+        reply(1, context=20_000),
+    ]
+    graph = _graph(tmp_path, records, [claude])
+    assert [(item.key, item.remainder) for item in graph.builtin] == [
+        ("system_prompt", True),
+        ("deferred_tools", False),
+        ("agent_list", False),
+        ("skill_list", False),
+        ("session_context", False),
+    ]
+    sizes = {item.key: item.tokens_est for item in graph.builtin}
+    # The reply total less the estimated instruction file (100) and skills listing (1000), the tool definitions
+    # (200), the agent listing (100) and the session context (10).
+    assert sizes == {
+        "system_prompt": 20_000 - 100 - 1000 - 200 - 100 - 10,
+        "deferred_tools": 200,
+        "agent_list": 100,
+        "skill_list": 1000,
+        "session_context": 10,
+    }
+    notes = {item.key: item.note for item in graph.builtin}
+    assert notes["agent_list"] == "3 agent descriptions" and notes["session_context"] is not None
+    assert [item.visible for item in graph.builtin][:2] == ["no", "partial"]
+
+
+def test_a_system_prompt_is_never_negative_when_the_estimates_overshoot_the_reply(tmp_path: Path) -> None:
+    records = [_entry("skill_list", "skills", 5, 40_000), reply(1, context=500)]
+    system = next(item for item in _graph(tmp_path, records).builtin if item.remainder)
+    assert system.tokens_est == 0
+
+
+def test_a_launched_built_in_type_is_an_agent_source_and_a_defined_type_is_not_listed_twice(tmp_path: Path) -> None:
+    reviewer = _definition(tmp_path, "reviewer")
+    records = [
+        reply(1),
+        call(5, "tuA", "agent"),
+        _typed_launch(6, "A", None, "tuA", "Explore"),
+        reply(7, "A"),
+        call(8, "tuB", "agent"),
+        _typed_launch(9, "B", None, "tuB", "Explore"),
+        reply(10, "B"),
+        call(11, "tuC", "agent"),
+        _typed_launch(12, "C", None, "tuC", "reviewer"),
+        reply(13, "C"),
+        reply(30),
+    ]
+    graph = _graph(tmp_path, records, [reviewer])
+    agents = [source for source in graph.sources if source.kind == "agent"]
+    (built_in,) = [source for source in agents if source.builtin]
+    assert (built_in.name, built_in.agent_type, built_in.label, built_in.path, built_in.tokens_est) == (
+        "Explore",
+        "Explore",
+        "explore",
+        None,
+        None,
+    )
+    assert (built_in.availability, built_in.had_by, built_in.launches) == ("loaded", ("A", "B"), 2)
+    assert built_in.id not in {source.id for source in agents if not source.builtin}
+    (defined,) = [source for source in agents if not source.builtin]
+    assert (defined.agent_type, defined.had_by, defined.builtin) == ("reviewer", ("C",), False)
+
+
+def test_a_memory_item_is_labelled_without_its_type_prefix_and_the_index_is_told_apart(tmp_path: Path) -> None:
+    topic = tmp_path / "feedback_pnpm-only.md"
+    index = tmp_path / "MEMORY.md"
+    topic.write_text("x")
+    index.write_text("x")
+    files = [
+        ArtifactFile(str(topic), "memory", "auto", None, "pnpm-only", "feedback", True),
+        ArtifactFile(str(index), "memory", "auto", None, "MEMORY.md", None, None),
+    ]
+    memory = [source for source in _graph(tmp_path, [reply(1)], files).sources if source.kind == "memory"]
+    assert [(source.label, source.memory_role) for source in memory] == [("pnpm-only", "item"), ("MEMORY.md", "index")]
+
+
+def test_a_rules_scopes_come_from_its_frontmatter(tmp_path: Path) -> None:
+    scoped = tmp_path / ".claude" / "rules" / "py.md"
+    scoped.parent.mkdir(parents=True)
+    scoped.write_text('---\npaths:\n  - "src/**/*.py"\n  - tests/*.py\n---\n# Python\n')
+    plain = tmp_path / ".claude" / "rules" / "all.md"
+    plain.write_text("# Everything\n")
+    files = [
+        ArtifactFile(str(scoped), "rule", "project", None, "py", None, None),
+        ArtifactFile(str(plain), "rule", "project", None, "all", None, None),
+    ]
+    rules = {source.label: source for source in _graph(tmp_path, [reply(1)], files).sources if source.kind == "rule"}
+    assert rules["py.md"].scopes == ("src/**/*.py", "tests/*.py")
+    assert rules["all.md"].scopes == ()
+
+
+def test_an_mcp_server_lists_its_tools_with_their_call_counts(tmp_path: Path) -> None:
+    records = [
+        reply(1),
+        call(2, "t1", "mcp", name="mcp__docs__search", server="docs"),
+        call(3, "t2", "mcp", name="mcp__docs__fetch", server="docs"),
+        call(4, "t3", "mcp", name="mcp__docs__search", server="docs"),
+        call(5, "t4", "mcp", name="mcp__other__ping", server="other"),
+        reply(30),
+    ]
+    servers = {source.name: source for source in _graph(tmp_path, records).sources if source.kind == "mcp"}
+    assert servers["docs"].tools == (("mcp__docs__search", 2), ("mcp__docs__fetch", 1))
+    assert servers["other"].tools == (("mcp__other__ping", 1),)
+
+
+def _context_session(root: Path) -> tuple[list[EventRecord], list[ArtifactFile]]:
+    claude = _file(root, "CLAUDE.md", 400)
+    rule = _file(root, ".claude/rules/py.md", 800, "rule")
+    records = [
+        _entry("skill_list", "skills", 5, 4000),
+        _entry("agent_list", "agents", 3, 400),
+        load(0.4, claude),
+        reply(1, context=30_000),
+        load(2, rule, memory_type="nested"),
+        _hook_note(3, "PreToolUse:hook", "PreToolUse", 200),
+        _hook_note(4, "PreToolUse:hook", "PreToolUse", 200),
+        call(5, "tuA", "agent"),
+        _typed_launch(6, "A", None, "tuA", "Explore"),
+        load(6.1, claude, "A"),
+        reply(7, "A", context=9000),
+        reply(40, context=60_000),
+    ]
+    return records, [claude, rule]
+
+
+def test_in_context_adds_up_to_the_peak_on_every_node_and_orders_the_rows(tmp_path: Path) -> None:
+    records, files = _context_session(tmp_path)
+    graph = _graph(tmp_path, records, files)
+    for node in graph.nodes:
+        shown = _agent(node).in_context
+        assert shown is not None and not shown.over
+        assert shown.total == _agent(node).peak
+        assert sum(row.tokens_est for row in shown.rows) == shown.total
+    main = _agent(_node(graph, "main")).in_context
+    assert main is not None
+    assert [(row.key, row.label) for row in main.rows if row.key != "source"] == [
+        ("hooks", "PreToolUse:hook"),
+        ("builtin", "System prompt, tools and listings"),
+        ("rest", "Conversation and tool results"),
+    ]
+    sources = [(row.label, row.kind, row.reason) for row in main.rows if row.key == "source"]
+    assert sources == [
+        ("CLAUDE.md", "instructions", "loaded with the session's instructions"),
+        ("py.md", "rule", "loaded when a matching file was touched"),
+    ]
+    hook = next(row for row in main.rows if row.key == "hooks")
+    assert (hook.reason, hook.tokens_est) == ("fired 2 times", 100)
+    sub = _agent(_node(graph, "A")).in_context
+    assert sub is not None
+    assert [row.key for row in sub.rows] == ["task", "source", "builtin", "rest"]
+    assert sub.rows[1].reason == "handed down at launch"
+
+
+def test_in_context_marks_an_overshoot_and_leaves_the_last_row_at_zero(tmp_path: Path) -> None:
+    claude = _file(tmp_path, "CLAUDE.md", 40_000)
+    graph = _graph(tmp_path, [load(0.4, claude), reply(1, context=500)], [claude])
+    shown = _agent(_node(graph, "main")).in_context
+    assert shown is not None and shown.over and shown.total == 500
+    assert shown.rows[-1].key == "rest" and shown.rows[-1].tokens_est == 0
+
+
+def test_the_vocabulary_words_what_used_means_for_each_source_kind_and_the_price_list_states_its_method() -> None:
+    kinds = {item.key: (item.verb, item.graph_label) for item in vocabulary_for("claude", []).source_kinds}
+    assert kinds["agent"] == ("launched", "subagents") and kinds["mcp"] == ("connected", "MCP servers")
+    assert {verb for verb, _ in kinds.values()} == {"loaded", "launched", "read", "connected", "fired"}
+    assert "reply" in load_price_list().info.source_method

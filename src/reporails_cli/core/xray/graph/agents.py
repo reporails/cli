@@ -47,7 +47,7 @@ from reporails_cli.core.xray.derive import (
     start_loads,
     tokens_of,
 )
-from reporails_cli.core.xray.graph.composition import composition_series
+from reporails_cli.core.xray.graph.composition import build_in_context, composition_series
 from reporails_cli.core.xray.graph.port import register
 from reporails_cli.core.xray.graph.sources import for_path, hook_id, mcp_id
 
@@ -208,13 +208,15 @@ def _detail(
     given: Sequence[XrayGiven],
     handoff: tuple[XrayDown, int | None, AgentOutcome | None],
     world: AgentWorld,
+    run_type: str | None,
 ) -> XrayAgentDetail:
     down, back, outcome = handoff
     frame = world.frame
     brief_chars = None if own.key == MAIN_ID else _brief_chars(own)
     series = tuple((moment - frame.t0, context) for moment, context in own.replies.points)
     peak = peak_context(own.replies, own.compactions)
-    composition, carried = composition_series(own, world.context.sources, frame, brief_chars)
+    series_of = composition_series(own, world.context.sources, frame, brief_chars)
+    composition, carried = series_of
     return XrayAgentDetail(
         context_start=series[0][1] if series else None,
         peak=peak,
@@ -230,6 +232,7 @@ def _detail(
             agent_cost(own.records, world.context.prices, frame.t0, carried, world.context.sources),
             composition,
         ),
+        in_context=build_in_context(own, run_type, down, series_of, world),
     )
 
 
@@ -309,7 +312,7 @@ def _main_node(own: AgentRecords, world: AgentWorld) -> ProducedNode:
     harness, loaded = _given(own, world.context.sources)
     given = [*harness, *loaded]
     down = XrayDown(None, sum(item.tokens_est or 0 for item in given))
-    detail = _detail(own, given, (down, None, None), world)
+    detail = _detail(own, given, (down, None, None), world, None)
     return ProducedNode(
         id=MAIN_ID,
         kind=_KIND,
@@ -351,7 +354,7 @@ def _sub_node(
     run_type = next((r.subagent_type for r in own.records if r.event == "subagent_run"), None)
     task, given, down = _subagent_given(own, meta, run_type, world)
     handoff = _handoff(own, parent, meta, down, world.frame.live)
-    detail = _detail(own, given, (down, handoff.back, handoff.outcome), world)
+    detail = _detail(own, given, (down, handoff.back, handoff.outcome), world, run_type)
     node = ProducedNode(
         id=own.key,
         kind=_KIND,

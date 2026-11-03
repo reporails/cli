@@ -40,16 +40,24 @@ class ModelPrices:
 
 @dataclass(frozen=True)
 class PriceListInfo:
-    """Which list priced the view: its name, the day it was read, where and in what unit."""
+    """Which list priced the view: its name, the day it was read, where and in what unit, and the sentence that
+    states how a source's cost is worked out from it."""
 
     name: str
     as_of: str
     source: str
     unit: str
+    source_method: str
 
     def to_json(self) -> JsonObject:
         """The list's identity as a JSON object; no price is in it."""
-        return {"name": self.name, "as_of": self.as_of, "source": self.source, "unit": self.unit}
+        return {
+            "name": self.name,
+            "as_of": self.as_of,
+            "source": self.source,
+            "unit": self.unit,
+            "source_method": self.source_method,
+        }
 
 
 @dataclass(frozen=True)

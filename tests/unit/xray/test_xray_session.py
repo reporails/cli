@@ -23,7 +23,7 @@ FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "eventbus" / "tran
 RUNNING = XrayCheck("running", None)
 TOP_KEYS = {
     "version", "session", "project", "started_at", "length_s", "picked", "model", "window", "adapter", "price_list",
-    "nodes", "edges", "sources", "stations", "track", "funnel", "facts", "check", "refusals", "not_known",
+    "nodes", "edges", "sources", "stations", "track", "builtin", "funnel", "facts", "check", "refusals", "not_known",
 }  # fmt: skip
 HANDOFFS = "2.1.309-handoffs"
 NEW_TURN = (
@@ -296,7 +296,8 @@ def test_a_session_peeks_only_a_listed_file_that_is_not_a_hook_config(tmp_path: 
     (root / "notes.txt").write_text("notes\n")
     session = _session(tmp_path, "2.1.301", root)
     session.refresh()
-    assert session.peek("CLAUDE.md") == ((root / "CLAUDE.md").read_text(), False)
+    peeked = session.peek("CLAUDE.md")
+    assert peeked is not None and (peeked.text, peeked.truncated) == ((root / "CLAUDE.md").read_text(), False)
     assert session.peek(".claude/skills/demo/SKILL.md") is not None
     assert session.peek("notes.txt") is None
     assert session.peek(".claude/settings.json") is None
@@ -307,8 +308,8 @@ def test_a_peek_is_cut_at_the_character_limit(tmp_path: Path) -> None:
     root = _project(tmp_path)
     (root / "CLAUDE.md").write_text("a" * (PEEK_LIMIT + 5))
     session = _session(tmp_path, "2.1.301", root)
-    text, truncated = session.peek("CLAUDE.md") or ("", False)
-    assert len(text) == PEEK_LIMIT and truncated is True
+    peeked = session.peek("CLAUDE.md")
+    assert peeked is not None and len(peeked.text) == PEEK_LIMIT and peeked.truncated is True
 
 
 def test_a_brief_is_given_only_for_a_subagent_the_records_name(tmp_path: Path) -> None:
@@ -426,3 +427,14 @@ def test_the_size_of_each_listed_agent_definition_is_found_by_its_type(tmp_path:
     root = _project(tmp_path)
     sizes = agent_file_tokens(artifact_files(root, []), root)
     assert sizes["helper"] == (root / ".claude" / "agents" / "helper.md").stat().st_size // BYTES_PER_TOKEN > 0
+
+
+def test_a_peek_splits_the_frontmatter_block_from_the_body(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    (root / "CLAUDE.md").write_text("---\nname: demo\npaths: [a]\n---\n# Body\n\ntext\n")
+    session = _session(tmp_path, "2.1.301", root)
+    session.refresh()
+    peeked = session.peek("CLAUDE.md")
+    assert peeked is not None
+    assert (peeked.frontmatter, peeked.body) == ("name: demo\npaths: [a]", "# Body\n\ntext\n")
+    assert peeked.text.startswith("---\n")

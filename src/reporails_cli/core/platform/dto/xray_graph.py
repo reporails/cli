@@ -20,6 +20,8 @@ NodeKind = Literal["agent"]
 SourceKind = Literal["instructions", "rule", "skill", "agent", "memory", "mcp", "hook"]
 LoadTrigger = Literal["session_start", "path_match", "agent", "inherited", "hook"]
 AgentOutcome = Literal["returned", "failed", "stopped", "no_handback", "running"]
+# What one row of an agent's "in context" list stands for.
+ContextKey = Literal["task", "source", "hooks", "builtin", "rest"]
 # The outcomes in which an agent's parent received something back.
 HANDED_BACK_OUTCOMES: frozenset[AgentOutcome] = frozenset({"returned", "failed"})
 
@@ -265,6 +267,49 @@ class XrayGiven:
 
 
 @dataclass(frozen=True)
+class XrayContextRow:
+    """One row of an agent's "in context" list: what it stands for, the source it is (None for a row that is no
+    source) and that source's kind, its label and the reason it is there as the coding agent words it, its
+    estimated size, when it came in and its finding count."""
+
+    key: ContextKey
+    source: str | None
+    kind: SourceKind | None
+    label: str
+    reason: str
+    tokens_est: int
+    t: float | None
+    findings: int | None
+
+    def to_json(self) -> JsonObject:
+        """The row as a JSON object."""
+        return {
+            "key": self.key,
+            "source": self.source,
+            "kind": self.kind,
+            "label": self.label,
+            "reason": self.reason,
+            "tokens_est": self.tokens_est,
+            "t": self.t,
+            "findings": self.findings,
+        }
+
+
+@dataclass(frozen=True)
+class XrayInContext:
+    """What an agent's context held at its peak reply: the measured total, the rows that make it up (the last row
+    takes what the estimates leave) and whether the estimates overshoot the total, which leaves that row at 0."""
+
+    total: int
+    rows: tuple[XrayContextRow, ...]
+    over: bool
+
+    def to_json(self) -> JsonObject:
+        """The list as a JSON object."""
+        return {"total": self.total, "rows": objects(row.to_json() for row in self.rows), "over": self.over}
+
+
+@dataclass(frozen=True)
 class XrayDown:
     """What a parent handed an agent: the task prompt's size (None for the root) and the rest it started with."""
 
@@ -287,7 +332,8 @@ class XrayUsage:
 @dataclass(frozen=True)
 class XrayAgentDetail:
     """What the page shows of an agent beyond the generic node: its context line, what it was handed, what it
-    handed back (and how many times the context peak is that), how it ended and the prompts a person typed to it."""
+    handed back (and how many times the context peak is that), how it ended, the prompts a person typed to it and
+    what its context held at its peak reply (None for an agent with no reply)."""
 
     context_start: int | None
     peak: int | None
@@ -300,6 +346,7 @@ class XrayAgentDetail:
     prompts: tuple[XrayPrompt, ...]
     brief: bool
     usage: XrayUsage
+    in_context: XrayInContext | None
     kind: NodeKind = "agent"
 
     def to_json(self) -> JsonObject:
@@ -318,6 +365,7 @@ class XrayAgentDetail:
             "brief": self.brief,
             "cost": self.usage.cost.to_json(),
             "composition": self.usage.composition.to_json(),
+            "in_context": None if self.in_context is None else self.in_context.to_json(),
         }
 
 

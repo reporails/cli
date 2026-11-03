@@ -63,6 +63,14 @@ def _model(item: JsonValue, position: int) -> ModelPrices:
     return ModelPrices(ids, _rate(entry, where), above)
 
 
+# How `attributed_cost` works out what a source cost, in the words the page states it with.
+SOURCE_METHOD = (
+    "A source's cost is, for each reply of every agent that carried it, the tokens it carried (estimated from its "
+    "size) times that reply's input-side price per context token (fresh input, cache writes and cache reads over "
+    "the reply's context), summed; a reply of a model with no price adds nothing."
+)
+
+
 @lru_cache(maxsize=1)
 def load_price_list() -> PriceList:
     """The bundled Claude price list, read and validated once per process; a malformed file raises."""
@@ -72,6 +80,7 @@ def load_price_list() -> PriceList:
         _text(document.get("as_of"), "as_of"),
         _text(document.get("source"), "source"),
         _text(document.get("unit"), "unit"),
+        SOURCE_METHOD,
     )
     models = tuple(_model(item, position) for position, item in enumerate(as_list(document.get("models"))))
     if not models:

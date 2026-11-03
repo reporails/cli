@@ -28,6 +28,7 @@ from reporails_cli.core.platform.dto.xray import (
     SessionPick,
     XrayCheck,
     XrayGaps,
+    XrayPeek,
     XraySessionInfo,
     XrayVerdict,
     XrayView,
@@ -104,9 +105,10 @@ class XraySession:
         item = self._listed(path)
         return item is not None and is_actionable(item, self._root)
 
-    def peek(self, path: str) -> tuple[str, bool] | None:
-        """The text of the listed file shown as `path` and whether it was cut; None unless the page lists it
-        as an instruction, memory, skill or agent file that exists. The text is not kept."""
+    def peek(self, path: str) -> XrayPeek | None:
+        """The text of the listed file shown as `path`, whether it was cut and its frontmatter split from its body;
+        None unless the page lists it as an instruction, memory, skill or agent file that exists. The text is not
+        kept."""
         item = self._listed(path)
         return None if item is None or item.kind == "hook" else peek_text(item, self._root)
 
@@ -182,6 +184,7 @@ class XraySession:
             sources=graph.sources,
             stations=graph.stations,
             tracks=graph.tracks,
+            builtin=graph.builtin,
             gaps=self._gaps(window),
             verdict=self._verdict(table, graph, records, vocabulary),
         )

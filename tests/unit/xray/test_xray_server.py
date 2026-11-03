@@ -37,7 +37,7 @@ PORT = 8765
 ORIGIN = f"http://127.0.0.1:{PORT}"
 TOP_KEYS = {
     "version", "session", "project", "started_at", "length_s", "picked", "model", "window", "adapter", "price_list",
-    "nodes", "edges", "sources", "stations", "track", "funnel", "facts", "check", "refusals", "not_known",
+    "nodes", "edges", "sources", "stations", "track", "builtin", "funnel", "facts", "check", "refusals", "not_known",
 }  # fmt: skip
 HEAVY = ("starlette", "uvicorn", "reporails_cli.core.mapper", "onnxruntime", "tokenizers", "numpy")
 
@@ -347,7 +347,7 @@ def test_view_lists_no_plugin_file_and_shows_the_refusal_when_the_install_record
     assert reply.status_code == 200
     assert any("installed_plugins.json" in refusal for refusal in body["refusals"])
     # Only the files the session loaded and the project lists are sources: no plugin file is among them.
-    paths = [a["path"] for a in body["sources"]]
+    paths = [a["path"] for a in body["sources"] if a["path"] is not None]
     assert "CLAUDE.md" in paths and not any("plugins" in path for path in paths)
 
 
@@ -433,7 +433,8 @@ def _get(client: TestClient, route: str, query: dict[str, str], token: str | Non
 def test_peek_replies_with_the_text_of_a_listed_file(client: TestClient, project: Path) -> None:
     reply = _get(client, "/peek", {"path": "CLAUDE.md"})
     assert reply.status_code == 200 and reply.headers["Cache-Control"] == "no-store"
-    assert reply.json() == {"path": "CLAUDE.md", "text": (project / "CLAUDE.md").read_text(), "truncated": False}
+    text = (project / "CLAUDE.md").read_text()
+    assert reply.json() == {"path": "CLAUDE.md", "text": text, "truncated": False, "frontmatter": None, "body": text}
 
 
 def test_peek_reads_a_listed_memory_file_by_its_home_path(

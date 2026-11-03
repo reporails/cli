@@ -17,6 +17,7 @@ from reporails_cli.core.platform.dto.events import HarnessKind, ToolCategory
 from reporails_cli.core.platform.dto.xray_composition import CompositionKey, XrayCompositionLabel
 from reporails_cli.core.platform.dto.xray_cost import PriceListInfo
 from reporails_cli.core.platform.dto.xray_graph import (
+    ContextKey,
     LoadTrigger,
     NodeKind,
     SourceKind,
@@ -33,6 +34,9 @@ CheckState = Literal["running", "done", "refused"]
 FactKind = Literal["memory_unlinked", "repeated_instructions", "kind_absent"]
 TargetKind = Literal["path", "node", "kind"]
 Availability = Literal["loaded", "listed", "on_disk"]
+MemoryRole = Literal["index", "item"]
+# Whether a built-in context item's text can be read in the transcript.
+Visibility = Literal["no", "partial", "yes"]
 
 # The kind of artifact a config file type is shown as; a file type not listed is an instruction file.
 ARTIFACT_KIND_OF_FILE_TYPE: dict[str, ArtifactKind] = {
@@ -121,6 +125,30 @@ class XrayHarnessItem:
 
 
 @dataclass(frozen=True)
+class XrayBuiltin:
+    """One item of the coding agent's own context: its key, label, estimated size, a note on what it holds, whether
+    its text can be read in the transcript and whether its size carries what the estimates leave of the total."""
+
+    key: HarnessKind
+    label: str
+    tokens_est: int
+    note: str | None
+    visible: Visibility
+    remainder: bool
+
+    def to_json(self) -> JsonObject:
+        """The item as a JSON object."""
+        return {
+            "key": self.key,
+            "label": self.label,
+            "tokens_est": self.tokens_est,
+            "note": self.note,
+            "visible": self.visible,
+            "remainder": self.remainder,
+        }
+
+
+@dataclass(frozen=True)
 class SourceFacts:
     """What a source is before any node's context is known: its id, kind, name, path (None for an MCP server or a
     hook), size and findings."""
@@ -141,6 +169,9 @@ class SourceEntry(SourceFacts):
     actionable: bool
     advertised: bool | None
     linked: bool | None
+    # A rule's path patterns, and an MCP server's tools with the calls each received.
+    scopes: tuple[str, ...] = ()
+    tools: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -155,6 +186,16 @@ class XraySource(SourceFacts):
     launches: int | None
     # What the source cost across every reply that carried it, an estimate; None when no priced reply carried it.
     cost_usd_est: float | None
+    # The name the page shows the source by.
+    label: str
+    # A rule's path patterns (empty for any other kind), an MCP server's tools with their call counts (likewise).
+    scopes: tuple[str, ...] = ()
+    tools: tuple[tuple[str, int], ...] = ()
+    # The type key of an agent source; `builtin` marks a type the coding agent ships with no definition file.
+    agent_type: str | None = None
+    builtin: bool = False
+    # Whether a memory file is the memory index or an item (None for any other kind).
+    memory_role: MemoryRole | None = None
 
     def to_json(self) -> JsonObject:
         """The source as a JSON object."""
@@ -170,6 +211,12 @@ class XraySource(SourceFacts):
             "actionable": self.actionable,
             "launches": self.launches,
             "cost_usd_est": self.cost_usd_est,
+            "label": self.label,
+            "scopes": list(self.scopes),
+            "tools": [[tool, calls] for tool, calls in self.tools],
+            "agent_type": self.agent_type,
+            "builtin": self.builtin,
+            "memory_role": self.memory_role,
         }
 
 
@@ -197,6 +244,7 @@ class XrayArtifact(ArtifactFile):
     actionable: bool
     tokens_est: int | None
     advertised: bool | None
+    scopes: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -263,6 +311,17 @@ class XrayWindow:
     def to_json(self) -> JsonObject:
         """The window as a JSON object."""
         return {"size": self.size, "basis": self.basis}
+
+
+@dataclass(frozen=True)
+class XrayPeek:
+    """A listed file's text cut at the peek limit, whether it was cut, its frontmatter block's text (None when it
+    has none) and the text after that block."""
+
+    text: str
+    truncated: bool
+    frontmatter: str | None
+    body: str
 
 
 SessionPick = Literal["named", "current", "current_unknown", "newest"]
@@ -345,9 +404,35 @@ class XraySourceKindInfo:
     label: str
     letter: str
     small: bool
+    # What a source of the kind being used means (loaded, launched, read, connected, fired) and the noun the graph's
+    # eye button hides it under.
+    verb: str
+    graph_label: str
     note: str | None = None
     # Its sources are definitions that subagents are launched from.
     definitions: bool = False
+
+
+@dataclass(frozen=True)
+class XrayBuiltinInfo:
+    """One built-in context item of the coding agent: its harness kind, label, whether its text can be read in the
+    transcript and a note template filled from the item's count (`{count}`); a template that needs a count the
+    item lacks gives no note."""
+
+    key: HarnessKind
+    label: str
+    visible: Visibility
+    note: str | None
+
+
+@dataclass(frozen=True)
+class XrayContextText:
+    """The label and reason the coding agent words one kind of "in context" row with; a reason may hold the
+    fire count as `{count}`."""
+
+    key: ContextKey
+    label: str
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -435,6 +520,10 @@ class AdapterVocabulary:
     composition: tuple[XrayCompositionLabel, ...]
     composition_remainder: CompositionKey
     burst: XrayBurstSettings
+    # The built-in items of the coding agent's context in display order, and the words of the "in context" rows
+    # that are no source.
+    builtin: tuple[XrayBuiltinInfo, ...]
+    context_texts: tuple[XrayContextText, ...]
 
     def to_json(self) -> JsonObject:
         """The vocabulary as a JSON object."""
@@ -448,6 +537,8 @@ class AdapterVocabulary:
                     "label": item.label,
                     "letter": item.letter,
                     "small": item.small,
+                    "verb": item.verb,
+                    "graph_label": item.graph_label,
                     "note": item.note,
                     "definitions": item.definitions,
                 }
@@ -488,6 +579,7 @@ class Graph:
     sources: tuple[XraySource, ...]
     stations: tuple[XrayStation, ...]
     tracks: tuple[XrayTrack, ...]
+    builtin: tuple[XrayBuiltin, ...]
 
 
 @dataclass(frozen=True)
@@ -522,6 +614,7 @@ class XrayView(Graph):
             "sources": objects(source.to_json() for source in self.sources),
             "stations": objects(station.to_json() for station in self.stations),
             "track": objects(track.to_json() for track in self.tracks),
+            "builtin": objects(item.to_json() for item in self.builtin),
             "funnel": objects(row.to_json() for row in self.verdict.funnel),
             "facts": objects(fact.to_json() for fact in self.verdict.facts),
             "check": self.verdict.check.to_json(),

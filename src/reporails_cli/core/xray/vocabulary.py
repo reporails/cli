@@ -8,8 +8,10 @@ from reporails_cli.core.platform.dto.xray import (
     AdapterVocabulary,
     FactKind,
     XrayAgentTypeInfo,
+    XrayBuiltinInfo,
     XrayBurstSettings,
     XrayCategoryInfo,
+    XrayContextText,
     XrayNesting,
     XrayNodeKindInfo,
     XrayRoot,
@@ -29,13 +31,13 @@ _PLAN_ICON = "M9 3h6 M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"
 _FORK_ICON = "M2 12s4-7 10-7s10 7 10 7s-4 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z"
 
 _CLAUDE_SOURCE_KINDS = (
-    XraySourceKindInfo("instructions", "Instructions", "I", False),
-    XraySourceKindInfo("rule", "Rules", "R", False),
-    XraySourceKindInfo("skill", "Skills", "S", False),
-    XraySourceKindInfo("agent", "Agents", "A", True, "Built-in agent types are not listed.", True),
-    XraySourceKindInfo("memory", "Memory", "M", False),
-    XraySourceKindInfo("mcp", "MCP servers", "C", False),
-    XraySourceKindInfo("hook", "Hooks", "H", False),
+    XraySourceKindInfo("instructions", "Instructions", "I", False, "loaded", "instruction files"),
+    XraySourceKindInfo("rule", "Rules", "R", False, "loaded", "rules"),
+    XraySourceKindInfo("skill", "Skills", "S", False, "loaded", "skills"),
+    XraySourceKindInfo("agent", "Agents", "A", True, "launched", "subagents", definitions=True),
+    XraySourceKindInfo("memory", "Memory", "M", False, "read", "memory"),
+    XraySourceKindInfo("mcp", "MCP servers", "C", False, "connected", "MCP servers"),
+    XraySourceKindInfo("hook", "Hooks", "H", False, "fired", "hooks"),
 )
 
 _CLAUDE_AGENT_TYPES = (
@@ -81,6 +83,25 @@ _CLAUDE_COMPOSITION = (
 )
 
 
+# The coding agent's own context in display order; the system prompt is not in the transcript, so its size is what
+# the reply total leaves.
+_CLAUDE_BUILTIN = (
+    XrayBuiltinInfo(
+        "system_prompt", "System prompt", "no", "Not in the transcript; its size is what the reply total leaves."
+    ),
+    XrayBuiltinInfo("deferred_tools", "Tool definitions", "partial", "{count} tools loaded on demand"),
+    XrayBuiltinInfo("agent_list", "Agent listing", "yes", "{count} agent descriptions"),
+    XrayBuiltinInfo("skill_list", "Skills listing", "yes", "{count} skill descriptions"),
+    XrayBuiltinInfo("session_context", "Session context", "yes", "Working folder, git state and date"),
+)
+
+_CLAUDE_CONTEXT_TEXTS = (
+    XrayContextText("task", "Task prompt", "written by the parent"),
+    XrayContextText("hooks", "Hook", "fired {count} times"),
+    XrayContextText("builtin", "System prompt, tools and listings", "from the coding agent"),
+    XrayContextText("rest", "Conversation and tool results", "grew during the run, estimated"),
+)
+
 _CLAUDE_BURST = XrayBurstSettings(window_s=90.0, window_share=0.013, min_size=3)
 
 
@@ -105,6 +126,8 @@ def _claude(disk_types: Sequence[str]) -> AdapterVocabulary:
         composition=_CLAUDE_COMPOSITION,
         composition_remainder=REMAINDER_KEY,
         burst=_CLAUDE_BURST,
+        builtin=_CLAUDE_BUILTIN,
+        context_texts=_CLAUDE_CONTEXT_TEXTS,
     )
 
 

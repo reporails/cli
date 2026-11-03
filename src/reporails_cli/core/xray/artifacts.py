@@ -7,7 +7,7 @@ from pathlib import Path
 
 from reporails_cli.core.pipeline.expected_loads import expected_loads
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
-from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object, as_str
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object, as_str, pattern_list
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessKind
 from reporails_cli.core.platform.dto.xray import (
     AGENT_ARTIFACT_KINDS,
@@ -20,12 +20,17 @@ from reporails_cli.core.platform.dto.xray import (
     ArtifactScope,
     FindingTally,
     XrayArtifact,
+    XrayPeek,
     is_artifact_scope,
 )
+from reporails_cli.core.platform.utils.utils import frontmatter_block, read_frontmatter_file, strip_frontmatter
 from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path
 
 # The most characters of a file the page may ask for.
 PEEK_LIMIT = 200_000
+
+# The frontmatter key a rule file lists the path patterns it applies to under.
+RULE_SCOPE_KEY = "paths"
 
 
 def _scope_of(item: JsonObject) -> ArtifactScope:
@@ -145,6 +150,17 @@ def is_actionable(item: ArtifactFile, root: Path) -> bool:
     return Path(item.path).is_relative_to(root) and Path(real_path(item.path, root)).is_file()
 
 
+def rule_scopes(item: ArtifactFile, root: Path) -> tuple[str, ...]:
+    """The path patterns a rule file's frontmatter lists; none for any other kind of file, a file with no such
+    key or one that cannot be read."""
+    if item.kind != "rule":
+        return ()
+    read = read_frontmatter_file(Path(real_path(item.path, root)), lenient=True)
+    if read is None or read.data is None:
+        return ()
+    return tuple(pattern_list(read.data.get(RULE_SCOPE_KEY, [])))
+
+
 def build_artifacts(
     files: Sequence[ArtifactFile],
     findings: Mapping[str, FindingTally],
@@ -166,14 +182,15 @@ def build_artifacts(
             actionable=is_actionable(item, root),
             tokens_est=file_tokens_est(real_path(item.path, root)),
             advertised=advertised.get(item.path),
+            scopes=rule_scopes(item, root),
         )
         for item in files
     )
 
 
-def peek_text(item: ArtifactFile, root: Path) -> tuple[str, bool] | None:
-    """The text of a listed file, cut at `PEEK_LIMIT` characters, and whether it was cut; None when the path is
-    not a readable file."""
+def peek_text(item: ArtifactFile, root: Path) -> XrayPeek | None:
+    """The text of a listed file cut at `PEEK_LIMIT` characters, whether it was cut, and the text split into its
+    frontmatter block and what follows; None when the path is not a readable file."""
     path = Path(real_path(item.path, root))
     try:
         if not path.is_file():
@@ -182,4 +199,6 @@ def peek_text(item: ArtifactFile, root: Path) -> tuple[str, bool] | None:
             text = handle.read(PEEK_LIMIT + 1)
     except OSError:
         return None
-    return text[:PEEK_LIMIT], len(text) > PEEK_LIMIT
+    cut = text[:PEEK_LIMIT]
+    block = frontmatter_block(cut)
+    return XrayPeek(cut, len(text) > PEEK_LIMIT, None if block is None else block.text, strip_frontmatter(cut))

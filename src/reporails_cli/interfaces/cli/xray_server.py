@@ -44,7 +44,7 @@ from reporails_cli.core.platform.config.bootstrap import parse_idle_timeout_env
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.pipeline import Refusal
-from reporails_cli.core.platform.dto.xray import FindingTally, SessionPick, XrayCheck
+from reporails_cli.core.platform.dto.xray import FindingTally, SessionPick, XrayCheck, XrayPeek
 from reporails_cli.core.xray.pages import HOST, forget_page, register_page
 from reporails_cli.core.xray.session import XraySession
 from reporails_cli.core.xray.sessions import session_entries
@@ -221,10 +221,18 @@ class XrayServer:
         found = await run_in_threadpool(self._peek, chosen[1], path)
         if found is None:
             return _refused(400, "not a file this page lists")
-        text, truncated = found
-        return JSONResponse({"path": path, "text": text, "truncated": truncated}, headers=NO_STORE)
+        return JSONResponse(
+            {
+                "path": path,
+                "text": found.text,
+                "truncated": found.truncated,
+                "frontmatter": found.frontmatter,
+                "body": found.body,
+            },
+            headers=NO_STORE,
+        )
 
-    def _peek(self, session: XraySession, path: str) -> tuple[str, bool] | None:
+    def _peek(self, session: XraySession, path: str) -> XrayPeek | None:
         with self._view_lock:
             return session.peek(path)
 

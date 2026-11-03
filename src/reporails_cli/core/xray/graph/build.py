@@ -6,7 +6,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from reporails_cli.core.platform.dto.events import EventRecord
-from reporails_cli.core.platform.dto.xray import AdapterVocabulary, Availability, Graph, SourceEntry, XraySource
+from reporails_cli.core.platform.dto.xray import (
+    AdapterVocabulary,
+    Availability,
+    Graph,
+    SourceEntry,
+    XrayBuiltin,
+    XraySource,
+)
 from reporails_cli.core.platform.dto.xray_build import (
     BuildContext,
     Frame,
@@ -26,8 +33,11 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayTree,
 )
 from reporails_cli.core.xray.graph import spine
+from reporails_cli.core.xray.graph.agents import MAIN_ID, main_records
 from reporails_cli.core.xray.graph.bursts import bursts
+from reporails_cli.core.xray.graph.composition import builtin_items
 from reporails_cli.core.xray.graph.port import PRODUCERS
+from reporails_cli.core.xray.graph.sources import builtin_agent_id, memory_role, source_label
 
 # A load smaller than this many tokens is small.
 SMALL_TOKENS = 1000
@@ -147,12 +157,21 @@ def build_graph(
     return Graph(
         tuple(_xray_node(node, build) for node in pnodes),
         edges,
-        _sources(sources, pnodes, build.had, set(build.launch)),
+        _sources(sources, pnodes, build.had, set(build.launch), vocabulary),
         tuple(_station(node, sources, vocabulary) for node in spined),
         tuple(
             XrayTrack(node.id, spine.track_calls(node), spine.failure_runs(node), spine.breaks(node)) for node in spined
         ),
+        _builtin(pnodes, records, sources, vocabulary),
     )
+
+
+def _builtin(
+    nodes: Sequence[ProducedNode], records: Sequence[EventRecord], sources: SourceTable, vocabulary: AdapterVocabulary
+) -> tuple[XrayBuiltin, ...]:
+    """The coding agent's own context, read from the main agent's records; none when the graph has no main agent."""
+    main = next((node for node in nodes if node.id == MAIN_ID), None)
+    return () if main is None else builtin_items(main, main_records(records), sources, vocabulary)
 
 
 def _had_by(
@@ -173,8 +192,42 @@ def _source_costs(nodes: Sequence[ProducedNode]) -> dict[str, float]:
     return total
 
 
+def _builtin_agents(
+    nodes: Sequence[ProducedNode], launched: set[str], defined: set[str], vocabulary: AdapterVocabulary
+) -> list[XraySource]:
+    """An agent source for each subagent type launched in the session that no agent definition stands for."""
+    labels = {item.key: item.label for item in vocabulary.agent_types}
+    launches: dict[str, list[str]] = {}
+    for node in nodes:
+        if node.id in launched and node.type is not None and node.type not in defined:
+            launches.setdefault(node.type, []).append(node.id)
+    return [
+        XraySource(
+            id=builtin_agent_id(agent_type),
+            kind="agent",
+            name=agent_type,
+            path=None,
+            tokens_est=None,
+            findings=None,
+            availability="loaded",
+            had_by=tuple(ids),
+            actionable=False,
+            launches=len(ids),
+            cost_usd_est=None,
+            label=labels.get(agent_type, agent_type),
+            agent_type=agent_type,
+            builtin=True,
+        )
+        for agent_type, ids in launches.items()
+    ]
+
+
 def _sources(
-    sources: SourceTable, nodes: Sequence[ProducedNode], had: dict[str, list[str]], launched: set[str]
+    sources: SourceTable,
+    nodes: Sequence[ProducedNode],
+    had: dict[str, list[str]],
+    launched: set[str],
+    vocabulary: AdapterVocabulary,
 ) -> tuple[XraySource, ...]:
     out: list[XraySource] = []
     costs = _source_costs(nodes)
@@ -193,6 +246,13 @@ def _sources(
                 actionable=entry.actionable,
                 launches=len(had_by) if entry.kind == "agent" else None,
                 cost_usd_est=costs.get(entry.id),
+                label=source_label(entry),
+                scopes=entry.scopes,
+                tools=entry.tools,
+                agent_type=entry.name if entry.kind == "agent" else None,
+                memory_role=memory_role(entry),
             )
         )
+    defined = {entry.name for entry in sources.entries if entry.kind == "agent"}
+    out.extend(_builtin_agents(nodes, launched, defined, vocabulary))
     return tuple(out)

@@ -170,7 +170,7 @@ def step_memory_selected(context, text):
     page = _get(context.url)[1]
     token = re.search(r'name="xray-token" content="([^"]+)"', page).group(1)
     sources = json.loads(_get(context.url + "view", token)[1])["sources"]
-    names = [s["name"] for s in sources if s["path"].endswith("feedback_orphan.md")]
+    names = [s["name"] for s in sources if s["path"] and s["path"].endswith("feedback_orphan.md")]
     assert names and seen["row"] == names[0], (names, seen)
     assert text in seen["text"], seen
 
