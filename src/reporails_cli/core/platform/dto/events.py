@@ -284,6 +284,8 @@ class RequestSize:
     tool_calls: int
     tool_results: int
     unresolved: int
+    # The names of the tools the request was sent with, in the order the shape lists them.
+    tool_names: tuple[str, ...] = ()
 
 
 @dataclass
@@ -294,6 +296,7 @@ class RequestChain:
     the assistant message being merged from its rows. Sizes only, no message text."""
 
     shapes: dict[str, tuple[int, int, int]] = field(default_factory=dict)
+    tool_names: dict[str, tuple[str, ...]] = field(default_factory=dict)
     pool: dict[str, MessageSize] = field(default_factory=dict)
     prefix: list[MessageSize] = field(default_factory=lambda: [MessageSize()])
     merge_id: str | None = None

@@ -275,6 +275,18 @@ class XrayServer:
             ),
         )
 
+    async def system(self, request: Request) -> Response:
+        """The system prompt one launched agent type was sent with."""
+        return await self._text_route(
+            request,
+            _TextRoute(
+                "type",
+                "the query is ?type=<agent type>",
+                _text_fields(XraySession.system_prompt),
+                "not an agent type this session launched with a recorded request",
+            ),
+        )
+
     async def prompt(self, request: Request) -> Response:
         """The text of one typed prompt of the session."""
         return await self._text_route(
@@ -472,6 +484,7 @@ def build_app(
             Route("/view", server.view, methods=["GET"]),
             Route("/peek", server.peek, methods=["GET"]),
             Route("/brief", server.brief, methods=["GET"]),
+            Route("/system", server.system, methods=["GET"]),
             Route("/prompt", server.prompt, methods=["GET"]),
             Route("/call", server.call, methods=["GET"]),
             Route("/sessions", server.sessions, methods=["GET"]),

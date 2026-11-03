@@ -15,6 +15,7 @@ from reporails_cli.core.eventbus.transcript import (
     prompt_text,
     read_transcript,
     subagent_brief,
+    subagent_system,
 )
 from reporails_cli.core.pipeline.expected_loads import AGENT
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
@@ -125,6 +126,25 @@ class XraySession:
         if not any(record.subagent_id == subagent_id for record in self._transcript):
             return None
         return subagent_brief(AGENT, self._file, subagent_id)
+
+    def system_prompt(self, agent_type: str) -> str | None:
+        """The system prompt the first launch of an agent type that recorded a request was sent with; None when the
+        session launched no such type or none of its launches recorded one. Raises `PayloadRefused` when the
+        subagent file does not record it as the adapter is pinned to. The text is not kept."""
+        launched = sorted(
+            record.subagent_id
+            for record in self._transcript
+            if record.event == "subagent_run" and record.subagent_type == agent_type and record.subagent_id
+        )
+        recorded = {record.subagent_id for record in self._transcript if record.request is not None}
+        return next(
+            (
+                text
+                for subagent_id in launched
+                if subagent_id in recorded and (text := subagent_system(AGENT, self._file, subagent_id)) is not None
+            ),
+            None,
+        )
 
     def prompt(self, prompt_id: str) -> str | None:
         """The text of a typed prompt the records name; None for any other id. Raises `PayloadRefused` when the

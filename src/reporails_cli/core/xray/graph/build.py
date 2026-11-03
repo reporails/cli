@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from reporails_cli.core.platform.dto.events import EventRecord
+from reporails_cli.core.platform.dto.events import EventRecord, RequestSize
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary, Graph
 from reporails_cli.core.platform.dto.xray_build import (
     BuildContext,
@@ -32,6 +32,7 @@ from reporails_cli.core.xray.graph.agents import MAIN_ID, main_records
 from reporails_cli.core.xray.graph.bursts import bursts
 from reporails_cli.core.xray.graph.composition import builtin_items
 from reporails_cli.core.xray.graph.port import PRODUCERS
+from reporails_cli.core.xray.graph.shapes import first_requests, launched_with
 from reporails_cli.core.xray.graph.sources import builtin_agent_id, memory_role, source_label
 
 # A load smaller than this many tokens is small.
@@ -154,7 +155,7 @@ def build_graph(
     return Graph(
         tuple(_xray_node(node, build) for node in pnodes),
         edges,
-        _sources(sources, pnodes, build.had, set(build.launch), vocabulary),
+        _sources(sources, pnodes, build, first_requests(records)),
         tuple(_station(node, sources, vocabulary) for node in spined),
         tuple(
             XrayTrack(node.id, spine.track_calls(node), spine.failure_runs(node), spine.breaks(node)) for node in spined
@@ -191,7 +192,11 @@ def _source_costs(nodes: Sequence[ProducedNode]) -> dict[str, float]:
 
 
 def _builtin_agents(
-    nodes: Sequence[ProducedNode], launched: set[str], defined: set[str], vocabulary: AdapterVocabulary
+    nodes: Sequence[ProducedNode],
+    launched: set[str],
+    defined: set[str],
+    vocabulary: AdapterVocabulary,
+    first: dict[str, RequestSize],
 ) -> list[XraySource]:
     """An agent source for each subagent type launched in the session that no agent definition stands for."""
     labels = {item.key: item.label for item in vocabulary.agent_types}
@@ -199,38 +204,42 @@ def _builtin_agents(
     for node in nodes:
         if node.id in launched and node.type is not None and node.type not in defined:
             launches.setdefault(node.type, []).append(node.id)
-    return [
-        XraySource(
-            id=builtin_agent_id(agent_type),
-            kind="agent",
-            name=agent_type,
-            path=None,
-            tokens_est=None,
-            findings=None,
-            availability="loaded",
-            had_by=tuple(ids),
-            actionable=False,
-            launches=len(ids),
-            cost_usd_est=None,
-            label=labels.get(agent_type, agent_type),
-            agent_type=agent_type,
-            builtin=True,
-        )
-        for agent_type, ids in launches.items()
-    ]
+    return [_builtin_agent(agent_type, ids, labels, first) for agent_type, ids in launches.items()]
+
+
+def _builtin_agent(
+    agent_type: str, ids: list[str], labels: dict[str, str], first: dict[str, RequestSize]
+) -> XraySource:
+    system_tokens, tools = launched_with(ids, first)
+    return XraySource(
+        id=builtin_agent_id(agent_type),
+        kind="agent",
+        name=agent_type,
+        path=None,
+        tokens_est=None,
+        findings=None,
+        availability="loaded",
+        had_by=tuple(ids),
+        actionable=False,
+        launches=len(ids),
+        cost_usd_est=None,
+        label=labels.get(agent_type, agent_type),
+        agent_type=agent_type,
+        builtin=True,
+        system_tokens_est=system_tokens,
+        tools=tools,
+    )
 
 
 def _sources(
-    sources: SourceTable,
-    nodes: Sequence[ProducedNode],
-    had: dict[str, list[str]],
-    launched: set[str],
-    vocabulary: AdapterVocabulary,
+    sources: SourceTable, nodes: Sequence[ProducedNode], build: BuildContext, first: dict[str, RequestSize]
 ) -> tuple[XraySource, ...]:
+    had, launched, vocabulary = build.had, set(build.launch), build.vocabulary
     out: list[XraySource] = []
     costs = _source_costs(nodes)
     for entry in sources.entries:
         had_by = _had_by(entry, nodes, had, launched)
+        system_tokens, launch_tools = launched_with(had_by, first) if entry.kind == "agent" else (None, ())
         out.append(
             XraySource(
                 id=entry.id,
@@ -246,11 +255,12 @@ def _sources(
                 cost_usd_est=costs.get(entry.id),
                 label=source_label(entry),
                 scopes=entry.scopes,
-                tools=entry.tools,
+                tools=launch_tools or entry.tools,
                 agent_type=entry.name if entry.kind == "agent" else None,
                 memory_role=memory_role(entry),
+                system_tokens_est=system_tokens,
             )
         )
     defined = {entry.name for entry in sources.entries if entry.kind == "agent"}
-    out.extend(_builtin_agents(nodes, launched, defined, vocabulary))
+    out.extend(_builtin_agents(nodes, launched, defined, vocabulary, first))
     return tuple(out)

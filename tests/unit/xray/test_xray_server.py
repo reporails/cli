@@ -782,3 +782,36 @@ def test_a_page_whose_record_cannot_be_written_still_serves_and_forgets_nothing(
         xray_server.serve(project, tmp_path / "session" / "session.jsonl", "newest", open_page=False)
     assert served == [True] and forgotten == []
     assert any("will not be reused" in r.getMessage() for r in caplog.records)
+
+
+def _record_request(tmp_path: Path, system: list[str]) -> None:
+    """Append the request shape and request row Claude Code 2.1.309 writes to the fixture subagent's file."""
+    file = tmp_path / "session" / "session" / "subagents" / f"agent-{SUB_ID}.jsonl"
+    blocks = [{"type": "text", "text": text} for text in system]
+    shape = {"type": "api-request-shape", "shapeHash": "sh", "shape": {"system": blocks, "tools": [{"name": "Read"}]}}
+    own = {"sessionId": "session", "timestamp": "2026-10-31T10:00:00.000Z"}
+    request = {"type": "api-request", "id": "r1", "shapeHash": "sh", "keep": 0, "tail": [], **own}
+    with file.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(shape) + "\n" + json.dumps(request) + "\n")
+
+
+def test_system_replies_with_the_system_prompt_a_launched_agent_type_was_sent(
+    client: TestClient, tmp_path: Path
+) -> None:
+    _record_request(tmp_path, ["SYSTEM_ONE", "SYSTEM_TWO"])
+    view = client.get("/view", headers={"X-Xray-Token": TOKEN})
+    assert "SYSTEM_ONE" not in view.text
+    (source,) = [item for item in view.json()["sources"] if item["agent_type"] == "general-purpose"]
+    assert source["tools"] == [["Read", 1]] and source["system_tokens_est"] is not None
+    reply = _get(client, "/system", {"type": "general-purpose"})
+    assert reply.status_code == 200 and reply.headers["Cache-Control"] == "no-store"
+    assert reply.json() == {"id": "general-purpose", "text": "SYSTEM_ONE\n\nSYSTEM_TWO"}
+
+
+def test_system_refuses_a_type_no_launch_recorded_a_request_for_and_a_missing_query(client: TestClient) -> None:
+    client.get("/view", headers={"X-Xray-Token": TOKEN})
+    for query in ({"type": "general-purpose"}, {"type": "Explore"}):
+        reply = _get(client, "/system", query)
+        assert reply.status_code == 400 and "recorded request" in reply.json()["error"]
+    assert _get(client, "/system", {}).status_code == 400
+    assert _get(client, "/system", {"type": "general-purpose"}, token=None).status_code == 403

@@ -100,7 +100,12 @@ from reporails_cli.core.eventbus.adapters.claude_calls import (
     tool_call,
     tool_result,
 )
-from reporails_cli.core.eventbus.adapters.claude_requests import feed_row
+from reporails_cli.core.eventbus.adapters.claude_requests import (
+    BLOCK_SEPARATOR,
+    feed_row,
+    request_shape_hash,
+    shape_system_text,
+)
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
@@ -128,7 +133,6 @@ from reporails_cli.core.platform.dto.events import (
 # The `message.model` Claude Code writes on a reply it made itself, for an API error or an interrupt.
 SYNTHETIC_MODEL = "<synthetic>"
 NESTED_MARKER = "nested"
-BRIEF_BLOCK_SEPARATOR = "\n\n"
 HOOK_NOTE_ATTACHMENTS = ("hook_additional_context", "hook_success", "hook_blocking_error")
 # The hook events whose plain-text stdout Claude Code adds to the context.
 HOOK_STDOUT_CONTEXT_EVENTS = ("UserPromptSubmit", "UserPromptExpansion", "SessionStart", "PostModelSwitch")
@@ -198,7 +202,7 @@ def _brief_text(first_row: JsonObject) -> str | None:
     if isinstance(content, str):
         return content or None
     texts = blocks_text(content, "subagent first row")
-    return BRIEF_BLOCK_SEPARATOR.join(texts) if texts else None
+    return BLOCK_SEPARATOR.join(texts) if texts else None
 
 
 def _usage_counts(usage: JsonObject) -> JsonObject:
@@ -283,6 +287,15 @@ class ClaudeTranscriptAdapter:
         if text is None:
             raise PayloadRefused("subagent first row holds no text content")
         return text
+
+    def resolve_request_shape(self, row: JsonObject) -> str | None:
+        """The hash of the request shape an `api-request` row names; None for any other row."""
+        return request_shape_hash(row)
+
+    def resolve_system(self, row: JsonObject, shape_hash: str) -> str | None:
+        """The system prompt of the `api-request-shape` row recorded under `shape_hash`, for the route that shows
+        it; None for any other row."""
+        return shape_system_text(row, shape_hash)
 
     def holds_call(self, row: JsonObject, use_id: str) -> bool:
         """Whether `row` is an assistant row holding the tool call `use_id`."""

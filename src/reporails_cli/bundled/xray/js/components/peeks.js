@@ -1,7 +1,8 @@
 // The details renderers for a source, a built-in item, a task prompt, the peak context and the estimated cost.
 import { el, nk, err } from '../dom.js';
 import { clock, costEst, k1, plural, tk, usd } from '../format.js';
-import { briefUrl, peekUrl } from '../api.js';
+import { briefUrl, peekUrl, systemUrl } from '../api.js';
+import { textBlock } from './textblock.js';
 import { hashFor } from '../state.js';
 import { bandColour } from '../geometry.js';
 import { peakOf, replyMeasured, replyOver, replyParts, typeOf, UNRECORDED } from '../views.js';
@@ -84,9 +85,13 @@ registerPeek('src', (env, id) => {
   if (count || (s.actionable && s.path)) main.push(findingsBlock(s, env));
   if (entry && entry.frontmatter) main.push(section('Configuration', pre(entry.frontmatter)));
   if (s.scopes && s.scopes.length) main.push(section('Scopes', pre(s.scopes.join('\n'))));
-  if (s.tools && s.tools.length) main.push(section('Tools on this server', pre(s.tools.map(([t, n]) => `${t} · ${n ? plural(n, 'call') : 'not called'}`).join('\n'))));
+  if (s.tools && s.tools.length && s.kind !== 'agent') main.push(section('Tools on this server', pre(s.tools.map(([t, n]) => `${t} · ${n ? plural(n, 'call') : 'not called'}`).join('\n'))));
   if (entry) main.push(section('Its text', fetched(entry, e => e.body ?? e.text)));
   else main.push(section('Its text', nk(s.builtin ? 'Comes from the coding agent; there is no file.' : 'No file behind this source.')));
+  if (s.kind === 'agent' && s.system_tokens_est != null) {
+    main.push(section(`System prompt · ${tk(s.system_tokens_est, true)} · recorded at launch`, textBlock(env.text, 'system:' + s.agent_type, systemUrl(s.agent_type))));
+    main.push(section('Tools its launches had', pre(s.tools.map(([t, n]) => `${t} · ${plural(n, 'launch')}`).join('\n'))));
+  }
   const holders = s.had_by.map(h => ix.nodes.get(h)).filter(Boolean);
   const loaded = s.kind && (ix.kinds.get(s.kind) || {}).definitions
     ? (s.launches > 0 ? `launched as ${plural(s.launches, 'subagent')}` : 'never launched')

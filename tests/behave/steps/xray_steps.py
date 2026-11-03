@@ -254,8 +254,8 @@ def _write_session(context, recorded: bool) -> None:
         ]
         sub_hash = message_hash("assistant", [{"type": "text", "text": "a b c"}])
         sub = [
-            _shape_row("shape-sub", "t" * 500),
             sub[0],
+            _shape_row("shape-sub", "t" * 500),
             _request_row("req-sub-1", "shape-sub", 0, [message_hash("user", listed)], 10, project),
             sub[1],
             _request_row("req-sub-2", "shape-sub", 1, [sub_hash], 11, project),
@@ -366,6 +366,26 @@ def step_estimated_page(context):
     text = seen["main"]["text"]
     assert "Estimated: no complete recorded request for this reply." in text, text
     assert "remainder" in text.lower(), text
+
+
+@then("the general-purpose agent type's details show its recorded system prompt and its tools with launch counts")
+def step_agent_shape_on_page(context):
+    seen = _layout_script(context, "agent")
+    if seen is None:
+        return
+    assert seen["ready"] and seen["row"], seen
+    assert seen["text"] == "t" * 500, seen
+    assert seen["tools"].splitlines() == [f"Tool{n} · 1 launch" for n in range(6)], seen
+
+
+@then("the system prompt route returns that text only for a type the session launched")
+def step_system_route(context):
+    page = _get(context.url)[1]
+    token = re.search(r'name="xray-token" content="([^"]+)"', page).group(1)
+    status, body = _get(context.url + "system?type=general-purpose", token)
+    assert status == 200 and json.loads(body)["text"] == "t" * 500, (status, body)
+    status, _ = _get(context.url + "system?type=Explore", token)
+    assert status == 400, status
 
 
 @given("a project with no recorded Claude Code session")
@@ -574,7 +594,7 @@ STUB_SESSIONS = [
     {"session": "sess-ccc", "started_at": "2026-10-26T08:05:30Z", "length_s": 3725.0, "subagents": 1},
 ]
 STUB_PROMPTS = {s["session"]: f"first prompt of {s['session']}" for s in STUB_SESSIONS}
-SESSION_ROUTES = ("/view", "/peek", "/brief", "/prompt", "/call", "/sessions", "/first-prompt")
+SESSION_ROUTES = ("/view", "/peek", "/brief", "/system", "/prompt", "/call", "/sessions", "/first-prompt")
 
 
 class _FixtureHandler(BaseHTTPRequestHandler):

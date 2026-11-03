@@ -103,11 +103,11 @@ def test_fixture_rebuilds_each_request_by_part(tmp_path: Path) -> None:
     path = tmp_path / "s1.jsonl"
     _write(path, _fixture_rows())
     first, second = _sizes(_read(path)[0])
-    assert first == RequestSize("req_1", 6, 12, 1, 5, 5, 0, 0, 0, 0, 0)
+    assert first == RequestSize("req_1", 6, 12, 1, 5, 5, 0, 0, 0, 0, 0, ("A",))
     # keep=2 holds the system note and "hello"; the tail adds the assistant response (the hash of the response
     # without `caller`), the tool result and one unknown hash that counts as unresolved.
     expected_calls = len("Read") + len('{"file_path":"/x"}')
-    assert second == RequestSize("req_2", 6, 12, 1, 5, 5, 0, 5, expected_calls, 4, 1)
+    assert second == RequestSize("req_2", 6, 12, 1, 5, 5, 0, 5, expected_calls, 4, 1, ("A",))
 
 
 def test_assistant_merge_is_registered_with_and_without_caller() -> None:
@@ -289,3 +289,17 @@ def test_real_transcript_rebuilds_with_few_unresolved() -> None:
     refs = {r.usage.request_ref for r in records if r.usage and r.usage.request_ref and r.subagent_id is None}
     assert refs
     assert refs <= ids
+
+
+def test_a_request_carries_the_names_of_the_tools_of_its_shape() -> None:
+    chain = RequestChain()
+    tools = [{"name": "Read"}, {"name": "Grep", "input_schema": {}}]
+    feed_row(chain, {"type": "api-request-shape", "shapeHash": "s", "shape": {"system": [], "tools": tools}})
+    size = feed_row(chain, {"type": "api-request", "id": "r", "shapeHash": "s", "keep": 0, "tail": []})
+    assert size is not None and size.tool_names == ("Read", "Grep")
+
+
+def test_a_tool_with_no_string_name_refuses_its_shape() -> None:
+    row = {"type": "api-request-shape", "shapeHash": "s", "shape": {"system": [], "tools": [{"name": 3}]}}
+    with pytest.raises(PayloadRefused, match=r"shape\.tools"):
+        feed_row(RequestChain(), row)

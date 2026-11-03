@@ -50,6 +50,14 @@ class TranscriptAdapter(Protocol):
         """The brief a subagent was given, from the first row of its file; raises `PayloadRefused` when that
         row is not the pinned shape."""
 
+    def resolve_request_shape(self, row: JsonObject) -> str | None:
+        """The hash of the request shape an API request row names; None for any other row; raises
+        `PayloadRefused` when the row's hash is not the pinned shape."""
+
+    def resolve_system(self, row: JsonObject, shape_hash: str) -> str | None:
+        """The system prompt of the request-shape row recorded under `shape_hash`; None for any other row; raises
+        `PayloadRefused` when that row is not the pinned shape."""
+
     def holds_call(self, row: JsonObject, use_id: str) -> bool:
         """Whether the row is an assistant row holding the tool call `use_id`."""
 

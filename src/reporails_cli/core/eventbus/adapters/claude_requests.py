@@ -8,7 +8,8 @@ request's messages this one keeps, and `tail`, a list of the hashes of the messa
 `assistant` rows whose messages those hashes name; Claude Code records them from 2.1.309. The fields
 `querySource`, `params`, `cacheControl` and `requestDigest` are not read. A hash that names no known message
 counts as unresolved and keeps its place in the request as an empty size. `feed_row` takes every row of one file
-in order and keeps only the sizes of what it sees; the text of a message is never stored.
+in order and keeps only the sizes of what it sees and the names of the tools a request was sent with; the text of a
+message is never stored.
 
 A message's hash is the sha256 of its `{role, content}` object written with sorted keys, compact separators and
 no ASCII escaping. A `user` row's message is known under that hash, and under the hash of its string content
@@ -34,6 +35,8 @@ from reporails_cli.core.platform.contract.json_value import (
 from reporails_cli.core.platform.dto.events import MessageSize, RequestChain, RequestSize
 from reporails_cli.core.platform.utils.utils import compact_json
 
+# What joins the text blocks of one message or system prompt.
+BLOCK_SEPARATOR = "\n\n"
 _MERGE_OPEN = b'{"content":['
 _MERGE_CLOSE = b'],"role":"assistant"}'
 _CALLER = "caller"
@@ -184,6 +187,13 @@ def _system_text(block: JsonValue, what: str) -> str:
     return text
 
 
+def _tool_name(tool: JsonValue, what: str) -> str:
+    name = tool.get("name") if isinstance(tool, dict) else None
+    if not isinstance(name, str):
+        raise PayloadRefused(f"{what} shape.tools has a tool with no string name")
+    return name
+
+
 def _register_shape(chain: RequestChain, row: JsonObject) -> None:
     what = "api-request-shape"
     shape_hash = row.get("shapeHash")
@@ -200,6 +210,31 @@ def _register_shape(chain: RequestChain, row: JsonObject) -> None:
     system_chars = sum(len(_system_text(block, what)) for block in system)
     tools_chars = sum(len(compact_json(tool, ensure_ascii=False)) for tool in tools)
     chain.shapes[shape_hash] = (system_chars, tools_chars, len(tools))
+    chain.tool_names[shape_hash] = tuple(_tool_name(tool, what) for tool in tools)
+
+
+def request_shape_hash(row: JsonObject) -> str | None:
+    """The `shapeHash` an `api-request` row names; None for any other row, a refusal for one whose hash is not a
+    string."""
+    if row.get("type") != "api-request":
+        return None
+    shape_hash = row.get("shapeHash")
+    if not isinstance(shape_hash, str):
+        raise PayloadRefused("api-request shapeHash is not a string")
+    return shape_hash
+
+
+def shape_system_text(row: JsonObject, shape_hash: str) -> str | None:
+    """The system blocks of the `api-request-shape` row recorded under `shape_hash`, joined by a blank line; None
+    for any other row. The text is returned, never stored."""
+    if row.get("type") != "api-request-shape" or row.get("shapeHash") != shape_hash:
+        return None
+    what = "api-request-shape"
+    shape = row.get("shape")
+    system = shape.get("system") if isinstance(shape, dict) else None
+    if not isinstance(system, list):
+        raise PayloadRefused(f"{what} shape.system is not a list")
+    return BLOCK_SEPARATOR.join(_system_text(block, what) for block in system)
 
 
 def _request(chain: RequestChain, row: JsonObject) -> RequestSize:
@@ -236,6 +271,7 @@ def _request(chain: RequestChain, row: JsonObject) -> RequestSize:
         total.tool_calls,
         total.tool_results,
         unresolved,
+        chain.tool_names.get(shape_hash, ()),
     )
 
 

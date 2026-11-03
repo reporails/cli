@@ -186,6 +186,24 @@ def subagent_brief(agent: str, session_file: Path, subagent_id: str) -> str | No
     return None if first_row is None else adapter.resolve_brief(first_row)
 
 
+def subagent_system(agent: str, session_file: Path, subagent_id: str) -> str | None:
+    """The system prompt the first request of one subagent was sent with, or None when the session has no such
+    subagent file or the file records no request with its shape.
+
+    Raises `PayloadRefused` when the agent is unknown or a request or shape row is not the shape the adapter is
+    pinned to. The text is returned, never stored."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        raise PayloadRefused(f"unknown agent: {agent}")
+    path = _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
+    request = _find_row(path, '"api-request"', lambda row: adapter.resolve_request_shape(row) is not None)
+    shape_hash = None if request is None else adapter.resolve_request_shape(request)
+    if shape_hash is None:
+        return None
+    shape = _find_row(path, shape_hash, lambda row: adapter.resolve_system(row, shape_hash) is not None)
+    return None if shape is None else adapter.resolve_system(shape, shape_hash)
+
+
 def prompt_text(agent: str, session_file: Path, prompt_id: str) -> str | None:
     """The text of the typed prompt written as row `prompt_id` of the main transcript, or None when the file
     holds no such row.

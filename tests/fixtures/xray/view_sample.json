@@ -5269,7 +5269,8 @@
       "tools": [],
       "agent_type": null,
       "builtin": false,
-      "memory_role": null
+      "memory_role": null,
+      "system_tokens_est": null
     },
     {
       "id": "~/.claude/CLAUDE.md",
@@ -5302,7 +5303,8 @@
       "tools": [],
       "agent_type": null,
       "builtin": false,
-      "memory_role": null
+      "memory_role": null,
+      "system_tokens_est": null
     },
     {
       "id": "packages/cli/CLAUDE.md",
@@ -5328,7 +5330,8 @@
       "tools": [],
       "agent_type": null,
       "builtin": false,
-      "memory_role": null
+      "memory_role": null,
+      "system_tokens_est": null
     },
     {
       "id": ".claude/rules/rules-engine.md",
@@ -5359,7 +5362,8 @@
       "tools": [],
       "agent_type": null,
       "builtin": false,
-      "memory_role": null
+      "memory_role": null,
+      "system_tokens_est": null
     },
     {
       "id": ".claude/rules/style.md",
@@ -5387,7 +5391,8 @@
       "tools": [],
       "agent_type": null,
       "builtin": false,
-      "memory_role": null
+      "memory_role": null,
+      "system_tokens_est": null
     },
     {
       "id": ".claude/skills/orient/SKILL.md",
@@ -5408,7 +5413,8 @@
       "tools": [],
       "agent_type": null,
       "builtin": false,
-      "memory_role": null
+      "memory_role": null,
+      "system_tokens_est": null
     },
     {
       "id": ".claude/skills/agents-sdk/SKILL.md",
@@ -5429,7 +5435,8 @@
       "tools": [],
       "agent_type": null,
       "builtin": false,
-      "memory_role": null
+      "memory_role": null,
+      "system_tokens_est": null
     },
     {
       "id": ".claude/skills/cloudflare/SKILL.md",
@@ -5448,7 +5455,8 @@
       "tools": [],
       "agent_type": null,
       "builtin": false,
-      "memory_role": null
+      "memory_role": null,
+      "system_tokens_est": null
     },
     {
       "id": "~/.claude/projects/-work-demo/memory/MEMORY.md",
@@ -5476,7 +5484,8 @@
       "tools": [],
       "agent_type": null,
       "builtin": false,
-      "memory_role": "index"
+      "memory_role": "index",
+      "system_tokens_est": null
     },
     {
       "id": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
@@ -5495,7 +5504,8 @@
       "tools": [],
       "agent_type": null,
       "builtin": false,
-      "memory_role": "item"
+      "memory_role": "item",
+      "system_tokens_est": null
     },
     {
       "id": "mcp:docs-server",
@@ -5524,7 +5534,8 @@
       ],
       "agent_type": null,
       "builtin": false,
-      "memory_role": null
+      "memory_role": null,
+      "system_tokens_est": null
     },
     {
       "id": "hook:PreToolUse:Edit",
@@ -5545,7 +5556,8 @@
       "tools": [],
       "agent_type": null,
       "builtin": false,
-      "memory_role": null
+      "memory_role": null,
+      "system_tokens_est": null
     },
     {
       "id": ".claude/agents/test-runner.md",
@@ -5574,7 +5586,8 @@
       "tools": [],
       "agent_type": "test-runner",
       "builtin": false,
-      "memory_role": null
+      "memory_role": null,
+      "system_tokens_est": null
     },
     {
       "id": ".claude/agents/reviewer.md",
@@ -5603,7 +5616,8 @@
       "tools": [],
       "agent_type": "reviewer",
       "builtin": false,
-      "memory_role": null
+      "memory_role": null,
+      "system_tokens_est": null
     },
     {
       "id": "builtin-agent:Explore",
@@ -5624,7 +5638,8 @@
       "tools": [],
       "agent_type": "Explore",
       "builtin": true,
-      "memory_role": null
+      "memory_role": null,
+      "system_tokens_est": null
     }
   ],
   "stations": [

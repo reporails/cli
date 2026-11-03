@@ -18,6 +18,7 @@ from reporails_cli.core.eventbus.transcript import (
     prompt_text,
     read_transcript,
     subagent_brief,
+    subagent_system,
 )
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
 from reporails_cli.core.platform.dto.events import EventRecord, ReplyText, TranscriptCursor
@@ -968,3 +969,43 @@ def test_a_call_is_read_back_in_one_pass_over_the_file(tmp_path: Path, monkeypat
     detail = call_detail("claude", session, None, "toolu_read1", "Read", shell=False)
     assert detail is not None and detail.result == "PLACEHOLDER-FILE-TEXT" * 10
     assert opened.count(session) == 1
+
+
+def _shaped_subagent(tmp_path: Path, rows: list[dict[str, object]]) -> Path:
+    session = tmp_path / "s1.jsonl"
+    session.write_text("", encoding="utf-8")
+    folder = tmp_path / "s1" / "subagents"
+    folder.mkdir(parents=True)
+    (folder / "agent-aaa.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    return session
+
+
+def _shape(shape_hash: str, system: list[str]) -> dict[str, object]:
+    blocks = [{"type": "text", "text": text} for text in system]
+    return {"type": "api-request-shape", "shapeHash": shape_hash, "shape": {"system": blocks, "tools": [{"name": "A"}]}}
+
+
+def test_a_subagent_system_prompt_is_the_text_of_the_shape_its_first_request_names(tmp_path: Path) -> None:
+    request = {"type": "api-request", "id": "r1", "shapeHash": "two", "keep": 0, "tail": []}
+    session = _shaped_subagent(tmp_path, [_shape("one", ["WRONG"]), _shape("two", ["SYS-A", "SYS-B"]), request])
+    assert subagent_system("claude", session, "aaa") == "SYS-A\n\nSYS-B"
+    assert subagent_system("claude", session, "nosuchagent") is None
+
+
+def test_a_subagent_file_with_no_request_has_no_system_prompt(tmp_path: Path) -> None:
+    session = _shaped_subagent(tmp_path, [_shape("one", ["SYS"])])
+    assert subagent_system("claude", session, "aaa") is None
+
+
+def test_a_request_naming_a_shape_the_file_lacks_has_no_system_prompt(tmp_path: Path) -> None:
+    request = {"type": "api-request", "id": "r1", "shapeHash": "gone", "keep": 0, "tail": []}
+    session = _shaped_subagent(tmp_path, [_shape("one", ["SYS"]), request])
+    assert subagent_system("claude", session, "aaa") is None
+
+
+def test_a_shape_whose_system_is_not_a_list_is_refused(tmp_path: Path) -> None:
+    request = {"type": "api-request", "id": "r1", "shapeHash": "one", "keep": 0, "tail": []}
+    bad = {"type": "api-request-shape", "shapeHash": "one", "shape": {"system": "x", "tools": []}}
+    session = _shaped_subagent(tmp_path, [bad, request])
+    with pytest.raises(PayloadRefused, match=r"shape\.system"):
+        subagent_system("claude", session, "aaa")
