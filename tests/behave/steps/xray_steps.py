@@ -170,7 +170,7 @@ def step_memory_selected(context, text):
     page = _get(context.url)[1]
     token = re.search(r'name="xray-token" content="([^"]+)"', page).group(1)
     sources = json.loads(_get(context.url + "view", token)[1])["sources"]
-    names = [s["name"] for s in sources if s["path"] and s["path"].endswith("feedback_orphan.md")]
+    names = [s["label"] for s in sources if s["path"] and s["path"].endswith("feedback_orphan.md")]
     assert names and seen["row"] == names[0], (names, seen)
     assert text in seen["text"], seen
 
@@ -570,7 +570,8 @@ def step_toggle_layer(context):
     if seen is None:
         return
     assert all(seen["before"][key] > 0 for key in ("chips", "sections", "nodes", "other")), seen
-    assert seen["after"]["chips"] == seen["after"]["sections"] == seen["after"]["nodes"] == 0, seen
+    assert seen["after"]["chips"] == seen["after"]["nodes"] == 0, seen
+    assert seen["after"]["sections"] == seen["before"]["sections"], "the Sources list is an inventory, not a layer"
     assert seen["after"]["other"] == seen["before"]["other"], seen
     assert seen["again"] == seen["before"], seen
 
@@ -596,8 +597,8 @@ def step_special_marks(context):
         return
     assert len(seen["compact"]) == 1 and seen["compact"][0].startswith("compacted · 529k → 53k"), seen["compact"]
     never = " ".join(seen["never"])
-    assert "packages/cli/CLAUDE.md | on disk, never loaded" in never, seen["never"]
-    assert any(row.endswith("listed, never loaded") for row in seen["never"]), seen["never"]
+    assert "packages/cli/CLAUDE.md | not loaded" in never, seen["never"]
+    assert any(row.startswith("cloudflare | not loaded") for row in seen["never"]), seen["never"]
     stopped = seen["stopped"]
     assert stopped["dashed"] and stopped["up"] == 0 and stopped["down"] == 1, stopped
     assert "stopped" in stopped["inspector"] and "Came back" not in stopped["inspector"], stopped
@@ -625,7 +626,7 @@ def step_stub_kind(context):
         return
     assert "stub" in seen["before"].lower() and "STUB" not in seen["before"], seen
     assert seen["after"] == "STUB Stub worker", seen
-    assert seen["inspector"] == "stub inspector for stub1", seen
+    assert seen["inspector"].startswith("Selected"), seen  # the right column describes any node kind
     assert seen["agentCard"] == 1, seen  # the agent kind still draws its own top node
 
 
@@ -650,12 +651,12 @@ def step_view_words(context):
         for old in ("at session start", "loaded by a path match", "inherited from its parent")
     ), seen["titles"]
     returned = next(n for n in view["nodes"] if n["id"] == "a1")["detail"]
-    assert f"{returned['back_ratio']}:1 from peak" in seen["returned"], seen["returned"]
-    assert ":1 from peak" not in seen["stopped"], seen["stopped"]
+    assert f"({round(returned['back_ratio'])}\u00d7 smaller)" in seen["returned"], seen["returned"]
+    assert "smaller" not in seen["stopped"], seen["stopped"]
     main = next(n for n in view["nodes"] if n["id"] == "main")
     count = main["child_sources"]["mcp:docs-server"]
     assert f"{count} of {len(main['children'])} subagents here did" in seen["banner"], seen["banner"]
-    assert "in 13 contexts" in seen["claudeRow"], seen["claudeRow"]
+    assert "13 of 13 agents" in seen["claudeDetails"], seen["claudeDetails"]
 
 
 @then("a kind the view reports absent says so from its fact, and an untyped node adds no filter button but still shows")
@@ -689,61 +690,35 @@ def step_call_fetched_once(context):
     assert calls and len(calls) == len(set(calls)), calls
 
 
-@then(
-    "the inspector's panes start compact, open independently, stay open across agents, "
-    "and print every estimate with a tilde"
-)
+@then("the inspector tiles open the peak and cost details, and every estimate has a tilde")
 def step_inspector_panes(context):
     seen = _page(context, "panes")
     if seen is None:
         return
     view = context.fixture
     nodes = {n["id"]: n for n in view["nodes"]}
-    assert seen["start"]["context"]["open"] == "false" and seen["start"]["context"]["bodyHidden"], seen["start"]
-    assert seen["start"]["cost"]["open"] == "false" and seen["start"]["cost"]["bodyHidden"], seen["start"]
-    assert seen["contextOpen"]["open"] == "true" and not seen["contextOpen"]["bodyHidden"], seen["contextOpen"]
-    assert seen["costAfterContext"]["open"] == "false", "opening Context must not open Cost"
     comp = nodes["main"]["detail"]["composition"]
     reply = comp["replies"][comp["peak"]]
-    total, first = reply[1], 5
-    assert [c["key"] for c in seen["categories"]] == [c["key"] for c in view["adapter"]["composition"]]
-    remainder = view["adapter"]["composition_remainder"]
-    for row in seen["categories"]:
-        assert row["value"].startswith("~"), row
-        want = "est. + remainder" if row["key"] == remainder else "estimated"
-        assert row["tags"] == [want], row
-    assert sum(reply[first : first + len(comp["keys"])]) == total, "fixture row must sum to its exact total"
-    assert "exact" in seen["exactTag"] and _k1(total) in seen["contextOpen"]["head"], seen["contextOpen"]
-    assert f"cache read {reply[4]:,}" in seen["contextText"], seen["contextText"]
-    assert seen["costOpen"]["open"] == "true"
+    total = reply[1]
+    assert [t["label"] for t in seen["mainTiles"]] == ["Peak context", "Est. cost"], seen["mainTiles"]
+    peak_tile = seen["mainTiles"][0]
+    assert peak_tile["value"] == _k1(total) and peak_tile["peek"] == "peak:main", peak_tile
+    assert seen["mainTiles"][1]["peek"] == "cost:main", seen["mainTiles"]
+    assert seen["peakOpen"]["title"] == f"{total:,} tokens", seen["peakOpen"]
+    assert [c["key"] for c in seen["peakOpen"]["cats"]] == [
+        c["key"] for c in view["adapter"]["composition"] if reply[5 + comp["keys"].index(c["key"])] > 0
+    ], seen["peakOpen"]
+    assert all(c["value"].startswith("~") for c in seen["peakOpen"]["cats"]), seen["peakOpen"]
     price = view["price_list"]
     assert f"{price['name']}, {price['as_of']}" in seen["costText"], seen["costText"]
-    assert "derived" in seen["costOpen"]["head"] and "cached" in seen["costOpen"]["head"], seen["costOpen"]
     assert "~$" in seen["costText"], "instruction-file cost is an estimate"
-    after = seen["afterSelect"]
-    assert after["context"]["open"] == "true" and after["cost"]["open"] == "true", after
-    withheld = nodes["a1"]["withheld"]
-    summary = f"Not passed down: {len(withheld['sources'])} sources · ~"
-    compact = seen["withheldCompact"]
-    assert summary in compact["head"] and compact["open"] == "false", compact
-    assert seen["withheldRowsBefore"] == 0 and seen["withheldRowsAfter"] == len(withheld["sources"]), seen
-    assert any(line.endswith("Agents · 2 defined, listed") for line in seen["mainChip"]), seen["mainChip"]
-    assert any(line.endswith("Agents · built-in") for line in seen["a1Chip"]), seen["a1Chip"]
-    definition = next(s for s in view["sources"] if s["kind"] == "agent" and "a3" in s["had_by"])
-    name = definition["path"].rsplit("/", 1)[-1]
-    assert any(line.endswith(f"Agents · {name}") for line in seen["a3Chip"]), seen["a3Chip"]
     for key, text in (("a1", seen["a1Text"]), ("main", seen["mainText"])):
         node = nodes[key]
-        values = [g["tokens_est"] for g in node["detail"]["given"]]
-        values += [p["tokens_est"] for p in node["detail"]["prompts"]]
-        values += [s["tokens_est"] for s in (node.get("withheld") or {"sources": []})["sources"]]
-        if node["detail"]["back_tokens_est"] is not None:
-            values.append(node["detail"]["back_tokens_est"])
+        values = [r["tokens_est"] for r in node["detail"]["in_context"]["rows"] if r["tokens_est"]]
         assert values, key
         for value in values:
-            shown = re.escape(_k1(value))
-            assert value == 0 or not re.search(rf"(?<![~\w.,]){shown}(?![\w.,])", text), (key, value, text)
             assert f"~{_k1(value)}" in text, (key, value)
+    assert any(line.startswith("Parent had but didn't pass on:") for line in seen["withheld"]), seen["withheld"]
 
 
 @then(
@@ -761,7 +736,8 @@ def step_source_groups(context):
     assert all(not g["rows"] for g in seen["initial"] if g["kind"] != first), seen["initial"]
     assert all(g["open"] for g in seen["expanded"]), seen["expanded"]
     assert not any(g["open"] for g in seen["collapsed"]), seen["collapsed"]
-    agents = [s["id"] for s in context.fixture["sources"] if s["kind"] == "agent"]
+    listed = [s for s in context.fixture["sources"] if s["kind"] == "agent"]
+    agents = [s["id"] for s in sorted(listed, key=lambda s: s["availability"] != "loaded")]  # used items first
     assert len(agents) == 6, agents
     group = next(g for g in seen["agentOpen"] if g["kind"] == "agent")
     assert group["rows"] == agents[:4] and group["more"] == "Show 2 more", group
@@ -780,9 +756,8 @@ def step_source_groups(context):
 
 
 @then(
-    "a launched agent source lights exactly its subagents, a never-launched one lights nothing, the group ends "
-    "with the adapter note, the A chip is filled or outlined by count and the Sources panel has a layer toggle "
-    "per adapter kind"
+    "a launched agent source lights exactly its subagents, a never-launched one lights nothing, "
+    "the A chip is filled or outlined by count and the Sources panel has an eye per adapter kind"
 )
 def step_agent_sources(context):
     seen = _page(context, "agents")
@@ -791,17 +766,12 @@ def step_agent_sources(context):
     sources = {s["id"]: s for s in context.fixture["sources"] if s["kind"] == "agent"}
     rows = seen["rows"]
     reviewer = rows[".claude/agents/reviewer.md"]
-    assert reviewer["name"] == ".claude/agents/reviewer.md", reviewer
-    assert reviewer["who"] == "launched as 2 subagents · passed down as its system prompt", reviewer
-    assert reviewer["pill"] is True, reviewer
-    assert rows[".claude/agents/planner.md"]["who"] == "launched as 1 subagent · passed down as its system prompt", rows
-    assert rows[".claude/agents/idle.md"]["who"] == "defined, never launched", rows
+    assert reviewer["name"] == sources[".claude/agents/reviewer.md"]["name"], reviewer
+    assert rows[".claude/agents/idle.md"]["who"] == "never launched", rows
     here = set(context.fixture["nodes"][0]["children"])
     lit = seen["lit"]
     assert set(lit[".claude/agents/reviewer.md"]) == set(sources[".claude/agents/reviewer.md"]["had_by"]) & here, lit
     assert lit[".claude/agents/idle.md"] == [] and lit[".claude/agents/idle.md top"] is False, lit
-    notes = [kind["note"] for kind in context.fixture["adapter"]["source_kinds"] if kind["key"] == "agent"]
-    assert notes and notes[0] and seen["note"] == notes[0], (notes, seen["note"])
     chips = seen["chips"]
 
     def filled(name: str) -> bool:
@@ -809,9 +779,8 @@ def step_agent_sources(context):
 
     assert filled("a3") and filled("a4"), chips  # launched from a definition
     assert not filled("a1") and not filled("a5"), chips  # built-in types: outlined
-    letters = [f"{kind['key']}:{kind['letter']}" for kind in context.fixture["adapter"]["source_kinds"]]
-    assert seen["toggles"] == letters, seen["toggles"]
-    assert "agent:A" in letters and "hook:H" in letters, letters
+    assert seen["toggles"] == [kind["key"] for kind in context.fixture["adapter"]["source_kinds"]], seen["toggles"]
+    assert "agent" in seen["toggles"] and "hook" in seen["toggles"], seen["toggles"]
 
 
 @then("an instructions source row shows its cost as an estimate and a source without one shows none")
@@ -819,7 +788,7 @@ def step_source_cost(context):
     seen = _page(context, "cost")
     if seen is None:
         return
-    assert "~$0.01 estimated" in seen["claude"] and "~$0.01 estimated" in seen["other"], seen
+    assert seen["claude"].endswith("~$0.01 · 21 findings") and seen["other"].endswith("~$0.01"), seen
     assert "$" not in seen["rule"], seen
 
 
@@ -962,13 +931,13 @@ def step_estimates_tilde(context):
         return
     assert seen["rows"] and seen["titles"], seen
     for text in seen["rows"]:
-        assert re.search(r"~[\d.]+k? each \(estimated\)", text), text
+        assert re.search(r"~[\d.]+k? tok", text), text
     assert re.search(r"~[\d.]+k? each \(estimated\)", seen["focus"]), seen["focus"]
     for title in seen["titles"]:
         assert re.search(r"~[\d.]+k? loaded \(estimated\)", title), title
 
 
-@then("the cost pane says replies were not priced because no model was named, and lists the models when there are some")
+@then("the cost details say replies were not priced because no model was named, and list the models if any")
 def step_unpriced_wording(context):
     seen = _page(context, "fxcost")
     if seen is None:

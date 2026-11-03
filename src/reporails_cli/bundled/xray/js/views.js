@@ -83,3 +83,10 @@ export function subtreeIds(ix, id) {
   walk(ix.nodes.get(id));
   return out;
 }
+
+// The agent's peak reply and its composition, or null when no reply was recorded.
+export function peakOf(node) {
+  const comp = node.detail && node.detail.composition;
+  const reply = comp && comp.peak != null ? comp.replies[comp.peak] : null;
+  return reply ? { comp, reply } : null;
+}

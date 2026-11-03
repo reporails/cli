@@ -1,0 +1,208 @@
+// The details renderers for a source, a built-in item, a task prompt, the peak context and the estimated cost.
+import { el, nk, err } from '../dom.js';
+import { clock, costEst, k1, plural, tk, usd } from '../format.js';
+import { briefUrl, peekUrl } from '../api.js';
+import { hashFor } from '../state.js';
+import { bandColour } from '../geometry.js';
+import { peakOf, replyParts, typeOf } from '../views.js';
+import { render as renderFindings } from './findings.js';
+import { registerPeek } from './details.js';
+
+const section = (title, ...nodes) => {
+  const box = el('section', 'pk-sec');
+  box.append(el('h4', null, title), ...nodes);
+  return box;
+};
+
+const kv = pairs => {
+  const box = el('div', 'pk-kv');
+  for (const [k, v] of pairs) if (v != null && v !== '') box.append(el('span', 'lb', k), el('span', 'v', v));
+  return box;
+};
+
+const pre = text => el('pre', 'pk-pre', text);
+const action = (label, attrs, primary) => {
+  const b = el('button', 'pk-act' + (primary ? ' primary' : ''), label);
+  b.type = 'button';
+  Object.assign(b.dataset, attrs);
+  return b;
+};
+
+// A fetched text as a block: loading, the refusal, or the text itself.
+function fetched(entry, pick) {
+  if (entry.loading) return nk('Loading…');
+  if (entry.error) return err(entry.error);
+  const out = document.createDocumentFragment();
+  out.append(el('pre', 'peek', pick(entry)));
+  if (entry.truncated) out.append(nk('text truncated'));
+  return out;
+}
+
+// The reason an agent had the source, as the first recorded load words it.
+function whyLoaded(view, id) {
+  for (const n of view.nodes) {
+    const rows = (n.detail && n.detail.in_context && n.detail.in_context.rows) || [];
+    const hit = rows.find(r => r.source === id && r.reason);
+    if (hit) return hit.reason;
+  }
+  return null;
+}
+
+function findingsBlock(s, env) {
+  const count = (s.findings && s.findings.count) || 0;
+  const box = el('div');
+  if (env.res && env.res.path === s.path) renderFindings(box, env.res);
+  else if (s.actionable && s.path) {
+    const b = action(count ? `Show the ${plural(count, 'finding')}` : 'Check this file');
+    b.dataset.act = 'check';
+    b.dataset.path = s.path;
+    b.disabled = !!env.busy;
+    box.append(b);
+  } else box.append(nk('Outside this project; run ails check on it.'));
+  return section(count ? `${plural(count, 'finding')}` : 'Findings', box);
+}
+
+registerPeek('src', (env, id) => {
+  const { ix } = env;
+  const s = ix.sources.get(id);
+  if (!s) return null;
+  const view = ix.view;
+  const k = ix.kinds.get(s.kind);
+  const count = (s.findings && s.findings.count) || 0;
+  const entry = s.path ? env.text('p:' + s.path, peekUrl(s.path)) : null;
+  const main = [];
+  if (count || (s.actionable && s.path)) main.push(findingsBlock(s, env));
+  if (entry && entry.frontmatter) main.push(section('Configuration', pre(entry.frontmatter)));
+  if (s.scopes && s.scopes.length) main.push(section('Scopes', pre(s.scopes.join('\n'))));
+  if (s.tools && s.tools.length) main.push(section('Tools on this server', pre(s.tools.map(([t, n]) => `${t} · ${n ? plural(n, 'call') : 'not called'}`).join('\n'))));
+  if (entry) main.push(section('Its text', fetched(entry, e => e.body ?? e.text)));
+  else main.push(section('Its text', nk(s.builtin ? 'Comes from the coding agent; there is no file.' : 'No file behind this source.')));
+  const holders = s.had_by.map(h => ix.nodes.get(h)).filter(Boolean);
+  const loaded = s.kind && (ix.kinds.get(s.kind) || {}).definitions
+    ? (s.launches > 0 ? `launched as ${plural(s.launches, 'subagent')}` : 'never launched')
+    : holders.length ? `${holders.length} of ${view.nodes.length} agents` : 'no agent';
+  const why = whyLoaded(view, s.id);
+  const side = [kv([['Path', s.path], ['Loaded by', loaded], ['Why', why]])];
+  const price = costEst(s.cost_usd_est);
+  if (price && holders.length) side.push(kv([['Est. cost', `${price} across this session`], ['Method', view.price_list.source_method]]));
+  if (holders.length) {
+    const list = el('div', 'pk-list');
+    for (const n of holders.slice(0, 8)) {
+      const b = el('button', 'pk-li');
+      b.type = 'button';
+      b.dataset.showInGraph = n.id;
+      b.append(el('span', 'lb', n.parent === null ? 'main agent' : n.name), el('span', 'mono v', clock(n.start)));
+      list.append(b);
+    }
+    if (holders.length > 8) list.append(nk(`and ${holders.length - 8} more agents`));
+    side.push(section('Loaded in', list));
+  }
+  const tags = [holders.length ? 'in context' : 'never loaded'];
+  if (count) tags.push(`${plural(count, 'finding')}`);
+  if (s.tokens_est != null) tags.push(`${tk(s.tokens_est, true)} each · estimated`);
+  const actions = [action('Pin on graph', { closePeek: '1' })];
+  if (count && s.path) {
+    const a = el('a', 'pk-act primary', 'Open findings page');
+    a.href = hashFor(env.state.path, s.path);
+    actions.push(a);
+  }
+  const dir = s.path && s.path.includes('/') ? s.path.slice(0, s.path.lastIndexOf('/') + 1) : '';
+  return { chip: k ? k.letter : null, kicker: `${k ? k.label : s.kind}${dir ? ` · ${dir}` : ''}`, title: s.label || s.name, tags, main, side, actions };
+});
+
+const VISIBLE = { hidden: 'not visible in transcript', partial: 'partly visible in transcript', shown: 'visible in transcript' };
+
+registerPeek('builtin', (env, id) => {
+  const item = (env.ix.view.builtin || []).find(b => b.key === id);
+  if (!item) return null;
+  const tags = [`${tk(item.tokens_est, true)} · ${item.remainder ? 'est. + remainder' : 'estimated'}`, VISIBLE[item.visible] || item.visible];
+  return {
+    chip: '·', kicker: 'Built in', title: item.label, tags,
+    main: [section('What it contains', pre(item.note || ''))],
+    side: [kv([['Sent to', 'every agent, every turn'], ['Visibility', VISIBLE[item.visible] || item.visible], ['Source', 'the coding agent itself, not your files']])],
+    actions: [],
+  };
+});
+
+registerPeek('task', (env, id) => {
+  const { ix } = env;
+  const node = ix.nodes.get(id);
+  if (!node || node.parent === null) return null;
+  const parent = ix.nodes.get(node.parent);
+  const row = ((node.detail.in_context || {}).rows || []).find(r => r.key === 'task');
+  const body = node.detail.brief ? fetched(env.text('brief:' + id, briefUrl(id)), e => e.text) : nk('The prompt text was not recorded.');
+  const writer = parent && parent.parent === null ? 'main agent' : parent ? parent.name : 'its parent';
+  const b = action('Show in graph', {});
+  b.dataset.showInGraph = id;
+  return {
+    chip: '✎', kicker: `Task prompt · written by ${writer}`, title: node.name,
+    tags: row ? [`${tk(row.tokens_est, true)} · estimated`] : [],
+    main: [section('The prompt', body)],
+    side: [kv([['Written by', writer], ['Sent at', clock(node.start)], ['To', `${node.name} · ${typeOf(ix, node).label}`]]),
+      nk('What the parent asked this subagent to do. With its definition and inherited instructions this is everything it was told.')],
+    actions: [b],
+  };
+});
+
+function bar(values, total) {
+  const box = el('div', 'stack');
+  values.forEach(([i, v]) => {
+    if (v <= 0 || total <= 0) return;
+    const seg = el('i');
+    seg.style.width = `${v / total * 100}%`;
+    seg.style.background = bandColour(i);
+    box.append(seg);
+  });
+  return box;
+}
+
+registerPeek('peak', (env, id) => {
+  const { ix } = env;
+  const node = ix.nodes.get(id);
+  const hit = node && peakOf(node);
+  if (!hit) return null;
+  const { comp, reply } = hit;
+  const total = reply[1], parts = replyParts(comp, reply);
+  const adapter = ix.view.adapter;
+  const base = Math.max(total, parts.reduce((a, b) => a + b, 0));
+  const cats = adapter.composition.map(c => ({ c, i: comp.keys.indexOf(c.key) })).filter(x => x.i >= 0 && parts[x.i] > 0);
+  const legend = el('div', 'pk-legend');
+  for (const { c, i } of cats) {
+    const rest = c.key === adapter.composition_remainder;
+    const line = el('div', 'pk-lg');
+    line.dataset.category = c.key;
+    const sw = el('span', 'swatch');
+    sw.style.background = bandColour(i);
+    line.append(sw, el('span', 'lb', rest ? `${c.label}*` : c.label), el('span', 'v mono', `~${k1(parts[i])}`), el('span', 'pct mono', `${Math.round(parts[i] / base * 100)}%`));
+    legend.append(line);
+  }
+  const cached = Math.round(reply[4] / total * 100);
+  const remLabel = (adapter.composition.find(c => c.key === adapter.composition_remainder) || {}).label || adapter.composition_remainder;
+  return {
+    chip: '∑', kicker: `Peak context · ${node.parent === null ? 'main agent' : node.name} at ${clock(reply[0])}`, title: `${total.toLocaleString('en-US')} tokens`, tags: [],
+    main: [bar(cats.map(x => [x.i, parts[x.i]]), base), legend],
+    side: [kv([['Read from cache', `${cached}%`], ['New this turn', `${(reply[2] + reply[3]).toLocaleString('en-US')} tokens`]]),
+      nk(`The total is measured. How it splits into parts is estimated, so parts show ~. *Includes whatever could not be attributed, folded into ${remLabel}, so the parts add up to the total.`)],
+    actions: [],
+  };
+});
+
+registerPeek('cost', (env, id) => {
+  const { ix } = env;
+  const node = ix.nodes.get(id);
+  const cost = node && node.detail && node.detail.cost;
+  if (!cost || cost.total_usd == null) return null;
+  const list = ix.view.price_list;
+  const pairs = [['Over', plural(cost.turns, 'turn')]];
+  if (cost.peak_turn_usd != null) pairs.push(['Most expensive turn', `${usd(cost.peak_turn_usd)}${cost.peak_turn_t != null ? ` at ${clock(cost.peak_turn_t)}` : ''}`]);
+  if (cost.instructions_usd_est != null) pairs.push(['Your instruction files', `~${usd(cost.instructions_usd_est)} of it`]);
+  if (cost.cache_hit_rate != null) pairs.push(['Read from cache', `${Math.round(cost.cache_hit_rate * 100)}% (cheaper)`]);
+  const notes = [];
+  if (cost.unpriced > 0) notes.push(nk(`${plural(cost.unpriced, 'reply', 'replies')} not priced${cost.unpriced_models.length ? `: ${cost.unpriced_models.join(', ')}` : ' (no model named)'}.`));
+  if (cost.split_assumed > 0) notes.push(nk(`${plural(cost.split_assumed, 'reply', 'replies')} had no 5-minute / 1-hour cache split and ${cost.split_assumed === 1 ? 'was' : 'were'} priced at the 5-minute rate.`));
+  notes.push(nk(`Token counts are measured; the price is list price (${list.name}, ${list.as_of}). On a subscription you don't pay per token, so read this as API-equivalent.`));
+  return {
+    chip: '$', kicker: `Est. cost · ${node.parent === null ? 'main agent' : node.name}`, title: usd(cost.total_usd), tags: [],
+    main: [kv(pairs)], side: notes, actions: [],
+  };
+});

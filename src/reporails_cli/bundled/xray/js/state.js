@@ -1,8 +1,6 @@
 // Page state and its URL hash: the agent path (#/agent/<id>/<id>) and the findings drill-down (#/file/<path>).
 export const state = {
   path: ['main'], sel: null, pinned: null, hover: null, layers: null, file: null, groups: {},
-  // Inspector panes by key; open state lives here so it survives selecting another agent and the page's re-renders.
-  panes: {},
   // The open tab (null = by the view's shape), the open details ({kind, id} or null) and the Tool calls filters.
   tab: null, peek: null, calls: { scope: 'all', tool: 'all', failed: false, all: false },
   // Source kinds opened or closed by hand, the long kinds showing all, and the source last revealed by focus.

@@ -1,73 +1,79 @@
-// The Sources panel: one section per source kind the adapter declares and the layers show.
-import { el, tpl, slot } from '../dom.js';
-import { fill, plural, tk } from '../format.js';
-import { hashFor } from '../state.js';
+// The Sources panel: an inventory of everything the session had, whatever the graph shows. Built in first, then one group
+// per source kind the adapter declares; each header says how many were used and carries the kind's eye for the graph.
+import { el, svg } from '../dom.js';
+import { costEst, fill, tk, plural } from '../format.js';
 import { SOURCES_SHOWN } from '../geometry.js';
 
+const BUILTIN = 'builtin';
+const EYE = 'M2 12s4-7 10-7s10 7 10 7s-4 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z';
 
-// Facts that annotate a row: by path target; the kind-level ones are read by `kindCount`.
-function rowNotes(facts, templates) {
-  const notes = new Map();
-  for (const f of facts) {
-    if (!f.target || f.target.kind !== 'path' || !templates[f.kind]) continue;
-    notes.set(f.target.value, [...(notes.get(f.target.value) || []), fill(templates[f.kind], f.numbers)]);
-  }
-  return notes;
-}
-
-// One statement per section from the funnel row: loaded of on disk, plus the listed count only when it differs.
-function kindCount(ix, key, list) {
+// Used of total from the funnel row (loaded of on disk); a kind with no funnel row counts its own list.
+function counts(ix, key, list) {
   const row = (ix.view.funnel || []).find(f => f.kind === key);
-  if (!row) return list.length ? `${list.filter(s => s.availability === 'loaded').length} of ${list.length} loaded` : '';
-  const listed = row.advertised != null && row.advertised !== row.on_disk ? ` · ${row.advertised} listed` : '';
-  return `${row.loaded ?? 0} of ${row.on_disk} loaded${listed}`;
+  if (!row) return { used: list.filter(s => s.availability === 'loaded').length, total: list.length };
+  return { used: row.loaded ?? 0, total: row.on_disk };
 }
 
-// A source of a kind the adapter marks as definitions says how often it was launched, not who held it.
-const isDefinition = (ix, s) => !!(ix.kinds.get(s.kind) || {}).definitions;
+const findingsText = n => `${n} finding${n === 1 ? '' : 's'}`;
+const findingsOf = s => (s.findings && s.findings.count) || 0;
 
-function who(ix, s) {
-  if (isDefinition(ix, s)) {
-    return s.launches > 0
-      ? `launched as ${plural(s.launches, 'subagent')} · passed down as its system prompt`
-      : 'defined, never launched';
+// Line 2 of a row: its size, its cost and its findings, or that it never entered a context.
+function facts(s, kind) {
+  if (s.builtin) return [`built in · launched as ${plural(s.launches || 0, 'subagent')}`];
+  const bits = [];
+  const finds = findingsOf(s);
+  if (s.availability !== 'loaded') bits.push(kind.definitions ? 'never launched' : 'not loaded');
+  else {
+    if (s.tokens_est != null) bits.push(`${tk(s.tokens_est, true)} tok`);
+    const c = costEst(s.cost_usd_est);
+    if (c) bits.push(c);
   }
-  if (s.availability === 'listed') return 'listed, never loaded';
-  if (s.availability === 'on_disk') return 'on disk, never loaded';
-  const all = ix.view.nodes.length;
-  if (s.had_by.length === all) return 'every agent, every level';
-  if (s.had_by.length === 1) return ix.nodes.get(s.had_by[0]).name;
-  return `${s.had_by.length} of ${all} agents`;
+  if (finds) bits.push(findingsText(finds));
+  return bits;
 }
 
-function row(env, s, notes) {
+function dot(ix, s) {
+  const d = el('span', 'sdot' + (findingsOf(s) ? ' find' : ''));
+  const t = s.agent_type ? ix.types.get(s.agent_type) : null;
+  if (!t) return d;
+  d.classList.add('sq');
+  d.style.background = t.colour;
+  return d;
+}
+
+function row(env, s) {
+  const { ix } = env;
+  const kind = ix.kinds.get(s.kind) || {};
   const never = s.availability !== 'loaded';
   const r = el('div', 'sr' + (never ? ' never' : '') + (env.focus && env.focus.id === s.id ? ' on' : ''));
   r.dataset.source = s.id;
   r.tabIndex = 0;
   r.setAttribute('role', 'button');
-  const finds = s.findings && s.findings.count > 0;
-  r.append(el('span', 'sdot' + (finds ? ' find' : '')));
+  const label = s.label || s.name;
+  const finds = findingsOf(s);
+  r.setAttribute('aria-label', `${label}${never ? ', not loaded' : ''}${finds ? `, ${findingsText(finds)}` : ''}. Open details.`);
+  r.append(dot(ix, s));
   const text = el('span', 'stx');
-  text.append(el('b', 'sn', isDefinition(env.ix, s) && s.path ? s.path : s.name));
-  const bits = [who(env.ix, s), ...(notes.get(s.path) || [])];
-  if (s.tokens_est != null && !never && !isDefinition(env.ix, s)) bits.push(`${tk(s.tokens_est, true)} each (estimated)`);
-  if (typeof s.cost_usd_est === 'number') bits.push(`~$${s.cost_usd_est.toFixed(2)} estimated`);
-  text.append(el('span', 'sw', bits.join(' · ')));
+  const top = el('span', 'sline');
+  top.append(el('b', 'sn', label));
+  if (s.scopes && s.scopes.length) top.append(el('span', 'scoped', 'scoped'));
+  text.append(top, el('span', 'sw', facts(s, kind).join(' · ')));
   r.append(text);
-  if (finds) {
-    const p = el('a', 'pill', String(s.findings.count));
-    p.href = hashFor(env.state.path, s.path);
-    p.title = `${s.findings.count} findings in ${s.name}`;
-    r.append(p);
-  }
-  if (s.path) {
-    const open = el('a', 'sopen', '↗');
-    open.href = hashFor(env.state.path, s.path);
-    open.title = 'open ' + s.path;
-    open.setAttribute('aria-label', 'Open findings for ' + s.path);
-    r.append(open);
-  }
+  return r;
+}
+
+function builtinRow(item) {
+  const r = el('div', 'sr');
+  r.dataset.peek = `${BUILTIN}:${item.key}`;
+  r.tabIndex = 0;
+  r.setAttribute('role', 'button');
+  r.setAttribute('aria-label', `${item.label}. Open details.`);
+  r.append(el('span', 'sdot'));
+  const text = el('span', 'stx');
+  const top = el('span', 'sline');
+  top.append(el('b', 'sn', item.label));
+  text.append(top, el('span', 'sw', [`${tk(item.tokens_est, true)} tok`, item.visible === 'hidden' ? 'not in transcript' : null].filter(Boolean).join(' · ')));
+  r.append(text);
   return r;
 }
 
@@ -103,7 +109,7 @@ export function click(t, env) {
   if (more) { if (!state.more.delete(more.dataset.more)) state.more.add(more.dataset.more); return true; }
   const all = t.closest('[data-groups]');
   if (all) {
-    for (const k of ix.view.adapter.source_kinds) state.sourceGroups[k.key] = all.dataset.groups === 'open';
+    for (const key of [BUILTIN, ...ix.view.adapter.source_kinds.map(k => k.key)]) state.sourceGroups[key] = all.dataset.groups === 'open';
     return true;
   }
   return false;
@@ -122,63 +128,81 @@ function controls() {
   return bar;
 }
 
-// One eye per source kind: shows or hides the kind on the graph.
-function eyes(ix, state) {
-  const bar = el('div', 'seyes');
-  bar.setAttribute('role', 'group');
-  bar.setAttribute('aria-label', 'Layers');
-  for (const k of ix.view.adapter.source_kinds) {
-    const on = !!state.layers[k.key];
-    const b = el('button', 'eye');
-    b.type = 'button';
-    b.dataset.eye = k.key;
-    b.setAttribute('aria-pressed', String(on));
-    b.setAttribute('aria-label', `${on ? 'Hide' : 'Show'} ${k.label} on the graph`);
-    b.title = b.getAttribute('aria-label');
-    b.append(el('span', 'chip ' + (on ? 'on' : ''), k.letter));
-    bar.append(b);
+function eyeButton(k, on) {
+  const b = el('button', 'sx-eye');
+  b.type = 'button';
+  b.dataset.eye = k.key;
+  b.setAttribute('aria-pressed', String(on));
+  b.setAttribute('aria-label', `${on ? 'Hide' : 'Show'} ${k.graph_label} on the graph`);
+  b.title = b.getAttribute('aria-label');
+  const s = svg('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
+  s.append(svg('path', { d: on ? EYE : `${EYE} M3 3l18 18` }));
+  b.append(s);
+  return b;
+}
+
+// A group: its header (chevron, chip, name, used/total, findings line, hidden line, eye) and its items when open.
+function group(env, spec) {
+  const { state, ix } = env;
+  const open = isOpen(state, ix, spec.key);
+  const wrap = el('section', 'ssec' + (spec.hidden ? ' hidden' : ''));
+  wrap.dataset.kind = spec.key;
+  const head = el('div', 'sx-hd');
+  const button = el('button', 'sh');
+  button.type = 'button';
+  button.dataset.sourceGroup = spec.key;
+  button.setAttribute('aria-expanded', String(open));
+  button.setAttribute('aria-label', [spec.label, spec.usage, spec.finds ? findingsText(spec.finds) : null].filter(Boolean).join(', '));
+  button.append(el('span', 'chev', open ? '▾' : '▸'), el('span', 'chip on', spec.letter), el('span', 'sx-title', spec.label));
+  const ct = el('span', 'ct');
+  ct.title = spec.usage;
+  ct.append(el('b', 'used', String(spec.used)));
+  if (spec.total != null) ct.append(el('span', 'tot', `/${spec.total}`));
+  button.append(ct);
+  if (spec.finds) button.append(el('span', 'sx-sub gf', findingsText(spec.finds)));
+  if (spec.hidden) button.append(el('span', 'sx-sub off', `${spec.graphLabel} hidden on the graph`));
+  head.append(button);
+  if (spec.eye) head.append(eyeButton(spec.eye, !spec.hidden));
+  wrap.append(head);
+  const body = el('div', 'sbody');
+  body.hidden = !open;
+  if (open) {
+    if (spec.absent) body.append(el('div', 'nk', spec.absent));
+    const all = state.more.has(spec.key);
+    for (const r of all ? spec.rows : spec.rows.slice(0, SOURCES_SHOWN)) body.append(r);
+    if (spec.rows.length > SOURCES_SHOWN) {
+      const b = el('button', 'slink smore', all ? 'Show fewer' : `Show ${spec.rows.length - SOURCES_SHOWN} more`);
+      b.dataset.more = spec.key;
+      body.append(b);
+    }
   }
-  return bar;
+  wrap.append(body);
+  return wrap;
 }
 
 export function render(box, env) {
   const { ix, state } = env;
-  const facts = ix.view.facts;
   const templates = ix.view.adapter.fact_notes || {};
-  const notes = rowNotes(facts, templates);
-  const lists = new Map(ix.view.adapter.source_kinds.map(k => [k.key, ix.view.sources.filter(s => s.kind === k.key)]));
+  // Loaded items first, each group in the view's own order otherwise.
+  const lists = new Map(ix.view.adapter.source_kinds.map(k => [k.key, ix.view.sources.filter(s => s.kind === k.key).sort((a, b) => (a.availability !== 'loaded') - (b.availability !== 'loaded'))]));
   reveal(env, lists);
-  box.replaceChildren(controls(), eyes(ix, state));
+  box.replaceChildren(controls());
+  const builtin = ix.view.builtin || [];
+  if (builtin.length) {
+    box.append(group(env, {
+      key: BUILTIN, label: 'Built in', letter: '·', used: builtin.length, total: null, usage: plural(builtin.length, 'item'),
+      finds: 0, rows: builtin.map(builtinRow),
+    }));
+  }
   for (const k of ix.view.adapter.source_kinds) {
-    if (!state.layers[k.key]) continue;
-    const sec = tpl('t-source-section');
-    const wrap = sec.firstElementChild;
-    wrap.dataset.kind = k.key;
-    const open = isOpen(state, ix, k.key);
-    const head = slot(wrap, 'head');
-    head.dataset.sourceGroup = k.key;
-    head.setAttribute('aria-expanded', open);
-    slot(head, 'chev').textContent = open ? '▾' : '▸';
-    slot(head, 'letter').textContent = k.letter;
-    slot(head, 'label').textContent = k.label;
     const list = lists.get(k.key);
-    const finds = list.reduce((n, s) => n + ((s.findings && s.findings.count) || 0), 0);
-    if (finds > 0) slot(head, 'finds').textContent = String(finds);
-    slot(head, 'count').textContent = kindCount(ix, k.key, list);
-    const body = slot(wrap, 'rows');
-    body.hidden = !open;
-    if (open) {
-      const absent = facts.find(f => f.kind === 'kind_absent' && f.target && f.target.value === k.key);
-      if (absent && templates.kind_absent) body.append(el('div', 'nk', fill(templates.kind_absent, { ...absent.numbers, label: k.label.toLowerCase() })));
-      const all = state.more.has(k.key);
-      for (const s of all ? list : list.slice(0, SOURCES_SHOWN)) body.append(row(env, s, notes));
-      if (list.length > SOURCES_SHOWN) {
-        const b = el('button', 'slink smore', all ? 'Show fewer' : `Show ${list.length - SOURCES_SHOWN} more`);
-        b.dataset.more = k.key;
-        body.append(b);
-      }
-      if (k.note) body.append(el('div', 'nk snote', k.note));
-    }
-    box.append(wrap);
+    const { used, total } = counts(ix, k.key, list);
+    const absent = ix.view.facts.find(f => f.kind === 'kind_absent' && f.target && f.target.value === k.key);
+    box.append(group(env, {
+      key: k.key, label: k.label, letter: k.letter, used, total, usage: `${used} of ${total} ${k.verb}`,
+      finds: list.reduce((n, s) => n + findingsOf(s), 0), hidden: !state.layers[k.key], graphLabel: k.graph_label, eye: k,
+      absent: absent && templates.kind_absent ? fill(templates.kind_absent, { ...absent.numbers, label: k.label.toLowerCase() }) : null,
+      rows: list.map(s => row(env, s)),
+    }));
   }
 }

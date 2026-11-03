@@ -1,128 +1,240 @@
-// The inspector: the selected child, or the current agent when nothing is selected.
-import { el, nk } from '../dom.js';
-import { clock, k1, plural, range } from '../format.js';
-import { hashFor } from '../state.js';
-import { bandColour } from '../geometry.js';
-import { childrenOf, replyParts, typeOf } from '../views.js';
-import { rendererFor } from './nodes/index.js';
+// The right column: one agent, always. Nothing selected shows the agent whose view this is; a selected card shows that agent.
+// Sections: header with slot chips, peak context and cost tiles, what was in context, activity, and the output of a subagent.
+import { el, svg } from '../dom.js';
+import { clock, k1, tk, usd, range, plural } from '../format.js';
+import { childrenOf, peakOf, typeOf } from '../views.js';
+import { promptUrl } from '../api.js';
 import { tile } from './nodes/agent.js';
-import { pane, tag } from './pane.js';
+import { textBlock } from './textblock.js';
 
-function slotText(node, k, s, env) {
-  const view = env.ix.view;
-  if (k.definitions) {
-    if (node.parent === null) return `${k.label} · ${s.count} defined, listed`;
-    const def = s.count === 1 && view.sources.find(x => x.kind === k.key && x.had_by.includes(node.id));
-    return `${k.label} · ${def ? def.path.split('/').pop() : 'built-in'}`;
+const EXPAND = 'M4 9V4h5 M20 9V4h-5 M4 15v5h5 M20 15v5h-5';
+
+const WHAT_HAPPENED = {
+  failed: 'It failed: its parent’s call for it reported an error, so nothing was handed back.',
+  stopped: 'You stopped it before it handed anything back.',
+  no_handback: 'It ended without handing a result back.',
+  running: 'It is still running; nothing has been handed back yet.',
+};
+
+const nodeLabel = node => (node.parent === null ? 'main agent' : node.name);
+
+function chips(node, env) {
+  const row = el('div', 'ix-chips');
+  for (const k of env.ix.view.adapter.source_kinds) {
+    const s = (node.slots && node.slots[k.key]) || { count: 0, findings: 0 };
+    const chip = el('span', 'chip' + (s.count > 0 ? (s.findings > 0 ? ' find' : ' on') : ''), k.letter);
+    const said = `${k.label}: ${s.count > 0 ? `${s.count} ${k.verb}` : 'none'}${s.findings > 0 ? ` · ${s.findings} findings` : ''}`;
+    chip.setAttribute('role', 'img');
+    chip.setAttribute('aria-label', said);
+    chip.title = said;
+    row.append(chip);
   }
-  const total = view.sources.filter(x => x.kind === k.key).length;
-  return `${k.label} · ${s.count} of ${total}`;
+  return row;
 }
 
-function slotLines(node, env) {
-  const box = el('div', 'slotlines');
-  for (const k of env.ix.view.adapter.source_kinds) {
-    const s = node.slots && node.slots[k.key];
-    if (!s || !env.state.layers[k.key]) continue;
-    const line = el('span', 'sl' + (s.count ? ' on' : ''));
-    line.append(el('span', 'chip ' + (s.count ? (s.findings ? 'find' : 'on') : ''), k.letter), slotText(node, k, s, env));
-    box.append(line);
+function header(node, env, selected, here) {
+  const { ix } = env;
+  const box = el('div', 'ix-head');
+  box.append(el('div', 'ix-kicker', selected ? `Selected · depth ${node.depth}` : `Viewing · ${node.parent === null ? 'main agent' : `depth ${node.depth}`}`));
+  if (selected) {
+    const back = el('button', 'ix-back', `← ${nodeLabel(here)}`);
+    back.type = 'button';
+    back.dataset.unselect = '1';
+    back.title = `Back to ${nodeLabel(here)} (clear selection)`;
+    box.append(back);
   }
+  const line = el('div', 'ih');
+  const title = el('div', 'ititle');
+  title.append(el('b', 'nm', nodeLabel(node)), el('span', 'sub', `${typeOf(ix, node).label} · ${range(node.start, node.end)}`));
+  line.append(tile(ix, node, 32), title);
+  box.append(line, chips(node, env));
   return box;
 }
 
-const usd = n => '$' + (n >= 0.01 || n === 0 ? n.toFixed(2) : n.toFixed(4));
-const row = (label, value, ...extra) => {
-  const r = el('div', 'row');
-  r.append(el('span', 'lb', label), el('span', 'v', value), ...extra);
-  return r;
-};
-const note = text => el('p', 'note', text);
-
-function stackBar(values, total) {
-  const bar = el('div', 'stack');
-  values.forEach((v, i) => {
-    if (v <= 0 || total <= 0) return;
-    const seg = el('i');
-    seg.style.width = `${v / total * 100}%`;
-    seg.style.background = bandColour(i);
-    bar.append(seg);
-  });
-  return bar;
+function expand(peek, label) {
+  const b = el('button', 'ix-expand');
+  b.type = 'button';
+  b.dataset.peek = peek;
+  b.setAttribute('aria-label', label);
+  b.title = label;
+  const s = svg('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
+  s.append(svg('path', { d: EXPAND }));
+  b.append(s);
+  return b;
 }
 
-function contextPane(node, env) {
-  const view = env.ix.view, comp = node.detail.composition;
-  const title = el('b', null, 'Context at peak');
-  const reply = comp && comp.peak != null ? comp.replies[comp.peak] : null;
-  if (!reply) return pane('context', [title, el('span', 'note', 'not known here')], [note('Not known here: no replies were recorded for this agent.')]);
-  const total = reply[1], parts = replyParts(comp, reply), over = reply[reply.length - 1];
-  const remainder = view.adapter.composition_remainder;
-  const labels = view.adapter.composition;
-  const head = [title, el('span', 'big', k1(total)), tag('exact', 'exact'), stackBar(parts, total)];
-  const body = [
-    note(`At ${clock(reply[0])} · ${node.name}`),
-    el('p', null, `input ${reply[2].toLocaleString('en-US')} + cache write ${reply[3].toLocaleString('en-US')} + cache read ${reply[4].toLocaleString('en-US')}`),
-  ];
-  let rest = null;
-  for (const c of labels) {
-    const i = comp.keys.indexOf(c.key);
-    if (i < 0) continue;
-    const isRest = c.key === remainder;
-    if (isRest) rest = { c, v: parts[i] };
-    const sw = el('span', 'swatch');
-    sw.style.background = bandColour(i);
-    const line = row(c.label, over && isRest ? 'see below' : `~${k1(parts[i])}`, isRest ? tag('est. + remainder', 'est') : tag('estimated', 'est'));
-    line.prepend(sw);
-    line.dataset.category = c.key;
-    body.push(line);
-  }
-  const remLabel = (labels.find(c => c.key === remainder) || {}).label || remainder;
-  if (over) body.push(note(`The estimates add up to more than the exact ${k1(total)}, so nothing is left for ${remLabel}; the split is approximate.`));
-  else if (rest) body.push(note(`The estimates sum to ~${k1(total - rest.v)}; the rest of the exact ${k1(total)} went to ${remLabel}.`));
-  return pane('context', head, body);
+function stat(cls, label, value, line, peek, open) {
+  const box = el('div', `ix-tile ${cls}`);
+  const top = el('div', 'ix-tl');
+  top.append(el('span', 'lb', label));
+  if (peek) top.append(expand(peek, open));
+  box.append(top, el('b', 'big mono', value), el('span', 'ix-line', line));
+  return box;
 }
 
-function costPane(node, env) {
-  const view = env.ix.view, cost = node.detail.cost, list = view.price_list;
-  const title = el('b', null, 'Cost');
-  if (!cost || cost.total_usd == null) return pane('cost', [title, el('span', 'note', 'not known here'), tag('derived', 'derived')], [note('Not known here.')]);
-  const pct = cost.cache_hit_rate == null ? null : `${Math.round(cost.cache_hit_rate * 100)}% cached`;
-  const head = [title, el('span', 'big', usd(cost.total_usd))];
-  if (pct) head.push(el('span', 'note', pct));
-  head.push(tag('derived', 'derived'));
-  const body = [row(`this agent, ${plural(cost.turns, 'turn')}`, usd(cost.total_usd))];
-  if (cost.peak_turn_usd != null) body.push(row(`peak turn${cost.peak_turn_t != null ? ' at ' + clock(cost.peak_turn_t) : ''}`, usd(cost.peak_turn_usd)));
-  if (cost.cache_hit_rate != null) body.push(row('cache hit rate', `${Math.round(cost.cache_hit_rate * 100)}%`, tag('exact', 'exact')));
-  if (cost.instructions_usd_est != null) body.push(row('instruction files carried every turn', `~${usd(cost.instructions_usd_est)}`, tag('estimated', 'est')));
-  if (cost.unpriced > 0) {
-    const named = cost.unpriced_models.length ? `: ${cost.unpriced_models.join(', ')}` : ' (no model named)';
-    body.push(note(`${plural(cost.unpriced, 'reply', 'replies')} not priced${named}`));
+function tiles(node) {
+  const box = el('div', 'ix-tiles');
+  const hit = peakOf(node);
+  const cost = node.detail && node.detail.cost;
+  box.append(hit
+    ? stat('peak', 'Peak context', k1(hit.reply[1]), `at ${clock(hit.reply[0])}`, `peak:${node.id}`, 'Open peak context details')
+    : stat('peak', 'Peak context', '–', 'not known here', null));
+  const known = cost && cost.total_usd != null;
+  box.append(known
+    ? stat('cost', 'Est. cost', usd(cost.total_usd), [plural(cost.turns, 'turn'), cost.cache_hit_rate == null ? null : `${Math.round(cost.cache_hit_rate * 100)}% cached`].filter(Boolean).join(' · '), `cost:${node.id}`, 'Open est. cost details')
+    : stat('cost', 'Est. cost', '–', 'not known here', null));
+  return box;
+}
+
+// The details a row of the in-context list opens: a source, the task prompt, a built-in item, or the composition at peak.
+function opener(row, node, env) {
+  const view = env.ix.view;
+  if (row.key === 'source' || row.key === 'hooks') return row.source ? { source: row.source } : null;
+  if (row.key === 'task') return { peek: `task:${node.id}` };
+  if (row.key === 'builtin') {
+    const item = (view.builtin || []).find(b => b.remainder) || (view.builtin || [])[0];
+    return item ? { peek: `builtin:${item.key}` } : null;
   }
-  if (cost.split_assumed > 0) body.push(note(`${plural(cost.split_assumed, 'reply', 'replies')} had no 5-minute / 1-hour cache split and ${cost.split_assumed === 1 ? 'was' : 'were'} priced at the 5-minute rate.`));
-  body.push(note(`Exact token counts × list price (${list.name}, ${list.as_of}). API-equivalent: on a subscription you don't pay per token.`));
-  return pane('cost', head, body);
+  return { peek: `peak:${node.id}` };
+}
+
+function contextRow(row, node, env) {
+  const kind = row.kind ? env.ix.kinds.get(row.kind) : null;
+  const b = el('button', 'ic');
+  b.type = 'button';
+  const go = opener(row, node, env);
+  if (go && go.source) b.dataset.source = go.source;
+  else if (go) b.dataset.peek = go.peek;
+  const time = row.t != null ? clock(row.t) : row.key === 'rest' ? 'at peak' : 'always';
+  b.setAttribute('aria-label', `${row.label}, ${row.reason}${row.findings ? `, ${row.findings} findings` : ''}, ${tk(row.tokens_est, true)}. Open details.`);
+  const text = el('span', 'ic-t');
+  text.append(el('span', 'ic-n', row.label), el('span', 'ic-w', row.reason));
+  b.append(el('span', 'chip on', kind ? kind.letter : '·'), text);
+  if (row.findings) b.append(el('span', 'ic-f', String(row.findings)));
+  b.append(el('span', 'ic-k mono', tk(row.tokens_est, true)), el('span', 'ic-s mono', time));
+  return b;
+}
+
+function sectionHead(title) {
+  const head = el('div', 'ix-sh');
+  head.append(el('h4', null, title));
+  return head;
+}
+
+function quiet(text) {
+  return el('p', 'ix-quiet', text);
+}
+
+function inContext(node, env) {
+  const sec = el('section', 'ix-sec ix-ctx');
+  const ic = node.detail && node.detail.in_context;
+  const head = el('div', 'ix-sh');
+  head.append(el('h4', null, 'In context'));
+  if (ic) head.append(el('span', 'ix-total mono', `~${k1(ic.total)} at peak`));
+  sec.append(head);
+  if (!ic) { sec.append(quiet('Not known here: no replies were recorded for this agent.')); return sec; }
+  for (const r of ic.rows) sec.append(contextRow(r, node, env));
+  if (ic.over) sec.append(quiet(`These estimates add up to more than the exact ${k1(ic.total)}, so the split is approximate.`));
+  const w = node.withheld;
+  if (node.parent !== null && w) {
+    const names = w.sources.map(s => {
+      const src = env.ix.sources.get(s.source);
+      return src ? src.label || src.name : s.source;
+    });
+    if (w.context_tokens) names.push(`conversation (~${k1(w.context_tokens)})`);
+    if (names.length) sec.append(quiet(`Parent had but didn't pass on: ${names.join(', ')}`));
+  }
+  return sec;
+}
+
+function toCalls(cls, label, scopeTool, aria) {
+  const b = el('button', cls);
+  b.type = 'button';
+  b.dataset.tab = 'calls';
+  b.dataset.callsScope = 'one';
+  b.dataset.callsTool = scopeTool;
+  b.setAttribute('aria-label', aria);
+  b.append(...label);
+  return b;
+}
+
+function activity(node, env) {
+  const sec = el('section', 'ix-sec ix-act');
+  sec.append(sectionHead('Activity'));
+  const total = node.tools.reduce((n, t) => n + t.calls, 0);
+  sec.append(toCalls('ix-all', [el('b', null, `${total} tool calls`), el('span', 'ix-go', '→')], 'all', `${total} tool calls, open in Tool calls`));
+  const most = Math.max(1, ...node.tools.map(t => t.calls));
+  const categories = new Map(env.ix.view.adapter.categories.map(c => [c.key, c]));
+  for (const t of node.tools) {
+    const colour = (categories.get(t.category) || {}).colour;
+    const bar = el('span', 'ix-bar');
+    const fillBar = el('i');
+    fillBar.style.width = `${Math.max(4, Math.round(t.calls / most * 100))}%`;
+    if (colour) fillBar.style.background = colour;
+    bar.append(fillBar);
+    const b = toCalls('ix-tool', [el('span', 'lb', t.tool), bar, el('span', 'n mono', String(t.calls))], t.tool, `${t.calls} ${t.tool} calls, open in Tool calls`);
+    b.dataset.tool = t.tool;
+    sec.append(b);
+  }
+  const prompts = node.detail.prompts || [];
+  if (prompts.length) {
+    sec.append(el('div', 'ix-sub', 'Prompts'));
+    for (const p of prompts) {
+      const key = `prompt:${p.id}`;
+      const b = el('button', 'ix-kid');
+      b.type = 'button';
+      b.dataset.open = key;
+      b.append(el('span', 'lb', `prompt at ${clock(p.t)}`), el('span', 'mono ix-s', tk(p.tokens_est, true)));
+      sec.append(b);
+      if (env.opened.has(key)) sec.append(textBlock(env.text, key, promptUrl(p.id)));
+    }
+  }
+  const kids = childrenOf(env.ix, node);
+  if (kids.length) {
+    const below = node.descendants > kids.length ? ` · ${node.descendants} in total below` : '';
+    sec.append(el('div', 'ix-sub', `Launched ${plural(kids.length, 'subagent')}${below}`));
+    for (const kid of kids) {
+      const b = el('button', 'ix-kid');
+      b.type = 'button';
+      b.dataset.showInGraph = kid.id;
+      const dot = el('span', 'sdot sq');
+      dot.style.background = typeOf(env.ix, kid).colour;
+      b.append(dot, el('span', 'lb', kid.name), el('span', 'mono ix-s', clock(kid.start)));
+      sec.append(b);
+    }
+  }
+  return sec;
+}
+
+function output(node, env) {
+  const d = node.detail;
+  const sec = el('section', 'ix-sec ix-out');
+  sec.append(sectionHead('Output'));
+  if (d.outcome !== 'returned') {
+    sec.append(el('p', 'ix-line', WHAT_HAPPENED[d.outcome] || 'It has no recorded outcome.'));
+    return sec;
+  }
+  const edge = env.ix.edges.get(node.id);
+  const parent = env.ix.nodes.get(node.parent);
+  const at = edge && edge.back_t != null ? ` at ${clock(edge.back_t)}` : '';
+  const back = d.back_tokens_est == null ? '' : `, summarised in ${k1(d.back_tokens_est)}${d.back_ratio ? ` (${Math.round(d.back_ratio)}× smaller)` : ''}`;
+  sec.append(el('p', 'ix-line', `Returned to ${parent ? nodeLabel(parent) : 'its parent'}${at}. ${k1(d.peak)} of work${back}.`));
+  return sec;
 }
 
 export function render(box, env) {
   const { ix, state } = env;
   const here = ix.nodes.get(state.path[state.path.length - 1]);
-  const node = state.sel ? ix.nodes.get(state.sel) : here;
-  const t = typeOf(ix, node);
-  const head = el('div', 'ih');
-  const title = el('div', 'ititle');
-  title.append(el('b', 'nm', node.name), el('span', 'sub', `${t.label} · ${range(node.start, node.end)} · depth ${node.depth}`));
-  head.append(tile(ix, node, 32), title);
-  const panes = [];
-  if (node.detail && 'composition' in node.detail) panes.push(contextPane(node, env));
-  if (node.detail && 'cost' in node.detail) panes.push(costPane(node, env));
-  box.replaceChildren(head, slotLines(node, env), ...panes, rendererFor(node.kind).inspector(node, env));
+  const selected = !!state.sel && ix.nodes.has(state.sel);
+  const node = selected ? ix.nodes.get(state.sel) : here;
+  const parts = [header(node, env, selected, here), tiles(node), inContext(node, env), activity(node, env)];
+  if (node.parent !== null) parts.push(output(node, env));
   const kind = ix.nodeKinds.get(node.kind);
-  if (node !== here && kind && kind.opens) {
-    const open = el('a', 'open', node.descendants > 0 ? `Open — ${node.descendants} nested inside` : 'Open');
-    open.href = hashFor([...state.path, node.id]);
-    box.append(open);
+  if (selected && kind && kind.opens) {
+    const open = el('button', 'ix-open', node.descendants > 0 ? `Open — ${node.descendants} nested inside` : 'Open');
+    open.type = 'button';
+    open.dataset.drill = node.id;
+    parts.push(open);
   }
-  if (node === here && !childrenOf(ix, node).length) box.append(nk('This agent launched no subagents.'));
-  if (node === here && node.parent !== null) box.append(nk(`Started at ${clock(node.start)} in this session.`));
+  box.replaceChildren(...parts);
 }

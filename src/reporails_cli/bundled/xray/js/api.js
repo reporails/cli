@@ -18,7 +18,7 @@ export const onTextArrived = fn => { redraw = fn; };
 const kept = new Set();
 export const forgetTexts = () => { for (const k of [...fetched.keys()]) if (!kept.has(k)) fetched.delete(k); };
 
-// The text behind a key (`keep`: fetched once per page life, e.g. a recorded call that never changes): {loading}, {error} or {text, truncated}; the page draws again when it arrives.
+// The text behind a key (`keep`: fetched once per page life, e.g. a recorded call that never changes): {loading}, {error} or {text, truncated, frontmatter, body}; the page draws again when it arrives.
 export function text(key, url, keep = false) {
   if (fetched.has(key)) return fetched.get(key);
   if (keep) kept.add(key);
@@ -26,7 +26,7 @@ export function text(key, url, keep = false) {
   fetched.set(key, e);
   xrayFetch(url).then(res => {
     if (!res) fetched.set(key, { error: 'The x-ray server did not answer.' });
-    else if (res.ok && res.j && typeof res.j.text === 'string') fetched.set(key, { text: res.j.text, truncated: !!res.j.truncated });
+    else if (res.ok && res.j && typeof res.j.text === 'string') fetched.set(key, { text: res.j.text, truncated: !!res.j.truncated, frontmatter: res.j.frontmatter ?? null, body: typeof res.j.body === 'string' ? res.j.body : res.j.text });
     else fetched.set(key, { error: (res.j && res.j.error) || `request refused (${res.status})` });
   }).then(redraw);
   return e;

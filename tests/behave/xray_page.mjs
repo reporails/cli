@@ -77,15 +77,21 @@ if (mode === 'fxup' && ready) {
 
 if (mode === 'fxbare' && ready) {
   await expandAll();
-  const rows = () => page.ev(`[...document.querySelectorAll('#sources .sr')].filter(r => /\\beach\\b/.test(r.querySelector('.sw').textContent))`);
-  out.rows = await page.ev(`[...document.querySelectorAll('#sources .sr .sw')].map(e => e.textContent).filter(t => /\\beach\\b/.test(t))`);
-  await page.ev(`(() => { const r = [...document.querySelectorAll('#sources .sr')].find(r => /\\beach\\b/.test(r.querySelector('.sw').textContent)); r.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return 0; })()`);
+  const rows = () => page.ev(`[...document.querySelectorAll('#sources .sr')].filter(r => /\\btok\\b/.test(r.querySelector('.sw').textContent))`);
+  out.rows = await page.ev(`[...document.querySelectorAll('#sources .sr .sw')].map(e => e.textContent).filter(t => /\\btok\\b/.test(t))`);
+  await page.ev(`(() => { const r = [...document.querySelectorAll('#sources .sr')].find(r => r.dataset.source && /\\btok\\b/.test(r.querySelector('.sw').textContent)); r.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return 0; })()`);
   out.focus = await page.ev(`(document.querySelector('.fbanner') || {}).textContent || ''`);
   out.titles = await page.ev(`[...document.querySelectorAll('.snode')].map(e => e.title).filter(t => /\\d[kM]? loaded/.test(t))`);
 }
 
 if (mode === 'fxcost' && ready) {
-  const note = () => page.ev(`[...document.querySelectorAll('#inspector [data-pane="cost"] .note')].map(e => e.textContent).filter(t => t.includes('not priced'))`);
+  const note = async () => {
+    await click('#inspector [data-peek^="cost:"]');
+    await page.until(`!!document.querySelector('.pk-dialog .pk-kv')`);
+    const lines = await page.ev(`[...document.querySelectorAll('.pk-dialog .nk')].map(e => e.textContent).filter(t => t.includes('not priced')).map(t => t.replace(/\\.$/, ''))`);
+    await click('.pk-x');
+    return lines;
+  };
   out.main = await note();
   await click('.card[data-group="main:a1"]');
   await click('.card[data-node="a1"]');
@@ -207,7 +213,10 @@ if (mode === 'markers' && ready) {
 
 if (mode === 'file' && ready) {
   await expandAll();
-  out.pill = await page.ev(`(() => { const a = document.querySelector('#sources .sr[data-source="CLAUDE.md"] a.pill'); const h = a.getAttribute('href'); a.click(); return h; })()`);
+  await click('#sources .sr[data-source="CLAUDE.md"]');
+  await page.until(`!!document.querySelector('.pk-dialog a.pk-act')`);
+  out.pill = await page.ev(`document.querySelector('.pk-dialog a.pk-act').getAttribute('href')`);
+  await click('.pk-dialog a.pk-act');
   await page.until(`location.hash.startsWith('#/file/')`);
   out.hash = await page.ev(`location.hash`);
   out.name = await page.until(`(document.querySelector('#view-file .fn')||{}).textContent`);
@@ -215,7 +224,9 @@ if (mode === 'file' && ready) {
   await click('[data-back]');
   await page.until(`location.hash.startsWith('#/agent/')`);
   out.backHash = await page.ev(`location.hash`);
-  out.row = await page.ev(`document.querySelector('#sources .sr[data-source=".claude/rules/rules-engine.md"] a.sopen').getAttribute('href')`);
+  await click('#sources .sr[data-source=".claude/rules/rules-engine.md"]');
+  await page.until(`!!document.querySelector('.pk-dialog a.pk-act')`);
+  out.row = await page.ev(`document.querySelector('.pk-dialog a.pk-act').getAttribute('href')`);
 }
 
 if (mode === 'stub' && ready) {
@@ -225,13 +236,11 @@ if (mode === 'stub' && ready) {
   await page.ev(`import('/test/stub_node.js').then(() => 0)`);
   out.after = (await page.until(`(document.querySelector('.card[data-node="stub1"] .stubcard')||{}).textContent`)) || '';
   await click('.card[data-node="stub1"]');
-  out.inspector = await page.until(`(document.querySelector('#inspector .stubinspector')||{}).textContent`);
+  out.inspector = await page.until(`(document.querySelector('#inspector .ix-kicker')||{}).textContent`);
   out.agentCard = await page.ev(`document.querySelectorAll('.card[data-node="a1"] .nc, .card.top .nc').length`);
 }
 
 if (mode === 'panes' && ready) {
-  const state = key => page.ev(`(() => { const p = document.querySelector('#inspector [data-pane="${key}"]'); return p ? { open: p.querySelector('.ph').getAttribute('aria-expanded'), bodyHidden: p.querySelector('.pb').hidden, head: p.querySelector('.ph').textContent } : null; })()`);
-  const toggle = key => click(`#inspector [data-pane="${key}"] .ph`);
   const selectNode = async id => {
     const before = await page.ev(`document.querySelector('#inspector .nm').textContent`);
     // A member of a collapsed fan-out group has no card until its group is expanded: expand the groups first.
@@ -241,30 +250,21 @@ if (mode === 'panes' && ready) {
     await click(`.card[data-node="${id}"]`);
     await page.until(`document.querySelector('#inspector .nm').textContent !== ${JSON.stringify(before)}`);
   };
-  const chips = () => page.ev(`[...document.querySelectorAll('#inspector .sl')].map(e => e.textContent)`);
-  const visibleRows = () => page.ev(`[...document.querySelectorAll('#inspector [data-pane="withheld"] .pb .it')].filter(e => e.offsetParent !== null).length`);
-  out.start = { context: await state('context'), cost: await state('cost') };
-  await toggle('context');
-  out.contextOpen = await state('context');
-  out.costAfterContext = await state('cost');
-  out.categories = await page.ev(`[...document.querySelectorAll('#inspector [data-pane="context"] [data-category]')].map(r => ({ key: r.dataset.category, label: r.querySelector('.lb').textContent, value: r.querySelector('.v').textContent, tags: [...r.querySelectorAll('.tag')].map(t => t.textContent) }))`);
-  out.contextText = await page.ev(`document.querySelector('#inspector [data-pane="context"] .pb').textContent`);
-  out.exactTag = await page.ev(`[...document.querySelectorAll('#inspector [data-pane="context"] .ph .tag')].map(t => t.textContent)`);
-  await toggle('cost');
-  out.costOpen = await state('cost');
-  out.costText = await page.ev(`document.querySelector('#inspector [data-pane="cost"] .pb').textContent`);
-  out.mainChip = await chips();
+  const tiles = () => page.ev(`[...document.querySelectorAll('#inspector .ix-tile')].map(t => ({ label: t.querySelector('.lb').textContent, value: t.querySelector('.big').textContent, line: t.querySelector('.ix-line').textContent, peek: (t.querySelector('[data-peek]') || {dataset: {}}).dataset.peek || null }))`);
+  out.mainTiles = await tiles();
   out.mainText = await page.ev(`document.querySelector('#inspector').textContent`);
+  await click('#inspector [data-peek="peak:main"]');
+  await page.until(`!!document.querySelector('.pk-dialog .pk-lg')`);
+  out.peakOpen = await page.ev(`({ cats: [...document.querySelectorAll('.pk-dialog .pk-lg')].map(r => ({ key: r.dataset.category, label: r.querySelector('.lb').textContent, value: r.querySelector('.v').textContent })), text: document.querySelector('.pk-dialog').textContent, title: document.querySelector('.pk-title').textContent })`);
+  await click('.pk-x');
+  await click('#inspector [data-peek="cost:main"]');
+  await page.until(`!!document.querySelector('.pk-dialog .pk-kv')`);
+  out.costText = await page.ev(`document.querySelector('.pk-dialog').textContent`);
+  await click('.pk-x');
   await selectNode('a1');
-  out.afterSelect = { context: await state('context'), cost: await state('cost') };
-  out.a1Chip = await chips();
-  out.withheldCompact = await state('withheld');
-  out.withheldRowsBefore = await visibleRows();
-  await toggle('withheld');
-  out.withheldRowsAfter = await visibleRows();
+  out.a1Tiles = await tiles();
   out.a1Text = await page.ev(`document.querySelector('#inspector').textContent`);
-  await selectNode('a3');
-  out.a3Chip = await chips();
+  out.withheld = await page.ev(`[...document.querySelectorAll('#inspector .ix-quiet')].map(e => e.textContent)`);
 }
 
 if (mode === 'words' && ready) {
@@ -273,6 +273,10 @@ if (mode === 'words' && ready) {
   out.unknown = await page.ev(`document.querySelector('#unknown').textContent`);
   out.titles = await page.ev(`[...document.querySelectorAll('[title]')].map(e => e.title)`);
   out.claudeRow = await page.ev(`document.querySelector('#sources .sr[data-source="CLAUDE.md"] .sw').textContent`);
+  await click('#sources .sr[data-source="CLAUDE.md"]');
+  await page.until(`!!document.querySelector('.pk-dialog')`);
+  out.claudeDetails = await page.ev(`document.querySelector('.pk-dialog').textContent`);
+  await click('.pk-x');
   await click('.card[data-group="main:a1"]');
   await click('.card[data-node="a1"]');
   out.returned = await page.ev(`document.querySelector('#inspector').textContent`);
@@ -330,7 +334,7 @@ if (mode === 'groups' && ready) {
 if (mode === 'agents' && ready) {
   await click('.sh[data-source-group="agent"]');
   await click('.smore');
-  const rows = await page.ev(`Object.fromEntries([...document.querySelectorAll('#sources .ssec[data-kind="agent"] .sr')].map(r => [r.dataset.source, { name: r.querySelector('.sn').textContent, who: r.querySelector('.sw').textContent, pill: !!r.querySelector('.pill') }]))`);
+  const rows = await page.ev(`Object.fromEntries([...document.querySelectorAll('#sources .ssec[data-kind="agent"] .sr')].map(r => [r.dataset.source, { name: r.querySelector('.sn').textContent, who: r.querySelector('.sw').textContent, }]))`);
   out.rows = rows;
   out.lit = {};
   for (const id of ['.claude/agents/reviewer.md', '.claude/agents/idle.md']) {
@@ -343,8 +347,7 @@ if (mode === 'agents' && ready) {
   // Fan-out groups start collapsed; open them so every card shows its chips.
   while (await page.ev(`!!document.querySelector('.card[data-group][aria-expanded="false"]')`)) await click('.card[data-group][aria-expanded="false"]');
   out.chips = await page.ev(`Object.fromEntries([...document.querySelectorAll('.card[data-node]:not(.top)')].map(c => { const a = c.querySelector('.chip[data-kind="agent"]'); return [c.dataset.node, a ? a.className : null]; }))`);
-  out.note = await page.ev(`(document.querySelector('#sources .ssec[data-kind="agent"] .snote')||{}).textContent`);
-  out.toggles = await page.ev(`[...document.querySelectorAll('[data-eye]')].map(e => e.dataset.eye + ':' + e.querySelector('.chip').textContent)`);
+  out.toggles = await page.ev(`[...document.querySelectorAll('[data-eye]')].map(e => e.dataset.eye)`);
 }
 
 if (mode === 'cost' && ready) {

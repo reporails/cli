@@ -124,15 +124,3 @@ export function settle(env, fallback, hadFocusIn) {
   if (!target && o && o.attr) target = [...document.querySelectorAll(`[${o.attr}]`)].find(n => n.getAttribute(o.attr) === o.value) || null;
   (target || fallback).focus();
 }
-
-// The fallback `src` renderer: the source's name, its kind and its path from the view.
-registerPeek('src', (env, id) => {
-  const s = env.ix.sources.get(id);
-  if (!s) return null;
-  const k = env.ix.kinds.get(s.kind);
-  const kind = k ? k.label : s.kind;
-  const path = el('p', 'pk-path mono', s.path || 'no path');
-  const rows = el('div', 'pk-kv');
-  rows.append(el('span', 'lb', 'Kind'), el('span', 'v', kind), el('span', 'lb', 'Path'), el('span', 'v mono', s.path || '–'));
-  return { chip: k ? k.letter : null, kicker: kind, title: s.label || s.name, tags: [], main: [path], side: [rows], actions: [] };
-});

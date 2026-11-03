@@ -124,9 +124,9 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Then the page shows the view's own model, window, unknown facts, trigger words, notes, ratio and subagent counts
 
   @page @browser
-  Scenario: The inspector's Context at peak, Cost and Not passed down panes are compact until opened
+  Scenario: The inspector's Peak context and Est. cost tiles open their details
     Given the bundled page is served over the "view_sample" fixture view
-    Then the inspector's panes start compact, open independently, stay open across agents, and print every estimate with a tilde
+    Then the inspector tiles open the peak and cost details, and every estimate has a tilde
 
   @page @browser
   Scenario: A kind reported absent and an untyped node
@@ -157,7 +157,7 @@ Feature: ails xray serves a session's context window on the loopback address thr
   @page @browser
   Scenario: Agent definitions list their launch counts, light their subagents and carry the A chip
     Given the bundled page is served over the "view_p3" fixture view
-    Then a launched agent source lights exactly its subagents, a never-launched one lights nothing, the group ends with the adapter note, the A chip is filled or outlined by count and the Sources panel has a layer toggle per adapter kind
+    Then a launched agent source lights exactly its subagents, a never-launched one lights nothing, the A chip is filled or outlined by count and the Sources panel has an eye per adapter kind
 
   @page @browser
   Scenario: A source row shows its estimated cost
@@ -212,7 +212,7 @@ Feature: ails xray serves a session's context window on the loopback address thr
   @page @browser
   Scenario: Unpriced replies with no model named say so
     Given the bundled page is served over the "view_fxpage" fixture view
-    Then the cost pane says replies were not priced because no model was named, and lists the models when there are some
+    Then the cost details say replies were not priced because no model was named, and list the models if any
 
   @page @browser
   Scenario: The session switcher lists the project's sessions and marks the current one

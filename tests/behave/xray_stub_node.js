@@ -8,10 +8,4 @@ register('stub', {
     box.textContent = `STUB ${node.name}`;
     return box;
   },
-  inspector: node => {
-    const box = document.createElement('div');
-    box.className = 'stubinspector';
-    box.textContent = `stub inspector for ${node.id}`;
-    return box;
-  },
 });

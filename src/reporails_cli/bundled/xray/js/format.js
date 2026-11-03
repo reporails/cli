@@ -25,3 +25,6 @@ export const startedAt = iso => {
   const d = iso ? new Date(iso) : null;
   return d && !isNaN(d) ? d.toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '';
 };
+export const usd = n => '$' + (n >= 0.01 || n === 0 ? n.toFixed(2) : n.toFixed(4));
+// A source's estimated cost: `~$0.09`, or `<$0.01` under a cent; null when the view has no figure.
+export const costEst = c => (typeof c !== 'number' ? null : c < 0.01 ? '<$0.01' : `~$${c.toFixed(2)}`);

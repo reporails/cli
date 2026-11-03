@@ -12,7 +12,7 @@ const openRow = needle => page.ev(`(() => {
   const all = document.querySelector('[data-groups="open"]'); if (all) all.click();
   const row = [...document.querySelectorAll('#sources .sr')].find(r => r.querySelector('.sn').textContent.includes(${JSON.stringify(needle)}));
   if (!row) return null;
-  const label = row.querySelector('.sn').textContent; row.querySelector('a.sopen').click(); return label;
+  const label = row.querySelector('.sn').textContent; row.click(); return label;
 })()`);
 
 if (mode === 'memory' && ready) {
@@ -38,7 +38,7 @@ if (mode === 'prompt' && ready) {
 if (mode === 'markup' && ready) {
   out.row = await openRow('onerror');
   out.text = out.row ? await peekText() : '';
-  await page.ev(`location.hash = '#/agent/main'; 0`);
+  await page.ev(`document.querySelector('.pk-x').click(); location.hash = '#/agent/main'; 0`);
   await page.until(`!!document.querySelector('[data-open^="prompt:"]')`);
   await page.ev(`document.querySelector('[data-open^="prompt:"]').click(); 0`);
   out.promptText = await peekText();

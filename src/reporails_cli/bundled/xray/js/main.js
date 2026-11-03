@@ -12,6 +12,7 @@ import * as filepane from './components/filepane.js';
 import * as details from './components/details.js';
 import * as calls from './components/calls.js';
 import * as sourcestable from './components/sourcestable.js';
+import './components/peeks.js';
 import { onRegister } from './components/nodes/index.js';
 
 const $ = s => document.querySelector(s);
@@ -147,6 +148,10 @@ document.addEventListener('click', e => {
   const tab = t.closest('[data-tab]');
   if (tab && TABS.includes(tab.dataset.tab)) {
     state.tab = tab.dataset.tab;
+    if (tab.dataset.callsScope != null || tab.dataset.callsTool != null) {
+      Object.assign(state.calls, { scope: tab.dataset.callsScope ?? state.calls.scope, tool: tab.dataset.callsTool ?? 'all', failed: false, all: false });
+      closePeek();
+    }
     if (state.file != null) location.hash = lastAgentHash;
     return render();
   }
