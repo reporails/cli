@@ -1,22 +1,22 @@
-import { el } from './dom.js';
+import { el, nk } from './dom.js';
 import { text, viewUrl, viewHeaders, xrayFetch, onTextArrived, forgetTexts } from './api.js';
-import { index, focusSource } from './views.js';
+import { index, focusSource, activeTab, TABS } from './views.js';
 import { state, applyHash, hashFor } from './state.js';
 import * as header from './components/header.js';
 import * as parentstrip from './components/parentstrip.js';
-import * as toolbar from './components/toolbar.js';
 import * as sources from './components/sources.js';
 import * as canvas from './components/canvas.js';
 import * as inspector from './components/inspector.js';
 import * as filepane from './components/filepane.js';
+import * as details from './components/details.js';
 import { onRegister } from './components/nodes/index.js';
 
 const $ = s => document.querySelector(s);
-let ix = null, version = null, etag = null, inflight = false, lastAgentHash = '#/agent/main';
+let ix = null, version = null, etag = null, inflight = false, lastAgentHash = '#/agent/main', afterHash = null;
 const run = { busy: false, res: null, autoChecked: new Set() };
 const opened = new Set();
 
-const env = () => ({ ix, state, focus: focusSource(ix, state), text, opened, busy: run.busy, res: run.res });
+const env = () => ({ ix, state, tab: activeTab(ix, state), focus: focusSource(ix, state), text, opened, busy: run.busy, res: run.res });
 
 function renderNotices() {
   const v = ix.view, b = $('#banner');
@@ -35,6 +35,29 @@ function renderNotices() {
   $('#unknown').textContent = v.not_known.length ? `Not known: ${v.not_known.join(', ')}.` : '';
 }
 
+const BODIES = { graph: '#view-graph', calls: '#view-calls-body', sources: '#view-sources-body' };
+const SIDES = { calls: '#side-calls', sources: '#side-sources' };
+
+// The Tool calls and Sources bodies hold a placeholder line until their tables are drawn.
+const placeholder = (box, text) => box.replaceChildren(nk(text));
+
+function renderTab(e) {
+  for (const k of TABS) $(BODIES[k]).hidden = e.tab !== k;
+  const hadFocus = details.hasFocusIn();
+  if (e.tab === 'graph') {
+    canvas.render($('#canvas'), e);
+    const cv = $('#canvas .cv');
+    $('#canvas').style.setProperty('--cvh', `${cv ? cv.offsetHeight : 0}px`);
+    inspector.render($('#inspector'), e);
+    details.renderOverlay($('#overlay'), e);
+  } else {
+    $('#overlay').hidden = true;
+    placeholder($(e.tab === 'calls' ? '#view-calls' : '#view-sources'), e.tab === 'calls' ? 'The tool call table is not drawn yet.' : 'The sources table is not drawn yet.');
+    details.renderPanel($(SIDES[e.tab]), e);
+  }
+  details.settle(e, $(BODIES[e.tab]), hadFocus);
+}
+
 function render() {
   if (!ix) return;
   const e = env();
@@ -46,22 +69,19 @@ function render() {
   sources.render($('#sources'), e);
   if (filing) {
     parentstrip.render($('#parentstrip'), { ...e, state: { ...state, path: ['main'] } });
-    $('#toolbar').replaceChildren();
     filepane.render($('#view-file'), e);
     autoCheck();
     return;
   }
   $('#view-file').replaceChildren();
   parentstrip.render($('#parentstrip'), e);
-  toolbar.render($('#toolbar'), e);
-  canvas.render($('#canvas'), e);
-  inspector.render($('#inspector'), e);
+  renderTab(e);
 }
 
 function renderFocus() {
   if (!ix || state.file != null) return;
   const e = env();
-  canvas.render($('#canvas'), e);
+  if (e.tab === 'graph') canvas.render($('#canvas'), e);
   sources.follow($('#sources'), e);
   for (const r of document.querySelectorAll('#sources .sr')) r.classList.toggle('on', !!e.focus && r.dataset.source === e.focus.id);
 }
@@ -91,23 +111,68 @@ async function runAct(kind, path) {
 
 const toggle = (set, v) => { if (!set.delete(v)) set.add(v); };
 
+const closePeek = () => { state.peek = null; };
+
+function openPeek(kind, id, from) {
+  details.remember(from);
+  state.peek = { kind, id };
+}
+
+// Draws the Graph tab's agent when a "show in graph" link names one: its parents become the path, it becomes the selection.
+function showInGraph(id) {
+  const chain = [];
+  for (let n = ix.nodes.get(id); n; n = ix.nodes.get(n.parent)) chain.unshift(n.id);
+  const here = chain.slice(0, -1);
+  state.tab = 'graph';
+  closePeek();
+  if (!here.length || here.join('/') === state.path.join('/')) { state.sel = id; return render(); }
+  afterHash = id;
+  location.hash = hashFor(here);
+}
+
+const CALLS = {
+  callsScope: (c, v) => { c.scope = v; },
+  callsTool: (c, v) => { c.tool = v; },
+  callsFailed: c => { c.failed = !c.failed; },
+  callsAll: c => { c.all = !c.all; },
+};
+
 document.addEventListener('click', e => {
   if (!ix) return;
   const t = e.target;
   if (sources.click(t, env())) return render();
   const act = t.closest('[data-act]');
   if (act) return runAct(act.dataset.act, act.dataset.path);
+  const tab = t.closest('[data-tab]');
+  if (tab && TABS.includes(tab.dataset.tab)) {
+    state.tab = tab.dataset.tab;
+    if (state.file != null) location.hash = lastAgentHash;
+    return render();
+  }
   if (t.closest('a[href]')) return;
   if (t.closest('[data-back]')) { location.hash = lastAgentHash; return; }
   const open = t.closest('[data-open]');
   if (open) { toggle(opened, open.dataset.open); return render(); }
   if (t.closest('[data-clear]')) { state.pinned = null; return render(); }
-  const type = t.closest('[data-type]');
-  if (type) { state.type = type.dataset.type; state.pinned = null; state.hover = null; return render(); }
-  const layer = t.closest('[data-layer]');
-  if (layer) { state.layers[layer.dataset.layer] = !state.layers[layer.dataset.layer]; return render(); }
+  const eye = t.closest('[data-eye]');
+  if (eye) { state.layers[eye.dataset.eye] = !state.layers[eye.dataset.eye]; return render(); }
+  if (t.closest('[data-close-peek]')) { closePeek(); return render(); }
+  const peek = t.closest('[data-peek]');
+  const want = peek && details.parsePeek(peek.dataset.peek);
+  if (want) { openPeek(want.kind, want.id, peek); return render(); }
+  const show = t.closest('[data-show-in-graph]');
+  if (show) return showInGraph(show.dataset.showInGraph);
+  const drill = t.closest('[data-drill]');
+  if (drill) { location.hash = hashFor([...state.path, drill.dataset.drill]); return; }
+  if (t.closest('[data-unselect]')) { state.sel = null; return render(); }
+  for (const [key, set] of Object.entries(CALLS)) {
+    const c = t.closest(`[data-${key.replace(/[A-Z]/g, m => '-' + m.toLowerCase())}]`);
+    if (!c) continue;
+    set(state.calls, c.dataset[key]);
+    return render();
+  }
   const src = t.closest('[data-source]');
-  if (src) { state.pinned = state.pinned === src.dataset.source ? null : src.dataset.source; return render(); }
+  if (src) { state.pinned = src.dataset.source; openPeek('src', src.dataset.source, src); return render(); }
   const group = t.closest('[data-group]');
   if (group) { state.groups[group.dataset.group] = group.getAttribute('aria-expanded') !== 'true'; return render(); }
   const card = t.closest('.card[data-node]');
@@ -115,38 +180,61 @@ document.addEventListener('click', e => {
   if (card) { state.sel = null; render(); }
 });
 
-document.addEventListener('dblclick', e => {
-  const card = e.target.closest('.card[data-node]:not(.top)');
-  if (!card || !ix) return;
-  const node = ix.nodes.get(card.dataset.node);
-  const kind = node && ix.nodeKinds.get(node.kind);
-  if (kind && kind.opens) location.hash = hashFor([...state.path, node.id]);
-});
-
 document.addEventListener('keydown', e => {
   if (!ix) return;
-  const card = e.target.closest && e.target.closest('.card[data-node]');
+  const target = e.target.closest ? e.target : document.body;
+  const card = target.closest('.card[data-node]');
   if (e.key === 'Enter' && card && !card.classList.contains('top')) { state.sel = card.dataset.node; render(); }
-  if (e.key === 'Escape' && state.pinned) { state.pinned = null; render(); }
+  if ((e.key === 'Enter' || e.key === ' ') && target.matches('[data-source], [data-peek]')) { e.preventDefault(); target.click(); return; }
+  const tab = target.closest('[role="tab"]');
+  if (tab && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+    const at = TABS.indexOf(tab.dataset.tab) + (e.key === 'ArrowRight' ? 1 : -1);
+    state.tab = TABS[(at + TABS.length) % TABS.length];
+    render();
+    document.getElementById(`tab-${state.tab}`).focus();
+    return;
+  }
+  if (e.key !== 'Escape' || e.defaultPrevented) return;
+  if (state.peek) closePeek();
+  else if (state.sel) state.sel = null;
+  else if (state.pinned) state.pinned = null;
+  else return;
+  render();
 });
 
-document.addEventListener('mouseover', e => {
-  const src = e.target.closest && e.target.closest('[data-source]');
-  const id = src ? src.dataset.source : null;
+// Hover and keyboard focus on a source highlight it; neither moves anything.
+function lightSource(id) {
   if (id === state.hover) return;
   state.hover = id;
   renderFocus();
+}
+
+document.addEventListener('mouseover', e => {
+  const src = e.target.closest && e.target.closest('[data-source]');
+  lightSource(src ? src.dataset.source : null);
+});
+
+document.addEventListener('focusin', e => {
+  const src = e.target.closest && e.target.closest('[data-source]');
+  if (src) lightSource(src.dataset.source);
+});
+
+document.addEventListener('focusout', e => {
+  const next = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('[data-source]');
+  if (e.target.closest && e.target.closest('[data-source]') && !next) lightSource(null);
 });
 
 window.addEventListener('hashchange', () => {
   if (!ix) return;
   applyHash(location.hash, ix.nodes);
+  if (afterHash) { state.sel = ix.nodes.has(afterHash) ? afterHash : null; afterHash = null; }
   if (state.file == null) lastAgentHash = location.hash || lastAgentHash;
   render();
 });
 
 onTextArrived(render);
 onRegister(render);
+details.onPeekRegister(render);
 
 function adopt(view) {
   ix = index(view);

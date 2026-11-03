@@ -653,7 +653,7 @@ def step_absent_and_untyped(context):
     if seen is None:
         return
     assert seen["absent"] == ["No skills configured"], seen
-    assert "null" not in seen["typeButtons"], seen
+    assert seen["typeButtons"] == [], seen
     assert seen["untypedCard"] is True, seen
 
 
@@ -770,7 +770,8 @@ def step_source_groups(context):
 
 @then(
     "a launched agent source lights exactly its subagents, a never-launched one lights nothing, the group ends "
-    "with the adapter note, the A chip is filled or outlined by count and the toolbar has a toggle per adapter kind"
+    "with the adapter note, the A chip is filled or outlined by count and the Sources panel has a layer toggle "
+    "per adapter kind"
 )
 def step_agent_sources(context):
     seen = _page(context, "agents")

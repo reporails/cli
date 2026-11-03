@@ -39,3 +39,18 @@ export const childrenOf = (ix, node) => node.children.map(id => ix.nodes.get(id)
 
 // A reply row is [t, total, input, cache write, cache read, ...one value per category key, over_estimate].
 export const replyParts = (comp, row) => row.slice(5, 5 + comp.keys.length);
+
+export const TABS = ['graph', 'calls', 'sources'];
+
+// The open tab: the one chosen, else Tool calls for a session with no subagents and Graph for the rest.
+export const activeTab = (ix, state) => state.tab || (ix.view.nodes.length > 1 ? 'graph' : 'calls');
+
+// What each tab's count in the header says.
+export function tabCounts(ix) {
+  const v = ix.view;
+  return {
+    graph: v.nodes.length,
+    calls: v.track.reduce((n, t) => n + t.calls.length, 0),
+    sources: v.sources.length + (v.builtin || []).length,
+  };
+}

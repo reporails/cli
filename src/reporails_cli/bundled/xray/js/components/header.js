@@ -1,8 +1,9 @@
-// The header: logo, breadcrumb of the agent path, the session's date and length, and the adapter chip.
+// The header: logo, breadcrumb of the agent path, the tabs with their counts, the session's date and length, and the adapter chip.
 import { el, tpl, slot } from '../dom.js';
 import { dur, k1, plural, startedAt } from '../format.js';
 import { xrayFetch, text, sessionsUrl, firstPromptUrl } from '../api.js';
 import { hashFor } from '../state.js';
+import { TABS, tabCounts } from '../views.js';
 
 const MAX_SHOWN = 3;
 
@@ -77,8 +78,27 @@ document.addEventListener('click', e => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && sw.open && sw.box) { sw.open = false; render(sw.box, sw.env); }
+  if (e.key === 'Escape' && sw.open && sw.box) { sw.open = false; e.preventDefault(); render(sw.box, sw.env); }
 });
+
+const TAB_LABELS = { graph: 'Graph', calls: 'Tool calls', sources: 'Sources' };
+
+function renderTabs(box, env) {
+  const counts = tabCounts(env.ix);
+  const list = slot(box, 'tabs');
+  for (const key of TABS) {
+    const on = env.tab === key;
+    const b = el('button', 'tab', TAB_LABELS[key]);
+    b.type = 'button';
+    b.dataset.tab = key;
+    b.id = `tab-${key}`;
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', String(on));
+    b.tabIndex = on ? 0 : -1;
+    b.append(el('span', 'n', String(counts[key])));
+    list.append(b);
+  }
+}
 
 export function render(box, env) {
   const { ix, state } = env;
@@ -89,6 +109,7 @@ export function render(box, env) {
   renderSwitch(box, v);
   if (first) loadSessions();
   slot(box, 'crumbs').replaceChildren(...crumbs(ix, state.path));
+  renderTabs(box, env);
   slot(box, 'session').textContent = [v.project].filter(Boolean).join(' · ');
   const win = v.window && v.window.size ? `${k1(v.window.size)} window${v.window.basis === 'observed' ? '' : ' (' + v.window.basis + ')'}` : '';
   slot(box, 'model').textContent = [v.model, win].filter(Boolean).join(' · ');

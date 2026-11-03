@@ -1,9 +1,10 @@
 // usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions>
 // Drives the real `ails xray` page in headless Chrome and prints one JSON object describing what it drew.
-import { openPage } from './xray_cdp.mjs';
+import { openPage, toGraph } from './xray_cdp.mjs';
 
 const [url, mode] = [process.argv[2], process.argv[3]];
 const page = await openPage(url, 1440);
+await toGraph(page);
 const ready = await page.until(`!!document.querySelector('.card.top')`);
 let out = { ready: !!ready };
 const peekText = () => page.until(`(document.querySelector('pre.peek')||{}).textContent`).then(t => t || '');

@@ -1,15 +1,19 @@
 // usage: node xray_page.mjs <page-url> <mode> [width] [session]
 // Drives the bundled page, served over a fixture view, in headless Chrome and prints one JSON object per mode.
-import { openPage, sleep as sleepMs } from './xray_cdp.mjs';
+import { openPage, sleep as sleepMs, toGraph } from './xray_cdp.mjs';
 
 const [url, mode, width, picked] = [process.argv[2], process.argv[3], Number(process.argv[4] || 1440), process.argv[5]];
 const page = await openPage(url, width);
+await toGraph(page);
 const ready = await page.until(`!!document.querySelector('.card.top')`);
 const out = { ready: !!ready };
 const go = async hash => { await page.ev(`location.hash = ${JSON.stringify(hash)}; 0`); await page.until(`location.hash === ${JSON.stringify(hash)}`); };
 const click = sel => page.ev(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return false; e.click(); return true; })()`);
 const expandAll = () => click('[data-groups="open"]');
 const cardsState = () => page.ev(`[...document.querySelectorAll('.card[data-node]:not(.top):not(.bottom)')].map(c => ({ id: c.dataset.node, ring: c.classList.contains('ring'), dim: c.classList.contains('dim') }))`);
+
+// The graph column scales by CSS zoom, so a measured length divides by it to compare with the view's own pixels.
+const ZOOM = `(parseFloat(getComputedStyle(document.querySelector('#canvas')).zoom) || 1)`;
 
 const overlapsOf = () => page.ev(`(() => {
   const cards = [...document.querySelectorAll('.card[data-node], .card[data-group], .card.bottom')];
@@ -33,7 +37,7 @@ const launchOf = () => page.ev(`(() => {
     const key = c.dataset.node || c.dataset.group;
     const edge = document.querySelector('path.arch.out[' + attr + '="' + key + '"]');
     const out = Number(edge.getAttribute('d').match(/^M[\\d.]+,([\\d.]+)/)[1]);
-    return { key, top: c.getBoundingClientRect().top - cv.top, out, launchY: Number(c.dataset.launchY || NaN) };
+    return { key, top: (c.getBoundingClientRect().top - cv.top) / ${ZOOM}, out, launchY: Number(c.dataset.launchY || NaN) };
   });
 })()`);
 
@@ -48,9 +52,9 @@ if (mode === 'fxtop' && ready) {
   await page.until(`!!document.querySelector('.gbox')`);
   out.expanded = await overlapsOf();
   const cv = await page.ev(`document.querySelector('.cv').getBoundingClientRect().top`);
-  out.early = await page.ev(`(() => { const c = document.querySelector('.card[data-node="a0"]'); return { top: c.getBoundingClientRect().top - ${cv}, launchY: Number(c.dataset.launchY) }; })()`);
-  out.topBottom = await page.ev(`document.querySelector('.card.top').getBoundingClientRect().bottom - ${cv}`);
-  out.boxTop = await page.ev(`document.querySelector('.gbox').getBoundingClientRect().top - ${cv}`);
+  out.early = await page.ev(`(() => { const c = document.querySelector('.card[data-node="a0"]'); return { top: (c.getBoundingClientRect().top - ${cv}) / ${ZOOM}, launchY: Number(c.dataset.launchY) }; })()`);
+  out.topBottom = await page.ev(`(document.querySelector('.card.top').getBoundingClientRect().bottom - ${cv}) / ${ZOOM}`);
+  out.boxTop = await page.ev(`(document.querySelector('.gbox').getBoundingClientRect().top - ${cv}) / ${ZOOM}`);
 }
 
 if (mode === 'fxgroup' && ready) {
@@ -121,9 +125,9 @@ if (mode === 'p1select' && ready) {
 }
 
 if (mode === 'p1stretch' && ready) {
-  out.bars = await page.ev(`[...document.querySelectorAll('.stretch')].map(e => ({ title: e.title, width: e.getBoundingClientRect().width, colour: getComputedStyle(e).backgroundColor }))`);
+  out.bars = await page.ev(`[...document.querySelectorAll('.stretch')].map(e => ({ title: e.title, width: Math.round(e.getBoundingClientRect().width / ${ZOOM} * 100) / 100, colour: getComputedStyle(e).backgroundColor }))`);
   out.note = await page.ev(`(document.querySelector('.scalenote') || {}).textContent || null`);
-  out.ticks = await page.ev(`[...document.querySelectorAll('.tick')].map(e => e.getBoundingClientRect().top).sort((a, b) => a - b)`);
+  out.ticks = await page.ev(`[...document.querySelectorAll('.tick')].map(e => e.getBoundingClientRect().top / ${ZOOM}).sort((a, b) => a - b)`);
   out.dense = await page.ev(`import('/static/js/geometry.js').then(g => g.tickMarks({ start: 0, end: 7200 }, t => t * 0.01).map(m => m.y))`);
 }
 
@@ -163,15 +167,15 @@ if (mode === 'layer' && ready) {
     other: document.querySelectorAll('.card .chip[data-kind="rule"]').length,
   })`);
   out.before = await count();
-  await click('[data-layer="skill"]');
+  await click('[data-eye="skill"]');
   out.after = await count();
-  await click('[data-layer="skill"]');
+  await click('[data-eye="skill"]');
   out.again = await count();
 }
 
 if (mode === 'omitted' && ready) {
   Object.assign(out, await page.ev(`({
-    toggles: [...document.querySelectorAll('[data-layer]')].map(e => e.dataset.layer),
+    toggles: [...document.querySelectorAll('[data-eye]')].map(e => e.dataset.eye),
     sections: [...document.querySelectorAll('#sources .ssec')].map(e => e.dataset.kind),
     chips: [...new Set([...document.querySelectorAll('.card .chip[data-kind]')].map(e => e.dataset.kind))],
     stations: [...document.querySelectorAll('.station')].map(e => e.dataset.source),
@@ -340,7 +344,7 @@ if (mode === 'agents' && ready) {
   while (await page.ev(`!!document.querySelector('.card[data-group][aria-expanded="false"]')`)) await click('.card[data-group][aria-expanded="false"]');
   out.chips = await page.ev(`Object.fromEntries([...document.querySelectorAll('.card[data-node]:not(.top)')].map(c => { const a = c.querySelector('.chip[data-kind="agent"]'); return [c.dataset.node, a ? a.className : null]; }))`);
   out.note = await page.ev(`(document.querySelector('#sources .ssec[data-kind="agent"] .snote')||{}).textContent`);
-  out.toggles = await page.ev(`[...document.querySelectorAll('[data-layer]')].map(e => e.dataset.layer + ':' + e.querySelector('.chip').textContent)`);
+  out.toggles = await page.ev(`[...document.querySelectorAll('[data-eye]')].map(e => e.dataset.eye + ':' + e.querySelector('.chip').textContent)`);
 }
 
 if (mode === 'cost' && ready) {

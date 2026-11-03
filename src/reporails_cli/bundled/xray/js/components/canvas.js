@@ -471,7 +471,7 @@ export function render(box, env) {
   }
   const lowest = scale.lowest;
   const shownKids = kids.filter(c => !groups.some(g => !g.expanded && g.members.includes(c)));
-  const matchOf = c => (focus ? focus.had_by.includes(c.id) : state.type === 'all' || c.type === state.type);
+  const matchOf = c => (!focus || focus.had_by.includes(c.id));
   const station = ix.stations.get(cur.id) || { compactions: [] };
   const cuts = station.compactions.map(c => c.t);
   const sel = state.sel ? ix.nodes.get(state.sel) : null;

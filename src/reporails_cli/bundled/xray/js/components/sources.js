@@ -44,6 +44,8 @@ function row(env, s, notes) {
   const never = s.availability !== 'loaded';
   const r = el('div', 'sr' + (never ? ' never' : '') + (env.focus && env.focus.id === s.id ? ' on' : ''));
   r.dataset.source = s.id;
+  r.tabIndex = 0;
+  r.setAttribute('role', 'button');
   const finds = s.findings && s.findings.count > 0;
   r.append(el('span', 'sdot' + (finds ? ' find' : '')));
   const text = el('span', 'stx');
@@ -63,6 +65,7 @@ function row(env, s, notes) {
     const open = el('a', 'sopen', '↗');
     open.href = hashFor(env.state.path, s.path);
     open.title = 'open ' + s.path;
+    open.setAttribute('aria-label', 'Open findings for ' + s.path);
     r.append(open);
   }
   return r;
@@ -119,6 +122,25 @@ function controls() {
   return bar;
 }
 
+// One eye per source kind: shows or hides the kind on the graph.
+function eyes(ix, state) {
+  const bar = el('div', 'seyes');
+  bar.setAttribute('role', 'group');
+  bar.setAttribute('aria-label', 'Layers');
+  for (const k of ix.view.adapter.source_kinds) {
+    const on = !!state.layers[k.key];
+    const b = el('button', 'eye');
+    b.type = 'button';
+    b.dataset.eye = k.key;
+    b.setAttribute('aria-pressed', String(on));
+    b.setAttribute('aria-label', `${on ? 'Hide' : 'Show'} ${k.label} on the graph`);
+    b.title = b.getAttribute('aria-label');
+    b.append(el('span', 'chip ' + (on ? 'on' : ''), k.letter));
+    bar.append(b);
+  }
+  return bar;
+}
+
 export function render(box, env) {
   const { ix, state } = env;
   const facts = ix.view.facts;
@@ -126,7 +148,7 @@ export function render(box, env) {
   const notes = rowNotes(facts, templates);
   const lists = new Map(ix.view.adapter.source_kinds.map(k => [k.key, ix.view.sources.filter(s => s.kind === k.key)]));
   reveal(env, lists);
-  box.replaceChildren(controls());
+  box.replaceChildren(controls(), eyes(ix, state));
   for (const k of ix.view.adapter.source_kinds) {
     if (!state.layers[k.key]) continue;
     const sec = tpl('t-source-section');

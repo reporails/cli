@@ -30,6 +30,8 @@ export function slotChips(node, env) {
     if (hot && hot.kind === k.key && hot.had_by.includes(node.id)) chip.classList.add('hot');
     else if (s.count > 0 && s.findings > 0) chip.classList.add('find');
     else if (s.count > 0) chip.classList.add('on');
+    chip.setAttribute('role', 'img');
+    chip.setAttribute('aria-label', `${k.label}: ${s.count > 0 ? s.count + ' loaded' : 'none'}`);
     chip.title = `${k.label}: ${s.count > 0 ? s.count + ' loaded' : 'none'}${s.findings > 0 ? ` · ${s.findings} findings` : ''}`;
     row.append(chip);
   }

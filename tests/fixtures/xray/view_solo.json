@@ -1,0 +1,1744 @@
+{
+ "version": 7,
+ "session": "5b1f0c9e-7d2a-4c1e-9a55-0d3e6f7a8b21",
+ "project": "demo",
+ "started_at": "2026-10-28T09:14:02Z",
+ "length_s": 7200.0,
+ "picked": "named",
+ "model": "claude-opus-4-8",
+ "window": {
+  "size": 1000000,
+  "basis": "observed"
+ },
+ "adapter": {
+  "tool": "Claude Code",
+  "root": {
+   "type": "main",
+   "name": "main agent"
+  },
+  "source_kinds": [
+   {
+    "key": "instructions",
+    "label": "Instructions",
+    "letter": "I",
+    "small": false,
+    "note": null,
+    "definitions": false
+   },
+   {
+    "key": "rule",
+    "label": "Rules",
+    "letter": "R",
+    "small": false,
+    "note": null,
+    "definitions": false
+   },
+   {
+    "key": "skill",
+    "label": "Skills",
+    "letter": "S",
+    "small": false,
+    "note": null,
+    "definitions": false
+   },
+   {
+    "key": "agent",
+    "label": "Agents",
+    "letter": "A",
+    "small": true,
+    "note": "Built-in agent types are not listed.",
+    "definitions": true
+   },
+   {
+    "key": "memory",
+    "label": "Memory",
+    "letter": "M",
+    "small": false,
+    "note": null,
+    "definitions": false
+   },
+   {
+    "key": "mcp",
+    "label": "MCP",
+    "letter": "C",
+    "small": false,
+    "note": null,
+    "definitions": false
+   },
+   {
+    "key": "hook",
+    "label": "Hooks",
+    "letter": "H",
+    "small": false,
+    "note": null,
+    "definitions": false
+   }
+  ],
+  "agent_types": [
+   {
+    "key": "main",
+    "label": "main",
+    "colour": "#6EA8FF",
+    "icon": "M4 6l5 6l-5 6 M12 18h8"
+   },
+   {
+    "key": "Explore",
+    "label": "explore",
+    "colour": "#4FC7B5",
+    "icon": "M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14z M20 20l-4-4"
+   },
+   {
+    "key": "general-purpose",
+    "label": "general",
+    "colour": "#A594FF",
+    "icon": "M12 3v6 M12 15v6 M3 12h6 M15 12h6"
+   },
+   {
+    "key": "Plan",
+    "label": "plan",
+    "colour": "#E8B04E",
+    "icon": "M5 5h14 M5 12h14 M5 19h9"
+   },
+   {
+    "key": "fork",
+    "label": "fork",
+    "colour": "#EE7FA6",
+    "icon": "M7 4v6a4 4 0 0 0 4 4h2a4 4 0 0 1 4 4v2 M7 4v16"
+   },
+   {
+    "key": "test-runner",
+    "label": "test-runner",
+    "colour": "#7FD4A8",
+    "icon": "M9 3h6 M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"
+   },
+   {
+    "key": "reviewer",
+    "label": "reviewer",
+    "colour": "#E8C27A",
+    "icon": "M2 12s4-7 10-7s10 7 10 7s-4 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z"
+   }
+  ],
+  "node_kinds": [
+   {
+    "key": "agent",
+    "label": "Agent",
+    "opens": true,
+    "has_spine": true
+   }
+  ],
+  "categories": [
+   {
+    "key": "read",
+    "label": "Read",
+    "track": true
+   },
+   {
+    "key": "edit",
+    "label": "Edit",
+    "track": true
+   },
+   {
+    "key": "run",
+    "label": "Bash",
+    "track": true
+   },
+   {
+    "key": "mcp",
+    "label": "MCP",
+    "track": false
+   },
+   {
+    "key": "agent",
+    "label": "Agents",
+    "track": false
+   },
+   {
+    "key": "other",
+    "label": "Other",
+    "track": false
+   }
+  ],
+  "nesting": {
+   "enabled": true,
+   "max_depth": null
+  },
+  "triggers": [
+   {
+    "key": "session_start",
+    "label": "loaded with the session's instructions"
+   },
+   {
+    "key": "path_match",
+    "label": "loaded when a matching file was touched"
+   },
+   {
+    "key": "agent",
+    "label": "loaded by the agent"
+   },
+   {
+    "key": "inherited",
+    "label": "handed down at launch"
+   },
+   {
+    "key": "hook",
+    "label": "added by a hook"
+   }
+  ],
+  "fact_notes": {
+   "memory_unlinked": "{count} not linked",
+   "repeated_instructions": "in {contexts} contexts",
+   "kind_absent": "No {label} configured"
+  },
+  "composition": [
+   {
+    "key": "system_tools",
+    "label": "System prompt + tools"
+   },
+   {
+    "key": "instructions",
+    "label": "Instruction files"
+   },
+   {
+    "key": "rules_skills",
+    "label": "Rules + loaded skills"
+   },
+   {
+    "key": "skill_listing",
+    "label": "Skills listing"
+   },
+   {
+    "key": "memory",
+    "label": "Memory"
+   },
+   {
+    "key": "hook_notes",
+    "label": "Hook notes"
+   },
+   {
+    "key": "conversation",
+    "label": "Conversation"
+   },
+   {
+    "key": "tool_results",
+    "label": "Tool results"
+   }
+  ],
+  "composition_remainder": "system_tools",
+  "burst": {
+   "window_s": 90.0,
+   "window_share": 0.013,
+   "min_size": 3
+  }
+ },
+ "nodes": [
+  {
+   "id": "main",
+   "kind": "agent",
+   "parent": null,
+   "depth": 0,
+   "name": "main agent",
+   "type": "main",
+   "start": 0.0,
+   "end": 7200.0,
+   "children": [],
+   "descendants": 0,
+   "slots": {
+    "instructions": {
+     "count": 2,
+     "findings": 21
+    },
+    "rule": {
+     "count": 1,
+     "findings": 2
+    },
+    "skill": {
+     "count": 2,
+     "findings": 0
+    },
+    "memory": {
+     "count": 1,
+     "findings": 1
+    },
+    "mcp": {
+     "count": 1,
+     "findings": 0
+    },
+    "hook": {
+     "count": 1,
+     "findings": 0
+    },
+    "agent": {
+     "count": 2,
+     "findings": 4
+    }
+   },
+   "tool_counts": {
+    "read": 34,
+    "edit": 24,
+    "run": 21,
+    "mcp": 0,
+    "agent": 10,
+    "other": 0
+   },
+   "withheld": null,
+   "detail": {
+    "kind": "agent",
+    "context_start": 41000,
+    "peak": 596000,
+    "series": [
+     [
+      0.0,
+      41000
+     ],
+     [
+      514.3,
+      61494
+     ],
+     [
+      1028.6,
+      89743
+     ],
+     [
+      1542.9,
+      121916
+     ],
+     [
+      2057.1,
+      156933
+     ],
+     [
+      2571.4,
+      194230
+     ],
+     [
+      3000.0,
+      53000
+     ],
+     [
+      3600.0,
+      141539
+     ],
+     [
+      4114.3,
+      158494
+     ],
+     [
+      4628.6,
+      175989
+     ],
+     [
+      5142.9,
+      193978
+     ],
+     [
+      5657.1,
+      212422
+     ],
+     [
+      6171.4,
+      231292
+     ],
+     [
+      6685.7,
+      250558
+     ],
+     [
+      7200.0,
+      270200
+     ]
+    ],
+    "down": {
+     "task_tokens_est": null,
+     "inherited_tokens_est": 6135
+    },
+    "back_tokens_est": null,
+    "outcome": null,
+    "given": [
+     {
+      "label": "system prompt",
+      "tokens_est": 5100,
+      "source": null
+     },
+     {
+      "label": "CLAUDE.md",
+      "tokens_est": 625,
+      "source": "CLAUDE.md"
+     },
+     {
+      "label": "~/.claude/CLAUDE.md",
+      "tokens_est": 410,
+      "source": "~/.claude/CLAUDE.md"
+     }
+    ],
+    "prompts": [
+     {
+      "id": "p1",
+      "t": 0.5,
+      "tokens_est": 40
+     },
+     {
+      "id": "p2",
+      "t": 1210.0,
+      "tokens_est": 22
+     }
+    ],
+    "brief": false,
+    "back_ratio": null,
+    "cost": {
+     "total_usd": 1.69,
+     "turns": 15,
+     "peak_turn_usd": 0.19,
+     "peak_turn_t": 7200.0,
+     "cache_hit_rate": 0.87,
+     "unpriced": 0,
+     "unpriced_models": [],
+     "split_assumed": 0,
+     "output_missing": 0,
+     "instructions_usd_est": 0.169
+    },
+    "composition": {
+     "keys": [
+      "system_tools",
+      "instructions",
+      "rules_skills",
+      "skill_listing",
+      "memory",
+      "hook_notes",
+      "conversation",
+      "tool_results"
+     ],
+     "replies": [
+      [
+       0.0,
+       41000,
+       3,
+       820,
+       40177,
+       35000,
+       3200,
+       0,
+       1500,
+       900,
+       0,
+       400,
+       0,
+       false
+      ],
+      [
+       514.3,
+       61494,
+       3,
+       1229,
+       60262,
+       51244,
+       3200,
+       1800,
+       1500,
+       900,
+       600,
+       1300,
+       950,
+       false
+      ],
+      [
+       1028.6,
+       89743,
+       3,
+       1794,
+       87946,
+       77343,
+       3200,
+       1800,
+       1500,
+       900,
+       600,
+       2200,
+       2200,
+       false
+      ],
+      [
+       1542.9,
+       121916,
+       3,
+       2438,
+       119475,
+       107066,
+       3200,
+       1800,
+       1500,
+       900,
+       600,
+       3100,
+       3750,
+       false
+      ],
+      [
+       2057.1,
+       156933,
+       3,
+       3138,
+       153792,
+       139333,
+       3200,
+       1800,
+       1500,
+       900,
+       600,
+       4000,
+       5600,
+       false
+      ],
+      [
+       2571.4,
+       194230,
+       3,
+       3884,
+       190343,
+       173580,
+       3200,
+       1800,
+       1500,
+       900,
+       600,
+       4900,
+       7750,
+       false
+      ],
+      [
+       3000.0,
+       53000,
+       3,
+       1060,
+       51937,
+       29000,
+       3200,
+       1800,
+       1500,
+       900,
+       600,
+       5800,
+       10200,
+       false
+      ],
+      [
+       3600.0,
+       141539,
+       3,
+       2830,
+       138706,
+       113889,
+       3200,
+       1800,
+       1500,
+       900,
+       600,
+       6700,
+       12950,
+       false
+      ],
+      [
+       4114.3,
+       158494,
+       3,
+       3169,
+       155322,
+       126894,
+       3200,
+       1800,
+       1500,
+       900,
+       600,
+       7600,
+       16000,
+       false
+      ],
+      [
+       4628.6,
+       175989,
+       3,
+       3519,
+       172467,
+       140139,
+       3200,
+       1800,
+       1500,
+       900,
+       600,
+       8500,
+       19350,
+       false
+      ],
+      [
+       5142.9,
+       193978,
+       3,
+       3879,
+       190096,
+       153578,
+       3200,
+       1800,
+       1500,
+       900,
+       600,
+       9400,
+       23000,
+       false
+      ],
+      [
+       5657.1,
+       212422,
+       3,
+       4248,
+       208171,
+       167172,
+       3200,
+       1800,
+       1500,
+       900,
+       600,
+       10300,
+       26950,
+       false
+      ],
+      [
+       6171.4,
+       231292,
+       3,
+       4625,
+       226664,
+       180892,
+       3200,
+       1800,
+       1500,
+       900,
+       600,
+       11200,
+       31200,
+       false
+      ],
+      [
+       6685.7,
+       250558,
+       3,
+       5011,
+       245544,
+       194708,
+       3200,
+       1800,
+       1500,
+       900,
+       600,
+       12100,
+       35750,
+       false
+      ],
+      [
+       7200.0,
+       270200,
+       3,
+       5404,
+       264793,
+       208600,
+       3200,
+       1800,
+       1500,
+       900,
+       600,
+       13000,
+       40600,
+       false
+      ]
+     ],
+     "peak": 14
+    }
+   },
+   "child_sources": {},
+   "bursts": []
+  }
+ ],
+ "edges": [],
+ "sources": [
+  {
+   "id": "CLAUDE.md",
+   "kind": "instructions",
+   "name": "CLAUDE.md",
+   "path": "CLAUDE.md",
+   "tokens_est": 2500,
+   "findings": {
+    "count": 21,
+    "by_severity": {
+     "error": 4,
+     "warning": 17,
+     "info": 0
+    }
+   },
+   "availability": "loaded",
+   "had_by": [
+    "main"
+   ],
+   "actionable": true,
+   "launches": null,
+   "cost_usd_est": 0.0123
+  },
+  {
+   "id": "~/.claude/CLAUDE.md",
+   "kind": "instructions",
+   "name": "~/.claude/CLAUDE.md",
+   "path": "~/.claude/CLAUDE.md",
+   "tokens_est": 1640,
+   "findings": null,
+   "availability": "loaded",
+   "had_by": [
+    "main"
+   ],
+   "actionable": false,
+   "launches": null,
+   "cost_usd_est": 0.0123
+  },
+  {
+   "id": "packages/cli/CLAUDE.md",
+   "kind": "instructions",
+   "name": "packages/cli/CLAUDE.md",
+   "path": "packages/cli/CLAUDE.md",
+   "tokens_est": 900,
+   "findings": {
+    "count": 0,
+    "by_severity": {
+     "error": 0,
+     "warning": 0,
+     "info": 0
+    }
+   },
+   "availability": "on_disk",
+   "had_by": [],
+   "actionable": true,
+   "launches": null,
+   "cost_usd_est": 0.0123
+  },
+  {
+   "id": ".claude/rules/rules-engine.md",
+   "kind": "rule",
+   "name": ".claude/rules/rules-engine.md",
+   "path": ".claude/rules/rules-engine.md",
+   "tokens_est": 1200,
+   "findings": {
+    "count": 2,
+    "by_severity": {
+     "error": 0,
+     "warning": 2,
+     "info": 0
+    }
+   },
+   "availability": "loaded",
+   "had_by": [
+    "main"
+   ],
+   "actionable": true,
+   "launches": null,
+   "cost_usd_est": null
+  },
+  {
+   "id": ".claude/rules/style.md",
+   "kind": "rule",
+   "name": ".claude/rules/style.md",
+   "path": ".claude/rules/style.md",
+   "tokens_est": 700,
+   "findings": {
+    "count": 0,
+    "by_severity": {
+     "error": 0,
+     "warning": 0,
+     "info": 0
+    }
+   },
+   "availability": "on_disk",
+   "had_by": [],
+   "actionable": true,
+   "launches": null,
+   "cost_usd_est": null
+  },
+  {
+   "id": ".claude/skills/orient/SKILL.md",
+   "kind": "skill",
+   "name": "orient",
+   "path": ".claude/skills/orient/SKILL.md",
+   "tokens_est": 2700,
+   "findings": null,
+   "availability": "loaded",
+   "had_by": [
+    "main"
+   ],
+   "actionable": true,
+   "launches": null,
+   "cost_usd_est": null
+  },
+  {
+   "id": ".claude/skills/agents-sdk/SKILL.md",
+   "kind": "skill",
+   "name": "agents-sdk",
+   "path": ".claude/skills/agents-sdk/SKILL.md",
+   "tokens_est": null,
+   "findings": null,
+   "availability": "loaded",
+   "had_by": [
+    "main"
+   ],
+   "actionable": true,
+   "launches": null,
+   "cost_usd_est": null
+  },
+  {
+   "id": ".claude/skills/cloudflare/SKILL.md",
+   "kind": "skill",
+   "name": "cloudflare",
+   "path": ".claude/skills/cloudflare/SKILL.md",
+   "tokens_est": 2200,
+   "findings": null,
+   "availability": "listed",
+   "had_by": [],
+   "actionable": true,
+   "launches": null,
+   "cost_usd_est": null
+  },
+  {
+   "id": "~/.claude/projects/-work-demo/memory/MEMORY.md",
+   "kind": "memory",
+   "name": "MEMORY.md",
+   "path": "~/.claude/projects/-work-demo/memory/MEMORY.md",
+   "tokens_est": 3100,
+   "findings": {
+    "count": 1,
+    "by_severity": {
+     "error": 0,
+     "warning": 1,
+     "info": 0
+    }
+   },
+   "availability": "loaded",
+   "had_by": [
+    "main"
+   ],
+   "actionable": true,
+   "launches": null,
+   "cost_usd_est": null
+  },
+  {
+   "id": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
+   "kind": "memory",
+   "name": "feedback_orphan.md",
+   "path": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
+   "tokens_est": 420,
+   "findings": null,
+   "availability": "on_disk",
+   "had_by": [],
+   "actionable": false,
+   "launches": null,
+   "cost_usd_est": null
+  },
+  {
+   "id": "mcp:docs-server",
+   "kind": "mcp",
+   "name": "docs-server",
+   "path": null,
+   "tokens_est": 473,
+   "findings": null,
+   "availability": "loaded",
+   "had_by": [
+    "main"
+   ],
+   "actionable": false,
+   "launches": null,
+   "cost_usd_est": null
+  },
+  {
+   "id": "hook:PreToolUse:Edit",
+   "kind": "hook",
+   "name": "PreToolUse:Edit",
+   "path": null,
+   "tokens_est": 210,
+   "findings": null,
+   "availability": "loaded",
+   "had_by": [
+    "main"
+   ],
+   "actionable": false,
+   "launches": null,
+   "cost_usd_est": null
+  },
+  {
+   "id": ".claude/agents/test-runner.md",
+   "kind": "agent",
+   "name": "test-runner",
+   "path": ".claude/agents/test-runner.md",
+   "tokens_est": 420,
+   "findings": {
+    "count": 2,
+    "by_severity": {
+     "error": 0,
+     "warning": 2,
+     "info": 0
+    }
+   },
+   "availability": "loaded",
+   "had_by": [],
+   "actionable": true,
+   "launches": 2,
+   "cost_usd_est": null
+  },
+  {
+   "id": ".claude/agents/reviewer.md",
+   "kind": "agent",
+   "name": "reviewer",
+   "path": ".claude/agents/reviewer.md",
+   "tokens_est": 420,
+   "findings": {
+    "count": 2,
+    "by_severity": {
+     "error": 0,
+     "warning": 2,
+     "info": 0
+    }
+   },
+   "availability": "loaded",
+   "had_by": [],
+   "actionable": true,
+   "launches": 2,
+   "cost_usd_est": null
+  }
+ ],
+ "stations": [
+  {
+   "node": "main",
+   "loads": [
+    {
+     "source": "CLAUDE.md",
+     "t": 0.0,
+     "tokens_est": 2500,
+     "trigger": "session_start",
+     "event": null,
+     "small": false,
+     "on_spine": false
+    },
+    {
+     "source": "~/.claude/CLAUDE.md",
+     "t": 0.0,
+     "tokens_est": 1640,
+     "trigger": "session_start",
+     "event": null,
+     "small": false,
+     "on_spine": false
+    },
+    {
+     "source": "~/.claude/projects/-work-demo/memory/MEMORY.md",
+     "t": 2.4,
+     "tokens_est": 3100,
+     "trigger": "session_start",
+     "event": null,
+     "small": false,
+     "on_spine": true
+    },
+    {
+     "source": "mcp:docs-server",
+     "t": 3.6,
+     "tokens_est": 473,
+     "trigger": "session_start",
+     "event": null,
+     "small": true,
+     "on_spine": true
+    },
+    {
+     "source": "hook:PreToolUse:Edit",
+     "t": 40.0,
+     "tokens_est": 210,
+     "trigger": "hook",
+     "event": "PreToolUse",
+     "small": true,
+     "on_spine": true
+    },
+    {
+     "source": ".claude/rules/rules-engine.md",
+     "t": 47.0,
+     "tokens_est": 1200,
+     "trigger": "path_match",
+     "event": null,
+     "small": false,
+     "on_spine": true
+    },
+    {
+     "source": ".claude/skills/orient/SKILL.md",
+     "t": 64.0,
+     "tokens_est": 2700,
+     "trigger": "agent",
+     "event": null,
+     "small": false,
+     "on_spine": true
+    },
+    {
+     "source": ".claude/skills/agents-sdk/SKILL.md",
+     "t": null,
+     "tokens_est": null,
+     "trigger": "agent",
+     "event": null,
+     "small": false,
+     "on_spine": true
+    }
+   ],
+   "mcp": [
+    {
+     "server": "mcp:docs-server",
+     "first": 900.0,
+     "last": 960.0,
+     "calls": 7,
+     "back_tokens_est": 2100
+    },
+    {
+     "server": "mcp:docs-server",
+     "first": 2100.0,
+     "last": 2400.0,
+     "calls": 58,
+     "back_tokens_est": 15100
+    }
+   ],
+   "compactions": [
+    {
+     "t": 3000.0,
+     "trigger": "auto",
+     "before": 529000,
+     "after": 53000
+    }
+   ],
+   "hooks": [
+    {
+     "source": "hook:PreToolUse:Edit",
+     "first": 1200.0,
+     "last": 1260.0,
+     "count": 3,
+     "tokens_est": 90
+    }
+   ]
+  }
+ ],
+ "track": [
+  {
+   "node": "main",
+   "calls": [
+    {
+     "t": 40.3,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_0"
+    },
+    {
+     "t": 72.9,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_1"
+    },
+    {
+     "t": 144.9,
+     "category": "read",
+     "label": "Read · docs/rules.md",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_2"
+    },
+    {
+     "t": 195.8,
+     "category": "read",
+     "label": "Read · src/xray/parse.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_3"
+    },
+    {
+     "t": 279.7,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_4"
+    },
+    {
+     "t": 348.4,
+     "category": "read",
+     "label": "Read · src/loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_5"
+    },
+    {
+     "t": 386.8,
+     "category": "edit",
+     "label": "Edit · CLAUDE.md",
+     "source": "CLAUDE.md",
+     "failed": false,
+     "use_id": "toolu_main_6"
+    },
+    {
+     "t": 452.9,
+     "category": "edit",
+     "label": "Edit · CLAUDE.md",
+     "source": "CLAUDE.md",
+     "failed": false,
+     "use_id": "toolu_main_7"
+    },
+    {
+     "t": 533.3,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_8"
+    },
+    {
+     "t": 590.2,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_9"
+    },
+    {
+     "t": 651.7,
+     "category": "read",
+     "label": "Read · src/xray/parse.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_10"
+    },
+    {
+     "t": 698.3,
+     "category": "read",
+     "label": "Read · docs/rules.md",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_11"
+    },
+    {
+     "t": 797.7,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_12"
+    },
+    {
+     "t": 830.1,
+     "category": "read",
+     "label": "Read · src/rules/index.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_13"
+    },
+    {
+     "t": 918.0,
+     "category": "edit",
+     "label": "Edit · docs/rules.md",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_14"
+    },
+    {
+     "t": 986.2,
+     "category": "read",
+     "label": "Read · src/rules/index.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_15"
+    },
+    {
+     "t": 1034.3,
+     "category": "read",
+     "label": "Read · src/rules/index.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_16"
+    },
+    {
+     "t": 1075.7,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_17"
+    },
+    {
+     "t": 1135.8,
+     "category": "edit",
+     "label": "Edit · src/xray/parse.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_18"
+    },
+    {
+     "t": 1237.7,
+     "category": "read",
+     "label": "Read · src/loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_19"
+    },
+    {
+     "t": 1273.8,
+     "category": "read",
+     "label": "Read · tests/test_loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_20"
+    },
+    {
+     "t": 1300.0,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": true,
+     "use_id": "toolu_fail0"
+    },
+    {
+     "t": 1312.5,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": true,
+     "use_id": "toolu_fail1"
+    },
+    {
+     "t": 1325.0,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": true,
+     "use_id": "toolu_fail2"
+    },
+    {
+     "t": 1337.5,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": true,
+     "use_id": "toolu_fail3"
+    },
+    {
+     "t": 1348.8,
+     "category": "read",
+     "label": "Read · tests/test_loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_21"
+    },
+    {
+     "t": 1350.0,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": true,
+     "use_id": "toolu_fail4"
+    },
+    {
+     "t": 1362.5,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": true,
+     "use_id": "toolu_fail5"
+    },
+    {
+     "t": 1375.0,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": true,
+     "use_id": "toolu_fail6"
+    },
+    {
+     "t": 1387.5,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": true,
+     "use_id": "toolu_fail7"
+    },
+    {
+     "t": 1397.3,
+     "category": "edit",
+     "label": "Edit · tests/test_loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_22"
+    },
+    {
+     "t": 1400.0,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": true,
+     "use_id": "toolu_fail8"
+    },
+    {
+     "t": 1492.6,
+     "category": "read",
+     "label": "Read · CLAUDE.md",
+     "source": "CLAUDE.md",
+     "failed": false,
+     "use_id": "toolu_main_23"
+    },
+    {
+     "t": 1556.9,
+     "category": "edit",
+     "label": "Edit · src/rules/index.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_24"
+    },
+    {
+     "t": 1585.9,
+     "category": "edit",
+     "label": "Edit · src/rules/index.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_25"
+    },
+    {
+     "t": 1677.9,
+     "category": "read",
+     "label": "Read · tests/test_loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_26"
+    },
+    {
+     "t": 1726.1,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_27"
+    },
+    {
+     "t": 1793.0,
+     "category": "read",
+     "label": "Read · docs/rules.md",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_28"
+    },
+    {
+     "t": 1837.9,
+     "category": "edit",
+     "label": "Edit · src/rules/index.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_29"
+    },
+    {
+     "t": 1922.9,
+     "category": "read",
+     "label": "Read · CLAUDE.md",
+     "source": "CLAUDE.md",
+     "failed": false,
+     "use_id": "toolu_main_30"
+    },
+    {
+     "t": 1952.5,
+     "category": "edit",
+     "label": "Edit · src/xray/parse.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_31"
+    },
+    {
+     "t": 2041.3,
+     "category": "read",
+     "label": "Read · tests/test_loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_32"
+    },
+    {
+     "t": 2087.9,
+     "category": "edit",
+     "label": "Edit · src/xray/parse.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_33"
+    },
+    {
+     "t": 2184.2,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_34"
+    },
+    {
+     "t": 2214.8,
+     "category": "edit",
+     "label": "Edit · src/loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_35"
+    },
+    {
+     "t": 2307.8,
+     "category": "read",
+     "label": "Read · src/loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_36"
+    },
+    {
+     "t": 2361.1,
+     "category": "read",
+     "label": "Read · tests/test_loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_37"
+    },
+    {
+     "t": 2412.3,
+     "category": "read",
+     "label": "Read · tests/test_loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_38"
+    },
+    {
+     "t": 2485.5,
+     "category": "read",
+     "label": "Read · src/rules/index.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_39"
+    },
+    {
+     "t": 2557.5,
+     "category": "edit",
+     "label": "Edit · tests/test_loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_40"
+    },
+    {
+     "t": 2601.3,
+     "category": "edit",
+     "label": "Edit · src/rules/index.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_41"
+    },
+    {
+     "t": 2677.7,
+     "category": "read",
+     "label": "Read · CLAUDE.md",
+     "source": "CLAUDE.md",
+     "failed": false,
+     "use_id": "toolu_main_42"
+    },
+    {
+     "t": 2751.9,
+     "category": "edit",
+     "label": "Edit · CLAUDE.md",
+     "source": "CLAUDE.md",
+     "failed": false,
+     "use_id": "toolu_main_43"
+    },
+    {
+     "t": 2770.7,
+     "category": "read",
+     "label": "Read · src/rules/index.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_44"
+    },
+    {
+     "t": 2877.9,
+     "category": "edit",
+     "label": "Edit · src/rules/index.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_45"
+    },
+    {
+     "t": 2930.2,
+     "category": "read",
+     "label": "Read · CLAUDE.md",
+     "source": "CLAUDE.md",
+     "failed": false,
+     "use_id": "toolu_main_46"
+    },
+    {
+     "t": 2983.1,
+     "category": "read",
+     "label": "Read · tests/test_loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_47"
+    },
+    {
+     "t": 3046.9,
+     "category": "read",
+     "label": "Read · docs/rules.md",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_48"
+    },
+    {
+     "t": 3093.1,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_49"
+    },
+    {
+     "t": 3190.8,
+     "category": "edit",
+     "label": "Edit · docs/rules.md",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_50"
+    },
+    {
+     "t": 3207.1,
+     "category": "read",
+     "label": "Read · src/rules/index.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_51"
+    },
+    {
+     "t": 3295.8,
+     "category": "edit",
+     "label": "Edit · docs/rules.md",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_52"
+    },
+    {
+     "t": 3353.0,
+     "category": "read",
+     "label": "Read · docs/rules.md",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_53"
+    },
+    {
+     "t": 3414.6,
+     "category": "read",
+     "label": "Read · src/xray/parse.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_54"
+    },
+    {
+     "t": 3462.2,
+     "category": "edit",
+     "label": "Edit · src/xray/parse.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_55"
+    },
+    {
+     "t": 3546.0,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_56"
+    },
+    {
+     "t": 3618.8,
+     "category": "read",
+     "label": "Read · docs/rules.md",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_57"
+    },
+    {
+     "t": 3654.0,
+     "category": "edit",
+     "label": "Edit · src/loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_58"
+    },
+    {
+     "t": 3732.5,
+     "category": "edit",
+     "label": "Edit · CLAUDE.md",
+     "source": "CLAUDE.md",
+     "failed": false,
+     "use_id": "toolu_main_59"
+    },
+    {
+     "t": 3817.2,
+     "category": "edit",
+     "label": "Edit · tests/test_loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_60"
+    },
+    {
+     "t": 3878.3,
+     "category": "edit",
+     "label": "Edit · docs/rules.md",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_61"
+    },
+    {
+     "t": 3931.7,
+     "category": "run",
+     "label": "Bash",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_62"
+    },
+    {
+     "t": 3988.0,
+     "category": "read",
+     "label": "Read · src/rules/index.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_63"
+    },
+    {
+     "t": 4073.2,
+     "category": "read",
+     "label": "Read · src/xray/parse.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_64"
+    },
+    {
+     "t": 4104.4,
+     "category": "edit",
+     "label": "Edit · src/xray/parse.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_65"
+    },
+    {
+     "t": 4193.7,
+     "category": "read",
+     "label": "Read · tests/test_loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_66"
+    },
+    {
+     "t": 4244.7,
+     "category": "read",
+     "label": "Read · src/loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_67"
+    },
+    {
+     "t": 4312.9,
+     "category": "edit",
+     "label": "Edit · tests/test_loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_68"
+    },
+    {
+     "t": 4353.6,
+     "category": "read",
+     "label": "Read · tests/test_loader.py",
+     "source": null,
+     "failed": false,
+     "use_id": "toolu_main_69"
+    }
+   ],
+   "failure_runs": [
+    {
+     "first": 1300.0,
+     "last": 1400.0,
+     "count": 9,
+     "call_id": "toolu_fail0"
+    }
+   ],
+   "breaks": [
+    {
+     "start": 4500.0,
+     "end": 6900.0
+    }
+   ]
+  }
+ ],
+ "funnel": [
+  {
+   "kind": "instructions",
+   "on_disk": 3,
+   "advertised": null,
+   "loaded": 2,
+   "used": null
+  },
+  {
+   "kind": "rule",
+   "on_disk": 2,
+   "advertised": null,
+   "loaded": 1,
+   "used": null
+  },
+  {
+   "kind": "skill",
+   "on_disk": 49,
+   "advertised": 49,
+   "loaded": 1,
+   "used": 1
+  },
+  {
+   "kind": "memory",
+   "on_disk": 56,
+   "advertised": null,
+   "loaded": 1,
+   "used": null
+  }
+ ],
+ "facts": [
+  {
+   "kind": "memory_unlinked",
+   "artifact_kind": "memory",
+   "numbers": {
+    "count": 1
+   },
+   "target": {
+    "kind": "path",
+    "value": "~/.claude/projects/-work-demo/memory/feedback_orphan.md"
+   }
+  },
+  {
+   "kind": "repeated_instructions",
+   "artifact_kind": null,
+   "numbers": {
+    "files": 2,
+    "contexts": 13,
+    "tokens_est": 49000
+   },
+   "target": {
+    "kind": "path",
+    "value": "CLAUDE.md"
+   }
+  }
+ ],
+ "check": {
+  "state": "done",
+  "message": null
+ },
+ "refusals": [],
+ "not_known": [
+  "subagent start times"
+ ],
+ "price_list": {
+  "name": "Claude API list prices",
+  "as_of": "2026-11-02",
+  "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+  "unit": "usd_per_mtok"
+ }
+}

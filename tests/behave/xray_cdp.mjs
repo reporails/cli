@@ -20,3 +20,9 @@ export async function openPage(url, width = 925, height = 1000) {
   const until = async (expr, tries = 60) => { for (let i = 0; i < tries; i++) { const v = await ev(expr); if (v) return v; await sleep(250); } return null; };
   return { ev, until, send, close: () => { ws.close(); chrome.kill(); } };
 }
+
+// A session with no subagents opens on the Tool calls tab; the graph scenarios need the Graph tab.
+export async function toGraph(page) {
+  await page.until(`!!document.querySelector('.tab[data-tab="graph"]')`);
+  await page.ev(`document.querySelector('.tab[data-tab="graph"]').click(); 0`);
+}

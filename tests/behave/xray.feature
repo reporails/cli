@@ -157,7 +157,7 @@ Feature: ails xray serves a session's context window on the loopback address thr
   @page @browser
   Scenario: Agent definitions list their launch counts, light their subagents and carry the A chip
     Given the bundled page is served over the "view_p3" fixture view
-    Then a launched agent source lights exactly its subagents, a never-launched one lights nothing, the group ends with the adapter note, the A chip is filled or outlined by count and the toolbar has a toggle per adapter kind
+    Then a launched agent source lights exactly its subagents, a never-launched one lights nothing, the group ends with the adapter note, the A chip is filled or outlined by count and the Sources panel has a layer toggle per adapter kind
 
   @page @browser
   Scenario: A source row shows its estimated cost
