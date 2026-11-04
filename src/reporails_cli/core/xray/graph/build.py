@@ -231,7 +231,7 @@ def _builtin_agent(
         cost_usd_est=None,
         label=labels.get(agent_type, agent_type),
         agent_type=agent_type,
-        launch=launched_with(ids, first, metas),
+        detail=launched_with(ids, first, metas),
     )
 
 
@@ -266,7 +266,7 @@ def _sources(
                 tools=entry.tools,
                 agent_type=entry.name if entry.kind == "agent" else None,
                 memory_role=memory_role(entry),
-                launch=launched_with(had_by, first, metas) if entry.kind == "agent" else None,
+                detail=launched_with(had_by, first, metas) if entry.kind == "agent" else entry.detail,
             )
         )
     defined = {entry.name for entry in sources.entries if entry.kind == "agent"}

@@ -8,7 +8,7 @@ from typing import Literal, TypeGuard, get_args
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
-from reporails_cli.core.platform.dto.events import HarnessKind
+from reporails_cli.core.platform.dto.events import HarnessKind, HookDecision
 from reporails_cli.core.platform.dto.exclusion import FileLeftOut
 from reporails_cli.core.platform.dto.xray_graph import ContextKey, SourceKind
 
@@ -27,6 +27,11 @@ MemoryRole = Literal["index", "item"]
 
 # Whether a built-in context item's text can be read in the transcript.
 Visibility = Literal["hidden", "partial", "shown"]
+
+
+# Where an MCP server stands in a session: connected, still connecting, failed to connect, turned off for the
+# project, or declared in a configuration file and never seen.
+McpState = Literal["connected", "pending", "failed", "turned_off", "declared"]
 
 
 # The kind of artifact a config file type is shown as; a file type not listed is an instruction file.
@@ -123,6 +128,72 @@ class XrayBuiltin:
 
 
 @dataclass(frozen=True)
+class McpDetail:
+    """An MCP server as the configuration and the session show it: the plugin that provides it (None for any other
+    server), the scope and file that declare it (None when no file does) and its state."""
+
+    plugin: str | None
+    scope: ArtifactScope | None
+    declared_in: str | None
+    state: McpState
+
+    def to_json(self) -> JsonObject:
+        """The detail as a JSON object."""
+        return {"plugin": self.plugin, "scope": self.scope, "declared_in": self.declared_in, "state": self.state}
+
+
+@dataclass(frozen=True)
+class HookCommand:
+    """A command a hook ran and the settings or plugin file that declares it (None when no hook config Claude Code
+    reads holds it)."""
+
+    command: str
+    declared_in: str | None
+
+
+@dataclass(frozen=True)
+class HookRun:
+    """One firing of a hook as the page lists it: the id of the transcript row that holds its output, seconds from
+    the session's start, what it decided, its exit code and duration (None when the row has none) and the size of
+    its output in characters."""
+
+    id: str | None
+    t: float | None
+    decision: HookDecision
+    exit_code: int | None
+    duration_ms: int | None
+    chars: int
+
+
+@dataclass(frozen=True)
+class HookDetail:
+    """A hook as the session shows it: the commands it ran with their declaring files, how many times it fired and
+    its latest firings."""
+
+    commands: tuple[HookCommand, ...]
+    firing_count: int
+    firings: tuple[HookRun, ...]
+
+    def to_json(self) -> JsonObject:
+        """The detail as a JSON object."""
+        commands: list[JsonValue] = [
+            {"command": item.command, "declared_in": item.declared_in} for item in self.commands
+        ]
+        firings: list[JsonValue] = [
+            {
+                "id": run.id,
+                "t": run.t,
+                "decision": run.decision,
+                "exit_code": run.exit_code,
+                "duration_ms": run.duration_ms,
+                "chars": run.chars,
+            }
+            for run in self.firings
+        ]
+        return {"commands": commands, "firing_count": self.firing_count, "firings": firings}
+
+
+@dataclass(frozen=True)
 class SourceFacts:
     """What a source is before any node's context is known: its id, kind, name, path (None for an MCP server or a
     hook), size and findings."""
@@ -148,6 +219,8 @@ class SourceEntry(SourceFacts):
     tools: tuple[tuple[str, int], ...] = ()
     # What keeps the file out of a project-wide check or fix, and where a link out of the project leads.
     excluded: FileLeftOut = field(default_factory=FileLeftOut)
+    # An MCP server's configuration and state, or a hook's commands and firings.
+    detail: McpDetail | HookDetail | None = None
 
 
 @dataclass(frozen=True)
@@ -184,8 +257,14 @@ class XraySource(SourceFacts):
     agent_type: str | None = None
     # Whether a memory file is the memory index or an item (None for any other kind).
     memory_role: MemoryRole | None = None
-    # What an agent source's launches were sent with (None when no launch recorded a request).
-    launch: AgentLaunch | None = None
+    # What an agent source's launches were sent with (None when no launch recorded a request), an MCP server's
+    # configuration and state, or a hook's commands and firings (None for any other kind).
+    detail: AgentLaunch | McpDetail | HookDetail | None = None
+
+    @property
+    def launch(self) -> AgentLaunch | None:
+        """What an agent source's launches were sent with."""
+        return self.detail if isinstance(self.detail, AgentLaunch) else None
 
     @property
     def builtin(self) -> bool:
@@ -216,6 +295,8 @@ class XraySource(SourceFacts):
             "memory_role": self.memory_role,
             "system_tokens_est": self.launch.system_tokens_est if self.launch else None,
             "launch_settings": [[label, value] for label, value in (self.launch.settings if self.launch else ())],
+            "mcp": self.detail.to_json() if isinstance(self.detail, McpDetail) else None,
+            "hook": self.detail.to_json() if isinstance(self.detail, HookDetail) else None,
         }
 
 

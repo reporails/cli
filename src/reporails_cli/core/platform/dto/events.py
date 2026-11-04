@@ -42,6 +42,7 @@ EventKind = Literal[
     "tool_result",
     "assistant_text",
     "api_request",
+    "hook_firing",
 ]
 
 # What a tool call does, as the side track and the inspector group it; `handback` is a subagent handing its result
@@ -60,6 +61,9 @@ TARGETS_FILE: dict[ToolCategory, bool] = {
 }
 
 NoteKind = Literal["hook_note", "stop_block"]
+
+# What one firing of a hook did: put text into the context, showed a message, blocked the agent, or only ran.
+HookDecision = Literal["context_added", "message_shown", "blocked", "ran"]
 
 HarnessKind = (
     Literal[
@@ -221,6 +225,22 @@ class ReplyText:
 
 
 @dataclass(frozen=True)
+class HookFiring:
+    """One firing of a hook: the hook's name and event, the id of the transcript row that holds its output (None
+    when the row has none), the command that ran (None when the row names none), its exit code and duration, what
+    it decided and the size of its output in characters. Never the output text."""
+
+    label: str
+    event: str
+    id: str | None
+    command: str | None
+    exit_code: int | None
+    duration_ms: int | None
+    decision: HookDecision
+    chars: int
+
+
+@dataclass(frozen=True)
 class HarnessEntry:
     """One piece of what the harness put into a session's context: its kind, a label, how many items it holds
     (None when it is not a list) and its size in characters."""
@@ -238,6 +258,9 @@ class HarnessEntry:
     readded: tuple[str, ...] = ()
     # The names a skill listing row names; None when the row carries none.
     names: tuple[str, ...] | None = None
+    # The MCP servers a tool listing row names as still connecting and as failed to connect.
+    pending: tuple[str, ...] = ()
+    failed: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -400,7 +423,17 @@ class EventRecord:
     # prompt a transcript's `prompt_submit` record sizes, the skill a `skill_run` record names, or the launch a
     # `subagent_run` record describes, the size of the text an `assistant_text` record carries, or the sizes of
     # an `api_request` record's request.
-    item: InstructionLoad | HarnessEntry | PromptEntry | SkillRun | SubagentMeta | ReplyText | RequestSize | None = None
+    item: (
+        InstructionLoad
+        | HarnessEntry
+        | PromptEntry
+        | SkillRun
+        | SubagentMeta
+        | ReplyText
+        | RequestSize
+        | HookFiring
+        | None
+    ) = None
 
     @property
     def load(self) -> InstructionLoad | None:
@@ -436,6 +469,11 @@ class EventRecord:
     def request(self) -> RequestSize | None:
         """The sizes of the request an `api_request` record describes."""
         return self.item if isinstance(self.item, RequestSize) else None
+
+    @property
+    def hook(self) -> HookFiring | None:
+        """The hook firing a `hook_firing` record describes."""
+        return self.item if isinstance(self.item, HookFiring) else None
 
     def to_json(self) -> JsonObject:
         """The record as a JSON object."""

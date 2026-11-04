@@ -11,6 +11,7 @@ from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.eventbus.transcript import (
     call_detail,
     first_prompt_text,
+    hook_output_text,
     last_write,
     prompt_text,
     read_transcript,
@@ -19,6 +20,11 @@ from reporails_cli.core.eventbus.transcript import (
 )
 from reporails_cli.core.pipeline.expected_loads import AGENT
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
+from reporails_cli.core.platform.config.claude_settings import (
+    claude_settings_files,
+    mcp_declarations,
+    mcp_turned_off,
+)
 from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
 from reporails_cli.core.platform.dto.events import CallDetail, EventRecord, TranscriptCursor
 from reporails_cli.core.platform.dto.xray import (
@@ -59,6 +65,9 @@ _NO_WINDOW = "context window"
 # A session whose transcript was written this many seconds ago or less is taken to be still going.
 LIVE_WINDOW_S = 300.0
 
+# The most characters of one hook firing's output the page is sent.
+HOOK_OUTPUT_CHARS = 20_000
+
 
 class XraySession:
     """The records of one session of a project and the view built from them."""
@@ -70,6 +79,7 @@ class XraySession:
         self._transcript: list[EventRecord] = []
         self._files: tuple[ArtifactFile, ...] | None = None
         self._plugin_problem: str | None = None
+        self._plugins: list[tuple[str, Path]] = []
         self._findings: dict[str, FindingTally] = {}
         self._check = XrayCheck("running", None)
         self.version = 0
@@ -94,6 +104,7 @@ class XraySession:
             except InstalledPluginsUnreadableError as exc:
                 plugins = []
                 self._plugin_problem = str(exc)
+            self._plugins = plugins
             self._files = artifact_files(self._root, plugins)
         return self._files
 
@@ -149,6 +160,18 @@ class XraySession:
         ):
             return None
         return prompt_text(AGENT, self._file, prompt_id)
+
+    def hook_output(self, row_id: str) -> str | None:
+        """The text one hook firing the records name left in the transcript, cut at `HOOK_OUTPUT_CHARS`; None for
+        any other id. Raises `PayloadRefused` when the row is not the shape the adapter is pinned to. The text is not
+        kept."""
+        named = next(
+            (record for record in self._transcript if record.hook is not None and record.hook.id == row_id), None
+        )
+        if named is None:
+            return None
+        text = hook_output_text(AGENT, self._file, named.subagent_id, row_id)
+        return None if text is None else text[:HOOK_OUTPUT_CHARS]
 
     def first_prompt(self) -> str | None:
         """The text of the first typed prompt of the session; None when it has none. The text is not kept."""
@@ -223,6 +246,9 @@ class XraySession:
             runnable_paths(files),
             agent_file_tokens(files, self._root),
             live,
+            mcp_declarations(self._root, self._plugins),
+            mcp_turned_off(self._root),
+            claude_settings_files(self._root),
         )
 
     def _verdict(

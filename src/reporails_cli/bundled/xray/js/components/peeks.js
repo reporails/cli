@@ -1,7 +1,7 @@
 // The details renderers for a source, a built-in item, a task prompt, the peak context and the estimated cost.
 import { el, nk, err } from '../dom.js';
 import { clock, costEst, exclusionNote, k1, plural, tk, usd } from '../format.js';
-import { briefUrl, peekUrl, systemUrl } from '../api.js';
+import { briefUrl, hookOutputUrl, peekUrl, systemUrl } from '../api.js';
 import { textBlock } from './textblock.js';
 import { hashFor } from '../state.js';
 import { bandColour } from '../geometry.js';
@@ -78,6 +78,31 @@ function findingsBlock(s, env) {
   return section(count ? `${plural(count, 'finding')}` : 'Findings', box);
 }
 
+const DECISIONS = { context_added: 'added to the context', message_shown: 'showed a message', blocked: 'blocked', ran: 'ran' };
+const STATES = { connected: 'connected', pending: 'still connecting', failed: 'failed to connect', turned_off: 'turned off in this project', declared: 'declared, not seen in this session' };
+const SCOPES = { project: 'project .mcp.json', user: 'your user settings', local: 'this project in your user settings', managed: 'managed settings', plugin: 'plugin' };
+
+// A hook's commands with the file that declares each, and its firings: the output opens on request.
+function hookSections(env, hook) {
+  const out = [];
+  const cmds = hook.commands.map(c => `${c.command}\n  declared in: ${c.declared_in || 'no hook config Claude Code reads holds this command'}`);
+  out.push(section(plural(hook.commands.length, 'command'), cmds.length ? pre(cmds.join('\n\n')) : nk('No command is recorded for this hook.')));
+  const list = el('div', 'pk-list');
+  for (const f of hook.firings) {
+    const key = `hook:${f.id}`;
+    const b = el('button', 'pk-li');
+    b.type = 'button';
+    if (f.id) b.dataset.open = key;
+    const bits = [DECISIONS[f.decision] || f.decision, f.exit_code != null ? `exit ${f.exit_code}` : null, `${f.chars} chars`, f.duration_ms != null ? `${f.duration_ms} ms` : null];
+    b.append(el('span', 'lb', bits.filter(Boolean).join(' · ')), el('span', 'mono v', f.t != null ? clock(f.t) : ''));
+    list.append(b);
+    if (f.id && env.opened.has(key)) list.append(textBlock(env.text, key, hookOutputUrl(f.id)));
+  }
+  const more = hook.firing_count > hook.firings.length ? ` · latest ${hook.firings.length}` : '';
+  out.push(section(`${plural(hook.firing_count, 'firing')}${more}`, hook.firings.length ? list : nk('No firing is recorded.')));
+  return out;
+}
+
 registerPeek('src', (env, id) => {
   const { ix } = env;
   const s = ix.sources.get(id);
@@ -92,8 +117,9 @@ registerPeek('src', (env, id) => {
   if (entry && entry.frontmatter) main.push(section('Configuration', pre(entry.frontmatter)));
   if (s.scopes && s.scopes.length) main.push(section('Scopes', pre(s.scopes.join('\n'))));
   if (s.tools && s.tools.length) main.push(section('Tools on this server', pre(s.tools.map(([t, n]) => `${t} · ${n ? plural(n, 'call') : 'not called'}`).join('\n'))));
+  if (s.hook) main.push(...hookSections(env, s.hook));
   if (entry) main.push(section('Its text', fetched(entry, e => e.body ?? e.text)));
-  else if (s.system_tokens_est == null) main.push(section('Its text', nk(s.builtin ? 'Comes from the coding agent; there is no file.' : 'No file behind this source.')));
+  else if (s.system_tokens_est == null && !s.hook) main.push(section('Its text', nk(s.builtin ? 'Comes from the coding agent; there is no file.' : 'No file behind this source.')));
   if (s.kind === 'agent' && s.system_tokens_est != null) {
     main.push(section(`System prompt · ${tk(s.system_tokens_est, true)} · recorded at launch`, textBlock(env.text, 'system:' + s.agent_type, systemUrl(s.agent_type))));
 
@@ -105,7 +131,9 @@ registerPeek('src', (env, id) => {
     ? (s.launches > 0 ? `launched as ${plural(s.launches, 'subagent')}` : 'never launched')
     : unrecorded ? UNRECORDED : holders.length ? `${holders.length} of ${view.nodes.length} agents` : 'no agent';
   const why = unrecorded ? null : whyLoaded(view, s.id);
-  const side = [kv([['Path', s.path], ['Loaded by', loaded], ['Why', why]])];
+  const m = s.mcp;
+  const where = m ? (m.declared_in ? `${SCOPES[m.scope] || m.scope}: ${m.declared_in}` : 'no configuration file declares it') : null;
+  const side = [kv([['Path', s.path], ['Plugin', m ? m.plugin : null], ['State', m ? STATES[m.state] : null], ['Declared in', where], ['Loaded by', loaded], ['Why', why]])];
   const price = costEst(s.cost_usd_est);
   if (price && holders.length) side.push(kv([['Est. cost', `${price} across this session`], ['Method', view.price_list.source_method]]));
   if (holders.length) {

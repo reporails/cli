@@ -309,6 +309,18 @@ class XrayServer:
             request, _TextRoute("id", "the query is ?id=<call id>", _call_fields, "not a call this page lists")
         )
 
+    async def hook_output(self, request: Request) -> Response:
+        """The text one hook firing of the session left in the transcript."""
+        return await self._text_route(
+            request,
+            _TextRoute(
+                "id",
+                "the query is ?id=<firing id>",
+                _text_fields(XraySession.hook_output),
+                "not a firing this page lists",
+            ),
+        )
+
     async def first_prompt(self, request: Request) -> Response:
         """The text of the first typed prompt of a session, read when asked for and never kept."""
         return await self._text_route(
@@ -494,6 +506,7 @@ def build_app(
             Route("/system", server.system, methods=["GET"]),
             Route("/prompt", server.prompt, methods=["GET"]),
             Route("/call", server.call, methods=["GET"]),
+            Route("/hook-output", server.hook_output, methods=["GET"]),
             Route("/sessions", server.sessions, methods=["GET"]),
             Route("/first-prompt", server.first_prompt, methods=["GET"]),
             Route("/launch", server.launch, methods=["GET"]),

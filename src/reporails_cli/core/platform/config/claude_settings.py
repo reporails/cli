@@ -22,11 +22,13 @@ from __future__ import annotations
 import glob
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from reporails_cli.core.platform.config.config import get_agent_config_path, read_agent_config
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, pattern_list
+from reporails_cli.core.platform.dto.mcp import McpDeclaration
+from reporails_cli.core.platform.dto.xray_sources import ArtifactScope
 from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
 logger = logging.getLogger(__name__)
@@ -182,6 +184,12 @@ def _precedence_files(scopes: dict[str, list[str]], project_root: Path | None) -
     )
 
 
+def claude_settings_files(project_root: Path) -> tuple[Path, ...]:
+    """Claude Code's settings files that exist for a session in `project_root`, lowest precedence first: the
+    user's, the project's shared and local ones, then managed settings."""
+    return tuple(_precedence_files(_settings_patterns(), project_root))
+
+
 def enabled_plugins(project_root: Path | None = None) -> dict[str, bool]:
     """Each plugin id the settings files turn on or off, merged key by key: the highest source that names
     an id decides it. An id no file names is absent (the plugin's own `defaultEnabled` applies)."""
@@ -235,3 +243,77 @@ def _account_folder(path: Path) -> str | None:
     folder = f"{organization}_{uuid}" if named else None
     _account_folders[str(path)] = (stamp, folder)
     return folder
+
+
+def _declared_in(data: JsonObject, *, wrapped: bool) -> list[str]:
+    """The server names an `mcpServers` map names; the map is the object's `mcpServers` value, or the object
+    itself when `wrapped` is false."""
+    servers = data.get("mcpServers") if wrapped else data
+    return [name for name, spec in as_object(servers).items() if isinstance(spec, dict)]
+
+
+def _plugin_mcp_files(plugin_root: Path) -> list[tuple[Path, JsonObject, bool]]:
+    """The files a plugin declares servers in: its `.mcp.json` and, when it carries an inline `mcpServers` map, its
+    manifest. A `.mcp.json` is read with or without an `mcpServers` wrapper."""
+    files: list[tuple[Path, JsonObject, bool]] = []
+    mcp_file = plugin_root / ".mcp.json"
+    if _is_readable_file(mcp_file):
+        data = _read_json(mcp_file)
+        files.append((mcp_file, data, isinstance(data.get("mcpServers"), dict)))
+    manifest = plugin_root / ".claude-plugin" / "plugin.json"
+    if _is_readable_file(manifest):
+        data = _read_json(manifest)
+        if isinstance(data.get("mcpServers"), dict):
+            files.append((manifest, data, True))
+    return files
+
+
+def _project_entry(project_root: Path) -> JsonObject:
+    """What the user's `~/.claude.json` records for the project at `project_root`; empty when it records none."""
+    for path in _expand(_scope_patterns("mcp").get("user", []), None):
+        projects = as_object(_read_json(path).get("projects"))
+        for key in (str(project_root), str(project_root.resolve())):
+            if key in projects:
+                return as_object(projects[key])
+    return {}
+
+
+def mcp_declarations(project_root: Path, plugins: Sequence[tuple[str, Path]]) -> tuple[McpDeclaration, ...]:
+    """Every MCP server the configuration declares for a session in `project_root`: the project's `.mcp.json`, the
+    user's and the project's own entries in `~/.claude.json`, the managed file and each of `plugins`' servers, with
+    the file each is declared in. A plugin is named by its id before the `@`."""
+    scopes = _scope_patterns("mcp")
+    found: list[McpDeclaration] = []
+    claude_json = _expand(scopes.get("user", []), None)
+    sources: list[tuple[ArtifactScope, Path, JsonObject, bool]] = [
+        ("project", path, _read_json(path), True) for path in _expand(scopes.get("project", []), project_root)
+    ]
+    sources += [("user", path, _read_json(path), True) for path in claude_json]
+    sources += [("local", path, _project_entry(project_root), True) for path in claude_json]
+    sources += [("managed", path, _read_json(path), True) for path in _managed_files(scopes)]
+    found.extend(
+        McpDeclaration(name, scope, None, str(path))
+        for scope, path, data, wrapped in sources
+        for name in _declared_in(data, wrapped=wrapped)
+    )
+    for plugin_id, plugin_root in plugins:
+        plugin = plugin_id.split("@", 1)[0]
+        found.extend(
+            McpDeclaration(name, "plugin", plugin, str(path))
+            for path, data, wrapped in _plugin_mcp_files(plugin_root)
+            for name in _declared_in(data, wrapped=wrapped)
+        )
+    return tuple(found)
+
+
+def mcp_turned_off(project_root: Path) -> frozenset[str]:
+    """The servers `~/.claude.json` turns off for the project at `project_root`: its `disabledMcpServers` (a user,
+    managed or claude.ai server by name, a plugin's as `plugin:<plugin>:<server>`) and the `.mcp.json` servers it
+    rejects in `disabledMcpjsonServers`."""
+    entry = _project_entry(project_root)
+    off: set[str] = set()
+    for key in ("disabledMcpServers", "disabledMcpjsonServers"):
+        listed = entry.get(key)
+        if isinstance(listed, list):
+            off.update(item for item in listed if isinstance(item, str))
+    return frozenset(off)

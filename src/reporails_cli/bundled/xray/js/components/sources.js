@@ -19,7 +19,17 @@ const findingsText = n => `${n} finding${n === 1 ? '' : 's'}`;
 const findingsOf = s => (s.findings && s.findings.count) || 0;
 
 // Line 2 of a row: its size, its cost and its findings, or that it never entered a context.
+const MCP_STATES = { connected: null, pending: 'still connecting', failed: 'failed to connect', turned_off: 'turned off in this project', declared: 'declared, not seen' };
+
 function facts(s, kind) {
+  if (s.mcp) {
+    const bits = [];
+    if (s.mcp.plugin) bits.push(`plugin ${s.mcp.plugin}`);
+    if (MCP_STATES[s.mcp.state]) bits.push(MCP_STATES[s.mcp.state]);
+    if (s.tools && s.tools.length) bits.push(plural(s.tools.length, 'tool'));
+    if (s.availability === 'loaded' && s.tokens_est != null) bits.push(`${tk(s.tokens_est, true)} tok`);
+    return bits;
+  }
   if (s.builtin) return [`built in · launched as ${plural(s.launches || 0, 'subagent')}`];
   const bits = [];
   const finds = findingsOf(s);

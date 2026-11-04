@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessEntry, HarnessKind
+from reporails_cli.core.platform.dto.mcp import McpDeclaration
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary
 from reporails_cli.core.platform.dto.xray_cost import PriceList
 from reporails_cli.core.platform.dto.xray_graph import (
@@ -38,6 +39,11 @@ class Frame:
     agent_files: Mapping[str, int]
     # Whether the session's transcript was written recently enough that the session is still going.
     live: bool
+    # The MCP servers the configuration declares, and the entries `~/.claude.json` turns off for the project.
+    mcp: tuple[McpDeclaration, ...] = ()
+    mcp_off: frozenset[str] = frozenset()
+    # The settings files that exist, which can declare hooks.
+    settings_files: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True)

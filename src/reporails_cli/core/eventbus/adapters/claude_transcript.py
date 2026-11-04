@@ -31,7 +31,8 @@ the adapter refuses any other shape of a row type it reads:
   a whole number, `content`, a string, and optionally `names`, a list of strings), `agent_listing_delta`
   (`addedTypes` and `addedLines`, lists of strings), `mcp_instructions_delta`
   (`addedNames` and `addedBlocks`, lists of strings), `deferred_tools_delta`
-  (`addedNames` and `addedLines`, lists of strings, or in a subagent file `content`, a string),
+  (`addedNames` and `addedLines`, lists of strings, or in a subagent file `content`, a string; and optionally
+  `pendingMcpServers` and `failedMcpServers`, lists of strings),
   `session_context` (`context`, an object of strings). The three delta rows may also carry `removedTypes` or
   `removedNames`, lists of strings, counted off their item count; a deferred-tools delta row whose
   added items list is empty names tools re-added by name: `readdedNames`, a list of strings, must name every
@@ -43,8 +44,11 @@ the adapter refuses any other shape of a row type it reads:
   it is not empty and its `hookEvent` is one of `UserPromptSubmit`, `UserPromptExpansion`, `SessionStart` or
   `PostModelSwitch`: https://code.claude.com/docs/en/hooks says Claude Code writes a hook's stdout to the
   debug log for every other event and adds it to the context only for those four) or `hook_blocking_error`
-  (`blockingError`, an object whose `blockingError` is a string; a Stop block), each sized by character count
-  and then dropped.
+  (`blockingError`, an object whose `blockingError` is a string and whose `command` is a string; a Stop
+  block), each sized by character count and then dropped. Every hook row also yields a firing with the row's
+  `uuid` when it has one, the hook's `command`, `exitCode` and `durationMs` where the row has them, the size of
+  its output and what it decided: a `hook_system_message` row (`content`, a string) shows a message, a
+  `hook_success` row holds its `stdout` and `stderr` strings.
 - a typed prompt: a `user` row with `uuid`, `promptSource: "typed"`, `origin.kind: "human"` and
   `message.content` a string or a list of blocks whose `type: "text"` blocks hold `text`; or an attachment row
   with `uuid` and `attachment.type: "queued_command"`, `commandMode: "prompt"`, `origin.kind: "human"` and
@@ -101,6 +105,12 @@ from reporails_cli.core.eventbus.adapters.claude_calls import (
     tool_call,
     tool_result,
 )
+from reporails_cli.core.eventbus.adapters.claude_hooks import (
+    HOOK_NOTE_ATTACHMENTS,
+    hook_firing,
+    hook_note,
+    hook_output,
+)
 from reporails_cli.core.eventbus.adapters.claude_requests import (
     BLOCK_SEPARATOR,
     feed_row,
@@ -134,9 +144,6 @@ from reporails_cli.core.platform.dto.events import (
 # The `message.model` Claude Code writes on a reply it made itself, for an API error or an interrupt.
 SYNTHETIC_MODEL = "<synthetic>"
 NESTED_MARKER = "nested"
-HOOK_NOTE_ATTACHMENTS = ("hook_additional_context", "hook_success", "hook_blocking_error")
-# The hook events whose plain-text stdout Claude Code adds to the context.
-HOOK_STDOUT_CONTEXT_EVENTS = ("UserPromptSubmit", "UserPromptExpansion", "SessionStart", "PostModelSwitch")
 BACKGROUND_SHAPE = "background"
 
 
@@ -520,6 +527,8 @@ class ClaudeTranscriptAdapter:
             added=added,
             removed=removed,
             readded=() if added else tuple(names),
+            pending=self._removed_names(attachment, "pendingMcpServers", what),
+            failed=self._removed_names(attachment, "failedMcpServers", what),
         )
 
     def _session_context(self, attachment: JsonObject) -> HarnessEntry:
@@ -533,21 +542,18 @@ class ClaudeTranscriptAdapter:
         return HarnessEntry("session_context", "session context", None, chars)
 
     def _hook_note(self, row: JsonObject, attachment: JsonObject, subagent_id: str | None) -> list[EventRecord]:
-        kind = attachment.get("type")
-        what = f"{kind} attachment"
+        what = f"{attachment.get('type')} attachment"
         label = _text(attachment, "hookName", what)
         event = _text(attachment, "hookEvent", what)
-        if kind == "hook_blocking_error":
-            blocked = as_object(attachment.get("blockingError")).get("blockingError")
-            if not isinstance(blocked, str):
-                raise PayloadRefused(f"{what} blockingError is not an object holding a string")
-            return [self._harness(row, HarnessEntry("stop_block", label, None, len(blocked), event), subagent_id)]
-        if kind == "hook_success":
-            content = attachment.get("content")
-            if content is None or content == "" or event not in HOOK_STDOUT_CONTEXT_EVENTS:
-                return []
-            if not isinstance(content, str):
-                raise PayloadRefused(f"{what} content is not a string")
-            return [self._harness(row, HarnessEntry("hook_note", label, None, len(content), event), subagent_id)]
-        chars = sum(len(item) for item in _strings(attachment.get("content"), "content", what))
-        return [self._harness(row, HarnessEntry("hook_note", label, None, chars, event), subagent_id)]
+        found = hook_note(attachment, event)
+        notes = (
+            []
+            if found is None
+            else [self._harness(row, HarnessEntry(found[0], label, None, found[1], event), subagent_id)]
+        )
+        firing = replace(self._record(row, "hook_firing", subagent_id), item=hook_firing(row, attachment, label, event))
+        return [*notes, firing]
+
+    def resolve_hook_output(self, row: JsonObject) -> str:
+        """The text a hook row holds, for the route that shows it; refuses a row that is not a hook row."""
+        return hook_output(as_object(row.get("attachment")))

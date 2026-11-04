@@ -58,6 +58,26 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And the page draws a compaction marker for each of the two compactions with the sizes the view holds
 
   @e2e
+  Scenario: A hook's details show its command, its settings file and its firings, and its output only on request
+    Given a project with a recorded Claude Code session
+    And the project's settings declare a PreToolUse hook running "echo guard"
+    And the session recorded that hook running with some output
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the hook's details name its command, its settings file and the firing's decision, exit code and output size
+    And the session view holds no output text and the hook output route returns it only when asked
+
+  @e2e
+  Scenario: The MCP group lists a plugin's server with its plugin and state, and a server only its tools name
+    Given a project with a recorded Claude Code session
+    And an enabled plugin named "reporails" declares an MCP server of the same name that the user turned off here
+    And the session listed one tool of an MCP server named "toolsonly" that no file declares
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the MCP group lists "reporails" as that plugin's server turned off in this project
+    And the MCP group lists "toolsonly" as connected with one tool and no plugin
+
+  @e2e
   Scenario: A project with no recorded session is refused
     Given a project with no recorded Claude Code session
     When "ails xray --no-open" is run in the project

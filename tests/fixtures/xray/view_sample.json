@@ -5312,7 +5312,9 @@
       "memory_role": null,
       "system_tokens_est": null,
       "launch_tools": [],
-      "launch_settings": []
+      "launch_settings": [],
+      "mcp": null,
+      "hook": null
     },
     {
       "id": "~/.claude/CLAUDE.md",
@@ -5349,7 +5351,9 @@
       "memory_role": null,
       "system_tokens_est": null,
       "launch_tools": [],
-      "launch_settings": []
+      "launch_settings": [],
+      "mcp": null,
+      "hook": null
     },
     {
       "id": "packages/cli/CLAUDE.md",
@@ -5379,7 +5383,9 @@
       "memory_role": null,
       "system_tokens_est": null,
       "launch_tools": [],
-      "launch_settings": []
+      "launch_settings": [],
+      "mcp": null,
+      "hook": null
     },
     {
       "id": ".claude/rules/rules-engine.md",
@@ -5414,7 +5420,9 @@
       "memory_role": null,
       "system_tokens_est": null,
       "launch_tools": [],
-      "launch_settings": []
+      "launch_settings": [],
+      "mcp": null,
+      "hook": null
     },
     {
       "id": ".claude/rules/style.md",
@@ -5446,7 +5454,9 @@
       "memory_role": null,
       "system_tokens_est": null,
       "launch_tools": [],
-      "launch_settings": []
+      "launch_settings": [],
+      "mcp": null,
+      "hook": null
     },
     {
       "id": ".claude/skills/orient/SKILL.md",
@@ -5471,7 +5481,9 @@
       "memory_role": null,
       "system_tokens_est": null,
       "launch_tools": [],
-      "launch_settings": []
+      "launch_settings": [],
+      "mcp": null,
+      "hook": null
     },
     {
       "id": ".claude/skills/agents-sdk/SKILL.md",
@@ -5496,7 +5508,9 @@
       "memory_role": null,
       "system_tokens_est": null,
       "launch_tools": [],
-      "launch_settings": []
+      "launch_settings": [],
+      "mcp": null,
+      "hook": null
     },
     {
       "id": ".claude/skills/cloudflare/SKILL.md",
@@ -5519,7 +5533,9 @@
       "memory_role": null,
       "system_tokens_est": null,
       "launch_tools": [],
-      "launch_settings": []
+      "launch_settings": [],
+      "mcp": null,
+      "hook": null
     },
     {
       "id": "~/.claude/projects/-work-demo/memory/MEMORY.md",
@@ -5551,7 +5567,9 @@
       "memory_role": "index",
       "system_tokens_est": null,
       "launch_tools": [],
-      "launch_settings": []
+      "launch_settings": [],
+      "mcp": null,
+      "hook": null
     },
     {
       "id": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
@@ -5574,7 +5592,9 @@
       "memory_role": "item",
       "system_tokens_est": null,
       "launch_tools": [],
-      "launch_settings": []
+      "launch_settings": [],
+      "mcp": null,
+      "hook": null
     },
     {
       "id": "mcp:docs-server",
@@ -5607,7 +5627,9 @@
       "memory_role": null,
       "system_tokens_est": null,
       "launch_tools": [],
-      "launch_settings": []
+      "launch_settings": [],
+      "mcp": null,
+      "hook": null
     },
     {
       "id": "hook:PreToolUse:Edit",
@@ -5632,7 +5654,9 @@
       "memory_role": null,
       "system_tokens_est": null,
       "launch_tools": [],
-      "launch_settings": []
+      "launch_settings": [],
+      "mcp": null,
+      "hook": null
     },
     {
       "id": ".claude/agents/test-runner.md",
@@ -5665,7 +5689,9 @@
       "memory_role": null,
       "system_tokens_est": null,
       "launch_tools": [],
-      "launch_settings": []
+      "launch_settings": [],
+      "mcp": null,
+      "hook": null
     },
     {
       "id": ".claude/agents/reviewer.md",
@@ -5698,7 +5724,9 @@
       "memory_role": null,
       "system_tokens_est": null,
       "launch_tools": [],
-      "launch_settings": []
+      "launch_settings": [],
+      "mcp": null,
+      "hook": null
     },
     {
       "id": "builtin-agent:Explore",
@@ -5723,7 +5751,9 @@
       "memory_role": null,
       "system_tokens_est": null,
       "launch_tools": [],
-      "launch_settings": []
+      "launch_settings": [],
+      "mcp": null,
+      "hook": null
     }
   ],
   "stations": [

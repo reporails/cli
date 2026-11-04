@@ -217,6 +217,22 @@ def prompt_text(agent: str, session_file: Path, prompt_id: str) -> str | None:
     return None if row is None else adapter.resolve_prompt(row)
 
 
+def hook_output_text(agent: str, session_file: Path, subagent_id: str | None, row_id: str) -> str | None:
+    """The text the hook row `row_id` holds, from the main transcript (`subagent_id` None) or that subagent's
+    file, or None when the file holds no such row.
+
+    Raises `PayloadRefused` when the agent is unknown or the row is not a hook row of the pinned shape. The text is
+    returned, never stored."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        raise PayloadRefused(f"unknown agent: {agent}")
+    path = (
+        session_file if subagent_id is None else _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
+    )
+    row = _find_row(path, row_id, lambda found: found.get("uuid") == row_id)
+    return None if row is None else adapter.resolve_hook_output(row)
+
+
 def call_detail(
     agent: str, session_file: Path, subagent_id: str | None, use_id: str, tool: str, *, shell: bool
 ) -> CallDetail | None:

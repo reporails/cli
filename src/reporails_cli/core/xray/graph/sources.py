@@ -8,7 +8,7 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
-from reporails_cli.core.platform.dto.events import EventRecord, is_note_kind
+from reporails_cli.core.platform.dto.events import EventRecord
 from reporails_cli.core.platform.dto.exclusion import FileLeftOut
 from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
 from reporails_cli.core.platform.dto.xray_graph import SourceKind
@@ -20,17 +20,9 @@ from reporails_cli.core.platform.dto.xray_sources import (
     XrayArtifact,
 )
 from reporails_cli.core.xray.artifacts import is_actionable, left_out_files, unlisted_loads, winners
-from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path, tokens_of
-
-
-def mcp_id(server: str) -> str:
-    """The source id of an MCP server."""
-    return f"mcp:{server}"
-
-
-def hook_id(label: str) -> str:
-    """The source id of a hook note label."""
-    return f"hook:{label}"
+from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path
+from reporails_cli.core.xray.graph.hook_sources import hook_sources
+from reporails_cli.core.xray.graph.mcp_sources import mcp_sources
 
 
 def builtin_agent_id(agent_type: str) -> str:
@@ -86,44 +78,6 @@ def _unlisted_loads(records: Sequence[EventRecord], known: Mapping[str, str], fr
     ]
 
 
-def _harness_sources(records: Sequence[EventRecord]) -> list[SourceEntry]:
-    """A source for each MCP server the records name and each hook note label; a hook's size is that of its
-    largest firing."""
-    servers: dict[str, int | None] = {}
-    called: dict[str, dict[str, int]] = {}
-    hooks: dict[str, int] = {}
-    for record in records:
-        entry = record.harness
-        if record.event == "harness" and entry is not None and entry.kind == "mcp_instructions":
-            for name, chars in entry.added:
-                servers[name] = tokens_of(chars)
-        elif record.event == "harness" and entry is not None and is_note_kind(entry.kind) and entry.event:
-            hooks[entry.label] = max(hooks.get(entry.label, 0), tokens_of(entry.chars))
-        elif record.event == "tool_call" and record.tool is not None and record.tool.server:
-            servers.setdefault(record.tool.server, None)
-            counts = called.setdefault(record.tool.server, {})
-            counts[record.tool.name or "tool"] = counts.get(record.tool.name or "tool", 0) + 1
-    found = [
-        SourceEntry(
-            mcp_id(name),
-            "mcp",
-            name,
-            None,
-            size,
-            None,
-            False,
-            None,
-            None,
-            tools=tuple(sorted(called.get(name, {}).items(), key=lambda item: (-item[1], item[0]))),
-        )
-        for name, size in servers.items()
-    ]
-    found.extend(
-        SourceEntry(hook_id(label), "hook", label, None, size, None, False, None, None) for label, size in hooks.items()
-    )
-    return found
-
-
 def _unrecorded_kinds(records: Sequence[EventRecord]) -> frozenset[SourceKind]:
     """The kinds whose loads the records cannot show: instruction files when no record of the session is an
     instruction load (an older transcript carries none)."""
@@ -165,7 +119,8 @@ def build_sources(artifacts: Sequence[XrayArtifact], records: Sequence[EventReco
         for name, path in frame.runnable.items()
         if real_path(path, frame.root) in by_real
     }
-    entries.extend(_harness_sources(records))
+    entries.extend(mcp_sources(records, frame))
+    entries.extend(hook_sources(records, artifacts, frame))
     return SourceTable(tuple(entries), frame.root, by_real, by_run, _unrecorded_kinds(records))
 
 

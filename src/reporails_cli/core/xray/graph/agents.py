@@ -49,8 +49,10 @@ from reporails_cli.core.xray.derive import (
     tokens_of,
 )
 from reporails_cli.core.xray.graph.composition import build_in_context, composition_series
+from reporails_cli.core.xray.graph.hook_sources import hook_id
+from reporails_cli.core.xray.graph.mcp_sources import mcp_id
 from reporails_cli.core.xray.graph.port import register
-from reporails_cli.core.xray.graph.sources import for_path, hook_id, mcp_id
+from reporails_cli.core.xray.graph.sources import for_path
 
 # The id of the main agent's node.
 MAIN_ID = "main"
