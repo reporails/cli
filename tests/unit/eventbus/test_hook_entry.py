@@ -5,8 +5,6 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import pty
-import select
 import socket
 import subprocess
 import sys
@@ -104,6 +102,9 @@ def test_stage_timing_names_each_recorded_event_on_stderr_and_stdout_stays_empty
 
 def test_a_bare_hook_on_a_terminal_prints_usage_and_exits_0_without_reading(tmp_path: Path) -> None:
     ails = Path(sys.executable).with_name("ails")
+    pty = pytest.importorskip("pty")
+    import select
+
     env = {"HOME": str(tmp_path), "USERPROFILE": str(tmp_path), "PATH": os.environ.get("PATH", "")}
     pid, fd = pty.fork()
     if pid == 0:  # child: stdin, stdout and stderr are the terminal

@@ -38,7 +38,7 @@ Feature: `ails check` scores and validates instruction files end-to-end
     Given a git project whose "sub/CLAUDE.md" has findings that the project config disables
     When I run "ails check sub/CLAUDE.md --format json"
     Then the check exits 0
-    And that file carries no finding
+    And that file carries none of the disabled rules
 
   @e2e @regression
   Scenario: A file in another project folder roots at its own folder

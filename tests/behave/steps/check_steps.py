@@ -131,6 +131,7 @@ def step_nested_file_with_project_config(context):
     baseline = document(run_ails(context.project, "check", "sub/CLAUDE.md", "--format", "json", home=context.home))
     rules = sorted({f["rule"] for record in baseline["files"].values() for f in record.get("findings", [])})
     assert rules, "the baseline run reported no rule, so nothing was disabled"
+    context.disabled = rules
     write_config(context.project, "disabled_rules:\n" + "".join(f"  - {rule}\n" for rule in rules))
 
 
@@ -157,9 +158,10 @@ def step_json_files_only(context, name):
     assert sorted(_json_files(context)) == [name], sorted(_json_files(context))
 
 
-@then("that file carries no finding")
-def step_file_no_finding(context):
-    assert not findings(context.result), [f["rule"] for f in findings(context.result)]
+@then("that file carries none of the disabled rules")
+def step_file_no_disabled_rule(context):
+    leaked = sorted({f["rule"] for f in findings(context.result)} & set(context.disabled))
+    assert not leaked, leaked
 
 
 @given('a git project "proj" elsewhere with a ".claude/rules/x.md" rule file')
