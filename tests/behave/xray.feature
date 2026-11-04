@@ -280,6 +280,13 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And each agent's system, tool definition and tool call rows are the shares of its request's own characters
     And the main agent's tool calls and results row holds the picture's tokens and its measure names them
 
+  @e2e
+  Scenario: A reply whose request is not recorded yet takes the system prompt and tools of the request before it
+    Given a project with a session whose main agent's newest reply has no recorded request yet
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the main agent's System prompt and tools show the sizes of its earlier request, not the reply's remainder
+
   @e2e @browser
   Scenario: A measured row opens its own agent's figure and request
     Given a project with a session whose Claude Code recorded each request it made, with a subagent

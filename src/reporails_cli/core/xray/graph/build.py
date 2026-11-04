@@ -29,8 +29,8 @@ from reporails_cli.core.platform.dto.xray_sources import Availability, SourceEnt
 from reporails_cli.core.xray.cost import session_cost
 from reporails_cli.core.xray.graph import spine
 from reporails_cli.core.xray.graph.agents import MAIN_ID, main_records
+from reporails_cli.core.xray.graph.builtin import builtin_items
 from reporails_cli.core.xray.graph.bursts import bursts
-from reporails_cli.core.xray.graph.composition import builtin_items
 from reporails_cli.core.xray.graph.port import PRODUCERS
 from reporails_cli.core.xray.graph.shapes import first_requests, launch_metas, launched_with
 from reporails_cli.core.xray.graph.sources import builtin_agent_id, memory_role, source_label

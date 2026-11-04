@@ -191,11 +191,14 @@ def _peak(rows: list[dict]) -> int:
     return max(totals)
 
 
-def _write_session(context, recorded: bool, *, picture: bool = False, configured: bool = False) -> None:
+def _write_session(
+    context, recorded: bool, *, picture: bool = False, configured: bool = False, newest_pending: bool = False
+) -> None:
     """A fixture session of a main agent and one subagent. `recorded` adds the request rows Claude Code 2.1.309
     writes and the `requestRef` of each reply; an older Claude Code writes neither. Keeps the highest total of each
     agent's own replies, from its own file, in `context.peaks`. `configured` gives the subagent a launch config: a
-    model asked for, a background run and the thinking, effort and max tokens its requests carry."""
+    model asked for, a background run and the thinking, effort and max tokens its requests carry. `newest_pending`
+    leaves out the request row of the main agent's newest reply, as a live session has it for a moment."""
     version = "2.1.309" if recorded else "2.1.308"
     project = context.project
     folder = context.home / ".claude" / "projects" / claude_project_folder_name(project)
@@ -278,6 +281,8 @@ def _write_session(context, recorded: bool, *, picture: bool = False, configured
             _request_row("req-main-3", "shape-main", 3, [hashes["a2"], message_hash("user", done)], 5, project),
             a3,
         ]
+        if newest_pending:
+            main = [row for row in main if row.get("id") != "req-main-3"]
         sub_hash = message_hash("assistant", [{"type": "text", "text": "a b c"}])
         sub = [
             sub[0],
@@ -341,6 +346,12 @@ def step_session_with_loaded_file(context):
     lines = session.read_text(encoding="utf-8").splitlines()
     lines.insert(1, json.dumps(loaded))
     session.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+@given("a project with a session whose main agent's newest reply has no recorded request yet")
+def step_session_newest_pending(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    _write_session(context, True, newest_pending=True)
 
 
 @given("a project with a session whose main requests were sent with two different system prompts")
@@ -1635,3 +1646,23 @@ def step_no_redraw_of_unchanged(context, source):
                 f"{tab['tab']} tab: a text block reloaded: loading {tab['loading']}, empty {tab['emptied']}"
             )
     assert not problems, "\n".join(problems)
+
+
+@then("the main agent's System prompt and tools show the sizes of its earlier request, not the reply's remainder")
+def step_earlier_request_sizes(context):
+    view = _session_view(context)
+    main, _ = _context_of(view)
+    # the newest reply has no request row; the request before it (req-main-2, total 1000 + 800 + 2) is measured
+    other = len("please summarise the layout") + len("and the tests") + len("the layout is flat")
+    expected = _expected_shares(1802, system=2000, other=other, calls=0)
+    rows = {row["key"]: row["tokens_est"] for row in main["rows"]}
+    assert main["measured"] is False and main["total"] == context.peaks["main"], main
+    builtin = {item["key"]: item for item in view["builtin"]}
+    system, tools = builtin["system_prompt"], builtin.get("tool_definitions")
+    # the unrecorded newest reply is the peak, so its remainder would have been shown as the system prompt
+    assert system["tokens_est"] == expected["system_prompt"] and not system["remainder"], (system, expected)
+    assert tools is not None and tools["tokens_est"] == expected["tool_definitions"], (tools, expected)
+    assert rows.get("system_prompt") == expected["system_prompt"], (rows, expected)
+    assert rows.get("tool_definitions") == expected["tool_definitions"], (rows, expected)
+    assert sum(rows.values()) == main["total"] and "rest" in rows, rows
+    assert "req-main-2" in system["note"], system

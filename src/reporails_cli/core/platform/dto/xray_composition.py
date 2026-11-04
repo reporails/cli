@@ -105,6 +105,11 @@ class XrayComposition:
     replies: tuple[ReplyComposition, ...]
     peak: int | None
 
+    @property
+    def latest_measure(self) -> RequestMeasure | None:
+        """The request measure of the newest reply that has one; None when no reply was measured."""
+        return next((reply.measure for reply in reversed(self.replies) if reply.measure is not None), None)
+
     def to_json(self) -> JsonObject:
         """The composition as columns: the category keys, one row per reply and the peak index."""
         rows: list[JsonValue] = [reply.to_row() for reply in self.replies]
