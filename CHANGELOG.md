@@ -85,6 +85,7 @@
 - Tests: the architecture, file-mode, x-ray page record and synced-skills tests run on Windows.
 - Tests: the integration, behave and smoke suites run on Windows.
 - Tests: the smoke checks run from the fixture folder, their project root, so they find instruction files with no model on disk; the x-ray help test reads its output as UTF-8 on Windows.
+- Tests: 15 behavioral scenarios of the x-ray page start and of checking a file or folder by path skip on Windows until they are verified there.
 
 ## 0.6.5
 
