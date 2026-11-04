@@ -23,13 +23,14 @@ SurfaceBucket = Literal["instruction", "rule", "config"]
 SURFACE_BUCKETS: tuple[SurfaceBucket, ...] = ("instruction", "rule", "config")
 
 
-def extract_patterns(spec: JsonObject, key: str = "patterns") -> list[str]:
+def extract_patterns(spec: JsonObject, key: str = "patterns", *, user_maintained: bool = False) -> list[str]:
     """Extract all file patterns from a file type spec (`key` names the pattern list: `patterns`, or
     `entry_patterns` for where an instance's entry file sits).
 
     Supports both v0.3.0 (patterns at top level) and v0.5.0 (patterns
     inside scopes). Returns a flat list of all patterns across all scopes; a `plugin`
-    scope's patterns come back as `<marker>/pattern` (see `plugin_roots`).
+    scope's patterns come back as `<marker>/pattern` (see `plugin_roots`). With `user_maintained`, a scope
+    declaring `maintainer: system` (a file Claude Code or the OS writes, which the user cannot fix) is left out.
     """
     # v0.3.0: patterns at top level
     patterns = pattern_list(spec.get(key, []))
@@ -43,6 +44,8 @@ def extract_patterns(spec: JsonObject, key: str = "patterns") -> list[str]:
     all_patterns: list[str] = []
     for scope_name, scope_spec in scopes.items():
         if not isinstance(scope_spec, dict):
+            continue
+        if user_maintained and scope_spec.get("maintainer") == "system":
             continue
         if scope_name == plugin_roots.PLUGIN_SCOPE:
             all_patterns.extend(plugin_roots.plugin_scope_patterns(scope_spec, key))

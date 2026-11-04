@@ -394,7 +394,9 @@ def _discover_surface(
     """The bucket and files of one file type, None when the file type contributes nothing.
     With `gated` false the agent's read gate leaves the files unnarrowed."""
     target = scope.target
-    patterns = _repo_scoped_patterns(extract_patterns(spec), ft_name, scope.repo_scoped, scope.user_dir)
+    patterns = _repo_scoped_patterns(
+        extract_patterns(spec, user_maintained=scope.repo_scoped), ft_name, scope.repo_scoped, scope.user_dir
+    )
     # A plugin component pattern resolves against each plugin root found here.
     patterns = expand_plugin_patterns(patterns, target, scope.exclusions, scope.plugin_roots, scope.installed_plugins)
     if not patterns:

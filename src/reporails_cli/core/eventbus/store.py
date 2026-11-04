@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import re
 import time
@@ -12,7 +13,10 @@ from pathlib import Path
 from reporails_cli.core.cache.sweep import sweep
 from reporails_cli.core.platform.config.bootstrap import get_xray_log_dir
 from reporails_cli.core.platform.config.claude_settings import claude_cleanup_period_days
+from reporails_cli.core.platform.contract.errors import ClaudeSettingsUnreadableError
 from reporails_cli.core.platform.dto.events import EventRecord
+
+logger = logging.getLogger(__name__)
 
 LOG_RETENTION_DAYS = 30
 LOG_FOLDER_MAX_BYTES = 100 * 1024 * 1024
@@ -51,7 +55,11 @@ def prune(root: Path | None) -> None:
         for log in logs:
             with contextlib.suppress(OSError):
                 log.chmod(0o600)
-        days = min(LOG_RETENTION_DAYS, claude_cleanup_period_days(root) or LOG_RETENTION_DAYS)
+        try:
+            days = min(LOG_RETENTION_DAYS, claude_cleanup_period_days(root) or LOG_RETENTION_DAYS)
+        except ClaudeSettingsUnreadableError as exc:
+            logger.warning("Event logs not pruned: %s", exc)
+            return
         sweep(
             logs,
             unit_of=lambda p: p.name.split(".", 1)[0],

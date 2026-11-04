@@ -483,3 +483,29 @@ def test_a_recorded_auto_memory_file_the_listing_leaves_out_is_a_memory_file(tmp
     )
     item = session._recorded("sub/AUTO.md")
     assert item is not None and item.kind == "memory"
+
+
+def test_a_malformed_remote_settings_cache_opens_the_view_lists_the_files_and_shows_the_refusal(
+    tmp_path: Path,
+) -> None:
+    cache = Path.home() / ".claude" / "remote-settings.json"
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text("{not json")
+    view = _view(_session(tmp_path, "2.1.301", _project(tmp_path)))
+    assert any(source.path == "CLAUDE.md" for source in view.sources)
+    (refusal,) = [r for r in view.gaps.refusals if "remote-settings.json" in r]
+    assert "AGENTS.md files and plugins Claude Code loads may differ" in refusal
+
+
+def test_a_malformed_plugin_record_and_a_malformed_cache_are_both_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache = Path.home() / ".claude" / "remote-settings.json"
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text("[]")
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text("{not json")
+    monkeypatch.setenv("CLAUDE_CODE_PLUGIN_CACHE_DIR", str(tmp_path / "plugins"))
+    refusals = _view(_session(tmp_path, "2.1.301", _project(tmp_path))).gaps.refusals
+    assert any("installed_plugins.json" in r for r in refusals)
+    assert any("remote-settings.json" in r for r in refusals)

@@ -22,6 +22,7 @@ from reporails_cli.core.pipeline.expected_loads import AGENT
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.config.claude_settings import (
     claude_settings_files,
+    leaving_out_unreadable_cache,
     mcp_declarations,
     mcp_turned_off,
 )
@@ -60,6 +61,9 @@ from reporails_cli.core.xray.graph.shapes import first_launch, first_requests
 from reporails_cli.core.xray.graph.sources import build_sources, ran_sources
 from reporails_cli.core.xray.vocabulary import vocabulary_for
 
+_CACHE_MAY_DIFFER = (
+    "which AGENTS.md files and plugins Claude Code loads may differ from what is shown, since the cache is left out"
+)
 _NO_WINDOW = "context window"
 
 # A session whose transcript was written this many seconds ago or less is taken to be still going.
@@ -78,7 +82,8 @@ class XraySession:
         self._cursor = TranscriptCursor()
         self._transcript: list[EventRecord] = []
         self._files: tuple[ArtifactFile, ...] | None = None
-        self._plugin_problem: str | None = None
+        self._problems: tuple[str, ...] = ()
+        self._settings: tuple[Path, ...] = ()
         self._plugins: list[tuple[str, Path]] = []
         self._findings: dict[str, FindingTally] = {}
         self._check = XrayCheck("running", None)
@@ -95,17 +100,22 @@ class XraySession:
         return True
 
     def _listing(self) -> tuple[ArtifactFile, ...]:
-        """The files the page lists; with the installed plugins' record unreadable, none of their files, and the
-        problem kept for the refusals."""
+        """The files the page lists; with the installed plugins' record unreadable, none of their files, and with
+        the server-managed settings cache unreadable, the files as if it were absent. Every problem is kept for
+        the refusals."""
         if self._files is None:
-            try:
-                plugins = installed_plugin_roots(resolve_project_root(self._root))
-                self._plugin_problem = None
-            except InstalledPluginsUnreadableError as exc:
-                plugins = []
-                self._plugin_problem = str(exc)
-            self._plugins = plugins
-            self._files = artifact_files(self._root, plugins)
+            problems: list[str] = []
+            with leaving_out_unreadable_cache() as cache_problems:
+                try:
+                    plugins = installed_plugin_roots(resolve_project_root(self._root))
+                except InstalledPluginsUnreadableError as exc:
+                    plugins = []
+                    problems.append(str(exc))
+                self._plugins = plugins
+                self._files = artifact_files(self._root, plugins)
+                self._settings = claude_settings_files(self._root)
+            problems.extend(f"{problem}; {_CACHE_MAY_DIFFER}" for problem in dict.fromkeys(cache_problems))
+            self._problems = tuple(problems)
         return self._files
 
     def _listed(self, path: str) -> ArtifactFile | None:
@@ -253,7 +263,7 @@ class XraySession:
             live,
             mcp_declarations(self._root, self._plugins),
             mcp_turned_off(self._root),
-            claude_settings_files(self._root),
+            self._settings,
         )
 
     def _verdict(
@@ -276,8 +286,7 @@ class XraySession:
     def _gaps(self, window: XrayWindow | None) -> XrayGaps:
         """The refusals the records and the plugin listing hold, and what the view could not read."""
         refusals = [r.refusal for r in self._transcript if r.event == "refusal" and r.refusal]
-        if self._plugin_problem:
-            refusals.append(self._plugin_problem)
+        refusals.extend(self._problems)
         return XrayGaps(
             refusals=tuple(dict.fromkeys(refusals)),
             not_known=(_NO_WINDOW,) if window is None else (),

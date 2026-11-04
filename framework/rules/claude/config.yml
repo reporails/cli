@@ -349,6 +349,12 @@ file_types:
         precedence: managed
         vcs: external
         maintainer: system
+      remote:
+        # https://code.claude.com/docs/en/server-managed-settings: "A startup that runs on the cache at `~/.claude/remote-settings.json`". Written by Claude Code from the claude.ai admin console, ranked above the managed files.
+        patterns: ["~/.claude/remote-settings.json"]
+        precedence: managed
+        vcs: external
+        maintainer: system
       managed_dropin:
         # https://code.claude.com/docs/en/managed-settings#where-each-mechanism-stores-the-policy: "`managed-settings.json`, an optional `managed-settings.d/` directory, and `managed-mcp.json` in the system directory"
         patterns:

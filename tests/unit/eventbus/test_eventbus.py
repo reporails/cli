@@ -250,6 +250,29 @@ def test_a_session_start_prunes_the_old_sessions() -> None:
     assert store.events_path(SESSION).exists()
 
 
+class _StartThenPromptAdapter:
+    agent = "other"
+
+    def resolve(self, payload: JsonObject) -> list[EventRecord]:
+        return [
+            EventRecord(agent="other", event=kind, session_id=SESSION, time="t")
+            for kind in ("session_start", "prompt_submit")
+        ]
+
+
+def test_a_malformed_remote_settings_cache_does_not_stop_the_records_of_a_payload_being_stored(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr(port, "ADAPTERS", dict(port.ADAPTERS))
+    port.register(_StartThenPromptAdapter())
+    cache = Path.home() / ".claude" / "remote-settings.json"
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text("{not json")
+    record_payload("other", "{}")
+    assert [r.event for r in read_events(SESSION, 0)[0]] == ["session_start", "prompt_submit"]
+    assert sum("remote-settings.json" in m for m in caplog.messages) == 1
+
+
 def test_expected_loads_calls_the_store_prune_and_keeps_no_copy() -> None:
     assert expected_loads.prune is store.prune
     assert not hasattr(expected_loads, "_prune_event_logs")

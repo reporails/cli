@@ -12,7 +12,8 @@ before Claude Code 2.1.285 the plugin's ID was `agents-md@builtin`, and both IDs
 - `managed-only`: the organization's managed `CLAUDE.md` only; every `AGENTS.md` is left out.
 
 Claude Code honours the value in the user's settings and in managed settings (managed
-wins) and ignores it in a project's own settings files. A plugin turned off through
+wins; the cache of the organization's server-managed settings, `~/.claude/remote-settings.json`,
+ranks first) and ignores it in a project's own settings files. A plugin turned off through
 `enabledPlugins` leaves `CLAUDE.md` files only. The settings files are the ones Claude's
 `config` file type declares, so this reader and discovery name the same files.
 """
@@ -22,10 +23,13 @@ from __future__ import annotations
 import glob
 import json
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from reporails_cli.core.platform.config.config import get_agent_config_path, read_agent_config
+from reporails_cli.core.platform.contract.errors import ClaudeSettingsUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, pattern_list
 from reporails_cli.core.platform.dto.mcp import McpDeclaration
 from reporails_cli.core.platform.dto.xray_sources import ArtifactScope
@@ -41,6 +45,13 @@ MODE_CLAUDE_MD_AND_AGENTS_MD = "claude-md-and-agents-md"
 MODE_CLAUDE_MD = "claude-md"
 MODE_MANAGED_ONLY = "managed-only"
 _MODES = frozenset({MODE_CLAUDE_MD_OR_AGENTS_MD, MODE_CLAUDE_MD_AND_AGENTS_MD, MODE_CLAUDE_MD, MODE_MANAGED_ONLY})
+
+# The two keys of a managed source that are not policy: a source holding only these delivers no policy.
+# https://code.claude.com/docs/en/managed-settings#how-claude-code-combines-managed-sources
+_CONTROL_KEYS = frozenset({"wslInheritsWindowsSettings", "managedSourcesBehavior"})
+
+# The problems of an unreadable server-managed cache, collected inside `leaving_out_unreadable_cache`.
+_CACHE_PROBLEMS: ContextVar[list[str] | None] = ContextVar("claude_cache_problems", default=None)
 
 # Modes under which Claude Code reads no AGENTS.md at all.
 MODES_WITHOUT_AGENTS_MD = frozenset({MODE_CLAUDE_MD, MODE_MANAGED_ONLY})
@@ -91,18 +102,67 @@ def _is_readable_file(path: Path) -> bool:
         return False
 
 
-def _read_json(path: Path) -> JsonObject:
+def _read_json(path: Path, *, strict: bool = False) -> JsonObject:
+    """A settings file's object; an unreadable or non-object file reads as empty, or with `strict` (the
+    server-managed cache) raises `ClaudeSettingsUnreadableError`."""
     try:
         data: JsonValue = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError) as exc:
+        if strict:
+            raise ClaudeSettingsUnreadableError(f"{path}: cannot be read as JSON ({exc})") from exc
         logger.debug("Claude settings file unreadable: %s", path, exc_info=True)
         return {}
+    if strict and not isinstance(data, dict):
+        raise ClaudeSettingsUnreadableError(f"{path}: not a JSON object")
     return as_object(data)
 
 
+@contextmanager
+def leaving_out_unreadable_cache() -> Iterator[list[str]]:
+    """Within the block an unreadable server-managed cache is left out instead of raising; each problem is
+    appended to the yielded list, for a caller that shows the problem and keeps listing."""
+    problems: list[str] = []
+    token = _CACHE_PROBLEMS.set(problems)
+    try:
+        yield problems
+    finally:
+        _CACHE_PROBLEMS.reset(token)
+
+
+def _remote_cache(scopes: dict[str, list[str]]) -> dict[Path, JsonObject]:
+    """The server-managed cache files that deliver a policy key, each with its settings."""
+    cache: dict[Path, JsonObject] = {}
+    for path in _expand(scopes.get("remote", []), None):
+        try:
+            data = _read_json(path, strict=True)
+        except ClaudeSettingsUnreadableError as exc:
+            problems = _CACHE_PROBLEMS.get()
+            if problems is None:
+                raise
+            problems.append(str(exc))
+            continue
+        if _holds_policy(data):
+            cache[path] = data
+    return cache
+
+
+def _holds_policy(data: JsonObject) -> bool:
+    return any(key not in _CONTROL_KEYS for key in data)
+
+
 def _managed_files(scopes: dict[str, list[str]]) -> list[Path]:
-    """Managed settings in merge order: `managed-settings.json`, then drop-ins alphabetically."""
-    return _expand(scopes.get("managed", []), None) + _expand(scopes.get("managed_dropin", []), None)
+    """Managed settings in merge order, lowest first. Claude Code's managed tier uses the first source that
+    delivers a policy key, server-managed settings (the `remote` scope's cache) before the files:
+    `managed-settings.json`, then drop-ins alphabetically. With `managedSourcesBehavior` `"merge"` on the
+    selected source, every source that delivers one is used, the server-managed one ranked highest. A
+    malformed cache raises `ClaudeSettingsUnreadableError`."""
+    files = _expand(scopes.get("managed", []), None) + _expand(scopes.get("managed_dropin", []), None)
+    remote = _remote_cache(scopes)
+    if not remote:
+        return files
+    if not any(data.get("managedSourcesBehavior") == "merge" for data in remote.values()):
+        return list(remote)
+    return [path for path in files if _holds_policy(_read_json(path))] + list(remote)
 
 
 def _mode_value(data: JsonObject) -> str | None:
