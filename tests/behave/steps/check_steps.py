@@ -31,6 +31,8 @@ _RICH = (
     "- Rotate credentials via the `scripts/rotate.sh` helper.\n\n## Layout\n\n"
     "- Source lives in `src/`; tests in `tests/`.\n"
 )
+# A broken link and a missing import give findings with no model on disk, as on the CI runner.
+_SPARSE_BROKEN_REFS = _SPARSE + "\nSee [guide](missing/guide.md) and @nothere.md\n"
 
 # The finding-tuple wire contract every JSON finding must carry.
 _TUPLE_KEYS = ("line", "severity", "rule", "category", "message")
@@ -127,7 +129,7 @@ def step_nested_file_with_project_config(context):
     nested = context.project / "sub"
     nested.mkdir()
     write_claude(context.project, _RICH)
-    (nested / "CLAUDE.md").write_text(_SPARSE, encoding="utf-8")
+    (nested / "CLAUDE.md").write_text(_SPARSE_BROKEN_REFS, encoding="utf-8")
     baseline = document(run_ails(context.project, "check", "sub/CLAUDE.md", "--format", "json", home=context.home))
     rules = sorted({f["rule"] for record in baseline["files"].values() for f in record.get("findings", [])})
     assert rules, "the baseline run reported no rule, so nothing was disabled"
