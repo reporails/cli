@@ -9,6 +9,8 @@ const ready = await page.until(`!!document.querySelector('.card.top')`);
 const out = { ready: !!ready };
 const go = async hash => { await page.ev(`location.hash = ${JSON.stringify(hash)}; 0`); await page.until(`location.hash === ${JSON.stringify(hash)}`); };
 const click = sel => page.ev(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return false; e.click(); return true; })()`);
+// A click on a source opens its details; only the details' Pin button puts it on the graph.
+const pin = async sel => { await click(sel); await page.until(`!!document.querySelector('[data-pin]')`); return click('[data-pin]'); };
 const expandAll = () => click('[data-groups="open"]');
 const cardsState = () => page.ev(`[...document.querySelectorAll('.card[data-node]:not(.top):not(.bottom)')].map(c => ({ id: c.dataset.node, ring: c.classList.contains('ring'), dim: c.classList.contains('dim') }))`);
 
@@ -153,13 +155,13 @@ if (mode === 'drill' && ready) {
 
 if (mode === 'focus' && ready) {
   await expandAll();
-  await click('#sources .sr[data-source="mcp:docs-server"]');
+  await pin('#sources .sr[data-source="mcp:docs-server"]');
   out.mcp = await cardsState();
   out.mcpGroup = await page.ev(`[...document.querySelectorAll('.card[data-group]')].map(c => ({ key: c.dataset.group, ring: c.classList.contains('ring'), dim: c.classList.contains('dim') }))`);
   out.mcpTop = await page.ev(`document.querySelector('.card.top').classList.contains('ring')`);
   out.mcpBanner = await page.ev(`document.querySelector('.fbanner').textContent`);
   await click('[data-clear]');
-  await click('#sources .sr[data-source="packages/cli/CLAUDE.md"]');
+  await pin('#sources .sr[data-source="packages/cli/CLAUDE.md"]');
   out.never = await cardsState();
   out.neverBanner = await page.ev(`document.querySelector('.fbanner').textContent`);
   out.neverRow = await page.ev(`document.querySelector('#sources .sr[data-source="packages/cli/CLAUDE.md"]').classList.contains('never')`);
@@ -312,7 +314,7 @@ if (mode === 'words' && ready) {
   out.returned = await page.ev(`document.querySelector('#inspector').textContent`);
   await click('.card[data-node="a6"]');
   out.stopped = await page.ev(`document.querySelector('#inspector').textContent`);
-  await click('#sources .sr[data-source="mcp:docs-server"]');
+  await pin('#sources .sr[data-source="mcp:docs-server"]');
   out.banner = await page.ev(`document.querySelector('.fbanner').textContent`);
 }
 
@@ -357,7 +359,7 @@ if (mode === 'groups' && ready) {
   await click('.sh[data-source-group="agent"]');
   out.closedAgain = await snap();
   // focus a source past the first four of a group the user collapsed
-  await page.ev(`document.querySelector('.snode[data-source=\".claude/agents/auditor.md\"]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); 0`);
+  await page.ev(`document.querySelector('.snode[data-source=\".claude/agents/auditor.md\"]').dispatchEvent(new FocusEvent('focusin', { bubbles: true })); 0`);
   out.focused = await page.until(`!!document.querySelector('#sources .sr[data-source=".claude/agents/auditor.md"]')`) ? await snap() : null;
 }
 
@@ -369,7 +371,7 @@ if (mode === 'agents' && ready) {
   out.lit = {};
   for (const id of ['.claude/agents/reviewer.md', '.claude/agents/idle.md']) {
     await click('[data-clear]');
-    await click(`#sources .sr[data-source="${id}"]`);
+    await pin(`#sources .sr[data-source="${id}"]`);
     out.lit[id] = (await cardsState()).filter(c => c.ring).map(c => c.id);
     out.lit[id + ' top'] = await page.ev(`document.querySelector('.card.top').classList.contains('ring')`);
   }
@@ -397,7 +399,7 @@ if (mode === 'p4spine' && ready) {
 
 if (mode === 'p4stations' && ready) {
   out.stations = await page.ev(`[...document.querySelectorAll('.station')].map(e => ({ kind: e.dataset.station, source: e.dataset.source, sources: e.dataset.sources, text: e.textContent, title: e.title, label: e.getAttribute('aria-label'), tag: e.tagName }))`);
-  await click('.station.merged');
+  await pin('.station.merged');
   out.pinned = await page.ev(`(document.querySelector('.fbanner b') || {}).textContent || null`);
 }
 

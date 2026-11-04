@@ -361,7 +361,10 @@ PACKAGE = Path(__file__).resolve().parents[3] / "src" / "reporails_cli"
 @given("a throwaway copy of the ails code")
 def step_code_copy(context):
     context.code = context.tmpdir / "code"
-    shutil.copytree(PACKAGE, context.code / "reporails_cli", ignore=shutil.ignore_patterns("__pycache__"))
+    # only what the page runs on: the bundled model files are large, and a symlink is copied as one
+    shutil.copytree(
+        PACKAGE, context.code / "reporails_cli", symlinks=True, ignore=shutil.ignore_patterns("__pycache__", "models")
+    )
 
 
 @when('"ails xray --no-open" is started from the copy in the project')

@@ -2024,6 +2024,10 @@
  "sources": [
   {
    "id": "CLAUDE.md",
+   "excluded": {"hits": [], "outside": null},
+   "launch_settings": [],
+   "mcp": null,
+   "hook": null,
    "kind": "instructions",
    "name": "CLAUDE.md",
    "path": "CLAUDE.md",
@@ -2057,6 +2061,10 @@
   },
   {
    "id": "~/.claude/CLAUDE.md",
+   "excluded": {"hits": [], "outside": null},
+   "launch_settings": [],
+   "mcp": null,
+   "hook": null,
    "kind": "instructions",
    "name": "~/.claude/CLAUDE.md",
    "path": "~/.claude/CLAUDE.md",
@@ -2083,6 +2091,10 @@
   },
   {
    "id": "packages/cli/CLAUDE.md",
+   "excluded": {"hits": [], "outside": null},
+   "launch_settings": [],
+   "mcp": null,
+   "hook": null,
    "kind": "instructions",
    "name": "packages/cli/CLAUDE.md",
    "path": "packages/cli/CLAUDE.md",
@@ -2102,6 +2114,10 @@
   },
   {
    "id": "~/.claude/projects/-work-demo/memory/MEMORY.md",
+   "excluded": {"hits": [], "outside": null},
+   "launch_settings": [],
+   "mcp": null,
+   "hook": null,
    "kind": "memory",
    "name": "MEMORY.md",
    "path": "~/.claude/projects/-work-demo/memory/MEMORY.md",
@@ -2124,6 +2140,10 @@
   },
   {
    "id": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
+   "excluded": {"hits": [], "outside": null},
+   "launch_settings": [],
+   "mcp": null,
+   "hook": null,
    "kind": "memory",
    "name": "feedback_orphan.md",
    "path": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
