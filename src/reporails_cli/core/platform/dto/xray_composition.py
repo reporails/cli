@@ -68,7 +68,9 @@ class ReplyComposition:
     """One reply: when, its exact context total and cache split, its categories in `COMPOSITION_KEYS` order and
     whether the estimates overshoot the total (the remainder is then negative). A measured reply was split by the
     request Claude Code recorded for it (`measure`, set only for a request with no unresolved message), so its
-    parts add up to the total with no remainder."""
+    parts add up to the total with no remainder. `sized` is the request its system prompt and tool definitions are
+    sized from: its own `measure`, else the newest complete request before it, else None; an unmeasured reply with
+    one keeps those two shares out of its remainder."""
 
     t: float
     total: int
@@ -78,6 +80,7 @@ class ReplyComposition:
     parts: tuple[int, ...]
     over_estimate: bool
     measure: RequestMeasure | None
+    sized: RequestMeasure | None
 
     @property
     def measured(self) -> bool:
@@ -104,11 +107,6 @@ class XrayComposition:
 
     replies: tuple[ReplyComposition, ...]
     peak: int | None
-
-    @property
-    def latest_measure(self) -> RequestMeasure | None:
-        """The request measure of the newest reply that has one; None when no reply was measured."""
-        return next((reply.measure for reply in reversed(self.replies) if reply.measure is not None), None)
 
     def to_json(self) -> JsonObject:
         """The composition as columns: the category keys, one row per reply and the peak index."""

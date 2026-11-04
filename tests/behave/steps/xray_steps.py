@@ -1665,4 +1665,13 @@ def step_earlier_request_sizes(context):
     assert rows.get("system_prompt") == expected["system_prompt"], (rows, expected)
     assert rows.get("tool_definitions") == expected["tool_definitions"], (rows, expected)
     assert sum(rows.values()) == main["total"] and "rest" in rows, rows
-    assert "req-main-2" in system["note"], system
+    assert "request req-main-2" in system["note"], system
+    # the row's details name the request the size came from, and its tokens per character
+    assert main["request_id"] == "req-main-2" and main["tokens_per_char"], main
+    assert all(row["measure"] for row in main["rows"] if row["key"] in ("system_prompt", "tool_definitions"))
+    # the chart's composition of the pending reply holds the request's system and tool share in its remainder category
+    composition = next(node for node in view["nodes"] if node["id"] == "main")["detail"]["composition"]
+    last = dict(zip(composition["keys"], composition["replies"][-1][5:], strict=False))
+    shares = expected["system_prompt"] + expected["tool_definitions"]
+    assert abs(last["system_tools"] - shares) <= 1, (last, shares)
+    assert last["conversation"] >= main["total"] - shares - 1000, last

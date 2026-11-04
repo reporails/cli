@@ -11,10 +11,11 @@ from reporails_cli.core.platform.dto.xray_build import ProducedNode
 from reporails_cli.core.platform.dto.xray_composition import (
     COMPOSITION_KEYS,
     REMAINDER_KEY,
+    ReplyComposition,
     RequestMeasure,
     XrayComposition,
 )
-from reporails_cli.core.platform.dto.xray_sources import XrayBuiltin
+from reporails_cli.core.platform.dto.xray_sources import XrayBuiltin, XrayBuiltinInfo
 from reporails_cli.core.xray.derive import build_harness, replies_of
 from reporails_cli.core.xray.graph.composition import count_text, share
 
@@ -43,49 +44,44 @@ def _estimated_system(composition: XrayComposition, held: Mapping[HarnessKind, X
     return max(0, reply.parts[COMPOSITION_KEYS.index(REMAINDER_KEY)] - inside)
 
 
-def _earlier_note(note: str | None, measured: RequestMeasure) -> str:
-    """`note` with the request the size was measured from, when the newest reply's own request was not recorded
-    yet."""
-    return f"{note or ''} Sized from the earlier request {measured.size.request_id}.".strip()
+def _sized_note(own: str | None, info: XrayBuiltinInfo, reply: ReplyComposition, sized: RequestMeasure) -> str | None:
+    """The note of a size measured from `sized`: `own` when it is the reply's own request, else the item's note that
+    names the earlier request it was measured from."""
+    if reply.measured or info.earlier_note is None:
+        return own
+    return info.earlier_note.replace("{request}", sized.size.request_id)
 
 
 def builtin_items(
     main: ProducedNode, records: Sequence[EventRecord], vocabulary: AdapterVocabulary
 ) -> tuple[XrayBuiltin, ...]:
     """The coding agent's own context in the vocabulary's order. A harness item's size is read from its records.
-    The system prompt and the tool definitions are in no record: when the main agent's peak reply was measured they
-    are shares of the request recorded for it, and when it was not, of the request of the newest reply that was
-    measured; otherwise the system prompt is what the main agent's remainder
-    category holds at its peak reply after the other harness items inside that category, never below 0, and there
-    is no tool definitions item."""
+    The system prompt and the tool definitions are in no record: they are shares of the request the main agent's peak
+    reply is sized from (its own recorded request, else the latest complete one before it, which the note names);
+    with none, the system prompt is what the main agent's remainder category holds at its peak reply after the
+    other harness items inside that category, never below 0, and there is no tool definitions item."""
     composition = main.detail.usage.composition
     held = {item.kind: item for item in build_harness(records, replies_of(records)) or ()}
-    measured = None if composition.peak is None else composition.replies[composition.peak].measure
-    from_earlier = measured is None and composition.latest_measure is not None
-    measured = composition.latest_measure if measured is None else measured
-    system = _estimated_system(composition, held) if measured is None else None
+    reply = None if composition.peak is None else composition.replies[composition.peak]
+    sized = None if reply is None else reply.sized
+    system = _estimated_system(composition, held) if sized is None else None
     shapes = _main_system_shapes(records)
     found: list[XrayBuiltin] = []
     for info in vocabulary.context.builtin:
         item = held.get(info.key)
-        if info.key == "system_prompt" and measured is not None:
-            size, scale = measured.size, measured.scale
-            note = info.measured_note or info.note
-            note = _earlier_note(note, measured) if from_earlier else note
-            found.append(
-                XrayBuiltin(info.key, info.label, share(size.system_chars, scale), note, info.visible, False, shapes)
-            )
+        if info.key == "system_prompt" and reply is not None and sized is not None:
+            note = _sized_note(info.measured_note, info, reply, sized) or info.note
+            tokens = share(sized.size.system_chars, sized.scale)
+            found.append(XrayBuiltin(info.key, info.label, tokens, note, info.visible, False, shapes))
         elif info.key == "system_prompt":
             if system is not None:
                 found.append(XrayBuiltin(info.key, info.label, system, info.note, info.visible, True, shapes))
         elif info.key == "tool_definitions":
-            if measured is not None:
-                size, scale = measured.size, measured.scale
-                note = count_text(info.note, info.note_once, size.tool_count)
-                note = _earlier_note(note, measured) if from_earlier else note
-                found.append(
-                    XrayBuiltin(info.key, info.label, share(size.tools_chars, scale), note, info.visible, False)
-                )
+            if reply is not None and sized is not None:
+                counted = count_text(info.note, info.note_once, sized.size.tool_count)
+                tokens = share(sized.size.tools_chars, sized.scale)
+                note = _sized_note(counted, info, reply, sized)
+                found.append(XrayBuiltin(info.key, info.label, tokens, note, info.visible, False))
         elif item is not None:
             note = count_text(info.note, info.note_once, item.count)
             found.append(XrayBuiltin(info.key, info.label, item.tokens_est or 0, note, info.visible, False))

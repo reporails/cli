@@ -94,6 +94,9 @@ _CLAUDE_BUILTIN = (
         "hidden",
         "Not in the transcript; its size is what the reply total leaves.",
         measured_note="Measured from the request Claude Code recorded.",
+        earlier_note=(
+            "Measured from request {request}, the latest complete request Claude Code recorded before this reply."
+        ),
     ),
     XrayBuiltinInfo(
         "tool_definitions",
@@ -101,6 +104,10 @@ _CLAUDE_BUILTIN = (
         "hidden",
         "{count} tools sent with every request",
         "{count} tool sent with every request",
+        earlier_note=(
+            "Tools sent with every request, measured from request {request}, the latest complete request Claude Code "
+            "recorded before this reply."
+        ),
     ),
     XrayBuiltinInfo(
         "deferred_tools",
@@ -124,12 +131,21 @@ _CLAUDE_CONTEXT_TEXTS = (
         "the remainder of the exact total: conversation, tool results and anything not itemised",
     ),
     XrayContextText(
-        "system_prompt", "System prompt", "a measured share of the request Claude Code recorded, sent every turn"
+        "system_prompt",
+        "System prompt",
+        "a measured share of the request Claude Code recorded, sent every turn",
+        reason_earlier=(
+            "a measured share of the latest complete request Claude Code recorded before this reply, sent every turn"
+        ),
     ),
     XrayContextText(
         "tool_definitions",
         "Tool definitions",
         "a measured share of the request Claude Code recorded: the tools sent every turn",
+        reason_earlier=(
+            "a measured share of the latest complete request Claude Code recorded before this reply: "
+            "the tools sent every turn"
+        ),
     ),
     XrayContextText("tool_io", "Tool calls and results", "a measured share of the request Claude Code recorded"),
     XrayContextText(

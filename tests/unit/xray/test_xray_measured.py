@@ -217,3 +217,43 @@ def test_a_measured_row_says_how_its_share_was_worked_out(tmp_path: Path) -> Non
     assert rows["system_prompt"].measure == XrayRowMeasure(4000, 0, 0)
     assert rows["tool_io"].measure == XrayRowMeasure(4000, 1000, 0)
     assert rows["rest"].measure is None and rows["source"].measure is None
+
+
+def _pending_peak(kind: str) -> list[EventRecord]:
+    """A recorded reply, then a bigger newest reply (the peak) whose request is missing or unresolved."""
+    newest = [_request(1.5, _size("u", unresolved=2))] if kind == "unresolved" else []
+    return [_request(0.5, _size("a")), _answer(1, 17200, "a"), *newest, _answer(2, 20000, "u")]
+
+
+@pytest.mark.parametrize("kind", ["missing", "unresolved"])
+def test_a_peak_with_no_complete_request_is_sized_by_the_latest_complete_one_before_it(
+    tmp_path: Path, kind: str
+) -> None:
+    records = _pending_peak(kind)
+    ic = _context(tmp_path, records)
+    values = _by_key(ic)
+    assert not ic.measured and ic.note == NOT_RECORDED and ic.total == 20000
+    assert values["system_prompt"] == 4000 and values["tool_definitions"] == 8000 and "tool_io" not in values
+    assert sum(values.values()) == 20000
+    assert ic.request_id == "a" and ic.tokens_per_char == pytest.approx(1.0)
+    for row in ic.rows:
+        if row.key in ("system_prompt", "tool_definitions"):
+            assert "before this reply" in row.reason and "request" in row.reason
+    items = {item.key: item for item in _graph(tmp_path, records, _files(tmp_path)).builtin}
+    assert items["system_prompt"].tokens_est == 4000 and not items["system_prompt"].remainder
+    assert "request a" in (items["system_prompt"].note or "") and "Measured from the request" not in str(
+        items["system_prompt"].note
+    )
+    assert items["tool_definitions"].tokens_est == 8000 and "request a" in (items["tool_definitions"].note or "")
+    (_, row) = _rows(tmp_path, records)
+    assert row["measured"] is False and row[REMAINDER_KEY] == 12000
+    assert sum(int(str(row[key])) for key in COMPOSITION_KEYS) == 20000
+
+
+def test_a_peak_is_never_sized_by_a_request_recorded_after_it(tmp_path: Path) -> None:
+    later = _size("b", system_chars=1000, tools_chars=1000)
+    records = [*_pending_peak("missing"), _request(2.5, later), _answer(3, 10000, "b")]
+    ic = _context(tmp_path, records)
+    assert ic.total == 20000 and ic.request_id == "a" and _by_key(ic)["system_prompt"] == 4000
+    items = {item.key: item for item in _graph(tmp_path, records, _files(tmp_path)).builtin}
+    assert items["system_prompt"].tokens_est == 4000

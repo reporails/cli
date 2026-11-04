@@ -357,14 +357,18 @@ class XrayBuiltinInfo:
     note_once: str | None = None
     # The note when the size is measured from the recorded request.
     measured_note: str | None = None
+    # The note when the size is measured from the latest complete request before the reply; `{request}` is its id.
+    earlier_note: str | None = None
 
 
 @dataclass(frozen=True)
 class XrayContextText:
     """The label and reason the coding agent words one kind of "in context" row with; a reason may hold the
-    fire count as `{count}`; `reason_once` words a count of one."""
+    fire count as `{count}`; `reason_once` words a count of one; `reason_earlier` words a row measured from the
+    latest complete request before its reply."""
 
     key: ContextKey
     label: str
     reason: str
     reason_once: str | None = None
+    reason_earlier: str | None = None
