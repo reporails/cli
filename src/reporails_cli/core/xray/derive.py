@@ -111,10 +111,13 @@ def window_of(replies: Replies) -> XrayWindow | None:
 def build_compactions(records: Sequence[EventRecord], replies: Replies, frame: Frame) -> tuple[XrayCompaction, ...]:
     """Every compaction among `records` in time order, with the context before and after from `replies`."""
     found = sorted(
-        (moment, record)
-        for record in records
-        if record.event == "post_compact"
-        if (moment := epoch(record.time)) is not None
+        (
+            (moment, record)
+            for record in records
+            if record.event == "post_compact"
+            if (moment := epoch(record.time)) is not None
+        ),
+        key=lambda found: found[0],
     )
     return tuple(
         XrayCompaction(

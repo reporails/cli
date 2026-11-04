@@ -41,6 +41,7 @@ from reporails_cli.core.platform.adapters.programs import open_in_browser
 from reporails_cli.core.platform.adapters.registry import file_level_check_ids
 from reporails_cli.core.platform.adapters.rules_query import rule_category, rule_title
 from reporails_cli.core.platform.config.bootstrap import parse_idle_timeout_env
+from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.pipeline import Refusal
@@ -504,6 +505,7 @@ def build_app(
 
     return Starlette(
         lifespan=lifespan,
+        exception_handlers={ConfigUnreadableError: lambda _request, exc: _refused(422, str(exc))},
         routes=[
             Route("/", server.page, methods=["GET"]),
             Route("/view", server.view, methods=["GET"]),
@@ -563,9 +565,7 @@ def _run(server: uvicorn.Server, sock: socket.socket, requests: RequestClock, id
 def serve(root: Path, session_file: Path, picked: SessionPick, *, open_page: bool) -> None:
     """Serve the page opening on `session_file` until interrupted, or until no request has come for
     `AILS_XRAY_IDLE_S` seconds (30 minutes by default; 0 never stops); print its address and open it unless told
-    not to.
-
-    The project's page record names this process while it serves."""
+    not to. The project's page record names this process while it serves."""
     sock = bound_socket()
     port = sock.getsockname()[1]
     launch = secrets.token_urlsafe(16)

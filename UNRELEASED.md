@@ -39,6 +39,7 @@
 
 ### Fixed
 
+- The x-ray page names a config file it cannot read, and the problem in it, instead of failing to load; Check and Fix on a file say the same.
 - The x-ray page reads a session in which an MCP server failed to connect. It had shown "Claude Code wrote rows this reporails version does not read" and left out that listing's tools and server states; now it shows that server as failed.
 - On the x-ray page, an instruction or memory file the session loaded shows its text, as the kind it is, even when the project's config leaves its folder out of the checks (it had read "not a file this page lists"), with a note naming the setting and the config file that leave it out (a check of the whole project skips it; Check and Fix on that one file still run, and for a file that links outside the project the note says why they are not offered); and when the page takes a new view of a growing session, a panel whose content did not change is left as it is and an open file text no longer flashes "Loading…", so the page no longer flickers.
 - An x-ray page stops by itself after 30 minutes with no request (`AILS_XRAY_IDLE_S` seconds; `0` never stops), so a page an agent started in the background no longer runs until it is killed by hand. A page left open in a browser tab stays up.

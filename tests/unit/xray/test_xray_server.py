@@ -815,3 +815,25 @@ def test_system_refuses_a_type_no_launch_recorded_a_request_for_and_a_missing_qu
         assert reply.status_code == 400 and "recorded request" in reply.json()["error"]
     assert _get(client, "/system", {}).status_code == 400
     assert _get(client, "/system", {"type": "general-purpose"}, token=None).status_code == 403
+
+
+@pytest.fixture
+def broken_config(project: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    (project / ".ails").mkdir()
+    (project / ".ails" / "config.yml").write_text("exclude_dirs: [unclosed\n")
+    monkeypatch.setattr(xray_server.XrayServer, "launch_check", lambda self: None)
+    return project
+
+
+@pytest.mark.parametrize(("method", "route"), [("get", "/view"), ("post", "/check"), ("post", "/heal")])
+def test_an_unreadable_project_config_is_answered_in_words_not_a_500(
+    client: TestClient, broken_config: Path, method: str, route: str
+) -> None:
+    headers = {"X-Xray-Token": TOKEN, "Origin": ORIGIN}
+    sent = (
+        client.get(route, headers=headers)
+        if method == "get"
+        else client.post(route, json={"path": "CLAUDE.md"}, headers=headers)
+    )
+    assert sent.status_code == 422
+    assert "config.yml" in sent.json()["error"]

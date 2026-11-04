@@ -250,3 +250,10 @@ def test_a_built_in_note_words_a_count_of_one_in_the_singular(tmp_path: Path) ->
 def test_only_the_shell_category_carries_a_command_to_fetch() -> None:
     categories = vocabulary_for("claude", []).categories
     assert [item.key for item in categories if item.command] == ["run"]
+
+
+def test_two_compactions_with_one_timestamp_build_the_view(tmp_path: Path) -> None:
+    claude, _, _ = _files(tmp_path)
+    records = [load(0.1, claude), rec("post_compact", 2, source="auto"), rec("post_compact", 2, source="manual")]
+    station = next(item for item in _graph(tmp_path, records, _files(tmp_path)).stations if item.node == "main")
+    assert len(station.compactions) == 2

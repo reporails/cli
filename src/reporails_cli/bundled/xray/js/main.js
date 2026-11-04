@@ -296,6 +296,15 @@ async function poll() {
       if (!ix) $('#canvas').replaceChildren(nk('No view is shown: this page was started before ails changed.'));
       return;
     }
+    if (r.status === 422) {
+      // The project's config cannot be read: the server's words are the notice.
+      const j = await r.json().catch(() => ({}));
+      const n = $('#chk');
+      n.hidden = false;
+      n.textContent = j.error || 'The project config cannot be read.';
+      if (!ix) $('#canvas').replaceChildren(nk(n.textContent));
+      return;
+    }
     if (!r.ok) throw new Error(String(r.status));
     const j = await r.json();
     if (j.version === version) return;
