@@ -59,6 +59,7 @@
 - The x-ray MCP servers group lists every server the session could reach, not only those that send instructions: servers from the project's `.mcp.json`, your user and per-project settings, managed settings and each enabled plugin (named with the plugin that brings it), plus any server whose tools the session listed. Each server shows whether it was connected, still starting, failed, turned off for this project, or declared but never seen, and how many tools it offered.
 - On Claude Code 2.1.309 or later, the main agent's System prompt details on the x-ray page show the system prompt text it was sent with, read from the session file when the details open and never stored; when the session's requests carried more than one different system prompt text, the details say how many and show the latest (a change in the tools sent alone does not count).
 - On a live session, the x-ray page's System prompt and Tool definitions keep the size measured from the latest recorded request while the newest reply's request is still being written, instead of briefly jumping to everything the reply total leaves; the reply's split and its band on the spine use the same sizes, its details name the request they came from, and the split stays labelled as an estimate.
+- `ails xray`: a hook that ran without adding text to the context, such as a Stop hook, counts as fired in the Hooks group instead of not loaded.
 
 ### Internal
 
@@ -79,6 +80,10 @@
 - On the x-ray page, a measured row of a subagent (system prompt, tool definitions, tool calls and results) opens that subagent's own figure instead of the main agent's, and shows how it was measured: the request, its characters, tokens per character, image tokens and what is already listed above.
 - Tests: the x-ray page scenarios pin a source through its details' "Pin on graph" button and reveal one by keyboard focus, the page fixtures carry every field a source has, and the stale-page scenario copies the package without its model files.
 - Tests: the terminal test of `ails hook` skips where Python has no `pty` (Windows), and the check scenario for a file inside the run folder asserts that the rules the project config disables stay off.
+- Tests: the nested-file project-config scenario gets findings with no model on disk.
+- Tests: the x-ray session and server tests run on Windows.
+- Tests: the architecture, file-mode, x-ray page record and synced-skills tests run on Windows.
+- Tests: the integration, behave and smoke suites run on Windows.
 
 ## 0.6.5
 

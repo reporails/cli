@@ -168,7 +168,9 @@ def step_commands_for_drawn_rows(context):
 
 @given("the bundled page is served over a view holding {n:d} calls")
 def step_big_view(context, n):
-    source = json.loads((Path(__file__).resolve().parents[2] / "fixtures" / "xray" / "view_sample.json").read_text(encoding="utf-8"))
+    source = json.loads(
+        (Path(__file__).resolve().parents[2] / "fixtures" / "xray" / "view_sample.json").read_text(encoding="utf-8")
+    )
     first = source["track"][0]
     base = list(first["calls"])
     first["calls"] = [{**base[i % len(base)], "t": 7300.0 + i / 100, "use_id": f"toolu_big_{i}"} for i in range(n)]

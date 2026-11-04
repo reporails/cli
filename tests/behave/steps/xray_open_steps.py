@@ -58,7 +58,11 @@ def step_two_sessions(context):
     context.project = build_project(context.tmpdir / "proj").resolve()
     folder = context.home / ".claude" / "projects" / claude_project_folder_name(context.project)
     folder.mkdir(parents=True)
-    text = (FIXTURE / "session.jsonl").read_text(encoding="utf-8").replace("/work/proj", json.dumps(str(context.project))[1:-1])
+    text = (
+        (FIXTURE / "session.jsonl")
+        .read_text(encoding="utf-8")
+        .replace("/work/proj", json.dumps(str(context.project))[1:-1])
+    )
     older = folder / f"{OLDER}.jsonl"
     older.write_text(text, encoding="utf-8")
     hour_ago = time.time() - 3600

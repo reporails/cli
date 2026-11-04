@@ -54,7 +54,11 @@ def step_project_with_session(context):
     folder = context.home / ".claude" / "projects" / claude_project_folder_name(context.project)
     folder.mkdir(parents=True)
     shutil.copytree(FIXTURE / "session", folder / "session")
-    text = (FIXTURE / "session.jsonl").read_text(encoding="utf-8").replace("/work/proj", json.dumps(str(context.project))[1:-1])
+    text = (
+        (FIXTURE / "session.jsonl")
+        .read_text(encoding="utf-8")
+        .replace("/work/proj", json.dumps(str(context.project))[1:-1])
+    )
     (folder / "session.jsonl").write_text(text, encoding="utf-8")
 
 
@@ -65,7 +69,8 @@ def step_project_with_compactions(context):
     folder.mkdir(parents=True)
     source = FIXTURE.parent / "2.1.309-compactions" / "session.jsonl"
     (folder / "session.jsonl").write_text(
-        source.read_text(encoding="utf-8").replace("/work/proj", json.dumps(str(context.project))[1:-1]), encoding="utf-8"
+        source.read_text(encoding="utf-8").replace("/work/proj", json.dumps(str(context.project))[1:-1]),
+        encoding="utf-8",
     )
 
 
@@ -1556,7 +1561,11 @@ def step_symlinked_excluded_file(context):
     folder = context.home / ".claude" / "projects" / claude_project_folder_name(context.project)
     folder.mkdir(parents=True)
     shutil.copytree(FIXTURE / "session", folder / "session")
-    rows = (FIXTURE / "session.jsonl").read_text(encoding="utf-8").replace("/work/proj", json.dumps(str(context.project))[1:-1])
+    rows = (
+        (FIXTURE / "session.jsonl")
+        .read_text(encoding="utf-8")
+        .replace("/work/proj", json.dumps(str(context.project))[1:-1])
+    )
     load = {
         "type": "attachment",
         "timestamp": "2026-10-30T20:11:30.000Z",
