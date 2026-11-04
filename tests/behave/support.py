@@ -70,7 +70,7 @@ def stop_xray_pages(home: Path) -> None:
     """Kill every x-ray page process the scenario's own home records, so no server outlives its scenario."""
     for record in (home / ".reporails" / "xray-pages").glob("*.json"):
         with contextlib.suppress(OSError, ValueError, KeyError):
-            os.kill(int(json.loads(record.read_text(encoding="utf-8"))["pid"]), signal.SIGKILL)
+            os.kill(int(json.loads(record.read_text(encoding="utf-8"))["pid"]), getattr(signal, "SIGKILL", signal.SIGTERM))  # Windows has no SIGKILL; SIGTERM ends the process there
 
 
 def daemon_started(home: Path) -> bool:

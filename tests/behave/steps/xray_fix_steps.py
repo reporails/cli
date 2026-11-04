@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from behave import given, then  # type: ignore[import-untyped]
@@ -109,7 +110,7 @@ CHANGES = {
 def step_serve_changed(context, name, change):
     view = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
     CHANGES[change](view)
-    path = Path("/tmp") / f"xray_fix_{os.getpid()}_{abs(hash(change))}.json"
+    path = Path(tempfile.gettempdir()) / f"xray_fix_{os.getpid()}_{abs(hash(change))}.json"
     path.write_text(json.dumps(view), encoding="utf-8")
     context.add_cleanup(lambda: path.unlink(missing_ok=True))
     context.execute_steps(f'Given the bundled page is served over the "{str(path)[:-5]}" fixture view')

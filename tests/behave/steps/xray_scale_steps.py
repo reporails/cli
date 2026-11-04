@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from behave import given, then  # type: ignore[import-untyped]
@@ -20,7 +21,7 @@ MIN_FPS = 30
 
 @given("the bundled page is served over a synthetic view at the design scale")
 def step_serve_scale(context):
-    path = Path("/tmp") / f"xray_scale_{os.getpid()}.json"
+    path = Path(tempfile.gettempdir()) / f"xray_scale_{os.getpid()}.json"
     context.scale_view = xray_scale_view.write(path)
     context.add_cleanup(lambda: path.unlink(missing_ok=True))
     context.execute_steps(f'Given the bundled page is served over the "{str(path)[:-5]}" fixture view')
