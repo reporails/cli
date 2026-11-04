@@ -74,7 +74,9 @@ def _session(tmp_path: Path, version: str, root: Path) -> XraySession:
     shutil.copytree(FIXTURES / version, copy)
     long_ago = time.time() - 2 * 24 * 3600
     for file in copy.rglob("*.jsonl"):
-        file.write_text(file.read_text().replace("/work/proj", str(root)))
+        file.write_text(
+            file.read_text(encoding="utf-8").replace("/work/proj", json.dumps(str(root))[1:-1]), encoding="utf-8"
+        )
         os.utime(file, (long_ago, long_ago))
     return XraySession(root, copy / "session.jsonl")
 

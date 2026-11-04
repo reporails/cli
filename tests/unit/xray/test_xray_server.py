@@ -62,7 +62,9 @@ def project(tmp_path: Path) -> Path:
     copy = tmp_path / "session"
     shutil.copytree(FIXTURES, copy)
     for file in copy.rglob("*.jsonl"):
-        file.write_text(file.read_text().replace("/work/proj", str(root)))
+        file.write_text(
+            file.read_text(encoding="utf-8").replace("/work/proj", json.dumps(str(root))[1:-1]), encoding="utf-8"
+        )
     return root
 
 
@@ -380,7 +382,15 @@ def test_the_page_and_its_data_load_with_the_network_blocked(
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise OSError("network blocked")
 
-    monkeypatch.setattr(socket.socket, "connect", refuse)
+    real_connect = socket.socket.connect
+
+    def refuse_off_loopback(self: socket.socket, address: Any) -> None:
+        # The Windows event loop wires itself with a loopback socket pair; only that stays open.
+        if isinstance(address, tuple) and address and address[0] in ("127.0.0.1", "::1"):
+            return real_connect(self, address)
+        refuse()
+
+    monkeypatch.setattr(socket.socket, "connect", refuse_off_loopback)
     monkeypatch.setattr(socket, "create_connection", refuse)
     paths = [
         "/",
@@ -415,7 +425,12 @@ def test_xray_help_loads_no_server_or_ml_runtime(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         timeout=60,
-        env={"HOME": str(tmp_path), "USERPROFILE": str(tmp_path), "PATH": ""},
+        env={
+            "HOME": str(tmp_path),
+            "USERPROFILE": str(tmp_path),
+            "PATH": "",
+            "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+        },
         check=False,
     )
     loaded = set(json.loads(done.stdout.splitlines()[-1]))
@@ -491,9 +506,9 @@ def test_brief_replies_with_the_refusal_when_the_subagent_file_opens_with_no_use
     client: TestClient, tmp_path: Path
 ) -> None:
     file = tmp_path / "session" / "session" / "subagents" / f"agent-{SUB_ID}.jsonl"
-    rows = [json.loads(line) for line in file.read_text().splitlines()]
+    rows = [json.loads(line) for line in file.read_text(encoding="utf-8").splitlines()]
     rows[0]["type"] = "assistant"
-    file.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    file.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
     client.get("/view", headers={"X-Xray-Token": TOKEN})
     reply = _get(client, "/brief", {"subagent": SUB_ID})
     assert reply.status_code == 400 and "user row" in reply.json()["error"]
