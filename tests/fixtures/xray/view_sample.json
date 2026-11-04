@@ -5301,6 +5301,7 @@
         "a10"
       ],
       "actionable": true,
+      "excluded": {"hits": [], "outside": null},
       "launches": null,
       "cost_usd_est": 0.0123,
       "label": "CLAUDE.md",
@@ -5337,6 +5338,7 @@
         "a10"
       ],
       "actionable": false,
+      "excluded": {"hits": [], "outside": null},
       "launches": null,
       "cost_usd_est": 0.0123,
       "label": "~/.claude/CLAUDE.md",
@@ -5366,6 +5368,7 @@
       "availability": "on_disk",
       "had_by": [],
       "actionable": true,
+      "excluded": {"hits": [], "outside": null},
       "launches": null,
       "cost_usd_est": 0.0123,
       "label": "packages/cli/CLAUDE.md",
@@ -5398,6 +5401,7 @@
         "a2"
       ],
       "actionable": true,
+      "excluded": {"hits": [], "outside": null},
       "launches": null,
       "cost_usd_est": null,
       "label": ".claude/rules/rules-engine.md",
@@ -5429,6 +5433,7 @@
       "availability": "on_disk",
       "had_by": [],
       "actionable": true,
+      "excluded": {"hits": [], "outside": null},
       "launches": null,
       "cost_usd_est": null,
       "label": ".claude/rules/style.md",
@@ -5455,6 +5460,7 @@
         "main"
       ],
       "actionable": true,
+      "excluded": {"hits": [], "outside": null},
       "launches": null,
       "cost_usd_est": null,
       "label": "orient",
@@ -5479,6 +5485,7 @@
         "main"
       ],
       "actionable": true,
+      "excluded": {"hits": [], "outside": null},
       "launches": null,
       "cost_usd_est": null,
       "label": "agents-sdk",
@@ -5501,6 +5508,7 @@
       "availability": "listed",
       "had_by": [],
       "actionable": true,
+      "excluded": {"hits": [], "outside": null},
       "launches": null,
       "cost_usd_est": null,
       "label": "cloudflare",
@@ -5532,6 +5540,7 @@
         "main"
       ],
       "actionable": true,
+      "excluded": {"hits": [], "outside": null},
       "launches": null,
       "cost_usd_est": null,
       "label": "MEMORY.md",
@@ -5554,6 +5563,7 @@
       "availability": "on_disk",
       "had_by": [],
       "actionable": false,
+      "excluded": {"hits": [], "outside": null},
       "launches": null,
       "cost_usd_est": null,
       "label": "feedback_orphan.md",
@@ -5581,6 +5591,7 @@
         "a5b"
       ],
       "actionable": false,
+      "excluded": {"hits": [], "outside": null},
       "launches": null,
       "cost_usd_est": null,
       "label": "docs-server",
@@ -5610,6 +5621,7 @@
         "main"
       ],
       "actionable": false,
+      "excluded": {"hits": [], "outside": null},
       "launches": null,
       "cost_usd_est": null,
       "label": "PreToolUse:Edit",
@@ -5642,6 +5654,7 @@
         "a9"
       ],
       "actionable": true,
+      "excluded": {"hits": [], "outside": null},
       "launches": 2,
       "cost_usd_est": null,
       "label": "test-runner",
@@ -5674,6 +5687,7 @@
         "a10"
       ],
       "actionable": true,
+      "excluded": {"hits": [], "outside": null},
       "launches": 2,
       "cost_usd_est": null,
       "label": "reviewer",
@@ -5698,6 +5712,7 @@
         "a1"
       ],
       "actionable": false,
+      "excluded": {"hits": [], "outside": null},
       "launches": 1,
       "cost_usd_est": null,
       "label": "explore",

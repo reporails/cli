@@ -11,6 +11,7 @@ import pytest
 from reporails_cli.core.discovery import exclusions as exclusions_module
 from reporails_cli.core.discovery.exclusions import (
     covers,
+    exclusion_hits,
     leaves_out,
     load_run_exclusions,
     parse_run_exclusions,
@@ -120,3 +121,22 @@ def test_record_reports_each_folder_in_the_form_it_was_given(tmp_path: Path) -> 
     named = with_named(excl, [tmp_path / "pkg" / "docs" / "a.md"])
     assert record_patterns(named, narrowed=True) == (("./docs", "scratch"), ())
     assert record_patterns(named) == (("./docs", "pkg/docs", "scratch"), ())
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_exclusion_hits_name_the_setting_the_value_and_the_config_file(tmp_path: Path) -> None:
+    (tmp_path / ".ails").mkdir()
+    (tmp_path / ".ails" / "config.yml").write_text("exclude_dirs: [hub]\nheal_exclude: ['**/CLAUDE.md']\n")
+    (tmp_path / ".ails" / "config.local.yml").write_text("exclude_files: ['notes/*.md']\n")
+    held, kept = tmp_path / "hub" / "CLAUDE.md", tmp_path / "docs" / "a.md"
+    noted = tmp_path / "notes" / "b.md"
+    found = exclusion_hits(tmp_path, [held, kept, noted])
+    assert [(h.setting, h.value, h.config) for h in found[held]] == [
+        ("exclude_dirs", "hub", ".ails/config.yml"),
+        ("heal_exclude", "**/CLAUDE.md", ".ails/config.yml"),
+    ]
+    assert found[kept] == ()
+    assert [(h.setting, h.value, h.config) for h in found[noted]] == [
+        ("exclude_files", "notes/*.md", ".ails/config.local.yml")
+    ]

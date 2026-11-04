@@ -17,7 +17,7 @@ import './components/peeks.js';
 import { onRegister } from './components/nodes/index.js';
 
 const $ = s => document.querySelector(s);
-let ix = null, version = null, etag = null, inflight = false, lastAgentHash = '#/agent/main', afterHash = null;
+let ix = null, version = null, etag = null, inflight = false, changed = false, lastAgentHash = '#/agent/main', afterHash = null;
 const run = { busy: false, res: null, autoChecked: new Set() };
 const opened = new Set();
 
@@ -275,11 +275,21 @@ function adopt(view) {
 }
 
 async function poll() {
-  if (document.hidden || inflight) return;
+  if (document.hidden || inflight || changed) return;
   inflight = true;
   try {
     const r = await fetch(viewUrl(), { headers: viewHeaders(etag), cache: 'no-store' });
     if (r.status === 304) return;
+    if (r.status === 409) {
+      // The server's code is older than the page's: what it would send does not match what this page draws.
+      changed = true;
+      const j = await r.json().catch(() => ({}));
+      const b = $('#changed');
+      b.hidden = false;
+      b.textContent = j.error || 'ails changed since this page started; run `ails xray` again to open a current page.';
+      if (!ix) $('#canvas').replaceChildren(nk('No view is shown: this page was started before ails changed.'));
+      return;
+    }
     if (!r.ok) throw new Error(String(r.status));
     const j = await r.json();
     if (j.version === version) return;

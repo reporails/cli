@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 
+from reporails_cli.core.discovery.exclusions import exclusion_hits
+from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.pipeline.expected_loads import expected_loads
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object, as_str, pattern_list
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessKind
+from reporails_cli.core.platform.dto.exclusion import FileLeftOut
 from reporails_cli.core.platform.dto.xray_sources import (
     AGENT_ARTIFACT_KINDS,
     ARTIFACT_KIND_OF_FILE_TYPE,
@@ -168,10 +172,29 @@ def advertised_files(files: Sequence[ArtifactFile], records: Sequence[EventRecor
 
 
 def is_actionable(item: ArtifactFile, root: Path) -> bool:
-    """True for a file of the project that exists and is not a hook config: the files the page may check or fix."""
+    """True for a file of the project that exists, whose real location is inside the project too, and that is not a
+    hook config: the files the page may check or fix."""
     if item.kind == "hook":
         return False
-    return Path(item.path).is_relative_to(root) and Path(real_path(item.path, root)).is_file()
+    real = Path(real_path(item.path, root))
+    return Path(item.path).is_relative_to(root) and real.is_file() and real.is_relative_to(safe_resolve(root))
+
+
+def left_out_files(files: Sequence[ArtifactFile], root: Path) -> dict[str, FileLeftOut]:
+    """For each file of the project that is no hook config (by its path), what keeps it out of a project-wide check
+    or fix and, for a file whose real location is outside the project, where its link leads."""
+    inside = [item for item in files if item.kind != "hook" and Path(item.path).is_relative_to(root)]
+    hits = exclusion_hits(root, [Path(item.path) for item in inside])
+    base = safe_resolve(root)
+    found: dict[str, FileLeftOut] = {}
+    for item in inside:
+        path = Path(item.path)
+        real = Path(real_path(item.path, root))
+        outside = None
+        if real.exists() and not real.is_relative_to(base):
+            outside = os.readlink(path) if path.is_symlink() else str(real)
+        found[item.path] = FileLeftOut(hits[path], outside)
+    return found
 
 
 def rule_scopes(item: ArtifactFile, root: Path) -> tuple[str, ...]:
@@ -193,6 +216,7 @@ def build_artifacts(
     advertised: Mapping[str, bool | None],
 ) -> tuple[XrayArtifact, ...]:
     """The artifact list: each listed file with its size and findings; `advertised` is keyed by the file's path."""
+    left_out = left_out_files(files, root)
     return tuple(
         XrayArtifact(
             path=relative_wire_path(item.path, root),
@@ -207,6 +231,7 @@ def build_artifacts(
             tokens_est=file_tokens_est(real_path(item.path, root)),
             advertised=advertised.get(item.path),
             scopes=rule_scopes(item, root),
+            excluded=left_out.get(item.path, FileLeftOut()),
         )
         for item in files
     )

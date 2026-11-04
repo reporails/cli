@@ -36,7 +36,7 @@
 
 ### Fixed
 
-- On the x-ray page, an instruction or memory file the session loaded shows its text, as the kind it is, even when the project's config leaves its folder out of the checks (it had read "not a file this page lists"), with no check or fix offered for it; and when the page takes a new view of a growing session, a panel whose content did not change is left as it is and an open file text no longer flashes "Loading…", so the page no longer flickers.
+- On the x-ray page, an instruction or memory file the session loaded shows its text, as the kind it is, even when the project's config leaves its folder out of the checks (it had read "not a file this page lists"), with a note naming the setting and the config file that leave it out (a check of the whole project skips it; Check and Fix on that one file still run, and for a file that links outside the project the note says why they are not offered); and when the page takes a new view of a growing session, a panel whose content did not change is left as it is and an open file text no longer flashes "Loading…", so the page no longer flickers.
 - An x-ray page stops by itself after 30 minutes with no request (`AILS_XRAY_IDLE_S` seconds; `0` never stops), so a page an agent started in the background no longer runs until it is killed by hand. A page left open in a browser tab stays up.
 - `ails xray` opens its page even when `~/.reporails` cannot be written (the page is then not reused by a later call), and the agent's `xray` tool answers `page_not_started` naming the folder instead of failing.
 - A `heal_exclude` entry that is a bare file name now matches only at the project root, as documented, and the findings listed as `excluded` name the files they sit in.
@@ -47,6 +47,7 @@
 - A stored API key is sent only to the default server or a local (loopback) address, never to any other `AILS_SERVER_URL` the cli is pointed at.
 - On the x-ray page, hovering the graph or the Sources panel no longer opens a group or changes the right column; a click on a spine item or source opens its details. "Pin on graph" keeps the source lit until you clear it, even while you hover others and the page updates, and each Sources group's eye button sits on the group's title line.
 - On the x-ray page, a built-in agent type's details (such as `general-purpose` or `Explore`) show how its subagents were launched: the model asked for and the model their requests used, whether they were launched with defaults (or that Claude Code did not record it), whether they ran in the background, and the thinking mode, effort and max tokens their requests carried; when launches differ, each value shows with its launch count.
+- An x-ray page started before `ails` changed no longer mixes its old view with the new page code: it shows "ails changed since this page started; run `ails xray` again" instead, and `ails xray --background` and the agent's `xray` tool start a fresh page rather than reuse it.
 
 ### Removed
 

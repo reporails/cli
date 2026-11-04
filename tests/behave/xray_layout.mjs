@@ -1,4 +1,4 @@
-// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions|recorded|agent> [source id]
+// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions|recorded|excluded|agent> [source id]
 // Drives the real `ails xray` page in headless Chrome and prints one JSON object describing what it drew.
 import { openPage, toGraph } from './xray_cdp.mjs';
 
@@ -21,6 +21,19 @@ if (mode === 'recorded' && ready) {
   out.text = out.opened ? await peekText() : '';
   out.dialog = await page.ev(`(document.querySelector('.pk-dialog') || {}).textContent || ''`);
   out.controls = await page.ev(`[...document.querySelectorAll('.pk-dialog button')].map(b => b.textContent)`);
+}
+
+if (mode === 'excluded' && ready) {
+  const source = process.argv[4];
+  await page.ev(`(() => { const all = document.querySelector('[data-groups="open"]'); if (all) all.click(); })()`);
+  out.opened = await page.ev(`(() => { const row = document.querySelector('#sources .sr[data-source=' + JSON.stringify(${JSON.stringify(source)}) + ']'); if (!row) return false; row.click(); return true; })()`);
+  out.text = out.opened ? await peekText() : '';
+  out.dialogControls = await page.ev(`[...document.querySelectorAll('.pk-dialog button')].map(b => b.textContent)`);
+  out.dialogNote = await page.ev(`[...document.querySelectorAll('.pk-dialog .excluded')].map(n => n.textContent).join(' ')`);
+  await page.ev(`location.hash = '#/file/' + ${JSON.stringify(source)}; 0`);
+  await page.until(`!!document.querySelector('#view-file .act')`, 240);
+  out.paneControls = await page.ev(`[...document.querySelectorAll('#view-file .act button')].map(b => b.textContent)`);
+  out.paneNote = await page.ev(`[...document.querySelectorAll('#view-file .excluded')].map(n => n.textContent).join(' ')`);
 }
 
 if (mode === 'memory' && ready) {

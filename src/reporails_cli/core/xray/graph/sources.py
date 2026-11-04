@@ -9,6 +9,7 @@ from pathlib import Path
 from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.dto.events import EventRecord, is_note_kind
+from reporails_cli.core.platform.dto.exclusion import FileLeftOut
 from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
 from reporails_cli.core.platform.dto.xray_graph import SourceKind
 from reporails_cli.core.platform.dto.xray_sources import (
@@ -18,7 +19,7 @@ from reporails_cli.core.platform.dto.xray_sources import (
     SourceEntry,
     XrayArtifact,
 )
-from reporails_cli.core.xray.artifacts import unlisted_loads, winners
+from reporails_cli.core.xray.artifacts import is_actionable, left_out_files, unlisted_loads, winners
 from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path, tokens_of
 
 
@@ -64,7 +65,10 @@ def for_path(table: SourceTable, path: str) -> str | None:
 
 
 def _unlisted_loads(records: Sequence[EventRecord], known: Mapping[str, str], frame: Frame) -> list[SourceEntry]:
-    """A source for each loaded instruction file the listing does not hold."""
+    """A source for each loaded instruction file the listing does not hold; one inside the project can be checked,
+    and carries the config values that keep it out of a project-wide check."""
+    items = unlisted_loads(records, known, frame.root)
+    left_out = left_out_files(items, frame.root)
     return [
         SourceEntry(
             wire := relative_wire_path(item.path, frame.root),
@@ -73,11 +77,12 @@ def _unlisted_loads(records: Sequence[EventRecord], known: Mapping[str, str], fr
             wire,
             file_tokens_est(item.path),
             count_for(frame.findings, item.path, frame.root),
-            False,
+            is_actionable(item, frame.root),
             None,
             None,
+            excluded=left_out.get(item.path, FileLeftOut()),
         )
-        for item in unlisted_loads(records, known, frame.root)
+        for item in items
     ]
 
 
@@ -148,6 +153,7 @@ def build_sources(artifacts: Sequence[XrayArtifact], records: Sequence[EventReco
             item.advertised,
             item.linked,
             item.scopes,
+            excluded=item.excluded,
         )
         for item in listed
     ]

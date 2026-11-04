@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -19,12 +20,15 @@ from reporails_cli.core.platform.contract.errors import XrayPageError
 from reporails_cli.core.platform.contract.json_value import JsonValue, as_object, as_str, opt_int
 from reporails_cli.core.platform.dto.xray import SessionPick, XrayPage
 from reporails_cli.core.platform.utils.utils import write_json_atomic
+from reporails_cli.core.platform.utils.version import installed_code_stamp
 
 HOST = "127.0.0.1"
 # Seconds a started page has to answer, and the age after which a start lock is taken to be stale.
 PAGE_START_S = 30.0
 _PROBE_TIMEOUT_S = 1.0
 _POLL_S = 0.1
+# Seconds a look at the installed code stays the answer to whether it changed.
+_CODE_CHECK_S = 3.0
 
 
 def _record_path(root: Path) -> Path:
@@ -64,10 +68,12 @@ def forget_page(root: Path, launch: str) -> None:
 
 
 def _answers(page: XrayPage) -> bool:
-    """Whether the process on the page's port reports the page's own launch id."""
+    """Whether the process on the page's port reports the page's own launch id and the installed code it started
+    with."""
     try:
         reply = httpx.get(f"http://{HOST}:{page.port}/launch", timeout=_PROBE_TIMEOUT_S)
-        return as_str(as_object(reply.json()).get("launch")) == page.launch
+        body = as_object(reply.json())
+        return as_str(body.get("launch")) == page.launch and body.get("changed") is False
     except (httpx.HTTPError, ValueError):
         return False
 
@@ -153,3 +159,20 @@ def page_url(page: XrayPage, session_id: str, picked: SessionPick) -> str:
     """The address of `session_id` on the running page; a session the agent did not name carries a mark the
     page says so by."""
     return f"http://{HOST}:{page.port}/?session={session_id}&pick={picked}"
+
+
+def code_change_watch() -> Callable[[], bool]:
+    """A check, started now, of whether the installed code differs from the code at this moment; once it does,
+    it stays so. The installed files are looked at once every few seconds."""
+    started = installed_code_stamp()
+    checked = time.monotonic()
+    changed = False
+
+    def check() -> bool:
+        nonlocal checked, changed
+        if not changed and time.monotonic() - checked >= _CODE_CHECK_S:
+            checked = time.monotonic()
+            changed = installed_code_stamp() != started
+        return changed
+
+    return check

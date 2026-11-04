@@ -298,6 +298,14 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And the page shows that file's text and offers no check or fix for it
 
   @e2e @browser
+  Scenario: A loaded file inside an excluded folder shows its text and its buttons name the exclusion
+    Given a project with a recorded Claude Code session
+    And the project's config excludes the folder "sub", which holds the loaded instruction file reading "sub scoped text"
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And "sub/CLAUDE.md" shows its text "sub scoped text" and its check and fix buttons name exclude_dirs "sub" in ".ails/config.yml"
+
+  @e2e @browser
   Scenario: A session that grows redraws no panel whose content did not change
     Given a project with a recorded Claude Code session
     And the project's instruction file reads "steady text"

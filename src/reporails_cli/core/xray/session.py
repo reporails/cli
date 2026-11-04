@@ -102,8 +102,9 @@ class XraySession:
         return next((item for item in self._listing() if relative_wire_path(item.path, self._root) == path), None)
 
     def acts_on(self, path: str) -> bool:
-        """True when the page lists `path` (project-relative) as a file it may check or fix."""
-        item = self._listed(path)
+        """True when the page lists `path` (project-relative), or the session recorded it as loaded, as a file it may
+        check or fix."""
+        item = self._listed(path) or self._recorded(path)
         return item is not None and is_actionable(item, self._root)
 
     def _recorded(self, path: str) -> ArtifactFile | None:

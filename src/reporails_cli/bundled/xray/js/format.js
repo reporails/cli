@@ -19,6 +19,16 @@ export const dur = s => {
 export const plural = (n, w, ws) => `${n} ${n === 1 ? w : (ws || w + 's')}`;
 // A template whose {names} are filled from `values`; an unknown name stays visible as written.
 export const fill = (template, values) => template.replace(/\{(\w+)\}/g, (m, k) => (k in values ? String(values[k]) : m));
+// What a file's exclusion facts say about its Check and Fix buttons (`left`: the source's `excluded` facts); empty when they say nothing.
+export const exclusionNote = left => {
+  const word = h => `${h.setting} \`${h.value}\` in ${h.config}`;
+  const scan = left.hits.filter(h => h.setting !== 'heal_exclude'), heal = left.hits.filter(h => h.setting === 'heal_exclude');
+  const out = [];
+  if (scan.length) out.push(`Excluded by ${scan.map(word).join(', ')}${left.outside ? '.' : ': a check of the whole project skips this file; Check and Fix on it still run.'}`);
+  if (left.outside) out.push(`Check and Fix are not offered: the file is a link to ${left.outside}, outside the project.`);
+  if (heal.length) out.push(`Fix never writes this file: ${heal.map(word).join(', ')}.`);
+  return out.join(' ');
+};
 export const range = (a, b) => `${clock(a)}–${clock(b)}`;
 
 // An ISO instant as `YYYY-MM-DD HH:MM UTC`; empty when it is missing or not a date.

@@ -1472,6 +1472,30 @@ def step_recorded_file_text(context):
     assert "symlinked canon text" in seen["text"], seen
     assert "not a file this page lists" not in seen["dialog"], seen
     assert not [c for c in seen["controls"] if re.search(r"check|fix|finding", c, re.I)], seen["controls"]
+    assert "Excluded by exclude_dirs `shared` in .ails/config.yml." in seen["dialog"], seen["dialog"]
+    assert "Check and Fix are not offered: the file is a link to " in seen["dialog"], seen["dialog"]
+    assert "outside the project." in seen["dialog"], seen["dialog"]
+
+
+@given('the project\'s config excludes the folder "{folder}", which holds the loaded instruction file reading "{text}"')
+def step_excluded_folder_with_load(context, folder, text):
+    (context.project / folder).mkdir()
+    (context.project / folder / "CLAUDE.md").write_text(f"# Scoped\n\n{text}\n", encoding="utf-8")
+    (context.project / ".ails").mkdir()
+    (context.project / ".ails" / "config.yml").write_text(f"exclude_dirs:\n  - {folder}\n", encoding="utf-8")
+
+
+@then('"{source}" shows its text "{text}" and its check and fix buttons name exclude_dirs "{value}" in "{config}"')
+def step_excluded_buttons_name_it(context, source, text, value, config):
+    seen = _layout_script(context, "excluded", source)
+    if seen is None:
+        return
+    assert seen["ready"] and seen["opened"], f"the page lists no source {source}: {seen}"
+    assert text in seen["text"], seen
+    assert [c for c in seen["dialogControls"] if re.search(r"check", c, re.I)], seen
+    assert {"Check this file", "Fix this file"} <= set(seen["paneControls"]), seen
+    named = f"exclude_dirs `{value}` in {config}"
+    assert named in seen["dialogNote"] and named in seen["paneNote"], seen
 
 
 @then(

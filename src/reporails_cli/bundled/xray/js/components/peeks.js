@@ -1,6 +1,6 @@
 // The details renderers for a source, a built-in item, a task prompt, the peak context and the estimated cost.
 import { el, nk, err } from '../dom.js';
-import { clock, costEst, k1, plural, tk, usd } from '../format.js';
+import { clock, costEst, exclusionNote, k1, plural, tk, usd } from '../format.js';
 import { briefUrl, peekUrl, systemUrl } from '../api.js';
 import { textBlock } from './textblock.js';
 import { hashFor } from '../state.js';
@@ -68,7 +68,13 @@ function findingsBlock(s, env) {
     b.dataset.path = s.path;
     b.disabled = !!env.busy;
     box.append(b);
-  } else box.append(nk('Outside this project; run ails check on it.'));
+    const note = exclusionNote(s.excluded);
+    if (note) box.append(el('div', 'nk excluded', note));
+  } else {
+    box.append(nk('Outside this project; run ails check on it.'));
+    const why = exclusionNote(s.excluded);
+    if (why) box.append(el('div', 'nk excluded', why));
+  }
   return section(count ? `${plural(count, 'finding')}` : 'Findings', box);
 }
 
@@ -82,7 +88,7 @@ registerPeek('src', (env, id) => {
   const unrecorded = s.availability === 'unrecorded';
   const entry = s.path ? env.text('p:' + s.path, peekUrl(s.path)) : null;
   const main = [];
-  if (count || (s.actionable && s.path)) main.push(findingsBlock(s, env));
+  if (count || (s.actionable && s.path) || (s.path && s.excluded.outside)) main.push(findingsBlock(s, env));
   if (entry && entry.frontmatter) main.push(section('Configuration', pre(entry.frontmatter)));
   if (s.scopes && s.scopes.length) main.push(section('Scopes', pre(s.scopes.join('\n'))));
   if (s.tools && s.tools.length) main.push(section('Tools on this server', pre(s.tools.map(([t, n]) => `${t} · ${n ? plural(n, 'call') : 'not called'}`).join('\n'))));

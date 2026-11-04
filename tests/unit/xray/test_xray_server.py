@@ -734,7 +734,7 @@ def test_first_prompt_replies_with_the_text_of_the_named_session_and_never_cache
 
 
 def test_launch_answers_its_id_without_the_token_and_sessions_does_not(two_sessions: TestClient) -> None:
-    assert _get(two_sessions, "/launch", {}, token=None).json() == {"launch": LAUNCH}
+    assert _get(two_sessions, "/launch", {}, token=None).json() == {"launch": LAUNCH, "changed": False}
     assert _get(two_sessions, "/sessions", {}, token=None).status_code == 403
     assert _get(two_sessions, "/first-prompt", {"session": "older"}, token=None).status_code == 403
 

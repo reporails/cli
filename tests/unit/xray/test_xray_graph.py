@@ -527,7 +527,7 @@ def test_a_loaded_file_the_listing_lacks_still_shows_as_a_source(tmp_path: Path)
         "instructions",
         20,
         ("main",),
-        False,
+        True,
     )
 
 

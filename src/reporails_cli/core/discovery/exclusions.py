@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import replace
 from pathlib import Path
 
 from reporails_cli.core.discovery.walk import child_real, safe_resolve
-from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.config.bootstrap import (
+    get_global_config_path,
+    get_local_config_path,
+    get_project_config_path,
+)
+from reporails_cli.core.platform.config.config import get_project_config, read_config_file
+from reporails_cli.core.platform.contract.json_value import str_list
 from reporails_cli.core.platform.dto.discovery import RunExclusions
-from reporails_cli.core.platform.dto.exclusion import FolderValue
+from reporails_cli.core.platform.dto.exclusion import EXCLUSION_SETTINGS, ExclusionHit, ExclusionSetting, FolderValue
 from reporails_cli.core.platform.policy.exclusion import parse_folder_value
 from reporails_cli.core.platform.utils.utils import matches_any_glob
 
@@ -117,3 +123,30 @@ def load_run_exclusions(
     return parse_run_exclusions(
         target, (*(flag_dirs or ()), *config.exclude_dirs), (*(flag_files or ()), *config.exclude_files)
     )
+
+
+def _setting_test(root: Path, setting: ExclusionSetting, value: str) -> Callable[[Path], bool]:
+    """The test of whether the one `value` of `setting` keeps a path out."""
+    if setting == "heal_exclude":
+        base = safe_resolve(root)
+        return lambda path: matches_any_glob(safe_resolve(path), [value], base, root_anchored=True)
+    dirs, files = ([value], []) if setting == "exclude_dirs" else ([], [value])
+    only = parse_run_exclusions(root, dirs, files)
+    return lambda path: leaves_out(only, path)
+
+
+def exclusion_hits(root: Path, paths: Iterable[Path]) -> dict[Path, tuple[ExclusionHit, ...]]:
+    """For each of `paths`, the config values that keep it out of a project-wide check or fix: the setting
+    (`exclude_dirs`, `exclude_files` or `heal_exclude`), the value and the config file holding it. A path nothing
+    keeps out maps to no hit. Raises `ConfigUnreadableError` for a config file that cannot be read.
+    """
+    tests: list[tuple[ExclusionHit, Callable[[Path], bool]]] = []
+    for config_path in (get_project_config_path(root), get_local_config_path(root), get_global_config_path()):
+        data = read_config_file(config_path)
+        label = config_path.relative_to(root).as_posix() if config_path.is_relative_to(root) else str(config_path)
+        tests.extend(
+            (ExclusionHit(setting, value, label), _setting_test(root, setting, value))
+            for setting in EXCLUSION_SETTINGS
+            for value in dict.fromkeys(str_list(data.get(setting)))
+        )
+    return {path: tuple(hit for hit, test in tests if test(path)) for path in paths}

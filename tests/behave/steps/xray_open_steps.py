@@ -10,7 +10,9 @@ import selectors
 import shutil
 import socket
 import subprocess
+import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -351,3 +353,87 @@ def step_refused_naming_folder(context):
     stderr = " ".join(context.result.stderr.split())
     assert f"no Claude Code session found for {context.project}" in stderr, stderr
     assert "run it in the folder Claude Code was started in" in stderr, stderr
+
+
+PACKAGE = Path(__file__).resolve().parents[3] / "src" / "reporails_cli"
+
+
+@given("a throwaway copy of the ails code")
+def step_code_copy(context):
+    context.code = context.tmpdir / "code"
+    shutil.copytree(PACKAGE, context.code / "reporails_cli", ignore=shutil.ignore_patterns("__pycache__"))
+
+
+@when('"ails xray --no-open" is started from the copy in the project')
+def step_start_from_copy(context):
+    env = {
+        **suite_env(os.environ),
+        "HOME": str(context.home),
+        "USERPROFILE": str(context.home),
+        "PYTHONPATH": str(context.code),
+    }
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with  # stopped by the scenario cleanup
+        [sys.executable, "-m", "reporails_cli", "xray", "--no-open"],
+        cwd=str(context.project),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    context.add_cleanup(proc.kill)
+    line = proc.stdout.readline()
+    found = PAGE_ADDRESS.search(line)
+    assert found, f"no page address printed: {line!r} {proc.poll()}"
+    context.url = found.group(0)
+    where = subprocess.run(
+        [sys.executable, "-c", "import reporails_cli; print(reporails_cli.__file__)"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert where.startswith(str(context.code)), f"the copy is not the code that runs: {where}"
+
+
+def _view_status(url: str) -> tuple[int, dict]:
+    base = _base(url)
+    request = urllib.request.Request(f"{base}view", headers={"X-Xray-Token": _token(base)})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as reply:
+            return reply.status, json.loads(reply.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        return error.code, json.loads(error.read().decode("utf-8"))
+
+
+@then("the page serves the session view")
+def step_serves_view(context):
+    status, body = _view_status(context.url)
+    assert status == 200 and body["nodes"], (status, body)
+    context.first_page = _base(context.url)
+
+
+@when("a file of the copy changes")
+def step_copy_changes(context):
+    with (context.code / "reporails_cli" / "__init__.py").open("a", encoding="utf-8") as handle:
+        handle.write("\n# changed after the page started\n")
+
+
+@then("within 15 seconds the page's session view is refused as old, telling the user to run ails xray again")
+def step_view_refused(context):
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        status, body = _view_status(context.first_page)
+        if status != 200:
+            assert status == 409 and body.get("changed") is True, (status, body)
+            assert "run `ails xray` again" in body["error"], body
+            return
+        time.sleep(1)
+    raise AssertionError("the page kept serving its old view after the code changed")
+
+
+@then('"ails xray --current --background --no-open" run in the project opens a different page serving the view')
+def step_fresh_page(context):
+    _run_current(context, "")
+    assert _base(context.url) != context.first_page, "the stale page was handed out again"
+    status, body = _view_status(context.url)
+    assert status == 200 and body["nodes"], (status, body)

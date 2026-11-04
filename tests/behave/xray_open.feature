@@ -72,6 +72,16 @@ Feature: Any session of a project opens in x-ray without typing an id, from a te
     And the project's marker was never printed
 
   @e2e
+  Scenario: A page left running across a change of ails refuses its old view and a new start opens a fresh page
+    Given a project with two recorded Claude Code sessions, the older one written first
+    And a throwaway copy of the ails code
+    When "ails xray --no-open" is started from the copy in the project
+    Then the page serves the session view
+    When a file of the copy changes
+    Then within 15 seconds the page's session view is refused as old, telling the user to run ails xray again
+    And "ails xray --current --background --no-open" run in the project opens a different page serving the view
+
+  @e2e
   Scenario: A page started from a terminal is reused by an agent that knows its session and shows it as the current one
     Given a project with two recorded Claude Code sessions, the older one written first
     When "ails xray --current --no-open" is left running in the project with the session variable unset

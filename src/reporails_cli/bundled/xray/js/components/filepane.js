@@ -1,5 +1,5 @@
 // The findings drill-down at #/file/<path>: a source's findings, who had it, and its text.
-import { tk, plural } from '../format.js';
+import { tk, plural, exclusionNote } from '../format.js';
 import { el, tpl, slot, nk } from '../dom.js';
 import { text, peekUrl } from '../api.js';
 import { textBlock } from './textblock.js';
@@ -24,6 +24,8 @@ function actions(s, env) {
     act.append(b);
   }
   out.append(act);
+  const note = exclusionNote(s.excluded);
+  if (note) out.append(el('div', 'nk excluded', note));
   if (env.res && env.res.path === s.path) {
     const box = el('div');
     renderFindings(box, env.res);
@@ -57,6 +59,8 @@ export function render(box, env) {
     const n = nk('outside this project; run ');
     n.append(el('code', null, 'ails check'), ' on it');
     pane.append(n);
+    const why = exclusionNote(s.excluded);
+    if (why) pane.append(el('div', 'nk excluded', why));
   }
   pane.append(el('h4', null, 'Its text'), textBlock(text, 'p:' + s.path, peekUrl(s.path)));
 }

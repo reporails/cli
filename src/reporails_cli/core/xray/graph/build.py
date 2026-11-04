@@ -231,7 +231,6 @@ def _builtin_agent(
         cost_usd_est=None,
         label=labels.get(agent_type, agent_type),
         agent_type=agent_type,
-        builtin=True,
         launch=launched_with(ids, first, metas),
     )
 
@@ -259,6 +258,7 @@ def _sources(
                 availability=_availability(entry, had_by, sources.unrecorded),
                 had_by=had_by,
                 actionable=entry.actionable,
+                excluded=entry.excluded,
                 launches=len(had_by) if entry.kind == "agent" else None,
                 cost_usd_est=costs.get(entry.id),
                 label=source_label(entry),

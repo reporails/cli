@@ -465,9 +465,10 @@ def test_a_peek_refuses_an_unlisted_file_the_session_never_loaded(tmp_path: Path
     assert session.peek("sub/OTHER.md") is None
 
 
-def test_a_file_recorded_as_loaded_but_unlisted_is_no_file_to_check_or_fix(tmp_path: Path) -> None:
+def test_a_file_recorded_as_loaded_but_unlisted_is_a_file_to_check_or_fix(tmp_path: Path) -> None:
     session = _excluding_sub(tmp_path)
-    assert session.acts_on("sub/CLAUDE.md") is False
+    assert session.acts_on("sub/CLAUDE.md") is True
+    assert session.acts_on("sub/OTHER.md") is False
 
 
 def test_a_recorded_auto_memory_file_the_listing_leaves_out_is_a_memory_file(tmp_path: Path) -> None:

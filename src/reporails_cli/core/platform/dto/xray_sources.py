@@ -3,12 +3,13 @@ as numbers, names and paths. Never prompt, tool or file text beyond a peek the u
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, TypeGuard, get_args
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
 from reporails_cli.core.platform.dto.events import HarnessKind
+from reporails_cli.core.platform.dto.exclusion import FileLeftOut
 from reporails_cli.core.platform.dto.xray_graph import ContextKey, SourceKind
 
 ArtifactKind = Literal["instructions", "rule", "memory", "skill", "agent", "command", "hook"]
@@ -145,6 +146,8 @@ class SourceEntry(SourceFacts):
     # A rule's path patterns, and an MCP server's tools with the calls each received.
     scopes: tuple[str, ...] = ()
     tools: tuple[tuple[str, int], ...] = ()
+    # What keeps the file out of a project-wide check or fix, and where a link out of the project leads.
+    excluded: FileLeftOut = field(default_factory=FileLeftOut)
 
 
 @dataclass(frozen=True)
@@ -175,13 +178,19 @@ class XraySource(SourceFacts):
     # A rule's path patterns (empty for any other kind) and an MCP server's tools with their call counts (likewise).
     scopes: tuple[str, ...] = ()
     tools: tuple[tuple[str, int], ...] = ()
-    # The type key of an agent source; `builtin` marks a type the coding agent ships with no definition file.
+    # What keeps the file out of a project-wide check or fix, and where a link out of the project leads.
+    excluded: FileLeftOut = field(default_factory=FileLeftOut)
+    # The type key of an agent source.
     agent_type: str | None = None
-    builtin: bool = False
     # Whether a memory file is the memory index or an item (None for any other kind).
     memory_role: MemoryRole | None = None
     # What an agent source's launches were sent with (None when no launch recorded a request).
     launch: AgentLaunch | None = None
+
+    @property
+    def builtin(self) -> bool:
+        """Whether the source is an agent type the coding agent ships with no definition file."""
+        return self.agent_type is not None and self.path is None
 
     def to_json(self) -> JsonObject:
         """The source as a JSON object."""
@@ -195,6 +204,7 @@ class XraySource(SourceFacts):
             "availability": self.availability,
             "had_by": list(self.had_by),
             "actionable": self.actionable,
+            "excluded": self.excluded.to_json(),
             "launches": self.launches,
             "cost_usd_est": self.cost_usd_est,
             "label": self.label,
@@ -234,6 +244,7 @@ class XrayArtifact(ArtifactFile):
     tokens_est: int | None
     advertised: bool | None
     scopes: tuple[str, ...]
+    excluded: FileLeftOut
 
 
 @dataclass(frozen=True)

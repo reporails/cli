@@ -46,7 +46,7 @@ from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.xray import SessionPick, XrayCheck
 from reporails_cli.core.platform.dto.xray_sources import FindingTally, XrayPeek
-from reporails_cli.core.xray.pages import HOST, forget_page, register_page
+from reporails_cli.core.xray.pages import HOST, code_change_watch, forget_page, register_page
 from reporails_cli.core.xray.session import XraySession
 from reporails_cli.core.xray.sessions import session_entries
 from reporails_cli.core.xray.tally import tallies_by_file, tally_of
@@ -64,6 +64,7 @@ PAGE_HEADERS = {
     "Cache-Control": "no-store",
 }
 NO_STORE = {"Cache-Control": "no-store"}
+CHANGED_MESSAGE = "ails changed since this page started; run `ails xray` again to open a current page"
 # Seconds with no request after which a page stops: an open tab asks at least once a minute, a closed one never.
 _DEFAULT_IDLE_S = 1800
 _PICKS: tuple[SessionPick, ...] = get_args(SessionPick)
@@ -96,17 +97,21 @@ class XrayServer:
         self._launch = XrayCheck("running", None)
         self._view_lock = threading.Lock()
         self._work_lock = threading.Lock()
+        self._code_changed = code_change_watch()
 
     def _wrong_token(self, request: Request) -> bool:
         sent = request.headers.get(TOKEN_HEADER, "")
         return not secrets.compare_digest(sent.encode(), self._token.encode())
 
     async def _guard(self, request: Request) -> JSONResponse | None:
-        """The refusal for a request that carries no valid token (or, for a POST, a foreign `Origin`), else None."""
+        """The refusal for a request that carries no valid token (or, for a POST, a foreign `Origin`) or that reaches
+        a page whose installed code changed since it started, else None."""
         if request.method == "POST" and request.headers.get("origin") != self._origin:
             return _refused(403, "foreign origin")
         if self._wrong_token(request):
             return _refused(403, "missing or wrong token")
+        if await run_in_threadpool(self._code_changed):
+            return JSONResponse({"error": CHANGED_MESSAGE, "changed": True}, status_code=409, headers=NO_STORE)
         return None
 
     async def _target(self, request: Request) -> Path | JSONResponse:
@@ -205,8 +210,10 @@ class XrayServer:
         )
 
     async def launch(self, _request: Request) -> Response:
-        """The id of this launch, so a caller can tell a live page from a record left behind."""
-        return JSONResponse({"launch": self._launch_id}, headers=NO_STORE)
+        """The id of this launch, so a caller can tell a live page from a record left behind, and whether the
+        installed code changed since it started."""
+        changed = await run_in_threadpool(self._code_changed)
+        return JSONResponse({"launch": self._launch_id, "changed": changed}, headers=NO_STORE)
 
     async def peek(self, request: Request) -> Response:
         """The text of one listed file."""
