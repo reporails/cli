@@ -424,12 +424,14 @@ def test_xray_help_loads_no_server_or_ml_runtime(tmp_path: Path) -> None:
         [sys.executable, "-c", script],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=60,
         env={
             "HOME": str(tmp_path),
             "USERPROFILE": str(tmp_path),
             "PATH": "",
             "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+            "PYTHONUTF8": "1",  # the help text is not ASCII; Windows would write and read it as cp1252
         },
         check=False,
     )
