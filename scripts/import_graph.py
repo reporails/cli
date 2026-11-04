@@ -229,7 +229,7 @@ def build_graph(src: Path = SRC) -> Graph:
         src_node = node_of(mod)
         if src_node is None:
             continue
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         short = mod.split(".", 1)[1]
         n_lines = text.count("\n") + 1
         graph.modules[src_node].append({"m": short, "lines": n_lines})

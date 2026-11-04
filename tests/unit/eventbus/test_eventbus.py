@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -218,6 +219,7 @@ def test_session_ids_are_reduced_to_a_safe_file_name() -> None:
     assert path.name == "etcpasswd.events.jsonl"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no POSIX permission bits")
 def test_the_folder_is_private_and_the_file_is_0600() -> None:
     record_payload("claude", ROWS[1])
     assert stat.S_IMODE(get_xray_log_dir().stat().st_mode) == 0o700

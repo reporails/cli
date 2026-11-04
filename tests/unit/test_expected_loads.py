@@ -730,6 +730,10 @@ def test_project_claude_md_linking_to_the_user_claude_md_stays_the_project_main_
 _ACCOUNT = "o_a"
 
 
+def _posix(path: str) -> str:
+    return path.replace("\\", "/")
+
+
 def _synced(name: str, account: str) -> None:
     _write(
         Path.home() / ".claude" / "skills" / "synced" / account / name / "SKILL.md",
@@ -749,13 +753,13 @@ def test_synced_skills_of_the_signed_in_account_only_are_listed_with_their_label
     _synced("chrome-browser", "x_y")
     _write(_project(tmp_path) / "CLAUDE.md")
     items = expected_loads(_project(tmp_path), [])["invocable"]
-    synced = {i["label"]: i for i in items if "/skills/synced/" in i["path"]}
+    synced = {i["label"]: i for i in items if "/skills/synced/" in _posix(i["path"])}
     assert set(synced) == {"anthropic-skills:docx", "anthropic-skills:pdf"}
     assert {i["precedence"] for i in synced.values()} == {"synced"}
-    assert all(f"/{_ACCOUNT}/" in i["path"] for i in synced.values())
+    assert all(f"/{_ACCOUNT}/" in _posix(i["path"]) for i in synced.values())
     listed = expected_loads(_project(tmp_path), [])["files"]
-    assert not [i for i in listed if "/synced/x_y/" in i["path"]]
-    assert [i for i in listed if f"/synced/{_ACCOUNT}/" in i["path"]]
+    assert not [i for i in listed if "/synced/x_y/" in _posix(i["path"])]
+    assert [i for i in listed if f"/synced/{_ACCOUNT}/" in _posix(i["path"])]
 
 
 @pytest.mark.unit
@@ -764,7 +768,7 @@ def test_no_signed_in_account_lists_no_synced_skill(tmp_path: Path) -> None:
     _synced("docx", _ACCOUNT)
     _write(_project(tmp_path) / "CLAUDE.md")
     items = expected_loads(_project(tmp_path), [])["invocable"]
-    assert not [i for i in items if "/skills/synced/" in i["path"]]
+    assert not [i for i in items if "/skills/synced/" in _posix(i["path"])]
 
 
 @pytest.mark.unit

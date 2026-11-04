@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -173,7 +175,8 @@ def test_the_first_prompt_is_the_first_typed_prompt_and_a_session_without_one_ha
 def test_a_record_whose_port_does_not_answer_is_removed(project: Path) -> None:
     register_page(project, 1, "launch-a")
     record = next(bootstrap.get_xray_pages_dir().glob("*.json"))
-    assert oct(record.stat().st_mode & 0o777) == "0o600"
+    if sys.platform != "win32":  # Windows has no POSIX permission bits
+        assert oct(record.stat().st_mode & 0o777) == "0o600"
     assert running_page(project) is None
     assert not record.exists()
 
@@ -222,10 +225,11 @@ def _read_only_pages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterato
     locked.chmod(0o700)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="chmod does not make a folder unwritable on Windows")
 def test_a_start_in_an_unwritable_settings_folder_is_a_page_error_naming_the_folder(
     project: Path, read_only_pages: Path
 ) -> None:
-    with pytest.raises(XrayPageError, match=str(read_only_pages / "xray-pages")):
+    with pytest.raises(XrayPageError, match=re.escape(str(read_only_pages / "xray-pages"))):
         start_page(project, "any")
 
 

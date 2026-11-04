@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -56,5 +57,6 @@ def test_write_json_atomic_failure_keeps_old_file_and_removes_temp(
 def test_write_json_atomic_creates_the_file_with_the_requested_mode(tmp_path: Path) -> None:
     target = tmp_path / "private.json"
     write_json_atomic(target, {"k": 1}, mode=0o600)
-    assert target.stat().st_mode & 0o777 == 0o600
+    if sys.platform != "win32":  # Windows has no POSIX permission bits
+        assert target.stat().st_mode & 0o777 == 0o600
     assert [p.name for p in tmp_path.iterdir()] == ["private.json"]
