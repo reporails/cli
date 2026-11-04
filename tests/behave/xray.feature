@@ -276,6 +276,13 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And the system prompt route returns that text only for a type the session launched
 
   @e2e @browser
+  Scenario: A built-in agent type shows how its launch was configured
+    Given a project with a session whose subagent was launched with a model and a config
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the general-purpose agent type's details show its launch settings
+
+  @e2e @browser
   Scenario: A session from an older Claude Code shows the estimated split, labelled as an estimate
     Given a project with a session from an older Claude Code that did not record its requests, with a subagent
     When "ails xray --no-open" is started in the project

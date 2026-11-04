@@ -154,6 +154,8 @@ class AgentLaunch:
 
     system_tokens_est: int
     tools: tuple[tuple[str, int], ...]
+    # What the launches were set up with, as (label, value) lines the page lists as written.
+    settings: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -203,6 +205,7 @@ class XraySource(SourceFacts):
             "builtin": self.builtin,
             "memory_role": self.memory_role,
             "system_tokens_est": self.launch.system_tokens_est if self.launch else None,
+            "launch_settings": [[label, value] for label, value in (self.launch.settings if self.launch else ())],
         }
 
 

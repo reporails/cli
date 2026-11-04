@@ -191,10 +191,11 @@ def _peak(rows: list[dict]) -> int:
     return max(totals)
 
 
-def _write_session(context, recorded: bool, *, picture: bool = False) -> None:
+def _write_session(context, recorded: bool, *, picture: bool = False, configured: bool = False) -> None:
     """A fixture session of a main agent and one subagent. `recorded` adds the request rows Claude Code 2.1.309
     writes and the `requestRef` of each reply; an older Claude Code writes neither. Keeps the highest total of each
-    agent's own replies, from its own file, in `context.peaks`."""
+    agent's own replies, from its own file, in `context.peaks`. `configured` gives the subagent a launch config: a
+    model asked for, a background run and the thinking, effort and max tokens its requests carry."""
     version = "2.1.309" if recorded else "2.1.308"
     project = context.project
     folder = context.home / ".claude" / "projects" / claude_project_folder_name(project)
@@ -286,6 +287,10 @@ def _write_session(context, recorded: bool, *, picture: bool = False) -> None:
             _request_row("req-sub-2", "shape-sub", 1, [sub_hash], 11, project),
             sub[2],
         ]
+        if configured:
+            config = {"model": "claude-sonnet-5-5", "max_tokens": 128000, "thinking": {"type": "adaptive"}}
+            config["output_config"] = {"effort": "medium"}
+            sub = [{**row, "params": config} if row["type"] == "api-request" else row for row in sub]
         sub = [{**row, "isSidechain": True, "agentId": SUB_ID} for row in sub]
     context.peaks = {"main": _peak(main), "sub": _peak(sub)}
     # the characters of the peak request of each agent, from the fixture's own texts
@@ -312,6 +317,8 @@ def _write_session(context, recorded: bool, *, picture: bool = False) -> None:
         "spawnDepth": 1,
         "finished": True,
     }
+    if configured:
+        meta |= {"model": "sonnet", "requestShape": "background"}
     (folder / "session" / "subagents" / f"agent-{SUB_ID}.meta.json").write_text(json.dumps(meta), encoding="utf-8")
 
 
@@ -319,6 +326,12 @@ def _write_session(context, recorded: bool, *, picture: bool = False) -> None:
 def step_session_with_requests(context):
     context.project = build_project(context.tmpdir / "proj").resolve()
     _write_session(context, True)
+
+
+@given("a project with a session whose subagent was launched with a model and a config")
+def step_session_with_launch_config(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    _write_session(context, True, configured=True)
 
 
 @given("a project with a session whose peak request carries a picture inside a tool result, with a subagent")
@@ -460,6 +473,24 @@ def step_system_route(context):
     assert status == 200 and json.loads(body)["text"] == "t" * 500, (status, body)
     status, _ = _get(context.url + "system?type=Explore", token)
     assert status == 400, status
+
+
+@then("the general-purpose agent type's details show its launch settings")
+def step_agent_launch_settings(context):
+    seen = _layout_script(context, "agent")
+    if seen is None:
+        return
+    assert seen["ready"] and seen["row"], seen
+    settings = next((text for text in seen["pres"] if text.startswith("Model asked for")), "")
+    assert settings.splitlines() == [
+        "Model asked for · sonnet",
+        "Model in requests · claude-sonnet-5-5",
+        "Launched with defaults · not recorded",
+        "Background · yes",
+        "Thinking · adaptive",
+        "Effort · medium",
+        "Max tokens · 128000",
+    ], seen
 
 
 @given("a project with no recorded Claude Code session")

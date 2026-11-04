@@ -6,10 +6,11 @@ and `message`, `{role, content}` with role `system`, `user` or `assistant`), `ap
 `requestRef` of the assistant rows that answer it, `shapeHash`, `keep`, a non-negative whole number of the previous
 request's messages this one keeps, and `tail`, a list of the hashes of the messages it appends) and the `user` and
 `assistant` rows whose messages those hashes name; Claude Code records them from 2.1.309. The fields
-`querySource`, `cacheControl` and `requestDigest` are not read, and of `params` only `model` is. A hash that names no
-known message counts as unresolved and keeps its place in the request as an empty size. `feed_row` takes every row
-of one file in order and keeps only the sizes of what it sees and the names of the tools a request was sent with;
-the text of a message is never stored. An image costs the tokens its header's size works out to (`claude_images`),
+`querySource`, `cacheControl` and `requestDigest` are not read, and of `params` only `model`, `max_tokens`,
+`thinking.type` and `output_config.effort` are. A hash that names no known message counts as unresolved and keeps its
+place in the request as an empty size. `feed_row` takes every row of one file in order and keeps only the sizes of
+what it sees and the names of the tools a request was sent with; the text of a message is never stored. An image costs
+the tokens its header's size works out to (`claude_images`),
 counted apart from the characters of the text.
 
 A message's hash is the sha256 of its `{role, content}` object written with sorted keys, compact separators and
@@ -34,7 +35,7 @@ from reporails_cli.core.platform.contract.json_value import (
     opt_str,
     strict_str_list,
 )
-from reporails_cli.core.platform.dto.events import ImageTokens, MessageSize, RequestChain, RequestSize
+from reporails_cli.core.platform.dto.events import ImageTokens, MessageSize, RequestChain, RequestConfig, RequestSize
 from reporails_cli.core.platform.utils.utils import compact_json
 
 # What joins the text blocks of one message or system prompt.
@@ -278,6 +279,23 @@ def _request_tier(row: JsonObject) -> bool | None:
     return high_resolution(model) if isinstance(model, str) else None
 
 
+def _request_config(row: JsonObject) -> RequestConfig:
+    """The model, max tokens, thinking type and effort the row's `params` name; None for each it does not."""
+    params = row.get("params")
+    if not isinstance(params, dict):
+        return RequestConfig()
+    thinking, output = params.get("thinking"), params.get("output_config")
+    thinking_type = thinking.get("type") if isinstance(thinking, dict) else None
+    effort = output.get("effort") if isinstance(output, dict) else None
+    model, max_tokens = params.get("model"), params.get("max_tokens")
+    return RequestConfig(
+        model if isinstance(model, str) else None,
+        max_tokens if isinstance(max_tokens, int) and not isinstance(max_tokens, bool) else None,
+        thinking_type if isinstance(thinking_type, str) else None,
+        effort if isinstance(effort, str) else None,
+    )
+
+
 def _request(chain: RequestChain, row: JsonObject) -> RequestSize:
     what = "api-request"
     request_id = row.get("id")
@@ -308,6 +326,7 @@ def _request(chain: RequestChain, row: JsonObject) -> RequestSize:
         unresolved,
         chain.tool_names.get(shape_hash, ()),
         _request_tier(row),
+        _request_config(row),
     )
 
 

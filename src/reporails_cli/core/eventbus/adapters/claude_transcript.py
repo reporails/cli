@@ -74,7 +74,8 @@ the adapter refuses any other shape of a row type it reads:
   or a list of blocks, sized by the characters of its text; a block of any other type counts nothing.
 - a subagent file: its first row's `timestamp`, the `agentType` of `agent-<id>.meta.json` and, when present, the
   meta fields `description`, `parentAgentId`, `toolUseId`, `requestShape` (strings; `background` marks a background
-  run), `spawnDepth` (a whole number) and `stoppedByUser` (a boolean).
+  run), `model` (a string), `launchedWithDefaults` (a boolean), `spawnDepth` (a whole number) and
+  `stoppedByUser` (a boolean).
 - API request rows, recorded on Claude Code 2.1.309 and later: `api-request-shape`, `api-request-blob` and
   `api-request`, sized and dropped by `claude_requests` when `resolve_row` is given a request chain, ignored
   otherwise; their fields are listed there.
@@ -323,6 +324,8 @@ class ClaudeTranscriptAdapter:
             brief_chars=None if brief is None else len(brief),
             stopped=_meta_field(meta, "stoppedByUser", bool) is True,
             background=_meta_field(meta, "requestShape", str) == BACKGROUND_SHAPE,
+            asked_model=_meta_field(meta, "model", str),
+            with_defaults=_meta_field(meta, "launchedWithDefaults", bool),
         )
         return replace(self._record(first_row, "subagent_run", subagent_id), subagent_type=agent_type, item=launch)
 

@@ -90,7 +90,9 @@ registerPeek('src', (env, id) => {
   else if (s.system_tokens_est == null) main.push(section('Its text', nk(s.builtin ? 'Comes from the coding agent; there is no file.' : 'No file behind this source.')));
   if (s.kind === 'agent' && s.system_tokens_est != null) {
     main.push(section(`System prompt · ${tk(s.system_tokens_est, true)} · recorded at launch`, textBlock(env.text, 'system:' + s.agent_type, systemUrl(s.agent_type))));
+
     main.push(section('Tools its launches had', pre(s.launch_tools.map(([t, n]) => `${t} · ${plural(n, 'launch', 'launches')}`).join('\n'))));
+    if (s.launch_settings.length) main.push(section('Launch settings', pre(s.launch_settings.map(([label, value]) => `${label} · ${value}`).join('\n'))));
   }
   const holders = s.had_by.map(h => ix.nodes.get(h)).filter(Boolean);
   const loaded = s.kind && (ix.kinds.get(s.kind) || {}).definitions

@@ -64,6 +64,7 @@ if (mode === 'agent' && ready) {
   out.row = await openRow('general');
   out.text = out.row ? await peekText() : '';
   out.tools = out.row ? await page.ev(`(document.querySelector('.pk-pre') || {}).textContent || ''`) : '';
+  out.pres = out.row ? await page.ev(`[...document.querySelectorAll('.pk-pre')].map(e => e.textContent)`) : [];
   out.dialog = await page.ev(`(document.querySelector('.pk-dialog') || {}).textContent || ''`);
 }
 

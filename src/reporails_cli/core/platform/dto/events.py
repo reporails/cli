@@ -205,6 +205,10 @@ class SubagentMeta:
     brief_chars: int | None
     stopped: bool
     background: bool
+    # The model the launch asked for (None when it asked for none) and whether Claude Code launched it with the
+    # definition's defaults (None when the meta file does not say).
+    asked_model: str | None = None
+    with_defaults: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -298,6 +302,17 @@ class MessageSize:
 
 
 @dataclass(frozen=True)
+class RequestConfig:
+    """The short settings a request's `params` carry: its model, its maximum output tokens, the type of its thinking
+    setting and its effort; None for one the request does not carry."""
+
+    model: str | None = None
+    max_tokens: int | None = None
+    thinking: str | None = None
+    effort: str | None = None
+
+
+@dataclass(frozen=True)
 class RequestSize:
     """One API request: its id, the characters of its system blocks and its tool definitions, the tool count, the
     summed parts of its messages and how many of the tail hashes named no known message."""
@@ -313,6 +328,7 @@ class RequestSize:
     # Whether the request's model prices images at the high-resolution tier; None when the row names no model or
     # the model id is not a Claude id.
     high_resolution: bool | None
+    config: RequestConfig = RequestConfig()
 
 
 @dataclass

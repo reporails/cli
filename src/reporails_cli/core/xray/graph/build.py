@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from reporails_cli.core.platform.dto.events import EventRecord, RequestSize
+from reporails_cli.core.platform.dto.events import EventRecord, RequestSize, SubagentMeta
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary, Graph
 from reporails_cli.core.platform.dto.xray_build import (
     BuildContext,
@@ -32,7 +32,7 @@ from reporails_cli.core.xray.graph.agents import MAIN_ID, main_records
 from reporails_cli.core.xray.graph.bursts import bursts
 from reporails_cli.core.xray.graph.composition import builtin_items
 from reporails_cli.core.xray.graph.port import PRODUCERS
-from reporails_cli.core.xray.graph.shapes import first_requests, launched_with
+from reporails_cli.core.xray.graph.shapes import first_requests, launch_metas, launched_with
 from reporails_cli.core.xray.graph.sources import builtin_agent_id, memory_role, source_label
 
 # A load smaller than this many tokens is small.
@@ -155,7 +155,7 @@ def build_graph(
     return Graph(
         tuple(_xray_node(node, build) for node in pnodes),
         edges,
-        _sources(sources, pnodes, build, first_requests(records)),
+        _sources(sources, pnodes, build, first_requests(records), launch_metas(records)),
         tuple(_station(node, sources, vocabulary) for node in spined),
         tuple(
             XrayTrack(node.id, spine.track_calls(node), spine.failure_runs(node), spine.breaks(node)) for node in spined
@@ -196,7 +196,9 @@ def _builtin_agents(
     launched: set[str],
     defined: set[str],
     vocabulary: AdapterVocabulary,
+    *,
     first: dict[str, RequestSize],
+    metas: dict[str, SubagentMeta],
 ) -> list[XraySource]:
     """An agent source for each subagent type launched in the session that no agent definition stands for."""
     labels = {item.key: item.label for item in vocabulary.agent_types}
@@ -204,11 +206,16 @@ def _builtin_agents(
     for node in nodes:
         if node.id in launched and node.type is not None and node.type not in defined:
             launches.setdefault(node.type, []).append(node.id)
-    return [_builtin_agent(agent_type, ids, labels, first) for agent_type, ids in launches.items()]
+    return [_builtin_agent(agent_type, ids, labels, first=first, metas=metas) for agent_type, ids in launches.items()]
 
 
 def _builtin_agent(
-    agent_type: str, ids: list[str], labels: dict[str, str], first: dict[str, RequestSize]
+    agent_type: str,
+    ids: list[str],
+    labels: dict[str, str],
+    *,
+    first: dict[str, RequestSize],
+    metas: dict[str, SubagentMeta],
 ) -> XraySource:
     return XraySource(
         id=builtin_agent_id(agent_type),
@@ -225,12 +232,16 @@ def _builtin_agent(
         label=labels.get(agent_type, agent_type),
         agent_type=agent_type,
         builtin=True,
-        launch=launched_with(ids, first),
+        launch=launched_with(ids, first, metas),
     )
 
 
 def _sources(
-    sources: SourceTable, nodes: Sequence[ProducedNode], build: BuildContext, first: dict[str, RequestSize]
+    sources: SourceTable,
+    nodes: Sequence[ProducedNode],
+    build: BuildContext,
+    first: dict[str, RequestSize],
+    metas: dict[str, SubagentMeta],
 ) -> tuple[XraySource, ...]:
     had, launched, vocabulary = build.had, set(build.launch), build.vocabulary
     out: list[XraySource] = []
@@ -255,9 +266,9 @@ def _sources(
                 tools=entry.tools,
                 agent_type=entry.name if entry.kind == "agent" else None,
                 memory_role=memory_role(entry),
-                launch=launched_with(had_by, first) if entry.kind == "agent" else None,
+                launch=launched_with(had_by, first, metas) if entry.kind == "agent" else None,
             )
         )
     defined = {entry.name for entry in sources.entries if entry.kind == "agent"}
-    out.extend(_builtin_agents(nodes, launched, defined, vocabulary, first))
+    out.extend(_builtin_agents(nodes, launched, defined, vocabulary, first=first, metas=metas))
     return tuple(out)

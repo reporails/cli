@@ -87,3 +87,27 @@ def test_the_system_prompt_comes_from_the_launch_the_size_was_taken_from(tmp_pat
         _shaped("B", 2.5, 400, ()),
     ]
     assert session.system_prompt("general-purpose") is None
+
+
+def test_launch_settings_group_values_that_differ_and_say_agreement_once() -> None:
+    from reporails_cli.core.platform.dto.events import MessageSize, RequestConfig, RequestSize, SubagentMeta
+    from reporails_cli.core.xray.graph.shapes import launched_with
+
+    def meta(model: str | None, background: bool, defaults: bool | None = None) -> SubagentMeta:
+        return SubagentMeta(None, None, None, 1, None, False, background, model, defaults)
+
+    def request(model: str) -> RequestSize:
+        return RequestSize("r", 4, 4, 1, MessageSize(), 0, ("Read",), None, RequestConfig(model, 100, None, "low"))
+
+    metas = {"a": meta("sonnet", True, True), "b": meta(None, True), "c": meta(None, True)}
+    first = {key: request("claude-x") for key in metas}
+    launch = launched_with(["a", "b", "c"], first, metas)
+    assert launch is not None
+    assert dict(launch.settings) == {
+        "Model asked for": "default · 2 launches; sonnet · 1 launch",
+        "Model in requests": "claude-x",
+        "Launched with defaults": "not recorded · 2 launches; yes · 1 launch",
+        "Background": "yes",
+        "Effort": "low",
+        "Max tokens": "100",
+    }

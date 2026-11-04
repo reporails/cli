@@ -46,6 +46,7 @@
 - Files from your home folder and from installed plugins are found by walking only below their own folder, skipping `node_modules` and the other left-out folders, and a plugin folder with `[` or `*` in its path is read as written.
 - A stored API key is sent only to the default server or a local (loopback) address, never to any other `AILS_SERVER_URL` the cli is pointed at.
 - On the x-ray page, hovering the graph or the Sources panel no longer opens a group or changes the right column; a click on a spine item or source opens its details. "Pin on graph" keeps the source lit until you clear it, even while you hover others and the page updates, and each Sources group's eye button sits on the group's title line.
+- On the x-ray page, a built-in agent type's details (such as `general-purpose` or `Explore`) show how its subagents were launched: the model asked for and the model their requests used, whether they were launched with defaults (or that Claude Code did not record it), whether they ran in the background, and the thinking mode, effort and max tokens their requests carried; when launches differ, each value shows with its launch count.
 
 ### Removed
 
