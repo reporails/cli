@@ -392,3 +392,37 @@ def test_excluded_line_names_what_was_left_out() -> None:
 def test_excluded_line_without_a_score_does_not_claim_one() -> None:
     payload = {"workflow": {}, "quality": None, "excluded": {"dirs": ["agents"], "files": []}}
     assert "excluded: agents/ — not checked" in render_text_view(payload).splitlines()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_a_listed_rule_names_at_most_three_excluded_files_then_the_rest() -> None:
+    files = ["a/CLAUDE.md", "b/CLAUDE.md", "c/CLAUDE.md", "d/CLAUDE.md", "e/CLAUDE.md"]
+    payload = {
+        "workflow": {
+            "listed": [
+                {"code": "excluded", "reason": "r", "rules": [{"rule": "X:1", "count": 5, "files": files}]},
+                {"code": "no-gain", "reason": "r", "rules": [{"rule": "X:2", "count": 1}]},
+            ]
+        }
+    }
+    lines = render_text_view(payload).split("\n")
+    assert "    rules: X:1 \u00d75 (a/CLAUDE.md, b/CLAUDE.md, c/CLAUDE.md, +2 more)" in lines
+    assert "    rules: X:2 \u00d71" in lines
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_the_grouped_listing_carries_each_rules_files_only_when_it_has_them() -> None:
+    from reporails_cli.formatters.mcp import _group_listed
+
+    groups = _group_listed(
+        [
+            {"rule": "X:1", "reason": "excluded", "count": 2, "files": ["sub/CLAUDE.md"]},
+            {"rule": "X:2", "reason": "excluded", "count": 1},
+        ]
+    )
+    assert groups[0]["rules"] == [
+        {"rule": "X:1", "count": 2, "files": ["sub/CLAUDE.md"]},
+        {"rule": "X:2", "count": 1},
+    ]

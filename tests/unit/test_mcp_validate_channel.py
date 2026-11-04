@@ -28,9 +28,9 @@ _WORKFLOW = {
 
 
 def _call(tmp_path: Path, monkeypatch, payload: dict[str, Any], **arguments: Any):
-    server._validate_states.clear()
+    server.validate_states.clear()
     monkeypatch.setattr(
-        server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(): (dict(payload), None, None)
+        server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(), **_k: (dict(payload), None, None)
     )
     return asyncio.run(server.server.call_tool("validate", {"path": str(tmp_path), **arguments}))
 
@@ -80,7 +80,7 @@ def test_free_reply_keeps_both_channels(tmp_path: Path, monkeypatch) -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_error_reply_keeps_both_channels(tmp_path: Path, monkeypatch) -> None:
-    server._validate_states.clear()
+    server.validate_states.clear()
     result = asyncio.run(server.server.call_tool("validate", {"path": str(tmp_path / "missing")}))
     assert isinstance(result.structured_content, dict) and "error" in result.structured_content
 
@@ -91,8 +91,9 @@ def test_preservation_reply_is_one_text_block(tmp_path: Path, monkeypatch) -> No
     target = tmp_path / "CLAUDE.md"
     target.write_text("# P\n\nRun tests.\n", encoding="utf-8")
     preservation = {"ok": True, "score_before": 7.0, "score_after": 8.0, "kept": {"instructions": 1}}
-    monkeypatch.setattr(server, "_with_preservation", lambda payload, *a: {**payload, "preservation": preservation})
+    monkeypatch.setattr(server, "with_preservation", lambda payload, *a: {**payload, "preservation": preservation})
     monkeypatch.setattr(server, "_with_feedback", lambda payload, *a: {**payload, "feedback": []})
+    monkeypatch.setenv("AILS_PROJECT_DIR", str(tmp_path))
     result = _call(target, monkeypatch, {"tier": "free", "files": {}, "level": "L2"})
     assert len(result.content) == 1 and result.structured_content is None
     assert "preservation.ok: true" in result.content[0].text
@@ -103,9 +104,9 @@ def test_preservation_reply_is_one_text_block(tmp_path: Path, monkeypatch) -> No
 def test_notice_appears_in_the_first_view_only(tmp_path: Path, monkeypatch) -> None:
     payload = {**_paid(), "notices": [{"id": "pay", "level": "warn", "text": "Payment failed", "url": ""}]}
     monkeypatch.setattr(
-        server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(): (dict(payload), None, None)
+        server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(), **_k: (dict(payload), None, None)
     )
-    server._validate_states.clear()
+    server.validate_states.clear()
     first = asyncio.run(server.server.call_tool("validate", {"path": str(tmp_path)}))
     (tmp_path / "CLAUDE.md").write_text("# changed\n", encoding="utf-8")
     second = asyncio.run(server.server.call_tool("validate", {"path": str(tmp_path)}))

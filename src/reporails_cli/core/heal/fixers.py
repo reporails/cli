@@ -12,22 +12,11 @@ written to disk — suggest, don't write.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 
 from reporails_cli.core.discovery.walk import is_under
+from reporails_cli.core.platform.dto.heal import Suggestion
 from reporails_cli.core.platform.dto.models import ClassifiedFile, Rule, Violation
-
-
-@dataclass(frozen=True)
-class Suggestion:
-    """A missing section a file's finding points at — not written."""
-
-    rule_id: str
-    file_path: str
-    section: str
-    description: str
-
 
 # Type alias for suggester functions
 SuggesterFn = Callable[

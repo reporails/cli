@@ -7,28 +7,21 @@ the server, and assemble the merged result. Each phase mutates the ``CheckState`
 from __future__ import annotations
 
 import sys
-import time
 from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.lint.regex.not_evaluated import not_evaluated_scope
 from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes_over_pairs
 from reporails_cli.core.mapper.skills import skill_membership
-from reporails_cli.core.pipeline.assemble import (
-    AssembleInputs,
-    assemble_result,
-    lint_request_local,
-    with_exclusions,
-)
+from reporails_cli.core.pipeline.assemble import assemble_result, lint_request_local, with_exclusions
 from reporails_cli.core.pipeline.mapping import agent_file_pairs, map_instruction_files
 from reporails_cli.core.platform.adapters.api_client import AilsClient
 from reporails_cli.core.platform.adapters.notices_seen import visible_notices
-from reporails_cli.core.platform.config.bootstrap import env_flag
-from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
+from reporails_cli.core.platform.dto.pipeline import AssembleInputs
+from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
 from reporails_cli.formatters.text.path_filter import filter_result_to_paths, filter_ruleset_map_to_paths
 from reporails_cli.interfaces.cli.check_notices import _agent_is_pinned
 from reporails_cli.interfaces.cli.check_orchestration import logger
@@ -61,10 +54,10 @@ def _agent_file_pairs(state: CheckState) -> list[tuple[str, list[Path]]]:
 def _flow_pipeline(state: CheckState) -> None:
     """Map instruction files, run M-probes + content/client checks, then the server lint."""
 
-    state.pipeline.start_time = time.perf_counter()
+    state.pipeline.stopwatch = Stopwatch()
 
     state.pipeline.stage_timer = get_stage_timer()
-    state.pipeline.stage_timer.configure(enabled=env_flag("AILS_STAGE_TIMING"))
+    state.pipeline.stage_timer.reset()
 
     show_progress = sys.stdout.isatty() and state.targets.output_format not in MACHINE_READABLE_CHECK_FORMATS
     progress: Callable[[str], None] = (
@@ -195,11 +188,11 @@ def _flow_assemble(state: CheckState) -> None:
     # `assemble_result` unpacks the lint result (report/hints/cross_file_coordinates/tier)
     # and attaches the composable remediation `workflow` itself; the path filter below
     # preserves it via `dataclasses.replace`.
-    state.render.elapsed_ms = (time.perf_counter() - state.pipeline.start_time) * 1000
+    state.render.elapsed_ms = state.pipeline.stopwatch.ms
 
     state.render.capability_paths = state.scope.upfront_paths
     if state.targets.single_file is not None:
-        state.render.capability_paths = {safe_resolve(state.targets.single_file)}
+        state.render.capability_paths = {state.targets.single_file}
     if state.render.capability_paths:
         state.render.display_result = filter_result_to_paths(
             state.render.result, state.render.capability_paths, state.targets.target

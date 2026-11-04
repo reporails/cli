@@ -16,11 +16,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
 
 from reporails_cli.core.mapper.atom_build import _atom_from_sentence
 from reporails_cli.core.mapper.bio_graphs import multislot_available
-from reporails_cli.core.mapper.bio_tagger import AtomTuple, Span
 from reporails_cli.core.mapper.charge_floors import (
     TABLE_HEADER_RULE,
     _apply_deontic_floor,
@@ -48,6 +46,7 @@ from reporails_cli.core.mapper.parse import (
     reindex_positions,
 )
 from reporails_cli.core.mapper.prose_split import split_prose_sentences
+from reporails_cli.core.platform.dto.mapping import AtomTuple, HeadEntry, PassEntry, PlanEntry, SentEntry, Span
 from reporails_cli.core.platform.dto.ruleset import RUNNING_TEXT_FORMATS, Atom, AtomSlots, Charge
 
 # Running-text formats this module rebuilds into spans. Headings are read too, but
@@ -288,54 +287,26 @@ def _with_joining_word(frames: list[AtomTuple], unit: str) -> list[AtomTuple]:
     return [restored, *frames[1:]]
 
 
-@dataclass(frozen=True, slots=True)
-class _PassEntry:
-    """An atom carried through unchanged."""
-
-    atom: Atom
-
-
-@dataclass(frozen=True, slots=True)
-class _HeadEntry:
-    """A heading atom decoded from the text at `start`."""
-
-    atom: Atom
-    start: int
-
-
-@dataclass(frozen=True, slots=True)
-class _SentEntry:
-    """An instruction atom split into `units`, decoded from the texts from `start`."""
-
-    atom: Atom
-    plain: bool
-    start: int
-    units: list[str]
-
-
-type _PlanEntry = _PassEntry | _HeadEntry | _SentEntry
-
-
-def _decode_plan(atoms: list[Atom]) -> tuple[list[str], list[_PlanEntry]]:
+def _decode_plan(atoms: list[Atom]) -> tuple[list[str], list[PlanEntry]]:
     """Every text to decode, plus the plan that reconstructs atom order from the batch."""
     texts: list[str] = []
-    plan: list[_PlanEntry] = []
+    plan: list[PlanEntry] = []
     for atom in atoms:
         if atom.kind == "heading":
-            plan.append(_HeadEntry(atom, len(texts)))
+            plan.append(HeadEntry(atom, len(texts)))
             texts.append(atom.plain_text or atom.text)
         elif not _head_eligible(atom):
-            plan.append(_PassEntry(atom))
+            plan.append(PassEntry(atom))
         else:
             text = atom.plain_text or atom.text
             sents = [s for s in (split_prose_sentences(text, atom.named_tokens) or [text]) if _span_has_content(s)]
             units = _instruction_units(atom, sents)
-            plan.append(_SentEntry(atom, bool(atom.plain_text), len(texts), units))
+            plan.append(SentEntry(atom, bool(atom.plain_text), len(texts), units))
             texts.extend(without_joining_word(u) for u in units)
     return texts, plan
 
 
-def _reconstruct_atoms(texts: list[str], plan: list[_PlanEntry], decoded: list[_Decoded | None]) -> list[Atom]:
+def _reconstruct_atoms(texts: list[str], plan: list[PlanEntry], decoded: list[_Decoded | None]) -> list[Atom]:
     """Rebuild one atom list from its decode plan and the decoded logits for its texts.
 
     ``decoded`` is 0-indexed against ``texts``, exactly as ``plan`` addresses it, so a
@@ -346,9 +317,9 @@ def _reconstruct_atoms(texts: list[str], plan: list[_PlanEntry], decoded: list[_
     """
     result: list[Atom] = []
     for entry in plan:
-        if isinstance(entry, _PassEntry):
+        if isinstance(entry, PassEntry):
             result.append(entry.atom)
-        elif isinstance(entry, _HeadEntry):
+        elif isinstance(entry, HeadEntry):
             i = entry.start
             result.append(_apply_heading_tuple(entry.atom, _heading_tuple_from_decoded(decoded[i], texts[i])))
         else:
@@ -414,7 +385,7 @@ def apply_multislot_groups(
     """
     if not multislot_available():
         return groups
-    plans: list[tuple[list[str], list[_PlanEntry], int]] = []
+    plans: list[tuple[list[str], list[PlanEntry], int]] = []
     all_texts: list[str] = []
     for group in groups:
         texts, plan = _decode_plan(group)

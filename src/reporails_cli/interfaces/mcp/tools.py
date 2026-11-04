@@ -1,80 +1,26 @@
-"""MCP `validate` tool implementation.
+"""MCP `validate` tool translation: a core check run into the reply payload.
 
-Runs the check pipeline over a path, scores the files and assembles the reply (findings, stats,
-surface health and, on the paid plan, the remediation workflow). `preflight` and `explain` live
-in `rule_tools.py`.
+`core/pipeline/check_one.py` decides what is checked and returns a typed `CheckRun` or a `Refusal`; this
+module words the refusal as a structured reply and formats the run as the payload (findings, stats, surface
+health and, on the paid plan, the remediation workflow). `preflight` and `explain` live in `rule_tools.py`.
 """
 
-import logging
-from dataclasses import replace
 from pathlib import Path
-from typing import NamedTuple
 
-from reporails_cli.core.discovery.agents import DetectedAgent, get_known_agents
-from reporails_cli.core.discovery.exclusions import RunExclusions
-from reporails_cli.core.discovery.project_root import resolve_project_root, resolve_project_root_for_file
-from reporails_cli.core.discovery.walk import safe_resolve
-from reporails_cli.core.lint.client_checks import run_client_checks
-from reporails_cli.core.lint.regex.not_evaluated import not_evaluated_scope
-from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes_over_pairs
-from reporails_cli.core.mapper.model_manifest import ModelFetchError, get_models_path, models_present
-from reporails_cli.core.mapper.skills import skill_membership
-from reporails_cli.core.pipeline.assemble import (
-    AssembleInputs,
-    assemble_result,
-    lint_request_local,
-    with_exclusions,
-)
-from reporails_cli.core.pipeline.mapping import (
-    agent_file_pairs,
-    apply_generic_scan,
-    discover_scope,
-    map_instruction_files,
-)
-from reporails_cli.core.platform.adapters.api_client import AilsClient
+from reporails_cli.core.discovery.agents import get_known_agents
+from reporails_cli.core.pipeline.check_one import check_path, model_refusal, rules_missing_message
 from reporails_cli.core.platform.adapters.api_key import has_api_key
-from reporails_cli.core.platform.adapters.notices_seen import visible_notices
-from reporails_cli.core.platform.config.config import get_project_config, get_rules_path, is_initialized
 from reporails_cli.core.platform.contract.json_value import JsonObject
-from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResponse, LintResult, Notice, tiers_unpaid
-from reporails_cli.core.platform.dto.models import LocalFinding
+from reporails_cli.core.platform.dto.diagnostics import FunnelError, tiers_unpaid
+from reporails_cli.core.platform.dto.pipeline import CheckRun, Refusal
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.formatters.host_hooks import host_hooks_field
 from reporails_cli.formatters.text.funnel_cta import plain_cta
 
-logger = logging.getLogger(__name__)
-
-# The `(folders, file globs)` a run left out because the user set them.
-Excluded = tuple[tuple[str, ...], tuple[str, ...]]
-
-
-# The `(M-probe, content, client)` findings of one local pass.
-LocalFindings = tuple[list[LocalFinding], list[LocalFinding], list[LocalFinding]]
-
-
-class LeftOut(NamedTuple):
-    """What a run left out: the `(folders, file globs)` to report and the exclusion set behind them."""
-
-    record: Excluded = ((), ())
-    exclusions: RunExclusions | None = None
-
-
-NOTHING_LEFT_OUT = LeftOut()
-
-
-class Scope(NamedTuple):
-    """Which files a `validate` at one path checks, and how they are read."""
-
-    scan_root: Path
-    single_file: Path | None
-    filter_agents: list[DetectedAgent]
-    effective_agent: str
-    instruction_files: list[Path]
-    file_type_by_path: dict[str, str]
-    left_out: LeftOut
+_MODEL_DOWNLOADING = "The reporails model (~275 MB) is downloading for first use. Call validate again shortly."
 
 
 def _unknown_agent_error(agent: str) -> JsonObject:
@@ -89,364 +35,39 @@ def _unknown_agent_error(agent: str) -> JsonObject:
     return {"error": f"Unknown agent: {agent}", "known_agents": [*sorted(get_known_agents())]}
 
 
-def _discover_files(
-    target: Path, single_file: Path | None = None, named: frozenset[Path] = frozenset()
-) -> tuple[list[DetectedAgent], str, list[Path], dict[str, str], Excluded, RunExclusions | None] | JsonObject:
-    """Detect agents and discover instruction files.
+def _rules_missing_payload() -> JsonObject:
+    """The reply when the rules folder is missing or has no `core` rules."""
 
-    Returns `(filter_agents, agent, files, file_type_by_path, excluded, exclusions)` on success, `excluded` being the
-    `(folders, file globs)` the pass left out (empty for a single file) and `exclusions` the run's exclusion set, or a
-    terminal payload dict when there is nothing to lint: a structured "Unknown agent" error
-    (mirroring the CLI's `_validate_agent`) for a misconfigured `default_agent`, or the
-    CLI's own benign empty-project envelope (`formatters/json.py::empty_result_payload` —
-    the SAME top-level shape a normal run emits, with `files: {}` and zeroed `stats`)
-    when discovery legitimately comes up empty. An empty set is not an error: an
-    AGENTS.md-only project under a `default_agent: claude` misconfiguration, or a
-    rules-only tree with no distinctive main file, reports "nothing to find" exactly as
-    the CLI does.
-
-    `target` is the discovery root (a directory). Discovery narrows against the resolved agent
-    set after the exclusions, not the raw detected list. When `generic_scanning` is on, the
-    `@`-import-reached files join the discovered set. When `single_file` is given the validated
-    set is that one file, kept whatever is excluded, while agents resolve against `target`, and
-    `named` is ignored. Otherwise `named` holds files the caller named, which stay in the set
-    whatever is excluded.
-    """
-
-    config = get_project_config(target)
-    normalized_agent = (config.default_agent or "").lower().strip()
-    if normalized_agent and normalized_agent not in get_known_agents():
-        return _unknown_agent_error(normalized_agent)
-
-    # A `single_file` target always resolves (its own existence is checked by the caller); only
-    # the whole-project scan can legitimately come up with nothing to lint. The whole-project
-    # scan includes each agent's config surfaces (hooks, permissions, MCP declarations, plugin
-    # manifests) alongside its instruction and rule files, matching `ails check`'s own scope.
-    found = discover_scope(
-        target,
-        config.default_agent,
-        None,
-        None,
-        scan_files=single_file is None,
-        named=frozenset({single_file}) if single_file is not None else named,
-    )
-    instruction_files = [safe_resolve(single_file)] if single_file is not None else found.files
-    if not instruction_files:
-        return json_formatter.empty_result_payload(target, found.excluded)
-
-    import_extra, file_type_by_path = apply_generic_scan(
-        target, instruction_files, found.effective_agent, config.generic_scanning, found.exclusions
-    )
-    if import_extra:
-        instruction_files = list(instruction_files) + import_extra
-    return found.filtered, found.effective_agent, instruction_files, file_type_by_path, found.excluded, found.exclusions
+    return {"needs_install": True, "message": rules_missing_message()}
 
 
-def build_map(
-    target: Path, instruction_files: list[Path], filter_agents: list[DetectedAgent] | None = None
-) -> tuple[RulesetMap | None, str | None]:
-    """Build the ruleset map via the shared warm path, so `validate` reuses a warm model
-    instead of loading one on every call.
-
-    Never spawns a background process from here: the MCP server runs inside a
-    multi-threaded process, and forking one from it can leave a new process holding a
-    half-initialized copy of an already-loaded model. It attaches to an already-running
-    background helper when one answers, else maps in-process.
-
-    `filter_agents` (the caller's already-resolved `resolve_agent_filters` `filtered` list)
-    is forwarded so this surface's file records carry the same corrected agent attribution
-    as the CLI (`map_instruction_files`'s `stamp_file_agents`) — otherwise a Codex/Cursor
-    project's `validate` reply could name a different agent than `ails check` for the same
-    files.
-
-    Returns `(ruleset_map, error)`: `error` is `None` on success, else the swallowed
-    exception's own text (`"<ExceptionType>: <message>"`) — logged here same as before,
-    but also handed back so a caller (`_lint_discovered` attaches it to the payload as
-    `mapper_error`) can surface WHY the map came back empty instead of only a bare `None`.
-    """
-    try:
-        return (
-            map_instruction_files(target, list(instruction_files), spawn_daemon=False, filtered_agents=filter_agents),
-            None,
-        )
-    except (ImportError, RuntimeError) as exc:
-        logger.warning("Mapper unavailable in MCP: %s", exc)
-        return None, f"{type(exc).__name__}: {exc}"
-
-
-def _resolve_scan_target(target: Path) -> tuple[Path, Path | None]:
-    """Map a target to `(scan_root, single_file)`.
-
-    A directory target roots at itself (`resolve_project_root`, CLI parity). A FILE
-    target cannot use that same function — it resolves to `target.parent`, which is
-    right for the CLI only because the CLI's actual single-file root is the invoking
-    terminal's `cwd`, not the file's directory (see `resolve_project_root_for_file`'s
-    docstring). MCP has no cwd to read, so a file target walks up to the real project
-    root instead, matching what the CLI resolves when a human `cd`s there first —
-    otherwise `validate(".claude/rules/style.md")` roots at `.claude/rules`, which
-    misclassifies the file and never shares the CLI's whole-map cache entry for the
-    same file.
-    """
-
-    if target.is_file():
-        return resolve_project_root_for_file(target), target
-    return resolve_project_root(target), None
+def refusal_payload(refusal: Refusal) -> JsonObject:
+    """The structured reply for a path that was not checked."""
+    match refusal.kind:
+        case "rules_missing":
+            return _rules_missing_payload()
+        case "unknown_agent":
+            return _unknown_agent_error(refusal.agent)
+        case "empty_project":
+            return json_formatter.empty_result_payload(refusal.target, refusal.excluded)
+        case "model_downloading":
+            return {"error": refusal.kind, "message": _MODEL_DOWNLOADING}
+        case "model_unavailable":
+            return {"error": refusal.kind, "message": refusal.message}
+        case "path_not_found" | "failed":
+            return {"error": refusal.message}
 
 
 def model_not_ready_error() -> JsonObject | None:
-    """Make the model set available (downloading it once); an error payload if it is not.
-
-    While a download already runs in this process (the server's launch-time fetch),
-    return `model_downloading` at once instead of blocking the tool call on it.
-    """
-
-    from reporails_cli.core.mapper import (  # pylint: disable=import-outside-toplevel  # startup: the model fetch loads off the MCP handshake path
-        model_fetch,
-    )
-    from reporails_cli.core.mapper.model_store import (  # pylint: disable=import-outside-toplevel  # startup: the model fetch loads off the MCP handshake path
-        ensure_models_available,
-    )
-
-    if models_present(get_models_path()):
-        return None
-    if model_fetch.download_in_progress():
-        return {
-            "error": "model_downloading",
-            "message": "The reporails model (~275 MB) is downloading for first use. Call validate again shortly.",
-        }
-    try:
-        ensure_models_available()
-    except ModelFetchError as exc:
-        return {"error": "model_unavailable", "message": str(exc)}
-    return None
-
-
-def _display_score(result: CombinedResult, target: Path | None = None, scan_root: Path | None = None) -> float | None:
-    """A single-file run's own per-file display score: the `per_file_analysis` entry whose
-    normalized path IS `target`, falling back to the run's aggregate quality score only when
-    `target` has no entry (never the first entry blindly — with `generic_scanning` on,
-    `@`-imported files join the scored set, so entry 0 is not reliably the target's).
-    `None` when neither is scored. `target=None` keeps the old first-entry fallback, for a
-    caller with no specific file to match."""
-
-    per_file = result.per_file_analysis
-    if target is not None:
-        target_key = normalize_finding_path(str(target), scan_root)
-        match = next((fa for fa in per_file if normalize_finding_path(fa.file, scan_root) == target_key), None)
-        if match is not None and match.display_score is not None:
-            return float(match.display_score)
-    elif per_file and per_file[0].display_score is not None:
-        return float(per_file[0].display_score)
-    quality = result.quality
-    if quality is not None and quality.display_score is not None:
-        return float(quality.display_score)
-    return None
-
-
-def _lint_discovered(
-    scan_root: Path,
-    effective_agent: str,
-    instruction_files: list[Path],
-    filter_agents: list[DetectedAgent],
-    *,
-    file_type_by_path: dict[str, str] | None = None,
-    full: bool = False,
-    single_file: Path | None = None,
-    left_out: LeftOut = NOTHING_LEFT_OUT,
-) -> tuple[JsonObject, RulesetMap | None, float | None]:
-    """Run M-probes + content/client checks over discovered files; returns `(payload,
-    ruleset_map, file_score)`.
-
-    Regime + surface health key against `scan_root` (the validated path), not the
-    server cwd — otherwise regime drops out and surface scores misroute for MCP.
-
-    Level determination, merge, and post-merge suppression/mutation run through the shared
-    `core/pipeline/assemble` spine, so this surface picks up the capability-level coverage
-    the CLI check flow already has. `filter_agents` (the resolved, exclude-filtered agent
-    set) drives the level policy, matching the CLI flow. `single_file` (when set) scopes
-    the mechanical M-probes the same way `ails check <file>` does — project-aggregate
-    checks skipped — and is also when `file_score` is computed. A server funnel rejection
-    is carried onto the payload as a top-level `funnel` object; a mapper failure (ruleset_map
-    came back `None`) is carried the same way as a top-level `mapper_error` string, so a
-    caller (`remedy_brief`'s `brief_unavailable`) can name the real cause instead of a bare
-    "produced no map". Unless `full` is set the formatted payload is bounded to a
-    top-N-per-file envelope (aggregate stats + surface_health stay whole).
-    """
-
-    ruleset_map, mapper_error = build_map(scan_root, instruction_files, filter_agents)
-    result, funnel_error = _check_and_assemble(
-        scan_root,
-        instruction_files,
-        effective_agent,
-        filter_agents,
-        ruleset_map,
-        left_out=left_out,
-        scoped=single_file is not None,
-    )
-    payload = json_formatter.format_combined_result(
-        result, ruleset_map=ruleset_map, project_root=scan_root, file_type_by_path=file_type_by_path
-    )
-    payload = with_host_hooks(_attach_funnel(payload, funnel_error), result)
-    if mapper_error is not None:
-        payload["mapper_error"] = mapper_error
-    payload = payload if full else mcp_formatter.bound_validate_payload(payload)
-    return payload, ruleset_map, _display_score(result, single_file, scan_root) if single_file is not None else None
+    """The error payload when the model set is not ready (downloading it once first), else `None`."""
+    refusal = model_refusal()
+    return None if refusal is None else refusal_payload(refusal)
 
 
 def with_host_hooks(payload: JsonObject, result: CombinedResult) -> JsonObject:
     """`payload` plus the `host_hooks` entries of `result`, for the MCP `validate` reply only:
     `ails check -f json` never lists the machine's own hooks."""
     return {**payload, **host_hooks_field(result.hooks)}
-
-
-def _mcp_agent_file_pairs(
-    scan_root: Path, instruction_files: list[Path], filter_agents: list[DetectedAgent], effective_agent: str
-) -> list[tuple[str, list[Path]]]:
-    """MCP's thin wrapper over the shared `core.pipeline.mapping.agent_file_pairs` split --
-    explicit-agent-ness for MCP `validate` can only come from the project's `default_agent`
-    (no per-call `--agent`-style override the way the CLI has one)."""
-
-    explicit = bool(get_project_config(scan_root).default_agent)
-    return agent_file_pairs(
-        instruction_files, filter_agents, scan_root, explicit=explicit, effective_agent=effective_agent
-    )
-
-
-def _check_and_assemble(
-    scan_root: Path,
-    instruction_files: list[Path],
-    effective_agent: str,
-    filter_agents: list[DetectedAgent],
-    ruleset_map: RulesetMap | None,
-    *,
-    left_out: LeftOut = NOTHING_LEFT_OUT,
-    scoped: bool = False,
-) -> tuple[CombinedResult, FunnelError | None]:
-    """Run the local checks, then `_assemble_mcp_result`; the request is resolved under the agents whose rules ran."""
-    pairs = _mcp_agent_file_pairs(scan_root, instruction_files, filter_agents, effective_agent)
-    with not_evaluated_scope() as unfinished:
-        local = _checks_over_pairs(scan_root, pairs, ruleset_map, scoped, left_out.exclusions)
-
-    result, funnel_error = _assemble_mcp_result(
-        scan_root,
-        effective_agent,
-        filter_agents,
-        ruleset_map,
-        local,
-        rule_agents=tuple(dict.fromkeys(agent_id for agent_id, _ in pairs)),
-        not_evaluated=tuple(unfinished),
-        exclusions=left_out.exclusions,
-    )
-    return with_exclusions(result, left_out.record), funnel_error
-
-
-def _checks_over_pairs(
-    scan_root: Path,
-    pairs: list[tuple[str, list[Path]]],
-    ruleset_map: RulesetMap | None,
-    scoped: bool,
-    exclusions: RunExclusions | None = None,
-) -> LocalFindings:
-    """Run M-probes + content/client checks over the `(agent, its files)` pairs, returning
-    `(m_findings, content_findings, client_findings)`.
-
-    `scoped` mirrors the CLI's `state.scope.is_targeted` — True for a single-file `validate`
-    target, so project-aggregate mechanical checks (e.g. total-bytes / file-count bounds)
-    are skipped exactly like `ails check <file>` skips them.
-
-    The pairs come from the SAME `agent_file_pairs` split the CLI check flow uses (via
-    `_mcp_agent_file_pairs`): a native file runs its owner's rules, an unowned file runs the
-    core rules only, so `validate` reports identical `(rule, file, line)` triples to
-    `ails check` for the same tree.
-    """
-
-    skills = skill_membership(ruleset_map)
-    m_findings = run_m_probes_over_pairs(scan_root, pairs, scoped=scoped, skills=skills, exclusions=exclusions)
-    content_findings: list[LocalFinding] = []
-    for agent_id, agent_files in pairs:
-        if ruleset_map:
-            content_findings.extend(
-                run_content_quality_checks(ruleset_map, scan_root, agent_files, agent=agent_id, exclusions=exclusions)
-            )
-    client_findings = run_client_checks(ruleset_map) if ruleset_map else []
-    return m_findings, content_findings, client_findings
-
-
-def _build_assemble_inputs(
-    scan_root: Path,
-    effective_agent: str,
-    filter_agents: list[DetectedAgent],
-    ruleset_map: RulesetMap | None,
-    local: LocalFindings,
-    *,
-    rule_agents: tuple[str, ...] = (),
-    not_evaluated: tuple[tuple[str, str], ...] = (),
-) -> AssembleInputs:
-    """The shared `AssembleInputs` for `_assemble_mcp_result`, built from the local M-probe /
-    content / client finding lists."""
-
-    m_findings, content_findings, client_findings = local
-    return AssembleInputs(
-        m_findings=m_findings,
-        content_findings=content_findings,
-        client_findings=client_findings,
-        ruleset_map=ruleset_map,
-        scan_root=scan_root,
-        filter_agents=filter_agents,
-        effective_agent=effective_agent,
-        lint_result=None,
-        rule_agents=rule_agents,
-        not_evaluated=not_evaluated,
-    )
-
-
-def _server_lint_result(inputs: AssembleInputs) -> tuple[LintResult | None, FunnelError | None, tuple[Notice, ...]]:
-    """Run `_server_lint` and split its response into `(lint_result, funnel_error, notices)` — `(None,
-    None, ())` when nothing was mapped (offline / no ruleset)."""
-    response = _server_lint(inputs)
-    if response is None:
-        return None, None, ()
-    return response.result, response.funnel_error, visible_notices(response.notices)
-
-
-def _assemble_mcp_result(
-    scan_root: Path,
-    effective_agent: str,
-    filter_agents: list[DetectedAgent],
-    ruleset_map: RulesetMap | None,
-    local: LocalFindings,
-    *,
-    rule_agents: tuple[str, ...] = (),
-    not_evaluated: tuple[tuple[str, str], ...] = (),
-    exclusions: RunExclusions | None = None,
-) -> tuple[CombinedResult, FunnelError | None]:
-    """Server-lint the local findings, then run the shared assemble spine. Returns `(result, funnel_error)`."""
-
-    inputs = _build_assemble_inputs(
-        scan_root,
-        effective_agent,
-        filter_agents,
-        ruleset_map,
-        local,
-        rule_agents=rule_agents,
-        not_evaluated=not_evaluated,
-    )
-    lint_result, funnel_error, notices = _server_lint_result(inputs)
-    return assemble_result(replace(inputs, lint_result=lint_result, notices=notices), exclusions), funnel_error
-
-
-def _server_lint(inputs: AssembleInputs) -> LintResponse | None:
-    """Send the reported local findings to the server and return the `LintResponse`.
-
-    `.result` is None when offline. Returning the whole response (not just `.result`) lets the
-    caller also read `.funnel_error` — a server-side rejection (rate limit, payload/atom cap,
-    project limit) that must not read like a network outage. None when nothing was mapped.
-    """
-
-    if not inputs.ruleset_map:
-        return None
-    local, structural_required = lint_request_local(inputs)
-    return AilsClient().lint(inputs.ruleset_map, local, structural_required, root=inputs.scan_root)
 
 
 def is_retryable_reply(payload: JsonObject) -> bool:
@@ -458,10 +79,10 @@ def is_retryable_reply(payload: JsonObject) -> bool:
 def _attach_funnel(payload: JsonObject, funnel_error: FunnelError | None) -> JsonObject:
     """Carry a server funnel rejection onto the payload as a top-level `funnel` object.
 
-    Without this, `_server_lint` dropping `response.funnel_error` made a rate-limit / payload
-    cap / atom cap / project-limit rejection indistinguishable from an offline server — both
-    left `offline: true` and no explanation. The CLI text path shows the same information via
-    `_render_funnel_cta` (`formatters.text.funnel_cta::format_cta`); this mirrors it for MCP consumers.
+    Without this, a rate-limit / payload cap / atom cap / project-limit rejection was
+    indistinguishable from an offline server: both left `offline: true` and no explanation. The CLI
+    text path shows the same information via `_render_funnel_cta`
+    (`formatters.text.funnel_cta::format_cta`); this mirrors it for MCP consumers.
 
     `payload["offline"]` is left exactly as `format_combined_result` already set it. A funnel
     rejection only ever reaches here when the server produced no diagnostics report — the same
@@ -503,78 +124,34 @@ def unpaid_signed_in_reply(payload: JsonObject) -> bool:
     return tiers_unpaid(tier if isinstance(tier, str) else None, funnel_tier if isinstance(funnel_tier, str) else None)
 
 
-def _rules_missing_payload() -> JsonObject:
-    """The reply when the rules folder is missing or has no `core` rules: the rules ship inside
-    the package, so this means a broken install or a `framework_path` setting that points at a
-    folder without them."""
-
-    return {
-        "needs_install": True,
-        "message": (
-            f"The rules folder {get_rules_path()} has no `core` rules. The rules ship with the "
-            "package: reinstall reporails-cli, or, if the config sets `framework_path`, point it "
-            "at a folder that holds them or remove the setting."
-        ),
-    }
-
-
-def scope_for_path(path: str, named: frozenset[Path] = frozenset()) -> Scope | JsonObject:
-    """The files a `validate` at `path` checks, or the reply to give when there is nothing to check.
-
-    A directory `path` roots at itself and a file `path` at its project, with that one file
-    checked. For a directory `path`, `named` holds files the caller named, which are checked
-    whatever is excluded; for a file `path` it is ignored. The reply is a structured payload
-    when the rules are missing, the path does not exist, the agent is unknown, the project has
-    no instruction files (the empty-project envelope) or the model set is not ready.
-    """
-    if not is_initialized():
-        return _rules_missing_payload()
-    target = Path(path).resolve()
-    if not target.exists():
-        return {"error": f"Path not found: {target}"}
-    scan_root, single_file = _resolve_scan_target(target)
-    discovery = _discover_files(scan_root, single_file=single_file, named=named)
-    if isinstance(discovery, dict):
-        return discovery
-    model_error = model_not_ready_error()
-    if model_error is not None:
-        return model_error
-    filter_agents, effective_agent, instruction_files, file_type_by_path, excluded, exclusions = discovery
-    return Scope(
-        scan_root,
-        single_file,
-        filter_agents,
-        effective_agent,
-        instruction_files,
-        file_type_by_path,
-        LeftOut(excluded, exclusions),
+def format_run(run: CheckRun, *, full: bool) -> JsonObject:
+    """The `validate` payload of a finished check. Unless `full` is set it is bounded to a
+    top-N-per-file envelope (aggregate stats + surface_health stay whole), so a large repo stays under
+    the harness per-tool-result token cap. A server funnel rejection is carried as a top-level `funnel`
+    object; a mapper failure as a top-level `mapper_error` string, so a caller (`remedy_brief`'s
+    `brief_unavailable`) can name the real cause instead of a bare "produced no map"."""
+    payload = json_formatter.format_combined_result(
+        run.result,
+        ruleset_map=run.ruleset_map,
+        project_root=run.scope.scan_root,
+        file_type_by_path=run.scope.file_type_by_path,
     )
+    payload = with_host_hooks(_attach_funnel(payload, run.funnel_error), run.result)
+    if run.mapper_error is not None:
+        payload["mapper_error"] = run.mapper_error
+    return payload if full else mcp_formatter.bound_validate_payload(payload)
 
 
 def run_pipeline_for_path(
-    path: str, full: bool = False, named: frozenset[Path] = frozenset()
+    path: str, full: bool = False, named: frozenset[Path] = frozenset(), *, project_root: Path
 ) -> tuple[JsonObject, RulesetMap | None, float | None]:
-    """Run the pipeline for `path` (directory or file); returns `(payload, ruleset_map,
-    file_score)`. `ruleset_map` and `file_score` are `None` on a structured error/needs-install
-    payload — the caller checks `"error"` / `"needs_install"` in the payload. A file `path`
-    narrows the validated set to that single file; unless `full` is set the payload is bounded
-    to a top-N-per-file envelope so a large repo stays under the harness per-tool-result token
-    cap, and `file_score` is that single file's own display score (`None` for a directory or an
-    unscored file). `named` is read as in `scope_for_path`.
+    """Check `path` (directory or file); returns `(payload, ruleset_map, file_score)`. `ruleset_map` and
+    `file_score` are `None` on a structured error/needs-install payload — the caller checks `"error"` /
+    `"needs_install"` in the payload. A file `path` narrows the validated set to that single file;
+    `file_score` is that single file's own display score (`None` for a directory or an unscored file).
+    `named` and `project_root` are read as in `core.pipeline.check_one.scope_for_path`.
     """
-    try:
-        scope = scope_for_path(path, named)
-        if isinstance(scope, dict):
-            return scope, None, None
-        return _lint_discovered(
-            scope.scan_root,
-            scope.effective_agent,
-            scope.instruction_files,
-            scope.filter_agents,
-            file_type_by_path=scope.file_type_by_path,
-            full=full,
-            single_file=scope.single_file,
-            left_out=scope.left_out,
-        )
-    except (FileNotFoundError, ValueError, RuntimeError) as e:
-        return {"error": str(e)}, None, None
+    run = check_path(path, project_root, named)
+    if isinstance(run, Refusal):
+        return refusal_payload(run), None, None
+    return format_run(run, full=full), run.ruleset_map, run.file_score

@@ -1,10 +1,11 @@
 # GitHub Copilot Agent Configuration
 # Schema: schemas/agent.schema.yml v0.5.0
 #
-# Last verified: 2026-09-03
+# Last verified: 2026-10-29
 #
 # Items intentionally NOT included here (not measurable on disk):
 #   - Copilot Memory: cloud-hosted (GitHub), no local file
+#   - Copilot app automations: UI-managed, no on-disk file
 #   - Copilot Spaces: GitHub web UI, no local file
 #   - Org instructions: GitHub org settings, web-managed
 #   - GitHub MCP via web UI: not local file
@@ -198,7 +199,15 @@ file_types:
         maintainer: human
 
   hooks:
-    # 15 recognized event names (camelCase or PascalCase); 13 documented on the GitHub coding agent, 8 in VS Code.
+    # 14 events (re-verified 2026-10-28 against the source below): agentStop,
+    # errorOccurred, notification, permissionRequest, postToolUse, postToolUseFailure,
+    # preCompact, preToolUse, sessionEnd, sessionStart, subagentStart, subagentStop,
+    # userPromptSubmitted, userPromptTransformed. Config files may use the PascalCase
+    # form (`Stop` for agentStop, `UserPromptSubmit` for userPromptSubmitted), which
+    # switches the payload to the snake_case VS Code format. Handler types `command`,
+    # `http` and `prompt` (`prompt` only on sessionStart). Plugin hooks load last
+    # (policy, user, project, plugins) from each plugin's own `hooks.json`; the cloud
+    # agent loads only the repo's `.github/hooks/*.json`.
     source: https://docs.github.com/en/copilot/reference/hooks-configuration
     format: schema_validated
     scope: global
@@ -293,6 +302,6 @@ intercept_events:
 
 # How this agent's hooks reach a sub-agent it starts, from the agent's own docs.
 subagent_hooks:
-  fire_in_subagents: {value: unconfirmed}
-  identifies_agent: {value: unconfirmed}
+  fire_in_subagents: {value: "yes", source: "https://docs.github.com/en/copilot/reference/hooks-configuration"}
+  identifies_agent: {value: "yes", fields: [agentId, agentType, parentAgentId], source: "https://docs.github.com/en/copilot/reference/hooks-configuration"}
   extension_opt_out: {value: unconfirmed}

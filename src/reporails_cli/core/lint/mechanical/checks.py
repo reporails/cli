@@ -5,13 +5,14 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 
-from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
+from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions
 from reporails_cli.core.discovery.walk import safe_resolve, walk_glob_matches
 from reporails_cli.core.mapper.skills import skill_entry_paths
 from reporails_cli.core.platform.contract.json_value import JsonValue, str_list
 from reporails_cli.core.platform.dto.checks import CheckResult
+from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import ClassifiedFile
-from reporails_cli.core.platform.policy.matching import _prop_matches
+from reporails_cli.core.platform.policy.matching import prop_matches
 from reporails_cli.core.platform.utils.utils import read_frontmatter_file
 
 # What a check reads: the check's own arguments (parsed `checks.yml` values), upstream annotations
@@ -76,7 +77,7 @@ def _resolve_glob_targets(pattern: str, root: Path, exclusions: RunExclusions | 
     `get_target_files` bounds the result back to in-scope instruction files.
     """
     exclusions = exclusions or load_run_exclusions(root)
-    return [m for m in walk_glob_matches(root, pattern, exclusions) if not exclusions.leaves_out(m)]
+    return [m for m in walk_glob_matches(root, pattern, exclusions) if not leaves_out(exclusions, m)]
 
 
 def get_target_files(
@@ -136,7 +137,7 @@ def _select_targets(
         # `match.type` may be a list (`{type: [config, hooks]}`) — compare through
         # the shared matching predicate, never `==`, or a list-valued type matches
         # nothing and the check reports "No matching files found" on a file it owns.
-        matched = [cf.path for cf in classified_files if _prop_matches(match_type, cf.file_type)]
+        matched = [cf.path for cf in classified_files if prop_matches(match_type, cf.file_type)]
         if matched:
             return matched
         # No files of this type — return empty, don't fall back to all files.

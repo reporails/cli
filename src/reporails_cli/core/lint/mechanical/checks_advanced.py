@@ -10,7 +10,7 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
-from reporails_cli.core.discovery.exclusions import RunExclusions
+from reporails_cli.core.discovery.exclusions import leaves_out, no_exclusions
 from reporails_cli.core.discovery.walk import safe_resolve, walk_files, walk_glob_matches
 from reporails_cli.core.lint.mechanical.checks import (
     CheckArgs,
@@ -29,12 +29,9 @@ from reporails_cli.core.mapper.parse import parse_blocks
 from reporails_cli.core.mapper.skills import one_level_skills_roots, slot_subfolders
 from reporails_cli.core.platform.contract.json_value import JsonValue, as_list, str_list
 from reporails_cli.core.platform.dto.checks import CheckResult
+from reporails_cli.core.platform.dto.frontmatter import FrontmatterBlock
 from reporails_cli.core.platform.dto.models import ClassifiedFile
-from reporails_cli.core.platform.utils.utils import (
-    FrontmatterBlock,
-    read_frontmatter,
-    read_frontmatter_file,
-)
+from reporails_cli.core.platform.utils.utils import read_frontmatter, read_frontmatter_file
 
 
 def frontmatter_present(
@@ -350,7 +347,7 @@ def skill_entrypoint_present(
     exclusions = run_exclusions(args, root)
     for skills_root in sorted(roots):
         for sub in slot_subfolders(skills_root):
-            if not (sub / entry).is_file() and not exclusions.leaves_out(sub):
+            if not (sub / entry).is_file() and not leaves_out(exclusions, sub):
                 rel = sub.relative_to(root).as_posix() if sub.is_relative_to(root) else sub.name
                 missing.append(rel)
     if not missing:
@@ -387,7 +384,7 @@ def frontmatter_valid_glob(
     subjects = [
         f
         for f in walk_files(target, exclusions, lambda f: f.suffix in MARKDOWN_RULE_SUFFIXES)
-        if not exclusions.leaves_out(f)
+        if not leaves_out(exclusions, f)
     ]
     if classified_files:
         checked = {safe_resolve(cf.path) for cf in classified_files}
@@ -429,7 +426,7 @@ def _validate_file_globs(
     key = path_filter_key(f, root)
     raw = read.data.get(key) if key else next((read.data[k] for k in _PATH_KEYS if read.data.get(k)), None)
     paths: Sequence[JsonValue] = split_top_level_commas(raw) if isinstance(raw, str) else as_list(raw)
-    defaults = RunExclusions.none(root)
+    defaults = no_exclusions(root)
     for p in paths:
         if not isinstance(p, str):
             return CheckResult(passed=False, message=f"{f.name}: non-string path: {p}")

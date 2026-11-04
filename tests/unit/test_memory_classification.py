@@ -9,6 +9,7 @@ import pytest
 from reporails_cli.core.classify import _parse_file_types, classify_files
 from reporails_cli.core.discovery.agent_config import categorize_file_type, load_config_file_types
 from reporails_cli.core.discovery.agent_discovery import claude_project_folder_name, discover_from_config
+from reporails_cli.core.discovery.exclusions import no_exclusions
 
 
 @pytest.fixture
@@ -125,7 +126,6 @@ class TestMemoryClassification:
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_memory_folder_is_found_for_a_project_path_with_underscore_and_dot(tmp_path: Path, monkeypatch) -> None:
-    from reporails_cli.core.discovery.exclusions import RunExclusions
     from reporails_cli.core.discovery.memory_locator import memory_entries_for_agent
 
     project = tmp_path / "rv_mem.proj"
@@ -137,6 +137,6 @@ def test_memory_folder_is_found_for_a_project_path_with_underscore_and_dot(tmp_p
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
 
-    entries = memory_entries_for_agent("claude", project, RunExclusions.none(project))
+    entries = memory_entries_for_agent("claude", project, no_exclusions(project))
 
     assert [e.path.name for e in entries] == ["MEMORY.md"]

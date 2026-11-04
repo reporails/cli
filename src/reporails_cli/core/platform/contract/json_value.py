@@ -44,9 +44,22 @@ def opt_int(value: JsonValue) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def opt_str(value: JsonValue) -> str | None:
+    """The string an optional field of a parsed document holds, else `None`."""
+    return value if isinstance(value, str) else None
+
+
 def str_list(value: JsonValue) -> list[str]:
     """The string items of the list an optional field of a parsed document holds, `[]` when it is not a list."""
     return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
+def strict_str_list(value: JsonValue) -> list[str] | None:
+    """The items of a list of strings an optional field of a parsed document holds, `None` when it is not one."""
+    if not isinstance(value, list):
+        return None
+    items = [item for item in value if isinstance(item, str)]
+    return items if len(items) == len(value) else None
 
 
 def pattern_list(value: JsonValue) -> list[str]:

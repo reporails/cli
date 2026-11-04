@@ -38,7 +38,7 @@ class TestMapCacheRehydrateTolerance:
     def test_stale_unknown_key_is_dropped_not_raised(self) -> None:
         # A warm cache written before a field was removed carries that key. The
         # reload must drop it rather than raise Atom(**d) on an unexpected kwarg.
-        from reporails_cli.core.cache.map_cache import dicts_to_atoms
+        from reporails_cli.core.mapper.map_cache import dicts_to_atoms
 
         stale = {
             "line": 1,
@@ -100,7 +100,7 @@ class TestSlotsNotPersisted:
         # still carried a `slots` object (the head always sets one), so the rehydrated
         # atom keeps a `slots` object too (see TestSlotCoordsPersisted for the
         # fresh-vs-cached symmetry this is the text-half of).
-        from reporails_cli.core.cache.map_cache import atoms_to_dicts, dicts_to_atoms
+        from reporails_cli.core.mapper.map_cache import atoms_to_dicts, dicts_to_atoms
         from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots
 
         atom = Atom(
@@ -153,7 +153,7 @@ class TestSlotCoordsPersisted:
     @pytest.mark.unit
     @pytest.mark.subsys_caching
     def test_cache_dict_round_trip_keeps_span_coords_drops_text(self) -> None:
-        from reporails_cli.core.cache.map_cache import atoms_to_dicts, dicts_to_atoms
+        from reporails_cli.core.mapper.map_cache import atoms_to_dicts, dicts_to_atoms
         from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots
 
         atom = Atom(
@@ -202,7 +202,7 @@ class TestSlotCoordsPersisted:
     def test_json_round_trip_keeps_span_coords(self) -> None:
         """The coordinates survive an actual JSON serialize/deserialize (disk shape),
         not just the in-memory dict — a tuple offset round-trips through a JSON list."""
-        from reporails_cli.core.cache.map_cache import atoms_to_dicts, dicts_to_atoms
+        from reporails_cli.core.mapper.map_cache import atoms_to_dicts, dicts_to_atoms
         from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots
 
         atom = Atom(
@@ -228,7 +228,7 @@ class TestSlotCoordsPersisted:
         so an all-None `AtomSlots` looked indistinguishable from "no slots object at
         all". Fresh and cached must agree: `AtomSlots()` in, `AtomSlots()` back out,
         not `None`."""
-        from reporails_cli.core.cache.map_cache import atoms_to_dicts, dicts_to_atoms
+        from reporails_cli.core.mapper.map_cache import atoms_to_dicts, dicts_to_atoms
         from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots
 
         fresh = Atom(
@@ -253,7 +253,7 @@ class TestFullMapIdentity:
     @pytest.mark.unit
     @pytest.mark.subsys_caching
     def test_identity_stable_across_path_order(self, tmp_path: Path) -> None:
-        from reporails_cli.core.cache.full_map_cache import compute_identity
+        from reporails_cli.core.mapper.full_map_cache import compute_identity
 
         a = tmp_path / "a.md"
         b = tmp_path / "b.md"
@@ -264,7 +264,7 @@ class TestFullMapIdentity:
     @pytest.mark.unit
     @pytest.mark.subsys_caching
     def test_identity_changes_on_content_change(self, tmp_path: Path) -> None:
-        from reporails_cli.core.cache.full_map_cache import compute_identity
+        from reporails_cli.core.mapper.full_map_cache import compute_identity
 
         a = tmp_path / "a.md"
         a.write_text("original")
@@ -277,7 +277,7 @@ class TestFullMapIdentity:
     def test_identity_changes_when_file_added(self, tmp_path: Path) -> None:
         # A targeted check maps a subset; a superset must key differently so the
         # smaller run never receives the larger run's cached map (and vice versa).
-        from reporails_cli.core.cache.full_map_cache import compute_identity
+        from reporails_cli.core.mapper.full_map_cache import compute_identity
 
         a = tmp_path / "a.md"
         b = tmp_path / "b.md"
@@ -288,7 +288,7 @@ class TestFullMapIdentity:
     @pytest.mark.unit
     @pytest.mark.subsys_caching
     def test_identity_changes_on_model(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        from reporails_cli.core.cache import full_map_cache
+        from reporails_cli.core.mapper import full_map_cache
 
         a = tmp_path / "a.md"
         a.write_text("alpha")
@@ -309,7 +309,7 @@ class TestFullMapIdentity:
         Leave the registry out of the identity and the pre-update classification keeps being
         served off disk until the files themselves change.
         """
-        from reporails_cli.core.cache.full_map_cache import compute_identity
+        from reporails_cli.core.mapper.full_map_cache import compute_identity
 
         rules = tmp_path / "rules" / "cursor"
         rules.mkdir(parents=True)
@@ -318,7 +318,7 @@ class TestFullMapIdentity:
             "agent: cursor\nfile_types:\n  rules:\n    loading: on_demand\n"
             '    detection:\n      project:\n        patterns: [".cursor/rules/**/*.mdc"]\n'
         )
-        monkeypatch.setattr("reporails_cli.core.cache.full_map_cache.get_rules_path", lambda: tmp_path / "rules")
+        monkeypatch.setattr("reporails_cli.core.mapper.full_map_cache.get_rules_path", lambda: tmp_path / "rules")
         a = tmp_path / "a.md"
         a.write_text("alpha")
 
@@ -336,7 +336,7 @@ class TestFullMapIdentity:
         root decides whether `.cursor/rules/x.mdc` reads as a cursor rule or as an unmatched
         generic file. Two roots must therefore never share one cache entry.
         """
-        from reporails_cli.core.cache.full_map_cache import compute_identity
+        from reporails_cli.core.mapper.full_map_cache import compute_identity
 
         nested = tmp_path / ".cursor" / "rules"
         nested.mkdir(parents=True)
@@ -352,7 +352,7 @@ class TestFullMapCache:
     @pytest.mark.unit
     @pytest.mark.subsys_caching
     def test_miss_then_hit_preserves_map(self, tmp_path: Path) -> None:
-        from reporails_cli.core.cache.full_map_cache import FullMapCache
+        from reporails_cli.core.mapper.full_map_cache import FullMapCache
 
         cache = FullMapCache(tmp_path)
         assert cache.get("k1") is None  # empty → miss
@@ -365,7 +365,7 @@ class TestFullMapCache:
     @pytest.mark.unit
     @pytest.mark.subsys_caching
     def test_get_corrupt_returns_none(self, tmp_path: Path) -> None:
-        from reporails_cli.core.cache.full_map_cache import FullMapCache
+        from reporails_cli.core.mapper.full_map_cache import FullMapCache
 
         cache = FullMapCache(tmp_path)
         cache.dir.mkdir(parents=True, exist_ok=True)
@@ -375,7 +375,7 @@ class TestFullMapCache:
     @pytest.mark.unit
     @pytest.mark.subsys_caching
     def test_evict_caps_entries(self, tmp_path: Path) -> None:
-        from reporails_cli.core.cache import full_map_cache
+        from reporails_cli.core.mapper import full_map_cache
 
         cache = full_map_cache.FullMapCache(tmp_path)
         for i in range(full_map_cache._MAX_ENTRIES + 5):

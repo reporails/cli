@@ -12,13 +12,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from reporails_cli.core.lint.harness_discovery import discover_agent_rules
-from reporails_cli.core.lint.harness_models import (
-    BaselineEntry,
-    CoverageGap,
-    LintError,
-    RuleInfo,
-)
+from reporails_cli.core.lint.harness_models import has_cases, has_fail_fixture, has_pass_fixture
 from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.lint import BaselineEntry, CoverageGap, LintError, RuleInfo
 from reporails_cli.core.platform.dto.models import CATEGORY_CODES, Category
 
 # ── Rule lint ───────────────────────────────────────────────────────
@@ -189,7 +185,7 @@ def export_baseline(
         BaselineEntry(
             rule_id=r.rule_id,
             slug=r.slug,
-            has_fixtures=r.has_pass_fixture or r.has_fail_fixture or r.has_cases,
+            has_fixtures=has_pass_fixture(r) or has_fail_fixture(r) or has_cases(r),
         )
         for r in rules
     ]
@@ -226,9 +222,9 @@ def check_coverage(
         if rule_id not in current_ids:
             gaps.append(CoverageGap(rule_id=rule_id, reason="missing"))
         elif entry.get("has_fixtures") and not (
-            current_map[rule_id].has_pass_fixture
-            or current_map[rule_id].has_fail_fixture
-            or current_map[rule_id].has_cases
+            has_pass_fixture(current_map[rule_id])
+            or has_fail_fixture(current_map[rule_id])
+            or has_cases(current_map[rule_id])
         ):
             gaps.append(CoverageGap(rule_id=rule_id, reason="fixtures removed"))
 

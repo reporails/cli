@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.classify import location_matches_mode
-from reporails_cli.core.discovery.exclusions import RunExclusions
+from reporails_cli.core.discovery.exclusions import covers, parse_run_exclusions
 from reporails_cli.core.platform.dto.models import FileTypeDeclaration
 from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
 
@@ -84,4 +84,4 @@ class TestUnderExcludedDir:
     def test_path_outside_project_root_is_not_excluded(self, tmp_path: Path) -> None:
         # A path outside the root can't be relativized and must report "not excluded".
         outside = Path("/totally/unrelated/elsewhere/file.md")
-        assert RunExclusions.parse(tmp_path, ["node_modules"], ()).covers(outside) is False
+        assert covers(parse_run_exclusions(tmp_path, ["node_modules"], ()), outside) is False

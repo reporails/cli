@@ -13,13 +13,11 @@ from typing import Any
 import pytest
 import yaml
 
-from reporails_cli.core.lint.regex.compiler import (
-    CompiledCheck,
-    compile_rules,
-)
+from reporails_cli.core.lint.regex.compiler import compile_rules
 from reporails_cli.core.lint.regex.expect import file_matches_path_filter
 from reporails_cli.core.lint.regex.matching import find_line_number, match_check
 from reporails_cli.core.platform.contract.rule_pattern import compile_rule_pattern
+from reporails_cli.core.platform.dto.lint import CompiledCheck
 from reporails_cli.core.platform.utils.utils import strip_frontmatter
 from tests.conftest import run_rule_files
 

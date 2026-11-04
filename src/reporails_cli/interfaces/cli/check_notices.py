@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from reporails_cli.core.heal.apply import heal_withheld_for_run
 from reporails_cli.core.pipeline.assemble import with_exclusions
 from reporails_cli.core.platform.config.config import get_project_config
-from reporails_cli.core.platform.runtime.merger import CombinedResult
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.formatters.text.verdict import render_excluded_line
 from reporails_cli.interfaces.cli.check_orchestration import RenderContext, _dispatch_output
 from reporails_cli.interfaces.cli.helpers import _print_no_instruction_files, console
@@ -55,6 +56,24 @@ def _emit_heal_withheld(output_format: str, *, funnel_error: object, tier: str |
         print(json.dumps({"error": code, "message": message}), file=sys.stderr)
         return
     console.print(f"[yellow]{message}[/yellow]")
+
+
+def _emit_unlisted_file(file: Path, root: Path, run_folder: Path, output_format: str) -> None:
+    """Say that a named file is checked outside any project listing, in the active output format.
+
+    A file whose project is the folder the command runs in is told only that it is not listed; a file
+    of another project is told to run the check in that project's folder.
+    Under json/github the diagnosis owns stdout, so the notice goes to stderr."""
+    if root == run_folder:
+        message = f"{file} is not an instruction file of this project."
+    else:
+        message = (
+            f"{file} is not an instruction file in the project at {root}; run ails check in that project's folder."
+        )
+    if output_format in MACHINE_READABLE_CHECK_FORMATS:
+        print(message, file=sys.stderr)
+        return
+    console.print(f"[yellow]{message}[/yellow]", soft_wrap=True)
 
 
 def _emit_heal_scope_refusal(output_format: str) -> None:

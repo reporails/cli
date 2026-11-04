@@ -3,28 +3,14 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 
 from reporails_cli.core.discovery.agent_config import load_config_file_types
 from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES, glob_file_type_patterns
-from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, pattern_list
+from reporails_cli.core.platform.dto.discovery import MemoryEntry, RunExclusions
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class MemoryEntry:
-    """One enumerable memory record per agent's memory locator.
-
-    `path` is the file holding the entry (always a real Path). `body` is
-    the entry text: the file content.
-    """
-
-    agent: str
-    path: Path
-    body: str
 
 
 def memory_entries_for_agent(agent: str, project_root: Path, exclusions: RunExclusions) -> list[MemoryEntry]:

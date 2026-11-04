@@ -1,9 +1,9 @@
-"""Programs run only through `interfaces/cli/helpers.py`.
+"""Programs run only through `core/platform/adapters/programs.py`.
 
 One rule, pure `ast`, over every `src/reporails_cli/**/*.py`:
 
 - P1 stray process: `import subprocess`, `import subprocess as x` or `from subprocess import ...`, and the same for
-  `webbrowser` and `pty`, in any module but `interfaces/cli/helpers.py`; an attribute reference to
+  `webbrowser` and `pty`, in any module but `core/platform/adapters/programs.py`; an attribute reference to
   `asyncio.create_subprocess_exec` or `asyncio.create_subprocess_shell` anywhere;
   and, anywhere in src, a call to `os.system`,
   `os.popen`, `os.startfile`, `os.spawn*`, `os.exec*` or `os.posix_spawn*` (through `import os`,
@@ -25,13 +25,13 @@ from pathlib import Path
 
 import pytest
 
-from tests.unit.architecture._os_aliases import os_names
+from tests.unit.architecture._module_aliases import module_names
 
 pytestmark = pytest.mark.architecture
 
 ROOT = Path(__file__).resolve().parent.parent.parent.parent
 SRC = ROOT / "src" / "reporails_cli"
-RUNNER = "interfaces/cli/helpers.py"
+RUNNER = "core/platform/adapters/programs.py"
 
 _OS_EXACT = {"system", "popen", "startfile"}
 _OS_PREFIXES = ("spawn", "exec", "posix_spawn")
@@ -75,7 +75,7 @@ def stray_process_violations(sources: list[Path], root: Path) -> list[Violation]
     for py in sources:
         rel = py.relative_to(root).as_posix()
         tree = ast.parse(py.read_text(encoding="utf-8"))
-        modules = os_names(tree)
+        modules = module_names(tree, "os")
         asyncio_names = _asyncio_names(tree)
         from_os = {
             alias.asname or alias.name: alias.name
@@ -121,7 +121,7 @@ def _src_files() -> list[Path]:
 def test_programs_run_only_through_the_one_runner() -> None:
     """P1: no subprocess import outside helpers.py and no os process call in src."""
     found = stray_process_violations(_src_files(), SRC)
-    lines = [f"{len(found)} P1 violation(s): run the program through interfaces/cli/helpers.py"]
+    lines = [f"{len(found)} P1 violation(s): run the program through core/platform/adapters/programs.py"]
     lines.extend(f"  {v.detail}" for v in found)
     assert not found, "\n".join(lines)
 

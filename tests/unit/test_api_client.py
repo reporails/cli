@@ -955,7 +955,7 @@ def test_diagnose_request_sends_bearer_key_to_v1(monkeypatch: pytest.MonkeyPatch
 @pytest.mark.subsys_api
 def test_diagnose_request_without_key_sends_no_authorization(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AILS_DEV_MODE", raising=False)
-    monkeypatch.setattr(api_client_mod, "resolve_api_key", lambda: "")
+    monkeypatch.setattr(api_client_mod, "diagnostics_server_api_key", lambda: "")
     _, headers = ails_client("https://x.example", tier="free").diagnose_request("a/b")
     assert "Authorization" not in headers
 
@@ -968,3 +968,25 @@ def test_diagnose_request_dev_mode_uses_tier_header(monkeypatch: pytest.MonkeyPa
     assert url == "http://localhost:8001/diagnose"
     assert headers["X-Tier"] == "pro"
     assert "Authorization" not in headers
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_api
+@pytest.mark.parametrize(
+    ("server", "sent"),
+    [
+        ("https://api.reporails.com", True),
+        ("http://localhost:8001", True),
+        ("http://127.0.0.1:8001", True),
+        ("https://staging.example.com", False),
+        ("https://localhost.evil.example", False),
+        ("https://evil.example/localhost", False),
+    ],
+)
+def test_stored_key_goes_only_to_the_default_or_a_loopback_server(
+    monkeypatch: pytest.MonkeyPatch, server: str, sent: bool
+) -> None:
+    monkeypatch.delenv("AILS_DEV_MODE", raising=False)
+    monkeypatch.setenv("AILS_API_KEY", "rr_stored")
+    _, headers = ails_client(server).diagnose_request("a/b")
+    assert ("Authorization" in headers) is sent

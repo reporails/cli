@@ -21,8 +21,8 @@ from reporails_cli.core.platform.dto.diagnostics import (
     Notice,
     QualityResult,
 )
+from reporails_cli.core.platform.dto.platform import CombinedResult, CombinedStats, ServerReply
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, ServerReply
 from reporails_cli.formatters.text import display, file_groups
 from reporails_cli.formatters.text.display import (
     _count_atoms,

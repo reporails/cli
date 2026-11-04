@@ -6,6 +6,7 @@ from pathlib import Path
 
 import typer
 
+from reporails_cli.core.platform.contract.errors import PlatformError
 from reporails_cli.interfaces.cli.typer_app import app
 
 
@@ -30,4 +31,9 @@ def expected_loads_command(
     if not folder.is_dir():
         typer.echo(f"Error: Path not found or not a folder: {folder}", err=True)
         raise typer.Exit(2)
-    typer.echo(compact_json(expected_loads(folder)))
+    try:
+        listing = expected_loads(folder)
+    except PlatformError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(compact_json(listing))

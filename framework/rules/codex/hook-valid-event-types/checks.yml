@@ -8,11 +8,11 @@ checks:
   message: No recognized Codex event type names found in hook configuration
   patterns:
   - pattern-regex: '"hooks"\s*:\s*\{'
-  - pattern-not-regex: (?:SessionStart|SessionEnd|SubagentStart|SubagentStop|PreToolUse|PermissionRequest|PostToolUse|PreCompact|PostCompact|UserPromptSubmit|Stop|Interrupt)
+  - pattern-not-regex: (?:SessionStart|SessionEnd|SubagentStart|SubagentStop|PreToolUse|PermissionRequest|PostToolUse|PreCompact|PostCompact|UserPromptSubmit|Stop|Interrupt|PreModelRequest|PostModelRequest)
 - id: CODEX.S.0003.no-unrecognized-event-key
   type: deterministic
   expect: absent
   message: An event-shaped key next to a recognized event name is not a recognized Codex event type
   patterns:
   - pattern-regex: '"hooks"\s*:\s*\{'
-  - pattern-regex: '"(?!(?:SessionStart|SessionEnd|SubagentStart|SubagentStop|PreToolUse|PermissionRequest|PostToolUse|PreCompact|PostCompact|UserPromptSubmit|Stop|Interrupt)")[A-Z][A-Za-z]*"\s*:\s*\['
+  - pattern-regex: '"(?!(?:SessionStart|SessionEnd|SubagentStart|SubagentStop|PreToolUse|PermissionRequest|PostToolUse|PreCompact|PostCompact|UserPromptSubmit|Stop|Interrupt|PreModelRequest|PostModelRequest)")[A-Z][A-Za-z]*"\s*:\s*\['

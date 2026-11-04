@@ -8,7 +8,6 @@ on ``bio_graphs.multislot_available``.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, get_args
@@ -131,42 +130,6 @@ def _pool_words(
 _SPAN_O, _SPAN_B, _SPAN_I = 0, 1, 2
 _POLARITY: dict[HeadClass, int] = {"DIRECTIVE": 1, "RESTRICTIVE": -1, "NEUTRAL": 0}
 _SOAS_AXES = ("subject", "predicate", "object", "scope")
-
-
-@dataclass
-class Span:
-    """One decoded O/B/I span: its joined text, confidence, and token offset.
-
-    ``conf`` is the mean max-softmax probability over the span's words, ``0.0``
-    when the axis decodes no span (``text`` empty). ``offset`` is the
-    ``[start_tok, end_tok)`` half-open word-index bounding box covering every
-    B/I run folded into ``text`` (start inclusive, end exclusive — mirrors the
-    half-open char offsets ``word_spans`` already uses); ``None`` when the axis
-    decodes no span.
-    """
-
-    text: str
-    conf: float
-    offset: tuple[int, int] | None = None
-
-
-@dataclass
-class AtomTuple:
-    """A per-sentence 5-tuple: polarity + subject/predicate/object/scope spans.
-
-    The four spans are separated: ``subject`` is the actor (who performs / is
-    governed; empty for imperatives), ``predicate`` the action, ``object`` the
-    value only (subject is no longer fused into it), ``scope`` the condition.
-    Each is a :class:`Span` carrying its own text and confidence.
-    """
-
-    polarity: int  # +1 directive, -1 restrictive, 0 neutral
-    modality: Modality
-    subject: Span
-    predicate: Span
-    object: Span
-    scope: Span
-    text: str
 
 
 @lru_cache(maxsize=1)

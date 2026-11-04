@@ -14,13 +14,14 @@ from typing import Any
 
 import pytest
 
-from reporails_cli.core.heal.preservation import PRESERVATION_CONTRACT, Snapshot, compare, take_snapshot
+from reporails_cli.core.heal.preservation import PRESERVATION_CONTRACT, compare, take_snapshot
 from reporails_cli.core.heal.preservation import match as preservation_match
 from reporails_cli.core.heal.preservation import named as preservation_named
 from reporails_cli.core.heal.preservation import structure as preservation_structure
-from reporails_cli.core.heal.preservation.snapshot import SnapshotAtom
+from reporails_cli.core.heal.preservation.snapshot import make_snapshot
 from reporails_cli.core.mapper.structure import read_structure
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
+from reporails_cli.core.platform.dto.heal import Snapshot, SnapshotAtom
 from reporails_cli.interfaces.mcp import snapshots
 
 
@@ -115,7 +116,7 @@ def _snapshot(
     atoms: tuple[SnapshotAtom, ...],
     relation_lines: frozenset[int] = frozenset(),
 ) -> Snapshot:
-    return Snapshot(file_path=_FILE, text=text, atoms=atoms, score=6.0, relation_lines=relation_lines)
+    return make_snapshot(file_path=_FILE, text=text, atoms=atoms, score=6.0, relation_lines=relation_lines)
 
 
 # ---------------------------------------------------------------------------
@@ -933,7 +934,7 @@ def test_a_path_relative_to_the_file_itself_is_not_invented(tmp_path) -> None:
     (pkg / "src" / "index.ts").write_text("export {}\n")
     before = "# Web\n\nStart from the entry file.\n"
     after = "# Web\n\nStart from `src/index.ts`.\n"
-    snap = Snapshot(
+    snap = make_snapshot(
         file_path=str(pkg / "CLAUDE.md"),
         text=before,
         atoms=(_atom(3, "Start from the entry file.", 1),),
@@ -971,7 +972,7 @@ def test_a_construct_moved_in_from_a_sibling_file_of_the_location_is_not_invente
     sibling_text = "# Agents\n\nRun `repo-lint --fix` before you push.\n"
     before = "# Skill\n\nCheck style before you push.\n"
     after = "# Skill\n\nRun `repo-lint --fix` before you push.\n"
-    snap = Snapshot(
+    snap = make_snapshot(
         file_path=str(tmp_path / "CLAUDE.md"),
         text=before,
         atoms=(_atom(3, "Check style before you push.", 1),),
@@ -1340,7 +1341,7 @@ def test_compare_against_the_real_mapper(tmp_path) -> None:
     target = tmp_path / "CLAUDE.md"
     target.write_text(before_text, encoding="utf-8")
     before_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
-    snap = Snapshot(
+    snap = make_snapshot(
         file_path=str(target),
         text=before_text,
         atoms=tuple(
@@ -2390,11 +2391,10 @@ def test_bold_around_a_bare_url_turning_italic_removes_no_link() -> None:
 @pytest.mark.subsys_server
 def test_sibling_texts_leave_out_a_project_that_shares_a_name_prefix(tmp_path: Path) -> None:
     """`/x/proj` does not pick up the snapshots of `/x/proj2`."""
-    from reporails_cli.core.heal.preservation import Snapshot
     from reporails_cli.interfaces.mcp import snapshots
 
     def snap(path: Path, text: str) -> Snapshot:
-        return Snapshot(file_path=str(path), text=text, atoms=(), score=None)
+        return make_snapshot(file_path=str(path), text=text, atoms=(), score=None)
 
     own, mine, other = tmp_path / "proj" / "a.md", tmp_path / "proj" / "b.md", tmp_path / "proj2" / "c.md"
     for path, text in ((own, "own"), (mine, "mine"), (other, "other")):

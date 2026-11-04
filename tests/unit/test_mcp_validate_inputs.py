@@ -24,7 +24,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (root / ".claude").mkdir(parents=True)
     (root / "CLAUDE.md").write_text("# Project\n\nRun the tests with pytest.\n", encoding="utf-8")
     (root / ".claude" / "settings.json").write_text(json.dumps({"permissions": {"allow": []}}), encoding="utf-8")
-    server._validate_states.clear()
+    server.validate_states.clear()
     monkeypatch.setattr(server, "model_not_ready_error", lambda: None)
     return root
 
@@ -42,12 +42,12 @@ def runs(monkeypatch: pytest.MonkeyPatch) -> list[int]:
         return payload, None, 0.0
 
     monkeypatch.setattr(server, "_fresh_validate_payload", fake_fresh)
-    monkeypatch.setattr(server, "_with_preservation", lambda payload, *a, **k: payload)
+    monkeypatch.setattr(server, "with_preservation", lambda payload, *a, **k: payload)
     return seen
 
 
 def _call(project: Path, full: bool = False) -> dict[str, Any]:
-    return asyncio.run(server._run_validate(str(project), full))
+    return asyncio.run(server._run_validate(str(project), full, None, project))
 
 
 def _rewrite(path: Path, text: str) -> None:
@@ -64,7 +64,7 @@ def test_no_change_is_served_from_the_stored_reply_and_counted(project: Path, ru
     _call(project)
     _call(project)
     assert len(runs) == 1
-    state = next(iter(server._validate_states.values()))
+    state = next(iter(server.validate_states.values()))
     assert state.consecutive_unchanged == 1
     assert _call(project).get("error") == "circuit_breaker"
 
@@ -75,7 +75,7 @@ def test_full_repeat_without_change_does_not_count(project: Path, runs: list[int
     _call(project)
     _call(project, full=True)
     assert len(runs) == 1
-    assert next(iter(server._validate_states.values())).consecutive_unchanged == 0
+    assert next(iter(server.validate_states.values())).consecutive_unchanged == 0
 
 
 @pytest.mark.unit
@@ -86,7 +86,7 @@ def test_agent_config_edit_gets_a_fresh_reply(project: Path, runs: list[int]) ->
     reply = _call(project)
     assert reply.get("error") is None
     assert len(runs) == 2
-    assert next(iter(server._validate_states.values())).consecutive_unchanged == 0
+    assert next(iter(server.validate_states.values())).consecutive_unchanged == 0
 
 
 @pytest.mark.unit
@@ -181,7 +181,7 @@ def test_the_key_value_is_not_part_of_the_stored_fingerprint(
 ) -> None:
     monkeypatch.setenv("AILS_API_KEY", "synthetic-key-value")
     _call(project)
-    state = next(iter(server._validate_states.values()))
+    state = next(iter(server.validate_states.values()))
     assert "synthetic-key-value" not in state.last_mtime_hash
 
 
@@ -208,12 +208,12 @@ def mapped(project: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[int], l
         return payload, state.last_ruleset_map, 0.0
 
     monkeypatch.setattr(server, "_fresh_validate_payload", fake_fresh)
-    monkeypatch.setattr(server, "_with_preservation", lambda payload, *a, **k: payload)
+    monkeypatch.setattr(server, "with_preservation", lambda payload, *a, **k: payload)
     return seen, mapped_paths
 
 
 def _call_path(path: Path, full: bool = False) -> dict[str, Any]:
-    return asyncio.run(server._run_validate(str(path), full))
+    return asyncio.run(server._run_validate(str(path), full, None, path if path.is_dir() else path.parent))
 
 
 @pytest.mark.unit
@@ -274,7 +274,7 @@ def test_unchanged_calls_are_served_and_counted_around_a_mapped_file_edit(
 ) -> None:
     runs, mapped_paths = mapped
     mapped_paths.append(str(SUPPORT))
-    state_of = lambda: next(iter(server._validate_states.values()))  # noqa: E731
+    state_of = lambda: next(iter(server.validate_states.values()))  # noqa: E731
     assert "error" not in _call_path(project)
     assert "error" not in _call_path(project)
     assert (len(runs), state_of().consecutive_unchanged) == (1, 1)
@@ -301,7 +301,7 @@ def test_a_run_that_maps_more_files_does_not_read_as_a_change_on_the_next_call(
     assert len(runs) == 2
     _call_path(project)
     assert len(runs) == 2
-    assert next(iter(server._validate_states.values())).consecutive_unchanged == 1
+    assert next(iter(server.validate_states.values())).consecutive_unchanged == 1
 
 
 @pytest.fixture
@@ -309,9 +309,9 @@ def pipeline_replies(project: Path, monkeypatch: pytest.MonkeyPatch) -> list[dic
     """The real `_fresh_validate_payload`, fed by a pipeline stub that answers from a queue."""
     replies: list[dict[str, Any]] = []
     monkeypatch.setattr(
-        server, "run_pipeline_for_path", lambda path, full, named=frozenset(): (replies.pop(0), None, 0.0)
+        server, "run_pipeline_for_path", lambda path, full, named=frozenset(), **_k: (replies.pop(0), None, 0.0)
     )
-    monkeypatch.setattr(server, "_with_preservation", lambda payload, *a, **k: payload)
+    monkeypatch.setattr(server, "with_preservation", lambda payload, *a, **k: payload)
     return replies
 
 
@@ -359,7 +359,7 @@ _BUSY = {"files": {}, "stats": {}, "funnel": {"error": "server_busy", "retryable
 
 
 def _state() -> Any:
-    return next(iter(server._validate_states.values()))
+    return next(iter(server.validate_states.values()))
 
 
 @pytest.mark.unit
@@ -401,8 +401,8 @@ def test_retryable_reply_counts_as_a_call_but_not_as_an_unchanged_repeat(
 def test_retryable_replies_beyond_the_call_limit_trip_the_breaker(
     project: Path, pipeline_replies: list[dict[str, Any]]
 ) -> None:
-    pipeline_replies.extend([_BUSY] * (server._MAX_CALLS + 1))
-    for _ in range(server._MAX_CALLS):
+    pipeline_replies.extend([_BUSY] * (server.MAX_CALLS + 1))
+    for _ in range(server.MAX_CALLS):
         assert _call(project).get("error") is None
     assert _call(project).get("error") == "circuit_breaker"
 
@@ -412,14 +412,14 @@ def test_retryable_replies_beyond_the_call_limit_trip_the_breaker(
 def test_a_concurrent_calls_result_survives_a_retryable_reply(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_fresh(path: str, tokens: Any, scan_root: Path, state: Any) -> tuple[dict, Any, float]:
         # Another validate on the same path completes while this one awaits the server.
-        live = next(iter(server._validate_states.values()))
+        live = next(iter(server.validate_states.values()))
         live.call_count += 2
         live.last_score = 0.7
         live.last_ruleset_map = "other-call-map"
         return dict(_BUSY), None, 0.0
 
     monkeypatch.setattr(server, "_fresh_validate_payload", fake_fresh)
-    monkeypatch.setattr(server, "_with_preservation", lambda payload, *a, **k: payload)
+    monkeypatch.setattr(server, "with_preservation", lambda payload, *a, **k: payload)
     assert _call(project)["funnel"]["retryable"] is True
     state = _state()
     assert state.call_count == 3

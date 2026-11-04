@@ -14,12 +14,7 @@ import pytest
 
 from reporails_cli.core.lint.client_checks import FORMATTING_RULE
 from reporails_cli.core.lint.suppression import rule_aliases
-from reporails_cli.core.pipeline.assemble import (
-    AssembleInputs,
-    assemble_result,
-    lint_request_local,
-    reported_local_findings,
-)
+from reporails_cli.core.pipeline.assemble import assemble_result, lint_request_local, reported_local_findings
 from reporails_cli.core.platform.dto.diagnostics import (
     CrossFileCoordinate,
     CrossFileFinding,
@@ -34,6 +29,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     WorkflowLocation,
 )
 from reporails_cli.core.platform.dto.models import LocalFinding
+from reporails_cli.core.platform.dto.pipeline import AssembleInputs
 from reporails_cli.core.platform.dto.results import AgentConfig
 
 _DISABLED = "CORE:E:0003"

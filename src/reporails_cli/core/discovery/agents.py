@@ -10,7 +10,6 @@ from __future__ import annotations
 import functools
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,31 +20,17 @@ from reporails_cli.core.discovery.agent_config import (
 )
 from reporails_cli.core.discovery.agent_discovery import discover_from_config
 from reporails_cli.core.discovery.agent_markers import agent_has_marker, dir_prefix_from_glob
-from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
+from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions
 from reporails_cli.core.discovery.file_aliases import clear_alias_cache, dedupe_with_aliases, store_alias_cache
 from reporails_cli.core.discovery.read_gates import reads_as_fallback
 from reporails_cli.core.discovery.surface_config import config_names_agent
 from reporails_cli.core.platform.config.config import get_project_config, get_rules_path, iter_agent_configs
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_str, str_list
+from reporails_cli.core.platform.dto.discovery import AgentType, DetectedAgent, RunExclusions
 from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
 if TYPE_CHECKING:
     from reporails_cli.core.platform.dto.results import ProjectConfig
-
-
-@dataclass(frozen=True)
-class AgentType:
-    """Definition of a coding agent's file conventions."""
-
-    id: str
-    name: str
-    instruction_patterns: tuple[str, ...]  # Root-level marker patterns for fast detection
-    config_patterns: tuple[str, ...]  # Glob patterns for config files
-    rule_patterns: tuple[str, ...]  # Glob patterns for rule/snippet files
-    directory_patterns: tuple[tuple[str, str], ...] = ()  # (label, dir_path) pairs
-    core: bool = False  # the shared standard every other agent also reads (the default agent)
-    home_dir: str = ""  # the dot-folder holding the agent's own files (`.claude`)
-    shared_names: tuple[str, ...] = ()  # root file names several agents read; each points at no one agent
 
 
 def _parse_agent_config(data: JsonObject) -> AgentType | None:
@@ -115,17 +100,6 @@ def _build_agent_registry() -> dict[str, AgentType]:
 def get_known_agents() -> dict[str, AgentType]:
     """Get the agent registry, building from config.yml on first access."""
     return _build_agent_registry()
-
-
-@dataclass
-class DetectedAgent:
-    """An agent detected in a project."""
-
-    agent_type: AgentType
-    instruction_files: list[Path] = field(default_factory=list)
-    config_files: list[Path] = field(default_factory=list)
-    rule_files: list[Path] = field(default_factory=list)
-    detected_directories: dict[str, str] = field(default_factory=dict)
 
 
 # Module-level cache for detected agents — avoids repeated glob scanning.
@@ -512,7 +486,7 @@ def filter_agents_by_exclusions(agents: list[DetectedAgent], exclusions: RunExcl
     """Remove the files the run's exclusions leave out. Drops an agent left with no instruction or rule files."""
     if not exclusions.dirs and not exclusions.files:
         return agents
-    return _drop_agent_files(agents, exclusions.leaves_out)
+    return _drop_agent_files(agents, functools.partial(leaves_out, exclusions))
 
 
 def get_all_instruction_files(target: Path, agents: list[DetectedAgent] | None = None) -> list[Path]:

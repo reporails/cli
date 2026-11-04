@@ -16,10 +16,10 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.mapper.bio_pipeline import _decode_plan, _SentEntry
-from reporails_cli.core.mapper.bio_tagger import AtomTuple
+from reporails_cli.core.mapper.bio_pipeline import _decode_plan
 from reporails_cli.core.mapper.multislot_frames import _decode_logits_batch, _frames_from_decoded
 from reporails_cli.core.mapper.parse import tokenize
+from reporails_cli.core.platform.dto.mapping import AtomTuple, SentEntry
 
 
 def tag_atom_multislot_frames(text: str) -> list[AtomTuple]:
@@ -138,7 +138,7 @@ def test_corpus_sample_drops_no_words() -> None:
         atoms = tokenize(content)
         texts, plan = _decode_plan(atoms)
         for entry in plan:
-            if not isinstance(entry, _SentEntry):
+            if not isinstance(entry, SentEntry):
                 continue
             for t in texts[entry.start : entry.start + len(entry.units)]:
                 src_words = t.split()

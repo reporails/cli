@@ -10,7 +10,6 @@ import pytest
 import yaml
 
 from reporails_cli.core.discovery.agents import (
-    DetectedAgent,
     _codex_global_heuristic,
     _disambiguate_codex_generic,
     auto_detect_agent,
@@ -18,6 +17,7 @@ from reporails_cli.core.discovery.agents import (
 )
 from reporails_cli.core.platform.adapters.registry import _apply_agent_overrides, _is_other_agent_rule, load_rules
 from reporails_cli.core.platform.config.config import get_agent_config
+from reporails_cli.core.platform.dto.discovery import DetectedAgent
 from reporails_cli.core.platform.dto.models import Category, Check, Rule, RuleType, Severity
 from reporails_cli.core.platform.dto.results import AgentConfig
 

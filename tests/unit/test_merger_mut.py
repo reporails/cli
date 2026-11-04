@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.platform.runtime.merger import CombinedResult
+from reporails_cli.core.platform.dto.platform import CombinedResult
 
 
 @pytest.mark.unit

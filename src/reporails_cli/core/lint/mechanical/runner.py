@@ -10,12 +10,12 @@ from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
-from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.discovery.walk import is_under, shared_dir_listings
 from reporails_cli.core.lint.mechanical.checks import get_target_files
 from reporails_cli.core.lint.mechanical.registry import MECHANICAL_CHECKS
 from reporails_cli.core.platform.contract.json_value import JsonValue
 from reporails_cli.core.platform.dto.checks import CheckResult
+from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, Rule, Violation
 from reporails_cli.core.platform.policy.matching import match_files
 

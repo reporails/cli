@@ -16,7 +16,6 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from reporails_cli.core.classify import classify_files, load_file_types
-from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.lint.content_checker import run_content_checks
 from reporails_cli.core.lint.mechanical.runner import run_mechanical_checks
 from reporails_cli.core.lint.regex import run_checks
@@ -25,6 +24,7 @@ from reporails_cli.core.mapper.skills import skill_entry_paths, skill_membership
 from reporails_cli.core.platform.adapters.registry import load_rules
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.dto.diagnostics import SEVERITY_RANK
+from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import ClassifiedFile, Execution, LocalFinding, Rule, RuleType
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.policy.matching import match_files

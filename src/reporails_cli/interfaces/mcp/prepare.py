@@ -7,12 +7,14 @@ sooner. Nothing here contacts the server, reads an account or counts as a `valid
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
+from reporails_cli.core.pipeline.check_one import build_map, resolve_scan_target, scope_for_path
 from reporails_cli.core.platform.contract.json_value import JsonObject
-from reporails_cli.interfaces.mcp.tools import Scope, _resolve_scan_target, build_map, scope_for_path
+from reporails_cli.core.platform.dto.pipeline import Refusal
+from reporails_cli.interfaces.mcp.tools import refusal_payload
 from reporails_cli.interfaces.mcp.validate_targets import named_files, resolve_validate_targets, target_tokens
 
 
-def prepare_for_path(path: str, targets: list[str] | None = None) -> JsonObject:
+def prepare_for_path(path: str, targets: list[str] | None, project_root: Path) -> JsonObject:
     """Map the files `validate(path, targets)` checks; `{"files": n}` is how many are ready.
 
     Answers `validate`'s own payload for every condition that stops it (model not ready,
@@ -27,13 +29,13 @@ def prepare_for_path(path: str, targets: list[str] | None = None) -> JsonObject:
         tokens = target_tokens(targets)
         target = Path(path).resolve()
         if tokens and target.exists():
-            resolved = resolve_validate_targets(tokens, _resolve_scan_target(target)[0])
+            resolved = resolve_validate_targets(tokens, resolve_scan_target(target, project_root)[0])
             if isinstance(resolved, dict):
                 return resolved
             named = named_files(resolved)
-        scope = scope_for_path(path, named)
-        if not isinstance(scope, Scope):
-            return {"files": 0} if "files" in scope else scope
+        scope = scope_for_path(path, project_root, named)
+        if isinstance(scope, Refusal):
+            return {"files": 0} if scope.kind == "empty_project" else refusal_payload(scope)
         ruleset_map, mapper_error = build_map(scope.scan_root, scope.instruction_files, scope.filter_agents)
         if ruleset_map is None:
             return {"error": "mapper_unavailable", "mapper_error": mapper_error}

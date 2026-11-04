@@ -8,12 +8,13 @@ own graph path + max length and adds the forward pass.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
 
 from reporails_cli.core.mapper.encode_pool import ort_intra_threads
+from reporails_cli.core.platform.dto.mapping import Tokens
 
 if TYPE_CHECKING:
     import onnxruntime as ort
@@ -21,14 +22,6 @@ if TYPE_CHECKING:
 
 # Texts tokenized per call when counting tokens for bucket ordering.
 _COUNT_CHUNK = 1024
-
-
-class _Tokens(NamedTuple):
-    """One text with its token ids and per-token character offsets (no padding)."""
-
-    text: str
-    ids: list[int]
-    offsets: list[tuple[int, int]]
 
 
 class _OnnxEncoderSession:
@@ -101,15 +94,15 @@ class _OnnxEncoderSession:
         buckets = [ordered[s : s + bucket_size] for s in range(0, len(ordered), bucket_size)]
         return buckets, [index[t] for t in texts]
 
-    def tokenize(self, texts: list[str]) -> list[_Tokens]:
+    def tokenize(self, texts: list[str]) -> list[Tokens]:
         """Tokenize one bucket's ``texts`` (truncated, padding stripped)."""
-        tokens: list[_Tokens] = []
+        tokens: list[Tokens] = []
         for t, e in zip(texts, self._tokenizer.encode_batch(texts), strict=True):
             n = sum(e.attention_mask)
-            tokens.append(_Tokens(t, e.ids[:n], list(e.offsets[:n])))
+            tokens.append(Tokens(t, e.ids[:n], list(e.offsets[:n])))
         return tokens
 
-    def encode_feed(self, bucket: list[_Tokens]) -> dict[str, npt.NDArray[np.int64]]:
+    def encode_feed(self, bucket: list[Tokens]) -> dict[str, npt.NDArray[np.int64]]:
         """Build the ORT feed (int64 ids / attention mask / type-ids) for one bucket, zero-padded."""
         width = max(len(t.ids) for t in bucket)
         ids = np.zeros((len(bucket), width), dtype=np.int64)

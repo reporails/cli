@@ -109,7 +109,8 @@ def with_rule_labels(payload: JsonObject) -> JsonObject:
 
 def _group_listed(listed: JsonValue) -> JsonValue:
     """`workflow.listed` grouped by its reason code, one group per distinct code in
-    first-seen order: `{"code": <code>, "reason": <sentence>, "rules": [{"rule": <id>, "count": <n>}, ...]}`.
+    first-seen order: `{"code": <code>, "reason": <sentence>, "rules": [<rule entry>, ...]}`, a rule
+    entry being `{"rule": <id>, "count": <n>}` plus `"files": [...]` when the listing names files.
     The sentence is the cli's own wording for the code (`listed_reason_text`); several rules
     commonly share one reason, so grouping them removes the repeated text instead of
     repeating it once per rule. The code stays on each group, so a reader can act on it without
@@ -127,7 +128,10 @@ def _group_listed(listed: JsonValue) -> JsonValue:
             rules_of[code] = []
             groups[code] = {"code": code, "reason": listed_reason_text(code), "rules": rules_of[code]}
             order.append(code)
-        rules_of[code].append({"rule": entry.get("rule", ""), "count": entry.get("count", 0)})
+        row: JsonObject = {"rule": entry.get("rule", ""), "count": entry.get("count", 0)}
+        if entry.get("files"):
+            row["files"] = entry["files"]
+        rules_of[code].append(row)
     return [groups[code] for code in order]
 
 

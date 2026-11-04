@@ -29,7 +29,8 @@ from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir, p
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, as_str, str_list
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.core.platform.runtime import _torch_blocker
+from reporails_cli.core.platform.observability.log_levels import configure_logging
+from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
 from reporails_cli.core.platform.utils.utils import compact_json
 
 logger = logging.getLogger(__name__)
@@ -51,8 +52,8 @@ _MAX_REQUEST_BYTES = 10_000_000  # 10MB
 
 
 def _init_daemon_process() -> None:
-    """Initialize daemon process: torch blocker, PID file, ML noise suppression."""
-    _torch_blocker.install()
+    """Initialize daemon process: logging, PID file, ML noise suppression."""
+    configure_logging()
     # Drop any wall-clock backstop inherited from the forking `ails check` parent:
     # fork() clears the interval timer but the SIGALRM disposition carries over.
     if sys.platform != "win32":  # no SIGALRM/setitimer on Windows
@@ -189,7 +190,8 @@ def _handle_connection(
         with contextlib.suppress(OSError):
             conn.sendall(compact_json({"type": "progress", "msg": msg}).encode() + b"\n")
 
-    response = _dispatch(request, models, warmup_done, _send_progress)
+    with get_stage_timer().run(f"daemon {as_str(request.get('cmd', ''))}"):
+        response = _dispatch(request, models, warmup_done, _send_progress)
     conn.sendall(compact_json(response).encode() + b"\n")
 
 

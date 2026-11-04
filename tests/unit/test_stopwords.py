@@ -8,7 +8,6 @@ import pytest
 import yaml
 
 from reporails_cli.core.classify.stopwords import (
-    PatternParts,
     _split_alternation,
     _strip_flags,
     decompose,
@@ -17,6 +16,7 @@ from reporails_cli.core.classify.stopwords import (
     recompose,
 )
 from reporails_cli.core.classify.stopwords_sync import sync_vocab
+from reporails_cli.core.platform.dto.classify import PatternParts
 
 # ── decompose / recompose ────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 """Fault-translation boundary — adapters must not collapse a caught fault into a sentinel.
 
-The import-direction boundary is enforced by `test_adapter_boundary.py`. This is the
+The import-direction boundary is enforced by `test_layer_rules.py`. This is the
 error-translation contract on the same boundary: a fault caught in an `except` handler
 must not silently become a sentinel (`""` / `None` / `0` / empty collection / a no-arg
 constructor like `LintResponse()`) or `pass` that flows downstream as authoritative truth.
@@ -47,6 +47,9 @@ _KNOWN_EXCEPTIONS: set[tuple[str, str, str]] = {
     ("src/reporails_cli/core/platform/adapters/rate_cooldown.py", "_load", "FileNotFoundError"),
     ("src/reporails_cli/core/platform/adapters/rate_cooldown.py", "_load", "OSError,ValueError"),
     ("src/reporails_cli/core/platform/adapters/rate_cooldown.py", "active_cooldown", "ValueError"),
+    # Legitimate logged-isolation — a program that cannot start or runs out of time is logged at WARNING and
+    # reads as no result.
+    ("src/reporails_cli/core/platform/adapters/programs.py", "run_program", "OSError,subprocess.TimeoutExpired"),
 }
 
 

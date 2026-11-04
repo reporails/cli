@@ -18,9 +18,10 @@ from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.adapters.rules_query import rule_title
 from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem, FindingSeverity
 from reporails_cli.core.platform.dto.models import CATEGORY_CODES
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
-from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path, overlapping_pairs
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path, overlapping_pairs
 from reporails_cli.formatters.text.display_constants import (
     HEALTH_BAR_WIDTH,
     HRULE,

@@ -15,12 +15,12 @@ source: https://antigravity.google/docs/hooks/
 
 # Hook Valid Event Types
 
-Hook event keys in `.agents/hooks.json` (or the global `~/.gemini/config/hooks.json`) MUST use recognized hook event type names (5 events: `PreToolUse`, `PostToolUse`, `PreInvocation`, `PostInvocation`, `Stop`). Unrecognized event names are silently ignored, so a typo means the hook never fires.
+Hook event keys in `.agents/hooks.json` (or the global `~/.gemini/config/hooks.json`) MUST use recognized hook event type names (6 events: `SessionStart`, `PreToolUse`, `PostToolUse`, `PreInvocation`, `PostInvocation`, `Stop`). Unrecognized event names are silently ignored, so a typo means the hook never fires.
 
 ## Antipatterns
 
 - **Camel-case typos.** Writing event names with wrong capitalization, such as `"posttooluse"` or `"PreTOOLUse"`. The agent silently ignores unrecognized keys.
-- **Cross-agent event names.** Using event names from another agent's convention (e.g. Gemini-CLI's `SessionStart` or Claude's `SubagentStop`) instead of the 5 Antigravity hook events.
+- **Cross-agent event names.** Using event names from another agent's convention (e.g. Gemini-CLI's `BeforeTool` or Claude's `SubagentStop`) instead of the 6 Antigravity hook events.
 - **Deprecated event names.** Using event names from older versions that have been renamed or removed.
 
 ## Pass / Fail

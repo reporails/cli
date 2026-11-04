@@ -33,7 +33,7 @@ def test_png_reference_not_expanded(tmp_path: Path) -> None:
     content = "Load the asset @assets/logo.png now."
     (tmp_path / "assets").mkdir()
     (tmp_path / "assets" / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\nBINARYGARBAGE\x00\x01")
-    result = expand_imports(content, src)
+    result = expand_imports(content, src, src.parent)
     assert result == content
     assert "PNG" not in result and "BINARYGARBAGE" not in result
 
@@ -45,7 +45,7 @@ def test_pdf_reference_not_expanded(tmp_path: Path) -> None:
     (tmp_path / "docs" / "spec.pdf").write_bytes(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3garbage")
     src = tmp_path / "main.md"
     content = "See @docs/spec.pdf for details."
-    result = expand_imports(content, src)
+    result = expand_imports(content, src, src.parent)
     assert result == content
     assert "PDF" not in result
 
@@ -58,7 +58,7 @@ def test_svg_zip_jpg_references_not_expanded(tmp_path: Path) -> None:
         (tmp_path / "assets" / name).write_bytes(body)
     src = tmp_path / "main.md"
     content = "@assets/icon.svg @assets/bundle.zip @assets/photo.jpg"
-    result = expand_imports(content, src)
+    result = expand_imports(content, src, src.parent)
     assert result == content
 
 
@@ -81,7 +81,7 @@ def test_markdown_extensions_still_expand(tmp_path: Path) -> None:
     (tmp_path / "README").write_text("README-BODY", encoding="utf-8")
     src = tmp_path / "main.md"
     content = "@a.md @docs/b.mdc @docs/c.markdown @docs/d.mdx @README"
-    result = expand_imports(content, src)
+    result = expand_imports(content, src, src.parent)
     for body in ("MD-BODY", "MDC-BODY", "MARKDOWN-BODY", "MDX-BODY", "README-BODY"):
         assert body in result
 
@@ -95,7 +95,7 @@ def test_repeated_sibling_import_expands_both_occurrences(tmp_path: Path) -> Non
     (tmp_path / "b.md").write_text("SHARED-BODY", encoding="utf-8")
     main = tmp_path / "main.md"
     content = "First: @b.md\nSecond: @b.md\n"
-    result = expand_imports(content, main)
+    result = expand_imports(content, main, main.parent)
     assert result.count("SHARED-BODY") == 2, result
 
 
@@ -106,7 +106,7 @@ def test_real_cycle_still_detected_and_left_literal(tmp_path: Path) -> None:
     b = tmp_path / "b.md"
     a.write_text("A-BODY @b.md", encoding="utf-8")
     b.write_text("B-BODY @a.md", encoding="utf-8")
-    result = expand_imports(a.read_text(encoding="utf-8"), a)
+    result = expand_imports(a.read_text(encoding="utf-8"), a, a.parent)
     # b's expansion is spliced in, but b's own @a.md reference is a cycle
     # (a.md is still on the ancestor stack) and must stay literal.
     assert "B-BODY" in result
@@ -129,7 +129,7 @@ def test_at_path_inside_inline_code_not_expanded(tmp_path: Path) -> None:
     (tmp_path / "reporails" / "cli").write_text("SHOULD-NOT-EXPAND", encoding="utf-8")
     src = tmp_path / "main.md"
     content = "Run `npx @reporails/cli check .` to lint your repo."
-    result = expand_imports(content, src)
+    result = expand_imports(content, src, src.parent)
     assert result == content
     assert "SHOULD-NOT-EXPAND" not in result
 
@@ -142,7 +142,7 @@ def test_at_path_outside_code_still_expands(tmp_path: Path) -> None:
     (tmp_path / "docs" / "guide.md").write_text("GUIDE-BODY", encoding="utf-8")
     src = tmp_path / "main.md"
     content = "Run `npx @reporails/cli check .` then read @docs/guide.md for setup."
-    result = expand_imports(content, src)
+    result = expand_imports(content, src, src.parent)
     assert "GUIDE-BODY" in result
 
 
@@ -157,7 +157,7 @@ def test_at_path_in_fenced_block_still_skipped_alongside_inline_code(tmp_path: P
     (tmp_path / "reporails" / "cli").write_text("INLINE-SHOULD-NOT-EXPAND", encoding="utf-8")
     src = tmp_path / "main.md"
     content = "```\n@x.md\n```\nRun `npx @reporails/cli check .` now."
-    result = expand_imports(content, src)
+    result = expand_imports(content, src, src.parent)
     assert result == content
     assert "FENCE-SHOULD-NOT-EXPAND" not in result
     assert "INLINE-SHOULD-NOT-EXPAND" not in result
@@ -171,6 +171,6 @@ def test_inline_code_mask_does_not_change_line_map(tmp_path: Path) -> None:
     (the identity map)."""
     src = tmp_path / "main.md"
     content = "Run `npx @reporails/cli check .` here.\nSee @docs/guide.md there.\n"
-    expanded, line_map, _origins = expand_imports_with_origins(content, src)
+    expanded, line_map, _origins = expand_imports_with_origins(content, src, src.parent)
     assert expanded == content  # neither reference resolves to a real file -> unexpanded
     assert line_map == [1, 2, 3]

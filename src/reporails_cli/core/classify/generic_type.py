@@ -19,8 +19,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reporails_cli.core.classify.link_walker import LinkEdge
 from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES
+from reporails_cli.core.platform.dto.classify import LinkEdge
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 
 GENERIC_TYPE_NAME = "generic"

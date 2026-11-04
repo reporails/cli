@@ -6,6 +6,7 @@ from typing import Literal, get_args
 
 CheckFormat = Literal["text", "json", "github"]
 RulesListFormat = Literal["text", "md", "json"]
+EventsFormat = Literal["json"]
 
 # Accepted values of `ails check --format`, in the order help text names them.
 CHECK_FORMATS: tuple[CheckFormat, ...] = get_args(CheckFormat)
@@ -16,3 +17,6 @@ MACHINE_READABLE_CHECK_FORMATS: tuple[CheckFormat, ...] = tuple(f for f in CHECK
 RULES_LIST_FORMATS: tuple[RulesListFormat, ...] = get_args(RulesListFormat)
 # Rules-list formats that need no Markdown rendering: `rules agents` and `rules explain` accept these.
 RULES_PLAIN_FORMATS: tuple[RulesListFormat, ...] = tuple(f for f in RULES_LIST_FORMATS if f != "md")
+
+# Accepted values of `ails events --format`.
+EVENTS_FORMATS: tuple[EventsFormat, ...] = get_args(EventsFormat)

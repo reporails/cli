@@ -19,12 +19,12 @@ import numpy as np
 import pytest
 
 from reporails_cli.core.mapper import bio_graphs, bio_tagger, graph_hash
-from reporails_cli.core.mapper.bio_tagger import Span
 from reporails_cli.core.mapper.multislot_frames import (
     _assign_span,
     _charge_runs,
     _decode_span_axis_runs,
 )
+from reporails_cli.core.platform.dto.mapping import Span
 
 _CHARGE_TAG = {"O": 0, "B-DIR": 1, "I-DIR": 2, "B-REST": 3, "I-REST": 4, "B-NEUT": 5, "I-NEUT": 6}
 

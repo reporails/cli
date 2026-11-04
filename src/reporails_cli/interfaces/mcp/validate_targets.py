@@ -12,12 +12,13 @@ from pathlib import Path
 from reporails_cli.core.classify.capability_paths import TargetError, classify_target_token, sniff_agent
 from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
 from reporails_cli.core.discovery.agents import detect_agents
-from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.lint.suppression import renumbered_json
 from reporails_cli.core.pipeline.mapping import resolve_agent_filters
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str, str_list
+from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.interfaces.mcp.remedy_brief import resolve_from_root
 
 

@@ -7,13 +7,14 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING
 
 from reporails_cli.core.mapper.annotate import check_specificity
 from reporails_cli.core.mapper.charge_floors import _classify_content
 from reporails_cli.core.mapper.classify_phases import ChargeVerdict
 from reporails_cli.core.mapper.md_parser import replace_code_spans
 from reporails_cli.core.mapper.model_manifest import get_models_path
+from reporails_cli.core.platform.dto.mapping import AppearanceFields, SpecificityFields
 from reporails_cli.core.platform.dto.ruleset import Atom, AtomFormat, Specificity
 
 if TYPE_CHECKING:
@@ -76,28 +77,12 @@ def _count_tokens(text: str) -> int:
     return len(enc.ids) - sum(mask) if mask else len(enc.ids)
 
 
-class _AppearanceFields(TypedDict):
-    """The specificity and token-list fields of an Atom, passed on as keyword arguments."""
-
-    specificity: Specificity
-    named_tokens: list[str]
-    unformatted_code: list[str]
-    italic_tokens: list[str]
-    bold_tokens: list[str]
-
-
-class _SpecificityFields(_AppearanceFields):
-    """The appearance fields with the token count of the line."""
-
-    token_count: int
-
-
 def _specificity_of(spec: str) -> Specificity:
     """The specificity `check_specificity` named: `named`, otherwise `abstract`."""
     return "named" if spec == "named" else "abstract"
 
 
-def _specificity_fields(text: str, counted: str | None = None) -> _SpecificityFields:
+def _specificity_fields(text: str, counted: str | None = None) -> SpecificityFields:
     """Build specificity-related Atom fields from text.
 
     The length is counted on `counted` (the text without inline formatting) when given.
@@ -175,7 +160,7 @@ def _ends_with_colon(plain_text: str) -> bool:
     return plain_text.rstrip().endswith(":")
 
 
-def _appearance_fields(text: str, *, literal: bool) -> _AppearanceFields:
+def _appearance_fields(text: str, *, literal: bool) -> AppearanceFields:
     """The specificity and rendered-appearance fields of `text`; a literal (fenced) line renders nothing."""
     spec, named, unformatted, italic, bold = check_specificity(text)
     return {

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from functools import lru_cache
-from typing import NamedTuple
 
 from markdown_it import MarkdownIt
 from markdown_it.rules_inline import StateInline
@@ -24,49 +23,13 @@ from markdown_it.rules_inline import link as _link_rule
 from markdown_it.token import Token
 from markdown_it.utils import EnvType
 
+from reporails_cli.core.platform.dto.mapping import CodeSpan, EmphasisRun, InlineSpans
+
 # markdown-it token types: a fenced or an indented code block; a line break inside a paragraph; the opening of
 # a link or an image.
 CODE_BLOCK_TOKENS = frozenset({"fence", "code_block"})
 LINE_BREAK_TOKENS = frozenset({"softbreak", "hardbreak"})
 LINK_TOKENS = frozenset({"link_open", "image"})
-
-
-class CodeSpan(NamedTuple):
-    """One code span of a text: where it sits (delimiters included) and what it holds."""
-
-    start: int
-    end: int
-    content: str
-
-
-class EmphasisRun(NamedTuple):
-    """One bold or italic run of a text: where it sits (delimiters included), what it wraps, and the
-    delimiter it was written with (`*`, `**`, `_` or `__`)."""
-
-    start: int
-    end: int
-    content_start: int
-    content_end: int
-    marker: str
-
-    @property
-    def strong(self) -> bool:
-        """Whether the run is bold (a double delimiter) rather than italic."""
-        return len(self.marker) == 2
-
-    def shifted(self, by: int) -> EmphasisRun:
-        """The same run `by` characters further on (or back, when negative)."""
-        return EmphasisRun(self.start + by, self.end + by, self.content_start + by, self.content_end + by, self.marker)
-
-
-class InlineSpans(NamedTuple):
-    """What the inline rules recorded on one inline token: its code spans, its written links and
-    images and its inline HTML tags (character ranges), and its emphasis runs, each in order of start."""
-
-    code: tuple[CodeSpan, ...]
-    links: tuple[tuple[int, int], ...]
-    emphasis: tuple[EmphasisRun, ...]
-    html: tuple[tuple[int, int], ...] = ()
 
 
 def _record_span(

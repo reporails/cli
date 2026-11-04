@@ -12,26 +12,13 @@ import json
 import re
 import tomllib
 from collections.abc import Iterator
-from dataclasses import dataclass
 from pathlib import Path
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
+from reporails_cli.core.platform.dto.hooks import HookConfig, HookPath, HookSite
 
 # A config file larger than this is not read.
 MAX_HOOK_CONFIG_BYTES = 1_048_576
-
-# A data path from the top of the parsed file to one handler: keys and list positions.
-HookPath = tuple[str | int, ...]
-
-
-@dataclass(frozen=True)
-class HookSite:
-    """One hook handler: its event, the matcher it is registered under, the handler and its data path."""
-
-    event: str
-    matcher: str
-    handler: JsonObject
-    path: HookPath
 
 
 def value_at(data: JsonValue, path: HookPath) -> JsonValue:
@@ -147,14 +134,6 @@ def _load_json(text: str) -> JsonValue:
 
     data: JsonValue = json.loads(text, object_pairs_hook=located)
     return data
-
-
-@dataclass(frozen=True)
-class HookConfig:
-    """A hook config file read once: its text and the data parsed from it."""
-
-    text: str
-    data: JsonValue
 
 
 def read_hook_config(path: Path) -> HookConfig | None:

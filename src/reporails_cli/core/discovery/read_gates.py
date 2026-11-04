@@ -17,11 +17,9 @@ Anything under a `.agents/` directory is never read.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
-from reporails_cli.core.discovery.file_aliases import AliasHow, has_same_text
+from reporails_cli.core.discovery.file_aliases import has_same_text
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.discovery.walk import list_dir, safe_resolve
 from reporails_cli.core.platform.config.claude_settings import (
@@ -31,6 +29,7 @@ from reporails_cli.core.platform.config.claude_settings import (
     MODES_WITHOUT_LAUNCH_INSTRUCTIONS,
     claude_instruction_files_mode,
 )
+from reporails_cli.core.platform.dto.discovery import AgentsMdReads, AliasFile, SkippedFile, SkipReason
 
 _AGENTS_MD = "agents.md"
 _CLAUDE_FAMILY = ("claude.md", "claude.local.md")
@@ -89,40 +88,6 @@ def _never_read(path: Path, root: Path) -> bool:
 
 def _loads_at_session_start(path: Path, root: Path) -> bool:
     return path.parent in (root, root / ".claude")
-
-
-SkipReason = Literal["claude_md_present", "subdir_has_claude_md", "setting_off", "never_read"]
-
-
-@dataclass(frozen=True)
-class SkippedFile:
-    """An `AGENTS.md` Claude Code does not read, and why; `cause` is the `CLAUDE.md`-family file that made
-    it skip the file (`claude_md_present`, `subdir_has_claude_md`), None for the other reasons."""
-
-    path: Path
-    reason: SkipReason
-    cause: Path | None
-
-
-@dataclass(frozen=True)
-class AliasFile:
-    """An `AGENTS.md` whose text reaches Claude through a `CLAUDE.md` it reads: `link` when it is the
-    same file under another name, `copy` when it is a separate file with exactly the same text."""
-
-    path: Path
-    same_as: Path
-    how: AliasHow
-
-
-@dataclass(frozen=True)
-class AgentsMdReads:
-    """The `AGENTS.md` files Claude Code loads, the ones it skips, the ones that are a `CLAUDE.md`
-    it reads under another name, and the setting that decided."""
-
-    kept: list[Path]
-    skipped: list[SkippedFile]
-    mode: str
-    aliases: list[AliasFile]
 
 
 def claude_agents_md_reads(found: list[Path], target: Path, read: Mapping[Path, str] | None = None) -> AgentsMdReads:

@@ -6,7 +6,7 @@ import pytest
 
 from reporails_cli.core.heal.preservation import structure
 from reporails_cli.core.mapper.classify import absolute_cues, leading_prohibition
-from reporails_cli.core.mapper.structure import LineSpans, line_spans, paragraph_lines, read_structure
+from reporails_cli.core.mapper.structure import fragment_line_spans, line_spans, paragraph_lines, read_structure
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 
 _DOC = """---
@@ -180,7 +180,7 @@ def test_line_spans_and_a_fragment_agree_on_where_a_link_sits() -> None:
     text = "See [a `b` c](d.md) now"
     (spans,) = line_spans(text)
     assert spans.links == ((4, 19),) and text[4:19] == "[a `b` c](d.md)"
-    assert LineSpans.of_fragment(text) == spans
+    assert fragment_line_spans(text) == spans
     assert spans.code == ((7, 10),)
 
 
@@ -191,7 +191,7 @@ def test_a_link_reference_definition_is_a_link_in_a_file_and_in_a_fragment() -> 
     spans = line_spans(text)
     assert spans[0].links == ((4, 11),)
     assert spans[2].links == ((0, 22),)
-    assert LineSpans.of_fragment("[guide]: docs/build.sh").links == ((0, 22),)
+    assert fragment_line_spans("[guide]: docs/build.sh").links == ((0, 22),)
 
 
 @pytest.mark.unit
@@ -235,7 +235,7 @@ def test_line_spans_place_emphasis_runs_in_line_columns_and_a_fragment_agrees() 
     assert spans[3].emphasis == ()  # bold typed inside a fence is text
     assert spans[6].emphasis == spans[7].emphasis == ()  # a run over a line break sits on no one line
     line = "Do **not** push"
-    assert LineSpans.of_fragment(line).emphasis == line_spans(line)[0].emphasis
+    assert fragment_line_spans(line).emphasis == line_spans(line)[0].emphasis
 
 
 @pytest.mark.unit
@@ -277,7 +277,7 @@ def test_a_bare_url_target_is_the_url_text_the_parse_reads(text: str, expected: 
 def test_line_spans_place_inline_html() -> None:
     (spans,) = line_spans('See <img src="a.png"> now')
     assert spans.html == ((4, 21),)
-    assert LineSpans.of_fragment('See <img src="a.png"> now').html == ((4, 21),)
+    assert fragment_line_spans('See <img src="a.png"> now').html == ((4, 21),)
 
 
 @pytest.mark.unit

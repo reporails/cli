@@ -31,7 +31,7 @@ from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from reporails_cli.core.classify.file_tags import classify_file
+from reporails_cli.core.discovery.file_tags import classify_file
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.imports import expand_imports_with_origins
 from reporails_cli.core.platform.adapters.rules_query import rule_slug
@@ -50,12 +50,8 @@ from reporails_cli.core.platform.dto.diagnostics import (
     workflow_summary,
 )
 from reporails_cli.core.platform.dto.models import Rule
-from reporails_cli.core.platform.runtime.merger import (
-    CombinedResult,
-    drop_findings,
-    normalize_finding_path,
-    rebuild_cross_file_stats,
-)
+from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.runtime.merger import drop_findings, normalize_finding_path, rebuild_cross_file_stats
 from reporails_cli.core.platform.utils.directives import parse_directives
 from reporails_cli.core.platform.utils.utils import matches_any_glob
 
@@ -85,7 +81,7 @@ class SuppressionIndex(dict[tuple[str, int], set[str]]):
 ImportedPlaces = Mapping[tuple[str, int], tuple[str, int]]
 
 
-def _index_file(index: SuppressionIndex, rel: str, path: Path) -> None:
+def _index_file(index: SuppressionIndex, rel: str, path: Path, boundary: Path) -> None:
     """Read `path`, expand its imports and record each directive into `index`.
 
     A directive written in the file itself is keyed under `rel` and its source line;
@@ -97,7 +93,7 @@ def _index_file(index: SuppressionIndex, rel: str, path: Path) -> None:
     except OSError:
         return
     try:
-        text, line_map, origins = expand_imports_with_origins(raw, path)
+        text, line_map, origins = expand_imports_with_origins(raw, path, boundary)
     except (OSError, UnicodeDecodeError, RecursionError):
         text, line_map, origins = raw, list(range(1, len(raw.split("\n")) + 1)), []
     for lineno, rules in parse_directives(text).items():
@@ -115,7 +111,7 @@ def _index_file(index: SuppressionIndex, rel: str, path: Path) -> None:
 
 def build_index(
     finding_files: Iterable[str],
-    project_root: Path | None,
+    project_root: Path,
 ) -> SuppressionIndex:
     """Scan each finding-bearing file for directives and key them by (file, line).
 
@@ -131,13 +127,13 @@ def build_index(
     for rel in set(finding_files):
         path = resolve_finding_path(rel, project_root)
         if path is not None:
-            _index_file(index, rel, path)
+            _index_file(index, rel, path, project_root)
     return index
 
 
 def suppressed_lines(
     finding_files: Iterable[str],
-    project_root: Path | None,
+    project_root: Path,
 ) -> dict[str, set[int]]:
     """Per-file set of lines carrying any suppression directive (for the heal write path).
 
@@ -344,14 +340,19 @@ def list_heal_excluded(
 
     The rows leave their location (`prune_workflow`: a location left with nothing is dropped,
     the rest are numbered again from 1). Each rule that fired on an excluded file is listed once
-    with its row count.
+    with its row count and the files it fired on (the project-relative paths `norm` gives).
     """
     counts: dict[str, int] = {}
+    files_of: dict[str, list[str]] = {}
     for loc in workflow.locations:
         rows = (*((f.file, f.rule) for f in walk_findings(loc.findings)), *((r.file, r.rule) for r in loc.relations))
         for file, rule in rows:
-            if excluded(norm(file)):
-                counts[rule] = counts.get(rule, 0) + 1
+            rel = norm(file)
+            if not excluded(rel):
+                continue
+            counts[rule] = counts.get(rule, 0) + 1
+            if rel not in files_of.setdefault(rule, []):
+                files_of[rule].append(rel)
     if not counts:
         return workflow
     pruned = prune_workflow(
@@ -359,7 +360,10 @@ def list_heal_excluded(
     )
     listed = (
         *pruned.listed,
-        *(ListedFinding(rule=rule, reason=HEAL_EXCLUDED_REASON, count=n) for rule, n in counts.items()),
+        *(
+            ListedFinding(rule=rule, reason=HEAL_EXCLUDED_REASON, count=n, files=tuple(files_of[rule]))
+            for rule, n in counts.items()
+        ),
     )
     return replace(pruned, listed=listed, summary=workflow_summary(pruned.locations, listed))
 
@@ -378,7 +382,9 @@ def apply_config_listing(result: CombinedResult, project_root: Path | None = Non
     patterns = get_project_config(project_root).heal_exclude if project_root is not None else []
     if patterns and project_root is not None:
         projected = list_heal_excluded(
-            projected, lambda rel: matches_any_glob(project_root / rel, patterns, project_root), norm
+            projected,
+            lambda rel: matches_any_glob(project_root / rel, patterns, project_root, root_anchored=True),
+            norm,
         )
     return result if projected is workflow else replace(result, reply=replace(result.reply, workflow=projected))
 
@@ -389,7 +395,7 @@ def _workflow_files(workflow: RemediationWorkflow, norm: Callable[[str], str]) -
 
 def apply_suppressions(
     result: CombinedResult,
-    project_root: Path | None = None,
+    project_root: Path,
     imported: ImportedPlaces | None = None,
 ) -> CombinedResult:
     """Return `result` with directive-suppressed findings removed and stats rebuilt.

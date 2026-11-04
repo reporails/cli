@@ -13,7 +13,7 @@ from reporails_cli.core.lint.suppression import (
 )
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, ServerReply
+from reporails_cli.core.platform.dto.platform import CombinedResult, CombinedStats, ServerReply
 
 CFG = ".claude/settings.local.json"
 RULE_A = "CORE:E:0004"
@@ -85,3 +85,15 @@ def test_a_rule_already_listed_gets_its_count_added() -> None:
     )
     out = list_config_locations(wf, _norm)
     assert [(e.rule, e.reason, e.count) for e in out.listed] == [(RULE_A, "no_remedy", 4)]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_diagnostic
+def test_a_heal_excluded_rule_lists_the_files_it_fired_on() -> None:
+    from reporails_cli.core.lint.suppression import list_heal_excluded
+
+    a, b = "a/CLAUDE.md", "b/CLAUDE.md"
+    wf = _wf([_loc(1, "main", [a, b], [_row(RULE_A, a), _row(RULE_A, b), _row(RULE_A, a, 9)])])
+    out = list_heal_excluded(wf, lambda rel: True, _norm)
+    [entry] = out.listed
+    assert (entry.rule, entry.count, entry.files) == (RULE_A, 3, (a, b))

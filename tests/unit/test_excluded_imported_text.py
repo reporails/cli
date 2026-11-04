@@ -8,10 +8,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from reporails_cli.core.discovery.exclusions import load_run_exclusions
+from reporails_cli.core.discovery.exclusions import load_run_exclusions, with_named
 from reporails_cli.core.discovery.features import detect_features_filesystem
-from reporails_cli.core.pipeline.assemble import AssembleInputs, _imports_left_out
-from reporails_cli.core.platform.runtime.merger import CombinedResult, Omissions
+from reporails_cli.core.pipeline.assemble import _imports_left_out
+from reporails_cli.core.platform.dto.pipeline import AssembleInputs
+from reporails_cli.core.platform.dto.platform import CombinedResult, Omissions
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters import mcp_view
 from reporails_cli.formatters.text.display_constants import excluded_phrase
@@ -118,7 +119,7 @@ def test_a_capability_left_out_by_file_glob_is_not_counted(tmp_path: Path) -> No
     assert detect_features_filesystem(tmp_path).has_skills_dir
     left_out = load_run_exclusions(tmp_path, None, [".claude/skills/*/SKILL.md"])
     assert not detect_features_filesystem(tmp_path, exclusions=left_out).has_skills_dir
-    assert detect_features_filesystem(tmp_path, exclusions=left_out.with_named([skill])).has_skills_dir
+    assert detect_features_filesystem(tmp_path, exclusions=with_named(left_out, [skill])).has_skills_dir
 
 
 @pytest.mark.unit
@@ -131,7 +132,7 @@ def test_a_file_named_inside_a_left_out_folder_still_counts_toward_the_level(tmp
     skill.write_text("---\nname: foo\ndescription: d\n---\nBody.\n", encoding="utf-8")
     left_out = load_run_exclusions(tmp_path, ["skills"], None)
     assert not detect_features_filesystem(tmp_path, exclusions=left_out).has_skills_dir
-    assert detect_features_filesystem(tmp_path, exclusions=left_out.with_named([skill])).has_skills_dir
+    assert detect_features_filesystem(tmp_path, exclusions=with_named(left_out, [skill])).has_skills_dir
 
 
 @pytest.mark.unit
@@ -141,4 +142,4 @@ def test_an_import_that_was_itself_named_is_not_a_left_out_import(tmp_path: Path
     atom = SimpleNamespace(file_path=str(tmp_path / "CLAUDE.md"), imported_from="docs/x.md")
     inp = replace(_inputs(tmp_path, None), ruleset_map=SimpleNamespace(atoms=[atom]))
     assert _imports_left_out(inp, left_out)
-    assert not _imports_left_out(inp, left_out.with_named([tmp_path / "docs" / "x.md"]))
+    assert not _imports_left_out(inp, with_named(left_out, [tmp_path / "docs" / "x.md"]))

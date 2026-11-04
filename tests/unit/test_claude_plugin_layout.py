@@ -22,14 +22,14 @@ from reporails_cli.core.discovery.agents import (
     detect_agents,
     get_all_instruction_files,
 )
-from reporails_cli.core.discovery.exclusions import RunExclusions
+from reporails_cli.core.discovery.exclusions import no_exclusions
 from reporails_cli.core.discovery.plugin_roots import (
     expand_plugin_patterns,
     find_plugin_roots,
     plugin_relative_path,
     split_plugin_pattern,
 )
-from reporails_cli.core.mapper.inspect import _detect_file_activation, _load_registry
+from reporails_cli.core.mapper.inspect import _detect_file_activation, load_registry
 
 MANIFEST = ".claude-plugin/plugin.json"
 SKILL = "---\nname: fmt\ndescription: Formats Python files\n---\n\nRun `ruff format` on each changed file.\n"
@@ -77,11 +77,9 @@ def test_plugin_roots_at_the_root_and_below_it(tmp_path: Path) -> None:
     _plugin(tmp_path)
     _plugin(tmp_path / "plugins" / "demo")
     _plugin(tmp_path / "node_modules" / "vendored")
-    roots = find_plugin_roots(tmp_path, MANIFEST, RunExclusions.none(tmp_path))
+    roots = find_plugin_roots(tmp_path, MANIFEST, no_exclusions(tmp_path))
     assert roots == [tmp_path, tmp_path / "plugins" / "demo"]
-    assert expand_plugin_patterns(
-        [f"<{MANIFEST}>/skills/**/SKILL.md", "x.md"], tmp_path, RunExclusions.none(tmp_path)
-    ) == [
+    assert expand_plugin_patterns([f"<{MANIFEST}>/skills/**/SKILL.md", "x.md"], tmp_path, no_exclusions(tmp_path)) == [
         "skills/**/SKILL.md",
         "plugins/demo/skills/**/SKILL.md",
         "x.md",
@@ -92,7 +90,7 @@ def test_plugin_roots_at_the_root_and_below_it(tmp_path: Path) -> None:
 @pytest.mark.subsys_classify
 def test_no_manifest_no_plugin_pattern(tmp_path: Path) -> None:
     _write(tmp_path / "skills" / "fmt" / "SKILL.md", SKILL)
-    assert expand_plugin_patterns([f"<{MANIFEST}>/skills/**/SKILL.md"], tmp_path, RunExclusions.none(tmp_path)) == []
+    assert expand_plugin_patterns([f"<{MANIFEST}>/skills/**/SKILL.md"], tmp_path, no_exclusions(tmp_path)) == []
     assert plugin_relative_path(tmp_path / "skills" / "fmt" / "SKILL.md", tmp_path, MANIFEST) is None
 
 
@@ -143,7 +141,7 @@ def test_plugin_components_classify_as_claude_types(tmp_path: Path) -> None:
 def test_the_mapper_types_plugin_components_as_claude_types(tmp_path: Path) -> None:
     project = tmp_path / "market"
     _plugin(project / "plugins" / "demo")
-    registry = _load_registry()
+    registry = load_registry()
     skill = _detect_file_activation(project / "plugins/demo/skills/fmt/SKILL.md", project, registry)[:5]
     agent = _detect_file_activation(project / "plugins/demo/agents/reviewer.md", project, registry)[:5]
     assert (skill[0], skill[3], skill[4]) == ("on_invocation", "claude", "skills")
@@ -160,7 +158,7 @@ def test_a_top_level_skills_folder_without_a_manifest_is_not_claudes(tmp_path: P
     agent = _write(project / "agents" / "reviewer.md", AGENT)
     assert _scope(project) == {"CLAUDE.md"}
     assert classify_files(project, [skill, agent], load_file_types("claude")) == []
-    registry = _load_registry()
+    registry = load_registry()
     assert _detect_file_activation(skill, project, registry)[:5][3:] == ("generic", "generic")
 
 
@@ -180,7 +178,7 @@ def test_an_unreadable_folder_is_skipped_and_the_plugin_beside_it_is_found(tmp_p
     (locked / "inner").mkdir(parents=True)
     locked.chmod(0)
     try:
-        assert find_plugin_roots(project, MANIFEST, RunExclusions.none(project)) == [project / "plugins" / "demo"]
+        assert find_plugin_roots(project, MANIFEST, no_exclusions(project)) == [project / "plugins" / "demo"]
         clear_agent_cache()
         assert "claude" in {a.agent_type.id for a in detect_agents(project)}
     finally:

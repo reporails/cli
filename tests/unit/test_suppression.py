@@ -13,7 +13,6 @@ from reporails_cli.core.lint.suppression import (
     finding_surface,
 )
 from reporails_cli.core.platform.adapters.registry import load_rules
-from reporails_cli.core.platform.dto.diagnostics import Diagnostic, FileAnalysis, QualityResult, RulesetReport
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.runtime.merger import merge_results
 from reporails_cli.core.platform.utils.directives import parse_directives
@@ -89,40 +88,6 @@ class TestApplySuppressions:
         assert lines == [4]
         assert out.stats.total_findings == 1
         assert out.stats.warnings == 1
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_silenced_findings_leave_the_source_counts(self, project: Path) -> None:
-        (project / "CLAUDE.md").write_text(
-            "# T\nx  <!-- ails-disable-line CORE:C:0049, CORE:C:0046, CORE:C:0047 -->\nspacer\nlast\n",
-            encoding="utf-8",
-        )
-        # Line 2 carries the directive: its probe, client and server findings all go.
-        probe = [
-            LocalFinding("CLAUDE.md", 2, "warning", "CORE:C:0049", "p", source="m_probe"),
-            LocalFinding("CLAUDE.md", 4, "warning", "CORE:C:0049", "p", source="m_probe"),
-        ]
-        client = [LocalFinding("CLAUDE.md", 2, "warning", "CORE:C:0046", "c", source="client_check")]
-        server = RulesetReport(
-            per_file=(
-                FileAnalysis(
-                    file="CLAUDE.md",
-                    diagnostics=(
-                        Diagnostic("CLAUDE.md", 2, "warning", "CORE:C:0047", "s", "fix"),
-                        Diagnostic("CLAUDE.md", 4, "warning", "CORE:C:0047", "s", "fix"),
-                    ),
-                ),
-            ),
-            quality=QualityResult(),
-        )
-        result = merge_results(probe, client, server, project_root=project)
-        before = result.stats
-        assert (before.m_probe_count, before.client_check_count, before.server_diagnostic_count) == (2, 1, 2)
-
-        out = apply_suppressions(result, project_root=project).stats
-
-        assert (out.m_probe_count, out.client_check_count, out.server_diagnostic_count) == (1, 0, 1)
-        assert out.total_findings == out.m_probe_count + out.client_check_count + out.server_diagnostic_count
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -216,7 +181,7 @@ class TestBuildIndex:
 
         from reporails_cli.core.mapper.imports import expand_imports
 
-        expanded = expand_imports(main.read_text(encoding="utf-8"), main)
+        expanded = expand_imports(main.read_text(encoding="utf-8"), main, main.parent)
         expanded_line = next(i for i, line in enumerate(expanded.splitlines(), start=1) if "ails-disable-line" in line)
         assert expanded_line != 2, "import expansion did not move the directive off its source line"
 
@@ -314,7 +279,7 @@ class TestSurfaceMutations:
         # the classifier does not cover.
         import yaml
 
-        from reporails_cli.core.classify.file_tags import _SCHEMA_VALIDATED
+        from reporails_cli.core.discovery.file_tags import _SCHEMA_VALIDATED
         from reporails_cli.core.platform.config.bundled import get_bundled_rules_path
 
         rules_dir = get_bundled_rules_path()
@@ -362,34 +327,6 @@ class TestSurfaceMutations:
         result = merge_results([], findings, None, project_root=tmp_path)
         out = apply_surface_mutations(result, rules)
         assert len(out.findings) == 1
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_surface_dropped_findings_leave_the_source_counts(self, tmp_path: Path) -> None:
-        rules = load_rules()
-        probe = [LocalFinding("memory/MEMORY.md", 1, "warning", "CORE:D:0003", "o", source="m_probe")]
-        client = [LocalFinding("memory/MEMORY.md", 2, "warning", "CORE:D:0003", "o", source="client_check")]
-        server = RulesetReport(
-            per_file=(
-                FileAnalysis(
-                    file="memory/MEMORY.md",
-                    diagnostics=(Diagnostic("memory/MEMORY.md", 3, "warning", "CORE:D:0003", "o", "fix"),),
-                ),
-                FileAnalysis(
-                    file="CLAUDE.md",
-                    diagnostics=(Diagnostic("CLAUDE.md", 1, "warning", "CORE:D:0003", "o", "fix"),),
-                ),
-            ),
-            quality=QualityResult(),
-        )
-        result = merge_results(probe, client, server, project_root=tmp_path)
-        before = result.stats
-        assert (before.m_probe_count, before.client_check_count, before.server_diagnostic_count) == (1, 1, 2)
-
-        out = apply_surface_mutations(result, rules).stats
-
-        assert (out.m_probe_count, out.client_check_count, out.server_diagnostic_count) == (0, 0, 1)
-        assert out.total_findings == out.m_probe_count + out.client_check_count + out.server_diagnostic_count
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint

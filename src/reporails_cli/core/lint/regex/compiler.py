@@ -3,42 +3,16 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from pathlib import Path
-
-import regex as re
 
 from reporails_cli.core.platform.adapters.registry import RuleReadError, read_checks_document
 from reporails_cli.core.platform.adapters.rule_builder import load_checks
 from reporails_cli.core.platform.contract.rule_pattern import compile_rule_pattern
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
+from reporails_cli.core.platform.dto.lint import CompiledCheck, CompiledRuleSet
 from reporails_cli.core.platform.dto.models import Check, Severity
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class CompiledCheck:
-    """A single compiled regex check from a YAML rule file."""
-
-    id: str
-    message: str
-    severity: FindingSeverity
-    patterns: tuple[re.Pattern[str], ...]  # AND — all must match
-    negative_patterns: tuple[re.Pattern[str], ...]  # AND — none must match
-    either_patterns: tuple[re.Pattern[str], ...]  # OR — any must match
-    path_includes: tuple[str, ...]  # Resolved path filters
-    every_match: bool = False  # True → report every matching line, not the first (a check that forbids something)
-    follow_imports: bool = False  # True → also read the text an `@path` import splices in, reporting at its source
-    entry_only: bool = False  # True → only a skill's entry file is checked, once the run records skills
-    min_lines: int = 0  # > 0 → a file shorter than this many lines is neither failing nor passing the check
-
-
-@dataclass
-class CompiledRuleSet:
-    """All compiled checks from a set of YAML rule files."""
-
-    checks: list[CompiledCheck] = field(default_factory=list)
 
 
 def display_severity(raw: str) -> FindingSeverity:

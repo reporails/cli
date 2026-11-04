@@ -311,7 +311,7 @@ class TestLevelFollowsTheCheckedAgent:
     @pytest.mark.unit
     @pytest.mark.subsys_gates
     def test_claude_auto_memory_counts_for_claude_only(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        from reporails_cli.core.discovery.features import claude_project_folder_name
+        from reporails_cli.core.discovery.agent_discovery import claude_project_folder_name
 
         project = tmp_path / "proj"
         project.mkdir()

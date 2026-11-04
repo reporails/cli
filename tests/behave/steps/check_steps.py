@@ -8,8 +8,17 @@ derivation, and both the text and JSON formatters. No in-process ``CliRunner``.
 
 from __future__ import annotations
 
+import subprocess
+
 from behave import given, then, when  # type: ignore[import-untyped]
-from support import build_project, findings, run_ails, write_claude  # behave puts features/ on sys.path
+from support import (  # behave puts features/ on sys.path
+    build_project,
+    document,
+    findings,
+    run_ails,
+    write_claude,
+    write_config,
+)
 
 # A sparse instruction file with real error findings; the rich rewrite carries more
 # structure, specificity, and backticked constructs, so the finding set changes.
@@ -22,6 +31,8 @@ _RICH = (
     "- Rotate credentials via the `scripts/rotate.sh` helper.\n\n## Layout\n\n"
     "- Source lives in `src/`; tests in `tests/`.\n"
 )
+# A broken link and a missing import give findings with no model on disk, as on the CI runner.
+_SPARSE_BROKEN_REFS = _SPARSE + "\nSee [guide](missing/guide.md) and @nothere.md\n"
 
 # The finding-tuple wire contract every JSON finding must carry.
 _TUPLE_KEYS = ("line", "severity", "rule", "category", "message")
@@ -106,3 +117,86 @@ def step_determinism(context):
 def step_reacts_to_edit(context):
     assert len(context.runs) >= 2, "need a baseline run and a post-edit run"
     assert context.runs[-1] != context.runs[0], "pipeline did not react to the persisted edit"
+
+
+def _json_files(context) -> dict:
+    return document(context.result).get("files", {})
+
+
+@given('a git project whose "sub/CLAUDE.md" has findings that the project config disables')
+def step_nested_file_with_project_config(context):
+    context.project = build_project(context.tmpdir)
+    nested = context.project / "sub"
+    nested.mkdir()
+    write_claude(context.project, _RICH)
+    (nested / "CLAUDE.md").write_text(_SPARSE_BROKEN_REFS, encoding="utf-8")
+    baseline = document(run_ails(context.project, "check", "sub/CLAUDE.md", "--format", "json", home=context.home))
+    rules = sorted({f["rule"] for record in baseline["files"].values() for f in record.get("findings", [])})
+    assert rules, "the baseline run reported no rule, so nothing was disabled"
+    context.disabled = rules
+    write_config(context.project, "disabled_rules:\n" + "".join(f"  - {rule}\n" for rule in rules))
+
+
+@given('a git project "proj" elsewhere with a CLAUDE.md and a "docs/CLAUDE.md"')
+def step_other_project(context):
+    context.elsewhere = context.tmpdir / "elsewhere"
+    proj = context.elsewhere / "proj"
+    (proj / "docs").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=proj, check=True)
+    (proj / "CLAUDE.md").write_text(_SPARSE, encoding="utf-8")
+    (proj / "docs" / "CLAUDE.md").write_text(_SPARSE, encoding="utf-8")
+    context.project = context.tmpdir / "cwd"
+    context.project.mkdir()
+
+
+@when('I run "ails check" on "{target}" from the folder beside it')
+def step_run_elsewhere(context, target):
+    absolute = str(context.elsewhere / target)
+    context.result = run_ails(context.project, "check", absolute, "--format", "json", home=context.home)
+
+
+@then('the json files map contains only "{name}"')
+def step_json_files_only(context, name):
+    assert sorted(_json_files(context)) == [name], sorted(_json_files(context))
+
+
+@then("that file carries none of the disabled rules")
+def step_file_no_disabled_rule(context):
+    leaked = sorted({f["rule"] for f in findings(context.result)} & set(context.disabled))
+    assert not leaked, leaked
+
+
+@given('a git project "proj" elsewhere with a ".claude/rules/x.md" rule file')
+def step_other_project_with_rule(context):
+    context.elsewhere = context.tmpdir / "elsewhere"
+    proj = context.elsewhere / "proj"
+    (proj / ".claude" / "rules").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=proj, check=True)
+    (proj / "CLAUDE.md").write_text(_SPARSE, encoding="utf-8")
+    (proj / ".claude" / "rules" / "x.md").write_text(_SPARSE, encoding="utf-8")
+    context.project = context.tmpdir / "cwd"
+    context.project.mkdir()
+
+
+@then('the notice names "{name}" and says to run ails check in the project\'s folder')
+def step_unlisted_file_notice(context, name):
+    output = context.result.stdout + context.result.stderr
+    file = str(context.elsewhere / name)
+    assert f"{file} is not an instruction file in the project at " in output, output
+    assert "run ails check in that project's folder." in output, output
+
+
+@given('a home agent folder with a CLAUDE.md and a "skills/demo/SKILL.md"')
+def step_home_agent_folder(context):
+    agent = context.home / ".claude"
+    (agent / "skills" / "demo").mkdir(parents=True)
+    (agent / "CLAUDE.md").write_text(_SPARSE, encoding="utf-8")
+    skill = "---\nname: demo\ndescription: Demo skill used to show a folder check.\n---\n\n" + _SPARSE
+    (agent / "skills" / "demo" / "SKILL.md").write_text(skill, encoding="utf-8")
+    context.project = build_project(context.tmpdir)
+
+
+@when('I run "ails check" on the home "{folder}" folder from a project folder')
+def step_run_home_folder(context, folder):
+    target = str(context.home / ".claude" / folder)
+    context.result = run_ails(context.project, "check", target, "--format", "json", home=context.home)

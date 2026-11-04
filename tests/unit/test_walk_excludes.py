@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
+from reporails_cli.core.discovery.exclusions import (
+    leaves_out,
+    load_run_exclusions,
+    no_exclusions,
+    parse_run_exclusions,
+    with_named,
+)
 from reporails_cli.core.discovery.plugin_roots import find_plugin_roots
 from reporails_cli.core.discovery.walk import walk_files, walk_glob, walk_glob_matches, walk_markdown
 
@@ -38,7 +44,7 @@ def _rel(root: Path, paths: object) -> set[str]:
 def test_default_set_keeps_every_walker_out_of_vcs_cache_and_dependency_dirs(tmp_path: Path) -> None:
     _tree(tmp_path)
     expected_names = {"CLAUDE.md", "docs/CLAUDE.md", "scratch/CLAUDE.md"}
-    skip = RunExclusions.none(tmp_path)
+    skip = no_exclusions(tmp_path)
     assert _rel(tmp_path, walk_glob(tmp_path, "CLAUDE.md", skip)) == expected_names
     assert _rel(tmp_path, walk_markdown(tmp_path, skip)) == expected_names | {
         "docs/note.md",
@@ -78,7 +84,7 @@ def test_plugin_root_search_honours_the_exclude_set(tmp_path: Path) -> None:
         (tmp_path / name / ".claude-plugin").mkdir(parents=True)
         (tmp_path / name / ".claude-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
     assert find_plugin_roots(
-        tmp_path, ".claude-plugin/plugin.json", RunExclusions.parse(tmp_path, ["vendored"], ())
+        tmp_path, ".claude-plugin/plugin.json", parse_run_exclusions(tmp_path, ["vendored"], ())
     ) == [tmp_path / "mine"]
 
 
@@ -155,7 +161,7 @@ def test_a_glob_under_an_excluded_folder_or_above_the_root_matches_nothing(
     for name in files:
         (root / name).parent.mkdir(parents=True, exist_ok=True)
         (root / name).write_text("x\n", encoding="utf-8")
-    exclude = RunExclusions.parse(root, ["skills"], ())
+    exclude = parse_run_exclusions(root, ["skills"], ())
     assert list(walk_glob_matches(root, pattern, exclude)) == []
 
 
@@ -186,7 +192,7 @@ def _docs_tree(root: Path) -> None:
 @pytest.mark.parametrize("value", ["pkg/docs", "./pkg/docs"])
 def test_a_folder_path_is_never_entered(tmp_path: Path, listed: list[str], value: str) -> None:
     _docs_tree(tmp_path)
-    skip = RunExclusions.parse(tmp_path, [value], ())
+    skip = parse_run_exclusions(tmp_path, [value], ())
     assert _rel(tmp_path, walk_markdown(tmp_path, skip)) == {"docs/b.md", "pkg/keep/c.md"}
     assert str(tmp_path / "pkg" / "docs") not in listed
     assert str(tmp_path / "docs") in listed
@@ -196,7 +202,7 @@ def test_a_folder_path_is_never_entered(tmp_path: Path, listed: list[str], value
 @pytest.mark.subsys_lint
 def test_a_folder_name_is_never_entered_at_any_depth(tmp_path: Path, listed: list[str]) -> None:
     _docs_tree(tmp_path)
-    skip = RunExclusions.parse(tmp_path, ["docs"], ())
+    skip = parse_run_exclusions(tmp_path, ["docs"], ())
     assert _rel(tmp_path, walk_markdown(tmp_path, skip)) == {"pkg/keep/c.md"}
     assert not [p for p in listed if Path(p).name == "docs"]
 
@@ -209,7 +215,7 @@ def test_a_symlink_to_an_excluded_folder_path_is_pruned(tmp_path: Path, listed: 
         (tmp_path / "alias").symlink_to(tmp_path / "pkg" / "docs", target_is_directory=True)
     except OSError:
         pytest.skip("symlinks cannot be created here")
-    skip = RunExclusions.parse(tmp_path, ["pkg/docs"], ())
+    skip = parse_run_exclusions(tmp_path, ["pkg/docs"], ())
     assert _rel(tmp_path, walk_markdown(tmp_path, skip)) == {"docs/b.md", "pkg/keep/c.md"}
     assert str(tmp_path / "alias") not in listed
 
@@ -220,9 +226,11 @@ def test_a_folder_holding_a_named_file_is_entered_but_its_excluded_sibling_is_no
     for rel in ("pkg/docs/a.md", "pkg/docs/sub/s.md", "pkg/other/o.md", "node_modules/n.md"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text("x\n", encoding="utf-8")
-    skip = RunExclusions.parse(tmp_path, ["pkg/docs", "pkg/other"], ()).with_named([tmp_path / "pkg" / "docs" / "a.md"])
+    skip = with_named(
+        parse_run_exclusions(tmp_path, ["pkg/docs", "pkg/other"], ()), [tmp_path / "pkg" / "docs" / "a.md"]
+    )
     assert _rel(tmp_path, walk_markdown(tmp_path, skip)) == {"pkg/docs/a.md"}
-    by_name = RunExclusions.parse(tmp_path, ["docs", "other"], ()).with_named([tmp_path / "pkg" / "docs" / "a.md"])
+    by_name = with_named(parse_run_exclusions(tmp_path, ["docs", "other"], ()), [tmp_path / "pkg" / "docs" / "a.md"])
     assert _rel(tmp_path, walk_markdown(tmp_path, by_name)) == {"pkg/docs/a.md"}
 
 
@@ -231,7 +239,7 @@ def test_a_folder_holding_a_named_file_is_entered_but_its_excluded_sibling_is_no
 def test_a_default_folder_is_pruned_even_when_it_holds_a_named_file(tmp_path: Path) -> None:
     (tmp_path / "node_modules").mkdir()
     (tmp_path / "node_modules" / "n.md").write_text("x\n", encoding="utf-8")
-    skip = RunExclusions.parse(tmp_path, ["other"], ()).with_named([tmp_path / "node_modules" / "n.md"])
+    skip = with_named(parse_run_exclusions(tmp_path, ["other"], ()), [tmp_path / "node_modules" / "n.md"])
     assert _rel(tmp_path, walk_markdown(tmp_path, skip)) == set()
 
 
@@ -239,7 +247,7 @@ def test_a_default_folder_is_pruned_even_when_it_holds_a_named_file(tmp_path: Pa
 @pytest.mark.subsys_lint
 def test_a_glob_under_an_excluded_folder_path_matches_nothing(tmp_path: Path) -> None:
     _docs_tree(tmp_path)
-    skip = RunExclusions.parse(tmp_path, ["pkg/docs"], ())
+    skip = parse_run_exclusions(tmp_path, ["pkg/docs"], ())
     assert list(walk_glob_matches(tmp_path, "pkg/docs/*.md", skip)) == []
     assert _rel(tmp_path, walk_glob_matches(tmp_path, "pkg/keep/*.md", skip)) == {"pkg/keep/c.md"}
 
@@ -254,9 +262,9 @@ def test_a_symlink_into_a_folder_left_out_by_name_is_not_entered(tmp_path: Path)
         (tmp_path / "link").symlink_to(tmp_path / "vendor" / "pkg", target_is_directory=True)
     except OSError:
         pytest.skip("symlinks cannot be created here")
-    skip = RunExclusions.parse(tmp_path, ["vendor"], ())
+    skip = parse_run_exclusions(tmp_path, ["vendor"], ())
     assert _rel(tmp_path, walk_markdown(tmp_path, skip)) == {"keep.md"}
-    assert skip.leaves_out(tmp_path / "link" / "x.md")
+    assert leaves_out(skip, tmp_path / "link" / "x.md")
 
 
 @pytest.mark.unit
@@ -267,8 +275,9 @@ def test_a_folder_left_out_by_name_that_holds_a_named_file_is_entered_but_a_bare
     for rel in ("pkg/docs/a.md", "pkg/docs/sub/s.md", "pkg/docs/hold/h.md", "pkg/keep/k.md"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text("x\n", encoding="utf-8")
-    skip = RunExclusions.parse(tmp_path, ["docs"], ()).with_named(
-        [tmp_path / "pkg" / "docs" / "a.md", tmp_path / "pkg" / "docs" / "hold" / "h.md"]
+    skip = with_named(
+        parse_run_exclusions(tmp_path, ["docs"], ()),
+        [tmp_path / "pkg" / "docs" / "a.md", tmp_path / "pkg" / "docs" / "hold" / "h.md"],
     )
     assert _rel(tmp_path, walk_markdown(tmp_path, skip)) == {"pkg/docs/a.md", "pkg/docs/hold/h.md", "pkg/keep/k.md"}
 

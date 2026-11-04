@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.mapper.bio_tagger import AtomTuple
 from reporails_cli.core.mapper.multislot_frames import _decode_logits_batch, _frames_from_decoded
+from reporails_cli.core.platform.dto.mapping import AtomTuple
 
 # (sentence, expected signed charge, expected modality) — hand-labelled, then
 # confirmed against the real decode. Each row is an independent semantic

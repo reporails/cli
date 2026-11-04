@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
 from reporails_cli.core.platform.adapters.registry import RuleReadError, read_checks_document
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str
+from reporails_cli.core.platform.dto.classify import ExtractResult, PatternInfo, PatternParts
 from reporails_cli.core.platform.dto.models import REGEX_PATTERN_FIELDS
 
 _GUARD_PATTERNS = frozenset(
@@ -19,17 +19,6 @@ _GUARD_PATTERNS = frozenset(
         r"\A[\s\S]*",
     }
 )
-
-
-@dataclass
-class PatternParts:
-    """Decomposed regex pattern: flags + prefix + group(terms) + suffix."""
-
-    flags: str
-    prefix: str
-    group_open: str  # "(?:" or "("
-    terms: list[str]
-    suffix: str
 
 
 def _strip_flags(pattern: str) -> tuple[str, str]:
@@ -168,25 +157,17 @@ def is_guard(pattern: str) -> bool:
     return any(rest == g or rest.startswith(g) for g in _GUARD_PATTERNS)
 
 
-@dataclass
-class _PatternInfo:
-    """Info about one extractable pattern within a check."""
-
-    target: str  # "pattern-regex", "pattern-not-regex", "args.pattern"
-    terms: list[str]
-
-
-def _try_decompose(pattern: str, target: str) -> _PatternInfo | None:
+def _try_decompose(pattern: str, target: str) -> PatternInfo | None:
     """Try to decompose a pattern; return PatternInfo or None."""
     if not pattern or is_guard(pattern):
         return None
     d = decompose(pattern)
-    return _PatternInfo(target, d.terms) if d else None
+    return PatternInfo(target, d.terms) if d else None
 
 
-def _analyze_patterns_array(patterns: list[JsonValue]) -> list[_PatternInfo]:
+def _analyze_patterns_array(patterns: list[JsonValue]) -> list[PatternInfo]:
     """Extract alternation info from a patterns: array."""
-    infos: list[_PatternInfo] = []
+    infos: list[PatternInfo] = []
     for entry in patterns:
         if not isinstance(entry, dict):
             continue
@@ -198,7 +179,7 @@ def _analyze_patterns_array(patterns: list[JsonValue]) -> list[_PatternInfo]:
     return infos
 
 
-def _analyze_check(check: JsonObject) -> list[_PatternInfo]:
+def _analyze_check(check: JsonObject) -> list[PatternInfo]:
     """Find extractable alternation patterns in a check definition."""
     ctype = as_str(check.get("type", ""))
 
@@ -249,16 +230,6 @@ def extract_vocab(rule_dir: Path) -> JsonObject | None:
             vocab[suffix] = {info.target: [*info.terms] for info in infos}
 
     return vocab if vocab else None
-
-
-@dataclass
-class ExtractResult:
-    """Result of extracting vocab from one rule directory."""
-
-    rule_dir: Path
-    vocab: JsonObject | None
-    message: str
-    problem: str = ""  # why the rule's checks.yml was skipped; empty when it was read
 
 
 def extract_all(rules_root: Path) -> list[ExtractResult]:

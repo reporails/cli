@@ -15,8 +15,8 @@ from pathlib import Path
 
 from reporails_cli.core.platform.contract.json_value import as_str
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity, Notice
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.formatters import json as json_formatter
 
 

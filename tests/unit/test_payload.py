@@ -7,7 +7,7 @@ from pathlib import Path
 import msgpack
 import pytest
 
-from reporails_cli.core.cache.map_cache import atoms_to_dicts, dicts_to_atoms
+from reporails_cli.core.mapper.map_cache import atoms_to_dicts, dicts_to_atoms
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.mapper.serialize import load_ruleset_map, save_ruleset_map
 from reporails_cli.core.platform.adapters.payload import (

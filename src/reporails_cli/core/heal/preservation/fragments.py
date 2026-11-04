@@ -18,7 +18,7 @@ from reporails_cli.core.mapper.lexical import DASH_MARKS
 from reporails_cli.core.mapper.markers import without_list_marker
 from reporails_cli.core.mapper.md_parser import replace_code_spans
 from reporails_cli.core.mapper.parse import inline_plain_text
-from reporails_cli.core.mapper.prose_split import split_prose_sentences
+from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark, split_prose_sentences
 from reporails_cli.core.platform.contract.json_value import JsonObject
 
 # What opens a list or a closing clause: a colon, or a dash set off by spaces.
@@ -158,8 +158,8 @@ def _rephrased_cut(old_text: str, new_text: str, new_sentences: list[str]) -> bo
 
 
 def _wholes(atoms: Sequence[AtomView]) -> list[str]:
-    """Each atom's sentence in full: the mapper cuts a long comma list into clause atoms on one
-    line, each but the last ending in its comma, so the clauses that follow are joined on."""
+    """Each atom's sentence in full: an atom ending in a comma is joined with the atoms that
+    follow it on the same line."""
     out = []
     for i, atom in enumerate(atoms):
         text, j = _plain(atom), i + 1
@@ -223,11 +223,6 @@ def _lead_stands_alone(old_text: str, new: str, new_sentences: list[str]) -> boo
     return False
 
 
-def _ends_sentence(text: str) -> bool:
-    """Whether `text` ends on a sentence mark (closing quotes, brackets and emphasis marks skipped)."""
-    return text.rstrip(" \t*_)\"'`").endswith((".", "!", "?"))
-
-
 _STEP_RE = re.compile(r"(?:and\s+)?then,?\s+")
 
 
@@ -262,7 +257,7 @@ def _marks(sentences: list[str], opens: list[bool], follows: list[bool]) -> list
 def _atom_marks(atoms: Sequence[AtomView], sentences: list[str]) -> list[tuple[str | None, bool, bool]]:
     """`_marks` for the atoms of a file, each sentence read with the line and the atom before it."""
     opens = [i == 0 or atoms[i - 1].line != a.line for i, a in enumerate(atoms)]
-    follows = [not o and _ends_sentence(_plain(atoms[i - 1])) for i, o in enumerate(opens)]
+    follows = [not o and ends_with_sentence_mark(_plain(atoms[i - 1])) for i, o in enumerate(opens)]
     return _marks(sentences, opens, follows)
 
 

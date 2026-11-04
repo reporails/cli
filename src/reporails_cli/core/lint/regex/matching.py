@@ -6,8 +6,8 @@ import logging
 
 import regex as re
 
-from reporails_cli.core.lint.regex.compiler import CompiledCheck
 from reporails_cli.core.lint.regex.not_evaluated import PatternTimeoutError
+from reporails_cli.core.platform.dto.lint import CompiledCheck
 
 logger = logging.getLogger(__name__)
 

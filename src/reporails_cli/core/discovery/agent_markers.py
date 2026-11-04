@@ -14,11 +14,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from reporails_cli.core.discovery import plugin_roots as _plugin_roots
-from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.discovery.walk import list_dir
+from reporails_cli.core.platform.dto.discovery import RunExclusions
 
 if TYPE_CHECKING:
-    from reporails_cli.core.discovery.agents import AgentType
+    from reporails_cli.core.platform.dto.discovery import AgentType
 
 logger = logging.getLogger(__name__)
 

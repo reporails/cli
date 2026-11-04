@@ -10,10 +10,11 @@ from typing import Any
 
 import pytest
 
-from reporails_cli.core.heal.keyed import KeyedResult, put_back_line
+from reporails_cli.core.heal.keyed import put_back_line
 from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
+from reporails_cli.core.platform.dto.heal import KeyedResult
 from reporails_cli.interfaces.cli.heal import _apply_keyed_fixes, _output_heal_results
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_heal]

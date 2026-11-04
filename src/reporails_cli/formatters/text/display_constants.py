@@ -12,13 +12,15 @@ from collections.abc import Callable, Iterable
 from pathlib import Path, PurePosixPath
 from typing import NamedTuple
 
-from reporails_cli.core.classify.file_tags import classify_file
 from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME, MEMORY_SURFACES
+from reporails_cli.core.discovery.file_tags import classify_file
 from reporails_cli.core.lint.suppression import SHORT_TOKEN
+from reporails_cli.core.mapper.labels import skill_name
 from reporails_cli.core.mapper.skills import skill_membership
 from reporails_cli.core.platform.dto.diagnostics import BOLD_CHECK, CLIENT_CHECK_KINDS, FORMAT_CHECK, FindingItem
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
-from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path, overlapping_pairs
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path, overlapping_pairs
 
 # ── Aggregate rule sets ───────────────────────────────────────────────
 
@@ -186,7 +188,7 @@ def friendly_name(filepath: str, tag: str, skill_dir: str | None = None) -> str:
         except ValueError:
             inside = ""
         if inside not in ("", ".", "SKILL.md"):
-            return f"{PurePosixPath(skill_dir).name}/{inside}"
+            return f"{skill_name(skill_dir)}/{inside}"
     if ":" in tag:
         return tag.split(":", 1)[1]
     if tag == "nested" and not p.is_absolute():
@@ -278,7 +280,7 @@ def element_namer(ruleset_map: RulesetMap | None, project_root: Path | None) -> 
         norm = normalize_finding_path(path, root)
         folder = skill_of.get(norm)
         if folder:
-            return Element(folder, PurePosixPath(folder).name, "skill", folder)
+            return Element(folder, skill_name(folder), "skill", folder)
         ftype = type_by_path.get(norm, "")
         if ftype in MEMORY_SURFACES:
             index = PurePosixPath(norm).name == MEMORY_INDEX_FILENAME
@@ -367,7 +369,7 @@ def path_tag(filepath: str, skill_of: dict[str, str] | None, norm: str | None = 
         return classify_file(filepath)
     skill_dir = skill_of.get(filepath if norm is None else norm)
     if skill_dir is not None:
-        return f"skills:{PurePosixPath(skill_dir).name}"
+        return f"skills:{skill_name(skill_dir)}"
     tag = classify_file(filepath)
     return "file" if tag.split(":")[0] == "skills" else tag
 

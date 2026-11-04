@@ -13,7 +13,7 @@ Killed survivors (module line → mutation):
   - L255  `scope == "global" and loading ...`   ==→!= (x2), and→or
   - L260  path-prefixed early return            True→False
   - L409  `match is None`                       is→is not
-  - L434  `_prop_matches` list-vs-list guard    and→or
+  - L434  `prop_matches` list-vs-list guard    and→or
   - L446  `file_matches` type-mismatch return   False→True
 """
 
@@ -28,7 +28,7 @@ from reporails_cli.core.classify import (
     location_matches_mode,
 )
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, FileTypeDeclaration
-from reporails_cli.core.platform.policy.matching import _prop_matches, file_matches
+from reporails_cli.core.platform.policy.matching import file_matches, prop_matches
 from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -126,7 +126,7 @@ class TestLocationMatchesMode:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# _prop_matches / file_matches — property targeting (L434, L446)
+# prop_matches / file_matches — property targeting (L434, L446)
 # ═══════════════════════════════════════════════════════════════════════
 
 
@@ -140,13 +140,13 @@ class TestPropMatches:
         the `set(match_val) & set(actual)` branch, which compares CHARACTERS and misses
         a genuine multi-char membership hit.
         """
-        assert _prop_matches(["ab", "cd"], "ab") is True  # "ab" ∈ ["ab", "cd"]
-        assert _prop_matches(["ab", "cd"], "xy") is False
+        assert prop_matches(["ab", "cd"], "ab") is True  # "ab" ∈ ["ab", "cd"]
+        assert prop_matches(["ab", "cd"], "xy") is False
 
     @pytest.mark.unit
     @pytest.mark.subsys_classify
     def test_none_criterion_is_wildcard(self) -> None:
-        assert _prop_matches(None, "anything") is True
+        assert prop_matches(None, "anything") is True
 
     @pytest.mark.unit
     @pytest.mark.subsys_classify

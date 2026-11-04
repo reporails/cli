@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
 
 import regex
 import yaml
 
-from reporails_cli.core.classify.stopwords import PatternParts, decompose, is_guard, recompose
+from reporails_cli.core.classify.stopwords import decompose, is_guard, recompose
 from reporails_cli.core.platform.adapters.registry import RuleReadError, read_checks_document
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
@@ -20,6 +18,7 @@ from reporails_cli.core.platform.contract.json_value import (
     str_list,
 )
 from reporails_cli.core.platform.contract.rule_pattern import compile_rule_pattern
+from reporails_cli.core.platform.dto.classify import FieldOutcome, PatternParts, SyncResult
 from reporails_cli.core.platform.dto.models import REGEX_PATTERN_FIELDS
 from reporails_cli.core.platform.utils.utils import (
     fast_yaml_load,
@@ -44,21 +43,8 @@ def _find_check_by_suffix(
     return None
 
 
-FieldStatus = Literal["changed", "unchanged", "no_target", "invalid"]
-"""What a vocab field did to its check: rewrote a pattern, matched one, found no pattern, or cannot be used."""
-
-
-@dataclass(frozen=True, slots=True)
-class _FieldOutcome:
-    """The result of walking one vocab field against a check; nothing is written until the whole entry is read."""
-
-    status: FieldStatus
-    reasons: tuple[str, ...] = ()  # why an `invalid` field cannot be used, one message per fault
-    write: tuple[JsonObject, str, str] | None = None  # (container, key, new pattern) of a `changed` field
-
-
-def _invalid(*reasons: str) -> _FieldOutcome:
-    return _FieldOutcome("invalid", reasons=reasons)
+def _invalid(*reasons: str) -> FieldOutcome:
+    return FieldOutcome("invalid", reasons=reasons)
 
 
 def _pattern_slots(container: JsonObject, keys: tuple[str, ...]) -> list[tuple[JsonObject, str]]:
@@ -119,11 +105,11 @@ def _unusable_terms(value: JsonValue) -> tuple[str, ...]:
     return (*(reading for _, reading in non_text_items(value)), *blanks)
 
 
-def _rewrite(container: JsonObject, key: str, parts: PatternParts, terms: list[str]) -> _FieldOutcome:
+def _rewrite(container: JsonObject, key: str, parts: PatternParts, terms: list[str]) -> FieldOutcome:
     """The outcome of putting `terms` into the pattern at `container[key]`: unchanged, a write, or invalid."""
     new = recompose(parts, terms)
     if new == container[key]:
-        return _FieldOutcome("unchanged")
+        return FieldOutcome("unchanged")
     try:
         compile_rule_pattern(new)
     except regex.error as exc:
@@ -131,10 +117,10 @@ def _rewrite(container: JsonObject, key: str, parts: PatternParts, terms: list[s
     read_back = decompose(new)
     if read_back is None or read_back.terms != terms:
         return _invalid(f"the pattern {new!r} does not read back as the term list")
-    return _FieldOutcome("changed", write=(container, key, new))
+    return FieldOutcome("changed", write=(container, key, new))
 
 
-def _walk_field(check: JsonObject, field_name: str, value: JsonValue) -> _FieldOutcome:
+def _walk_field(check: JsonObject, field_name: str, value: JsonValue) -> FieldOutcome:
     """Read one vocab field (`field_name` is empty for a plain list) against `check`; writes nothing."""
     reasons = _unusable_terms(value)
     if reasons:
@@ -142,7 +128,7 @@ def _walk_field(check: JsonObject, field_name: str, value: JsonValue) -> _FieldO
     terms = str_list(value)
     slots = _slots_for_field(check, field_name) if field_name else _slots_for_list(check)
     if not slots:
-        return _FieldOutcome("no_target")
+        return FieldOutcome("no_target")
     decomposed = [(slot, decompose(as_str(slot[0][slot[1]]))) for slot in slots]
     for (container, key), parts in decomposed:
         if parts is not None:
@@ -155,7 +141,7 @@ def _walk_field(check: JsonObject, field_name: str, value: JsonValue) -> _FieldO
     )
 
 
-def _walk_entry(check: JsonObject, value: JsonValue) -> list[tuple[str, _FieldOutcome]]:
+def _walk_entry(check: JsonObject, value: JsonValue) -> list[tuple[str, FieldOutcome]]:
     """Walk one vocab entry: a `(field name, outcome)` per field (name empty for a plain list)."""
     if isinstance(value, dict):
         if not value:
@@ -164,7 +150,7 @@ def _walk_entry(check: JsonObject, value: JsonValue) -> list[tuple[str, _FieldOu
     return [("", _walk_field(check, "", value))]
 
 
-def _entry_messages(suffix: str, outcomes: list[tuple[str, _FieldOutcome]]) -> list[str]:
+def _entry_messages(suffix: str, outcomes: list[tuple[str, FieldOutcome]]) -> list[str]:
     """The warnings one entry's outcomes call for; a field that is `changed` or `unchanged` says nothing."""
     messages: list[str] = []
     for name, outcome in outcomes:
@@ -186,16 +172,6 @@ def _read_vocab_file(path: Path) -> tuple[JsonValue, str | None]:
         return data, None
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
         return None, f"{path.name} {unreadable_file_problem(exc)}"
-
-
-@dataclass
-class SyncResult:
-    """Result of syncing vocab into checks.yml for one rule."""
-
-    rule_dir: Path
-    updated: int = 0
-    skipped: int = 0
-    messages: list[str] = field(default_factory=list)
 
 
 def _sync_entry(result: SyncResult, suffix: str, check: JsonObject, value: JsonValue) -> bool:

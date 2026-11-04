@@ -13,7 +13,8 @@ from typing import Any
 
 import pytest
 
-from reporails_cli.interfaces.mcp import remedy_brief, server
+from reporails_cli.interfaces.mcp import remedy_brief
+from reporails_cli.interfaces.mcp.preservation import with_preservation
 
 
 def _payload(*rules: str) -> dict[str, Any]:
@@ -25,7 +26,7 @@ def _brief(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *rules: str) -> Path
     file.write_text("# Project\n\nThe build uses a local cache.\n", encoding="utf-8")
     fake_map = SimpleNamespace(atoms=(), files=())
     monkeypatch.setattr(
-        remedy_brief, "run_pipeline_for_path", lambda path, full=False: (_payload(*rules), fake_map, 5.0)
+        remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: (_payload(*rules), fake_map, 5.0)
     )
     location = {
         "order": 1, "element": "CLAUDE.md", "kind": "main", "loading": "session_start", "files": ["CLAUDE.md"],
@@ -38,7 +39,7 @@ def _brief(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *rules: str) -> Path
 
 def _after(file: Path, tmp_path: Path, *rules: str) -> dict[str, Any]:
     fake_map = SimpleNamespace(atoms=(), files=())
-    return server._with_preservation(_payload(*rules), file, fake_map, 5.0, tmp_path)["preservation"]
+    return with_preservation(_payload(*rules), file, fake_map, 5.0, tmp_path)["preservation"]
 
 
 @pytest.mark.unit

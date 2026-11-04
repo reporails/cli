@@ -6,11 +6,12 @@ retired argument was silently dropped with no signal at all.
 
 from __future__ import annotations
 
-from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult, InputRequiredResult
 
 from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.interfaces.mcp.project_folder import ToolContext
 
 
 class StrictArgsMCPServer(MCPServer[None]):
@@ -20,7 +21,7 @@ class StrictArgsMCPServer(MCPServer[None]):
     here covers both."""
 
     async def call_tool(
-        self, name: str, arguments: JsonObject, context: Context[None, object] | None = None
+        self, name: str, arguments: JsonObject, context: ToolContext | None = None
     ) -> CallToolResult | InputRequiredResult:
         tool = next((t for t in await self.list_tools() if t.name == name), None)
         if tool is not None:

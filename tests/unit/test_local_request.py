@@ -13,9 +13,10 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.pipeline import assemble as assemble_module
-from reporails_cli.core.pipeline.assemble import AssembleInputs, lint_request_local
+from reporails_cli.core.pipeline.assemble import lint_request_local
 from reporails_cli.core.platform.adapters.payload import project_local
 from reporails_cli.core.platform.dto.models import LocalEntry, LocalFinding
+from reporails_cli.core.platform.dto.pipeline import AssembleInputs
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap
 
 _MAIN = (

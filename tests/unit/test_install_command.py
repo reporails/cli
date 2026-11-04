@@ -12,8 +12,8 @@ from unittest.mock import MagicMock
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.platform.adapters import programs as programs_module
 from reporails_cli.core.platform.utils.version import installed_version
-from reporails_cli.interfaces.cli import helpers as helpers_module
 from reporails_cli.interfaces.cli import install as install_module
 from reporails_cli.interfaces.cli.main import app
 
@@ -60,7 +60,7 @@ def test_install_to_path_pins_a_floor_not_an_exact_version(monkeypatch: pytest.M
         result.stderr = ""
         return result
 
-    monkeypatch.setattr(helpers_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(programs_module.subprocess, "run", fake_run)
 
     assert install_module._install_to_path() is True
     assert len(calls) == 1
@@ -108,7 +108,7 @@ def _setup(
 ) -> None:
     monkeypatch.setattr(install_module, "_install_to_path", lambda: True)
     monkeypatch.setattr(install_module.shutil, "which", lambda cmd: f"/bin/{cmd}" if cmd in present else None)
-    monkeypatch.setattr(helpers_module.subprocess, "run", runner)
+    monkeypatch.setattr(programs_module.subprocess, "run", runner)
     monkeypatch.setattr("reporails_cli.core.platform.adapters.api_key.has_api_key", lambda: key)
     if tmp_path is not None:
         monkeypatch.chdir(tmp_path)
@@ -208,7 +208,7 @@ def test_install_timeout_and_oserror_do_not_abort(monkeypatch: pytest.MonkeyPatc
         raise next(outcomes, OSError("nope"))
 
     _setup(monkeypatch, _Runner(), {"claude", "uvx"})
-    monkeypatch.setattr(helpers_module.subprocess, "run", boom)
+    monkeypatch.setattr(programs_module.subprocess, "run", boom)
 
     result = _runner_invoke()
 
@@ -271,7 +271,7 @@ def _update_setup(monkeypatch: pytest.MonkeyPatch, runner: _Runner, present: set
 
     monkeypatch.setattr(commands_module, "_update_engine", lambda: True)
     monkeypatch.setattr(install_module.shutil, "which", lambda cmd: f"/bin/{cmd}" if cmd in present else None)
-    monkeypatch.setattr(helpers_module.subprocess, "run", runner)
+    monkeypatch.setattr(programs_module.subprocess, "run", runner)
 
 
 @pytest.mark.unit
@@ -538,7 +538,7 @@ def test_agent_commands_do_not_inherit_the_agent_session(monkeypatch: pytest.Mon
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
-def test_project_install_runs_from_the_repository_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_project_install_runs_in_the_folder_it_is_run_from(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
     sub = tmp_path / "pkg" / "sub"
     sub.mkdir(parents=True)
@@ -548,8 +548,25 @@ def test_project_install_runs_from_the_repository_root(monkeypatch: pytest.Monke
     result = _runner.invoke(app, ["install", "--project"])
 
     claude_cwds = {kw.get("cwd") for c, kw in zip(runner.calls, runner.kwargs, strict=True) if c[0] == "/bin/claude"}
-    assert claude_cwds == {tmp_path}
-    assert str(tmp_path) in result.stdout.replace("\n", "")
+    assert claude_cwds == {sub}
+    assert str(sub) in result.stdout.replace("\n", "")
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_project_install_refuses_the_home_folder(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    runner = _Runner()
+    _setup(monkeypatch, runner, {"claude"}, tmp_path=home)
+
+    result = _runner.invoke(app, ["install", "--project"])
+
+    assert result.exit_code == 2
+    assert "project folder" in result.output
+    assert runner.calls == []
 
 
 @pytest.mark.unit
@@ -586,25 +603,6 @@ def test_project_install_adds_a_declared_marketplace_the_machine_has_not_added(
     cmds = runner.commands()
     assert "claude plugin marketplace add reporails/plugin --scope project" in cmds
     assert not any(c.startswith("claude plugin marketplace update") for c in cmds)
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_cli_ux
-def test_project_install_uses_the_nearest_git_root_in_a_nested_repository(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    (tmp_path / ".ails").mkdir()
-    (tmp_path / ".ails" / "backbone.yml").write_text("{}\n", encoding="utf-8")
-    inner = tmp_path / "inner"
-    (inner / "src").mkdir(parents=True)
-    (inner / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
-    runner = _Runner()
-    _setup(monkeypatch, runner, {"claude"}, tmp_path=inner / "src")
-
-    _runner.invoke(app, ["install", "--project"])
-
-    claude_cwds = {kw.get("cwd") for c, kw in zip(runner.calls, runner.kwargs, strict=True) if c[0] == "/bin/claude"}
-    assert claude_cwds == {inner}
 
 
 @pytest.mark.unit
@@ -694,33 +692,6 @@ def test_relative_plugin_source_becomes_an_absolute_path(monkeypatch: pytest.Mon
     assert install_module._plugin_source() == "owner/repo"
 
 
-@pytest.mark.unit
-@pytest.mark.subsys_cli_ux
-def test_git_root_never_accepts_the_home_folder(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """A dotfiles repository at home is not a project root; the start folder is."""
-    home = tmp_path / "home"
-    nested = home / "work" / "proj" / "sub"
-    nested.mkdir(parents=True)
-    (home / ".git").mkdir()
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-
-    assert install_module._git_root(nested) == nested
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_cli_ux
-def test_git_root_still_finds_a_repository_below_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    home = tmp_path / "home"
-    repo = home / "work" / "proj"
-    nested = repo / "sub"
-    nested.mkdir(parents=True)
-    (home / ".git").mkdir()
-    (repo / ".git").mkdir()
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-
-    assert install_module._git_root(nested) == repo
-
-
 def _path_install(
     monkeypatch: pytest.MonkeyPatch, ails: str, uv: str | None, cache_dir: str | None
 ) -> tuple[bool, list[list[str]]]:
@@ -745,7 +716,7 @@ def _path_install(
         result.stderr = ""
         return result
 
-    monkeypatch.setattr(helpers_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(programs_module.subprocess, "run", fake_run)
     return install_module._install_to_path(), calls
 
 

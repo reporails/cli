@@ -1,8 +1,6 @@
 """The root Typer application every ``ails`` command registers on.
 
-Importing this module installs the torch import blocker, so it is in place before any
-other CLI module loads: nothing the commands import can pull torch in. The module
-imports no command module; each command module imports ``app`` from here and
+The module imports no command module; each command module imports ``app`` from here and
 ``main.py`` imports the command modules so their commands register.
 """
 
@@ -14,9 +12,7 @@ from typer.core import TyperGroup
 
 from reporails_cli.core.platform.config.bootstrap import consume_npm_launch
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
-from reporails_cli.core.platform.runtime import _torch_blocker
-
-_torch_blocker.install()
+from reporails_cli.core.platform.observability.log_levels import configure_logging
 
 
 class _AilsGroup(TyperGroup):
@@ -24,6 +20,7 @@ class _AilsGroup(TyperGroup):
 
     def invoke(self, ctx: click.Context) -> object:
         consume_npm_launch()
+        configure_logging()
         try:
             return super().invoke(ctx)
         except ConfigUnreadableError as exc:

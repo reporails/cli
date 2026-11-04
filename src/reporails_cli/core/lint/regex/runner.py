@@ -10,11 +10,7 @@ import regex as re
 from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.discovery.walk import safe_resolve, walk_files, walk_markdown
 from reporails_cli.core.lint.regex import matching
-from reporails_cli.core.lint.regex.compiler import (
-    CompiledCheck,
-    CompiledRuleSet,
-    compile_rules,
-)
+from reporails_cli.core.lint.regex.compiler import compile_rules
 from reporails_cli.core.lint.regex.expect import (
     apply_min_lines_overrides,
     emit_expect_findings,
@@ -23,6 +19,7 @@ from reporails_cli.core.lint.regex.expect import (
 from reporails_cli.core.lint.regex.not_evaluated import PatternTimeoutError
 from reporails_cli.core.mapper.imports import expand_imports_with_origins
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_list, as_object, as_str
+from reporails_cli.core.platform.dto.lint import CompiledCheck, CompiledRuleSet
 from reporails_cli.core.platform.dto.models import LocalFinding
 
 logger = logging.getLogger(__name__)
@@ -234,7 +231,8 @@ def _scan_file(
     except ValueError:
         file_uri = file_path.as_posix()
 
-    expanded = expand_imports_with_origins(content, file_path) if any(c.follow_imports for c in checks) else None
+    follows_imports = any(c.follow_imports for c in checks)
+    expanded = expand_imports_with_origins(content, file_path, scan_root) if follows_imports else None
     for check in checks:
         try:
             matches, text, imports = _check_hits(check, content, expanded, scan_root)

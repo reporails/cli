@@ -16,7 +16,7 @@ from rich.console import Console
 
 import reporails_cli.formatters.text.item_scorecard as isc
 from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem, QualityResult
-from reporails_cli.core.platform.runtime.merger import CombinedResult
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.formatters.text.health import SurfaceHealth, count_tag
 from reporails_cli.formatters.text.item_scorecard import (
     _display_name_for_path,

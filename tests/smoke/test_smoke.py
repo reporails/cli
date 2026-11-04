@@ -14,6 +14,7 @@ produce them IS the bug.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
 
@@ -126,7 +127,8 @@ def _check_json(path: Path, agent: str = "") -> dict:
     args = ["check", str(path), "-f", "json"]
     if agent:
         args.extend(["--agent", agent])
-    result = runner.invoke(app, args)
+    with contextlib.chdir(path):  # the folder a check runs in is its project root
+        result = runner.invoke(app, args)
     assert result.exit_code == 0, f"check failed (exit {result.exit_code}):\n{result.output}"
     return json.loads(result.stdout)
 
@@ -136,7 +138,8 @@ def _check_text(path: Path, agent: str = "") -> str:
     args = ["check", str(path), "-f", "text"]
     if agent:
         args.extend(["--agent", agent])
-    result = runner.invoke(app, args)
+    with contextlib.chdir(path):  # the folder a check runs in is its project root
+        result = runner.invoke(app, args)
     assert result.exit_code == 0, f"check failed (exit {result.exit_code}):\n{result.output}"
     return result.output
 
@@ -1332,7 +1335,8 @@ class TestCheckFlags:
     @requires_rules
     def test_strict_exits_1_on_violations(self, generic_only: Path) -> None:
         """--strict must exit 1 when violations exist."""
-        result = runner.invoke(app, ["check", str(generic_only), "--strict"])
+        with contextlib.chdir(generic_only):
+            result = runner.invoke(app, ["check", str(generic_only), "--strict"])
         assert result.exit_code == 1
 
     @pytest.mark.e2e
@@ -1348,7 +1352,8 @@ class TestCheckFlags:
     @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_verbose_output(self, claude_only: Path) -> None:
-        result = runner.invoke(app, ["check", str(claude_only), "-f", "text", "-v", "--agent", "claude"])
+        with contextlib.chdir(claude_only):
+            result = runner.invoke(app, ["check", str(claude_only), "-f", "text", "-v", "--agent", "claude"])
         assert result.exit_code == 0
         # Verbose mode shows more detail — at minimum, rule IDs
         assert "CORE:" in result.output

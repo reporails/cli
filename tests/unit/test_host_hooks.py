@@ -11,9 +11,9 @@ import pytest
 from reporails_cli.core.discovery.agents import detect_agents
 from reporails_cli.core.discovery.features import detect_features_filesystem
 from reporails_cli.core.platform.config.config import get_agent_config
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.results import HookEntry
 from reporails_cli.core.platform.policy.host_hooks import intercepted_tools
-from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.formatters.host_hooks import host_hooks_field
 from reporails_cli.formatters.json import format_combined_result
 from reporails_cli.formatters.mcp import bound_validate_payload

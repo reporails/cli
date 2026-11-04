@@ -29,14 +29,14 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
         with:
-          version: "latest"
+          version: "0.13.4"
 
       - name: Install dependencies
-        run: uv sync --python ${{ matrix.python-version }}
+        run: uv sync --locked --python ${{ matrix.python-version }}
 
       - name: Lint
         run: uv run poe lint
@@ -66,6 +66,10 @@ jobs:
       - name: Integration tests
         run: uv run poe test_integration
 
+      # The suite sets its own hermetic environment; the api-backed scenarios skip loudly offline.
+      - name: Behavioral tests
+        run: uv run poe test_behave
+
       # Smoke suite is hermetic: tests/smoke/conftest.py forces offline
       # diagnostics (no network), HOME is isolated, and tests that can only
       # be observed via the mapper model declare `requires_model` so they
@@ -81,14 +85,14 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
         with:
-          version: "latest"
+          version: "0.13.4"
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --locked
 
       - name: Live network tests
         run: uv run poe test_live

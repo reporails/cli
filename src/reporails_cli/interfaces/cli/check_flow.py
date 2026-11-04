@@ -21,18 +21,21 @@ from typing import TYPE_CHECKING
 import typer
 
 from reporails_cli.core.classify.capability_paths import canonicalize_capability, classify_target_token
-from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
+from reporails_cli.core.heal.apply import heal_bound
 from reporails_cli.core.pipeline.mapping import (
     apply_generic_scan,
     discover_scope,
+    is_listed_file,
 )
 from reporails_cli.core.platform.config.config import get_project_config
-from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
-from reporails_cli.core.platform.runtime.merger import CombinedResult
+from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
 from reporails_cli.interfaces.cli.check_notices import (
     _emit_empty_run,
     _emit_heal_scope_refusal,
     _emit_heal_withheld,
+    _emit_unlisted_file,
     _notify_heal_scope_skips,
 )
 from reporails_cli.interfaces.cli.check_orchestration import (
@@ -40,16 +43,15 @@ from reporails_cli.interfaces.cli.check_orchestration import (
     RenderContext,
     _dispatch_output,
     _emit_stage_timing,
-    _file_under_target,
     _named_paths,
     _narrow_to_path_targets,
     _quiet_mapper_logs,
     _resolve_capability_paths,
     _resolved_within_target,
     _run_heal_pass,
-    _scan_root,
     _should_exit_strict,
     _token_agent,
+    scan_scope,
 )
 from reporails_cli.interfaces.cli.check_pipeline import _flow_assemble, _flow_pipeline
 from reporails_cli.interfaces.cli.check_support import (
@@ -65,9 +67,8 @@ from reporails_cli.interfaces.cli.helpers import (
 )
 
 if TYPE_CHECKING:
-    from reporails_cli.core.discovery.agents import DetectedAgent
-    from reporails_cli.core.discovery.exclusions import RunExclusions
     from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResult, Notice, RemediationWorkflow
+    from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
     from reporails_cli.core.platform.dto.models import LocalFinding
     from reporails_cli.core.platform.dto.ruleset import RulesetMap
     from reporails_cli.core.platform.observability.stage_timer import StageTimer
@@ -101,7 +102,7 @@ class CheckTargets:
     single_file: Path | None = None
     # A lone directory target that lives INSIDE the project and is NOT a project root
     # of its own — the run stays anchored at the project root and is scoped to this
-    # subtree. `None` for every other target shape. See `_scan_root`.
+    # subtree. `None` for every other target shape. See `scan_scope`.
     subtree: Path | None = None
     # Mirrors `subtree is not None` — the run is scope-to-subtree rather than
     # anchored at the target.
@@ -132,7 +133,7 @@ class CheckPipeline:
     """Pipeline outputs — mapping, probes, content/client checks, server lint."""
 
     stage_timer: StageTimer = field(default_factory=get_stage_timer)
-    start_time: float = 0.0
+    stopwatch: Stopwatch = field(default_factory=Stopwatch)
     ruleset_map: RulesetMap | None = None
     m_findings: list[LocalFinding] = field(default_factory=list)
     content_findings: list[LocalFinding] = field(default_factory=list)
@@ -199,17 +200,11 @@ def _flow_targets(state: CheckState) -> None:
         if (state.targets.path_targets and not state.targets.capability_specs and len(state.targets.path_targets) == 1)
         else None
     )
-    state.targets.single_file = (
-        state.targets.single_path
-        if (state.targets.single_path is not None and state.targets.single_path.is_file())
-        else None
-    )
-    state.targets.subtree, state.targets.target = _scan_root(
-        state.targets.single_path, state.targets.single_file, state.inputs.project_root
+    state.targets.subtree, state.targets.target, state.targets.single_file = scan_scope(
+        state.targets.single_path, state.inputs.project_root
     )
     state.targets.subtree_scoped = state.targets.subtree is not None
     if state.targets.subtree is not None and not state.targets.path_targets and not state.targets.capability_specs:
-        # No target named, run from inside an agent configuration folder: the folder is the scope.
         state.targets.path_targets.add(state.targets.subtree)
     state.targets.output_format = state.inputs.format_opt or _default_format()
 
@@ -252,16 +247,19 @@ def _resolve_scope_at_target(state: CheckState, capability_paths: frozenset[Path
     )
     state.scope.instruction_files = found.files
     if state.targets.single_file is not None:
-        state.scope.instruction_files = [safe_resolve(state.targets.single_file)]
+        state.scope.instruction_files = [state.targets.single_file]
     elif state.targets.target != state.inputs.project_root:
         state.scope.instruction_files = [
-            f for f in state.scope.instruction_files if _file_under_target(f, state.targets.target)
+            f for f in state.scope.instruction_files if file_under_target(f, state.targets.target)
         ]
 
 
 def _flow_scope(state: CheckState) -> bool:
     """Detect agents, discover instruction files, narrow to scope. False = nothing in scope."""
     _resolve_scope_at_target(state)
+    single = state.targets.single_file
+    if single is not None and not is_listed_file(single, state.targets.target):
+        _emit_unlisted_file(single, state.targets.target, state.inputs.project_root, state.targets.output_format)
     # A scope-to-subtree run keeps the project scan root, so its narrowing runs here
     # with the capability/multi-path narrowing rather than through the re-root branch.
     narrows = state.targets.single_path is None or state.targets.subtree_scoped
@@ -384,7 +382,8 @@ def _flow_heal(state: CheckState) -> None:
             server_replied=state.pipeline.lint_result is not None,
         )
         return
-    heal_scope = state.targets.single_path if state.targets.single_path is not None else state.targets.target
+    single = state.targets.single_path
+    heal_scope = heal_bound(single, state.targets.target) if single is not None else state.targets.target
     candidate = (
         [f for f in state.scope.instruction_files if f in state.render.capability_paths]
         if state.render.capability_paths

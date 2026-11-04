@@ -16,7 +16,6 @@ shared across those agents.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -27,24 +26,16 @@ from reporails_cli.core.classify.capability_paths import (
     list_capability_targets,
     resolve_capability,
 )
-from reporails_cli.core.discovery.exclusions import load_run_exclusions
+from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions
+from reporails_cli.core.platform.dto.classify import UnresolvedSkill
 from reporails_cli.core.platform.utils.utils import read_frontmatter
 
 if TYPE_CHECKING:
-    from reporails_cli.core.discovery.exclusions import RunExclusions
+    from reporails_cli.core.platform.dto.discovery import RunExclusions
 
 logger = logging.getLogger(__name__)
 
 _SKILL_PRELOAD_FRONTMATTER_KEY = "skills"
-
-
-@dataclass(frozen=True)
-class UnresolvedSkill:
-    """A skill name declared by an agent that discovery could not resolve."""
-
-    declared_in: Path
-    skill_name: str
-    agent: str
 
 
 def expand_focus(
@@ -74,7 +65,7 @@ def expand_focus(
         for skill_name in _read_preloaded_skills(path):
             resolved = resolve_capability(agent, "skills", skill_name, project_root)
             if resolved is not None:
-                if not exclusions.leaves_out(resolved):
+                if not leaves_out(exclusions, resolved):
                     expanded.add(resolved)
             else:
                 unresolved.append(UnresolvedSkill(declared_in=path, skill_name=skill_name, agent=agent))

@@ -1,0 +1,65 @@
+/* tables.css: styles for the Tool calls and Sources tables. */
+.tb-bar{display:flex;align-items:center;gap:12px;flex-wrap:nowrap;min-height:44px;margin:0 0 10px;padding:8px 12px;border-radius:14px;background:var(--panel);border:1px solid var(--hair)}
+.tb-summary{font:600 12px 'JetBrains Mono',monospace;color:var(--t1);margin-right:auto;white-space:nowrap}
+.tb-filters{display:flex;gap:10px;flex-wrap:nowrap;align-items:center;flex:none}
+.tb-filters>.seggrp{flex:none}
+.seggrp{display:flex;gap:2px;flex-wrap:nowrap;padding:2px;border-radius:10px;background:rgba(255,255,255,.035)}
+.seg{white-space:nowrap;flex:none;height:26px;padding:0 10px;border:0;border-radius:8px;font:inherit;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;background:none;color:var(--t2);border:1px solid var(--ctl)}
+.seg:hover{color:var(--t1)}
+.seg[aria-pressed=true]{background:var(--chip);color:#fff;box-shadow:inset 0 -2px 0 var(--t1)}
+.sdot2{width:7px;height:7px;border-radius:2px;flex:none}
+.seg:focus-visible,.tb-row:focus-visible,.tb-src:focus-visible,.tb-act:focus-visible,.vl:focus-visible{outline:2px solid #A9C2FF;outline-offset:2px}
+.tb-strip{position:relative;height:56px;margin:0 0 10px;padding:0;overflow:hidden;border-radius:12px;background:var(--panel);border:1px solid var(--hair)}
+.tb-canvas{display:block;width:100%;height:34px;cursor:pointer}
+.tb-ticks{position:relative;height:18px;margin:0}
+.tb-tick{position:absolute;top:0;width:0;height:18px;font:10.5px 'JetBrains Mono',monospace;color:var(--t3)}
+.tb-tick::before{content:'';position:absolute;left:-.5px;top:0;width:1px;height:4px;background:var(--t3)}
+.tb-tl{position:absolute;top:4px;transform:translateX(-50%);white-space:nowrap}
+.tb-tick:first-child .tb-tl{transform:none}
+.tb-tick:last-child .tb-tl{transform:translateX(-100%)}
+.tb-table{border-radius:14px;background:var(--panel);border:1px solid var(--hair);overflow:hidden}
+.tb-head{display:grid;gap:10px;align-items:center;min-height:30px;padding:0 14px;border-bottom:1px solid var(--hair);font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em}
+.tb-calls{grid-template-columns:56px 140px 80px minmax(0,1fr) 64px 84px 50px}
+.segname{display:inline-block;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-src-grid{grid-template-columns:22px minmax(0,1fr) 110px 150px 70px 64px}
+.vl{position:relative;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#3A3C42 transparent}
+.vl-sizer{position:relative;width:100%}
+.vl-row{position:absolute;left:0;right:0;display:grid;gap:10px;align-items:center;padding:0 14px;border:0;border-bottom:1px solid #1C1D22;background:none;color:var(--t1);font:inherit;font-size:12px;text-align:left;cursor:pointer;box-sizing:border-box}
+.vl-row:hover{background:rgba(255,255,255,.04)}
+.vl-row.on{background:#23252C;box-shadow:inset 2px 0 0 var(--sel)}
+.tb-mono{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--t2)}
+.tb-r{text-align:right}
+.tb-trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.tb-agent{display:flex;align-items:center;gap:7px;min-width:0}
+.tb-adot{width:8px;height:8px;border-radius:3px;flex:none}
+.tb-fail{color:var(--find2);font-weight:600}
+.tb-ok{color:var(--t3)}
+.tb-dim{color:var(--t3)}
+.tb-find{color:var(--find2);font-size:11px}
+.vl-row.never{color:var(--t2)}
+.tb-more{margin:6px 12px;color:var(--t1);background:var(--chip)}
+.tb-table>.nk{padding:14px}
+/* call details */
+.tb-kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px;margin-bottom:12px}
+.tb-lb{color:var(--t3)}
+.tb-block{margin:0 0 12px}
+.tb-bt{font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+.tb-pre{margin:0;padding:8px 10px;max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.45 'JetBrains Mono',monospace;color:var(--t1);background:var(--chip);border:1px solid var(--hair);border-radius:8px}
+.tb-pre.bad{border-color:#5A3520}
+.tb-srcs{display:flex;flex-direction:column;gap:2px}
+.tb-src{display:flex;justify-content:space-between;gap:8px;padding:5px 8px;border:0;border-radius:8px;background:none;color:var(--t1);font:inherit;font-size:12px;cursor:pointer;text-align:left}
+.tb-src:hover{background:var(--chip)}
+.tb-act{height:26px;padding:0 10px;border:0;border-radius:8px;background:var(--chip);color:var(--t1);font:inherit;font-size:12px;cursor:pointer}
+/* the filter menu: opened by one button, as the header's session list is */
+.tb-menuwrap{position:relative;display:flex;flex:none}
+.tb-menubtn{max-width:min(240px,100%);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;line-height:24px}
+.tb-menu{position:absolute;right:0;top:32px;z-index:20;width:max-content;max-width:min(420px,86vw);display:flex;flex-direction:column;gap:8px;padding:8px;border-radius:12px;background:var(--surface);border:1px solid var(--hair);box-shadow:0 12px 32px rgba(0,0,0,.5)}
+.wrapgrp{flex-wrap:wrap}
+/* an open item narrows the table to the columns that identify a row (a screen too narrow for two panes keeps the whole table) */
+.narrow .tb-tick:nth-child(even){display:none}
+.narrow .tb-calls{grid-template-columns:56px 80px minmax(0,1fr)}
+.narrow .tb-calls>:nth-child(2),.narrow .tb-calls>:nth-child(n+5){display:none}
+.narrow .tb-src-grid{grid-template-columns:22px minmax(0,1fr) 96px}
+.narrow .tb-src-grid>:nth-child(n+4){display:none}
+.narrow .tb-bar{flex-wrap:wrap}
+.narrow .tb-menuwrap{max-width:100%}

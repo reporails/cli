@@ -16,12 +16,14 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from reporails_cli.core.pipeline.assemble import AssembleInputs, assemble_result
+from reporails_cli.core.pipeline import check_one
+from reporails_cli.core.pipeline.assemble import assemble_result
 from reporails_cli.core.platform.adapters.api_client import AilsClient
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER
 from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResponse, Notice
+from reporails_cli.core.platform.dto.pipeline import AssembleInputs
+from reporails_cli.core.platform.dto.platform import CombinedResult, ServerReply
 from reporails_cli.core.platform.dto.ruleset import RulesetMap, RulesetSummary
-from reporails_cli.core.platform.runtime.merger import CombinedResult, ServerReply
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.interfaces.cli.main import app
 from reporails_cli.interfaces.mcp import tools
@@ -141,11 +143,11 @@ def test_mcp_validate_payload_carries_notices_and_the_funnel_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     err = FunnelError(error="rate_limit_exceeded", tier="free", status=429)
-    monkeypatch.setattr(tools, "_server_lint", lambda *_a, **_k: LintResponse(funnel_error=err, notices=(WARN,)))
-    monkeypatch.setattr(tools, "_checks_over_pairs", lambda *_a, **_k: ([], [], []))
-    monkeypatch.setattr(tools, "_mcp_agent_file_pairs", lambda *_a, **_k: [])
+    monkeypatch.setattr(check_one, "_server_lint", lambda *_a, **_k: LintResponse(funnel_error=err, notices=(WARN,)))
+    monkeypatch.setattr(check_one, "_checks_over_pairs", lambda *_a, **_k: ([], [], []))
+    monkeypatch.setattr(check_one, "_agent_file_pairs", lambda *_a, **_k: [])
     ruleset_map = _map()
-    result, funnel_error = tools._check_and_assemble(tmp_path, [], "claude", [], ruleset_map)
+    result, funnel_error = check_one.check_and_assemble(tmp_path, [], "claude", [], ruleset_map)
     payload = tools._attach_funnel(json_formatter.format_combined_result(result, ruleset_map=ruleset_map), funnel_error)
     from reporails_cli.formatters import mcp as mcp_formatter
 
@@ -166,7 +168,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[Path, 
     root.mkdir()
     (root / "CLAUDE.md").write_text("# Project\n\nUse uv for Python.\n", encoding="utf-8")
     monkeypatch.chdir(root)
-    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.map_instruction_files", lambda *_a, **_k: _map())
+    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.map_instruction_files", lambda *_a, **_k: _map())
     monkeypatch.setattr("reporails_cli.interfaces.cli.check_pipeline.map_instruction_files", lambda *_a, **_k: _map())
     monkeypatch.setattr(
         AilsClient, "lint", lambda *_a, **_k: LintResponse(funnel_error=None, result=None, notices=(WARN, INFO))
@@ -304,9 +306,9 @@ def test_json_run_with_the_flag_leaves_the_promo_out(promo_project: Path) -> Non
 
 def _mcp_notices(monkeypatch: pytest.MonkeyPatch) -> tuple[Notice, ...]:
     monkeypatch.setattr(
-        tools, "_server_lint", lambda *_a, **_k: LintResponse(funnel_error=None, result=None, notices=(WARN, PROMO))
+        check_one, "_server_lint", lambda *_a, **_k: LintResponse(funnel_error=None, result=None, notices=(WARN, PROMO))
     )
-    return tools._server_lint_result(object())[2]
+    return check_one._server_lint_result(object())[2]
 
 
 @pytest.mark.unit

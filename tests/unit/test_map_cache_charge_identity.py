@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.cache.map_cache import CachedFileEntry, MapCache
+from reporails_cli.core.mapper.map_cache import MapCache
+from reporails_cli.core.platform.dto.mapping import CachedFileEntry
 
 
 def _seed(cache_dir: Path, charge: str) -> None:
@@ -54,8 +55,8 @@ def test_whole_map_identity_folds_charge_head_fingerprint(monkeypatch: pytest.Mo
     # charge-head re-export (new fingerprint, unchanged atom shape) MISSES the cached map
     # instead of serving stale charges. The per-file cache already did this; the whole-map
     # short-circuit did not.
-    import reporails_cli.core.cache.full_map_cache as bt
-    from reporails_cli.core.cache.full_map_cache import compute_identity
+    import reporails_cli.core.mapper.full_map_cache as bt
+    from reporails_cli.core.mapper.full_map_cache import compute_identity
 
     paths = [Path("a.md")]
     root = Path(".")

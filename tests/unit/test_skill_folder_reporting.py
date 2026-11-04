@@ -9,8 +9,8 @@ import pytest
 
 from reporails_cli.core.mapper.skills import record_skills
 from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem, QualityResult
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap
-from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.formatters.text import display, file_groups, item_scorecard, scorecard, triage_view
 from reporails_cli.formatters.text.display_constants import file_type_summary, skill_lookup
 from reporails_cli.formatters.text.item_scorecard import _display_name_for_path, compute_item_scores
@@ -461,15 +461,16 @@ class TestSkillRecordConsumers:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_local_type_resolver_keeps_mapped_types_and_gates_unmapped_skills(self, tmp_path: Path) -> None:
-        from reporails_cli.core.mapper.inspect import _load_registry
-        from reporails_cli.core.pipeline.assemble import AssembleInputs, _local_finding_type_resolver
+        from reporails_cli.core.mapper.inspect import load_registry
+        from reporails_cli.core.pipeline.assemble import _local_finding_type_resolver
+        from reporails_cli.core.platform.dto.pipeline import AssembleInputs
 
         rmap = _map(tmp_path, *_skill(tmp_path, ".claude/skills/foo"), _rec(tmp_path, ".claude/skills/bar/SKILL.md"))
         inp = AssembleInputs(
             m_findings=[], content_findings=[], client_findings=[], ruleset_map=rmap, scan_root=tmp_path,
             filter_agents=None, effective_agent="claude", lint_result=None,
         )  # fmt: skip
-        typed = _local_finding_type_resolver(inp, _load_registry())
+        typed = _local_finding_type_resolver(inp, load_registry())
         root = tmp_path.as_posix()
         assert typed(f"{root}/.claude/skills/foo/SKILL.md") == "skills"  # mapped: the record's type
         assert typed(f"{root}/.claude/skills/foo/new.md") == "skills"  # unmapped, in a recorded skill folder

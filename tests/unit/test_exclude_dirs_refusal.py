@@ -130,11 +130,11 @@ def test_mcp_validate_and_heal_apply_name_the_refused_setting(tmp_path: Path, gl
     from reporails_cli.interfaces.mcp.server import _run_heal_apply, _run_validate
 
     root = _project(tmp_path, "config.yml")
-    payload = asyncio.run(_run_validate(str(root), True, None))
+    payload = asyncio.run(_run_validate(str(root), True, None, root))
     assert payload["error"] == "config_unreadable"
     message = str(payload["message"])
     assert "exclude_dirs" in message and "docs/*" in message
-    healed = asyncio.run(_run_heal_apply(str(root)))
+    healed = asyncio.run(_run_heal_apply(str(root), None, root))
     assert healed.startswith("heal_apply: ") and "exclude_dirs" in healed
 
 

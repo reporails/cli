@@ -9,7 +9,7 @@ last_updated: 2026-09-20
 
 ## Quick start
 
-From the root of any repository that has at least one instruction file (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.github/copilot-instructions.md`, or `GEMINI.md`) — no install, no account:
+From a folder that has at least one instruction file (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.github/copilot-instructions.md`, or `GEMINI.md`) — no install, no account:
 
 ```bash
 npx @reporails/cli check
@@ -120,6 +120,8 @@ The JSON output groups findings under `files{path: {findings: [...], count: N}}`
 
 ## Focus on one file or capability
 
+The folder you run `ails check` in is the project. A file or folder inside it is checked as part of that project; a folder outside it is checked as its own project, and a file outside it at its own folder (a file under `~/.claude` at `~/.claude`). Nothing looks in the folders above for `.git`, `.ails/backbone.yml` or an editor or agent folder. When you name a file that is not an instruction file of that project, the check says so and points you to run `ails check` in the project's folder.
+
 When the whole-repo view is too noisy, name the target. Each positional is `capability:name`, `@capability` (all of capability), or a path:
 
 ```bash
@@ -136,6 +138,31 @@ ails check skills:backlog @agents  # mix: one skill + all agents
 Only the named files are read and checked, so cross-file rules compare them with each other, not with the rest of the project, and checks about the project as a whole (such as whether a main instruction file exists) are skipped. The output uses the same per-file card layout as a whole-project run, narrowed to the named target. Listing mode (`ails check <capability>` with no name) narrows the same card layout to every file under that capability instead of a single one. Capability names come from the agent's declared `file_types:` — both singular and plural are accepted.
 
 The whole-repo summary also shows a `Top rules (by finding count)` block — a fast triage view of which rule classes contribute the most findings across your project.
+
+## See a Claude Code session's context
+
+```bash
+ails xray                      # the newest Claude Code session started in this folder
+ails xray --session <id>       # one session by its id
+ails xray --no-open            # print the address instead of opening the browser
+ails xray --current            # the session of the agent running this command
+ails xray --background         # start the page detached, print its address and return
+```
+
+`ails xray` opens a page on `127.0.0.1` that shows one session as who handed what to whom, in three tabs: **Graph**, **Tool calls** and **Sources**. It opens on the Graph. On the Graph, the agent sits on a timeline that runs top to bottom: what entered its context is on the left (one node per instruction file, rule, skill, memory file or MCP server, at the moment it first loaded), its subagents are cards on the right, joined by an arch that leaves the timeline when the agent launched and returns when it handed its result back, and only hooks stay on the timeline itself. The line's thickness follows the context size, and a compaction narrows it with a marker showing the sizes before and after. A jump rail beside the graph shows where the calls were and scrolls to repeated failures, fan-outs, the selection and the end.
+
+- **Hover or focus** anything to highlight what it relates to; nothing moves. **Click a card** to see that agent in the right column: its peak context and estimated cost (each opens a breakdown), everything that was in its context at its peak, adding up to the exact total, its tool calls per tool, the subagents it launched and, for a subagent, what it returned. Press **Open** to go into that agent in the same layout; the path shows in the address bar and the breadcrumb, so a level can be linked. **Esc** closes the details, then clears the selection.
+- **Click a source** anywhere to open its details over the graph: its findings, configuration, path patterns or MCP tools, its full text, which agents loaded it and how its cost is estimated. Repeated calls to one MCP server collapse into one round trip per burst.
+- **The Sources list** on the left is the inventory of everything the session could load, the coding agent's own context first, and says what did not happen: listed but never loaded, on disk but never loaded, not recorded in this session, or none configured. Each group shows how many of its items were used and its findings; each item its size, estimated cost and findings. The eye button on a group shows or hides that kind on the graph only. A source's findings page opens with the command that fixes it.
+- **The Tool calls tab** opens full width: the call count and the agent, tool and failed filters on one line (the most-called tools show as buttons and a `+N` button opens a menu with the rest), a strip with one full-height mark per call in its tool's colour (failed calls in the failure colour), and the table of every call with its time, agent, tool, result size, duration and status. Hovering a mark shows that call's time, tool and label, and a click on a mark opens that call (a click on a gap opens nothing). Clicking a row (or a mark) narrows the table to its time, tool and call (its filters collapse into one button naming the active ones), opens the call's input, result, context at that turn and the instruction files in context beside it, and marks the open call on the strip; the × or Esc closes the details and the table has its full width again. **The Sources tab** works the same way: it lists every source with the agents that had it, its size and findings at full width, and a click narrows it to the name and kind and opens the source's details beside it.
+
+### Open any session
+
+- **From a terminal**, `ails xray` opens the newest session of the folder and keeps serving until Ctrl-C, or until it has had no request for 30 minutes; an open page keeps it running (set `AILS_XRAY_IDLE_S` to another number of seconds, `0` to never stop). It reads the sessions of the folder it runs in, so run it in the folder Claude Code was started in; with none there it exits with code 2 and names the folder. `--session <id>` opens one by its id. To choose without an id, open the session button in the page header: it lists the folder's recent sessions with their start time, length and subagent count, a "first prompt" toggle shows a session's first prompt only when clicked, and picking a session opens it on the same page. `--session` and `--current` cannot be combined, and an id that is not a session of the folder is refused.
+- **From inside an agent**, ask for the x-ray and the page opens in the background, so the agent's call returns at once with the address to show you. In the reporails plugin that is `/reporails:ails xray`; any agent connected to the reporails MCP server can call its `xray` tool, optionally with a `session`. Without a terminal tool, `ails xray --current --background` prints the same address. A page already running for the project is reused, and a page started with `ails xray` in a terminal is reused too. A page stops by itself after 30 minutes with no request, so an agent's calls leave no servers running.
+- **Which session opens.** From inside Claude Code, `--current` and the `xray` tool find the session you are running in by its id, whichever project it ran in, and open it even when a newer session of that folder exists. When the agent does not tell the command which session it is, the newest session opens and the page says that it is only the newest.
+
+The page uses the names your coding agent gives its agents, tools and files, so only what that agent has appears. It updates while the session runs, checks the project's files once when it opens, and reads the session transcript Claude Code keeps under `~/.claude/projects/` and, with the reporails plugin installed, the session's recorded events. Nothing is sent off the machine except the check and fix calls `ails check` makes; a part of the page with no source shows "not known here".
 
 ## Next steps
 

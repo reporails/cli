@@ -21,8 +21,9 @@ from reporails_cli.core.platform.dto.diagnostics import (
     WorkflowLocation,
 )
 from reporails_cli.core.platform.dto.models import CATEGORY_CODES, Level
+from reporails_cli.core.platform.dto.platform import CombinedResult, Omissions
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.core.platform.runtime.merger import CombinedResult, Omissions, normalize_finding_path
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.formatters.text.funnel_cta import plain_cta
 from reporails_cli.formatters.text.scorecard import compute_surface_scores
 from reporails_cli.formatters.triage import classify_regime, resolve_leverage, tally_rules
@@ -146,7 +147,15 @@ def _format_workflow(wf: RemediationWorkflow, project_root: Path) -> JsonObject:
         "locations": [_location(loc) for loc in wf.locations],
     }
     if wf.listed:
-        out["listed"] = [{"rule": e.rule, "reason": e.reason, "count": e.count} for e in wf.listed]
+        out["listed"] = [
+            {
+                "rule": e.rule,
+                "reason": e.reason,
+                "count": e.count,
+                **({"files": [_rel(f) for f in e.files]} if e.files else {}),
+            }
+            for e in wf.listed
+        ]
     return out
 
 

@@ -1,7 +1,7 @@
 # Google Antigravity Agent Configuration
 # Schema: schemas/agent.schema.yml v0.5.0
 #
-# Last verified: 2026-09-30
+# Last verified: 2026-10-29 (rules, mcp, config, plugins paths re-checked; other entries unchanged)
 #
 # Provenance. Google retired the open-source `gemini` CLI on 2026-06-18 and
 # succeeded it with the Antigravity CLI (Google transition blog, 2026-06-18).
@@ -13,15 +13,17 @@
 #
 # Items intentionally NOT included here (not measurable on disk):
 #   - Cloud-managed enterprise policies (Google Cloud admin / Code Assist Enterprise)
+#     (unverified: docs/enterprise names no policy file paths as of 2026-10-29; /etc/gemini-cli/* system paths below also unverified)
 #   - scheduled_tasks: native `/schedule` (one-time timers + recurring cron jobs,
 #     confirmed 2026-09-03), but the on-disk cron store path not documented.
 #
-# Hooks (re-verified 2026-09-30, antigravity.google/docs/hooks/ is now fetchable):
+# Hooks (re-verified 2026-10-28 against https://antigravity.google/docs/hooks/):
 # a dedicated `hooks.json` at project ".agents/hooks.json" and global
 # "~/.gemini/config/hooks.json" — no longer the Gemini-CLI `.gemini/settings.json`
-# shape. 5 events (PreToolUse, PostToolUse, PreInvocation, PostInvocation, Stop),
-# handler `type` optional (defaults to "command"), `command` required, `timeout`
-# optional. See the `hooks` file_type and the 3 ANTIGRAVITY:S:* hook rules below.
+# shape. 6 events (SessionStart, PreToolUse, PostToolUse, PreInvocation,
+# PostInvocation, Stop), handler `type` optional (defaults to "command"; `command`
+# is the only supported type), `command` required, `timeout` optional. See the
+# `hooks` file_type and the 3 ANTIGRAVITY:S:* hook rules below.
 
 agent: antigravity
 version: "0.5.0"
@@ -44,7 +46,8 @@ file_types:
     loading: session_start
     scopes:
       project:
-        patterns: ["**/AGENTS.md", "**/GEMINI.md"]
+        # https://antigravity.google/docs/rules (2026-10-29): "<dir>/.agents/AGENTS.md or <dir>/.agents/GEMINI.md"
+        patterns: ["**/AGENTS.md", "**/GEMINI.md"]  # also covers <dir>/.agents/AGENTS.md and <dir>/.agents/GEMINI.md
         precedence: project
         vcs: committed
         maintainer: human
@@ -78,6 +81,7 @@ file_types:
         maintainer: human
 
   cross_read:
+    # (unverified: not in docs as of 2026-10-29) CONTEXT.md is not mentioned in the fetched docs; kept.
     # Additional cross-agent context file when context.fileName is configured.
     # AGENTS.md is promoted to `main` (Antigravity's go-forward primary); CONTEXT.md
     # remains an opt-in cross-read.
@@ -120,13 +124,23 @@ file_types:
       project:
         # https://antigravity.google/docs/rules#project-level-rules: "or a `.agents/rules/` directory—in any subdirectory of your project"
         # "Antigravity scans only immediate `.md` children inside `.agents/rules/`."
-        patterns: [".agents/rules/*.md", "**/.agents/rules/*.md"]
+        # https://antigravity.google/docs/rules (2026-10-29): "(and legacy `<dir>/.agent/rules/*.md`)"; `.agents/rules.json` is a
+        # rules config file ("create `.agents/rules.json`:"), a JSON config not a rule body, so not a pattern here.
+        patterns: [".agents/rules/*.md", "**/.agents/rules/*.md", "**/.agent/rules/*.md"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
         # https://antigravity.google/docs/rules#global-rules: "~/.gemini/config/rules/*.md"
-        patterns: ["~/.gemini/config/rules/*.md"]
+        # https://antigravity.google/docs/rules (2026-10-29): "~/.gemini/antigravity-cli/rules/*.md" (CLI global) and plugin
+        # "rules packaged inside installed plugins under `~/.gemini/antigravity-cli/plugins/<plugin_name>/rules/`"
+        # https://antigravity.google/docs/plugins: plugin layout `rules/<rule-name>.md`
+        patterns:
+          - "~/.gemini/config/rules/*.md"
+          - "~/.gemini/antigravity-cli/rules/*.md"
+          - "~/.gemini/antigravity-cli/plugins/*/rules/*.md"
+          # derived: plugin folder location (docs/plugins) + plugin rules/ layout; not stated as one path
+          - "~/.gemini/config/plugins/*/rules/*.md"
         precedence: user
         vcs: external
         maintainer: human
@@ -196,6 +210,7 @@ file_types:
         maintainer: human
 
   commands:
+    # (unverified: not in docs as of 2026-10-29) gcli-migration says only that commands were "converted to skills" on import.
     # TOML format with prompt + description, supports {{args}}, !{shell}, @{file}
     source: https://antigravity.google/docs/cli/gcli-migration
     format: schema_validated
@@ -227,6 +242,7 @@ file_types:
     loading: session_start
     scopes:
       project:
+        # (unverified: not in docs as of 2026-10-29) project .gemini/settings.{json,toml}; docs name only ~/.gemini/antigravity-cli/settings.json
         patterns: [".gemini/settings.json", ".gemini/settings.toml"]
         precedence: project
         vcs: committed
@@ -235,6 +251,7 @@ file_types:
         patterns:
           - "~/.gemini/settings.json"
           - "~/.gemini/settings.toml"
+          # (unverified: not in docs as of 2026-10-29) legacy ~/.gemini/antigravity/ state dir
           - "~/.gemini/antigravity/**"
           # https://antigravity.google/docs/settings?tab=cli: "~/.gemini/antigravity-cli/settings.json"
           - "~/.gemini/antigravity-cli/settings.json"
@@ -242,6 +259,7 @@ file_types:
         vcs: external
         maintainer: human
       system_defaults:
+        # (unverified: not in docs as of 2026-10-29) /etc/gemini-cli/*, /Library/.../GeminiCli/*, C:/ProgramData/gemini-cli/*
         patterns:
           - "/etc/gemini-cli/system-defaults.json"
           - "/Library/Application Support/GeminiCli/system-defaults.json"
@@ -281,10 +299,11 @@ file_types:
     # Hooks are kept by Antigravity (Google transition blog). Dedicated
     # "hooks.json" files — project ".agents/hooks.json", global
     # "~/.gemini/config/hooks.json" — NOT the Gemini-CLI `.gemini/settings.json`
-    # `hooks` key. 5 events: PreToolUse, PostToolUse, PreInvocation,
-    # PostInvocation, Stop. Handler `type` optional (default "command"),
-    # `command` required, `timeout` optional (default 30). Re-verified
-    # 2026-09-30 against antigravity.google/docs/hooks/ — see the 3
+    # `hooks` key. 6 events: SessionStart, PreToolUse, PostToolUse,
+    # PreInvocation, PostInvocation, Stop. Handler `type` optional (default
+    # "command", the only supported type), `command` required, `timeout`
+    # optional (default 30). Re-verified 2026-10-28 against
+    # https://antigravity.google/docs/hooks/ — see the 3
     # ANTIGRAVITY:S:* hook rules.
     source: https://antigravity.google/docs/hooks/
     format: schema_validated
@@ -317,6 +336,11 @@ file_types:
     # Antigravity separates MCP servers into a dedicated lightweight JSON profile
     # (mcp_config.json) rather than nesting them in primary settings. Legacy
     # gemini settings.json `mcpServers` key still read for backward-compat.
+    # Re-verified 2026-10-29 (gcli-migration, settings?tab=cli): global "~/.gemini/config/mcp_config.json",
+    # workspace ".agents/mcp_config.json"; plugin "mcp_config.json" (docs/plugins). Remote URL key is `serverUrl`
+    # ("current key for remote server URLs"; `url`/`httpUrl` are legacy) -- the schema has no key field, so noted here only.
+    # The old "~/.gemini/antigravity/mcp_config.json" is not in the docs; listed below as legacy/unverified.
+    # The legacy ~/.gemini/settings.json inline MCP declaration is documented as legacy ("Servers were declared inline within `~/.gemini/settings.json`").
     # Global profile re-verified 2026-09-30: "~/.gemini/config/mcp_config.json"
     # (antigravity.google/docs/cli/gcli-migration), not "~/.gemini/antigravity/".
     source: https://antigravity.google/docs/cli/gcli-migration
@@ -327,13 +351,17 @@ file_types:
     loading: session_start
     scopes:
       project:
-        patterns: [".agents/mcp_config.json", ".gemini/settings.json", ".gemini/settings.toml"]
+        patterns: [".agents/mcp_config.json", ".agents/plugins/*/mcp_config.json", ".gemini/settings.json", ".gemini/settings.toml"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
         patterns:
           - "~/.gemini/config/mcp_config.json"
+          # derived: plugin folder location (docs/plugins) + plugin mcp_config.json; not stated as one path
+          - "~/.gemini/config/plugins/*/mcp_config.json"
+          # (unverified/legacy: not in docs as of 2026-10-29) prior path, superseded by ~/.gemini/config/mcp_config.json
+          - "~/.gemini/antigravity/mcp_config.json"
           - "~/.gemini/settings.json"
           - "~/.gemini/settings.toml"
         precedence: user
@@ -365,6 +393,7 @@ file_types:
         maintainer: human
 
   geminiignore:
+    # (unverified: not in docs as of 2026-10-29)
     source: https://antigravity.google/docs/cli/gcli-migration
     format: freeform
     scope: global
@@ -380,6 +409,7 @@ file_types:
 
   system_prompt:
     # Replace default system prompt entirely
+    # (unverified: not in docs as of 2026-10-29)
     source: https://antigravity.google/docs/cli/gcli-migration
     format: freeform
     scope: global
@@ -394,6 +424,7 @@ file_types:
         maintainer: human
 
   memory:
+    # (unverified: not in docs as of 2026-10-29) brain/ and global_workflows/ paths are not in the fetched docs; kept.
     # Antigravity's private persistent state lives under ~/.gemini/antigravity/
     # (brain/, conversations/, global_workflows/) — direct-edit, recalled on
     # demand. The legacy ~/.gemini/GEMINI.md "## Gemini Added Memories" section

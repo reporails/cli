@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.mapper.inspect import _load_registry
+from reporails_cli.core.mapper.inspect import load_registry
 from reporails_cli.core.mapper.skills import record_skills
 from reporails_cli.core.pipeline.assemble import _local_finding_type_resolver
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap
@@ -42,7 +42,7 @@ def test_slot_finding_wire_type_is_skills_and_its_file_is_generic(tmp_path: Path
     )
     rmap = RulesetMap(schema_version="1", embedding_model="", generated_at="2026-01-01T00:00:00Z", files=recs, atoms=())
     record_skills(rmap, ["claude"], tmp_path)
-    typed = _local_finding_type_resolver(SimpleNamespace(ruleset_map=rmap, scan_root=tmp_path), _load_registry())  # type: ignore[arg-type]
+    typed = _local_finding_type_resolver(SimpleNamespace(ruleset_map=rmap, scan_root=tmp_path), load_registry())  # type: ignore[arg-type]
     assert typed((tmp_path / ".claude/skills/broken").as_posix()) == "skills"
     assert typed((tmp_path / ".claude/skills/broken/notes.md").as_posix()) == "generic"
     assert typed(str(tmp_path / ".claude/skills/broken/README.md")) == "generic"  # unmapped, in a slot: a plain file

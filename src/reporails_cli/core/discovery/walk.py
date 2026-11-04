@@ -20,9 +20,10 @@ import logging
 import os
 from collections.abc import Callable, Iterator
 from pathlib import Path, PurePosixPath
-from typing import NamedTuple, Protocol
+from typing import Protocol
 
 from reporails_cli.core.platform.contract.glob_pattern import GLOB_CHARS, brace_alternatives, glob_matches
+from reporails_cli.core.platform.dto.discovery import ListedEntry
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,23 @@ def safe_resolve(path: Path) -> Path:
         return path.resolve()
     except (OSError, RuntimeError):
         return path
+
+
+def file_under_target(f: Path, tgt: Path) -> bool:
+    """True when instruction file `f` is the target or sits beneath it.
+
+    Tests the file's logical absolute path alongside its symlink-resolved path, so a folder target keeps
+    in-tree symlinked files whose real location is elsewhere.
+    """
+    candidates = [Path(os.path.abspath(f))]
+    # A symlink loop resolves nowhere; its logical path stands alone.
+    with contextlib.suppress(OSError, RuntimeError):
+        candidates.append(safe_resolve(f))
+    if tgt.is_file():
+        return any(p == tgt for p in candidates)
+    if tgt.is_dir():
+        return any(p == tgt or p.is_relative_to(tgt) for p in candidates)
+    return False
 
 
 def is_symlink_loop_error(exc: BaseException) -> bool:
@@ -80,17 +98,6 @@ class Pruner(Protocol):  # pylint: disable=too-few-public-methods  # a protocol 
 
     def prunes(self, path: str, name: str, real: str) -> bool:
         """True when the listed folder `path` named `name` (canonical path `real`) is skipped."""
-
-
-class ListedEntry(NamedTuple):
-    """One directory entry, resolved once: name, path, whether it resolves to a regular file
-    or to a directory (symlinks followed), and whether it is itself a symlink."""
-
-    name: str
-    path: str
-    is_file: bool
-    is_dir: bool
-    is_symlink: bool
 
 
 # While set, `list_dir` reads each directory once and replays it for every later walk.

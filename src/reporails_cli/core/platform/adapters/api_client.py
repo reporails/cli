@@ -14,7 +14,7 @@ from pathlib import Path
 
 import httpx
 
-from reporails_cli.core.platform.adapters.api_key import resolve_api_key
+from reporails_cli.core.platform.adapters.api_key import diagnostics_server_api_key
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER, notices_from_header
 from reporails_cli.core.platform.adapters.payload import encode_msgpack, mapped_paths, project_local, project_payload
 from reporails_cli.core.platform.adapters.rate_cooldown import active_cooldown, record_cooldown
@@ -93,7 +93,7 @@ class AilsClient:
 
     def __init__(self, api_key: str | None = None) -> None:
         self.base_url = server_url()
-        self.api_key = api_key or resolve_api_key()
+        self.api_key = api_key or diagnostics_server_api_key()
         self.tier = env_tier() or _tier_from_config() or "free"
 
     def lint(

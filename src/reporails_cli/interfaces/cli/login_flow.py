@@ -8,7 +8,6 @@ from __future__ import annotations
 import logging
 import math
 import socket
-import sys
 import time
 from datetime import UTC, datetime
 from urllib.parse import urlparse
@@ -18,8 +17,8 @@ from rich.markup import escape
 
 from reporails_cli.core.platform.adapters.key_check import check_api_key
 from reporails_cli.core.platform.adapters.notices_seen import due_notices, visible_notices
+from reporails_cli.core.platform.adapters.programs import open_in_browser
 from reporails_cli.core.platform.adapters.sign_in import poll_sign_in, revoke_sign_in, start_sign_in
-from reporails_cli.core.platform.config.bootstrap import env_text, running_in_ci
 from reporails_cli.core.platform.config.credentials import (
     clear_credentials,
     credentials_path,
@@ -36,7 +35,7 @@ from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, STILL_RE
 from reporails_cli.core.platform.dto.sign_in import SignedIn, SignInGrant
 from reporails_cli.formatters.text.funnel_cta import OTHER_AGENT_HEAL_TEXT, UNPAID_PITCH_LINE, upgrade_link_line
 from reporails_cli.formatters.text.notices import print_notices
-from reporails_cli.interfaces.cli.helpers import console, launch_detached
+from reporails_cli.interfaces.cli.helpers import console
 
 logger = logging.getLogger(__name__)
 
@@ -141,28 +140,6 @@ def _start(site: str) -> SignInGrant:
         raise typer.Exit(1) from exc
 
 
-def _can_show_browser() -> bool:
-    """True when this machine can show a page.
-
-    Never in CI. Otherwise a non-blank `BROWSER` setting says how to open one. Without it, macOS and
-    Windows can unless the session is over SSH, and every other system needs `DISPLAY` or `WAYLAND_DISPLAY`.
-    """
-    if running_in_ci():
-        return False
-    if env_text("BROWSER"):
-        return True
-    if sys.platform == "darwin" or sys.platform.startswith("win"):
-        return not any(env_text(name) for name in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"))
-    return bool(env_text("DISPLAY") or env_text("WAYLAND_DISPLAY"))
-
-
-def _open_in_browser(url: str) -> None:
-    """Open `url` from a detached child that ignores the working directory and holds none of the caller's streams."""
-    if not sys.executable:
-        return
-    launch_detached([sys.executable, "-I", "-m", "webbrowser", "-t", url])
-
-
 def _is_the_websites_link(url: str, site: str) -> bool:
     """True for a link on the website's own scheme and host with no control characters."""
     if any(ord(char) < 32 or ord(char) == 127 for char in url):
@@ -175,16 +152,10 @@ def _show_link(site: str, grant: SignInGrant) -> None:
     """Print the link and the code, and open the website's own link when this machine can show a page."""
     console.print(f"  Open this link to sign in: {escape(grant.verification_url)}", soft_wrap=True)
     console.print(f"  Code: [bold]{escape(grant.user_code)}[/bold], check it matches the page")
-    if not _can_show_browser():
-        return
     if not _is_the_websites_link(grant.verification_url, site):
         logger.debug("Not opening a link that is not the website's own")
         return
-    try:
-        _open_in_browser(grant.verification_url)
-    except OSError as exc:
-        # Best effort: the link is already printed, so a missing or misconfigured browser costs nothing.
-        logger.debug("Could not open the browser: %s", exc)
+    open_in_browser(grant.verification_url)
 
 
 def _wait_for_sign_in(site: str, grant: SignInGrant) -> SignedIn:

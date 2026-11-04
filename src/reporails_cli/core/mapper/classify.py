@@ -10,7 +10,6 @@ Public entry point: `classify_charge(md_text, plain_text=...)`.
 from __future__ import annotations
 
 import re
-from typing import NamedTuple
 
 from reporails_cli.core.mapper.classify_lexicon import (
     ADDRESSEE_SUBJECTS,
@@ -32,6 +31,7 @@ from reporails_cli.core.mapper.classify_phases import (
 )
 from reporails_cli.core.mapper.markers import strip_markdown_inline, without_list_marker
 from reporails_cli.core.mapper.md_parser import leading_bold_run, replace_code_spans
+from reporails_cli.core.platform.dto.mapping import CoverageRestrictor
 from reporails_cli.core.platform.dto.ruleset import Modality
 
 # ──────────────────────────────────────────────────────────────────
@@ -57,6 +57,8 @@ _LATE_DONOT_RE = re.compile(r"\bdo not\b|\bdon't\b|\bdo NOT\b", re.IGNORECASE)
 
 # The hedge leads that can be dropped alone, leaving the instruction (`Perhaps run the linter`).
 HEDGE_ADVERB_LEADS: frozenset[str] = frozenset({"perhaps", "maybe", "possibly", "ideally"})
+# The words that can be dropped alone from the front of an instruction: the hedge adverbs and `please`.
+DROPPABLE_LEADS: frozenset[str] = HEDGE_ADVERB_LEADS | {"please"}
 # The hedge words that, opening an instruction (after `you` / `we` / `please`), make all of it a
 # suggestion (`Prefer real objects`, `Try not to mock`, `Perhaps run the linter`).
 HEDGE_LEADS: frozenset[str] = HEDGE_ADVERB_LEADS | {"prefer", "preferably", "consider", "try"}
@@ -79,14 +81,6 @@ SCOPE_RESTRICTORS: frozenset[str] = (
     EXCLUDING_RESTRICTORS | frozenset({"solely", "absent"}) | (_ABSOLUTE_ADVERBS - {"always"})
 )
 # ... and prepositions that narrow it when followed by a place, time or thing the line did not name.
-
-
-class CoverageRestrictor(NamedTuple):
-    """When a word cuts a rule's coverage down: it must be followed by one of `next_words` (any word
-    when empty), and the author's line must hold none of `already` (the senses it already carries)."""
-
-    next_words: frozenset[str]
-    already: frozenset[str]
 
 
 # Words that cut a rule's coverage down to part of what it named (`the rest of the output`,

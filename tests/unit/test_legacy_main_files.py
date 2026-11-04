@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.classify.file_tags import classify_file
 from reporails_cli.core.discovery.agent_surfaces import agent_main_names
 from reporails_cli.core.discovery.agents import get_known_agents
+from reporails_cli.core.discovery.file_tags import classify_file
 from reporails_cli.core.platform.config.capabilities import legacy_main_files
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_classify]

@@ -24,6 +24,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import parse_run_exclusions, with_named
 from reporails_cli.core.pipeline import mapping
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
@@ -283,7 +284,7 @@ def test_daemon_ping_reports_the_code_it_maps_with() -> None:
     pong = _dispatch({"cmd": "ping"}, None, threading.Event())
     assert pong["code"] == code_identity()
     assert code_identity().endswith(
-        f"+map{__import__('reporails_cli.core.cache.map_cache', fromlist=['x'])._CACHE_VERSION}"
+        f"+map{__import__('reporails_cli.core.mapper.map_cache', fromlist=['x']).CACHE_VERSION}"
     )
 
 
@@ -826,8 +827,8 @@ def test_two_threads_mapping_the_same_files_map_once(monkeypatch, tmp_path):
 def test_explicit_agent_places_no_file_another_agent_owns(tmp_path, agent, other_added):
     """A named file inside a left-out folder that another agent lists is placed under that agent
     only when no agent was asked for; an explicit run never gains the other agent."""
-    from reporails_cli.core.discovery.agents import DetectedAgent, get_known_agents
-    from reporails_cli.core.discovery.exclusions import RunExclusions
+    from reporails_cli.core.discovery.agents import get_known_agents
+    from reporails_cli.core.platform.dto.discovery import DetectedAgent
 
     known = get_known_agents()
     cursor_file = tmp_path / "ext" / ".cursor" / "rules" / "r.mdc"
@@ -839,7 +840,7 @@ def test_explicit_agent_places_no_file_another_agent_owns(tmp_path, agent, other
         DetectedAgent(known["claude"], [claude_md], [], []),
         DetectedAgent(known["cursor"], [], [], [cursor_file]),
     ]
-    exclusions = RunExclusions.parse(tmp_path, ["ext"], ()).with_named([cursor_file])
+    exclusions = with_named(parse_run_exclusions(tmp_path, ["ext"], ()), [cursor_file])
 
     _, _, _, filtered = mapping.resolve_agent_filters(agent, detected, tmp_path, exclusions)
 
@@ -851,8 +852,8 @@ def test_explicit_agent_places_no_file_another_agent_owns(tmp_path, agent, other
 
 def _unlisted_named_case(tmp_path, folder, rel):
     """A claude-only detection (the named file is not listed) and exclusions leaving out `folder`."""
-    from reporails_cli.core.discovery.agents import DetectedAgent, get_known_agents
-    from reporails_cli.core.discovery.exclusions import RunExclusions
+    from reporails_cli.core.discovery.agents import get_known_agents
+    from reporails_cli.core.platform.dto.discovery import DetectedAgent
 
     named = tmp_path / rel
     named.parent.mkdir(parents=True)
@@ -860,7 +861,7 @@ def _unlisted_named_case(tmp_path, folder, rel):
     claude_md = tmp_path / "CLAUDE.md"
     claude_md.write_text("# P\n", encoding="utf-8")
     detected = [DetectedAgent(get_known_agents()["claude"], [claude_md], [], [])]
-    return named, detected, RunExclusions.parse(tmp_path, [folder], ()).with_named([named])
+    return named, detected, with_named(parse_run_exclusions(tmp_path, [folder], ()), [named])
 
 
 @pytest.mark.unit

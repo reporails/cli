@@ -31,14 +31,14 @@ from reporails_cli.core.lint.harness_discovery import (
 )
 from reporails_cli.core.lint.harness_models import (
     _FIXTURE_EXCLUDES,
-    CheckRun,
-    HarnessResult,
     HarnessStatus,
-    RuleInfo,
+    fixture_cases,
+    has_fail_fixture,
+    has_pass_fixture,
 )
 from reporails_cli.core.lint.mechanical.runner import UnknownCheckError, run_mechanical_check
 from reporails_cli.core.lint.regex import scan_ruleset
-from reporails_cli.core.lint.regex.compiler import CompiledCheck, CompiledRuleSet, compile_rules
+from reporails_cli.core.lint.regex.compiler import compile_rules
 from reporails_cli.core.lint.rule_scaffold import (
     _scaffold_fail_fixture,
     _scaffold_fixture,
@@ -46,10 +46,11 @@ from reporails_cli.core.lint.rule_scaffold import (
     _scaffold_scoped_rule_file,
 )
 from reporails_cli.core.mapper.pipeline import map_ruleset
-from reporails_cli.core.platform.adapters.registry import RuleReadError, _load_from_path, read_checks_document
+from reporails_cli.core.platform.adapters.registry import RuleReadError, load_rules_from_path, read_checks_document
 from reporails_cli.core.platform.adapters.rule_builder import load_checks
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object
 from reporails_cli.core.platform.dto.checks import CheckResult
+from reporails_cli.core.platform.dto.lint import CheckRun, CompiledCheck, CompiledRuleSet, HarnessResult, RuleInfo
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, FileTypeDeclaration, Rule
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
@@ -152,7 +153,7 @@ def _build_platform_rule(rule: RuleInfo) -> Rule | None:
     text, and match targeting come from the identical construction path
     instead of a harness-only rebuild.
     """
-    rules = _load_from_path(rule.rule_dir)
+    rules = load_rules_from_path(rule.rule_dir)
     return rules.get(rule.rule_id)
 
 
@@ -237,11 +238,11 @@ def _prepare_fixture(
 def _fixtures_of(rule: RuleInfo) -> list[tuple[str, str, Path]]:
     """`(label, kind, directory)` for every fixture the rule runs: pass, fail, then each named case."""
     fixtures: list[tuple[str, str, Path]] = []
-    if rule.has_pass_fixture:
+    if has_pass_fixture(rule):
         fixtures.append(("pass", "pass", rule.rule_dir / "tests" / "pass"))
-    if rule.has_fail_fixture:
+    if has_fail_fixture(rule):
         fixtures.append(("fail", "fail", rule.rule_dir / "tests" / "fail"))
-    for name, case_dir in rule.fixture_cases()[0]:
+    for name, case_dir in fixture_cases(rule)[0]:
         fixtures.append((f"case {name}", "pass" if name.startswith("pass-") else "fail", case_dir))
     return fixtures
 
@@ -266,7 +267,7 @@ def run_rule(
         title=rule.title,
         status=HarnessStatus.PASSED,
     )
-    result.cases_not_run = rule.fixture_cases()[1]
+    result.cases_not_run = fixture_cases(rule)[1]
 
     if rule.load_failure:
         result.status = HarnessStatus.FAILED

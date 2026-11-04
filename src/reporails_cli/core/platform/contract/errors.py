@@ -36,5 +36,18 @@ class ConfigUnreadableError(PlatformError):
     """
 
 
+class InstalledPluginsUnreadableError(PlatformError):
+    """Claude Code's `installed_plugins.json` exists but is not valid JSON or not the documented shape."""
+
+
+class ClaudeSettingsUnreadableError(ConfigUnreadableError):
+    """Claude Code's cache of the server-managed settings, `remote-settings.json`, cannot be read, or is not a JSON
+    object. A config error, so every interface answers it as it does the other unreadable config files."""
+
+
 class BundledConfigMissingError(PlatformError):
     """The agent configs that ship with the package are missing or unreadable: a broken install."""
+
+
+class XrayPageError(PlatformError):
+    """The x-ray page did not start, or did not answer within the time given to it."""

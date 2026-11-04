@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from reporails_cli.core.discovery.exclusions import leaves_out
 from reporails_cli.core.discovery.walk import walk_glob_matches
 from reporails_cli.core.lint.mechanical.checks import (
     CheckArgs,
@@ -17,7 +18,7 @@ from reporails_cli.core.lint.mechanical.checks import (
 from reporails_cli.core.platform.contract.glob_pattern import GLOB_CHARS
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
-from reporails_cli.core.platform.policy.matching import _prop_matches
+from reporails_cli.core.platform.policy.matching import prop_matches
 
 
 def _scope_dir_from_glob(glob_pattern: str) -> str:
@@ -56,7 +57,7 @@ def _resolve_scope_dir(match_type: str | list[str], classified_files: list[Class
     types = sorted(match_type) if isinstance(match_type, list) else [match_type]
     for one_type in types:
         for cf in classified_files:
-            if _prop_matches(one_type, cf.file_type):
+            if prop_matches(one_type, cf.file_type):
                 rel = str(cf.path.parent)
                 # Extract the non-glob prefix from the relative path
                 return _scope_dir_from_glob(rel)
@@ -91,7 +92,7 @@ def file_absent(
         scope_root = root / scope_dir
         direct_path = scope_root / pattern
         matches = [
-            m for m in walk_glob_matches(scope_root, f"**/{pattern}", exclusions) if not exclusions.leaves_out(m)
+            m for m in walk_glob_matches(scope_root, f"**/{pattern}", exclusions) if not leaves_out(exclusions, m)
         ]
     else:
         direct_path = root / pattern
@@ -99,7 +100,7 @@ def file_absent(
     if matches:
         name = matches[0].relative_to(root).as_posix() if matches[0].is_relative_to(root) else matches[0].name
         return CheckResult(passed=False, message=f"Forbidden file exists: {name}")
-    if direct_path.exists() and not exclusions.leaves_out(direct_path):
+    if direct_path.exists() and not leaves_out(exclusions, direct_path):
         rel = f"{scope_dir}/{pattern}" if scope_dir else pattern
         return CheckResult(passed=False, message=f"Forbidden file exists: {rel}")
     return CheckResult(passed=True, message="Forbidden file not found")

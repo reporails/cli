@@ -149,7 +149,7 @@ fields:
               precedence:
                 required: true
                 type: enum
-                values: [managed, project, user, auto]
+                values: [managed, project, user, auto, synced]
                 description: "Priority in conflict resolution"
               vcs:
                 required: true

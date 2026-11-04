@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.classify.file_tags import classify_file
+from reporails_cli.core.discovery.file_tags import classify_file
 from reporails_cli.core.platform.utils.utils import config_pattern_matches
 
 

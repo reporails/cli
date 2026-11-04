@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.discovery.agent_discovery import ci_glob
-from reporails_cli.core.discovery.exclusions import RunExclusions
+from reporails_cli.core.discovery.exclusions import no_exclusions
 from reporails_cli.core.discovery.walk import walk_glob_matches, walk_markdown
 from reporails_cli.core.lint.mechanical import runner
 from reporails_cli.core.lint.mechanical.checks import _resolve_glob_targets
@@ -51,9 +51,9 @@ def test_guard_relative_root_matches_glob(tmp_path: Path, monkeypatch: pytest.Mo
     (tmp_path / ".claude" / "rules" / "x.md").write_text("x\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     expected = Path(".claude/rules/x.md")
-    assert ci_glob(Path("."), ".claude/rules/*.md", RunExclusions.none(Path("."))) == [expected]
+    assert ci_glob(Path("."), ".claude/rules/*.md", no_exclusions(Path("."))) == [expected]
     assert _resolve_glob_targets(".claude/rules/*.md", Path(".")) == [expected]
-    assert list(walk_glob_matches(Path("."), "**/*.md", RunExclusions.none(Path(".")))) == [expected]
+    assert list(walk_glob_matches(Path("."), "**/*.md", no_exclusions(Path(".")))) == [expected]
 
 
 def _looping_symlink(root: Path) -> None:
@@ -68,10 +68,10 @@ def test_guard_glob_walk_does_not_report_loops_but_markdown_walk_does(
 ) -> None:
     _looping_symlink(tmp_path)
     caplog.set_level(logging.WARNING)
-    list(walk_glob_matches(tmp_path, "*.md", RunExclusions.none(tmp_path)))
+    list(walk_glob_matches(tmp_path, "*.md", no_exclusions(tmp_path)))
     glob_records = [r for r in caplog.records if "Circular symlink" in r.getMessage()]
     caplog.clear()
-    list(walk_markdown(tmp_path, RunExclusions.none(tmp_path)))
+    list(walk_markdown(tmp_path, no_exclusions(tmp_path)))
     md_records = [r for r in caplog.records if "Circular symlink" in r.getMessage()]
     assert len(glob_records) == 0
     assert len(md_records) == 1

@@ -12,15 +12,15 @@ pattern/property accessors from `core/discovery`.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from collections.abc import Sequence
 from pathlib import Path
-from typing import NamedTuple
 
 from reporails_cli.core.discovery.agent_config import extract_patterns, extract_properties
 from reporails_cli.core.discovery.agent_discovery import is_eager_global, is_memory_recall_entry, is_nested
-from reporails_cli.core.discovery.plugin_roots import matches_plugin_pattern, split_plugin_pattern
+from reporails_cli.core.discovery.plugin_roots import PLUGIN_SCOPE, matches_plugin_pattern, split_plugin_pattern
 from reporails_cli.core.platform.config.config import get_rules_path, iter_agent_configs
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, pattern_list
+from reporails_cli.core.platform.dto.mapping import FileRead, FileTypeSpec, RegistryMatch, RegistryPicks, RegistryQuery
 from reporails_cli.core.platform.utils.utils import config_pattern_matches, read_frontmatter_file
 
 logger = logging.getLogger(__name__)
@@ -85,7 +85,7 @@ def path_filter_key(path: Path, root: Path) -> str | None:
     """The frontmatter key the file's registry file type declares as its `path_key` (`globs` when it declares
     none); None for a file no file type claims."""
     rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
-    match = _find_best_registry_match(rel.lower(), _load_registry(), path, root)
+    match = _find_best_registry_match(rel.lower(), load_registry(), path, root)
     return str(match[2].get("path_key", "globs")) if match else None
 
 
@@ -94,7 +94,7 @@ def _frontmatter_flag(path: Path, key: str) -> bool:
     return _frontmatter_data(path, lenient=True).get(key) is True
 
 
-def _load_registry() -> dict[str, JsonObject]:
+def load_registry() -> dict[str, JsonObject]:
     """Load all agent registry configs. Returns {agent: config_dict}."""
     registry_dir = get_rules_path()
     if not registry_dir.is_dir():
@@ -115,24 +115,16 @@ _ACTIVATION_KEYS = (
 )
 
 
-class _FileTypeSpec(NamedTuple):
-    """A registry file type read for matching."""
-
-    patterns: list[str]
-    declared: dict[str, str | list[str]]  # the file type's own properties
-    props: JsonObject  # `declared` with the activation keys folded in
-
-
-def _read_file_type(ft: JsonValue) -> _FileTypeSpec:
+def _read_file_type(ft: JsonValue) -> FileTypeSpec:
     """A registry file type's patterns and properties (its activation keys folded in)."""
     if not isinstance(ft, dict):
-        return _FileTypeSpec([], {}, {})
+        return FileTypeSpec([], {}, {})
     declared = extract_properties(ft)
     props: JsonObject = {k: ([*v] if isinstance(v, list) else v) for k, v in declared.items()}
     for key in _ACTIVATION_KEYS:
         if key in ft:
             props[key] = ft[key]
-    return _FileTypeSpec(extract_patterns(ft), declared, props)
+    return FileTypeSpec(extract_patterns(ft), declared, props)
 
 
 def _scope_activation(ft: JsonValue, pattern: str) -> JsonObject:
@@ -150,23 +142,24 @@ def _match_lower(rel: str, pattern: str) -> bool:
     return config_pattern_matches(rel, pattern, ignore_case=True, anchor_loose_leaf=True)
 
 
-def _plugin_match_specificity(patterns: list[str], path: Path | None, root: Path | None) -> int | None:
+def _plugin_match_specificity(
+    patterns: list[str], path: Path | None, root: Path | None, installed: Sequence[Path]
+) -> int | None:
     """The best specificity among the plugin component patterns (`<marker>/...`) that match
-    `path` from its plugin root, or None when none does (or there is no path to check)."""
+    `path` from its plugin root (one under `root` or an `installed` one), or None when none does
+    (or there is no path to check)."""
     if path is None or root is None:
         return None
     specificities = [
         len(split[1].split("*")[0])
         for pat in patterns
-        if (split := split_plugin_pattern(pat)) is not None and matches_plugin_pattern(path, root, pat, _match_lower)
+        if (split := split_plugin_pattern(pat)) is not None
+        and matches_plugin_pattern(path, root, pat, _match_lower, installed)
     ]
     return max(specificities, default=None)
 
 
-_Match = tuple[int, str, str, JsonObject]  # (specificity, agent, file type, properties)
-
-
-def _beats(specificity: int, current: _Match | None) -> bool:
+def _beats(specificity: int, current: RegistryMatch | None) -> bool:
     """Whether a match of this specificity beats `current` (strictly more specific, or nothing held yet)."""
     return current is None or specificity > current[0]
 
@@ -174,7 +167,7 @@ def _beats(specificity: int, current: _Match | None) -> bool:
 def _outranks(
     specificity: int,
     agent_id: str,
-    current: _Match | None,
+    current: RegistryMatch | None,
     registry: dict[str, JsonObject],
 ) -> bool:
     """Whether a match beats `current`: more specific, or as specific and made by the core agent
@@ -185,36 +178,12 @@ def _outranks(
     return specificity == current[0] and bool(registry[agent_id].get("core")) and not registry[current[1]].get("core")
 
 
-@dataclass
-class _RegistryQuery:
-    """What one registry lookup is for: the file's lowered relative path, its absolute path and
-    scan root when known, and the registry it is matched against."""
-
-    rel_lower: str
-    registry: dict[str, JsonObject]
-    path: Path | None
-    root: Path | None
-
-    @property
-    def below_root(self) -> bool:
-        """Whether the file sits in a subdirectory rather than at the root."""
-        return "/" in self.rel_lower and not self.rel_lower.startswith("/")
-
-
-@dataclass
-class _Picks:
-    """The best match so far, and the best match for a subdirectory copy of an eager global file."""
-
-    best: _Match | None = None
-    below_root_copy: _Match | None = None
-
-
-def _scan_file_type(query: _RegistryQuery, agent_id: str, type_name: str, ft: JsonValue, picks: _Picks) -> None:
+def _scan_file_type(query: RegistryQuery, agent_id: str, type_name: str, ft: JsonValue, picks: RegistryPicks) -> None:
     """Match one registry file type against the file, recording what it wins in `picks`."""
     patterns, declared, props = _read_file_type(ft)
-    plugin_hit = _plugin_match_specificity(patterns, query.path, query.root)
+    plugin_hit = _plugin_match_specificity(patterns, query.path, query.root, query.plugin_roots)
     if plugin_hit is not None and _beats(plugin_hit, picks.best):
-        picks.best = (plugin_hit, agent_id, type_name, props)
+        picks.best = (plugin_hit, agent_id, type_name, {**props, "precedence": PLUGIN_SCOPE})
     for pat in patterns:
         if split_plugin_pattern(pat) is not None:
             continue
@@ -248,6 +217,7 @@ def _find_best_registry_match(
     registry: dict[str, JsonObject],
     path: Path | None = None,
     root: Path | None = None,
+    plugin_roots: Sequence[Path] = (),
 ) -> tuple[str, str, JsonObject] | None:
     """Find the most specific registry pattern match for a file path.
 
@@ -257,13 +227,14 @@ def _find_best_registry_match(
     different file types. A subdirectory copy of a leaf whose agent declares no nested
     type keeps that agent's match and loads when work touches its subdirectory. A plugin
     component pattern (`<marker>/skills/**/SKILL.md`) matches the file's path from the
-    plugin root holding the marker, so it needs `path` and `root`.
+    plugin root holding the marker (or an installed one in `plugin_roots`), so it needs `path` and `root`;
+    its properties name the `plugin` precedence.
 
     Returns (agent_id, file_type, properties) or None if no match; `file_type` is the matched
     type's key in the agent's config.
     """
-    query = _RegistryQuery(rel_lower, registry, path, root)
-    picks = _Picks()
+    query = RegistryQuery(rel_lower, registry, path, root, plugin_roots)
+    picks = RegistryPicks()
     for agent_id, config in registry.items():
         for type_name, ft in as_object(config.get("file_types")).items():
             _scan_file_type(query, agent_id, type_name, ft, picks)
@@ -337,6 +308,14 @@ INVOKED_TYPES = frozenset(
 )
 
 
+# File types whose files are shown by their file stem: an agent or command is named by its file.
+STEM_LABELLED_TYPES = frozenset({"agents", "commands"})
+
+
+# File types whose files a session in a folder can invoke: the invoked bodies and the files that configure hooks.
+SESSION_INVOCABLE_TYPES = ("skills", "agents", "commands", "hooks")
+
+
 def activation_code(loading: str, scope: str, globs: tuple[str, ...], file_type: str, configured: str = "") -> str:
     """The agent-neutral way a file comes into context, from its resolved loading, scope, globs
     and type: always, subtree, launch_subtree, file_match, invoked, agent_decides or manual. A
@@ -356,6 +335,7 @@ def _detect_file_activation(
     path: Path,
     root: Path,
     registry: dict[str, JsonObject],
+    plugin_roots: Sequence[Path] = (),
 ) -> tuple[str, str, tuple[str, ...], str, str, str]:
     """Determine loading/scope/globs/agent/type/activation for an instruction file.
 
@@ -369,7 +349,7 @@ def _detect_file_activation(
         config key
     """
     rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
-    match = _find_best_registry_match(rel.lower(), registry, path, root)
+    match = _find_best_registry_match(rel.lower(), registry, path, root, plugin_roots)
     if match is None:
         return "session_start", "global", (), "generic", "generic", "always"
 
@@ -392,26 +372,25 @@ def file_type_of(path: Path, root: Path, registry: dict[str, JsonObject]) -> str
     return match[1] if match is not None else "generic"
 
 
-class FileRead(NamedTuple):
-    """How an agent reads a file: its file type, when it loads and from which precedence scope."""
-
-    file_type: str
-    loading: str
-    precedence: str
-
-
-def file_read_by(agent_id: str, path: Path, root: Path, registry: dict[str, JsonObject]) -> FileRead | None:
+def file_read_by(
+    agent_id: str,
+    path: Path,
+    root: Path,
+    registry: dict[str, JsonObject],
+    plugin_roots: Sequence[Path] = (),
+) -> FileRead | None:
     """The file type, loading and precedence `agent_id`'s own file types give `path`, None when none matches.
 
-    Loading is the mapper's own (`_detect_file_activation`); precedence is the matched location scope's.
+    Loading is the mapper's own (`_detect_file_activation`); precedence is the matched location scope's,
+    `plugin` for a file in a plugin root (an installed one in `plugin_roots` included).
     """
     config = registry.get(agent_id)
     if config is None:
         return None
     own = {agent_id: config}
     rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
-    match = _find_best_registry_match(rel.lower(), own, path, root)
+    match = _find_best_registry_match(rel.lower(), own, path, root, plugin_roots)
     if match is None:
         return None
-    loading, _, _, _, file_type, _ = _detect_file_activation(path, root, own)
+    loading, _, _, _, file_type, _ = _detect_file_activation(path, root, own, plugin_roots)
     return FileRead(file_type, loading, str(match[2].get("precedence", "")))

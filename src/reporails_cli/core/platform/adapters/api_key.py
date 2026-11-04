@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from urllib.parse import urlsplit
 
 from reporails_cli.core.platform.config.credentials import env_api_key, load_credentials_record
 from reporails_cli.core.platform.config.endpoints import DEFAULT_SERVER_URL, server_url
@@ -43,12 +44,29 @@ def resolve_api_key() -> str:
     return env_api_key() or degrade_on_fault(api_key_from_credentials, "API key")
 
 
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
 def default_server_api_key() -> str:
     """The API key in effect when ``AILS_SERVER_URL`` is unset or the default server, else "".
 
-    A key paired with another server (a local or staging one) is not returned.
+    A key paired with another server (a local or staging one) is not returned, so a stored key
+    never reaches a host the user points the cli at — including the default model host when the
+    diagnostics server is not the default one.
     """
     if server_url() != DEFAULT_SERVER_URL:
+        return ""
+    return resolve_api_key()
+
+
+def diagnostics_server_api_key() -> str:
+    """The API key the diagnostics client sends: the default server or a loopback dev stack, else "".
+
+    Loopback (``localhost`` / ``127.0.0.1`` / ``::1``) is the user's own machine, so a stored key may
+    go to a local dev server; any other host would be handed a credential the user does not control.
+    """
+    url = server_url()
+    if url != DEFAULT_SERVER_URL and urlsplit(url).hostname not in _LOOPBACK_HOSTS:
         return ""
     return resolve_api_key()
 

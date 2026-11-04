@@ -13,10 +13,11 @@ import logging
 from pathlib import Path
 
 from reporails_cli.core.classify import classify_files, load_file_types
-from reporails_cli.core.lint.harness_models import _FIXTURE_EXCLUDES, RuleInfo
+from reporails_cli.core.lint.harness_models import _FIXTURE_EXCLUDES
 from reporails_cli.core.platform.adapters.registry import RuleReadError, read_rule
 from reporails_cli.core.platform.config.config import get_agent_config, get_agent_config_path, iter_agent_configs
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
+from reporails_cli.core.platform.dto.lint import RuleInfo
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, FieldProblem, FileTypeDeclaration, Rule
 
 logger = logging.getLogger(__name__)

@@ -62,7 +62,7 @@ _NO_MAP_FALLBACK = "its pipeline run produced no map"
 def _pipeline_failure_reason(payload: JsonObject) -> str:
     """The best available cause string from a pipeline `payload` that yielded no map:
     the mapper's own swallowed exception text (`mapper_error` — see
-    `interfaces/mcp/tools.py::build_map`) when there is one, else the payload's own
+    `core/pipeline/check_one.py::build_map`) when there is one, else the payload's own
     `message` / `error` field (discovery's `needs_install` / unknown-agent / path-not-found
     payloads), else `_NO_MAP_FALLBACK` naming nothing more specific."""
     reason = payload.get("mapper_error") or payload.get("message") or payload.get("error")
@@ -98,7 +98,7 @@ def _build_file(rel: str, scan_root: Path) -> _BuiltFile | str:
     cause, never a bare sentinel."""
 
     abs_file = resolve_from_root(rel, scan_root)
-    payload, ruleset_map, score = run_pipeline_for_path(str(abs_file), True)
+    payload, ruleset_map, score = run_pipeline_for_path(str(abs_file), True, project_root=scan_root)
     if ruleset_map is None:
         return _pipeline_failure_reason(payload)
     try:

@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats
+from reporails_cli.core.platform.dto.platform import CombinedResult, CombinedStats
 from reporails_cli.formatters.json import format_combined_result
 
 

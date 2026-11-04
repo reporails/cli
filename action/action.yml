@@ -57,7 +57,7 @@ runs:
   using: 'composite'
   steps:
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
       with:
         python-version: '3.12'
 
@@ -98,7 +98,7 @@ runs:
     - name: Restore reporails model
       id: model-cache
       if: steps.model.outputs.dir != ''
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: ${{ steps.model.outputs.dir }}
         key: reporails-model-${{ runner.os }}-${{ steps.model.outputs.version }}
@@ -111,7 +111,7 @@ runs:
     # the prefix restore-key keeps the cache warm on every run in between. The
     # model is cached separately above, so an instruction edit never re-saves it.
     - name: Cache reporails analysis
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: |
           ~/.reporails/cache/*
@@ -198,7 +198,7 @@ runs:
 
     - name: Save reporails model
       if: ${{ !cancelled() && steps.model-ready.outputs.ready == 'true' }}
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: ${{ steps.model.outputs.dir }}
         key: ${{ steps.model-cache.outputs.cache-primary-key }}

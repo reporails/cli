@@ -21,7 +21,6 @@ from __future__ import annotations
 import base64
 import json
 import re
-from dataclasses import dataclass
 from pathlib import Path
 from typing import get_args
 
@@ -32,8 +31,8 @@ from reporails_cli.core.mapper.classify import (
 )
 from reporails_cli.core.mapper.classify_lexicon import MODAL_ABSOLUTE, words_of
 from reporails_cli.core.mapper.classify_no import starts_bare_no_status, starts_descriptive_no
-from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str
-from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str, opt_str
+from reporails_cli.core.platform.dto.mapping import MapFinding
 from reporails_cli.core.platform.dto.ruleset import (
     NO_CHARGE,
     SLOT_COORD_FIELDS,
@@ -178,7 +177,7 @@ def _atom_from_dict(d: JsonObject) -> Atom:
     fields["italic_tokens"] = [*styled["italic"]]
     fields["bold_tokens"] = [*styled["bold"]]
     fields["unformatted_code"] = [*styled["none"]]
-    embedding = _decode_embedding_b64(_optional_str(d.get("embedding_b64")))
+    embedding = _decode_embedding_b64(opt_str(d.get("embedding_b64")))
     fields["embedding_int8"] = None if embedding is None else [*embedding]
     atom = Atom.model_validate(fields)
     atom.slots = _unpack_slot_coords(_optional_object(d.get("slot_coords")))
@@ -187,11 +186,6 @@ def _atom_from_dict(d: JsonObject) -> Atom:
 
 # Wire keys that carry a differently shaped value than the Atom field of the same meaning.
 _ATOM_WIRE_ONLY_FIELDS = frozenset({"inline", "embedding_b64", "slot_coords", "slots"})
-
-
-def _optional_str(value: JsonValue) -> str | None:
-    """The string a field holds, None when absent."""
-    return value if isinstance(value, str) else None
 
 
 def _optional_object(value: JsonValue) -> JsonObject | None:
@@ -247,7 +241,7 @@ def save_ruleset_map(ruleset_map: RulesetMap, path: Path) -> None:
 def _file_record_from_dict(f: JsonObject) -> FileRecord:
     """Deserialize a FileRecord from its disk form."""
     fields: JsonObject = {k: v for k, v in f.items() if k != "description_embedding_b64"}
-    embedding = _decode_embedding_b64(_optional_str(f.get("description_embedding_b64")))
+    embedding = _decode_embedding_b64(opt_str(f.get("description_embedding_b64")))
     fields["description_embedding"] = None if embedding is None else [*embedding]
     return FileRecord.model_validate(fields)
 
@@ -274,17 +268,6 @@ def load_ruleset_map(path: Path) -> RulesetMap:
 # ──────────────────────────────────────────────────────────────────
 # MAP VALIDATION
 # ──────────────────────────────────────────────────────────────────
-
-
-@dataclass
-class MapFinding:
-    """A validation finding from map inspection."""
-
-    severity: FindingSeverity
-    rule: str
-    message: str
-    line: int = 0
-    text: str = ""
 
 
 # Strong charge words that should not appear in NEUTRAL atoms (unless quoted): the classifier's words

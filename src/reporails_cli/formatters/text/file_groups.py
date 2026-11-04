@@ -8,7 +8,8 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.file_aliases import compute_same_dir_content_aliases, get_file_aliases
 from reporails_cli.core.platform.dto.diagnostics import SEVERITY_RANK, FindingItem, Hint
-from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path
+from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.formatters.text.display_constants import path_tag
 from reporails_cli.formatters.triage import Regime, classify_regime
 

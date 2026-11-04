@@ -12,19 +12,21 @@ in this module.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from pathlib import Path
 
 from reporails_cli.core.classify import classify_files, load_file_types, location_matches_mode
 from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES, discover_from_config
 from reporails_cli.core.discovery.agents import detect_agents
-from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
+from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions, no_exclusions
 from reporails_cli.core.discovery.memory_locator import memory_entries_for_agent
 from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.read_gates import apply_read_gate
 from reporails_cli.core.discovery.walk import Pruner, safe_resolve, walk_glob_matches
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
+from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import FileTypeDeclaration
 from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
@@ -122,7 +124,9 @@ def classify_target_token(
 
     def _path(raw: str) -> Path:
         p = Path(raw)
-        return safe_resolve(p if p.is_absolute() or base is None else base / p)
+        full = p if p.is_absolute() or base is None else base / p
+        # A linked file keeps its own path; the run's project root decides whether it is read there or at its target.
+        return Path(os.path.abspath(full)) if full.is_file() and full.is_symlink() else safe_resolve(full)
 
     if token.startswith("file:"):
         return "path", _path(token[len("file:") :])
@@ -216,10 +220,10 @@ def list_capability_targets(
             continue
         if _is_user_scope_memory(ft_name, decl.patterns):
             paths = _user_scope_memory_paths(agent, project_root, exclusions)
-            paths = [p for p in paths if not exclusions.leaves_out(p)]
+            paths = [p for p in paths if not leaves_out(exclusions, p)]
         else:
             paths = _glob_patterns(decl.patterns, project_root, exclusions, decl=decl)
-            paths = [p for p in paths if not exclusions.leaves_out(p)]
+            paths = [p for p in paths if not leaves_out(exclusions, p)]
             # A file the agent reads only under a condition is its target only then.
             paths = apply_read_gate(agent, ft_name, paths, project_root)
         for path in paths:
@@ -243,7 +247,7 @@ def _list_referenced_targets(agent: str, project_root: Path, exclusions: RunExcl
     discovered = discover_from_config(project_root, agent, exclusions=exclusions)
     if discovered is None:
         return []
-    instruction_files = [f for f in discovered[0] if not exclusions.leaves_out(f)]
+    instruction_files = [f for f in discovered[0] if not leaves_out(exclusions, f)]
     file_types = load_file_types(agent, project_root=project_root)
     classified = classify_files(
         project_root,
@@ -305,7 +309,7 @@ def resolve_capability(
     A named instance resolves whatever the user excludes. Returns the first match, or None when no
     candidate matches.
     """
-    candidates = list_capability_targets(agent, capability, project_root, RunExclusions.none(project_root))
+    candidates = list_capability_targets(agent, capability, project_root, no_exclusions(project_root))
     extractor = _name_extractor_for(capability)
     for candidate in candidates:
         if extractor(candidate) == name:

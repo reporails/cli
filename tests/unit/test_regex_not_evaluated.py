@@ -14,7 +14,7 @@ from reporails_cli.core.lint.regex.not_evaluated import (
     not_evaluated_scope,
     record_not_evaluated,
 )
-from reporails_cli.core.platform.runtime.merger import CombinedResult, Omissions
+from reporails_cli.core.platform.dto.platform import CombinedResult, Omissions
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters.text.not_evaluated import print_not_evaluated
 

@@ -24,6 +24,21 @@ def escape_glob(text: str) -> str:
     return "".join(_ESCAPES.get(char, char) for char in text)
 
 
+_ESCAPED_CHAR = re.compile(r"\[[*?\[{]\]")
+_ESCAPE_TEXT = {"[*]": "*", "[?]": "?", "[[]": "[", "[{]": "{"}
+
+
+def literal_segment(segment: str) -> str | None:
+    """The text one glob segment stands for when it holds no glob character beyond `escape_glob`'s
+    escapes (`[[]wip]` is `[wip]`); None when it is a pattern.
+
+    Pure function.
+    """
+    if GLOB_CHARS & set(_ESCAPED_CHAR.sub("", segment)):
+        return None
+    return _ESCAPED_CHAR.sub(lambda found: _ESCAPE_TEXT[found.group(0)], segment)
+
+
 class _Segment(NamedTuple):
     """One glob segment: its text, and a matcher for a path segment."""
 

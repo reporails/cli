@@ -13,9 +13,9 @@ from collections.abc import Sequence
 
 from reporails_cli.core.heal.preservation.conditions import by_line
 from reporails_cli.core.heal.preservation.match import pair_score
-from reporails_cli.core.heal.preservation.snapshot import SnapshotAtom
 from reporails_cli.core.heal.preservation.words import AtomView, content_words
 from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.heal import SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import PROSE_OR_LIST_FORMATS, Atom
 from reporails_cli.core.platform.dto.structure import DocumentStructure
 from reporails_cli.core.platform.policy.negative_headings import heading_label

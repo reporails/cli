@@ -16,8 +16,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from reporails_cli.core.pipeline.assemble import AssembleInputs, assemble_result
+from reporails_cli.core.pipeline.assemble import assemble_result
 from reporails_cli.core.platform.dto.models import Level
+from reporails_cli.core.platform.dto.pipeline import AssembleInputs
 
 
 def _inputs(**overrides: object) -> AssembleInputs:
@@ -366,7 +367,8 @@ def test_a_finding_the_workflow_does_not_serve_keeps_the_grade_of_its_reply_row(
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_stamping_served_tiers_without_a_workflow_returns_the_same_result():
-    from reporails_cli.core.platform.runtime.merger import CombinedResult, stamp_served_tiers
+    from reporails_cli.core.platform.dto.platform import CombinedResult
+    from reporails_cli.core.platform.runtime.merger import stamp_served_tiers
 
     result = CombinedResult()
     assert stamp_served_tiers(result) is result
@@ -383,14 +385,13 @@ def test_assemble_records_the_agents_whose_rules_ran(tmp_path):
     )
 
 
-def _archive_project(tmp_path, config: str):
+def _archive_project(tmp_path, config: str, places=("AGENTS.md", "archive/AGENTS.md")):
     """A project with a main file and an archived copy, each holding one served finding."""
     from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
     from reporails_cli.core.platform.dto.models import LocalFinding
 
     (tmp_path / ".ails").mkdir()
     (tmp_path / ".ails" / "config.yml").write_text(config, encoding="utf-8")
-    places = ("AGENTS.md", "archive/AGENTS.md")
     locations = tuple(
         WorkflowLocation(
             order=i,
@@ -426,6 +427,22 @@ def test_a_heal_excluded_file_keeps_its_findings_and_takes_no_rewrite_location(t
     assert [loc.order for loc in result.reply.workflow.locations] == [1]
     [entry] = result.reply.workflow.listed
     assert (entry.rule, entry.reason, entry.count) == ("CODEX:E:0001", "excluded", 1)
+    assert entry.files == ("archive/AGENTS.md",)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_a_bare_heal_exclude_name_matches_only_at_the_project_root(tmp_path, dev_rules_dir):
+    """A bare `AGENTS.md` entry is anchored at the project root: the nested copy keeps its location."""
+    result = _archive_project(tmp_path, "heal_exclude: [AGENTS.md]\n", places=("AGENTS.md", "sub/AGENTS.md"))
+
+    assert [loc.element for loc in result.reply.workflow.locations] == ["sub/AGENTS.md"]
+    [entry] = result.reply.workflow.listed
+    assert (entry.reason, entry.count, entry.files) == ("excluded", 1, ("AGENTS.md",))
+
+    (tmp_path / "d").mkdir()
+    deep = _archive_project(tmp_path / "d", "heal_exclude: ['**/AGENTS.md']\n", places=("AGENTS.md", "sub/AGENTS.md"))
+    assert not deep.reply.workflow.locations
 
 
 @pytest.mark.unit

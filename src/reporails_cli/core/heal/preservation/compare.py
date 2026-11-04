@@ -15,13 +15,7 @@ from reporails_cli.core.heal.preservation.named import (
     prohibition_scope_changes,
     repeated_named,
 )
-from reporails_cli.core.heal.preservation.snapshot import (
-    Snapshot,
-    SnapshotAtom,
-    is_hedge_fragment,
-    is_instruction_heading,
-    rewritten_atoms,
-)
+from reporails_cli.core.heal.preservation.snapshot import is_hedge_fragment, is_instruction_heading, rewritten_atoms
 from reporails_cli.core.heal.preservation.words import named_key
 from reporails_cli.core.lint.content_queries import own_atoms_for_file
 from reporails_cli.core.mapper.imports import import_refs
@@ -29,6 +23,7 @@ from reporails_cli.core.mapper.structure import read_structure
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 from reporails_cli.core.platform.contract.environment import ProjectEnvironment
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_list, as_object, as_str
+from reporails_cli.core.platform.dto.heal import Pair, Snapshot, SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.core.platform.dto.structure import DocumentStructure
 from reporails_cli.core.platform.policy.negative_headings import is_negative_heading
@@ -59,7 +54,7 @@ def _negative_heading_texts(new_map: RulesetMap | None, file_path: str) -> list[
     return [a.text for a in atoms if a.kind == "heading" and is_negative_heading(a.text)]
 
 
-def _pair_checks(pairs: list[conditions.Pair], old_by_line: conditions.ByLine, invented: set[str]) -> JsonObject:
+def _pair_checks(pairs: list[Pair], old_by_line: conditions.ByLine, invented: set[str]) -> JsonObject:
     """The checks that read each matched instruction against its rewrite; `invented` is the lowered
     names reported as invented."""
     narrowed = conditions.narrowed_instructions(pairs, old_by_line)

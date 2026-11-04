@@ -9,13 +9,15 @@ row per file for every other kind.
 from __future__ import annotations
 
 from collections import Counter
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from rich.console import Console
 
+from reporails_cli.core.mapper.labels import skill_name
 from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem
+from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.formatters.text.display_constants import HEALTH_BAR_WIDTH, skill_lookup
 from reporails_cli.formatters.text.health import SurfaceHealth, count_tag, mean_display_score
 from reporails_cli.formatters.text.score import score_color
@@ -103,7 +105,7 @@ def _display_name_for_path(rel: str, skill_of: dict[str, str] | None = None) -> 
     """
     p = Path(rel)
     if skill_of is not None and rel in skill_of:
-        return PurePosixPath(skill_of[rel]).name
+        return skill_name(skill_of[rel])
     if p.name == "SKILL.md":
         return p.parent.name if skill_of is None else rel
     return p.stem
@@ -113,9 +115,7 @@ def _item_names(members: dict[str, dict[str, None]], skill_of: dict[str, str]) -
     """Display name per item key: a skill folder by its name, another file by its stem; two
     skill folders sharing a name are each named by their project-relative folder path."""
     folders = set(skill_of.values())
-    names = {
-        key: PurePosixPath(key).name if key in folders else _display_name_for_path(key, skill_of) for key in members
-    }
+    names = {key: skill_name(key) if key in folders else _display_name_for_path(key, skill_of) for key in members}
     counts = Counter(names.values())
     return {key: key if key in folders and counts[name] > 1 else name for key, name in names.items()}
 

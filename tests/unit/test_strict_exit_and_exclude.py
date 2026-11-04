@@ -95,7 +95,7 @@ class TestExcludeFilesDropsLinkWalked:
     @pytest.mark.subsys_lint
     def test_link_walked_left_out_file_is_not_classified(self, tmp_path: Path) -> None:
         """The @import link walk does not reach a file the run left out."""
-        from reporails_cli.core.discovery.exclusions import RunExclusions
+        from reporails_cli.core.discovery.exclusions import parse_run_exclusions
         from reporails_cli.core.lint.rule_runner import _classify_agent_files
 
         (tmp_path / "CLAUDE.md").write_text("# P\n\n@VENDORED.md\n\n@other.md\n", encoding="utf-8")
@@ -103,7 +103,7 @@ class TestExcludeFilesDropsLinkWalked:
         (tmp_path / "other.md").write_text("Always test.\n", encoding="utf-8")
         (tmp_path / ".ails").mkdir()
         (tmp_path / ".ails" / "config.yml").write_text("generic_scanning: true\n", encoding="utf-8")
-        exclusions = RunExclusions(tmp_path, files=("VENDORED.md",))
+        exclusions = parse_run_exclusions(tmp_path, (), ("VENDORED.md",))
 
         classified, _ = _classify_agent_files(tmp_path, [tmp_path / "CLAUDE.md"], "claude", exclusions=exclusions)
         names = {cf.path.name for cf in classified}

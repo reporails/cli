@@ -12,7 +12,7 @@ import os
 import re
 from collections.abc import Hashable
 from pathlib import Path
-from typing import ClassVar, NamedTuple
+from typing import ClassVar
 
 import yaml
 from yaml.constructor import SafeConstructor
@@ -20,6 +20,7 @@ from yaml.resolver import Resolver
 
 from reporails_cli.core.platform.contract.glob_pattern import glob_matches
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
+from reporails_cli.core.platform.dto.frontmatter import Frontmatter, FrontmatterBlock, FrontmatterProblem
 
 logger = logging.getLogger(__name__)
 
@@ -158,30 +159,7 @@ _PLAIN_TOKEN = re.compile(r"^(?:~|null|true|false|[-+]?\d+(?:\.\d+)?)$", re.IGNO
 _UNCLOSED = "the frontmatter block is not closed"
 
 
-class FrontmatterBlock(NamedTuple):
-    """Where a file's leading frontmatter block is: its YAML text and the lines it occupies."""
-
-    text: str  # the YAML between the two delimiter lines
-    first_line: int  # 1-based file line of `text`'s first line
-    body_line: int  # 0-based index of the first line after the closing delimiter
-
-
 NOT_A_MAPPING = "the block is not a YAML mapping"
-
-
-class FrontmatterProblem(NamedTuple):
-    """Why a frontmatter block cannot be read: the 1-based file line of the problem and one line of text."""
-
-    line: int
-    message: str
-
-
-class Frontmatter(NamedTuple):
-    """What a file's leading frontmatter block holds: the mapping, or the problem that stops it reading."""
-
-    block: FrontmatterBlock | None  # None when the file has no closed block (an opened one is the problem)
-    data: JsonObject | None  # None when there is no block, it is empty, or it does not read
-    problem: FrontmatterProblem | None
 
 
 def frontmatter_block(content: str) -> FrontmatterBlock | None:
@@ -330,11 +308,13 @@ def config_pattern_matches(
     return glob_matches(subject, expanded, anchored=anchor_loose_leaf or not is_loose_leaf_pattern(clean))
 
 
-def matches_any_glob(path: Path, patterns: list[str], target: Path) -> bool:
+def matches_any_glob(path: Path, patterns: list[str], target: Path, *, root_anchored: bool = False) -> bool:
     """Check whether path matches any glob pattern relative to target.
 
     Pure function. Tries the target-relative path first, then the absolute
-    path, so patterns may include or omit the project-root prefix.
+    path, so patterns may include or omit the project-root prefix. With `root_anchored`
+    each pattern is a glob anchored at `target` and only the target-relative path is
+    tried: a bare name (`CLAUDE.md`) matches only at the root, `**/CLAUDE.md` at any depth.
     """
     if not patterns:
         return False
@@ -342,6 +322,8 @@ def matches_any_glob(path: Path, patterns: list[str], target: Path) -> bool:
         rel = path.relative_to(target).as_posix()
     except ValueError:
         rel = path.as_posix()
+    if root_anchored:
+        return any(config_pattern_matches(rel, p, anchor_loose_leaf=True) for p in patterns)
     return any(glob_matches(rel, pattern) or glob_matches(path.as_posix(), pattern) for pattern in patterns)
 
 
@@ -359,25 +341,30 @@ def json_object(text: str) -> JsonObject:
     return body if isinstance(body, dict) else {}
 
 
-def write_json_atomic(path: Path, data: JsonValue) -> None:
+def write_json_atomic(path: Path, data: JsonValue, *, mode: int = 0o666) -> None:
     """Write `data` as JSON to `path` in one step (I/O).
 
     The JSON goes to a temp file beside `path` and `os.replace` swaps it in, so a
-    reader sees the old file or the new one, never a half-written one. Creates the
-    parent directory. Raises `OSError` when the write fails; the temp file is removed.
+    reader sees the old file or the new one, never a half-written one. The temp file is
+    created with permission bits `mode` (less the process umask), so a private file is
+    never readable by others, even briefly. Creates the parent directory. Raises
+    `OSError` when the write fails; the temp file is removed.
     """
     tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(json.dumps(data), encoding="utf-8")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(data))
         os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
 
 
-def compact_json(value: JsonValue, *, ensure_ascii: bool = True) -> str:
+def compact_json(value: JsonValue, *, ensure_ascii: bool = True, sort_keys: bool = False) -> str:
     """`value` as JSON text with no whitespace between items.
 
-    Non-ASCII characters are written as `\\uXXXX` escapes unless `ensure_ascii` is False.
+    Non-ASCII characters are written as `\\uXXXX` escapes unless `ensure_ascii` is False; object keys are written
+    in sorted order when `sort_keys` is True.
     """
-    return json.dumps(value, separators=(",", ":"), ensure_ascii=ensure_ascii)
+    return json.dumps(value, separators=(",", ":"), ensure_ascii=ensure_ascii, sort_keys=sort_keys)

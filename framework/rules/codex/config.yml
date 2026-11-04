@@ -5,7 +5,7 @@
 # does not indicate a Codex project. Detection requires .codex/ markers
 # (config.toml, rules/, agents/, hooks.json) or AGENTS.override.md.
 #
-# Last verified: 2026-09-03
+# Last verified: 2026-10-29
 #
 # Items intentionally NOT included here (cannot be statically measured):
 #   - fallback_main: project_doc_fallback_filenames is user-configurable in
@@ -102,6 +102,7 @@ file_types:
         vcs: committed
         maintainer: human
       user:
+        # build-skills lists only $HOME/.agents/skills for USER scope; ~/.codex/skills is unverified (docs do not list it).
         patterns: ["~/.agents/skills/**/*.md", "~/.codex/skills/**/*.md"]
         entry_patterns: ["~/.agents/skills/*/SKILL.md", "~/.codex/skills/*/SKILL.md"]
         precedence: user
@@ -187,12 +188,17 @@ file_types:
         maintainer: human
 
   hooks:
-    # 12 events (re-verified 2026-09-30): SessionStart, SessionEnd, SubagentStart,
+    # 12 documented events (re-verified 2026-10-28 against
+    # https://learn.chatgpt.com/docs/hooks): SessionStart, SessionEnd, SubagentStart,
     # SubagentStop, PreToolUse, PermissionRequest, PostToolUse, PreCompact,
-    # PostCompact, UserPromptSubmit, Stop, Interrupt. Handler types `command` and
-    # `mcp_tool` (`prompt`/`agent` parsed but skipped). Requires
-    # [features] codex_hooks = true. Hooks can also live inline in a [hooks]
-    # table inside config.toml.
+    # PostCompact, UserPromptSubmit, Stop, Interrupt. rust-v0.164.0 adds
+    # PreModelRequest and PostModelRequest (observation-only; not yet on the docs
+    # page): codex-rs/hooks/schema/generated/model-request.command.input.schema.json.
+    # Handler types `command` and `mcp_tool` (`prompt`/`agent` parsed but skipped).
+    # Feature key `hooks` under [features], on by default; `codex_hooks` is a
+    # deprecated alias. Hooks can also live inline in a [hooks] table inside
+    # config.toml. An enabled plugin's hooks load from `hooks/hooks.json` at the
+    # plugin root (or the manifest's `hooks` entry) and run only after a trust review.
     source: https://learn.chatgpt.com/docs/hooks
     format: schema_validated
     scope: global
@@ -320,6 +326,6 @@ intercept_events:
 
 # How this agent's hooks reach a sub-agent it starts, from the agent's own docs.
 subagent_hooks:
-  fire_in_subagents: {value: unconfirmed}
-  identifies_agent: {value: unconfirmed}
+  fire_in_subagents: {value: "yes", source: "https://learn.chatgpt.com/docs/hooks"}
+  identifies_agent: {value: "yes", fields: [agent_id, agent_type], source: "https://github.com/openai/codex/blob/rust-v0.164.0/codex-rs/hooks/schema/generated/pre-tool-use.command.input.schema.json"}
   extension_opt_out: {value: unconfirmed}

@@ -6,12 +6,15 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from reporails_cli.core.discovery.walk import safe_resolve
-from reporails_cli.core.heal.keyed import KeyedResult, keyed_heal
+from reporails_cli.core.heal.keyed import keyed_heal
 from reporails_cli.core.lint.suppression import suppressed_lines
+from reporails_cli.core.pipeline.check_one import check_path
 from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, RemediationWorkflow, tiers_unpaid
+from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult
+from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.utils.utils import matches_any_glob
 
@@ -44,6 +47,12 @@ def heal_withheld_for_run(
     )
 
 
+def heal_server_replied(*, mapped: bool, offline: bool, rejected: bool) -> bool:
+    """True when the server answered with a report: the run mapped the files, was not offline and the server
+    did not reject it. The one answer to "did the server reply" for a heal that wrote nothing."""
+    return mapped and not (offline or rejected)
+
+
 def heal_withheld(*, signed_in: bool, server_replied: bool) -> tuple[str, str]:
     """Why a heal run writes nothing: `(code, message)` from the account and what the server sent back.
 
@@ -63,8 +72,17 @@ def allowed_set(target: Path, allowed_files: Iterable[Path] | None) -> set[Path]
     allowed = {safe_resolve(p) for p in allowed_files} if allowed_files is not None else None
     patterns = get_project_config(target).heal_exclude
     if allowed is not None and patterns:
-        allowed = {p for p in allowed if not matches_any_glob(p, patterns, safe_resolve(target))}
+        allowed = {p for p in allowed if not matches_any_glob(p, patterns, safe_resolve(target), root_anchored=True)}
     return allowed
+
+
+def heal_bound(scope: Path, project_root: Path) -> Path:
+    """The folder heal may not write outside: `scope` when it is a folder, else `project_root`.
+
+    A file named as the scope would bound heal by its own real path, so a symlink at that
+    path would pass for any destination; the project holding the file bounds it instead.
+    """
+    return scope if scope.is_dir() else project_root
 
 
 def resolved_within(path: Path, scope: Path) -> bool:
@@ -110,3 +128,50 @@ def apply_keyed_heal(
         suppressed=suppressed,
         remap=remap,
     )
+
+
+def heal_workflow_within(
+    ruleset_map: RulesetMap, workflow: RemediationWorkflow | None, target: Path, scan_root: Path
+) -> KeyedResult:
+    """Write the workflow's keyed fixes to the mapped files inside `target`'s scope (`heal_bound`).
+
+    A file `heal_exclude` matches is never written and a line annotated with `ails-disable-line` is left
+    alone; a written file is re-mapped and checked against its plan, and one that departs is put back.
+    """
+    files = sorted({Path(a.file_path) for a in ruleset_map.atoms})
+    files = [f for f in files if resolved_within(f, heal_bound(target, scan_root))]
+    return apply_keyed_heal(
+        ruleset_map,
+        scan_root,
+        workflow,
+        dry_run=False,
+        allowed_files=files,
+        suppressed=suppressed_by_path(files, scan_root),
+    )
+
+
+def heal_one(path: str, project_root: Path) -> HealOutcome:
+    """Check one file and write the fixes the reply carries for it, as `heal_apply` does.
+
+    A refused check, a run with no map or no workflow writes nothing and says why in the words
+    `ails check --heal` uses.
+    """
+    run = check_path(path, project_root)
+    target = Path(path)
+    if isinstance(run, Refusal):
+        return HealOutcome(None, run.text, target.parent)
+    workflow = run.result.reply.workflow
+    if run.ruleset_map is None or workflow is None:
+        error = run.funnel_error
+        replied = heal_server_replied(
+            mapped=run.ruleset_map is not None, offline=run.result.offline, rejected=error is not None
+        )
+        _, message = heal_withheld_for_run(
+            error=error.error if error else None,
+            tier=run.result.reply.tier,
+            funnel_tier=error.tier if error else None,
+            server_replied=replied,
+        )
+        return HealOutcome(None, message, run.scope.scan_root)
+    written = heal_workflow_within(run.ruleset_map, workflow, safe_resolve(target), run.scope.scan_root)
+    return HealOutcome(written, "", run.scope.scan_root)

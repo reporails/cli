@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from reporails_cli.interfaces.mcp import tools
+from reporails_cli.core.pipeline import check_one
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_map]
 
@@ -30,9 +30,9 @@ def test_build_map_routes_through_shared_warm_path(monkeypatch):
         seen["files"] = list(files)
         return "SENTINEL_MAP"
 
-    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.map_instruction_files", fake_map)
+    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.map_instruction_files", fake_map)
 
-    ruleset_map, mapper_error = tools.build_map(Path("/proj"), [Path("/proj/CLAUDE.md")])
+    ruleset_map, mapper_error = check_one.build_map(Path("/proj"), [Path("/proj/CLAUDE.md")])
 
     assert ruleset_map == "SENTINEL_MAP", "MCP must map via the shared warm path, not a cold map_ruleset"
     assert mapper_error is None
@@ -51,9 +51,9 @@ def test_build_map_keeps_the_swallowed_exception_text_for_its_caller(monkeypatch
     def raising_map(*_a, **_kw):
         raise RuntimeError("dictionary changed size during iteration")
 
-    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.map_instruction_files", raising_map)
+    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.map_instruction_files", raising_map)
 
-    ruleset_map, mapper_error = tools.build_map(Path("/proj"), [Path("/proj/CLAUDE.md")])
+    ruleset_map, mapper_error = check_one.build_map(Path("/proj"), [Path("/proj/CLAUDE.md")])
 
     assert ruleset_map is None
     assert mapper_error == "RuntimeError: dictionary changed size during iteration"
@@ -85,7 +85,7 @@ def test_discover_files_discovers_against_filtered_agents(monkeypatch, tmp_path)
 
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.get_all_scannable_files", fake_get_all)
 
-    filter_agents, agent, _files, _file_type_by_path, _excluded, _exclusions = tools._discover_files(tmp_path)
+    filter_agents, agent, *_ = check_one.discover_files(tmp_path)
 
     assert captured["agents"] == sentinel_filtered, "discovery must key off the filtered agent set"
     assert filter_agents == sentinel_filtered
@@ -99,7 +99,7 @@ def test_prepare_and_validate_map_the_same_files_for_a_named_left_out_file(monke
     import asyncio
 
     from reporails_cli.core.discovery.agents import clear_agent_cache
-    from reporails_cli.core.platform.runtime.merger import CombinedResult
+    from reporails_cli.core.platform.dto.platform import CombinedResult
     from reporails_cli.interfaces.mcp import server
     from reporails_cli.interfaces.mcp.prepare import prepare_for_path
 
@@ -115,14 +115,14 @@ def test_prepare_and_validate_map_the_same_files_for_a_named_left_out_file(monke
     def capture(target, files, **_kw):
         seen.append((target, sorted(files)))
 
-    monkeypatch.setattr(tools, "is_initialized", lambda: True)
-    monkeypatch.setattr(tools, "model_not_ready_error", lambda: None)
-    monkeypatch.setattr(tools, "map_instruction_files", capture)
-    monkeypatch.setattr(tools, "_check_and_assemble", lambda *_a, **_k: (CombinedResult(), None))
+    monkeypatch.setattr(check_one, "is_initialized", lambda: True)
+    monkeypatch.setattr(check_one, "model_refusal", lambda: None)
+    monkeypatch.setattr(check_one, "map_instruction_files", capture)
+    monkeypatch.setattr(check_one, "check_and_assemble", lambda *_a, **_k: (CombinedResult(), None))
     tokens = ("packages/x/CLAUDE.md",)
 
-    asyncio.run(server._fresh_validate_payload(str(project), tokens, project, server._CircuitState()))
-    prepare_for_path(str(project), list(tokens))
+    asyncio.run(server._fresh_validate_payload(str(project), tokens, project, server.CircuitState()))
+    prepare_for_path(str(project), list(tokens), project)
 
     assert len(seen) == 2
     assert seen[0] == seen[1]
