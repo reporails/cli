@@ -4,12 +4,17 @@ const REGIONS = ['#overlay', '#canvas', '#inspector', '#sources', '#view-calls',
 
 const regionOf = e => REGIONS.find(r => e.closest(r)) || '';
 
+const dataSelector = (tag, pairs) => tag + pairs.map(([name, value]) => `[${name}="${CSS.escape(value)}"]`).join('');
+
+// The key of the element a region draws for an identity, as `keyOf` would write it once that element exists.
+export const keyFor = (region, tag, pairs) => ({ region, selector: dataSelector(tag, pairs) });
+
 // What finds an element again: its tag plus its id or data-* attributes, or its first class when it has none.
 function selectorOf(e) {
   const tag = e.tagName.toLowerCase();
   if (e.id) return `${tag}[id="${CSS.escape(e.id)}"]`;
   const data = [...e.attributes].filter(a => a.name.startsWith('data-') && a.name !== 'data-slot');
-  if (data.length) return tag + data.map(a => `[${a.name}="${CSS.escape(a.value)}"]`).join('');
+  if (data.length) return dataSelector(tag, data.map(a => [a.name, a.value]));
   const slot = e.getAttribute('data-slot');
   if (slot) return `${tag}[data-slot="${CSS.escape(slot)}"]`;
   const cls = e.classList[0];

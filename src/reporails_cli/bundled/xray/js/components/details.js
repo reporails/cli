@@ -1,6 +1,6 @@
 // The details frame: one open item ({kind, id}) drawn by the renderer registered for its kind. On the Graph tab the frame
-// is a dialog over the canvas column; on the other tabs the same output fills a one-column side panel.
-import { el, nk, sync } from '../dom.js';
+// is a dialog over the canvas column; on the other tabs the same output fills the pane beside the table.
+import { el, sync } from '../dom.js';
 import { find, keyOf, restore } from '../focus.js';
 
 const renderers = new Map();
@@ -34,6 +34,7 @@ function head(out, side) {
   const titles = el('div', 'pk-t');
   if (out.kicker) titles.append(el('span', 'pk-k', out.kicker));
   const title = el('h2', 'pk-title', out.title);
+  title.title = out.title;
   title.id = side ? 'peek-title-side' : 'peek-title';
   titles.append(title);
   h.append(titles);
@@ -93,10 +94,10 @@ export function renderOverlay(box, env) {
   sync(box, back, dlg);
 }
 
-// Another tab's side panel: the same output in one column, or a line saying nothing is open.
+// Another tab's details pane, beside its table: the same output in the overlay's two-column layout; empty when nothing is open.
 export function renderPanel(box, env) {
   const c = env.state.peek ? content(env, true) : null;
-  if (!c) { sync(box, nk('Click a row for its details.')); return; }
+  if (!c) { sync(box); return; }
   const wrap = el('section', 'pk-panel');
   wrap.setAttribute('role', 'region');
   wrap.setAttribute('aria-labelledby', c.titleId);
@@ -109,9 +110,9 @@ export function renderPanel(box, env) {
 // Focus: it goes to the × when details open, and back to the element that opened them when they close.
 const focus = { shown: '', opener: null };
 
-// What opened the details: its region and identity, which find its twin after a redraw.
+// What opened the details: an element, or the key of the element that stands for it; its region and identity find its twin after a redraw.
 export function remember(from) {
-  focus.opener = keyOf(from);
+  focus.opener = from instanceof Element ? keyOf(from) : from;
 }
 
 export const hasFocusIn = () => !!document.activeElement && !!document.activeElement.closest('.pk-dialog, .pk-panel');

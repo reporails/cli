@@ -2,15 +2,19 @@
 import { el } from '../dom.js';
 import { k1 } from '../format.js';
 import { UNRECORDED } from '../views.js';
-import { vlist, viewHeight } from './vlist.js';
+import { vlist, viewHeight, revealRow } from './vlist.js';
 
 const ROW_H = 36;
+const scrolled = new WeakMap();
 
 const inContext = (env, s, verb) => {
   if (s.availability === 'unrecorded') return UNRECORDED;
   const n = s.had_by ? s.had_by.length : 0;
   return n ? `${n} of ${env.ix.view.nodes.length} agents` : `never ${verb}`;
 };
+
+// Whether the open item is this row's: a source by its id, a built-in item by its key.
+const isOpen = (peek, item) => !!peek && (item.s ? peek.kind === 'src' && peek.id === item.s.id : peek.kind === 'builtin' && peek.id === item.key);
 
 function row(env, item) {
   const { state } = env, peek = state.peek;
@@ -21,8 +25,7 @@ function row(env, item) {
   b.append(chip, el('span', 'tb-trunc', item.name), el('span', 'tb-trunc tb-dim', item.kind), el('span', `tb-trunc${item.never ? ' tb-dim' : ''}`, item.who), el('span', 'tb-mono tb-r', item.tokens == null ? '–' : `~${k1(item.tokens)}`), el('span', item.finds ? 'tb-r tb-find' : 'tb-r tb-dim', item.finds ? String(item.finds) : '–'));
   if (item.s) b.dataset.source = item.s.id;
   else b.dataset.peek = `builtin:${item.key}`;
-  const on = peek && (item.s ? peek.kind === 'src' && peek.id === item.s.id : peek.kind === 'builtin' && peek.id === item.key);
-  if (on) b.classList.add('on');
+  if (isOpen(peek, item)) b.classList.add('on');
   if (item.never) b.classList.add('never');
   return b;
 }
@@ -52,4 +55,10 @@ export function render(box, env) {
   }
   const all = items(env);
   p.list.set(all.length, i => row(env, all[i]), viewHeight());
+  const peek = env.state.peek, at = all.findIndex(it => isOpen(peek, it));
+  const key = at >= 0 ? `${peek.kind}:${peek.id}` : '';
+  if (scrolled.get(box) !== key) {
+    scrolled.set(box, key);
+    if (at >= 0) revealRow(p.list.root, at, ROW_H);
+  }
 }

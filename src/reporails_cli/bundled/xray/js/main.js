@@ -41,6 +41,9 @@ function renderNotices() {
 }
 
 const BODIES = { graph: '#view-graph', calls: '#view-calls-body', sources: '#view-sources-body' };
+// Beside the table only on a screen wide enough for two panes; below it the details sit under the table.
+const WIDE = window.matchMedia('(min-width:1101px)');
+const TABLES = { calls: '#view-calls', sources: '#view-sources' };
 const SIDES = { calls: '#side-calls', sources: '#side-sources' };
 
 function renderTab(e) {
@@ -56,11 +59,16 @@ function renderTab(e) {
   } else {
     $('#overlay').hidden = true;
     $('.canvaswrap').inert = false;
+    // With nothing open the table has the whole width; an open item narrows it and its details fill the space beside it.
+    const open = !!state.peek;
+    for (const k of Object.keys(SIDES)) {
+      $(BODIES[k]).classList.toggle('beside', open && k === e.tab);
+      $(SIDES[k]).hidden = !(open && k === e.tab);
+      $(TABLES[k]).classList.toggle('narrow', open && k === e.tab && WIDE.matches);
+    }
     if (e.tab === 'calls') calls.render($('#view-calls'), e);
     else sourcestable.render($('#view-sources'), e);
-    // With nothing open the side panel describes the agent, as the Graph tab's right column does.
-    if (state.peek) details.renderPanel($(SIDES[e.tab]), e);
-    else inspector.render($(SIDES[e.tab]), e);
+    details.renderPanel($(SIDES[e.tab]), e);
   }
   details.settle(e, $(BODIES[e.tab]), hadFocus);
 }
@@ -125,7 +133,7 @@ const toggle = (set, v) => { if (!set.delete(v)) set.add(v); };
 const closePeek = () => { state.peek = null; };
 
 function openPeek(kind, id, from) {
-  details.remember(from);
+  details.remember(calls.openerOf(from) || from);
   state.peek = { kind, id };
 }
 
@@ -308,5 +316,15 @@ async function poll() {
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 poll();
 setInterval(poll, 2000);
+// A changed width of the page redraws it: the strip's pixels, the filter bar's fit and the one-pane breakpoint follow it.
+let pageWidth = 0;
+new ResizeObserver(entries => {
+  const w = Math.round(entries[0].contentRect.width);
+  if (w === pageWidth) return;
+  const first = pageWidth === 0;
+  pageWidth = w;
+  if (!first && ix) render();
+}).observe(document.querySelector('main'));
+
 // A hidden tab does not read the view; it still tells the server once a minute that the page is open.
 setInterval(() => { if (document.hidden) fetch('/launch', { cache: 'no-store' }).catch(() => {}); }, 60000);

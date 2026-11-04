@@ -53,13 +53,16 @@ if (mode === 'solo' && ready) {
   await tab('calls');
   out.hintHidden = await page.ev(`document.querySelector('#hint').hidden`);
   out.scopeButtons = await page.ev(`document.querySelectorAll('#view-calls [data-calls-scope]').length`);
-  out.tiles = await texts('#side-calls .ix-tile');
-  out.context = await text('#side-calls .ix-ctx .ix-total');
+  out.tilesCalls = await texts('#side-calls .ix-tile');
+  out.sideCalls = await page.ev(`document.querySelector('#side-calls').hidden`);
   await tab('sources');
   out.hintSources = await page.ev(`document.querySelector('#hint').hidden`);
   out.tilesSources = await texts('#side-sources .ix-tile');
+  out.sideSources = await page.ev(`document.querySelector('#side-sources').hidden`);
   await tab('graph');
   out.hintGraph = await page.ev(`document.querySelector('#hint').hidden`);
+  out.tiles = await texts('#inspector .ix-tile');
+  out.context = await text('#inspector .ix-ctx .ix-total');
 }
 
 if (mode === 'scope_name' && ready) {

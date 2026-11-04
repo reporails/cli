@@ -84,7 +84,17 @@ def _line_break_id(view: dict) -> None:
     view.update(changed)
 
 
+def _fourteen_tools(view: dict) -> None:
+    names = [f"Tool{i:02d}" for i in range(14)]
+    n = 0
+    for track in view["track"]:
+        for call in track["calls"]:
+            call["tool"] = names[n % 14 if n % 3 else n % 5]
+            n += 1
+
+
 CHANGES = {
+    "its calls used fourteen tools": _fourteen_tools,
     "the first subagent has no replies": _no_replies,
     "a source id holds a line break": _line_break_id,
     "its memory was not recorded": _unrecorded_memory,
@@ -192,7 +202,8 @@ def step_call_instructions(context):
 
 
 @then(
-    "the Tool calls tab shows the agent summary beside the table, no scope buttons and a hint bar only on the Graph tab"
+    "the Graph tab shows the agent summary, the Tool calls and Sources tabs show none, no scope buttons "
+    "and a hint bar only on the Graph tab"
 )
 def step_solo(context):
     seen = _drive(context, "solo")
@@ -203,9 +214,12 @@ def step_solo(context):
     assert seen["scopeButtons"] == 0, "a session with one agent shows scope buttons"
     assert seen["hintHidden"] is True and seen["hintSources"] is True and seen["hintGraph"] is False, seen
     labels = ["Peak context", "Est. cost"]
-    for tiles in (seen["tiles"], seen["tilesSources"]):
-        assert [t[: len(x)] for t, x in zip(tiles, labels, strict=True)] == labels, tiles
-        assert not any("this agent" in t for t in tiles), "one agent is not 'this agent'"
+    # The summary is the Graph tab's right column; the table tabs have no right pane while nothing is open.
+    assert seen["tilesCalls"] == [] and seen["tilesSources"] == [], seen
+    assert seen["sideCalls"] is True and seen["sideSources"] is True, seen
+    tiles = seen["tiles"]
+    assert [t[: len(x)] for t, x in zip(tiles, labels, strict=True)] == labels, tiles
+    assert not any("this agent" in t for t in tiles), "one agent is not 'this agent'"
     assert seen["context"] and seen["context"].endswith("at peak"), seen
     assert f"${node['detail']['cost']['total_usd']:.2f}" in seen["tiles"][1], seen["tiles"]
 

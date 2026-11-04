@@ -149,3 +149,138 @@ def step_type_and_contrast(context):
     for where in ("graph", "withPeek", "calls"):
         assert seen[where]["sizes"] == [], (where, seen[where]["sizes"][:8])
         assert seen[where]["contrast"] == [], (where, seen[where]["contrast"][:8])
+
+
+def _closed_full_width(seen: dict, bar: bool) -> None:
+    assert seen["sideHidden"] is True and seen["side"] == 0, seen
+    assert seen["tiles"] == 0, "the agent summary is still drawn on the tab"
+    assert abs(seen["table"] - seen["main"]) <= 1, seen
+    if bar:
+        assert seen["barHeight"] < 64 and max(seen["tops"]) - min(seen["tops"]) < 20, seen
+
+
+def _open_beside(seen: dict, keep: list[str]) -> None:
+    assert seen["sideHidden"] is False and seen["panel"] is True, seen
+    assert seen["table"] < seen["main"] * 0.4 and seen["side"] > seen["table"], seen
+    assert seen["sideLeft"] >= seen["tableRight"] - 1, seen
+    assert seen["cols"] == 2, ("the details are not in the overlay's two-column layout", seen)
+    assert seen["cut"] is False and seen["pageScroll"] is False, seen
+    assert seen["head"][: len(keep)] == keep or [h for h in seen["head"] if h] == keep, (seen["head"], keep)
+    assert seen["hasOn"] and seen["inView"], ("the clicked row is not marked and in view", seen)
+
+
+@then("the Tool calls tab has no right pane and its bar does not wrap at 1280 pixels")
+def step_calls_full(context):
+    seen = _shell(context, "layout_calls", 1280)
+    if seen is None:
+        return
+    _closed_full_width(seen["closed"], bar=True)
+
+
+@then(
+    "a click on a call narrows the table to its identifying columns and opens the details beside it, and "
+    "Escape restores the full width"
+)
+def step_calls_beside(context):
+    seen = _shell(context, "layout_calls", 1280)
+    if seen is None:
+        return
+    _open_beside(seen["open"], ["Time", "Tool", "Call"])
+    _closed_full_width(seen["after"], bar=True)
+    assert "vl-row" in seen["after"]["focus"], seen["after"]
+
+
+@then(
+    "the Sources tab has no right pane, a click on a source narrows it and opens the details beside it, and "
+    "Escape restores the full width"
+)
+def step_sources_beside(context):
+    seen = _shell(context, "layout_sources", 1280)
+    if seen is None:
+        return
+    _closed_full_width(seen["closed"], bar=False)
+    _open_beside(seen["open"], ["", "Name", "Kind"])
+    _closed_full_width(seen["after"], bar=False)
+
+
+@then(
+    "the strip spans the table at the canvas's pixel width with full-height marks, and "
+    "a click on a mark opens its call while a click on a gap opens nothing"
+)
+def step_strip(context):
+    seen = _shell(context, "strip", 1280)
+    if seen is None:
+        return
+    box = seen["box"]
+    assert abs(box["w"] - box["table"]) <= 2, ("the strip is narrower than the table", box)
+    assert box["px"] == round(box["w"] * box["dpr"]), box
+    assert seen["run"]["width"] >= 2 and seen["run"]["fullHeight"] is True, seen["run"]
+    assert seen["hover"] and seen["hover"]["title"], ("no mark names itself on hover", seen["hover"])
+    assert seen["gap"] is not None and seen["gapOpened"] is False, ("a click on a gap opened a call", seen)
+    assert seen["opened"]["on"] == seen["opened"]["peek"], seen["opened"]
+    assert seen["opened"]["title"], seen["opened"]
+    for ticks in (seen["ticks"], seen["openTicks"]):
+        # the first and last tick sit at the first and last mark's centre, narrow or wide
+        assert abs(ticks["first"] - 1) <= 1 and abs(ticks["last"] - 1) <= 1, ("ticks are off the marks' x", seen)
+
+
+@then(
+    "after the viewport narrows the strip is redrawn at the new width, a "
+    "click opens the right call and Escape focuses its row"
+)
+def step_strip_resize(context):
+    seen = _shell(context, "strip_resize", 1280)
+    if seen is None:
+        return
+    before, after = seen["before"], seen["after"]
+    assert after["px"] != before["px"] and after["px"] == round(after["w"] * after["dpr"]), (before, after)
+    assert seen["hover"], "no mark names itself after the resize"
+    assert seen["opened"]["on"] == seen["opened"]["peek"], ("the click after the resize opened another call", seen)
+    assert seen["focus"]["row"] and seen["focus"]["peek"] == seen["opened"]["peek"], (
+        "focus did not return to the row",
+        seen,
+    )
+
+
+@then(
+    "on a screen of 1000 pixels the open details sit under the table in "
+    "one column, and at 700 pixels nothing scrolls sideways"
+)
+def step_screens(context):
+    seen = _shell(context, "screens", 1000)
+    if seen is None:
+        return
+    for key in ("calls1000", "calls700", "sources700"):
+        assert seen[key]["cols"] == 1 and seen[key]["sideVisible"] and seen[key]["below"], (key, seen[key])
+        # the header's adapter chip is 1 px wide of a 1000 px screen on its own; nothing of the table or details is
+        assert not [w for w in seen[key]["wide"] if any(c in w for c in ("tb-", "seg", "pk-", "vl", "sidepanel"))], (
+            key,
+            seen[key],
+        )
+        if key != "calls1000":
+            assert seen[key]["pageScroll"] is False, (key, seen[key])
+
+
+@then(
+    "no element of the filter bar scrolls sideways, the plus menu filters by a tool "
+    "without a button and open details collapse the bar to one button"
+)
+def step_bar(context):
+    seen = _shell(context, "bar", 1280)
+    if seen is None:
+        return
+    wide = seen["wide"]
+    assert wide["scrolls"] == [] and max(wide["tops"]) - min(wide["tops"]) < 20, wide
+    assert wide["menu"].startswith("+"), ("no +N button for the tools without a button", wide)
+    assert seen["pick"] not in wide["buttons"] and seen["menuTools"], seen
+    picked = seen["picked"]
+    assert picked["menuOpen"] is False and picked["scrolls"] == [], picked
+    assert picked["menu"].startswith(seen["pick"]) and picked["pressed"] == "true", (
+        "the button does not name the active tool",
+        picked,
+    )
+    assert picked["tools"] == [seen["pick"]], ("the table is not filtered by the hidden tool", picked)
+    pane = seen["pane"]
+    assert pane["scrolls"] == [] and pane["menu"] == "Filters" and pane["buttons"] == [], pane
+    assert seen["paneGroups"][-2:] == ["Tools", "Status"], seen["paneGroups"]
+    assert seen["paneFailed"]["menu"] == "failed", seen["paneFailed"]

@@ -78,5 +78,12 @@ export function vlist(rowH, label, head) {
   };
 }
 
+// Scrolls a list so row `i` is in view, centred when it was out of it.
+export function revealRow(root, i, rowH) {
+  const h = root.clientHeight;
+  if (i * rowH >= root.scrollTop && (i + 1) * rowH <= root.scrollTop + h) return;
+  root.scrollTop = Math.max(0, i * rowH - (h - rowH) / 2);
+}
+
 // The scroll area's height for the window: tall enough to be useful, short enough to leave the toolbar in view.
 export const viewHeight = () => Math.max(280, Math.min(640, window.innerHeight - 280));
