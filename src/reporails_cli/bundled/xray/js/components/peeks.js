@@ -166,6 +166,15 @@ const VISIBLE = { hidden: 'not visible in transcript', partial: 'partly visible 
 // What a built-in item contains, and what is true of it wherever it is sent: shared by its own peek and the main
 // agent's measured System prompt and Tool definitions rows.
 const builtinContains = item => section('What it contains', pre(item.note || ''));
+
+// The main agent's system prompt text, read when the details open; a session with no recorded request has none.
+const mainSystemText = (env, item) => {
+  if (item.key !== 'system_prompt' || !item.system_shapes) return [];
+  const many = item.system_shapes > 1;
+  const body = [textBlock(env.text, 'system:main', systemUrl(''))];
+  if (many) body.unshift(nk(`The requests were sent with ${item.system_shapes} different system prompts; this is the latest.`));
+  return [section(`System prompt · recorded request${many ? ` · latest of ${item.system_shapes}` : ''}`, ...body)];
+};
 const builtinFacts = item => kv([['Sent to', 'every agent, every turn'], ['Visibility', VISIBLE[item.visible] || item.visible], ['Source', 'the coding agent itself, not your files']]);
 
 registerPeek('builtin', (env, id) => {
@@ -175,7 +184,7 @@ registerPeek('builtin', (env, id) => {
   const tags = [`${tk(item.tokens_est, true)} · ${item.remainder ? 'remainder' : measured ? 'measured' : 'estimated'}`, VISIBLE[item.visible] || item.visible];
   return {
     chip: '·', kicker: 'Built in', title: item.label, tags,
-    main: [builtinContains(item)],
+    main: [builtinContains(item), ...mainSystemText(env, item)],
     side: [builtinFacts(item)],
     actions: [],
   };
@@ -200,7 +209,7 @@ registerPeek('measured', (env, id) => {
       ['Tokens per character', Number(ic.tokens_per_char).toPrecision(3)],
       ['Image tokens', m.images > 0 ? m.images.toLocaleString('en-US') : null],
       ['Already listed above', m.listed_above > 0 ? k1(m.listed_above) : null],
-    ]), nk(`The share is the row’s characters times the tokens per character${m.images > 0 ? ', plus its image tokens' : ''}${m.listed_above > 0 ? ', less what is already listed above' : ''}.`)), ...(item ? [builtinContains(item)] : [])],
+    ]), nk(`The share is the row’s characters times the tokens per character${m.images > 0 ? ', plus its image tokens' : ''}${m.listed_above > 0 ? ', less what is already listed above' : ''}.`)), ...(item ? [builtinContains(item), ...mainSystemText(env, item)] : [])],
     side: item ? [builtinFacts(item)] : [],
     actions: [],
   };

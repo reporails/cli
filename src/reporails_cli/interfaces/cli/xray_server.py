@@ -283,14 +283,14 @@ class XrayServer:
         )
 
     async def system(self, request: Request) -> Response:
-        """The system prompt one launched agent type was sent with."""
+        """The system prompt one launched agent type was sent with; the empty type is the main agent."""
         return await self._text_route(
             request,
             _TextRoute(
                 "type",
-                "the query is ?type=<agent type>",
+                "the query is ?type=<agent type>, empty for the main agent",
                 _text_fields(XraySession.system_prompt),
-                "not an agent type this session launched with a recorded request",
+                "not an agent type this session launched with a recorded request, and no recorded main request",
             ),
         )
 

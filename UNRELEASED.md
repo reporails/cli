@@ -50,6 +50,7 @@
 - An x-ray page started before `ails` changed no longer mixes its old view with the new page code: it shows "ails changed since this page started; run `ails xray` again" instead, and `ails xray --background` and the agent's `xray` tool start a fresh page rather than reuse it.
 - On the x-ray page, a hook's details show its command, the settings file that declares it (your user, project, local or managed settings, or a plugin's hooks), and each time it fired: what it did (added context, showed a message, blocked, or just ran), its exit code, how long it took and the size of its output; the output text is read from the session file only when you open it, never stored, and a long output says it was cut.
 - The x-ray MCP servers group lists every server the session could reach, not only those that send instructions: servers from the project's `.mcp.json`, your user and per-project settings, managed settings and each enabled plugin (named with the plugin that brings it), plus any server whose tools the session listed. Each server shows whether it was connected, still starting, failed, turned off for this project, or declared but never seen, and how many tools it offered.
+- On Claude Code 2.1.309 or later, the main agent's System prompt details on the x-ray page show the system prompt text it was sent with, read from the session file when the details open and never stored; when the session's requests carried more than one system prompt, the details say how many and show the latest.
 
 ### Removed
 

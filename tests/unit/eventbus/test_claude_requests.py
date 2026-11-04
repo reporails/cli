@@ -105,7 +105,7 @@ def test_fixture_rebuilds_each_request_by_part(tmp_path: Path) -> None:
     path = tmp_path / "s1.jsonl"
     _write(path, _fixture_rows())
     first, second = _sizes(_read(path)[0])
-    assert first == RequestSize("req_1", 6, 12, 1, MessageSize(user_text=5, notes=5), 0, ("A",), None)
+    assert first == RequestSize("req_1", 6, 12, 1, MessageSize(user_text=5, notes=5), 0, ("A",), None, shape_hash="sh1")
     # keep=2 holds the system note and "hello"; the tail adds the assistant response (the hash of the response
     # without `caller`), the tool result and one unknown hash that counts as unresolved.
     expected_calls = len("Read") + len('{"file_path":"/x"}')
@@ -118,6 +118,7 @@ def test_fixture_rebuilds_each_request_by_part(tmp_path: Path) -> None:
         1,
         ("A",),
         None,
+        shape_hash="sh1",
     )
 
 

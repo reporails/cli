@@ -106,7 +106,9 @@ def _tally_json(tally: FindingTally | None) -> JsonValue:
 @dataclass(frozen=True)
 class XrayBuiltin:
     """One item of the coding agent's own context: its key, label, estimated size, a note on what it holds, whether
-    its text can be read in the transcript and whether its size carries what the estimates leave of the total."""
+    its text can be read in the transcript and whether its size carries what the estimates leave of the total. For
+    the system prompt, `system_shapes` is how many different system prompts the main agent's requests were sent
+    with (0 when no request was recorded)."""
 
     key: HarnessKind
     label: str
@@ -114,6 +116,7 @@ class XrayBuiltin:
     note: str | None
     visible: Visibility
     remainder: bool
+    system_shapes: int = 0
 
     def to_json(self) -> JsonObject:
         """The item as a JSON object."""
@@ -124,6 +127,7 @@ class XrayBuiltin:
             "note": self.note,
             "visible": self.visible,
             "remainder": self.remainder,
+            "system_shapes": self.system_shapes,
         }
 
 

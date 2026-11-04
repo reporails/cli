@@ -10087,7 +10087,8 @@
       "tokens_est": 2800,
       "note": "Not in the transcript; its size is what the reply total leaves.",
       "visible": "hidden",
-      "remainder": true
+      "remainder": true,
+      "system_shapes": 0
     },
     {
       "key": "skill_list",
@@ -10095,7 +10096,8 @@
       "tokens_est": 5100,
       "note": "49 skill descriptions",
       "visible": "shown",
-      "remainder": false
+      "remainder": false,
+      "system_shapes": 0
     }
   ],
   "session_cost": {

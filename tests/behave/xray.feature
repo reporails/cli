@@ -296,6 +296,27 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And the system prompt route returns that text only for a type the session launched
 
   @e2e @browser
+  Scenario: The main agent's System prompt details show the text its recorded request was sent with
+    Given a project with a session whose Claude Code recorded each request it made, with a subagent
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the main agent's System prompt details show the system prompt text of its recorded request
+
+  @e2e @browser
+  Scenario: The main agent's System prompt details name the latest of several system prompts
+    Given a project with a session whose main requests were sent with two different system prompts
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the main agent's System prompt details say there were two and show the latest
+
+  @e2e
+  Scenario: A session with no recorded request has no main system prompt text
+    Given a project with a session from an older Claude Code that did not record its requests, with a subagent
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the main agent's System prompt route refuses when the session recorded no request
+
+  @e2e @browser
   Scenario: A built-in agent type shows how its launch was configured
     Given a project with a session whose subagent was launched with a model and a config
     When "ails xray --no-open" is started in the project

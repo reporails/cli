@@ -327,6 +327,7 @@ def _request(chain: RequestChain, row: JsonObject) -> RequestSize:
         chain.tool_names.get(shape_hash, ()),
         _request_tier(row),
         _request_config(row),
+        shape_hash,
     )
 
 

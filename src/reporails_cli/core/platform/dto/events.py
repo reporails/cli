@@ -352,6 +352,8 @@ class RequestSize:
     # the model id is not a Claude id.
     high_resolution: bool | None
     config: RequestConfig = RequestConfig()
+    # The hash the request's recorded shape is known under.
+    shape_hash: str = ""
 
 
 @dataclass

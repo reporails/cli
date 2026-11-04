@@ -186,17 +186,25 @@ def subagent_brief(agent: str, session_file: Path, subagent_id: str) -> str | No
     return None if first_row is None else adapter.resolve_brief(first_row)
 
 
-def subagent_system(agent: str, session_file: Path, subagent_id: str) -> str | None:
+def subagent_system(agent: str, session_file: Path, subagent_id: str | None) -> str | None:
     """The system prompt the first request of one subagent was sent with, or None when the session has no such
-    subagent file or the file records no request with its shape.
+    subagent file or the file records no request with its shape. With no subagent id, the system prompt of the
+    last request the main transcript records.
 
     Raises `PayloadRefused` when the agent is unknown or a request or shape row is not the shape the adapter is
     pinned to. The text is returned, never stored."""
     adapter = get_transcript_adapter(agent)
     if adapter is None:
         raise PayloadRefused(f"unknown agent: {agent}")
-    path = _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
-    request = _find_row(path, '"api-request"', lambda row: adapter.resolve_request_shape(row) is not None)
+    path = (
+        session_file if subagent_id is None else _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
+    )
+    request = _find_row(
+        path,
+        '"api-request"',
+        lambda row: adapter.resolve_request_shape(row) is not None,
+        latest=subagent_id is None,
+    )
     shape_hash = None if request is None else adapter.resolve_request_shape(request)
     if shape_hash is None:
         return None
@@ -330,10 +338,13 @@ def _first_row(path: Path) -> JsonObject | None:
         return None
 
 
-def _find_row(path: Path, needle: str, matches: Callable[[JsonObject], bool]) -> JsonObject | None:
-    """The first row of a file that holds `needle` and that `matches` accepts; None when none does or the file
-    cannot be read."""
+def _find_row(
+    path: Path, needle: str, matches: Callable[[JsonObject], bool], *, latest: bool = False
+) -> JsonObject | None:
+    """The first row of a file that holds `needle` and that `matches` accepts, or the last when `latest`; None
+    when none does or the file cannot be read."""
     raw = needle.encode()
+    found: JsonObject | None = None
     try:
         with path.open("rb") as handle:
             for line in handle:
@@ -342,10 +353,12 @@ def _find_row(path: Path, needle: str, matches: Callable[[JsonObject], bool]) ->
                 with contextlib.suppress(ValueError):
                     row = as_object(json.loads(line))
                     if matches(row):
-                        return row
+                        if not latest:
+                            return row
+                        found = row
     except OSError:
         return None
-    return None
+    return found
 
 
 def _find_call_rows(

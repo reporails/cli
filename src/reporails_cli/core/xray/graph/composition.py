@@ -10,7 +10,7 @@ total is the system prompt and tool definitions.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 
 from reporails_cli.core.platform.dto.events import (
     EventRecord,
@@ -19,7 +19,7 @@ from reporails_cli.core.platform.dto.events import (
     TokenUsage,
     is_note_kind,
 )
-from reporails_cli.core.platform.dto.xray import AdapterVocabulary
+from reporails_cli.core.platform.dto.xray import AdapterVocabulary, XrayHarnessItem
 from reporails_cli.core.platform.dto.xray_build import (
     AgentRecords,
     AgentWorld,
@@ -316,6 +316,21 @@ def _in_remainder(kind: HarnessKind) -> bool:
     return kind not in (_LISTED_KIND, "system_prompt") and not is_note_kind(kind)
 
 
+def _main_system_shapes(records: Sequence[EventRecord]) -> int:
+    """How many different system prompts the main agent's recorded requests were sent with."""
+    return len({record.request.shape_hash for record in records if record.subagent_id is None and record.request})
+
+
+def _estimated_system(composition: XrayComposition, held: Mapping[HarnessKind, XrayHarnessItem]) -> int | None:
+    """The system prompt's estimated size: what the peak reply's remainder category holds after the other harness
+    items inside it, never below 0; None when no reply was recorded."""
+    if composition.peak is None:
+        return None
+    reply = composition.replies[composition.peak]
+    inside = sum((item.tokens_est or 0) for kind, item in held.items() if _in_remainder(kind))
+    return max(0, reply.parts[COMPOSITION_KEYS.index(REMAINDER_KEY)] - inside)
+
+
 def builtin_items(
     main: ProducedNode, records: Sequence[EventRecord], vocabulary: AdapterVocabulary
 ) -> tuple[XrayBuiltin, ...]:
@@ -327,21 +342,20 @@ def builtin_items(
     composition = main.detail.usage.composition
     held = {item.kind: item for item in build_harness(records, replies_of(records)) or ()}
     measured = None if composition.peak is None else composition.replies[composition.peak].measure
-    system: int | None = None
-    if measured is None and composition.peak is not None:
-        reply = composition.replies[composition.peak]
-        inside = sum((item.tokens_est or 0) for kind, item in held.items() if _in_remainder(kind))
-        system = max(0, reply.parts[COMPOSITION_KEYS.index(REMAINDER_KEY)] - inside)
+    system = _estimated_system(composition, held) if measured is None else None
+    shapes = _main_system_shapes(records)
     found: list[XrayBuiltin] = []
     for info in vocabulary.context.builtin:
         item = held.get(info.key)
         if info.key == "system_prompt" and measured is not None:
             size, scale = measured.size, measured.scale
             note = info.measured_note or info.note
-            found.append(XrayBuiltin(info.key, info.label, _share(size.system_chars, scale), note, info.visible, False))
+            found.append(
+                XrayBuiltin(info.key, info.label, _share(size.system_chars, scale), note, info.visible, False, shapes)
+            )
         elif info.key == "system_prompt":
             if system is not None:
-                found.append(XrayBuiltin(info.key, info.label, system, info.note, info.visible, True))
+                found.append(XrayBuiltin(info.key, info.label, system, info.note, info.visible, True, shapes))
         elif info.key == "tool_definitions":
             if measured is not None:
                 size, scale = measured.size, measured.scale

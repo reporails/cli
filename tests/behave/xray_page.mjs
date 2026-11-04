@@ -299,6 +299,15 @@ if (mode === 'measuredrow' && ready) {
   out.sub = await open();
 }
 
+if (mode === 'mainsystem' && ready) {
+  // The details of the main agent's measured System prompt row, once the system prompt text has come in.
+  await page.until(`!!document.querySelector('#inspector .ix-ctx .ic[data-peek*="system_prompt"]')`);
+  await click('#inspector .ix-ctx .ic[data-peek*="system_prompt"]');
+  await page.until(`!!document.querySelector('.pk-dialog')`);
+  out.text = await page.until(`(document.querySelector('.pk-dialog pre.peek') || {}).textContent`) || '';
+  out.dialog = await page.ev(`document.querySelector('.pk-dialog').textContent`);
+}
+
 if (mode === 'words' && ready) {
   await expandAll();
   out.header = await page.ev(`document.querySelector('.hmeta').textContent`);

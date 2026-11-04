@@ -142,7 +142,12 @@ class XraySession:
     def system_prompt(self, agent_type: str) -> str | None:
         """The system prompt the first launch of an agent type that recorded a request was sent with; None when the
         session launched no such type or none of its launches recorded one. Raises `PayloadRefused` when the
-        subagent file does not record it as the adapter is pinned to. The text is not kept."""
+        subagent file does not record it as the adapter is pinned to. The text is not kept.
+
+        The empty type is the main agent: the system prompt of the last request the main transcript recorded, None
+        when it recorded none."""
+        if not agent_type:
+            return subagent_system(AGENT, self._file, None)
         launched = {
             record.subagent_id
             for record in self._transcript

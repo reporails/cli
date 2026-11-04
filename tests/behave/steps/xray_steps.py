@@ -343,6 +343,19 @@ def step_session_with_loaded_file(context):
     session.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+@given("a project with a session whose main requests were sent with two different system prompts")
+def step_session_with_two_system_prompts(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    _write_session(context, True)
+    session = context.home / ".claude" / "projects" / claude_project_folder_name(context.project) / "session.jsonl"
+    rows = [json.loads(line) for line in session.read_text(encoding="utf-8").splitlines()]
+    for row in rows:
+        if row.get("id") == "req-main-3":
+            row["shapeHash"] = "shape-main-2"
+    rows.insert(0, _shape_row("shape-main-2", "w" * 300))
+    session.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+
 @given("a project with a session whose subagent was launched with a model and a config")
 def step_session_with_launch_config(context):
     context.project = build_project(context.tmpdir / "proj").resolve()
@@ -488,6 +501,46 @@ def step_system_route(context):
     assert status == 200 and json.loads(body)["text"] == "t" * 500, (status, body)
     status, _ = _get(context.url + "system?type=Explore", token)
     assert status == 400, status
+
+
+def _main_system(context) -> str:
+    """The text of the main agent's system prompt route."""
+    page = _get(context.url)[1]
+    token = re.search(r'name="xray-token" content="([^"]+)"', page).group(1)
+    status, body = _get(context.url + "system?type=", token)
+    assert status == 200, (status, body)
+    return json.loads(body)["text"]
+
+
+@then("the main agent's System prompt details show the system prompt text of its recorded request")
+def step_main_system_text(context):
+    assert _main_system(context) == "s" * 2000
+    seen = _page(context, "mainsystem")
+    if seen is None:
+        return
+    assert seen["text"] == "s" * 2000, seen["text"][:80]
+    assert "different system prompts" not in seen["dialog"], seen["dialog"][:300]
+
+
+@then("the main agent's System prompt details say there were two and show the latest")
+def step_main_system_latest(context):
+    assert _main_system(context) == "w" * 300
+    builtin = next(item for item in _session_view(context)["builtin"] if item["key"] == "system_prompt")
+    assert builtin["system_shapes"] == 2, builtin
+    seen = _page(context, "mainsystem")
+    if seen is None:
+        return
+    assert seen["text"] == "w" * 300, seen["text"][:80]
+    assert "2 different system prompts; this is the latest" in seen["dialog"], seen["dialog"][:300]
+
+
+@then("the main agent's System prompt route refuses when the session recorded no request")
+def step_main_system_none(context):
+    page = _get(context.url)[1]
+    token = re.search(r'name="xray-token" content="([^"]+)"', page).group(1)
+    assert _get(context.url + "system?type=", token)[0] == 400
+    builtin = next(item for item in _session_view(context)["builtin"] if item["key"] == "system_prompt")
+    assert builtin["system_shapes"] == 0, builtin
 
 
 @then("the general-purpose agent type's details show its launch settings")

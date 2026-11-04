@@ -290,9 +290,7 @@ def mcp_declarations(project_root: Path, plugins: Sequence[tuple[str, Path]]) ->
         ("managed", path, _read_json(path), True) for path in _managed_files(scopes)
     ]
     sources += [("local", path, _project_entry(project_root), True) for path in claude_json]
-    sources += [
-        ("project", path, _read_json(path), True) for path in _expand(scopes.get("project", []), project_root)
-    ]
+    sources += [("project", path, _read_json(path), True) for path in _expand(scopes.get("project", []), project_root)]
     sources += [("user", path, _read_json(path), True) for path in claude_json]
     found.extend(
         McpDeclaration(name, scope, None, str(path))
