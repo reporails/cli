@@ -113,7 +113,7 @@ def test_a_user_level_agent_folder_is_its_own_project_root(scratch_home: Path) -
 @pytest.mark.subsys_cli_ux
 def test_a_user_level_file_roots_the_same_when_checked_from_the_home_directory(scratch_home: Path) -> None:
     main, _ = _write_user_level(scratch_home)
-    assert orch.scan_scope(main, scratch_home) == (None, scratch_home / ".claude")
+    assert orch.scan_scope(main, scratch_home) == (None, scratch_home / ".claude", main)
     assert check_one.resolve_scan_target(main, scratch_home) == (scratch_home / ".claude", main)
 
 
@@ -173,7 +173,7 @@ def test_a_misspelled_hook_event_is_reported_in_a_project_with_no_git_checked_fr
     settings.write_text(_BAD_HOOK_SETTINGS, encoding="utf-8")
     (project / "CLAUDE.md").write_text(_MAIN_TEXT, encoding="utf-8")
 
-    assert orch.scan_scope(settings, project) == (None, project)
+    assert orch.scan_scope(settings, project) == (None, project, settings)
     assert check_one.resolve_scan_target(settings, project) == (project, settings)
 
     monkeypatch.chdir(project)

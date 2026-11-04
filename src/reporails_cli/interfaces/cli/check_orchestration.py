@@ -123,14 +123,14 @@ def _resolved_within_target(f: Path, target: Path) -> bool:
     return resolved_within(f, target)
 
 
-def scan_scope(single_path: Path | None, project_root: Path) -> tuple[Path | None, Path]:
-    """The `(subtree, scan_root)` of a lone path target: the scan root the shared target rule picks, and
-    the folder target narrower than it (None for a file, the whole project or no target)."""
-    if single_path is None:
-        return None, project_root
-    scan_root, _ = resolve_scan_target(single_path, project_root)
-    narrower = single_path.is_dir() and single_path != scan_root and single_path.is_relative_to(scan_root)
-    return (single_path if narrower else None), scan_root
+def scan_scope(single_path: Path | None, project_root: Path) -> tuple[Path | None, Path, Path | None]:
+    """The `(subtree, scan_root, single_file)` of a lone path target, read as `.` when there is no target:
+    the scan root and file the shared target rule picks, and the folder target narrower than the root
+    (None for a file or the whole project)."""
+    target = project_root if single_path is None else single_path
+    scan_root, single_file = resolve_scan_target(target, project_root)
+    narrower = target.is_dir() and target != scan_root and target.is_relative_to(scan_root)
+    return (target if narrower else None), scan_root, single_file
 
 
 def _existing_target_root(token: str, project_root: Path) -> Path | None:

@@ -9,6 +9,7 @@ naming why nothing was checked, and words the reply itself; no formatter or inte
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -62,9 +63,15 @@ def resolve_scan_target(target: Path, project_root: Path) -> tuple[Path, Path | 
 
     A file inside `project_root` is checked in that project; a file outside it roots at its own folder.
     A folder outside `project_root`, or `project_root` itself, roots at itself; a folder inside it stays
-    in the project, scoped to that folder by the caller.
+    in the project, scoped to that folder by the caller. A linked file named inside the project or under
+    a user-level agent folder keeps its own path as the `single_file` (its content is read through the
+    link); a linked file named elsewhere is the file it links to.
     """
 
+    if target.is_file() and target.is_symlink():
+        logical = Path(os.path.abspath(target))
+        in_place = logical.is_relative_to(project_root) or user_level_agent_dir(logical) is not None
+        target = logical if in_place else safe_resolve(target)
     user_dir = user_level_agent_dir(target)
     if user_dir is not None:
         return user_dir, target if target.is_file() else None
@@ -193,7 +200,8 @@ def scope_for_path(path: str, project_root: Path, named: frozenset[Path] = froze
     """
     if not is_initialized():
         return Refusal("rules_missing", rules_missing_message())
-    target = Path(path).resolve()
+    given = Path(path)
+    target = given if given.is_file() and given.is_symlink() else given.resolve()
     if not target.exists():
         return Refusal("path_not_found", f"Path not found: {target}")
     scan_root, single_file = resolve_scan_target(target, project_root)

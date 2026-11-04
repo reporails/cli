@@ -200,13 +200,12 @@ def _flow_targets(state: CheckState) -> None:
         if (state.targets.path_targets and not state.targets.capability_specs and len(state.targets.path_targets) == 1)
         else None
     )
-    state.targets.single_file = (
-        state.targets.single_path
-        if (state.targets.single_path is not None and state.targets.single_path.is_file())
-        else None
+    state.targets.subtree, state.targets.target, state.targets.single_file = scan_scope(
+        state.targets.single_path, state.inputs.project_root
     )
-    state.targets.subtree, state.targets.target = scan_scope(state.targets.single_path, state.inputs.project_root)
     state.targets.subtree_scoped = state.targets.subtree is not None
+    if state.targets.subtree is not None and not state.targets.path_targets and not state.targets.capability_specs:
+        state.targets.path_targets.add(state.targets.subtree)
     state.targets.output_format = state.inputs.format_opt or _default_format()
 
     root_targeted = any(t == state.inputs.project_root for t in state.targets.path_targets)
@@ -248,7 +247,7 @@ def _resolve_scope_at_target(state: CheckState, capability_paths: frozenset[Path
     )
     state.scope.instruction_files = found.files
     if state.targets.single_file is not None:
-        state.scope.instruction_files = [safe_resolve(state.targets.single_file)]
+        state.scope.instruction_files = [state.targets.single_file]
     elif state.targets.target != state.inputs.project_root:
         state.scope.instruction_files = [
             f for f in state.scope.instruction_files if file_under_target(f, state.targets.target)
@@ -259,8 +258,8 @@ def _flow_scope(state: CheckState) -> bool:
     """Detect agents, discover instruction files, narrow to scope. False = nothing in scope."""
     _resolve_scope_at_target(state)
     single = state.targets.single_file
-    if single is not None and not is_listed_file(safe_resolve(single), state.targets.target):
-        _emit_unlisted_file(single, state.targets.target, state.targets.output_format)
+    if single is not None and not is_listed_file(single, state.targets.target):
+        _emit_unlisted_file(single, state.targets.target, state.inputs.project_root, state.targets.output_format)
     # A scope-to-subtree run keeps the project scan root, so its narrowing runs here
     # with the capability/multi-path narrowing rather than through the re-root branch.
     narrows = state.targets.single_path is None or state.targets.subtree_scoped

@@ -58,11 +58,18 @@ def _emit_heal_withheld(output_format: str, *, funnel_error: object, tier: str |
     console.print(f"[yellow]{message}[/yellow]")
 
 
-def _emit_unlisted_file(file: Path, root: Path, output_format: str) -> None:
+def _emit_unlisted_file(file: Path, root: Path, run_folder: Path, output_format: str) -> None:
     """Say that a named file is checked outside any project listing, in the active output format.
 
+    A file whose project is the folder the command runs in is told only that it is not listed; a file
+    of another project is told to run the check in that project's folder.
     Under json/github the diagnosis owns stdout, so the notice goes to stderr."""
-    message = f"{file} is not an instruction file in the project at {root}; run ails check in that project's folder."
+    if root == run_folder:
+        message = f"{file} is not an instruction file of this project."
+    else:
+        message = (
+            f"{file} is not an instruction file in the project at {root}; run ails check in that project's folder."
+        )
     if output_format in MACHINE_READABLE_CHECK_FORMATS:
         print(message, file=sys.stderr)
         return

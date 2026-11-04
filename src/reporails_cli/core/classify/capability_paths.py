@@ -12,6 +12,7 @@ in this module.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from pathlib import Path
 
@@ -123,7 +124,9 @@ def classify_target_token(
 
     def _path(raw: str) -> Path:
         p = Path(raw)
-        return safe_resolve(p if p.is_absolute() or base is None else base / p)
+        full = p if p.is_absolute() or base is None else base / p
+        # A linked file keeps its own path; the run's project root decides whether it is read there or at its target.
+        return Path(os.path.abspath(full)) if full.is_file() and full.is_symlink() else safe_resolve(full)
 
     if token.startswith("file:"):
         return "path", _path(token[len("file:") :])

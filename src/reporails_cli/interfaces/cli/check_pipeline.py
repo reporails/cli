@@ -12,7 +12,6 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.lint.regex.not_evaluated import not_evaluated_scope
 from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes_over_pairs
@@ -193,7 +192,7 @@ def _flow_assemble(state: CheckState) -> None:
 
     state.render.capability_paths = state.scope.upfront_paths
     if state.targets.single_file is not None:
-        state.render.capability_paths = {safe_resolve(state.targets.single_file)}
+        state.render.capability_paths = {state.targets.single_file}
     if state.render.capability_paths:
         state.render.display_result = filter_result_to_paths(
             state.render.result, state.render.capability_paths, state.targets.target

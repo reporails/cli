@@ -62,3 +62,32 @@ Feature: `ails check` scores and validates instruction files end-to-end
     When I run "ails check" on the home "skills" folder from a project folder
     Then the check exits 0
     And the json files map contains only "skills/demo/SKILL.md"
+
+  @e2e @regression
+  Scenario: A rule file linked from outside its project is checked within that project
+    Given a git project whose ".claude/rules/style.md" links to a file outside it
+    When I run "ails check" on the linked file from the project folder
+    Then the check exits 0
+    And the run checked ".claude/rules/style.md" relative to its project root
+    And the output does not say the file is not an instruction file
+
+  @e2e @regression
+  Scenario: A dotfiles-linked file under ~/.claude keeps its user-level root
+    Given a home rule file that links to a dotfiles folder
+    When I run "ails check" on the linked home rule file from a project folder
+    Then the check exits 0
+    And the run checked "rules/style.md" relative to its project root
+    And the output does not say the file is not an instruction file
+
+  @e2e @regression
+  Scenario: No target inside a ~/.claude folder checks that folder like a dot does
+    Given a home agent folder with a CLAUDE.md and a "skills/demo/SKILL.md"
+    When I run "ails check" with no target from the home "skills" folder
+    Then the check exits 0
+    And the json files map contains only "skills/demo/SKILL.md"
+
+  @e2e @regression
+  Scenario: A file in the folder the command runs in is not told to move
+    Given a git project with a "docs/guide.md" that is not an instruction file
+    When I run "ails check docs/guide.md"
+    Then the notice says "docs/guide.md" is not an instruction file of this project, with no advice to move

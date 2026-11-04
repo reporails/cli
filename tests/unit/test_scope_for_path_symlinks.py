@@ -32,3 +32,24 @@ def test_scope_for_a_folder_keeps_a_symlinked_instruction_file(tmp_path: Path, m
 
     assert isinstance(scope, Scope)
     assert {f.name for f in scope.instruction_files} == {"reviewer.md", "own.md"}
+
+
+def test_scope_for_a_linked_file_named_in_the_project_stays_in_that_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "proj"
+    rules = project / ".claude" / "rules"
+    rules.mkdir(parents=True)
+    outside = tmp_path / "shared" / "style.md"
+    outside.parent.mkdir()
+    outside.write_text("---\npaths: ['src/**']\n---\n\n# Style\n\nUse tabs.\n", encoding="utf-8")
+    (rules / "style.md").symlink_to(outside)
+    clear_agent_cache()
+    monkeypatch.setattr(check_one, "is_initialized", lambda: True)
+    monkeypatch.setattr(check_one, "model_refusal", lambda: None)
+
+    scope = check_one.scope_for_path(str(rules / "style.md"), project)
+
+    assert isinstance(scope, Scope)
+    assert scope.scan_root == project
+    assert scope.single_file == rules / "style.md"

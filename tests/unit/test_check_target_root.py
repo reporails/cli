@@ -37,7 +37,7 @@ def test_a_file_inside_the_cwd_keeps_the_cwd_as_root(tmp_path: Path, rel: str) -
     target.parent.mkdir(parents=True)
     (project / "packages" / "api" / ".git").mkdir(parents=True, exist_ok=True)
     target.write_text("# Doc\n", encoding="utf-8")
-    assert orch.scan_scope(target, project) == (None, project)
+    assert orch.scan_scope(target, project) == (None, project, target)
 
 
 @pytest.mark.unit
@@ -50,8 +50,8 @@ def test_a_file_outside_the_cwd_roots_at_its_own_folder_even_in_a_project(tmp_pa
     target.write_text("# Doc\n", encoding="utf-8")
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
-    assert orch.scan_scope(target, elsewhere) == (None, project / "sub")
-    assert orch.scan_scope(target, project / ".claude") == (None, project / "sub")
+    assert orch.scan_scope(target, elsewhere) == (None, project / "sub", target)
+    assert orch.scan_scope(target, project / ".claude") == (None, project / "sub", target)
 
 
 @pytest.mark.unit
@@ -62,14 +62,14 @@ def test_a_folder_inside_the_cwd_is_scoped_inside_it(tmp_path: Path, rel: str) -
     (project / rel).mkdir(parents=True)
     (project / "packages" / "api" / ".claude").mkdir(parents=True, exist_ok=True)
     (project / "packages" / "api" / "CLAUDE.md").write_text("# API\n", encoding="utf-8")
-    assert orch.scan_scope(project / rel, project) == (project / rel, project)
+    assert orch.scan_scope(project / rel, project) == (project / rel, project, None)
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_the_cwd_itself_or_no_target_is_the_whole_project(tmp_path: Path) -> None:
-    assert orch.scan_scope(tmp_path, tmp_path) == (None, tmp_path)
-    assert orch.scan_scope(None, tmp_path) == (None, tmp_path)
+    assert orch.scan_scope(tmp_path, tmp_path) == (None, tmp_path, None)
+    assert orch.scan_scope(None, tmp_path) == (None, tmp_path, None)
 
 
 @pytest.mark.unit
@@ -77,8 +77,8 @@ def test_the_cwd_itself_or_no_target_is_the_whole_project(tmp_path: Path) -> Non
 def test_a_folder_outside_the_cwd_roots_at_itself_whatever_it_holds(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     (project / ".claude" / "rules").mkdir(parents=True)
-    assert orch.scan_scope(project, tmp_path / "elsewhere") == (None, project)
-    assert orch.scan_scope(project / ".claude", tmp_path / "elsewhere") == (None, project / ".claude")
+    assert orch.scan_scope(project, tmp_path / "elsewhere") == (None, project, None)
+    assert orch.scan_scope(project / ".claude", tmp_path / "elsewhere") == (None, project / ".claude", None)
 
 
 @pytest.mark.unit
@@ -93,6 +93,7 @@ def test_a_folder_inside_the_user_agent_folder_narrows_to_itself(
     monkeypatch.setenv("USERPROFILE", str(home))
     project = tmp_path / "proj"
     project.mkdir()
-    assert orch.scan_scope(skills, project) == (skills, home / ".claude")
-    assert orch.scan_scope(home / ".claude", project) == (None, home / ".claude")
-    assert orch.scan_scope(home / ".claude" / "CLAUDE.md", project) == (None, home / ".claude")
+    assert orch.scan_scope(skills, project) == (skills, home / ".claude", None)
+    assert orch.scan_scope(None, skills) == (skills, home / ".claude", None)
+    assert orch.scan_scope(home / ".claude", project) == (None, home / ".claude", None)
+    assert orch.scan_scope(home / ".claude" / "CLAUDE.md", project) == (None, home / ".claude", None)
