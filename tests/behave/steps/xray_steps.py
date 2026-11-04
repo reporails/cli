@@ -356,6 +356,21 @@ def step_session_with_two_system_prompts(context):
     session.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
 
 
+@given("a project with a session whose main requests were sent with the same system prompt and different tools")
+def step_session_with_same_system_other_tools(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    _write_session(context, True)
+    session = context.home / ".claude" / "projects" / claude_project_folder_name(context.project) / "session.jsonl"
+    rows = [json.loads(line) for line in session.read_text(encoding="utf-8").splitlines()]
+    for row in rows:
+        if row.get("id") == "req-main-3":
+            row["shapeHash"] = "shape-main-2"
+    other = _shape_row("shape-main-2", "s" * 2000)
+    other["shape"]["tools"] = FIXTURE_TOOLS[:3]
+    rows.insert(0, other)
+    session.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+
 @given("a project with a session whose subagent was launched with a model and a config")
 def step_session_with_launch_config(context):
     context.project = build_project(context.tmpdir / "proj").resolve()
@@ -532,6 +547,18 @@ def step_main_system_latest(context):
         return
     assert seen["text"] == "w" * 300, seen["text"][:80]
     assert "2 different system prompts; this is the latest" in seen["dialog"], seen["dialog"][:300]
+
+
+@then("the main agent's System prompt details show the text without saying the system prompts differed")
+def step_main_system_same_text(context):
+    assert _main_system(context) == "s" * 2000
+    builtin = next(item for item in _session_view(context)["builtin"] if item["key"] == "system_prompt")
+    assert builtin["system_shapes"] == 1, builtin
+    seen = _page(context, "mainsystem")
+    if seen is None:
+        return
+    assert seen["text"] == "s" * 2000, seen["text"][:80]
+    assert "different system prompts" not in seen["dialog"], seen["dialog"][:300]
 
 
 @then("the main agent's System prompt route refuses when the session recorded no request")

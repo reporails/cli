@@ -254,6 +254,8 @@ def _register_shape(chain: RequestChain, row: JsonObject) -> None:
     system_chars = sum(len(text) for text in _system_texts(row, what))
     tools_chars = sum(len(compact_json(tool, ensure_ascii=False)) for tool in tools)
     chain.shapes[shape_hash] = (system_chars, tools_chars, len(tools))
+    system = BLOCK_SEPARATOR.join(_system_texts(row, what))
+    chain.system_digests[shape_hash] = hashlib.sha256(_encode(system)).hexdigest()
     chain.tool_names[shape_hash] = tuple(_tool_name(tool, what) for tool in tools)
 
 
@@ -327,7 +329,7 @@ def _request(chain: RequestChain, row: JsonObject) -> RequestSize:
         chain.tool_names.get(shape_hash, ()),
         _request_tier(row),
         _request_config(row),
-        shape_hash,
+        chain.system_digests.get(shape_hash, ""),
     )
 
 

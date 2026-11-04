@@ -318,7 +318,7 @@ def _in_remainder(kind: HarnessKind) -> bool:
 
 def _main_system_shapes(records: Sequence[EventRecord]) -> int:
     """How many different system prompts the main agent's recorded requests were sent with."""
-    return len({record.request.shape_hash for record in records if record.subagent_id is None and record.request})
+    return len({record.request.system_digest for record in records if record.subagent_id is None and record.request})
 
 
 def _estimated_system(composition: XrayComposition, held: Mapping[HarnessKind, XrayHarnessItem]) -> int | None:

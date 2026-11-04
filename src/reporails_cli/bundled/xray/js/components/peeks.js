@@ -171,7 +171,7 @@ const builtinContains = item => section('What it contains', pre(item.note || '')
 const mainSystemText = (env, item) => {
   if (item.key !== 'system_prompt' || !item.system_shapes) return [];
   const many = item.system_shapes > 1;
-  const body = [textBlock(env.text, 'system:main', systemUrl(''))];
+  const body = [textBlock(env.text, 'main-system', systemUrl(''))];
   if (many) body.unshift(nk(`The requests were sent with ${item.system_shapes} different system prompts; this is the latest.`));
   return [section(`System prompt · recorded request${many ? ` · latest of ${item.system_shapes}` : ''}`, ...body)];
 };

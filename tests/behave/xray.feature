@@ -309,6 +309,13 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Then the printed address is on 127.0.0.1
     And the main agent's System prompt details say there were two and show the latest
 
+  @e2e @browser
+  Scenario: Requests that differ only in their tools do not make the system prompt look different
+    Given a project with a session whose main requests were sent with the same system prompt and different tools
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the main agent's System prompt details show the text without saying the system prompts differed
+
   @e2e
   Scenario: A session with no recorded request has no main system prompt text
     Given a project with a session from an older Claude Code that did not record its requests, with a subagent

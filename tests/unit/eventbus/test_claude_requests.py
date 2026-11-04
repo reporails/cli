@@ -44,6 +44,9 @@ def _blob(message: JsonObject) -> JsonObject:
     return {"type": "api-request-blob", "hash": message_hash(message["role"], message["content"]), "message": message}
 
 
+_SYSTEM_DIGEST = hashlib.sha256(b"sys\n\ntem").hexdigest()
+
+
 def _shape(shape_hash: str = "sh1") -> JsonObject:
     shape = {"system": [{"type": "text", "text": "sys"}, {"type": "text", "text": "tem"}], "tools": [{"name": "A"}]}
     return {"type": "api-request-shape", "shapeHash": shape_hash, "shape": shape}
@@ -105,7 +108,9 @@ def test_fixture_rebuilds_each_request_by_part(tmp_path: Path) -> None:
     path = tmp_path / "s1.jsonl"
     _write(path, _fixture_rows())
     first, second = _sizes(_read(path)[0])
-    assert first == RequestSize("req_1", 6, 12, 1, MessageSize(user_text=5, notes=5), 0, ("A",), None, shape_hash="sh1")
+    assert first == RequestSize(
+        "req_1", 6, 12, 1, MessageSize(user_text=5, notes=5), 0, ("A",), None, system_digest=_SYSTEM_DIGEST
+    )
     # keep=2 holds the system note and "hello"; the tail adds the assistant response (the hash of the response
     # without `caller`), the tool result and one unknown hash that counts as unresolved.
     expected_calls = len("Read") + len('{"file_path":"/x"}')
@@ -118,7 +123,7 @@ def test_fixture_rebuilds_each_request_by_part(tmp_path: Path) -> None:
         1,
         ("A",),
         None,
-        shape_hash="sh1",
+        system_digest=_SYSTEM_DIGEST,
     )
 
 

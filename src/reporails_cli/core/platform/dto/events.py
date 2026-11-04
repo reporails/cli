@@ -352,8 +352,9 @@ class RequestSize:
     # the model id is not a Claude id.
     high_resolution: bool | None
     config: RequestConfig = RequestConfig()
-    # The hash the request's recorded shape is known under.
-    shape_hash: str = ""
+    # A digest of the request's system blocks, never their text; two requests sent with the same system prompt share
+    # it whatever their tools.
+    system_digest: str = ""
 
 
 @dataclass
@@ -365,6 +366,8 @@ class RequestChain:
 
     shapes: dict[str, tuple[int, int, int]] = field(default_factory=dict)
     tool_names: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # A digest of each shape's system blocks, by shape hash.
+    system_digests: dict[str, str] = field(default_factory=dict)
     pool: dict[str, MessageSize] = field(default_factory=dict)
     prefix: list[MessageSize] = field(default_factory=lambda: [MessageSize()])
     merge_id: str | None = None
