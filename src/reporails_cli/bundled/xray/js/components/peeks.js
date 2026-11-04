@@ -1,6 +1,6 @@
 // The details renderers for a source, a built-in item, a task prompt, the peak context and the estimated cost.
 import { el, nk, err } from '../dom.js';
-import { clock, costEst, exclusionNote, k1, plural, tk, usd } from '../format.js';
+import { clock, costEst, exclusionNote, k1, MCP_STATES, plural, tk, usd } from '../format.js';
 import { briefUrl, hookOutputUrl, peekUrl, systemUrl } from '../api.js';
 import { textBlock } from './textblock.js';
 import { hashFor } from '../state.js';
@@ -71,7 +71,7 @@ function findingsBlock(s, env) {
     const note = exclusionNote(s.excluded);
     if (note) box.append(el('div', 'nk excluded', note));
   } else {
-    box.append(nk('Outside this project; run ails check on it.'));
+    if (!s.excluded.outside) box.append(nk('Outside this project; run ails check on it.'));
     const why = exclusionNote(s.excluded);
     if (why) box.append(el('div', 'nk excluded', why));
   }
@@ -79,7 +79,6 @@ function findingsBlock(s, env) {
 }
 
 const DECISIONS = { context_added: 'added to the context', message_shown: 'showed a message', blocked: 'blocked', ran: 'ran' };
-const STATES = { connected: 'connected', pending: 'still connecting', failed: 'failed to connect', turned_off: 'turned off in this project', declared: 'declared, not seen in this session' };
 const SCOPES = { project: 'project .mcp.json', user: 'your user settings', local: 'this project in your user settings', managed: 'managed settings', plugin: 'plugin' };
 
 // A hook's commands with the file that declares each, and its firings: the output opens on request.
@@ -122,8 +121,9 @@ registerPeek('src', (env, id) => {
   else if (s.system_tokens_est == null && !s.hook) main.push(section('Its text', nk(s.builtin ? 'Comes from the coding agent; there is no file.' : 'No file behind this source.')));
   if (s.kind === 'agent' && s.system_tokens_est != null) {
     main.push(section(`System prompt · ${tk(s.system_tokens_est, true)} · recorded at launch`, textBlock(env.text, 'system:' + s.agent_type, systemUrl(s.agent_type))));
-
-    main.push(section('Tools its launches had', pre(s.launch_tools.map(([t, n]) => `${t} · ${plural(n, 'launch', 'launches')}`).join('\n'))));
+  }
+  if (s.kind === 'agent') {
+    if (s.launch_tools.length) main.push(section('Tools its launches had', pre(s.launch_tools.map(([t, n]) => `${t} · ${plural(n, 'launch', 'launches')}`).join('\n'))));
     if (s.launch_settings.length) main.push(section('Launch settings', pre(s.launch_settings.map(([label, value]) => `${label} · ${value}`).join('\n'))));
   }
   const holders = s.had_by.map(h => ix.nodes.get(h)).filter(Boolean);
@@ -133,7 +133,7 @@ registerPeek('src', (env, id) => {
   const why = unrecorded ? null : whyLoaded(view, s.id);
   const m = s.mcp;
   const where = m ? (m.declared_in ? `${SCOPES[m.scope] || m.scope}: ${m.declared_in}` : 'no configuration file declares it') : null;
-  const side = [kv([['Path', s.path], ['Plugin', m ? m.plugin : null], ['State', m ? STATES[m.state] : null], ['Declared in', where], ['Loaded by', loaded], ['Why', why]])];
+  const side = [kv([['Path', s.path], ['Plugin', m ? m.plugin : null], ['State', m ? MCP_STATES[m.state] : null], ['Declared in', where], ['Loaded by', loaded], ['Why', why]])];
   const price = costEst(s.cost_usd_est);
   if (price && holders.length) side.push(kv([['Est. cost', `${price} across this session`], ['Method', view.price_list.source_method]]));
   if (holders.length) {

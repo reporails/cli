@@ -161,17 +161,17 @@ class XraySession:
             return None
         return prompt_text(AGENT, self._file, prompt_id)
 
-    def hook_output(self, row_id: str) -> str | None:
-        """The text one hook firing the records name left in the transcript, cut at `HOOK_OUTPUT_CHARS`; None for
-        any other id. Raises `PayloadRefused` when the row is not the shape the adapter is pinned to. The text is not
-        kept."""
+    def hook_output(self, row_id: str) -> tuple[str, bool] | None:
+        """The text one hook firing the records name left in the transcript, cut at `HOOK_OUTPUT_CHARS`, and whether
+        it was cut; None for any other id. Raises `PayloadRefused` when the row is not the shape the adapter is pinned
+        to. The text is not kept."""
         named = next(
             (record for record in self._transcript if record.hook is not None and record.hook.id == row_id), None
         )
         if named is None:
             return None
         text = hook_output_text(AGENT, self._file, named.subagent_id, row_id)
-        return None if text is None else text[:HOOK_OUTPUT_CHARS]
+        return None if text is None else (text[:HOOK_OUTPUT_CHARS], len(text) > HOOK_OUTPUT_CHARS)
 
     def first_prompt(self) -> str | None:
         """The text of the first typed prompt of the session; None when it has none. The text is not kept."""

@@ -1,8 +1,11 @@
-// usage: node xray_panels.mjs <page-url> <mode>
+// usage: node xray_panels.mjs <page-url> <mode> [<session file> <row>]
+// With a session file and a row, the page is the real `ails xray` on that file and a view update is the row appended to it; without them the page is
+// served over a fixture view and an update swaps the fixture.
 // Drives the Sources panel, the right column and the details contents of the bundled page and prints one JSON object.
+import { appendFileSync } from 'node:fs';
 import { openPage, toGraph, sleep } from './xray_cdp.mjs';
 
-const [url, mode] = [process.argv[2], process.argv[3]];
+const [url, mode, sessionFile, row] = process.argv.slice(2);
 const page = await openPage(url, 1440, 1000);
 await toGraph(page);
 const ready = await page.until(`!!document.querySelector('#sources .ssec') && !!document.querySelector('#inspector .ix-head')`);
@@ -87,6 +90,10 @@ if (mode === 'eye_hover' && ready) {
 }
 
 const swap = view => page.ev(`fetch('/test/swap?view=${view}').then(() => 0)`);
+// The page's own view version, as the server's ETag says it.
+const viewVersion = () => page.ev(`fetch('/view', { headers: { 'x-xray-token': document.querySelector('meta[name="xray-token"]').content } }).then(r => r.headers.get('etag'))`);
+const grow = async () => { if (sessionFile) appendFileSync(sessionFile, row + '\n'); else await swap('view_sample'); };
+const SUB_CARD = '.card[data-node]:not([data-node="main"])';
 const centre = sel => page.ev(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); e.scrollIntoView({ block: 'center', inline: 'center' }); const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
 const hoverOn = async sel => { const p = await centre(sel); await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, button: 'none' }); await sleep(250); };
 
@@ -102,9 +109,11 @@ if (mode === 'hover_calm' && ready) {
   await hoverOn('#sources .ssec:last-child .sh');
   out.columnAfter = await column();
   out.openAfter = await open();
-  const station = await page.ev(`(() => { const e = document.querySelector('#canvas .station[data-source]'); return e ? e.dataset.source : null; })()`);
-  out.station = station;
-  await click('#canvas .station[data-source]');
+  // A station where the spine has one, else the arrow of a source that entered the context.
+  const target = (await page.ev(`!!document.querySelector('#canvas .station[data-source]')`)) ? '#canvas .station[data-source]' : '#canvas .srcarrow[data-source]';
+  out.station = await page.ev(`(() => { const e = document.querySelector(${JSON.stringify(target)}); return e ? e.dataset.source : null; })()`);
+  const at = await centre(target);
+  for (const type of ['mousePressed', 'mouseReleased']) await page.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount: 1 });
   out.dialog = !!(await page.until(`!!document.querySelector('.pk-dialog .pk-title')`));
   out.title = await page.ev(`(document.querySelector('.pk-title') || {}).textContent || ''`);
 }
@@ -121,8 +130,10 @@ if (mode === 'pin' && ready) {
   out.clearAtOnce = await page.ev(`!!document.querySelector('#canvas [data-clear]')`);
   await hoverOn(`#sources .sr[data-source="${rows[1]}"]`);
   out.whileHovering = await name();
-  await swap('view_sample');
+  out.versionBefore = await viewVersion();
+  await grow();
   await sleep(3000);
+  out.versionAfter = await viewVersion();
   out.afterUpdate = await name();
   out.clearAfterUpdate = await page.ev(`!!document.querySelector('#canvas [data-clear]')`);
   await click('#canvas [data-clear]');
@@ -143,7 +154,7 @@ if (mode === 'eye_line' && ready) {
 if (mode === 'sub_cost' && ready) {
   const tiles = () => page.ev(`[...document.querySelectorAll('#inspector .ix-tile.cost')].map(t => t.innerText)`);
   out.mainTile = await tiles();
-  await click('.card[data-node="a1"]');
+  await click(SUB_CARD);
   await sleep(200);
   out.subTile = await tiles();
 }

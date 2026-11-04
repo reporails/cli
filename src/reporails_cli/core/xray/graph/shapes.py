@@ -73,16 +73,16 @@ def first_launch(launch_ids: Iterable[str], first: dict[str, RequestSize]) -> st
 def launched_with(
     launch_ids: Iterable[str], first: dict[str, RequestSize], metas: dict[str, SubagentMeta]
 ) -> AgentLaunch | None:
-    """The system prompt size in tokens of the first launch (lowest id) that recorded a request, and each tool the
-    launches were sent with and how many launches had it, most launches first then by name; None when no launch
-    recorded one."""
+    """The system prompt size in tokens of the first launch (lowest id) that recorded a request (None when none
+    did), each tool the launches were sent with and how many launches had it, most launches first then by name, and
+    the launch settings; None when no launch recorded a request or a launch setting."""
     ids = list(launch_ids)
     chosen = first_launch(ids, first)
-    if chosen is None:
+    if chosen is None and not any(node_id in metas for node_id in ids):
         return None
     counts = Counter(name for node_id in ids if node_id in first for name in set(first[node_id].tool_names))
     return AgentLaunch(
-        tokens_of(first[chosen].system_chars),
+        tokens_of(first[chosen].system_chars) if chosen is not None else None,
         tuple(sorted(counts.items(), key=lambda item: (-item[1], item[0]))),
         _settings(ids, first, metas),
     )

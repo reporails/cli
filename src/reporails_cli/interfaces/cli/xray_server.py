@@ -316,7 +316,7 @@ class XrayServer:
             _TextRoute(
                 "id",
                 "the query is ?id=<firing id>",
-                _text_fields(XraySession.hook_output),
+                _hook_output_fields,
                 "not a firing this page lists",
             ),
         )
@@ -420,6 +420,12 @@ def _text_fields(lookup: Callable[[XraySession, str], str | None]) -> Callable[[
         return None if text is None else {"text": text}
 
     return fields
+
+
+def _hook_output_fields(session: XraySession, key: str) -> JsonObject | None:
+    """The reply fields of a hook firing the session names: its output and whether the output was cut."""
+    found = session.hook_output(key)
+    return None if found is None else {"text": found[0], "truncated": found[1]}
 
 
 def _call_fields(session: XraySession, key: str) -> JsonObject | None:

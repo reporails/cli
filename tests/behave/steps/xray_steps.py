@@ -328,6 +328,21 @@ def step_session_with_requests(context):
     _write_session(context, True)
 
 
+@given("a project with a session that loaded two of the project's instruction files, with a subagent")
+def step_session_with_loaded_file(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    _write_session(context, True)
+    session = context.home / ".claude" / "projects" / claude_project_folder_name(context.project) / "session.jsonl"
+    attachment = {
+        "type": "instructions",
+        "files": [{"path": str(context.project / name), "type": "Project"} for name in ("CLAUDE.md", "AGENTS.md")],
+    }
+    loaded = _row("attachment", 0, "2.1.309", context.project, attachment=attachment)
+    lines = session.read_text(encoding="utf-8").splitlines()
+    lines.insert(1, json.dumps(loaded))
+    session.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 @given("a project with a session whose subagent was launched with a model and a config")
 def step_session_with_launch_config(context):
     context.project = build_project(context.tmpdir / "proj").resolve()

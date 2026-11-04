@@ -11,16 +11,18 @@ from pathlib import Path
 
 from behave import then  # type: ignore[import-untyped]
 
+from reporails_cli.core.discovery.agent_discovery import claude_project_folder_name
+
 SCRIPT = Path(__file__).resolve().parents[1] / "xray_panels.mjs"
 
 
-def _panels(context, mode: str) -> dict | None:
+def _panels(context, mode: str, *grown: str) -> dict | None:
     node, chrome = shutil.which("node"), shutil.which("google-chrome") or shutil.which("chromium")
     if node is None or chrome is None:
         context.scenario.skip("SKIPPED LOUDLY: no node or Chrome on PATH, the page was not driven")
         return None
     done = subprocess.run(
-        [node, str(SCRIPT), context.url, mode],
+        [node, str(SCRIPT), context.url, mode, *grown],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -140,7 +142,10 @@ def step_eye_hover(context):
 
 @then("hovering spine items and groups changes nothing, and clicking a spine item opens its details")
 def step_hover_calm(context):
-    seen = _panels(context, "hover_calm")
+    _hover_calm(_panels(context, "hover_calm"))
+
+
+def _hover_calm(seen: dict | None) -> None:
     if seen is None:
         return
     assert seen["hovered"] > 0, seen
@@ -151,7 +156,10 @@ def step_hover_calm(context):
 
 @then("a source pinned on the graph stays pinned after the view changes and until it is cleared")
 def step_pin(context):
-    seen = _panels(context, "pin")
+    _pinned(_panels(context, "pin"))
+
+
+def _pinned(seen: dict | None) -> None:
     if seen is None:
         return
     assert seen["pinnedByClick"] is False, seen
@@ -179,14 +187,52 @@ def _dollars(text: str) -> list[float]:
 
 @then("a subagent's cost tile shows dollars and the main tile's session figure is the sum of the agents")
 def step_sub_cost(context):
-    seen = _panels(context, "sub_cost")
+    session = _agent_costs(_panels(context, "sub_cost"))
+    if session is not None:
+        cost = context.fixture["session_cost"]
+        assert abs(session - cost["total_usd"]) <= 0.011, (session, cost)
+
+
+def _agent_costs(seen: dict | None) -> float | None:
+    """Checks a subagent's tile shows dollars and the main tile's session line is its own cost plus the subagents';
+    returns the session figure."""
     if seen is None:
-        return
+        return None
     sub = _dollars(" ".join(seen["subTile"]))
     assert sub, seen["subTile"]
     main = _dollars(" ".join(seen["mainTile"]))
     assert len(main) >= 3, seen["mainTile"]
     own, session, subs = main[0], main[1], main[2]
     assert abs(session - (own + subs)) <= 0.011, seen["mainTile"]
-    cost = context.fixture["session_cost"]
-    assert abs(session - cost["total_usd"]) <= 0.011, (session, cost)
+    return session
+
+
+def _grown(context) -> tuple[str, str]:
+    """The session file of the real run and the reply row appended to it when the page should take a new view."""
+    from steps.xray_steps import SESSION_ID, _reply, _usage  # behave puts features/ on sys.path
+
+    folder = context.home / ".claude" / "projects" / claude_project_folder_name(context.project)
+    reply = _reply(
+        30, "2.1.309", context.project, "msg_late", [{"type": "text", "text": "one more"}], _usage(2000, 400), "r"
+    )
+    reply.pop("requestRef")
+    assert reply["sessionId"] == SESSION_ID
+    return str(folder / "session.jsonl"), json.dumps(reply)
+
+
+@then("on the real page hovering changes nothing in the right column and a click on a spine source opens its details")
+def step_real_hover(context):
+    _hover_calm(_panels(context, "hover_calm"))
+
+
+@then("on the real page a pin survives the session file growing and the page taking the new view")
+def step_real_pin(context):
+    seen = _panels(context, "pin", *_grown(context))
+    _pinned(seen)
+    if seen is not None:
+        assert seen["versionAfter"] != seen["versionBefore"], f"the page never took a new view: {seen}"
+
+
+@then("on the real page the subagent's cost tile shows dollars and the main tile's session line is main plus subagents")
+def step_real_cost(context):
+    assert _agent_costs(_panels(context, "sub_cost")) is not None or context.scenario.status == "skipped"

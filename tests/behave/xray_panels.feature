@@ -75,3 +75,12 @@ Feature: The x-ray Sources panel and right column list everything and describe o
   Scenario: A subagent shows its cost and the main agent's session line is the sum of the agents
     Given the bundled page is served over the "view_sample" fixture view
     Then a subagent's cost tile shows dollars and the main tile's session figure is the sum of the agents
+
+  @e2e @browser
+  Scenario: The real page opens a spine source on a click, keeps a pin while the session grows and shows each agent's cost
+    Given a project with a session that loaded two of the project's instruction files, with a subagent
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And on the real page hovering changes nothing in the right column and a click on a spine source opens its details
+    And on the real page a pin survives the session file growing and the page taking the new view
+    And on the real page the subagent's cost tile shows dollars and the main tile's session line is main plus subagents

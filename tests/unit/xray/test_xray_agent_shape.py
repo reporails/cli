@@ -51,9 +51,11 @@ def test_a_second_request_of_a_launch_does_not_count_its_tools_again(tmp_path: P
     assert (_type_source(tmp_path, records).launch or AgentLaunch(0, ())).tools == (("Read", 1),)
 
 
-def test_a_type_with_no_recorded_request_keeps_today_s_state(tmp_path: Path) -> None:
+def test_a_type_with_no_recorded_request_shows_its_launch_settings_and_no_system_prompt(tmp_path: Path) -> None:
     source = _type_source(tmp_path, [launch(1, "A", None, "tuA")])
-    assert source.launch is None and source.builtin is True
+    assert source.builtin is True
+    assert source.launch is not None and source.launch.system_tokens_est is None and source.launch.settings
+    assert source.to_json()["system_tokens_est"] is None
 
 
 def test_the_serialized_source_holds_sizes_and_names_only(tmp_path: Path) -> None:

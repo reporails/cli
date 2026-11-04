@@ -225,10 +225,11 @@ class SourceEntry(SourceFacts):
 
 @dataclass(frozen=True)
 class AgentLaunch:
-    """What the first launch of an agent type that recorded a request was sent with: its system prompt size in
-    tokens, and each tool the type's launches were sent with and how many launches had it."""
+    """What the launches of an agent type were sent with: the system prompt size in tokens of the first that recorded
+    a request (None when none did), each tool the launches were sent with and how many launches had it, and the
+    settings they were set up with."""
 
-    system_tokens_est: int
+    system_tokens_est: int | None
     tools: tuple[tuple[str, int], ...]
     # What the launches were set up with, as (label, value) lines the page lists as written.
     settings: tuple[tuple[str, str], ...] = ()

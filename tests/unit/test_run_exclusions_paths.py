@@ -140,3 +140,14 @@ def test_exclusion_hits_name_the_setting_the_value_and_the_config_file(tmp_path:
     assert [(h.setting, h.value, h.config) for h in found[noted]] == [
         ("exclude_files", "notes/*.md", ".ails/config.local.yml")
     ]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_exclusion_hits_count_only_what_the_run_reads_and_name_a_global_file_under_home(tmp_path: Path) -> None:
+    glob_home = Path.home() / ".reporails"
+    glob_home.mkdir()
+    (glob_home / "config.yml").write_text("exclude_dirs: [hub]\nheal_exclude: ['**/CLAUDE.md']\n")
+    held = tmp_path / "hub" / "CLAUDE.md"
+    found = exclusion_hits(tmp_path, [held])
+    assert [(h.setting, h.value, h.config) for h in found[held]] == [("exclude_dirs", "hub", "~/.reporails/config.yml")]

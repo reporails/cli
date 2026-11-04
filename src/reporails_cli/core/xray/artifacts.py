@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 
@@ -182,7 +181,8 @@ def is_actionable(item: ArtifactFile, root: Path) -> bool:
 
 def left_out_files(files: Sequence[ArtifactFile], root: Path) -> dict[str, FileLeftOut]:
     """For each file of the project that is no hook config (by its path), what keeps it out of a project-wide check
-    or fix and, for a file whose real location is outside the project, where its link leads."""
+    or fix and, for a file whose real location is outside the project, where that location is, named as the page
+    shows paths."""
     inside = [item for item in files if item.kind != "hook" and Path(item.path).is_relative_to(root)]
     hits = exclusion_hits(root, [Path(item.path) for item in inside])
     base = safe_resolve(root)
@@ -192,7 +192,7 @@ def left_out_files(files: Sequence[ArtifactFile], root: Path) -> dict[str, FileL
         real = Path(real_path(item.path, root))
         outside = None
         if real.exists() and not real.is_relative_to(base):
-            outside = os.readlink(path) if path.is_symlink() else str(real)
+            outside = relative_wire_path(str(real), root)
         found[item.path] = FileLeftOut(hits[path], outside)
     return found
 

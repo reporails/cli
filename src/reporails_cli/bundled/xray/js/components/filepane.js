@@ -56,9 +56,11 @@ export function render(box, env) {
   }
   if (s.actionable) pane.append(actions(s, env));
   else {
-    const n = nk('outside this project; run ');
-    n.append(el('code', null, 'ails check'), ' on it');
-    pane.append(n);
+    if (!s.excluded.outside) {
+      const n = nk('outside this project; run ');
+      n.append(el('code', null, 'ails check'), ' on it');
+      pane.append(n);
+    }
     const why = exclusionNote(s.excluded);
     if (why) pane.append(el('div', 'nk excluded', why));
   }

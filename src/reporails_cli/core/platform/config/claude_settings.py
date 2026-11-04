@@ -279,18 +279,21 @@ def _project_entry(project_root: Path) -> JsonObject:
 
 
 def mcp_declarations(project_root: Path, plugins: Sequence[tuple[str, Path]]) -> tuple[McpDeclaration, ...]:
-    """Every MCP server the configuration declares for a session in `project_root`: the project's `.mcp.json`, the
-    user's and the project's own entries in `~/.claude.json`, the managed file and each of `plugins`' servers, with
-    the file each is declared in. A plugin is named by its id before the `@`."""
+    """Every MCP server the configuration declares for a session in `project_root`, the one Claude Code connects
+    first: the managed file, the project's own entry in `~/.claude.json`, the project's `.mcp.json`, the user's
+    entry in `~/.claude.json` and each of `plugins`' servers, with the file each is declared in. A plugin is named
+    by its id before the `@`."""
     scopes = _scope_patterns("mcp")
     found: list[McpDeclaration] = []
     claude_json = _expand(scopes.get("user", []), None)
     sources: list[tuple[ArtifactScope, Path, JsonObject, bool]] = [
+        ("managed", path, _read_json(path), True) for path in _managed_files(scopes)
+    ]
+    sources += [("local", path, _project_entry(project_root), True) for path in claude_json]
+    sources += [
         ("project", path, _read_json(path), True) for path in _expand(scopes.get("project", []), project_root)
     ]
     sources += [("user", path, _read_json(path), True) for path in claude_json]
-    sources += [("local", path, _project_entry(project_root), True) for path in claude_json]
-    sources += [("managed", path, _read_json(path), True) for path in _managed_files(scopes)]
     found.extend(
         McpDeclaration(name, scope, None, str(path))
         for scope, path, data, wrapped in sources

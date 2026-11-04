@@ -31,6 +31,9 @@ def installed_code_stamp() -> str:
     for path in sorted(package.rglob("*")):
         if "__pycache__" in path.parts or not path.is_file():
             continue
-        info = path.stat()
+        try:
+            info = path.stat()
+        except OSError:  # best-effort digest: a file removed since it was listed no longer counts
+            continue
         digest.update(f"{path.relative_to(package).as_posix()}\0{info.st_size}\0{info.st_mtime_ns}\n".encode())
     return f"{installed_version()}+{digest.hexdigest()[:16]}"

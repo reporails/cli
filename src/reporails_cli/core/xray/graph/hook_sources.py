@@ -12,7 +12,7 @@ from reporails_cli.core.platform.dto.events import EventRecord, is_note_kind
 from reporails_cli.core.platform.dto.xray_build import Frame
 from reporails_cli.core.platform.dto.xray_sources import HookCommand, HookDetail, HookRun, SourceEntry, XrayArtifact
 from reporails_cli.core.platform.utils.hook_config import hook_sites, read_hook_config
-from reporails_cli.core.xray.derive import frame_time, tokens_of
+from reporails_cli.core.xray.derive import frame_time, real_path, tokens_of
 
 # The firings of one hook the page lists, the latest first kept.
 FIRINGS_SHOWN = 100
@@ -55,7 +55,7 @@ def _declared_commands(artifacts: Sequence[XrayArtifact], frame: Frame) -> list[
     )
     found: list[tuple[str, str]] = []
     for path in paths:
-        config = read_hook_config(Path(path))
+        config = read_hook_config(Path(real_path(path, frame.root)))
         if config is None:
             continue
         wire = relative_wire_path(path, frame.root)

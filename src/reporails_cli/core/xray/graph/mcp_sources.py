@@ -74,8 +74,8 @@ def _seen_servers(records: Sequence[EventRecord]) -> dict[str, McpSeen]:
 
 
 def _declared(declarations: Sequence[McpDeclaration]) -> dict[str, McpDeclaration]:
-    """Each declared server by its slug; the first declaration of a slug wins, in the order the configuration is
-    read."""
+    """Each declared server by its slug; the first declaration of a slug wins: the configuration lists the one Claude
+    Code connects first."""
     found: dict[str, McpDeclaration] = {}
     for item in declarations:
         slug = _plugin_slug(item.plugin, item.name) if item.plugin else mcp_slug(item.name)

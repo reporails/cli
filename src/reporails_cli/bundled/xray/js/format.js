@@ -19,6 +19,8 @@ export const dur = s => {
 export const plural = (n, w, ws) => `${n} ${n === 1 ? w : (ws || w + 's')}`;
 // A template whose {names} are filled from `values`; an unknown name stays visible as written.
 export const fill = (template, values) => template.replace(/\{(\w+)\}/g, (m, k) => (k in values ? String(values[k]) : m));
+// How the page words the state of an MCP server (the state the view carries).
+export const MCP_STATES = { connected: 'connected', pending: 'still connecting', failed: 'failed to connect', turned_off: 'turned off in this project', declared: 'declared, not seen in this session' };
 // What a file's exclusion facts say about its Check and Fix buttons (`left`: the source's `excluded` facts); empty when they say nothing.
 export const exclusionNote = left => {
   const word = h => `${h.setting} \`${h.value}\` in ${h.config}`;
