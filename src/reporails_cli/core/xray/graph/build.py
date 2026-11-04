@@ -25,7 +25,13 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayTrack,
     XrayTree,
 )
-from reporails_cli.core.platform.dto.xray_sources import Availability, SourceEntry, XrayBuiltin, XraySource
+from reporails_cli.core.platform.dto.xray_sources import (
+    Availability,
+    HookDetail,
+    SourceEntry,
+    XrayBuiltin,
+    XraySource,
+)
 from reporails_cli.core.xray.cost import session_cost
 from reporails_cli.core.xray.graph import spine
 from reporails_cli.core.xray.graph.agents import MAIN_ID, main_records
@@ -86,7 +92,8 @@ def _load(load: LoadEvent, sources: SourceTable, small_kinds: set[SourceKind]) -
 
 
 def _availability(entry: SourceEntry, had_by: Sequence[str], unrecorded: frozenset[SourceKind]) -> Availability:
-    if had_by:
+    # A hook that fired is loaded though its output entered no context.
+    if had_by or (isinstance(entry.detail, HookDetail) and entry.detail.firing_count):
         return "loaded"
     if entry.kind in unrecorded:
         return "unrecorded"

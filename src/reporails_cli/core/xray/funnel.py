@@ -24,7 +24,7 @@ def build_funnel(
     """One row per source kind in `kinds` that has a source, in that order, the built-in agent types counted; `ran`
     holds the ids of the skill and command sources that ran. A kind whose loads the session does not record has
     no loaded or used count."""
-    had = {source.id for source in sources if source.had_by}
+    had = {source.id for source in sources if source.availability == "loaded"}
     entries = table.entries
     unrecorded = table.unrecorded
     rows: list[XrayFunnelRow] = []

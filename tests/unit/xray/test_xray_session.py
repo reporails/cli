@@ -511,3 +511,12 @@ def test_a_malformed_plugin_record_and_a_malformed_cache_are_both_refused(
     refusals = _view(_session(tmp_path, "2.1.301", _project(tmp_path))).gaps.refusals
     assert any("installed_plugins.json" in r for r in refusals)
     assert any("remote-settings.json" in r for r in refusals)
+
+
+def test_a_hook_that_fired_without_adding_to_the_context_counts_as_fired(tmp_path: Path) -> None:
+    view = _view(_session(tmp_path, "2.1.309-turns", _project(tmp_path)))
+    hook = next(source for source in view.sources if source.id == "hook:PreToolUse:Read")
+    assert hook.had_by == ()
+    assert hook.availability == "loaded"
+    (row,) = [row for row in view.verdict.funnel if row.kind == "hook"]
+    assert row.loaded == row.on_disk

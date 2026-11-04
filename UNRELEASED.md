@@ -6,6 +6,8 @@
 
 ### Fixed
 
+- `ails xray`: a hook that ran without adding text to the context, such as a Stop hook, counts as fired in the Hooks group instead of not loaded.
+
 ### Removed
 
 ### Internal
