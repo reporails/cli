@@ -1,9 +1,9 @@
 Feature: The x-ray page's shell keeps its tabs, hint bar, details frame and layout steady and readable
 
   @page @browser
-  Scenario: A session with no subagents opens on Tool calls, one with subagents on Graph
+  Scenario: A session with no subagents and one with subagents both open on Graph
     Given the bundled page is served over the "view_solo" fixture view
-    Then the page opens on the Tool calls tab with each tab's count from the view and no toolbar
+    Then the page opens on the Graph tab with each tab's count from the view
     Given the bundled page is served over the "view_sample" fixture view
     Then the page opens on the Graph tab with each tab's count from the view
 
@@ -40,9 +40,9 @@ Feature: The x-ray page's shell keeps its tabs, hint bar, details frame and layo
   @page @browser
   Scenario: A solo session's Tool calls tab describes its agent and keeps the hint bar for the Graph
     Given the bundled page is served over the "view_solo" fixture view
-    Then the page opens on Tool calls with the agent summary beside the table, no scope buttons and a hint bar only on the Graph tab
+    Then the Tool calls tab shows the agent summary beside the table, no scope buttons and a hint bar only on the Graph tab
 
   @page @browser
-  Scenario: The tab the page opened on stays when a subagent appears on a later poll
+  Scenario: A session without subagents opens on Graph, and so does the session picked in the header
     Given the bundled page is served over the "view_solo" fixture view
-    Then the page stays on Tool calls when a subagent appears on a later poll
+    Then the page opens on the Graph tab and the session picked in the header opens on it too

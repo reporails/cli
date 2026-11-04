@@ -32,7 +32,8 @@ the adapter refuses any other shape of a row type it reads:
   (`addedTypes` and `addedLines`, lists of strings), `mcp_instructions_delta`
   (`addedNames` and `addedBlocks`, lists of strings), `deferred_tools_delta`
   (`addedNames` and `addedLines`, lists of strings, or in a subagent file `content`, a string; and optionally
-  `pendingMcpServers` and `failedMcpServers`, lists of strings),
+  `pendingMcpServers`, a list of strings, and `failedMcpServers`, a list of objects each with a string
+  `name` and optionally string `errorCode` and `error`),
   `session_context` (`context`, an object of strings). The three delta rows may also carry `removedTypes` or
   `removedNames`, lists of strings, counted off their item count; a deferred-tools delta row whose
   added items list is empty names tools re-added by name: `readdedNames`, a list of strings, must name every
@@ -507,6 +508,25 @@ class ClaudeTranscriptAdapter:
             return ()
         return tuple(_strings(attachment.get(key), key, what))
 
+    def _failed_servers(self, attachment: JsonObject, what: str) -> tuple[str, ...]:
+        """The names of the servers that failed to connect; each entry is an object with a string name."""
+        if "failedMcpServers" not in attachment:
+            return ()
+        entries = attachment["failedMcpServers"]
+        if not isinstance(entries, list):
+            raise PayloadRefused(f"{what} failedMcpServers is not a list of objects")
+        names: list[str] = []
+        for entry in entries:
+            fields = as_object(entry)
+            name = opt_str(fields.get("name"))
+            if not name:
+                raise PayloadRefused(f"{what} failedMcpServers entry has no string name")
+            for key in ("errorCode", "error"):
+                if key in fields and opt_str(fields[key]) is None:
+                    raise PayloadRefused(f"{what} failedMcpServers entry {key} is not a string")
+            names.append(name)
+        return tuple(names)
+
     def _deferred_tools(self, attachment: JsonObject) -> HarnessEntry:
         what = "deferred_tools_delta attachment"
         if "content" in attachment:
@@ -528,7 +548,7 @@ class ClaudeTranscriptAdapter:
             removed=removed,
             readded=() if added else tuple(names),
             pending=self._removed_names(attachment, "pendingMcpServers", what),
-            failed=self._removed_names(attachment, "failedMcpServers", what),
+            failed=self._failed_servers(attachment, what),
         )
 
     def _session_context(self, attachment: JsonObject) -> HarnessEntry:

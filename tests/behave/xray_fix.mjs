@@ -50,6 +50,7 @@ if (mode === 'calls_instr' && ready) {
 
 if (mode === 'solo' && ready) {
   out.tab = await selectedTab();
+  await tab('calls');
   out.hintHidden = await page.ev(`document.querySelector('#hint').hidden`);
   out.scopeButtons = await page.ev(`document.querySelectorAll('#view-calls [data-calls-scope]').length`);
   out.tiles = await texts('#side-calls .ix-tile');
@@ -93,8 +94,13 @@ if (mode === 'late_result' && ready) {
 
 if (mode === 'default_tab' && ready) {
   out.first = await selectedTab();
-  await page.ev(`fetch('/test/swap?view=${args.then}').then(() => 0)`);
-  out.grown = await page.until(`document.querySelector('.tab[data-tab="graph"] .n').textContent !== '1'`, 24);
+  await click('.swbtn');
+  await page.until(`document.querySelectorAll('.swrow').length === 3`);
+  // The new document has no marker: the old page's marker is gone once the reload has happened.
+  await page.ev(`window.__oldPage = true; 0`);
+  await click('.swrow:nth-child(2) .swpick');
+  out.picked = await page.until(`location.search === '?session=sess-bbb' && location.search`);
+  await page.until(`window.__oldPage !== true && !!document.querySelector('.tab[aria-selected="true"]')`);
   out.later = await selectedTab();
 }
 

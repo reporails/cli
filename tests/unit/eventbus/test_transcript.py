@@ -20,7 +20,7 @@ from reporails_cli.core.eventbus.transcript import (
     subagent_brief,
     subagent_system,
 )
-from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object
 from reporails_cli.core.platform.dto.events import EventRecord, ReplyText, TranscriptCursor
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_eventbus]
@@ -445,7 +445,7 @@ def test_a_malformed_skill_run_is_refused_naming_the_field(result: JsonObject, f
         ClaudeTranscriptAdapter().resolve_row(_tool_result(result), None)
 
 
-def _deferred_row(**fields: list[str]) -> JsonObject:
+def _deferred_row(**fields: JsonValue) -> JsonObject:
     return {
         "type": "attachment",
         "sessionId": "s",
@@ -467,6 +467,38 @@ def test_tools_re_added_by_name_count_with_size_zero_and_are_not_refused() -> No
 def test_a_delta_row_with_unequal_non_empty_name_and_line_lists_is_refused() -> None:
     with pytest.raises(PayloadRefused, match="names for"):
         ClaudeTranscriptAdapter().resolve_row(_deferred_row(addedNames=["a", "b", "c"], addedLines=["x", "y"]), None)
+
+
+def test_failed_mcp_servers_are_read_from_object_entries_with_or_without_an_error_code() -> None:
+    failed = [
+        {"name": "reddit", "errorCode": "CONNECTION_CLOSED", "error": "Connection closed"},
+        {"name": "plugin:reporails:reporails", "error": "Skipping connection (recent failure)"},
+    ]
+    (record,) = ClaudeTranscriptAdapter().resolve_row(
+        _deferred_row(addedNames=["a"], addedLines=["x"], failedMcpServers=failed, pendingMcpServers=["p"]), None
+    )
+    entry = record.harness
+    assert entry is not None and entry.failed == ("reddit", "plugin:reporails:reporails")
+    assert entry.pending == ("p",)
+
+
+@pytest.mark.parametrize(
+    ("entry", "message"),
+    [
+        ("reddit", "has no string name"),
+        ({"error": "boom"}, "has no string name"),
+        ({"name": 3}, "has no string name"),
+        ({"name": "reddit", "errorCode": 5}, "errorCode is not a string"),
+        ({"name": "reddit", "error": []}, "error is not a string"),
+    ],
+)
+def test_a_failed_mcp_server_entry_that_is_not_a_named_object_is_refused_naming_the_field(
+    entry: JsonValue, message: str
+) -> None:
+    with pytest.raises(PayloadRefused, match=f"failedMcpServers entry {message}"):
+        ClaudeTranscriptAdapter().resolve_row(
+            _deferred_row(addedNames=["a"], addedLines=["x"], failedMcpServers=[entry]), None
+        )
 
 
 def test_a_skill_run_status_that_is_not_a_string_is_refused() -> None:

@@ -192,15 +192,14 @@ def step_call_instructions(context):
 
 
 @then(
-    "the page opens on Tool calls with the agent summary beside the table, "
-    "no scope buttons and a hint bar only on the Graph tab"
+    "the Tool calls tab shows the agent summary beside the table, no scope buttons and a hint bar only on the Graph tab"
 )
 def step_solo(context):
     seen = _drive(context, "solo")
     if seen is None:
         return
     node = context.fixture["nodes"][0]
-    assert seen["tab"] == "calls", seen
+    assert seen["tab"] == "graph", seen
     assert seen["scopeButtons"] == 0, "a session with one agent shows scope buttons"
     assert seen["hintHidden"] is True and seen["hintSources"] is True and seen["hintGraph"] is False, seen
     labels = ["Peak context", "Est. cost"]
@@ -241,13 +240,14 @@ def step_late_result(context):
     assert "result of toolu_" in seen["after"], seen["after"]
 
 
-@then("the page stays on Tool calls when a subagent appears on a later poll")
+@then("the page opens on the Graph tab and the session picked in the header opens on it too")
 def step_default_tab(context):
-    seen = _drive(context, "default_tab", {"then": "view_sample"})
+    seen = _drive(context, "default_tab")
     if seen is None:
         return
-    assert seen["first"] == "calls" and seen["grown"], seen
-    assert seen["later"] == "calls", seen
+    assert seen["first"] == "graph", seen
+    assert seen["picked"] == "?session=sess-bbb", seen
+    assert seen["later"] == "graph", seen
 
 
 @then("the main agent's cost tile and details list the session total, the subagents' share and the costliest subagents")

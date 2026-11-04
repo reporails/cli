@@ -55,11 +55,6 @@ def _tabs_say(context, selected: str, shown: str) -> None:
     assert seen["afterClick"] == {"selected": "sources", "shown": ["sources"]}, seen["afterClick"]
 
 
-@then("the page opens on the Tool calls tab with each tab's count from the view and no toolbar")
-def step_opens_on_calls(context):
-    _tabs_say(context, "calls", "calls")
-
-
 @then("the page opens on the Graph tab with each tab's count from the view")
 def step_opens_on_graph(context):
     _tabs_say(context, "graph", "graph")

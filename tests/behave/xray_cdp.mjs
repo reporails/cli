@@ -54,7 +54,7 @@ export async function openPage(url, width = 925, height = 1000) {
   return { ev, until, frame, send, close };
 }
 
-// A session with no subagents opens on the Tool calls tab; the graph scenarios need the Graph tab.
+// The page opens on the Graph tab; this waits for the tab and clicks it, so a scenario starts on the Graph whatever came first.
 export async function toGraph(page) {
   await page.until(`!!document.querySelector('.tab[data-tab="graph"]')`);
   await page.ev(`document.querySelector('.tab[data-tab="graph"]').click(); 0`);

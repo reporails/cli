@@ -21,7 +21,7 @@ let ix = null, version = null, etag = null, inflight = false, changed = false, l
 const run = { busy: false, res: null, autoChecked: new Set() };
 const opened = new Set();
 
-const env = () => { const focus = focusSource(ix, state); return { ix, state, tab: activeTab(ix, state), focus, graphFocus: focus && state.layers[focus.kind] ? focus : null, text, opened, busy: run.busy, res: run.res }; };
+const env = () => { const focus = focusSource(ix, state); return { ix, state, tab: activeTab(state), focus, graphFocus: focus && state.layers[focus.kind] ? focus : null, text, opened, busy: run.busy, res: run.res }; };
 
 function renderNotices() {
   const v = ix.view, b = $('#banner');
@@ -265,8 +265,6 @@ details.onPeekRegister(render);
 
 function adopt(view) {
   ix = index(view);
-  // The tab the page first opened on stays: a subagent showing up on a later poll does not move the user.
-  if (state.tab == null) state.tab = activeTab(ix, state);
   if (!state.layers) state.layers = {};
   for (const k of view.adapter.source_kinds) if (!(k.key in state.layers)) state.layers[k.key] = true;
   applyHash(location.hash, ix.nodes);

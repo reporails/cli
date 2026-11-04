@@ -51,8 +51,8 @@ export const replyMeasured = row => row[row.length - 1] === true;
 
 export const TABS = ['graph', 'calls', 'sources'];
 
-// The open tab: the one chosen, else Tool calls for a session with no subagents and Graph for the rest.
-export const activeTab = (ix, state) => state.tab || (ix.view.nodes.length > 1 ? 'graph' : 'calls');
+// The open tab: the one chosen, else the Graph.
+export const activeTab = state => state.tab || 'graph';
 
 // What each tab's count in the header says.
 export function tabCounts(ix) {
