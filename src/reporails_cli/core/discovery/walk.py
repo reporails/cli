@@ -39,6 +39,15 @@ def safe_resolve(path: Path) -> Path:
         return path
 
 
+def inside_git_repository(target: Path) -> bool:
+    """Whether the target or any folder above it holds a `.git`."""
+    try:
+        target = target.resolve()
+    except OSError:
+        return False
+    return any((folder / ".git").exists() for folder in (target, *target.parents))
+
+
 def file_under_target(f: Path, tgt: Path) -> bool:
     """True when instruction file `f` is the target or sits beneath it.
 

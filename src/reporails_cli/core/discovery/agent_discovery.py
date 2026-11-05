@@ -33,6 +33,7 @@ from reporails_cli.core.discovery.surface_config import (
 from reporails_cli.core.discovery.walk import (
     Pruner,
     documented_path,
+    inside_git_repository,
     list_dir,
     walk_glob,
     walk_glob_matches,
@@ -171,15 +172,6 @@ def _is_separate_repository(folder: Path, cache: dict[Path, bool]) -> bool:
     return separate
 
 
-def _inside_git_repository(target: Path) -> bool:
-    """Whether the target or any folder above it holds a `.git`."""
-    try:
-        target = target.resolve()
-    except OSError:
-        return False
-    return any((folder / ".git").exists() for folder in (target, *target.parents))
-
-
 def in_nested_repository(path: Path, target: Path, pattern: str, cache: dict[Path, bool]) -> bool:
     """Whether a file the `**/` part of a pattern reached sits in a separate repository.
 
@@ -265,7 +257,7 @@ def glob_file_type_patterns(
     nested = is_nested(props)
     project_root: Path | None = None
     repo_cache: dict[Path, bool] = {}
-    cache = repo_cache if _inside_git_repository(target) else None
+    cache = repo_cache if inside_git_repository(target) else None
 
     found: list[Path] = []
     for pattern in patterns:

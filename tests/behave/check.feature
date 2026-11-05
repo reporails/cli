@@ -33,6 +33,20 @@ Feature: `ails check` scores and validates instruction files end-to-end
     And I run "ails check --format json"
     Then the findings differ from the first run
 
+  @e2e @regression @windows_unverified
+  Scenario: A folder inside a git repository is not reported as untracked
+    Given a git project with a "sub/CLAUDE.md" and no ".git" in "sub"
+    When I run "ails check" on the project's "sub" folder from outside the project
+    Then the check exits 0
+    And the run reports no "CORE:G:0001" finding
+
+  @e2e @regression
+  Scenario: A folder with no git repository above it is reported as untracked
+    Given a project folder with a CLAUDE.md and no git repository above it
+    When I run "ails check --format json"
+    Then the check exits 0
+    And the run reports a "CORE:G:0001" finding
+
   @e2e @regression
   Scenario: A file inside the folder the command runs in keeps that folder as the project root
     Given a git project whose "sub/CLAUDE.md" has findings that the project config disables
