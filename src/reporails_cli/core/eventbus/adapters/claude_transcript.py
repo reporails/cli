@@ -228,6 +228,10 @@ def _usage_counts(usage: JsonObject) -> JsonObject:
     }
 
 
+# The command row a `/clear` opens the new session's transcript with.
+_CLEAR_COMMAND = "<command-name>/clear</command-name>"
+
+
 class ClaudeTranscriptAdapter:
     """Resolves the rows of a Claude Code session transcript."""
 
@@ -316,6 +320,18 @@ class ClaudeTranscriptAdapter:
         if text is None:
             raise PayloadRefused("row is not a typed prompt")
         return text
+
+    def opens_with_clear(self, row: JsonObject) -> bool | None:
+        """For a user row that is not a harness note, whether it is the `/clear` command row; None for any other
+        row."""
+        if row.get("type") != "user" or row.get("isMeta") is True:
+            return None
+        content = as_object(row.get("message")).get("content")
+        return isinstance(content, str) and _CLEAR_COMMAND in content
+
+    def row_time(self, row: JsonObject) -> str | None:
+        """The `timestamp` of a row; None for a row without one."""
+        return opt_str(row.get("timestamp")) or None
 
     def resolve_subagent(self, subagent_id: str, meta: JsonObject, first_row: JsonObject) -> EventRecord:
         """The `subagent_run` record of a subagent file; refuses a meta file without `agentType` or a first row that

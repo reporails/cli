@@ -62,8 +62,9 @@ TARGETS_FILE: dict[ToolCategory, bool] = {
 
 NoteKind = Literal["hook_note", "stop_block"]
 
-# What one firing of a hook did: put text into the context, showed a message, blocked the agent, or only ran.
-HookDecision = Literal["context_added", "message_shown", "blocked", "ran"]
+# What one firing of a hook did: put text into the context, showed a message, blocked the agent, exited non-zero
+# without blocking, or only ran.
+HookDecision = Literal["context_added", "message_shown", "blocked", "failed", "ran"]
 
 HarnessKind = (
     Literal[

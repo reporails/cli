@@ -63,6 +63,7 @@ _REFUSAL_REASONS = {
     "payload_too_large": "project over your plan's size cap",
     "atom_cap_exceeded": "project over the size cap",
     "file_cap_exceeded": "project over the size cap",
+    "file_budget_exceeded": "hourly file budget reached",
     "scoring_limit_exceeded": "project too large to score",
 }
 
@@ -169,7 +170,7 @@ def format_cta(err: FunnelError, *, command_line: bool = True) -> str:
     if err.retryable:
         return retry_text(err)
     url = merge_utm(_cta_upgrade_url(err))
-    if err.message:
+    if err.message and err.error != "file_budget_exceeded":
         return _with_url(escape_markup(err.message), url)
     tier = _cta_tier(err)
     template = _CTA_TEMPLATES.get((err.error, tier)) or _CTA_TEMPLATES.get((err.error, "*"))
@@ -284,6 +285,9 @@ _CTA_TEMPLATES: dict[tuple[str, str], str] = {
         "Project too dense ({err.size:,} atoms, {err.limit:,} cap). The cap is the same on every plan."
     ),
     ("atom_cap_exceeded", "pro"): "Project exceeds {err.limit:,}-atom cap ({err.size:,} atoms).",
+    ("file_budget_exceeded", "*"): (
+        "Hourly file budget used up ({err.limit:,} files per hour, {err.files:,} files sent). {err.reset_phrase}"
+    ),
     ("project_limit_reached", "*"): "Project limit reached — file an issue with your use case so we can raise it",
     ("file_cap_exceeded", "*"): (
         "Project has {err.files:,} files, over the {err.limit:,}-file cap — the same cap on every plan"

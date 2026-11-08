@@ -82,6 +82,7 @@ class XraySession:
         self._cursor = TranscriptCursor()
         self._transcript: list[EventRecord] = []
         self._files: tuple[ArtifactFile, ...] | None = None
+        self._shown: dict[str, ArtifactFile] | None = None
         self._problems: tuple[str, ...] = ()
         self._settings: tuple[Path, ...] = ()
         self._plugins: list[tuple[str, Path]] = []
@@ -96,6 +97,7 @@ class XraySession:
             return False
         self._transcript.extend(records)
         self._files = None
+        self._shown = None
         self.version += 1
         return True
 
@@ -118,28 +120,30 @@ class XraySession:
             self._problems = tuple(problems)
         return self._files
 
-    def _listed(self, path: str) -> ArtifactFile | None:
-        """The listed file the page shows as `path`, or None when the page lists none."""
-        return next((item for item in self._listing() if relative_wire_path(item.path, self._root) == path), None)
+    def _shown_as(self, path: str) -> ArtifactFile | None:
+        """The listed file the page shows as `path`, else the instruction or memory file the transcript recorded as
+        loaded that the listing leaves out and the page shows as `path`; None when the page shows none. The shown
+        names are worked out once per listing and kept until the transcript grows."""
+        if self._shown is None:
+            listing = self._listing()
+            known = {real_path(item.path, self._root) for item in listing}
+            loads = unlisted_loads(self._transcript, known, self._root)
+            self._shown = {}
+            for item in (*listing, *loads):
+                self._shown.setdefault(relative_wire_path(item.path, self._root), item)
+        return self._shown.get(path)
 
     def acts_on(self, path: str) -> bool:
         """True when the page lists `path` (project-relative), or the session recorded it as loaded, as a file it may
         check or fix."""
-        item = self._listed(path) or self._recorded(path)
+        item = self._shown_as(path)
         return item is not None and is_actionable(item, self._root)
-
-    def _recorded(self, path: str) -> ArtifactFile | None:
-        """The instruction or memory file the transcript recorded as loaded, the listing leaves out and the page
-        shows as `path`."""
-        known = {real_path(item.path, self._root) for item in self._listing()}
-        loads = unlisted_loads(self._transcript, known, self._root)
-        return next((item for item in loads if relative_wire_path(item.path, self._root) == path), None)
 
     def peek(self, path: str) -> XrayPeek | None:
         """The text of the file shown as `path`, whether it was cut and its frontmatter split from its body; None
         unless the page lists it as an instruction, memory, skill or agent file that exists, or the session
         recorded it as loaded. The text is not kept."""
-        item = self._listed(path) or self._recorded(path)
+        item = self._shown_as(path)
         return None if item is None or item.kind == "hook" else peek_text(item, self._root)
 
     def brief(self, subagent_id: str) -> str | None:

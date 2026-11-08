@@ -64,6 +64,13 @@ class TranscriptAdapter(Protocol):
     def resolve_prompt(self, row: JsonObject) -> str:
         """The text of a typed prompt, from its row; raises `PayloadRefused` when the row is not one."""
 
+    def opens_with_clear(self, row: JsonObject) -> bool | None:
+        """For the row that opens a session's conversation, whether it is the agent's `/clear` command; None for a
+        row that does not open it."""
+
+    def row_time(self, row: JsonObject) -> str | None:
+        """The time the row was written; None for a row that records none."""
+
     def resolve_hook_output(self, row: JsonObject) -> str:
         """The text a hook row holds, from its row; raises `PayloadRefused` when the row is not a hook row."""
 

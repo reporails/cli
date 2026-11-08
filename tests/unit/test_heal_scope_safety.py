@@ -13,6 +13,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.heal.apply import heal_scope_files, heal_workflow_within
+from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
+from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
@@ -175,3 +178,66 @@ def test_single_file_heal_refuses_a_symlink_to_a_file_outside_the_project(tmp_pa
     assert not resolved_within(link, heal_bound(link, project))
     assert resolved_within(inside, heal_bound(inside, project))
     assert resolved_within(link, heal_bound(project, project)) is False
+
+
+def _two_file_map(main: Path, imported: Path) -> tuple[RulesetMap, RemediationWorkflow]:
+    """A map with one fixable line in each of two files, and the workflow that lists both."""
+    atoms = tuple(
+        Atom(
+            line=3,
+            text="Run pyproject.toml here.",
+            kind="paragraph",
+            charge="NEUTRAL",
+            charge_value=0,
+            modality="none",
+            specificity="abstract",
+            unformatted_code=["pyproject.toml"],
+            file_path=str(path),
+        )
+        for path in (main, imported)
+    )
+    rmap = RulesetMap(schema_version="1", embedding_model="m", generated_at="now", files=(), atoms=atoms)
+    rows = tuple(LocationFinding("format", str(p), 3, 0, "code") for p in (main, imported))
+    return rmap, RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (), "", rows),))
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+@pytest.mark.requires_model
+def test_single_file_heal_writes_only_the_named_file_not_what_it_imports(tmp_path: Path) -> None:
+    """Healing `CLAUDE.md`, which `@import`s `docs/rules.md`, rewrites `CLAUDE.md` alone: the imported file
+    is left byte-identical (one named file = one written file)."""
+    base = tmp_path.resolve()
+    (base / "docs").mkdir()
+    main, imported = base / "CLAUDE.md", base / "docs" / "rules.md"
+    main.write_text("# Doc\n@docs/rules.md\nRun pyproject.toml here.\n", encoding="utf-8")
+    imported.write_text("# Rules\n\nRun pyproject.toml here.\n", encoding="utf-8")
+    imported_before = imported.read_bytes()
+    rmap, wf = _two_file_map(main, imported)
+
+    fixes = heal_workflow_within(rmap, wf, main, base).fixes
+
+    assert imported.read_bytes() == imported_before
+    assert "`pyproject.toml`" in main.read_text(encoding="utf-8")
+    assert {Path(f["file_path"]).resolve() for f in fixes} == {main}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_heal_scope_files_names_one_file_for_a_file_scope(tmp_path: Path) -> None:
+    """The file list `ails check <file> --heal` writes is the named file alone; a folder scope keeps every
+    file under it and a file whose real path escapes the project is dropped."""
+    project = (tmp_path / "proj").resolve()
+    (project / "docs").mkdir(parents=True)
+    main, imported = project / "CLAUDE.md", project / "docs" / "rules.md"
+    for f in (main, imported):
+        f.write_text("# Doc\n", encoding="utf-8")
+    outside = tmp_path / "outside.md"
+    outside.write_text("keep\n", encoding="utf-8")
+    link = project / "AGENTS.md"
+    link.symlink_to(outside)
+
+    assert heal_scope_files([main, imported], main, project) == [main]
+    assert heal_scope_files([main, imported], project / "docs", project) == [imported]
+    assert heal_scope_files([main, imported], project, project) == [main, imported]
+    assert heal_scope_files([link, main], link, project) == []

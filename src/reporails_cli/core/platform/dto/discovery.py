@@ -158,7 +158,7 @@ class OwnAccountOnly:
         """True when `inner` prunes the folder, or it is another account's folder under `skills/synced/`."""
         if self.inner.prunes(path, name, real):
             return True
-        return Path(path).parts[-2:] == ("skills", "synced") and name != self.account
+        return Path(path).parent.parts[-2:] == ("skills", "synced") and name != self.account
 
 
 @dataclass

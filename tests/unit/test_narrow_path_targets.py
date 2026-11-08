@@ -11,7 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.interfaces.cli.check_orchestration import _narrow_to_path_targets, _resolved_within_target
+from reporails_cli.core.heal.apply import heal_scope_files
+from reporails_cli.interfaces.cli.check_orchestration import _narrow_to_path_targets
 
 
 @pytest.mark.unit
@@ -52,7 +53,7 @@ def test_unrelated_file_is_dropped(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
-def test_resolved_within_target_excludes_escaping_symlink(tmp_path: Path) -> None:
+def test_heal_scope_files_excludes_escaping_symlink(tmp_path: Path) -> None:
     """A symlink under the target whose real file escapes the target is NOT a heal-write
     candidate — heal writes through to the real file, which sits outside the named scope."""
     target = tmp_path / "rules"
@@ -68,8 +69,8 @@ def test_resolved_within_target_excludes_escaping_symlink(tmp_path: Path) -> Non
 
     # In-scope by logical path (kept for scanning) but excluded from the heal write set.
     assert _narrow_to_path_targets([link], {target.resolve()}) == [link]
-    assert _resolved_within_target(link, target) is False
+    assert heal_scope_files([link], target, tmp_path) == []
 
     real = target / "real_in_scope.md"
     real.write_text("x")
-    assert _resolved_within_target(real, target) is True
+    assert heal_scope_files([real], target, tmp_path) == [real]

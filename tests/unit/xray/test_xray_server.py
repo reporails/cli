@@ -25,7 +25,7 @@ from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.formatters.text.rule_meta import rule_docs_url
-from reporails_cli.interfaces.cli import xray_server
+from reporails_cli.interfaces.cli import xray_launch, xray_server
 from tests.unit.test_mcp_heal_apply import DOC, _wire
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
@@ -40,6 +40,8 @@ TOP_KEYS = {
     "nodes", "edges", "sources", "stations", "track", "builtin", "session_cost", "funnel", "facts", "check", "refusals",
     "not_known",
 }  # fmt: skip
+# The transcript of a long session (megabytes of rows, many subagent files), named by this variable.
+LONG_SESSION_ENV = "XRAY_TEST_LONG_SESSION"
 HEAVY = ("starlette", "uvicorn", "reporails_cli.core.mapper", "onnxruntime", "tokenizers", "numpy")
 
 
@@ -96,7 +98,7 @@ def client(project: Path, tmp_path: Path) -> TestClient:
         token=TOKEN,
         launch=LAUNCH,
         port=PORT,
-        requests=xray_server.RequestClock(),
+        requests=xray_launch.RequestClock(),
     )
     return TestClient(app, base_url=ORIGIN)
 
@@ -207,8 +209,8 @@ def _view_of(client: TestClient) -> Any:
     return client.get("/view", headers={"X-Xray-Token": TOKEN}).json()
 
 
-def _settled_view(client: TestClient) -> Any:
-    for _ in range(100):
+def _settled_view(client: TestClient, tries: int = 100) -> Any:
+    for _ in range(tries):
         view = _view_of(client)
         if view["check"]["state"] != "running":
             return view
@@ -233,13 +235,143 @@ def test_the_launch_check_fills_every_files_tally_and_moves_the_version(
         token=TOKEN,
         launch=LAUNCH,
         port=PORT,
-        requests=xray_server.RequestClock(),
+        requests=xray_launch.RequestClock(),
     )
     with TestClient(app, base_url=ORIGIN) as client:
         view = _settled_view(client)
         artifact = next(a for a in view["sources"] if a["path"].endswith("CLAUDE.md"))
         assert view["check"] == {"state": "done", "message": None}
         assert artifact["findings"] == {"count": 2, "by_severity": {"error": 1, "warning": 0, "info": 1}}
+
+
+def _resolutions_of_one_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rules: int) -> int:
+    """The path resolutions one `/check` of a listed file costs once two sessions of a project with `rules` listed rule
+    files are held and the first `/check` has been answered."""
+    from reporails_cli.core.xray import derive, session
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    root = tmp_path / f"many{rules}"
+    (root / ".claude" / "rules").mkdir(parents=True)
+    (root / "CLAUDE.md").write_text("# Rules\n")
+    for number in range(rules):
+        (root / ".claude" / "rules" / f"r{number:02}.md").write_text("# Rule\n")
+    older = claude_project_dir(root) / "older.jsonl"
+    older.parent.mkdir(parents=True)
+    older.write_text(json.dumps(TYPED_PROMPT) + "\n", encoding="utf-8")
+    newer = claude_project_dir(root) / "newer.jsonl"
+    shutil.copy(FIXTURES / "session.jsonl", newer)
+    monkeypatch.setattr(xray_server, "check_path", lambda path, root: Refusal("failed", "fake refusal"))
+    app = xray_server.build_app(
+        root, newer, picked="newest", token=TOKEN, launch=LAUNCH, port=PORT, requests=xray_launch.RequestClock()
+    )
+    seen = {"count": 0}
+    resolve, wire = derive.safe_resolve, session.relative_wire_path
+
+    def counting_resolve(path: Path) -> Path:
+        seen["count"] += 1
+        return resolve(path)
+
+    def counting_wire(path: str, folder: Path) -> str:
+        seen["count"] += 1
+        return wire(path, folder)
+
+    last = f".claude/rules/r{rules - 1:02}.md"
+    headers = {"X-Xray-Token": TOKEN, "Origin": ORIGIN}
+    with monkeypatch.context() as patch, TestClient(app, base_url=ORIGIN) as client:
+        patch.setattr(derive, "safe_resolve", counting_resolve)
+        patch.setattr(session, "relative_wire_path", counting_wire)
+        _get(client, "/view", {})
+        _get(client, "/view", {"session": "older"})
+        assert client.post("/check", json={"path": last}, headers=headers).status_code == 400
+        seen["count"] = 0
+        assert client.post("/check", json={"path": last}, headers=headers).status_code == 400
+    return seen["count"]
+
+
+def test_check_resolves_no_listed_path_again_whatever_the_listing_holds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    few = _resolutions_of_one_check(tmp_path, monkeypatch, 3)
+    many = _resolutions_of_one_check(tmp_path, monkeypatch, 40)
+    assert few == many
+
+
+def test_the_launch_check_starts_only_after_the_first_view_is_answered(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started = threading.Event()
+
+    def check(path: str, root: Path) -> Refusal:
+        started.set()
+        return Refusal("failed", "no model")
+
+    monkeypatch.setattr(xray_server, "check_path", check)
+    app = xray_server.build_app(
+        project,
+        tmp_path / "session" / "session.jsonl",
+        picked="newest",
+        token=TOKEN,
+        launch=LAUNCH,
+        port=PORT,
+        requests=xray_launch.RequestClock(),
+    )
+    with TestClient(app, base_url=ORIGIN) as client:
+        assert not started.wait(1), "the launch check started before any view was asked for"
+        assert _get(client, "/view", {}).status_code == 200
+        assert started.wait(30), "the launch check never started after the first view"
+
+
+@pytest.mark.slow
+def test_the_first_view_on_a_long_session_is_answered_in_under_two_seconds_beside_the_real_launch_check(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    named = os.environ.get(LONG_SESSION_ENV)
+    if not named or not Path(named).is_file():
+        pytest.skip(f"NOT RUN, NOT PASSED: {LONG_SESSION_ENV} names no long session transcript on this machine")
+    real_check = xray_server.check_path
+    checking: list[str] = []
+
+    def watched_check(path: str, root: Path) -> Any:
+        checking.append(path)
+        return real_check(path, root)
+
+    monkeypatch.setattr(xray_server, "check_path", watched_check)
+    app = xray_server.build_app(
+        project,
+        Path(named),
+        picked="newest",
+        token=TOKEN,
+        launch=LAUNCH,
+        port=PORT,
+        requests=xray_launch.RequestClock(),
+    )
+    with TestClient(app, base_url=ORIGIN) as client:
+        started = time.perf_counter()
+        reply = _get(client, "/view", {})
+        answered = time.perf_counter()
+        _settled_view(client, tries=2400)
+    assert reply.status_code == 200
+    assert answered - started < 2, f"the first view took {answered - started:.1f} s"
+    assert checking, "the launch check never ran"
+
+
+def test_a_page_started_in_the_home_folder_runs_no_whole_home_check(
+    project: Path, tmp_path: Path, calls: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(project))
+    app = xray_server.build_app(
+        project,
+        tmp_path / "session" / "session.jsonl",
+        picked="newest",
+        token=TOKEN,
+        launch=LAUNCH,
+        port=PORT,
+        requests=xray_launch.RequestClock(),
+    )
+    with TestClient(app, base_url=ORIGIN) as client:
+        view = _settled_view(client)
+    assert calls.checked == []
+    assert view["check"]["state"] == "refused" and "home folder" in view["check"]["message"]
 
 
 def test_the_view_says_running_until_the_launch_check_lands_and_the_version_moves_when_it_does(
@@ -259,7 +391,7 @@ def test_the_view_says_running_until_the_launch_check_lands_and_the_version_move
         token=TOKEN,
         launch=LAUNCH,
         port=PORT,
-        requests=xray_server.RequestClock(),
+        requests=xray_launch.RequestClock(),
     )
     with TestClient(app, base_url=ORIGIN) as client:
         first = _view_of(client)
@@ -405,7 +537,7 @@ def test_the_page_and_its_data_load_with_the_network_blocked(
 
 
 def test_the_server_binds_the_loopback_address_only() -> None:
-    sock = xray_server.bound_socket()
+    sock = xray_launch.bound_socket()
     try:
         assert sock.getsockname()[0] == "127.0.0.1" and sock.getsockname()[1] > 0
     finally:
@@ -527,7 +659,7 @@ def prompt_client(project: Path, tmp_path: Path) -> TestClient:
         token=TOKEN,
         launch=LAUNCH,
         port=PORT,
-        requests=xray_server.RequestClock(),
+        requests=xray_launch.RequestClock(),
     )
     return TestClient(app, base_url=ORIGIN)
 
@@ -629,7 +761,7 @@ def handoff_client(project: Path, tmp_path: Path) -> TestClient:
         token=TOKEN,
         launch=LAUNCH,
         port=PORT,
-        requests=xray_server.RequestClock(),
+        requests=xray_launch.RequestClock(),
     )
     client = TestClient(app, base_url=ORIGIN)
     client.get("/view", headers={"X-Xray-Token": TOKEN})
@@ -701,7 +833,7 @@ def two_sessions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         token=TOKEN,
         launch=LAUNCH,
         port=PORT,
-        requests=xray_server.RequestClock(),
+        requests=xray_launch.RequestClock(),
     )
     return TestClient(app, base_url=ORIGIN)
 
@@ -764,7 +896,7 @@ def test_the_launch_pick_is_kept_only_for_a_request_that_names_no_session(projec
         token=TOKEN,
         launch=LAUNCH,
         port=PORT,
-        requests=xray_server.RequestClock(),
+        requests=xray_launch.RequestClock(),
     )
     client = TestClient(app, base_url=ORIGIN)
 

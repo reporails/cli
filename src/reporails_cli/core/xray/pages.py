@@ -144,7 +144,8 @@ def start_page(root: Path, session_id: str) -> tuple[XrayPage, bool]:
         page = running_page(root)
         if page is not None:
             return page, True
-        command = [sys.executable, "-I", "-m", "reporails_cli", "xray", "--no-open", "--session", session_id]
+        # `-P` keeps the working folder off the import path; `-I` would also drop a `pip install --user` install.
+        command = [sys.executable, "-P", "-m", "reporails_cli", "xray", "--no-open", "--session", session_id]
         try:
             pid = launch_detached(command, cwd=root)
         except OSError as exc:

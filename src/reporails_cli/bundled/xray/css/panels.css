@@ -75,3 +75,7 @@
 .pk-lg .lb{flex:1} .pk-lg .v{color:var(--t1)} .pk-lg .pct{min-width:36px;text-align:right;color:var(--t3)}
 .pk-lg .swatch{display:inline-block;width:9px;height:9px;border-radius:2px;flex:none}
 .sx-role{margin:6px 8px 2px;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--t3)}
+
+/* loading skeleton of the Sources panel and the inspector */
+.sk-row{height:30px}
+.sk-tile{height:56px;border-radius:10px}

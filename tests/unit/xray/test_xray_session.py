@@ -483,7 +483,7 @@ def test_a_recorded_auto_memory_file_the_listing_leaves_out_is_a_memory_file(tmp
             item=InstructionLoad(str(session._root / "sub" / "AUTO.md"), "AutoMem"),
         )
     )
-    item = session._recorded("sub/AUTO.md")
+    item = session._shown_as("sub/AUTO.md")
     assert item is not None and item.kind == "memory"
 
 

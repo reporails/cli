@@ -23,17 +23,22 @@ from __future__ import annotations
 import glob
 import json
 import logging
+import os
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from reporails_cli.core.platform.config.config import get_agent_config_path, read_agent_config
 from reporails_cli.core.platform.contract.errors import ClaudeSettingsUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, pattern_list
 from reporails_cli.core.platform.dto.mcp import McpDeclaration
-from reporails_cli.core.platform.dto.xray_sources import ArtifactScope
+from reporails_cli.core.platform.utils.git import git_root
 from reporails_cli.core.platform.utils.utils import is_rooted_pattern
+
+if TYPE_CHECKING:  # annotation only: the hook path reads settings without loading the x-ray records
+    from reporails_cli.core.platform.dto.xray_sources import ArtifactScope
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +98,21 @@ def _expand(patterns: list[str], project_root: Path | None) -> list[Path]:
         else:
             files.append(Path(expanded))
     return [f for f in files if _is_readable_file(f)]
+
+
+def _local_settings(scopes: dict[str, list[str]], project_root: Path | None) -> list[Path]:
+    """The local settings files Claude Code reads for a session in `project_root`: the project folder's and, when
+    the folder sits inside a git repository, the repository root's. The project's shared settings are read from
+    the project folder only.
+    https://code.claude.com/docs/en/settings.md"""
+    patterns = scopes.get("local", [])
+    files = _expand(patterns, project_root)
+    if project_root is None:
+        return files
+    root = git_root(project_root)
+    if root is None or root == Path(os.path.abspath(project_root)):
+        return files
+    return [*(f for f in _expand(patterns, root) if f not in files), *files]
 
 
 def _is_readable_file(path: Path) -> bool:
@@ -210,7 +230,7 @@ def claude_instruction_files_mode(project_root: Path | None = None) -> str:
     scopes = _settings_patterns()
     managed = _managed_files(scopes)
     user = _expand(scopes.get("user", []), None)
-    local = _expand(scopes.get("local", []), project_root)
+    local = _local_settings(scopes, project_root)
     project = _expand(scopes.get("project", []), project_root)
 
     for files in (managed, local, project, user):
@@ -239,14 +259,15 @@ def _precedence_files(scopes: dict[str, list[str]], project_root: Path | None) -
     return (
         _expand(scopes.get("user", []), None)
         + _expand(scopes.get("project", []), project_root)
-        + _expand(scopes.get("local", []), project_root)
+        + _local_settings(scopes, project_root)
         + _managed_files(scopes)
     )
 
 
 def claude_settings_files(project_root: Path) -> tuple[Path, ...]:
     """Claude Code's settings files that exist for a session in `project_root`, lowest precedence first: the
-    user's, the project's shared and local ones, then managed settings."""
+    user's, the project's shared and local ones (the local one also from the git repository root above the project
+    folder), then managed settings."""
     return tuple(_precedence_files(_settings_patterns(), project_root))
 
 

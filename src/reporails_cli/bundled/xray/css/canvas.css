@@ -123,3 +123,7 @@
 .fbanner .clear::after{content:'';position:absolute;inset:-4px}
 .callslink{min-height:24px}
 #canvas .chip{font-size:calc(10.5px / var(--z,1))}
+
+/* loading skeleton of the graph: stacked agent cards */
+.sk-graph{display:flex;flex-direction:column;align-items:center;gap:28px;padding:20px 0}
+.sk-card{width:min(320px,80%);height:84px;border-radius:12px}

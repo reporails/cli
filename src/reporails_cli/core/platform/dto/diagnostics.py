@@ -74,6 +74,7 @@ KNOWN_ERRORS = frozenset(
         "payload_too_large",
         "atom_cap_exceeded",
         "file_cap_exceeded",
+        "file_budget_exceeded",
         "scoring_limit_exceeded",
         "project_limit_reached",
         *AUTH_REJECTED_ERRORS,

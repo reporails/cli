@@ -92,6 +92,16 @@ def resolved_within(path: Path, scope: Path) -> bool:
     return real == root or real.is_relative_to(root)
 
 
+def heal_scope_files(files: Iterable[Path], scope: Path, project_root: Path) -> list[Path]:
+    """The files heal may write for `scope`: those within `heal_bound`, and for a file scope that file alone.
+
+    One named file is one written file: a file it `@import`s, though mapped with it, is left alone.
+    """
+    bound = heal_bound(scope, project_root)
+    named = None if scope.is_dir() else safe_resolve(scope)
+    return [f for f in files if resolved_within(f, bound) and (named is None or safe_resolve(f) == named)]
+
+
 def suppressed_by_path(files: Iterable[Path], target: Path) -> dict[Path, set[int]]:
     """The lines each file annotated with an `ails-disable-line` directive, keyed by resolved path."""
     raw = suppressed_lines([str(f) for f in files], target)
@@ -133,13 +143,13 @@ def apply_keyed_heal(
 def heal_workflow_within(
     ruleset_map: RulesetMap, workflow: RemediationWorkflow | None, target: Path, scan_root: Path
 ) -> KeyedResult:
-    """Write the workflow's keyed fixes to the mapped files inside `target`'s scope (`heal_bound`).
+    """Write the workflow's keyed fixes to the mapped files inside `target`'s scope (`heal_scope_files`).
 
     A file `heal_exclude` matches is never written and a line annotated with `ails-disable-line` is left
     alone; a written file is re-mapped and checked against its plan, and one that departs is put back.
     """
     files = sorted({Path(a.file_path) for a in ruleset_map.atoms})
-    files = [f for f in files if resolved_within(f, heal_bound(target, scan_root))]
+    files = heal_scope_files(files, target, scan_root)
     return apply_keyed_heal(
         ruleset_map,
         scan_root,

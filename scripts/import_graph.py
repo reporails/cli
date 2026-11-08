@@ -31,14 +31,6 @@ def interface_nodes(src: Path = SRC) -> set[str]:
     return {p.name for p in interfaces.iterdir() if p.is_dir() and p.name != "__pycache__"}
 
 
-PURE = ["contract", "dto", "policy"]
-INFRA = ["adapters", "runtime", "config", "observability", "utils"]
-SUBSYSTEMS = sorted(core_subsystems())
-OUTER = [*sorted(interface_nodes()), "formatters"]
-
-# Ring 0 is the pure core, 1 the infrastructure layers, 2 the subsystems, 3 the delivery layers.
-RING = {**dict.fromkeys(PURE, 0), **dict.fromkeys(INFRA, 1), **dict.fromkeys(SUBSYSTEMS, 2), **dict.fromkeys(OUTER, 3)}
-
 # What each platform layer may import.
 ALLOWED: dict[str, set[str]] = {
     "contract": set(),

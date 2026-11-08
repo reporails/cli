@@ -7,7 +7,13 @@ from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, opt_int, opt_str, strict_str_list
 from reporails_cli.core.platform.dto.events import HookDecision, HookFiring, NoteKind
 
-HOOK_NOTE_ATTACHMENTS = ("hook_additional_context", "hook_success", "hook_blocking_error", "hook_system_message")
+HOOK_NOTE_ATTACHMENTS = (
+    "hook_additional_context",
+    "hook_success",
+    "hook_blocking_error",
+    "hook_non_blocking_error",
+    "hook_system_message",
+)
 # The hook events whose plain-text stdout Claude Code adds to the context.
 HOOK_STDOUT_CONTEXT_EVENTS = ("UserPromptSubmit", "UserPromptExpansion", "SessionStart", "PostModelSwitch")
 
@@ -42,8 +48,8 @@ def hook_note(attachment: JsonObject, event: str) -> tuple[NoteKind, int] | None
 
 
 def hook_firing(row: JsonObject, attachment: JsonObject, label: str, event: str) -> HookFiring:
-    """The firing a hook row records: its command, exit code and duration where the row has them, what it decided and
-    the size of its output."""
+    """The firing a hook row records: its command, exit code and duration where the row has them, what it decided
+    (`failed` for a hook that exited non-zero without blocking) and the size of its output."""
     kind = attachment.get("type")
     what = f"{kind} attachment"
     row_id = opt_str(row.get("uuid")) or None
@@ -51,9 +57,9 @@ def hook_firing(row: JsonObject, attachment: JsonObject, label: str, event: str)
     if kind == "hook_blocking_error":
         command = opt_str(as_object(attachment.get("blockingError")).get("command"))
         return HookFiring(label, event, row_id, command, None, None, "blocked", note[1] if note else 0)
-    if kind == "hook_success":
+    if kind in ("hook_success", "hook_non_blocking_error"):
         output = len(opt_str(attachment.get("stdout")) or "") + len(opt_str(attachment.get("stderr")) or "")
-        decision: HookDecision = "context_added" if note else "ran"
+        decision: HookDecision = "failed" if kind == "hook_non_blocking_error" else "context_added" if note else "ran"
         return HookFiring(
             label,
             event,
@@ -81,7 +87,7 @@ def hook_output(attachment: JsonObject) -> str:
         if isinstance(blocked, str):
             return blocked
         raise PayloadRefused(f"{what} blockingError is not an object holding a string")
-    if kind == "hook_success":
+    if kind in ("hook_success", "hook_non_blocking_error"):
         return "\n".join(
             part for part in (opt_str(attachment.get("stdout")), opt_str(attachment.get("stderr"))) if part
         )

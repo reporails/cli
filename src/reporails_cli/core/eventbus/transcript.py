@@ -99,6 +99,15 @@ def session_start(agent: str, session_file: Path) -> str | None:
     return None
 
 
+def first_row_time(agent: str, session_file: Path) -> str | None:
+    """The time of the first row of the main transcript that records one; None when the agent is unknown or no row
+    records one."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        return None
+    return next((timed for timed in map(adapter.row_time, _main_rows(session_file)) if timed is not None), None)
+
+
 def session_cwd(agent: str, session_file: Path) -> str | None:
     """The folder the session's first row that records one says the agent ran in; None when the agent is unknown
     or no row records one."""
@@ -126,6 +135,16 @@ def first_prompt_text(agent: str, session_file: Path) -> str | None:
         except PayloadRefused:
             continue
     return None
+
+
+def opens_with_clear(agent: str, session_file: Path) -> bool:
+    """Whether the first row of the main transcript that the agent's adapter reads as opening the conversation is
+    its `/clear` command; False when the agent is unknown or the transcript has no such row."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        return False
+    opened = (adapter.opens_with_clear(row) for row in _main_rows(session_file))
+    return next((verdict for verdict in opened if verdict is not None), False)
 
 
 def read_transcript(

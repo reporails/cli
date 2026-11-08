@@ -27,7 +27,7 @@ from reporails_cli.core.discovery.agents import (
     get_known_agents,
 )
 from reporails_cli.core.discovery.exclusions import parse_run_exclusions
-from reporails_cli.core.platform.dto.discovery import DetectedAgent
+from reporails_cli.core.platform.dto.discovery import DetectedAgent, OwnAccountOnly
 
 
 def _is_external(f: Path, scope: Path) -> bool:
@@ -795,3 +795,23 @@ def test_vscode_config_surfaces_are_discovered(tmp_path: Path) -> None:
     config_names = {p.name for p in copilot.config_files}
     assert "mcp.json" in config_names
     assert "settings.json" in config_names
+
+
+# ── the synced-skills prune ────
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_synced_skills_prune_skips_every_account_folder_but_the_signed_in_one(tmp_path: Path) -> None:
+    """`OwnAccountOnly.prunes` answers for the folder it is asked about: an account folder under
+    `skills/synced/` is pruned unless it is the signed-in account's, and `skills/synced/` itself is entered."""
+    synced = tmp_path / "skills" / "synced"
+    own, other = synced / "own-account", synced / "other-account"
+    for folder in (own, other):
+        folder.mkdir(parents=True)
+    pruner = OwnAccountOnly(parse_run_exclusions(tmp_path, [], []), "own-account")
+
+    assert pruner.prunes(str(other), other.name, str(other)) is True
+    assert pruner.prunes(str(own), own.name, str(own)) is False
+    assert pruner.prunes(str(synced), synced.name, str(synced)) is False
+    assert OwnAccountOnly(pruner.inner, None).prunes(str(own), own.name, str(own)) is True

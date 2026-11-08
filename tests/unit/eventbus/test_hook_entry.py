@@ -126,3 +126,37 @@ def test_a_bare_hook_on_a_terminal_prints_usage_and_exits_0_without_reading(tmp_
     assert status is not None, "ails hook blocked on a terminal"
     assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
     assert "usage: ails hook [--agent NAME] < payload.json" in out.decode(errors="replace")
+
+
+def test_a_malformed_remote_settings_cache_leaves_the_hook_stderr_empty(tmp_path: Path) -> None:
+    claude_home = tmp_path / ".claude"
+    claude_home.mkdir()
+    (claude_home / "remote-settings.json").write_text("{ not json", encoding="utf-8")
+    ails = Path(sys.executable).with_name("ails")
+    env = {"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
+    done = subprocess.run(
+        [str(ails), "hook", "--agent", "claude"],
+        input=ROWS[0].encode(),
+        capture_output=True,
+        timeout=60,
+        env=env,
+        check=False,
+    )
+    assert done.returncode == 0 and done.stdout == b"" and done.stderr == b"", done.stderr
+
+
+@pytest.mark.parametrize("row", [0, 2], ids=["session_start", "tool_event"])
+def test_the_hook_path_does_not_import_the_xray_records_chain(tmp_path: Path, row: int) -> None:
+    script = TRACER.format(payload=ROWS[row].encode())
+    done = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={"HOME": str(tmp_path), "USERPROFILE": str(tmp_path), "PATH": ""},
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    loaded = set(json.loads(done.stdout.splitlines()[-1])["modules"])
+    chain = {m for m in loaded if m.startswith("reporails_cli.core.platform.dto.xray_")}
+    assert chain == set(), chain

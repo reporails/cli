@@ -1684,3 +1684,58 @@ def step_earlier_request_sizes(context):
     shares = expected["system_prompt"] + expected["tool_definitions"]
     assert abs(last["system_tools"] - shares) <= 1, (last, shares)
     assert last["conversation"] >= main["total"] - shares - 1000, last
+
+
+# ---- the loading skeleton: the page driven before any view has landed ----
+
+
+@then(
+    "with the first view held back the first paint is the graph layout as a skeleton, "
+    "and once it lands no skeleton remains and the top card is drawn"
+)
+def step_skeleton_then_graph(context):
+    seen = _page(context, "skeleton-hold")
+    if seen is None:
+        return
+    first, after = seen["first"], seen["after"]
+    assert seen["held"] >= 1, "the first view was not held back"
+    assert first["graph"] is True, first
+    assert first["calls"] is False and first["sources"] is False, f"a table tab shows on first paint: {first}"
+    assert first["hint"] is False, f"the hint line shows with nothing to hover: {first}"
+    assert first["busy"] == "true", f"main is not aria-busy on first paint: {first}"
+    assert first["skeletons"] > 0 and all(first["regions"]), f"a region has no skeleton: {first}"
+    assert first["topCard"] is False, first
+    assert after["skeletons"] == 0, f"a skeleton remains after the view landed: {after}"
+    assert after["busy"] is None, f"aria-busy is not cleared: {after}"
+    assert after["topCard"] is True, after
+
+
+@then("a view answered with 409 shows the notice text and no skeleton")
+def step_409_notice(context):
+    seen = _page(context, "skeleton-409")
+    if seen is None:
+        return
+    after = seen["after"]
+    assert "ails changed" in after["changed"], after
+    assert "No view is shown" in after["canvas"], after
+    assert after["skeletons"] == 0 and after["busy"] is None, after
+
+
+@then("a view that is never answered shows the notice text and no skeleton")
+def step_no_answer_notice(context):
+    seen = _page(context, "skeleton-none")
+    if seen is None:
+        return
+    after = seen["after"]
+    assert "did not answer" in after["canvas"], after
+    assert after["skeletons"] == 0 and after["busy"] is None, after
+
+
+@then("under reduced motion the skeleton has no running animation")
+def step_reduced_motion(context):
+    seen = _page(context, "skeleton-motion")
+    if seen is None:
+        return
+    assert seen["skeletons"] > 0, "no skeleton was drawn to test"
+    assert seen["animatedByDefault"] > 0, "the skeleton does not animate without the preference"
+    assert seen["animatedReduced"] == 0, f"{seen['animatedReduced']} animations still run under reduced motion"

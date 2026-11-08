@@ -13,8 +13,12 @@ from reporails_cli.core.xray.sessions import pick_session
 def xray_page(path: str, session: str) -> JsonObject:
     """The address of the session's x-ray page for the project at `path`, started in the background or reused.
 
-    With no `session`, the session of the calling agent, else the newest one. Answers `no_session` when the
-    project has none (or `session` is not one of them) and `page_not_started` when the page does not come up."""
+    With no `session`, the session of the calling agent, else the newest one. After `/clear` the calling agent's
+    session is the one the `/clear` opened, followed through each later `/clear`; a session another terminal
+    opens with `/clear` while the calling agent goes on writing its own is not taken. When two sessions opened
+    with `/clear` as one session ended, the newest one and `picked` is `current_unknown`.
+    Answers `no_session` when the project has none (or `session` is not one of them) and `page_not_started`
+    when the page does not come up."""
     here = Path(path).resolve()
     chosen = pick_session(here, session or None, current=not session)
     if chosen is None:
