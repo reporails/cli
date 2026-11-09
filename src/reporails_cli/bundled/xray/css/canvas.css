@@ -68,6 +68,10 @@
 .station.dot.dim::before{opacity:.3}
 .station.dim .kl{background:transparent;color:var(--t3)}
 .compact{position:absolute;left:0;width:100%;height:0;border-top:1px dashed var(--find2);z-index:1;pointer-events:none}
+.compact-files{position:absolute;left:84px;display:flex;flex-direction:column;font:calc(10.5px / var(--z,1)) 'JetBrains Mono',monospace;color:var(--find2);pointer-events:none;z-index:1}
+.compact-files .fs{pointer-events:auto}
+.compact-files .fs-dropped,.compact-files .fs-unknown,.compact-files .fs-pending{opacity:.7}
+.compact-summary{pointer-events:auto;font:inherit;color:inherit;background:none;border:0;border-bottom:1px dotted currentColor;padding:0;cursor:pointer}
 .compact span{position:absolute;left:84px;top:-8px;font:calc(10.5px / var(--z,1)) 'JetBrains Mono',monospace;color:var(--find2);background:var(--canvas);padding:0 6px}
 .pill-arch{position:absolute;z-index:4;white-space:nowrap;font-size:calc(11px / var(--z,1));padding:2px 9px;border-radius:999px}
 .pill-arch.right{transform:translate(10px,-50%)} .pill-arch.left{transform:translate(calc(-100% - 10px),-50%)}
@@ -123,3 +127,7 @@
 .fbanner .clear::after{content:'';position:absolute;inset:-4px}
 .callslink{min-height:24px}
 #canvas .chip{font-size:calc(10.5px / var(--z,1))}
+
+/* loading skeleton of the graph: stacked agent cards */
+.sk-graph{display:flex;flex-direction:column;align-items:center;gap:28px;padding:20px 0}
+.sk-card{width:min(320px,80%);height:84px;border-radius:12px}

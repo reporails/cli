@@ -78,7 +78,7 @@ function findingsBlock(s, env) {
   return section(count ? `${plural(count, 'finding')}` : 'Findings', box);
 }
 
-const DECISIONS = { context_added: 'added to the context', message_shown: 'showed a message', blocked: 'blocked', ran: 'ran' };
+const DECISIONS = { context_added: 'added to the context', message_shown: 'showed a message', blocked: 'blocked', failed: 'failed', ran: 'ran' };
 const SCOPES = { project: 'project .mcp.json', user: 'your user settings', local: 'this project in your user settings', managed: 'managed settings', plugin: 'plugin' };
 
 // A hook's commands with the file that declares each, and its firings: the output opens on request.

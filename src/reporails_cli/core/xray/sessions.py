@@ -6,9 +6,11 @@ from pathlib import Path
 
 from reporails_cli.core.eventbus.port import get_transcript_adapter
 from reporails_cli.core.eventbus.transcript import (
+    first_row_time,
     known_session,
     last_write,
     newest_session,
+    opens_with_clear,
     recent_sessions,
     session_anywhere,
     session_cwd,
@@ -19,6 +21,11 @@ from reporails_cli.core.pipeline.expected_loads import AGENT
 from reporails_cli.core.platform.config.bootstrap import env_text
 from reporails_cli.core.platform.dto.xray import PickedSession, XraySessionEntry
 from reporails_cli.core.xray.derive import epoch
+
+# The span around the first row of a transcript a `/clear` opened in which the last write of the session it
+# replaces falls: the agent writes the session it leaves until just after the new one begins.
+_REPLACED_BEFORE_S = 5.0
+_REPLACED_AFTER_S = 1.0
 
 
 def _calling_id() -> str:
@@ -33,20 +40,60 @@ def _recorded_root(transcript: Path, fallback: Path) -> Path:
     return fallback if recorded is None else Path(recorded)
 
 
+def _cleared_starts(root: Path, mine: Path) -> dict[Path, float]:
+    """The time of the first row of each recent transcript of `root` other than `mine` that opens with `/clear`, in
+    seconds since 1970."""
+    starts: dict[Path, float] = {}
+    for path in recent_sessions(root):
+        started_at = None if path == mine else first_row_time(AGENT, path)
+        began = None if started_at is None else epoch(started_at)
+        if began is not None and opens_with_clear(AGENT, path):
+            starts[path] = began
+    return starts
+
+
+def _replacing(session: Path, cleared: dict[Path, float]) -> list[Path]:
+    """The transcripts of `cleared` that replace `session`: the last write to its own transcript falls between
+    `_REPLACED_BEFORE_S` before and `_REPLACED_AFTER_S` after their first row."""
+    left_at = last_write(session, main_only=True)
+    if left_at is None:
+        return []
+    return [path for path, began in cleared.items() if -_REPLACED_BEFORE_S <= left_at - began <= _REPLACED_AFTER_S]
+
+
+def _in_use(folder: Path, mine: Path) -> PickedSession:
+    """The session in use of the one the calling agent started with, following each `/clear` that replaced it;
+    the newest of the transcripts replacing it, picked as `current_ambiguous`, when more than one does."""
+    cleared = _cleared_starts(folder, mine)
+    session = mine
+    while replacing := _replacing(session, cleared):
+        if len(replacing) > 1:
+            newest = max(replacing, key=lambda path: last_write(path) or 0.0)
+            return PickedSession(folder, newest, "current_ambiguous")
+        session = replacing[0]
+        del cleared[session]
+    return PickedSession(folder, session, "current")
+
+
 def pick_session(root: Path, named: str | None, *, current: bool) -> PickedSession | None:
     """The session to show, the project folder it belongs to and how it was chosen.
 
     Reads only the sessions recorded for `root`, the folder the command runs in. A named session must be one of
     them, else None. `current` takes the session the calling agent's env var names, found in any of the agent's
-    project folders, its folder the one the transcript records; when no transcript has that id it takes the
-    newest session of `root`, picked as `current_unknown`. With neither, the newest. None when `root` has none."""
+    project folders, its folder the one the transcript records. The agent keeps the id it started with across
+    `/clear`: a transcript of that folder that opens with a `/clear` command replaces a session whose last write
+    falls between `_REPLACED_BEFORE_S` before and `_REPLACED_AFTER_S` after its first row, so a session written on
+    after another terminal's `/clear` is not replaced. Each replacement is followed to the session no transcript
+    replaces; when more than one replaces a session, the newest of those is taken, picked as
+    `current_ambiguous`. When no transcript has the id it takes the newest session of `root`, picked as
+    `current_unknown`. With neither, the newest. None when `root` has none."""
     if named is not None:
         transcript = known_session(root, named)
         return None if transcript is None else PickedSession(root, transcript, "named")
     calling = _calling_id() if current else ""
     mine = session_anywhere(calling) if calling else None
     if mine is not None:
-        return PickedSession(_recorded_root(mine, root), mine, "current")
+        return _in_use(_recorded_root(mine, root), mine)
     newest = newest_session(root)
     if newest is None:
         return None

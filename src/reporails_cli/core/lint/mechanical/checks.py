@@ -6,7 +6,7 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 
 from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions
-from reporails_cli.core.discovery.walk import safe_resolve, walk_glob_matches
+from reporails_cli.core.discovery.walk import inside_git_repository, safe_resolve, walk_glob_matches
 from reporails_cli.core.mapper.skills import skill_entry_paths
 from reporails_cli.core.platform.contract.json_value import JsonValue, str_list
 from reporails_cli.core.platform.dto.checks import CheckResult
@@ -233,9 +233,10 @@ def git_tracked(
 ) -> CheckResult:
     """Check that the project is git-tracked.
 
-    In test fixtures, .git_marker stands in for .git (git cannot track .git paths).
+    A folder inside a git repository counts as tracked. In test fixtures,
+    .git_marker stands in for .git (git cannot track .git paths).
     """
-    if (root / ".git").exists() or (root / ".git_marker").exists():
+    if (root / ".git_marker").exists() or inside_git_repository(root):
         return CheckResult(passed=True, message="Git repository detected")
     return CheckResult(passed=False, message="Not a git repository")
 

@@ -45,7 +45,9 @@ def _resolve_one_target(
             paths, _unresolved = resolve_capability_spec(capability, name, effective_agent, scan_root, exclusions)
         except TargetError as err:
             return {"error": "target_not_found", "message": err.message()}
-        return {safe_resolve(p) for p in paths}, set()
+        resolved_paths = {safe_resolve(p) for p in paths}
+        # A skill names its whole folder (references and the rest); an agent or rule is its one file.
+        return resolved_paths, {p.parent for p in resolved_paths if p.name == "SKILL.md"}
     if isinstance(target, Path):
         if not target.exists():
             return {"error": "target_not_found", "message": f"Path not found: {target}"}

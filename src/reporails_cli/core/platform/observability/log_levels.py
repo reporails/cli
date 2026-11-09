@@ -25,15 +25,19 @@ class _StderrHandler(logging.Handler):
             self.handleError(record)
 
 
-def configure_logging() -> None:
+def configure_logging(*, stage_timing_only: bool = False) -> None:
     """Send the package's log records to stderr as bare messages, once per process.
 
     When the root logger already has a handler, records reach it and no second one is added.
-    When `AILS_STAGE_TIMING` is on, stage timing records print at INFO.
+    When `AILS_STAGE_TIMING` is on, stage timing records print at INFO. With `stage_timing_only`
+    those are the only records printed: a warning or error from the package never reaches stderr.
     """
     package_logger = logging.getLogger(_PACKAGE_LOGGER)
     if not logging.getLogger().handlers and not any(isinstance(h, _StderrHandler) for h in package_logger.handlers):
-        package_logger.addHandler(_StderrHandler())
+        handler = _StderrHandler()
+        if stage_timing_only:
+            handler.addFilter(lambda record: record.name == stage_timer.__name__)
+        package_logger.addHandler(handler)
     if env_flag("AILS_STAGE_TIMING"):
         logging.getLogger(stage_timer.__name__).setLevel(logging.INFO)
 

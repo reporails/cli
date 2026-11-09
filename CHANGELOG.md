@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.6.7
+
+### Added
+
+- The x-ray page shows a placeholder of its layout while the session loads, instead of empty boxes and every tab stacked at once; a page that cannot load shows its notice in place of the placeholder, and with reduced motion set the placeholder does not shimmer.
+- In the x-ray page, a hook that exited with an error without blocking counts as a firing and is listed as failed, with its exit code and error output.
+- At each compaction, the x-ray page shows the summary Claude Code wrote and its size in tokens; the marker's summary link opens it. The text is read from the session's transcript when you open it and is not stored anywhere.
+- At each compaction, the x-ray page says in words what happened to each instruction file loaded before it: still in context, loaded again, dropped, settles at the next request (until the agent next replies) or can't tell, with the reason on hover. The context chart after it leaves out the dropped files. A file the transcript cannot settle reads can't tell and stays in the chart: any file on Claude Code older than 2.1.309, and a nested `CLAUDE.md` that came in with the read of another file.
+- When a run would pass the free hourly file budget, `ails check` says so, with the budget, the files this hour counting the run, when it resets and that a paid plan has no hourly file budget, instead of an unknown error.
+
+### Changed
+
+- After `/clear`, `ails xray --current` and the agent's `xray` tool open the session the `/clear` started, not the one before it; when more than one session could be it, the page shows the newest of them and says so.
+- Healing one file writes only that file; the files it imports are left as they are.
+- For a session started in a subfolder of a git repository, the x-ray and `ails expected-loads` read the repository root's `.claude/settings.local.json`, as Claude Code does, so a hook declared there names its file.
+- The x-ray page answers its first view sooner: the project check starts once the first view is shown.
+- An x-ray page started in your home folder skips the whole-folder check and says why.
+
+### Fixed
+
+- `ails check <file> --heal` no longer says that a file the target imports resolves outside the heal scope; that notice appears only for files that really sit outside it.
+- The agent's `heal_apply` tool with `targets` writes only what the targets name: a named file without the files it imports, every file under a named folder, and a skill target's whole skill folder.
+- The agent's `heal_apply` tool with `targets` that name no file writes nothing.
+- When a `/clear` started more than one new session, the x-ray opens the newest of those and the page, the `ails xray` line and the agent's `xray` tool say so; a background subagent of the old session writing after the `/clear` no longer hides it, and a first prompt that only quotes the `/clear` command is not taken for one.
+- An x-ray page started in a folder that holds your home folder (`/`, `/home`) skips the whole-folder check, as it does in the home folder itself.
+- The x-ray page started in the background ignores `PYTHONPATH` and `PYTHONHOME`, so a project's own modules cannot replace the ones it needs.
+- `ails xray --background` and the agent's `xray` tool start the page from a `pip install --user` install.
+- `ails hook` prints nothing, also when a settings file it reads is malformed, and records an event faster again.
+- Skills synced from another claude.ai account are left out of the x-ray and `ails expected-loads`.
+- `ails check` on a folder inside a git repository no longer warns `CORE:G:0001 Not a git repository`.
+- On Windows, `ails xray --background` and the agent's `xray` tool open the page at once instead of reporting after 30 seconds that it did not start.
+
+### Internal
+
+- The x-ray home-folder skip tests pin the home folder on Windows too (`USERPROFILE` beside `HOME`).
+- A manual CI run executes the behavioral scenarios skipped on Windows, with full output, without affecting push runs.
+- The x-ray open scenarios run on Windows: the foreground-page step reads the printed address without `select`, and the file-name markup scenario is skipped there because Windows cannot hold such a file name.
+- The Windows check scenarios keep their skip tag until a path fix that keeps symlinked rule folders in scope.
+- The MCP x-ray tool's two-call scenario stays skipped on Windows; it errors there for a cause still to be read.
+
 ## 0.6.6
 
 ### Added

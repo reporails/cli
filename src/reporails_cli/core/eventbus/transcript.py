@@ -99,6 +99,15 @@ def session_start(agent: str, session_file: Path) -> str | None:
     return None
 
 
+def first_row_time(agent: str, session_file: Path) -> str | None:
+    """The time of the first row of the main transcript that records one; None when the agent is unknown or no row
+    records one."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        return None
+    return next((timed for timed in map(adapter.row_time, _main_rows(session_file)) if timed is not None), None)
+
+
 def session_cwd(agent: str, session_file: Path) -> str | None:
     """The folder the session's first row that records one says the agent ran in; None when the agent is unknown
     or no row records one."""
@@ -126,6 +135,16 @@ def first_prompt_text(agent: str, session_file: Path) -> str | None:
         except PayloadRefused:
             continue
     return None
+
+
+def opens_with_clear(agent: str, session_file: Path) -> bool:
+    """Whether the first row of the main transcript that the agent's adapter reads as opening the conversation is
+    its `/clear` command; False when the agent is unknown or the transcript has no such row."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        return False
+    opened = (adapter.opens_with_clear(row) for row in _main_rows(session_file))
+    return next((verdict for verdict in opened if verdict is not None), False)
 
 
 def read_transcript(
@@ -164,11 +183,11 @@ def _files(session_file: Path) -> list[tuple[str | None, Path]]:
     return files
 
 
-def last_write(session_file: Path) -> float | None:
-    """When the transcript or any of its subagent files was last written, in seconds since 1970; None when none can
-    be read."""
+def last_write(session_file: Path, *, main_only: bool = False) -> float | None:
+    """When the transcript or any of its subagent files was last written, in seconds since 1970; with `main_only`,
+    the transcript alone. None when none can be read."""
     written: list[float] = []
-    for _, path in _files(session_file):
+    for _, path in _files(session_file)[:1] if main_only else _files(session_file):
         with contextlib.suppress(OSError):
             written.append(path.stat().st_mtime)
     return max(written, default=None)
@@ -223,6 +242,48 @@ def prompt_text(agent: str, session_file: Path, prompt_id: str) -> str | None:
         raise PayloadRefused(f"unknown agent: {agent}")
     row = _find_row(session_file, prompt_id, lambda row: row.get("uuid") == prompt_id)
     return None if row is None else adapter.resolve_prompt(row)
+
+
+def compact_summaries(agent: str, session_file: Path, subagent_id: str | None) -> list[str]:
+    """The compaction summary texts of the main transcript (`subagent_id` None) or that subagent's file, in the
+    order the file records them; empty when the file holds none or cannot be read.
+
+    Raises `PayloadRefused` when the agent is unknown. The texts are returned, never stored."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        raise PayloadRefused(f"unknown agent: {agent}")
+    lines, _ = read_appended_lines(_owner_path(session_file, subagent_id), 0)
+    return [text for line in lines if (text := _summary_text(adapter, line)) is not None]
+
+
+def compact_summary_sizes(
+    agent: str, session_file: Path, subagent_id: str | None, offset: int
+) -> tuple[list[int], int]:
+    """The sizes in characters of the compaction summaries in the lines of one transcript file appended since byte
+    `offset`, and the offset just past the lines read; a torn last line waits for the next read.
+
+    Raises `PayloadRefused` when the agent is unknown. Only sizes are returned, never text."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        raise PayloadRefused(f"unknown agent: {agent}")
+    lines, end = read_appended_lines(_owner_path(session_file, subagent_id), offset)
+    return [len(text) for line in lines if (text := _summary_text(adapter, line)) is not None], end
+
+
+def _owner_path(session_file: Path, subagent_id: str | None) -> Path:
+    """The main transcript, or the file of one subagent."""
+    if subagent_id is None:
+        return session_file
+    return _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
+
+
+def _summary_text(adapter: TranscriptAdapter, line: bytes) -> str | None:
+    """The summary text of a transcript line when it is a compaction summary row; None for any other line."""
+    if b'"isCompactSummary"' not in line:
+        return None
+    with contextlib.suppress(ValueError):
+        return adapter.resolve_compact_summary(as_object(json.loads(line)))
+    return None
 
 
 def hook_output_text(agent: str, session_file: Path, subagent_id: str | None, row_id: str) -> str | None:

@@ -1,6 +1,6 @@
 [project]
 name = "reporails-cli"
-version = "0.6.6"
+version = "0.6.7"
 description = "AI instruction diagnostics for coding agents"
 readme = "README.md"
 license = "BUSL-1.1 AND LicenseRef-Reporails-Model"
@@ -153,6 +153,7 @@ exclude = [
 exclude = [
     "/scripts",
     "/.githooks",
+    "/docs/media",
     "/.ails",
     "/.claude",
     "/.idea",
@@ -180,7 +181,6 @@ lint = "ruff check src/ tests/"
 pylint_struct = "python scripts/pylint_gate.py"
 release_gates = "bash scripts/release-gates.sh"
 lint_imports = "lint-imports"
-hexagon = "python scripts/hexagon/build_hexagon.py"
 arch_data = "python scripts/bundled_data_gate.py"
 arch_no_fix = "python scripts/no_public_fix_gate.py"
 arch = ["lint_imports", "arch_data", "arch_no_fix"]
@@ -192,7 +192,6 @@ test_unit = "pytest tests/unit/ -v"
 test_integration = "pytest tests/integration/ -v -m 'not slow'"
 test_integration_all = "pytest tests/integration/ -v"
 test_smoke = "pytest tests/smoke/ -v -m e2e"
-test_live = "pytest -v -m requires_network"
 test_lint = "ails test --lint --rules-root framework/rules"
 # Behavioral tier (integration + e2e) — Gherkin scenarios driving the real `ails`
 # binary via subprocess. A separate first-class suite, NOT in the unit pytest pile.
@@ -345,7 +344,6 @@ markers = [
     # Cost — orthogonal, additive
     "slow: Takes more than 1 second",
     "requires_model: Needs the bundled ML runtime",
-    "requires_network: Hits real external service",
     "real_deps: Needs API key or live backend",
     # Subsystem tags — one or more per test
     "subsys_caching",

@@ -120,7 +120,7 @@ class XrayWindow:
         return {"size": self.size, "basis": self.basis}
 
 
-SessionPick = Literal["named", "current", "current_unknown", "newest"]
+SessionPick = Literal["named", "current", "current_unknown", "current_ambiguous", "newest"]
 
 
 @dataclass(frozen=True)
@@ -166,9 +166,8 @@ class XraySessionEntry:
 
 @dataclass(frozen=True)
 class XrayPage:
-    """A running x-ray page: the process serving it, its port and the id of its launch."""
+    """A running x-ray page: its port and the id of its launch."""
 
-    pid: int
     port: int
     launch: str
 

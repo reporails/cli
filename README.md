@@ -1,8 +1,22 @@
-# Reporails CLI (v0.6.6)
+# Reporails CLI (v0.6.7)
 
 > **AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 120+ rules across six rule packs (core + per-agent). Supports Antigravity, Claude, Codex, Copilot, and Cursor.**
 > 
 > *Beta phase - moving fast, feedback welcome.*
+
+## X-ray
+
+```bash
+npx @reporails/cli xray
+# or
+uvx --from reporails-cli ails xray
+```
+
+`xray` opens a local page on `127.0.0.1` that shows what filled a Claude Code session's context window, over time. It is built from the transcripts Claude Code keeps under `~/.claude/projects/`, so it covers Claude Code sessions. Pass `--session <id>` to pick a session; the newest is the default.
+
+[![Reporails x-ray demo](https://raw.githubusercontent.com/reporails/cli/main/docs/media/xray-demo.gif)](https://www.youtube.com/watch?v=2PmPI4rZCgM)
+
+The full 28-second demo is [on YouTube](https://www.youtube.com/watch?v=2PmPI4rZCgM).
 
 ## Quick Start
 
@@ -99,7 +113,7 @@ Full breakdown: [Tiers and Limits](https://github.com/reporails/cli/blob/main/do
 Run on every PR so instruction-quality regressions (vague or buried instructions, oversized files, weak reinforcement, instructions repeated across files) get caught the same way test or lint regressions do — before merge, not after a teammate's agent has been silently misbehaving for a week.
 
 ```yaml
-- uses: reporails/cli/action@0.6.6
+- uses: reporails/cli/action@0.6.7
   with:
     api-key: ${{ secrets.REPORAILS_API_KEY }}   # optional - a Pro key unlocks the full diagnostic detail
     strict: "true"                              # exit 1 if any rule fires

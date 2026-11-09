@@ -6,6 +6,7 @@ from collections.abc import Iterator
 
 import pytest
 
+from reporails_cli.core.platform.observability import stage_timer
 from reporails_cli.core.platform.observability.log_levels import configure_logging, quiet_loggers
 from reporails_cli.core.platform.observability.stage_timer import StageTimer
 
@@ -14,10 +15,11 @@ from reporails_cli.core.platform.observability.stage_timer import StageTimer
 def package_logger(monkeypatch: pytest.MonkeyPatch) -> Iterator[logging.Logger]:
     """The `reporails_cli` logger with no handler of its own, restored afterwards."""
     log = logging.getLogger("reporails_cli")
-    saved = (list(log.handlers), log.level, log.propagate)
+    timer = logging.getLogger(stage_timer.__name__)
+    saved = (list(log.handlers), log.level, log.propagate, timer.level)
     log.handlers = []
     yield log
-    log.handlers, log.level, log.propagate = saved[0], saved[1], saved[2]
+    log.handlers, log.level, log.propagate, timer.level = saved
 
 
 @pytest.mark.unit
@@ -82,3 +84,18 @@ def test_quiet_loggers_restore_the_level_when_the_block_raises() -> None:
     with pytest.raises(RuntimeError), quiet_loggers(("reporails_cli.test_quiet_probe",)):
         raise RuntimeError
     assert log.level == logging.DEBUG
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_stage_timing_only_prints_stage_timing_records_and_drops_every_other(
+    package_logger: logging.Logger, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(logging.getLogger(), "handlers", [])
+    monkeypatch.setenv("AILS_STAGE_TIMING", "1")
+    configure_logging(stage_timing_only=True)
+    logging.getLogger("reporails_cli.probe").warning("warning-marker")
+    logging.getLogger(stage_timer.__name__).info("timing-marker")
+    err = capsys.readouterr().err
+    assert "timing-marker" in err
+    assert "warning-marker" not in err

@@ -25,7 +25,9 @@ const connect = async wsUrl => {
 
 const version = async base => { for (let i = 0; i < 300; i++) { try { return await (await fetch(`${base}/json/version`)).json(); } catch { await sleep(100); } } throw new Error(`no Chrome answering at ${base}`); };
 
-export async function openPage(url, width = 925, height = 1000) {
+// `view` stands in for the server's /view answer: 'hold' keeps the request unanswered until page.release(), '409' answers 409,
+// 'none' fails the connection. It is armed before the page loads, so the first poll meets it.
+export async function openPage(url, width = 925, height = 1000, view = null) {
   let base = process.env.XRAY_CDP_URL, chrome = null, profile = null;
   if (!base) {
     const port = await freePort();
@@ -42,6 +44,22 @@ export async function openPage(url, width = 925, height = 1000) {
   const ev = async expr => (await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true })).result.result.value;
   // A tab made by Target.createTarget is not the focused window; the page's focus and visibility logic reads it as one.
   await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
+  const held = [];
+  let releasing = false;
+  if (view) {
+    const isView = p => new URL(p.request.url).pathname === '/view';
+    const answer = {
+      '409': p => send('Fetch.fulfillRequest', { requestId: p.requestId, responseCode: 409, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify({ error: 'ails changed since this page started; run `ails xray` again to open a current page.' })).toString('base64') }),
+      none: p => send('Fetch.failRequest', { requestId: p.requestId, errorReason: 'ConnectionRefused' }),
+      hold: p => { if (releasing) return send('Fetch.continueRequest', { requestId: p.requestId }); held.push(p.requestId); },
+    }[view];
+    ws.addEventListener('message', m => {
+      const d = JSON.parse(m.data);
+      if (d.method !== 'Fetch.requestPaused') return;
+      if (isView(d.params)) answer(d.params); else send('Fetch.continueRequest', { requestId: d.params.requestId });
+    });
+    await send('Fetch.enable', { patterns: [{ urlPattern: '*/view*', requestStage: 'Request' }] });
+  }
   await send('Page.navigate', { url });
   // Polls every 25 ms up to the ceiling the old 250 ms x tries loop gave.
   const until = async (expr, tries = 60) => { const end = Date.now() + tries * 250; for (;;) { const v = await ev(expr); if (v) return v; if (Date.now() >= end) { if (process.env.XRAY_DEBUG) appendFileSync(process.env.XRAY_DEBUG, `until timed out: ${expr.slice(0, 200)}\n`); return null; } await sleep(25); } };
@@ -51,7 +69,10 @@ export async function openPage(url, width = 925, height = 1000) {
     await fetch(`${base}/json/close/${targetId}`);
     if (chrome) { chrome.kill(); await sleep(100); rmSync(profile, { recursive: true, force: true }); }
   };
-  return { ev, until, frame, send, close };
+  // Lets every held /view request through, and the ones after it.
+  const release = async () => { releasing = true; await Promise.all(held.splice(0).map(requestId => send('Fetch.continueRequest', { requestId }))); };
+  const heldCount = () => held.length;
+  return { ev, until, frame, send, close, release, heldCount };
 }
 
 // The page opens on the Graph tab; this waits for the tab and clicks it, so a scenario starts on the Graph whatever came first.

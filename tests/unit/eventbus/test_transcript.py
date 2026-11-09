@@ -10,11 +10,12 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.eventbus.adapters.claude_transcript import ClaudeTranscriptAdapter
-from reporails_cli.core.eventbus.port import PayloadRefused
+from reporails_cli.core.eventbus.port import TRANSCRIPT_ADAPTERS, PayloadRefused
 from reporails_cli.core.eventbus.transcript import (
     CALL_INPUT_CHARS,
     CALL_RESULT_CHARS,
     call_detail,
+    opens_with_clear,
     prompt_text,
     read_transcript,
     subagent_brief,
@@ -1041,3 +1042,77 @@ def test_a_shape_whose_system_is_not_a_list_is_refused(tmp_path: Path) -> None:
     session = _shaped_subagent(tmp_path, [bad, request])
     with pytest.raises(PayloadRefused, match=r"shape\.system"):
         subagent_system("claude", session, "aaa")
+
+
+def test_a_hook_that_exits_non_zero_without_blocking_is_a_failed_firing_with_its_exit_code_and_stderr(
+    tmp_path: Path,
+) -> None:
+    session = _copy(TURNS, tmp_path)
+    row: JsonObject = {
+        "type": "attachment",
+        "uuid": "h-failed",
+        "timestamp": "2026-10-31T10:00:09.000Z",
+        "sessionId": "11111111-2222-3333-4444-555555555555",
+        "version": "2.1.311",
+        "cwd": "/work/proj",
+        "attachment": {
+            "type": "hook_non_blocking_error",
+            "hookName": "Stop",
+            "hookEvent": "Stop",
+            "toolUseID": "tool-1",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/check.sh",
+            "exitCode": 1,
+            "stderr": "PLACEHOLDER-STDERR",
+            "stdout": "",
+            "durationMs": 8127,
+        },
+    }
+    with session.open("a", encoding="utf-8") as out:
+        out.write(json.dumps(row) + "\n")
+    records, _ = read_transcript("claude", session, TranscriptCursor())
+    (failed,) = [r.hook for r in _of(records, "hook_firing") if r.hook and r.hook.id == "h-failed"]
+    assert (failed.label, failed.event, failed.decision) == ("Stop", "Stop", "failed")
+    assert (failed.exit_code, failed.duration_ms, failed.chars) == (1, 8127, len("PLACEHOLDER-STDERR"))
+    assert failed.command == "$CLAUDE_PROJECT_DIR/.claude/hooks/check.sh"
+    assert not _of(records, "refusal")
+    assert ClaudeTranscriptAdapter().resolve_hook_output(row) == "PLACEHOLDER-STDERR"
+
+
+def _user_row(content: JsonValue, **extra: JsonValue) -> str:
+    return json.dumps({"type": "user", "message": {"content": content}, **extra}) + "\n"
+
+
+def test_a_transcript_opens_with_clear_when_its_first_non_note_user_row_is_the_command(tmp_path: Path) -> None:
+    clear = "<command-name>/clear</command-name>"
+    opened = tmp_path / "a.jsonl"
+    opened.write_text("not json\n" + _user_row("note", isMeta=True) + _user_row(clear) + _user_row("hi"))
+    typed = tmp_path / "b.jsonl"
+    typed.write_text(_user_row("hi") + _user_row(clear))
+    quoted = tmp_path / "c.jsonl"
+    quoted.write_text(_user_row(f"why does {clear} reset the id?"))
+    assert opens_with_clear("claude", opened) is True
+    assert opens_with_clear("claude", typed) is False
+    assert opens_with_clear("claude", quoted) is False
+    assert opens_with_clear("claude", tmp_path / "missing.jsonl") is False
+    assert opens_with_clear("nobody", opened) is False
+
+
+def test_opens_with_clear_asks_the_adapter_registered_for_the_agent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[JsonObject] = []
+
+    class OtherAgent:
+        """Only the part of a transcript adapter this read asks for."""
+
+        agent = "other"
+
+        def opens_with_clear(self, row: JsonObject) -> bool | None:
+            asked.append(row)
+            return True
+
+    monkeypatch.setitem(TRANSCRIPT_ADAPTERS, "other", OtherAgent())
+    session = tmp_path / "s.jsonl"
+    session.write_text(_user_row("hi"))
+    assert opens_with_clear("other", session) is True
+    assert asked == [{"type": "user", "message": {"content": "hi"}}]

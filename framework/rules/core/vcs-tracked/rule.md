@@ -42,4 +42,4 @@ $ git ls-files .claude/rules/testing.md
 
 ## Limitations
 
-Verifies a `.git` directory exists. Does not check that individual instruction files are tracked, committed, or pushed to a remote.
+Passes when the checked folder or any folder above it holds a `.git`. Does not check that individual instruction files are tracked, committed, or pushed to a remote.

@@ -201,3 +201,15 @@ code.cmd{display:block;margin-top:6px;padding:6px 10px;border-radius:6px;backgro
 .sources::-webkit-scrollbar:hover,.inspector::-webkit-scrollbar:hover,.sidepanel::-webkit-scrollbar:hover,.pk-body::-webkit-scrollbar:hover,.canvaswrap::-webkit-scrollbar:hover,.swlist::-webkit-scrollbar:hover,.swtext::-webkit-scrollbar:hover,pre.peek::-webkit-scrollbar:hover,.tblwrap::-webkit-scrollbar:hover{width:10px;height:10px}
 .sources::-webkit-scrollbar-thumb,.inspector::-webkit-scrollbar-thumb,.sidepanel::-webkit-scrollbar-thumb,.pk-body::-webkit-scrollbar-thumb,.canvaswrap::-webkit-scrollbar-thumb,.swlist::-webkit-scrollbar-thumb,.swtext::-webkit-scrollbar-thumb,pre.peek::-webkit-scrollbar-thumb,.tblwrap::-webkit-scrollbar-thumb{background:#3A3C42;border-radius:4px}
 .sources::-webkit-scrollbar-thumb:hover,.inspector::-webkit-scrollbar-thumb:hover,.sidepanel::-webkit-scrollbar-thumb:hover,.pk-body::-webkit-scrollbar-thumb:hover,.canvaswrap::-webkit-scrollbar-thumb:hover,.swlist::-webkit-scrollbar-thumb:hover,.swtext::-webkit-scrollbar-thumb:hover,pre.peek::-webkit-scrollbar-thumb:hover,.tblwrap::-webkit-scrollbar-thumb:hover{background:#5A5C64}
+
+/* loading skeleton: placeholder shapes in the page's own layout until the first view is drawn */
+.sk{display:block;border-radius:8px;background:linear-gradient(90deg,rgba(255,255,255,.05) 25%,rgba(255,255,255,.11) 50%,rgba(255,255,255,.05) 75%) 0 0/200% 100%;animation:sk-shimmer 1.4s linear infinite}
+@keyframes sk-shimmer{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.sk{animation:none}}
+.sk-hdr{gap:16px}
+.sk-hdr .sk-mark{width:24px;height:24px;border-radius:7px;flex:none}
+.sk-hdr .sk-line{height:12px;flex:none}
+.sk-hdr .sk-tabs{width:230px;height:34px;border-radius:11px;flex:none;margin-left:8px}
+.sk-hdr .sk-end{margin-left:auto}
+.sk-stack{display:flex;flex-direction:column;gap:10px}
+.sk-stack .sk-line{height:12px}

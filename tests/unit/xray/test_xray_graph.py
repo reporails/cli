@@ -46,6 +46,7 @@ from reporails_cli.core.platform.dto.xray_build import (
     ProducerContext,
     SourceTable,
 )
+from reporails_cli.core.platform.dto.xray_compaction import XrayCompaction
 from reporails_cli.core.platform.dto.xray_composition import XrayComposition
 from reporails_cli.core.platform.dto.xray_graph import (
     AgentOutcome,
@@ -53,7 +54,6 @@ from reporails_cli.core.platform.dto.xray_graph import (
     NodeKind,
     XrayAgentDetail,
     XrayBack,
-    XrayCompaction,
     XrayDown,
     XrayEdge,
     XrayNode,
@@ -577,7 +577,7 @@ def test_a_compaction_is_a_station_of_the_node_it_ran_in_with_that_nodes_own_con
     ]
     graph = _graph(tmp_path, records)
     station = next(item for item in graph.stations if item.node == "A")
-    assert station.compactions == (XrayCompaction(t=20.0, trigger="auto", before=9000, after=1200),)
+    assert station.compactions == (XrayCompaction(t=20.0, trigger="auto", before=9000, after=1200, files=()),)
     assert next(item for item in graph.stations if item.node == MAIN_ID).compactions == ()
     assert _agent(_node(graph, "A")).peak == 9000
 

@@ -17,6 +17,7 @@ from reporails_cli.core.mapper.model_manifest import ModelFetchError
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list
+from reporails_cli.core.platform.dto.heal import NamedTargets
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.observability.log_levels import configure_logging
 from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
@@ -145,13 +146,17 @@ def _with_feedback(payload: JsonObject, target: Path, scan_root: Path, project_r
 
 
 async def _fresh_validate_payload(
-    path: str, tokens: tuple[str, ...], scan_root: Path, state: CircuitState
+    path: str,
+    tokens: tuple[str, ...],
+    scan_root: Path,
+    state: CircuitState,
+    selection: tuple[set[Path], set[Path]] | None = None,
 ) -> JsonObject | tuple[JsonObject, RulesetMap | None, float | None]:
     """Run the pipeline fresh (never served from `state.full_payload`): resolve `tokens` first,
     narrow `workflow.locations` to them (`keep_target_locations`) and memoize the map/score on
-    `state`. Returns `(payload, ruleset_map, score)`, or the target-resolution error payload."""
-    selection: tuple[set[Path], set[Path]] | None = None
-    if tokens:
+    `state`. A `selection` the caller already resolved is used as is. Returns `(payload, ruleset_map,
+    score)`, or the target-resolution error payload."""
+    if selection is None and tokens:
         resolved = await asyncio.to_thread(resolve_validate_targets, tokens, scan_root)
         if isinstance(resolved, dict):
             return resolved
@@ -313,15 +318,23 @@ async def _heal_apply_reply(path: str, targets: list[str] | None, project_root: 
     if model_error is not None or not target.exists():
         return heal_apply_message(model_error or {"error": f"Path not found: {target}"})
     scan_root = resolve_scan_target(target, project_root)[0]
-    result = await _fresh_validate_payload(path, target_tokens(targets), scan_root, CircuitState())
+    tokens = target_tokens(targets)
+    selection: tuple[set[Path], set[Path]] | None = None
+    if tokens:
+        resolved = await asyncio.to_thread(resolve_validate_targets, tokens, scan_root)
+        if isinstance(resolved, dict):
+            return heal_apply_message(resolved)  # never write when the named targets cannot be resolved
+        selection = resolved
+    result = await _fresh_validate_payload(path, tokens, scan_root, CircuitState(), selection)
     if isinstance(result, dict):
         return heal_apply_message(result)
     payload, ruleset_map, _score = result
     workflow = payload.get("workflow")
     if ruleset_map is None or not isinstance(workflow, dict):
         return heal_apply_message(payload, mapped=ruleset_map is not None)
+    named = NamedTargets(frozenset(selection[0]), frozenset(selection[1])) if selection is not None else None
     try:
-        return await asyncio.to_thread(heal_apply_write, ruleset_map, workflow, target, scan_root)
+        return await asyncio.to_thread(heal_apply_write, ruleset_map, workflow, target, scan_root, named)
     finally:
         release_written(scan_root, validate_states)
 
@@ -546,7 +559,8 @@ async def explain(rule_id: str) -> str:
         "Open the x-ray page of a session of this project in the background and return its address at once;"
         " a page already running for the project is reused. Show the returned `url` to the user."
         " With no `session` it opens the session you are running in (the newest one when this agent cannot say"
-        " which it is, marked `picked: current_unknown`: tell the user the newest session is shown); pass"
+        " which it is, marked `picked: current_unknown`, or the newest of several sessions a `/clear` of yours"
+        " started, marked `picked: current_ambiguous`: tell the user which session is shown and why); pass"
         " `session` to open another session of the project. Returns `url`, `session`, `picked` and `reused`."
     ),
     annotations=ToolAnnotations(read_only_hint=False, idempotent_hint=True),

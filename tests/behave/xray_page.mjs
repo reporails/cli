@@ -3,10 +3,56 @@
 import { openPage, sleep as sleepMs, toGraph } from './xray_cdp.mjs';
 
 const [url, mode, width, picked] = [process.argv[2], process.argv[3], Number(process.argv[4] || 1440), process.argv[5]];
-const page = await openPage(url, width);
-await toGraph(page);
-const ready = await page.until(`!!document.querySelector('.card.top')`);
+// The skeleton modes meet the page before any view has landed; every other mode starts from a drawn graph.
+const SKELETON = { 'skeleton-hold': 'hold', 'skeleton-409': '409', 'skeleton-none': 'none', 'skeleton-motion': 'hold' };
+const page = await openPage(url, width, 1000, SKELETON[mode] || null);
+if (!SKELETON[mode]) await toGraph(page);
+const ready = SKELETON[mode] ? true : await page.until(`!!document.querySelector('.card.top')`);
 const out = { ready: !!ready };
+
+// What a person sees of the page's loading state: which regions are drawn, the skeleton shapes left and the busy flag.
+const shown = sel => `(() => { const e = document.querySelector(${JSON.stringify(sel)}); return !!e && getComputedStyle(e).display !== 'none' && !e.closest('[hidden]'); })()`;
+const loadingState = () => page.ev(`({
+  busy: document.querySelector('main').getAttribute('aria-busy'),
+  skeletons: document.querySelectorAll('[data-skeleton]').length,
+  graph: ${shown('#view-graph')}, calls: ${shown('#view-calls-body')}, sources: ${shown('#view-sources-body')}, hint: ${shown('#hint')},
+  topCard: !!document.querySelector('.card.top'),
+  regions: ['#header', '#sources', '#canvas', '#inspector'].map(s => !!document.querySelector(s + ' [data-skeleton]')),
+  changed: document.querySelector('#changed').hidden ? '' : document.querySelector('#changed').textContent,
+  canvas: document.querySelector('#canvas').textContent.trim(),
+})`);
+const runningSkeleton = () => page.ev(`document.getAnimations().filter(a => a.playState === 'running' && a.effect && a.effect.target && a.effect.target.closest('[data-skeleton]')).length`);
+
+if (mode === 'skeleton-hold') {
+  await page.until(`document.readyState === 'complete'`);
+  await page.until(`1`);
+  await page.frame();
+  out.held = page.heldCount();
+  out.first = await loadingState();
+  await page.release();
+  await page.until(`!!document.querySelector('.card.top')`);
+  out.after = await loadingState();
+}
+
+if (mode === 'skeleton-409') {
+  await page.until(`!document.querySelector('#changed').hidden`);
+  out.after = await loadingState();
+}
+
+if (mode === 'skeleton-none') {
+  await page.until(`document.querySelector('#canvas').textContent.includes('did not answer')`);
+  out.after = await loadingState();
+}
+
+if (mode === 'skeleton-motion') {
+  await page.until(`document.querySelectorAll('[data-skeleton]').length > 0`);
+  await sleepMs(200);
+  out.animatedByDefault = await runningSkeleton();
+  await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await sleepMs(200);
+  out.animatedReduced = await runningSkeleton();
+  out.skeletons = (await loadingState()).skeletons;
+}
 const go = async hash => { await page.ev(`location.hash = ${JSON.stringify(hash)}; 0`); await page.until(`location.hash === ${JSON.stringify(hash)}`); };
 const click = sel => page.ev(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return false; e.click(); return true; })()`);
 // A click on a source opens its details; only the details' Pin button puts it on the graph.

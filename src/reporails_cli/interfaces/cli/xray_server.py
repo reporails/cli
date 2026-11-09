@@ -10,9 +10,7 @@ import logging
 import mimetypes
 import secrets
 import shlex
-import socket
 import threading
-import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -22,6 +20,7 @@ from typing import get_args
 import typer
 import uvicorn
 from starlette.applications import Starlette
+from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware import Middleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -29,9 +28,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
-from starlette.types import ASGIApp, Receive, Scope, Send
 
 from reporails_cli.bundled import get_xray_path
+from reporails_cli.core.discovery.project_root import home_folder
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.eventbus.transcript import known_session
@@ -45,7 +44,7 @@ from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.pipeline import Refusal
-from reporails_cli.core.platform.dto.xray import SessionPick, XrayCheck
+from reporails_cli.core.platform.dto.xray import PickedSession, SessionPick, XrayCheck
 from reporails_cli.core.platform.dto.xray_sources import FindingTally, XrayPeek
 from reporails_cli.core.xray.pages import HOST, code_change_watch, forget_page, register_page
 from reporails_cli.core.xray.session import XraySession
@@ -53,6 +52,7 @@ from reporails_cli.core.xray.sessions import session_entries
 from reporails_cli.core.xray.tally import tallies_by_file, tally_of
 from reporails_cli.formatters.mcp_view import render_heal_apply
 from reporails_cli.formatters.text.rule_meta import rule_docs_url
+from reporails_cli.interfaces.cli.xray_launch import RequestClock, bound_socket, mark_requests, run_until_idle, span
 from reporails_cli.interfaces.cli.xray_line import xray_line
 
 TOKEN_HEADER = "x-xray-token"
@@ -65,6 +65,7 @@ PAGE_HEADERS = {
     "Cache-Control": "no-store",
 }
 NO_STORE = {"Cache-Control": "no-store"}
+HOME_SKIPPED = "The project check was skipped: this is the home folder, not a project."
 CHANGED_MESSAGE = "ails changed since this page started; run `ails xray` again to open a current page"
 # Seconds with no request after which a page stops: an open tab asks at least once a minute, a closed one never.
 _DEFAULT_IDLE_S = 1800
@@ -88,8 +89,7 @@ class XrayServer:
         self, root: Path, session_file: Path, *, picked: SessionPick, token: str, launch: str, port: int
     ) -> None:
         self._root = root
-        self._launch_file = session_file
-        self._launch_pick = picked
+        self._opened = PickedSession(root, session_file, picked)
         self._sessions: dict[str, XraySession] = {}
         self._token = token
         self._launch_id = launch
@@ -98,6 +98,7 @@ class XrayServer:
         self._launch = XrayCheck("running", None)
         self._view_lock = threading.Lock()
         self._work_lock = threading.Lock()
+        self._first_view_answered = threading.Event()
         self._code_changed = code_change_watch()
 
     def _wrong_token(self, request: Request) -> bool:
@@ -135,7 +136,7 @@ class XrayServer:
 
     def _lists(self, path: str) -> bool:
         """Whether a session this page has read lists `path`."""
-        self._session_for(self._launch_file.stem)
+        self._session_for(self._opened.transcript.stem)
         with self._view_lock:
             return any(session.acts_on(path) for session in self._sessions.values())
 
@@ -155,9 +156,10 @@ class XrayServer:
         session_id, session, picked = chosen
         payload, version = await run_in_threadpool(self._build_view, session, picked)
         etag = f'"{session_id}:{version}"'
+        answered = None if self._first_view_answered.is_set() else BackgroundTask(self._first_view_answered.set)
         if request.headers.get("if-none-match") == etag:
-            return Response(status_code=304, headers={"ETag": etag})
-        return JSONResponse(payload, headers={"ETag": etag, **NO_STORE})
+            return Response(status_code=304, headers={"ETag": etag}, background=answered)
+        return JSONResponse(payload, headers={"ETag": etag, **NO_STORE}, background=answered)
 
     def _build_view(self, session: XraySession, picked: SessionPick) -> tuple[JsonObject, int]:
         with self._view_lock:
@@ -169,8 +171,8 @@ class XrayServer:
         """The session a request names with `?session=` (the launch session without it), and how it was chosen:
         `?pick=` when sent, else the launch pick for a request naming no session and `named` for one that does."""
         named_session = request.query_params.get("session")
-        session_id = named_session or self._launch_file.stem
-        picked: SessionPick = "named" if named_session else self._launch_pick
+        session_id = named_session or self._opened.transcript.stem
+        picked: SessionPick = "named" if named_session else self._opened.picked
         sent = request.query_params.get("pick")
         if sent is not None:
             named = next((member for member in _PICKS if member == sent), None)
@@ -188,8 +190,8 @@ class XrayServer:
             held = self._sessions.get(session_id)
             if held is not None:
                 return held
-            if session_id == self._launch_file.stem:
-                transcript: Path | None = self._launch_file
+            if session_id == self._opened.transcript.stem:
+                transcript: Path | None = self._opened.transcript
             else:
                 transcript = known_session(self._root, session_id)
             if transcript is None:
@@ -304,6 +306,18 @@ class XrayServer:
             ),
         )
 
+    async def summary(self, request: Request) -> Response:
+        """The summary text of one compaction of the session."""
+        return await self._text_route(
+            request,
+            _TextRoute(
+                "id",
+                "the query is ?id=<summary id>",
+                _text_fields(XraySession.summary),
+                "not a compaction summary this page lists",
+            ),
+        )
+
     async def call(self, request: Request) -> Response:
         """One call of the session: its tool, command, input and result excerpt."""
         return await self._text_route(
@@ -359,6 +373,12 @@ class XrayServer:
                 }
             )
 
+    def launch_after_first_view(self) -> None:
+        """Start the launch check once the page's first `/view` has been answered, so the first view never shares
+        the processor with the check."""
+        self._first_view_answered.wait()
+        self.launch_check()
+
     def launch_check(self) -> None:
         """Check the whole project once and hold the tally of every file it covers; any failure lands as refused."""
         with self._work_lock:
@@ -368,7 +388,11 @@ class XrayServer:
                 self._launch = outcome
 
     def _launch_outcome(self) -> tuple[XrayCheck, dict[str, FindingTally]]:
-        """The launch check's state and the tally of every file it covers; a failed check is refused with its text."""
+        """The launch check's state and the tally of every file it covers; a failed check is refused with its text,
+        and neither the home folder nor a folder holding it is checked as a project."""
+        home = home_folder()
+        if home is not None and home.is_relative_to(self._root):
+            return XrayCheck("refused", HOME_SKIPPED), {}
         try:
             run = check_path(str(self._root), self._root)
             if isinstance(run, Refusal):
@@ -457,32 +481,6 @@ def _line(finding: FindingItem) -> JsonObject:
     }
 
 
-class RequestClock:
-    """When the page last received a request."""
-
-    def __init__(self) -> None:
-        self._last = time.monotonic()
-
-    def mark(self) -> None:
-        """Record a request now."""
-        self._last = time.monotonic()
-
-    def quiet_s(self) -> float:
-        """Seconds since the last request."""
-        return time.monotonic() - self._last
-
-
-def _mark_requests(app: ASGIApp, requests: RequestClock) -> ASGIApp:
-    """`app` with every HTTP request marked on the clock before it is passed on."""
-
-    async def marked(scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http":
-            requests.mark()
-        await app(scope, receive, send)
-
-    return marked
-
-
 def build_app(
     root: Path,
     session_file: Path,
@@ -500,7 +498,7 @@ def build_app(
 
     @asynccontextmanager
     async def lifespan(_app: Starlette) -> AsyncIterator[None]:
-        threading.Thread(target=server.launch_check, daemon=True).start()
+        threading.Thread(target=server.launch_after_first_view, daemon=True).start()
         yield
 
     return Starlette(
@@ -513,6 +511,7 @@ def build_app(
             Route("/brief", server.brief, methods=["GET"]),
             Route("/system", server.system, methods=["GET"]),
             Route("/prompt", server.prompt, methods=["GET"]),
+            Route("/summary", server.summary, methods=["GET"]),
             Route("/call", server.call, methods=["GET"]),
             Route("/hook-output", server.hook_output, methods=["GET"]),
             Route("/sessions", server.sessions, methods=["GET"]),
@@ -524,51 +523,18 @@ def build_app(
         ],
         middleware=[
             Middleware(TrustedHostMiddleware, allowed_hosts=[HOST]),
-            Middleware(_mark_requests, requests=requests),
+            Middleware(mark_requests, requests=requests),
         ],
     )
 
 
-def bound_socket() -> socket.socket:
-    """A listening socket on `127.0.0.1` at a free port, so the port is known before the page address prints."""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind((HOST, 0))
-    sock.listen(16)
-    return sock
-
-
-def _stop_when_idle(server: uvicorn.Server, requests: RequestClock, idle_s: int, stopped: threading.Event) -> None:
-    """Tell the server to stop once no request has come for `idle_s` seconds, and set `stopped`."""
-    while (left := idle_s - requests.quiet_s()) > 0:
-        time.sleep(left)
-    stopped.set()
-    server.should_exit = True
-
-
-def _span(seconds: int) -> str:
-    """`seconds` in whole minutes when it is one, else in seconds."""
-    count, unit = (seconds // 60, "minute") if seconds % 60 == 0 else (seconds, "second")
-    return f"{count} {unit}{'' if count == 1 else 's'}"
-
-
-def _run(server: uvicorn.Server, sock: socket.socket, requests: RequestClock, idle_s: int | None) -> None:
-    """Serve on `sock` until stopped, stopping after `idle_s` seconds with no request when given; say so when that
-    is why it stopped."""
-    idle_stop = threading.Event()
-    if idle_s is not None:
-        threading.Thread(target=_stop_when_idle, args=(server, requests, idle_s, idle_stop), daemon=True).start()
-    server.run(sockets=[sock])
-    if idle_s is not None and idle_stop.is_set():
-        typer.echo(f"The x-ray page stopped: no request for {_span(idle_s)}.")
-
-
-def serve(root: Path, session_file: Path, picked: SessionPick, *, open_page: bool) -> None:
+def serve(root: Path, session_file: Path, picked: SessionPick, *, open_page: bool, launch: str | None) -> None:
     """Serve the page opening on `session_file` until interrupted, or until no request has come for
     `AILS_XRAY_IDLE_S` seconds (30 minutes by default; 0 never stops); print its address and open it unless told
     not to. The project's page record names this process while it serves."""
     sock = bound_socket()
     port = sock.getsockname()[1]
-    launch = secrets.token_urlsafe(16)
+    launch = launch or secrets.token_urlsafe(16)
     requests = RequestClock()
     app = build_app(
         root,
@@ -589,11 +555,11 @@ def serve(root: Path, session_file: Path, picked: SessionPick, *, open_page: boo
     except OSError as exc:
         logger.warning("the x-ray page will not be reused by a later `ails xray` or agent call: %s", exc)
     try:
-        stops = "" if idle_s is None else f"; it stops after {_span(idle_s)} with no request"
+        stops = "" if idle_s is None else f"; it stops after {span(idle_s)} with no request"
         typer.echo(f"{xray_line(session_file.stem, url, picked)}  (Ctrl-C to stop{stops})")
         if open_page:
             open_in_browser(url)
-        _run(server, sock, requests, idle_s)
+        run_until_idle(server, sock, requests, idle_s)
     finally:
         if recorded:
             forget_page(safe_resolve(root), launch)

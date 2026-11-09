@@ -24,6 +24,7 @@ from typing import Protocol
 
 from reporails_cli.core.platform.contract.glob_pattern import GLOB_CHARS, brace_alternatives, glob_matches
 from reporails_cli.core.platform.dto.discovery import ListedEntry
+from reporails_cli.core.platform.utils.git import git_root
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,15 @@ def safe_resolve(path: Path) -> Path:
         return path.resolve()
     except (OSError, RuntimeError):
         return path
+
+
+def inside_git_repository(target: Path) -> bool:
+    """Whether the target or any folder above it holds a `.git`."""
+    try:
+        target = target.resolve()
+    except OSError:
+        return False
+    return git_root(target) is not None
 
 
 def file_under_target(f: Path, tgt: Path) -> bool:

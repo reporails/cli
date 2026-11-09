@@ -23,6 +23,12 @@ const opened = new Set();
 
 const env = () => { const focus = focusSource(ix, state); return { ix, state, tab: activeTab(state), focus, graphFocus: focus && state.layers[focus.kind] ? focus : null, text, opened, busy: run.busy, res: run.res }; };
 
+// The first view or a notice replaces the loading skeleton: its shapes go and the page stops reporting itself busy.
+function endLoading() {
+  for (const s of document.querySelectorAll('[data-skeleton]')) s.remove();
+  $('main').removeAttribute('aria-busy');
+}
+
 function renderNotices() {
   const v = ix.view, b = $('#banner');
   b.hidden = !v.refusals.length;
@@ -31,8 +37,10 @@ function renderNotices() {
     b.title = v.refusals.join('\n');
   }
   const u = $('#picked');
-  u.hidden = v.picked !== 'current_unknown';
-  u.textContent = u.hidden ? '' : `Showing the folder's newest session because ${v.adapter.tool} did not say which session it is.`;
+  u.hidden = v.picked !== 'current_unknown' && v.picked !== 'current_ambiguous';
+  u.textContent = u.hidden ? '' : v.picked === 'current_ambiguous'
+    ? 'More than one session started from a /clear of this one; showing the newest of them.'
+    : `Showing the folder's newest session because ${v.adapter.tool} did not say which session it is.`;
   const c = v.check, chk = $('#chk');
   chk.hidden = !c || c.state === 'done';
   chk.textContent = !c ? '' : c.state === 'running' ? 'checking the project…' : (c.message || 'The project check was refused.');
@@ -177,6 +185,8 @@ document.addEventListener('click', e => {
   if (jump) return rail.jump(jump.dataset.jump);
   if (t.closest('a[href]')) return;
   if (t.closest('[data-back]')) { location.hash = lastAgentHash; return; }
+  const summary = t.closest('[data-summary]');
+  if (summary) { state.sel = summary.dataset.summaryNode; opened.add(`summary:${summary.dataset.summary}`); return render(); }
   const open = t.closest('[data-open]');
   if (open) { toggle(opened, open.dataset.open); return render(); }
   if (t.closest('[data-clear]')) { state.pinned = null; return render(); }
@@ -289,6 +299,7 @@ async function poll() {
     if (r.status === 409) {
       // The server's code is older than the page's: what it would send does not match what this page draws.
       changed = true;
+      endLoading();
       const j = await r.json().catch(() => ({}));
       const b = $('#changed');
       b.hidden = false;
@@ -298,6 +309,7 @@ async function poll() {
     }
     if (r.status === 422) {
       // The project's config cannot be read: the server's words are the notice.
+      endLoading();
       const j = await r.json().catch(() => ({}));
       const n = $('#chk');
       n.hidden = false;
@@ -311,9 +323,11 @@ async function poll() {
     etag = r.headers.get('ETag') || String(j.version);
     version = j.version;
     forgetTexts(j);
+    endLoading();
     adopt(j);
     render();
   } catch (_) {
+    endLoading();
     if (!ix) {
       const n = el('div', 'nk', 'The x-ray server did not answer; retrying.');
       n.style.padding = '14px';

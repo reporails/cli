@@ -56,6 +56,8 @@ RUNNABLE_ARTIFACT_KINDS: frozenset[ArtifactKind] = frozenset({"skill", "command"
 
 # The kind of artifact that defines a subagent type.
 AGENT_ARTIFACT_KINDS: frozenset[ArtifactKind] = frozenset({"agent"})
+# The artifact kinds that are instruction files an agent loads into its context.
+INSTRUCTION_ARTIFACT_KINDS: frozenset[ArtifactKind] = frozenset(get_args(ArtifactKind)) - INVOCABLE_ARTIFACT_KINDS
 
 
 # Which scope wins when two listed files share a label, highest first. The skills page ranks managed over user over

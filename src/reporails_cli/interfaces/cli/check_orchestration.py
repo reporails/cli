@@ -21,7 +21,7 @@ import typer
 from reporails_cli.core.classify.capability_paths import TargetError, looks_like_windows_path, sniff_agent
 from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
 from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
-from reporails_cli.core.heal.apply import resolved_within, suppressed_by_path
+from reporails_cli.core.heal.apply import suppressed_by_path
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.platform.adapters.notices_seen import due_notices
 from reporails_cli.core.platform.dto.classify import UnresolvedSkill
@@ -115,12 +115,6 @@ def _named_paths(state: CheckState, capability_paths: frozenset[Path]) -> tuple[
         t.is_file() for t in state.targets.path_targets
     )
     return named, bool(named) and only_files
-
-
-def _resolved_within_target(f: Path, target: Path) -> bool:
-    """True when the file's real (symlink-resolved) location is within the heal target."""
-
-    return resolved_within(f, target)
 
 
 def scan_scope(single_path: Path | None, project_root: Path) -> tuple[Path | None, Path, Path | None]:

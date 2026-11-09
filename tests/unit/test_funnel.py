@@ -32,6 +32,7 @@ from reporails_cli.formatters.text.funnel_cta import (
     format_bug_report_url,
     format_cta,
     merge_utm,
+    no_score_reason,
     plain_cta,
 )
 
@@ -966,3 +967,51 @@ class TestAtomCapRoute:
     def test_server_atom_cap_refusal_for_anonymous_is_unchanged(self, no_key: None) -> None:
         err = FunnelError(error="atom_cap_exceeded", tier="anonymous", limit=10_000, size=12_000, status=413)
         assert "use case" not in plain_cta(err)
+
+
+class TestFileBudgetExceeded:
+    BODY = json.dumps(
+        {
+            "error": "file_budget_exceeded",
+            "tier": "anonymous",
+            "limit": 1000,
+            "files": 1200,
+            "reset_in": 1800,
+            "message": "File budget used up.",
+        }
+    )
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_funnel
+    def test_parses_as_known_error(self) -> None:
+        """The server's hourly file-budget refusal keeps its token instead of collapsing to unknown_error."""
+        err = parse_error_body(429, self.BODY)
+        assert err is not None
+        assert err.error == "file_budget_exceeded"
+        assert (err.limit, err.files, err.reset_in) == (1000, 1200, 1800)
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_funnel
+    def test_text_names_hourly_budget_and_reset_without_bug_link(self, no_key: None) -> None:
+        """The reason names the hourly file budget and its reset even with a server message, no bug link."""
+        err = parse_error_body(429, self.BODY)
+        assert err is not None
+        cta = format_cta(err)
+        assert "hourly budget of 1,000 files" in cta
+        assert "1,200 files this hour, counting this run" in cta
+        assert "30 min" in cta
+        assert "sent" not in cta and "used up" not in cta
+        assert "ails login" in cta and "A paid plan has no hourly file budget" in cta
+        assert "issues" not in cta
+        assert no_score_reason(err) == "hourly file budget reached"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_funnel
+    def test_json_carries_token(self, no_key: None) -> None:
+        """The JSON form carries the token, not retryable."""
+        from reporails_cli.formatters.json import format_server_error
+
+        err = parse_error_body(429, self.BODY)
+        out = format_server_error(err)
+        assert out is not None and out["error"] == "file_budget_exceeded"
+        assert out["retryable"] is False

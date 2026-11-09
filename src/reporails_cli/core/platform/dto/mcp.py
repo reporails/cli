@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from reporails_cli.core.platform.dto.xray_sources import ArtifactScope, McpState
+if TYPE_CHECKING:  # annotations only: the hook path reads settings without loading the x-ray records
+    from reporails_cli.core.platform.dto.xray_sources import ArtifactScope, McpState
 
 
 @dataclass(frozen=True)

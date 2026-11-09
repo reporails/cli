@@ -15,6 +15,7 @@ from support import (  # behave puts features/ on sys.path
     build_project,
     document,
     findings,
+    rule_ids_in,
     run_ails,
     write_claude,
     write_config,
@@ -200,3 +201,39 @@ def step_home_agent_folder(context):
 def step_run_home_folder(context, folder):
     target = str(context.home / ".claude" / folder)
     context.result = run_ails(context.project, "check", target, "--format", "json", home=context.home)
+
+
+@given('a git project with a "sub/CLAUDE.md" and no ".git" in "sub"')
+def step_git_project_plain_subfolder(context):
+    context.project = build_project(context.tmpdir)
+    sub = context.project / "sub"
+    sub.mkdir()
+    (sub / "CLAUDE.md").write_text(_RICH, encoding="utf-8")
+    assert not (sub / ".git").exists()
+
+
+@given("a project folder with a CLAUDE.md and no git repository above it")
+def step_project_without_git_above(context):
+    project = context.tmpdir / "plain"
+    project.mkdir(parents=True)
+    above = [folder for folder in (project.resolve(), *project.resolve().parents) if (folder / ".git").exists()]
+    if above:
+        raise AssertionError(f"precondition failed: a git repository sits at {above[0]}, so this scenario cannot run")
+    context.project = project
+    write_claude(project, _RICH)
+
+
+@then('the run reports no "{rule}" finding')
+def step_no_rule(context, rule):
+    assert rule not in set(rule_ids_in(document(context.result))), f"{rule} was reported"
+
+
+@then('the run reports a "{rule}" finding')
+def step_has_rule(context, rule):
+    assert rule in set(rule_ids_in(document(context.result))), f"{rule} was not reported"
+
+
+@when('I run "ails check" on the project\'s "{folder}" folder from outside the project')
+def step_run_on_folder_from_outside(context, folder):
+    target = str(context.project / folder)
+    context.result = run_ails(context.home, "check", target, "--format", "json", home=context.home)

@@ -113,15 +113,21 @@ from reporails_cli.core.eventbus.adapters.claude_hooks import (
     hook_output,
 )
 from reporails_cli.core.eventbus.adapters.claude_requests import (
-    BLOCK_SEPARATOR,
     feed_row,
     request_shape_hash,
     shape_system_text,
 )
+from reporails_cli.core.eventbus.adapters.claude_rows import (
+    brief_text,
+    meta_field,
+    required_text,
+    sized_by_name,
+    string_list,
+    usage_counts,
+)
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
-    JsonValue,
     as_list,
     as_object,
     opt_int,
@@ -148,33 +154,6 @@ NESTED_MARKER = "nested"
 BACKGROUND_SHAPE = "background"
 
 
-def _meta_field[Field: (str, int, bool)](meta: JsonObject, key: str, kind: type[Field]) -> Field | None:
-    """A meta field that must be of type `kind` when present; None when absent."""
-    value = meta.get(key)
-    if value is None:
-        return None
-    if not isinstance(value, kind) or (kind is int and isinstance(value, bool)):
-        raise PayloadRefused(f"subagent meta {key} is not a {kind.__name__}")
-    return value
-
-
-def _sized_by_name(
-    names: list[str], items: list[str], readded: tuple[str, ...], what: str
-) -> tuple[tuple[str, int], ...]:
-    """Each added item's size under its name; the names and the items must pair up one to one. With no items every
-    name must be one the row re-added, and none is sized."""
-    if not items:
-        stray = [name for name in names if name not in readded]
-        if stray:
-            raise PayloadRefused(
-                f"{what} lists names with no items that readdedNames does not name: {', '.join(stray)}"
-            )
-        return ()
-    if len(names) != len(items):
-        raise PayloadRefused(f"{what} lists {len(names)} names for {len(items)} items")
-    return tuple((name, len(item)) for name, item in zip(names, items, strict=True))
-
-
 _HARNESS: dict[str, HarnessAttachment] = {
     "prompt_snapshot": HarnessAttachment(
         "system_prompt", "system prompt", "systemPrompt", False, "systemPrompt", False
@@ -189,43 +168,8 @@ _HARNESS: dict[str, HarnessAttachment] = {
 }
 
 
-def _strings(value: JsonValue, field: str, what: str) -> list[str]:
-    items = strict_str_list(value)
-    if items is None:
-        raise PayloadRefused(f"{what} {field} is not a list of strings")
-    return items
-
-
-def _text(row: JsonObject, key: str, what: str) -> str:
-    value = opt_str(row.get(key))
-    if not value:
-        raise PayloadRefused(f"{what} has no {key}")
-    return value
-
-
-def _brief_text(first_row: JsonObject) -> str | None:
-    """The text of a subagent file's first row, None when it holds none; refuses a first row that is not a user row."""
-    if first_row.get("type") != "user":
-        raise PayloadRefused("subagent file does not open with a user row")
-    content = as_object(first_row.get("message")).get("content")
-    if isinstance(content, str):
-        return content or None
-    texts = blocks_text(content, "subagent first row")
-    return BLOCK_SEPARATOR.join(texts) if texts else None
-
-
-def _usage_counts(usage: JsonObject) -> JsonObject:
-    """A row's usage object with the cache-write split lifted to the keys the usage record reads; a present
-    `cache_creation` that is not an object refuses the row."""
-    creation = usage.get("cache_creation")
-    if creation is not None and not isinstance(creation, dict):
-        raise PayloadRefused("assistant usage cache_creation is not an object")
-    split = creation or {}
-    return {
-        **usage,
-        "cache_write_5m_tokens": split.get("ephemeral_5m_input_tokens"),
-        "cache_write_1h_tokens": split.get("ephemeral_1h_input_tokens"),
-    }
+# The command row a `/clear` opens the new session's transcript with.
+_CLEAR_COMMAND = "<command-name>/clear</command-name>"
 
 
 class ClaudeTranscriptAdapter:
@@ -292,7 +236,7 @@ class ClaudeTranscriptAdapter:
         row holding text."""
         if first_row.get("type") != "user":
             raise PayloadRefused("subagent file does not open with a user row")
-        text = _brief_text(first_row)
+        text = brief_text(first_row)
         if text is None:
             raise PayloadRefused("subagent first row holds no text content")
         return text
@@ -317,23 +261,43 @@ class ClaudeTranscriptAdapter:
             raise PayloadRefused("row is not a typed prompt")
         return text
 
+    def resolve_compact_summary(self, row: JsonObject) -> str | None:
+        """The summary text of a compaction summary row (`type: "user"`, `isCompactSummary: true`, string
+        `message.content`); None for any other row."""
+        if row.get("type") != "user" or row.get("isCompactSummary") is not True:
+            return None
+        content = as_object(row.get("message")).get("content")
+        return content if isinstance(content, str) else None
+
+    def opens_with_clear(self, row: JsonObject) -> bool | None:
+        """For a user row that is not a harness note, whether it is the `/clear` command row; None for any other
+        row."""
+        if row.get("type") != "user" or row.get("isMeta") is True:
+            return None
+        content = as_object(row.get("message")).get("content")
+        return isinstance(content, str) and content.lstrip().startswith(_CLEAR_COMMAND)
+
+    def row_time(self, row: JsonObject) -> str | None:
+        """The `timestamp` of a row; None for a row without one."""
+        return opt_str(row.get("timestamp")) or None
+
     def resolve_subagent(self, subagent_id: str, meta: JsonObject, first_row: JsonObject) -> EventRecord:
         """The `subagent_run` record of a subagent file; refuses a meta file without `agentType` or a first row that
         is not a user row. A first row with no text leaves the brief size unknown."""
         agent_type = opt_str(meta.get("agentType"))
         if not agent_type:
             raise PayloadRefused(f"subagent {subagent_id} meta has no agentType")
-        brief = _brief_text(first_row)
+        brief = brief_text(first_row)
         launch = SubagentMeta(
-            description=_meta_field(meta, "description", str),
-            parent_id=_meta_field(meta, "parentAgentId", str),
-            tool_use_id=_meta_field(meta, "toolUseId", str),
-            depth=_meta_field(meta, "spawnDepth", int),
+            description=meta_field(meta, "description", str),
+            parent_id=meta_field(meta, "parentAgentId", str),
+            tool_use_id=meta_field(meta, "toolUseId", str),
+            depth=meta_field(meta, "spawnDepth", int),
             brief_chars=None if brief is None else len(brief),
-            stopped=_meta_field(meta, "stoppedByUser", bool) is True,
-            background=_meta_field(meta, "requestShape", str) == BACKGROUND_SHAPE,
-            asked_model=_meta_field(meta, "model", str),
-            with_defaults=_meta_field(meta, "launchedWithDefaults", bool),
+            stopped=meta_field(meta, "stoppedByUser", bool) is True,
+            background=meta_field(meta, "requestShape", str) == BACKGROUND_SHAPE,
+            asked_model=meta_field(meta, "model", str),
+            with_defaults=meta_field(meta, "launchedWithDefaults", bool),
         )
         return replace(self._record(first_row, "subagent_run", subagent_id), subagent_type=agent_type, item=launch)
 
@@ -363,7 +327,7 @@ class ClaudeTranscriptAdapter:
 
     def _record(self, row: JsonObject, event: EventKind, subagent_id: str | None) -> EventRecord:
         what = f"{row.get('type')} row"
-        session_id, time = _text(row, "sessionId", what), _text(row, "timestamp", what)
+        session_id, time = required_text(row, "sessionId", what), required_text(row, "timestamp", what)
         return EventRecord(self.agent, event, session_id, time, subagent_id, opt_str(row.get("cwd")) or None)
 
     def _compaction(self, row: JsonObject, subagent_id: str | None) -> EventRecord:
@@ -410,13 +374,15 @@ class ClaudeTranscriptAdapter:
         text = self._typed_text(row)
         if text is None:
             return []
-        entry = PromptEntry(_text(row, "uuid", f"{row.get('type')} row"), len(text), row.get("type") == "attachment")
+        entry = PromptEntry(
+            required_text(row, "uuid", f"{row.get('type')} row"), len(text), row.get("type") == "attachment"
+        )
         return [replace(self._record(row, "prompt_submit", subagent_id), item=entry)]
 
     def _usage(self, row: JsonObject, subagent_id: str | None) -> EventRecord:
         message = as_object(row.get("message"))
-        message_id = _text(message, "id", "assistant message")
-        usage = TokenUsage.from_json(message_id, _usage_counts(as_object(message.get("usage"))))
+        message_id = required_text(message, "id", "assistant message")
+        usage = TokenUsage.from_json(message_id, usage_counts(as_object(message.get("usage"))))
         if usage is None:
             raise PayloadRefused("assistant usage counts are not whole numbers")
         model = message.get("model")
@@ -435,7 +401,11 @@ class ClaudeTranscriptAdapter:
         attachment = as_object(row.get("attachment"))
         kind = attachment.get("type")
         if kind == "nested_memory":
-            return [self._load(row, _text(attachment, "path", "nested_memory attachment"), NESTED_MARKER, subagent_id)]
+            return [
+                self._load(
+                    row, required_text(attachment, "path", "nested_memory attachment"), NESTED_MARKER, subagent_id
+                )
+            ]
         if kind == "instructions":
             return self._instructions(row, attachment, subagent_id)
         if kind in HOOK_NOTE_ATTACHMENTS:
@@ -451,7 +421,7 @@ class ClaudeTranscriptAdapter:
         loads: list[EventRecord] = []
         for item in as_list(attachment.get("files")):
             entry = as_object(item)
-            path = _text(entry, "path", "instructions file")
+            path = required_text(entry, "path", "instructions file")
             loads.append(self._load(row, path, opt_str(entry.get("type")), subagent_id))
         return loads
 
@@ -479,7 +449,7 @@ class ClaudeTranscriptAdapter:
                 raise PayloadRefused(f"{what} {spec.count_key} is not a whole number")
             names: list[str] = []
         else:
-            names = _strings(attachment.get(spec.count_key), spec.count_key, what)
+            names = string_list(attachment.get(spec.count_key), spec.count_key, what)
             count = len(names)
         text = attachment.get(spec.chars_key)
         added: tuple[tuple[str, int], ...] = ()
@@ -488,13 +458,13 @@ class ClaudeTranscriptAdapter:
                 raise PayloadRefused(f"{what} {spec.chars_key} is not a string")
             chars = len(text)
         else:
-            items = _strings(text, spec.chars_key, what)
+            items = string_list(text, spec.chars_key, what)
             chars = sum(len(item) for item in items)
             if spec.removed_key is not None:
-                added = _sized_by_name(names, items, (), what)
+                added = sized_by_name(names, items, (), what)
         removed = self._removed_names(attachment, spec.removed_key, what)
         listed = (
-            tuple(_strings(attachment["names"], "names", what))
+            tuple(string_list(attachment["names"], "names", what))
             if kind == "skill_listing" and "names" in attachment
             else None
         )
@@ -506,7 +476,7 @@ class ClaudeTranscriptAdapter:
         """The names a delta row removed; none when the row does not carry the list."""
         if key is None or key not in attachment:
             return ()
-        return tuple(_strings(attachment.get(key), key, what))
+        return tuple(string_list(attachment.get(key), key, what))
 
     def _failed_servers(self, attachment: JsonObject, what: str) -> tuple[str, ...]:
         """The names of the servers that failed to connect; each entry is an object with a string name."""
@@ -534,11 +504,11 @@ class ClaudeTranscriptAdapter:
             if not isinstance(content, str):
                 raise PayloadRefused(f"{what} content is not a string")
             return HarnessEntry("deferred_tools", "deferred tools", None, len(content))
-        names = _strings(attachment.get("addedNames"), "addedNames", what)
-        lines = _strings(attachment.get("addedLines"), "addedLines", what)
+        names = string_list(attachment.get("addedNames"), "addedNames", what)
+        lines = string_list(attachment.get("addedLines"), "addedLines", what)
         removed = self._removed_names(attachment, "removedNames", what)
         readded = self._removed_names(attachment, "readdedNames", what)
-        added = _sized_by_name(names, lines, readded, what)
+        added = sized_by_name(names, lines, readded, what)
         return HarnessEntry(
             "deferred_tools",
             "deferred tools",
@@ -563,8 +533,8 @@ class ClaudeTranscriptAdapter:
 
     def _hook_note(self, row: JsonObject, attachment: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         what = f"{attachment.get('type')} attachment"
-        label = _text(attachment, "hookName", what)
-        event = _text(attachment, "hookEvent", what)
+        label = required_text(attachment, "hookName", what)
+        event = required_text(attachment, "hookEvent", what)
         found = hook_note(attachment, event)
         notes = (
             []

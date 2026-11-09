@@ -22,7 +22,7 @@ import typer
 
 from reporails_cli.core.classify.capability_paths import canonicalize_capability, classify_target_token
 from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
-from reporails_cli.core.heal.apply import heal_bound
+from reporails_cli.core.heal.apply import heal_scope_files, heal_scope_outside
 from reporails_cli.core.pipeline.mapping import (
     apply_generic_scan,
     discover_scope,
@@ -47,7 +47,6 @@ from reporails_cli.interfaces.cli.check_orchestration import (
     _narrow_to_path_targets,
     _quiet_mapper_logs,
     _resolve_capability_paths,
-    _resolved_within_target,
     _run_heal_pass,
     _should_exit_strict,
     _token_agent,
@@ -383,14 +382,16 @@ def _flow_heal(state: CheckState) -> None:
         )
         return
     single = state.targets.single_path
-    heal_scope = heal_bound(single, state.targets.target) if single is not None else state.targets.target
+    heal_scope = single if single is not None else state.targets.target
     candidate = (
         [f for f in state.scope.instruction_files if f in state.render.capability_paths]
         if state.render.capability_paths
         else state.scope.instruction_files
     )
-    heal_files = [f for f in candidate if _resolved_within_target(f, heal_scope)]
-    _notify_heal_scope_skips(len(candidate) - len(heal_files), state.targets.output_format)
+    heal_files = heal_scope_files(candidate, heal_scope, state.targets.target)
+    _notify_heal_scope_skips(
+        len(heal_scope_outside(candidate, heal_scope, state.targets.target)), state.targets.output_format
+    )
     _run_heal_pass(
         state.targets.target,
         HealScope(heal_files, state.scope.effective_agent, state.scope.exclusions),

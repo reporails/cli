@@ -6,8 +6,11 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
+import time
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -79,6 +82,129 @@ def test_a_named_session_of_the_project_is_picked_and_an_unknown_or_unsafe_one_i
     assert pick_session(project, "missing", current=False) is None
     assert pick_session(project, "../x", current=False) is None
     assert pick_session(project, "", current=False) is None
+
+
+def _stamp(epoch_s: float) -> str:
+    return datetime.fromtimestamp(epoch_s, tz=UTC).isoformat().replace("+00:00", "Z")
+
+
+def _timed_session(root: Path, name: str, began: float, ended: float, *, cleared: bool = False) -> Path:
+    """A transcript `name` of the project whose first timed row is at epoch `began` and which was last written at
+    `ended`. With `cleared` it opens as a `/clear` does: a harness note, then the command row, then the first
+    prompt."""
+    row = {"sessionId": name, "cwd": str(root)}
+    opening = [
+        {
+            **row,
+            "type": "user",
+            "isMeta": True,
+            "timestamp": _stamp(began),
+            "uuid": f"{name}-caveat",
+            "message": {
+                "role": "user",
+                "content": "<local-command-caveat>The command below was run directly</local-command-caveat>",
+            },
+        },
+        {
+            **row,
+            "type": "user",
+            "timestamp": _stamp(began - 0.03),
+            "uuid": f"{name}-command",
+            "message": {
+                "role": "user",
+                "content": "<command-name>/clear</command-name>\n<command-message>clear</command-message>",
+            },
+        },
+    ]
+    rows = (
+        [*opening, {**PROMPT_ROW, **row, "timestamp": _stamp(began + 1)}]
+        if cleared
+        else [{**PROMPT_ROW, **row, "timestamp": _stamp(began)}]
+    )
+    path = _session(root, name, 0, rows=rows)
+    os.utime(path, (ended, ended))
+    return path
+
+
+def test_current_after_a_clear_opens_the_session_the_clear_began_though_the_old_one_was_written_after_it(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`CLAUDE_CODE_SESSION_ID` is updated on `/clear`, but an MCP server keeps the id it was spawned with. The
+    cleared session's last write, a cost-state row, lands just after the new session's first row: 0.056 s after it
+    in a recorded pair."""
+    now = time.time()
+    _timed_session(project, "before-clear", now - 600, now - 100 + 0.056)
+    after = _timed_session(project, "after-clear", now - 100, now - 10, cleared=True)
+    monkeypatch.setenv(SESSION_ENV, "before-clear")
+    assert pick_session(project, None, current=True) == PickedSession(project, after, "current")
+
+
+def test_current_after_two_clears_follows_the_chain_to_the_session_in_use(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = time.time()
+    _timed_session(project, "first", now - 900, now - 600 + 0.056)
+    _timed_session(project, "middle", now - 600, now - 300 + 0.056, cleared=True)
+    in_use = _timed_session(project, "in-use", now - 300, now - 1, cleared=True)
+    monkeypatch.setenv(SESSION_ENV, "first")
+    assert pick_session(project, None, current=True) == PickedSession(project, in_use, "current")
+
+
+def test_current_stays_on_the_env_session_it_keeps_writing_after_another_terminal_ran_clear(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = time.time()
+    mine = _timed_session(project, "mine", now - 900, now)
+    _timed_session(project, "other-terminal", now - 2, now, cleared=True)
+    monkeypatch.setenv(SESSION_ENV, "mine")
+    assert pick_session(project, None, current=True) == PickedSession(project, mine, "current")
+
+
+def test_current_stays_on_the_env_session_while_a_parallel_one_began_without_a_clear(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = time.time()
+    mine = _timed_session(project, "mine", now - 600, now - 100)
+    _timed_session(project, "parallel", now - 100, now - 10)
+    monkeypatch.setenv(SESSION_ENV, "mine")
+    assert pick_session(project, None, current=True) == PickedSession(project, mine, "current")
+
+
+def test_current_stays_on_the_env_session_when_the_clear_began_long_after_its_last_write(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = time.time()
+    mine = _timed_session(project, "mine", now - 600, now - 300)
+    _timed_session(project, "later", now - 100, now - 10, cleared=True)
+    monkeypatch.setenv(SESSION_ENV, "mine")
+    assert pick_session(project, None, current=True) == PickedSession(project, mine, "current")
+
+
+def test_current_with_two_clears_beginning_at_its_last_write_shows_the_newest_and_says_so(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = time.time()
+    _timed_session(project, "mine", now - 600, now - 100)
+    _timed_session(project, "clear-a", now - 100, now - 50, cleared=True)
+    newest = _timed_session(project, "clear-b", now - 99, now - 10, cleared=True)
+    _timed_session(project, "unrelated", now - 5, now)
+    monkeypatch.setenv(SESSION_ENV, "mine")
+    assert pick_session(project, None, current=True) == PickedSession(project, newest, "current_ambiguous")
+
+
+def test_a_subagent_written_after_the_clear_does_not_hide_the_hand_off(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = time.time()
+    mine = _timed_session(project, "mine", now - 600, now - 100)
+    after = _timed_session(project, "after", now - 100, now - 10, cleared=True)
+    subagent = claude_project_dir(project) / "mine" / "subagents" / "agent-a1.jsonl"
+    subagent.parent.mkdir(parents=True)
+    subagent.write_text("{}\n", encoding="utf-8")
+    os.utime(subagent, (now - 5, now - 5))
+    assert mine.stat().st_mtime < now - 99
+    monkeypatch.setenv(SESSION_ENV, "mine")
+    assert pick_session(project, None, current=True) == PickedSession(project, after, "current")
 
 
 def test_current_opens_the_calling_session_even_when_a_newer_one_exists(
@@ -191,11 +317,43 @@ def test_a_page_forgets_only_its_own_launch(project: Path) -> None:
 
 def test_a_second_start_waits_for_the_page_the_first_registers(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert pages._take_lock(project)  # pylint: disable=protected-access
-    page = XrayPage(7, 8, "launch-a")
+    page = XrayPage(8, "launch-a")
     answers = iter([None, None, page])
     monkeypatch.setattr(pages, "running_page", lambda _root: next(answers))
     monkeypatch.setattr(pages, "_POLL_S", 0.01)
     assert start_page(project, "any") == (page, True)
+
+
+def test_the_wait_accepts_the_page_registered_under_its_launch_whatever_its_pid(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Windows venv's python.exe starts the real interpreter as a child, so the page's pid is not the spawned one."""
+    register_page(project, 5, "launch-a")  # records this test process's pid, never the one the start returned
+    monkeypatch.setattr(pages, "_answers", lambda _page: True)
+    assert pages._wait_for_page(project, "launch-a") == XrayPage(5, "launch-a")  # pylint: disable=protected-access
+
+
+def test_the_wait_ignores_a_page_registered_under_another_launch(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    register_page(project, 5, "launch-b")
+    monkeypatch.setattr(pages, "_answers", lambda _page: True)
+    monkeypatch.setattr(pages, "PAGE_START_S", 0.2)
+    monkeypatch.setattr(pages, "_POLL_S", 0.01)
+    with pytest.raises(XrayPageError, match="did not answer"):
+        pages._wait_for_page(project, "launch-a")  # pylint: disable=protected-access
+
+
+def test_the_start_passes_its_launch_id_to_the_page_and_waits_for_it(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started: list[list[str]] = []
+    waited: list[str | None] = []
+    monkeypatch.setattr(pages, "launch_detached", lambda command, *, cwd: started.append(command) or 1)
+    monkeypatch.setattr(pages, "_wait_for_page", lambda _root, launch: waited.append(launch) or XrayPage(2, "x"))
+    start_page(project, "any")
+    (command,) = started
+    assert command[command.index("--launch") + 1] == waited[0]
 
 
 def test_a_second_start_gives_up_when_no_page_answers_by_the_deadline(
@@ -234,6 +392,34 @@ def test_a_start_in_an_unwritable_settings_folder_is_a_page_error_naming_the_fol
 
 
 def test_the_page_address_always_carries_how_the_session_was_chosen() -> None:
-    page = XrayPage(1, 2, "launch-a")
+    page = XrayPage(2, "launch-a")
     assert pages.page_url(page, "s", "current").endswith("/?session=s&pick=current")
     assert pages.page_url(page, "s", "named").endswith("/?session=s&pick=named")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the user site layout differs on Windows")
+def test_the_detached_page_start_keeps_user_site_packages_and_not_the_working_folder(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `pip install --user` install lives in the user site; the page must start from it, not from the folder."""
+    base_python = getattr(sys, "_base_executable", sys.executable)  # a venv's own python never enables user site
+    user_base = tmp_path / "userbase"
+    user_site = user_base / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+    user_site.mkdir(parents=True)
+    (user_site / "user_site_probe.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (project / "folder_probe.py").write_text("VALUE = 1\n", encoding="utf-8")
+    started: list[list[str]] = []
+    monkeypatch.setattr(sys, "executable", base_python)
+    monkeypatch.setattr(pages, "launch_detached", lambda command, *, cwd: started.append(command) or 1)
+    monkeypatch.setattr(pages, "_wait_for_page", lambda _root, _launch: XrayPage(2, "launch-a"))
+    start_page(project, "any")
+    (command,) = started
+    flags = command[: command.index("-m")]
+    env = {**os.environ, "PYTHONUSERBASE": str(user_base), "PYTHONPATH": str(project)}
+
+    def imports(module: str) -> bool:
+        probe = [*flags, "-c", f"import {module}"]
+        return subprocess.run(probe, cwd=project, env=env, capture_output=True, check=False).returncode == 0
+
+    assert imports("user_site_probe")
+    assert not imports("folder_probe")

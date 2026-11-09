@@ -32,7 +32,7 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Then the printed address is on 127.0.0.1
     And the page shows "first text" for the file, then "second text" once the file and the session change
 
-  @e2e @browser @windows_unverified
+  @e2e @browser @posix_only
   Scenario: Markup in a file name and in a prompt shows as text and builds no element
     Given a project with a recorded Claude Code session
     And the project's memory folder holds an unlinked note named "<img src=x onerror=window.__pwned=1>.md" reading "<b>bold</b>"
@@ -56,6 +56,28 @@ Feature: ails xray serves a session's context window on the loopback address thr
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
     And the page draws a compaction marker for each of the two compactions with the sizes the view holds
+
+  @e2e @browser
+  Scenario: The compaction marker's summary control opens the summary in the inspector
+    Given a project with a recorded Claude Code session that compacted twice
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And clicking the first compaction marker's summary control opens that summary in the main agent's inspector
+
+  @e2e @browser
+  Scenario: Each compaction shows its summary text verbatim with its size in tokens
+    Given a project with a recorded Claude Code session that compacted twice
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the page shows the manual and the automatic compaction's summary text verbatim with its size beside it
+
+  @e2e
+  Scenario: A compaction summary is served on request and reaches no event record
+    Given a project with a recorded Claude Code session that compacted twice
+    When "ails xray --no-open" is started in the project
+    And the session's PostCompact hook payload carrying the summary text is piped into "ails hook"
+    Then the printed address is on 127.0.0.1
+    And the summary route returns the summary text, and the view, the event log and "ails events" hold none of it
 
   @e2e
   Scenario: A hook's details show its command, its settings file and its firings, and its output only on request
@@ -367,3 +389,19 @@ Feature: ails xray serves a session's context window on the loopback address thr
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
     And with the details of "CLAUDE.md" open on each tab, a session that grows redraws no panel whose content is unchanged
+
+  @e2e
+  Scenario: A compaction lists each instruction file loaded before it as kept, reloaded or unknown
+    Given a project with a session that compacted after loading three instruction files, recording requests
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the compaction lists the root file reloaded, the file read again kept and the other nested file unknown
+    And the chart's instruction files keep the unsettled file's tokens after the compaction
+
+  @e2e
+  Scenario: A compaction in a session that recorded no requests cannot settle its nested files
+    Given an older Claude Code session that compacted after loading three instruction files
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the compaction lists each nested file as unknown and the root file as reloaded
+    And the chart's instruction files after the compaction still hold each nested file

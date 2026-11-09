@@ -13,7 +13,7 @@ from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, RemediationWorkflow, tiers_unpaid
-from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult
+from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult, NamedTargets
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.utils.utils import matches_any_glob
@@ -92,6 +92,35 @@ def resolved_within(path: Path, scope: Path) -> bool:
     return real == root or real.is_relative_to(root)
 
 
+def heal_scope_outside(files: Iterable[Path], scope: Path, project_root: Path) -> list[Path]:
+    """The files whose real path escapes `heal_bound`: heal never writes through them."""
+    bound = heal_bound(scope, project_root)
+    return [f for f in files if not resolved_within(f, bound)]
+
+
+def heal_scope_files(
+    files: Iterable[Path], scope: Path, project_root: Path, named: NamedTargets | None = None
+) -> list[Path]:
+    """The files heal may write for `scope`: those within `heal_bound`, narrowed to what is named.
+
+    A file scope names that file alone; `named` (resolved targets) names files and folders, and a file
+    is kept when it is a named file or lies under a named folder. One named file is one written file: a
+    file it `@import`s, though mapped with it, is left alone.
+    """
+    bound = heal_bound(scope, project_root)
+    if not scope.is_dir():
+        named = NamedTargets(frozenset({safe_resolve(scope)}), frozenset())
+    if named is None:
+        return [f for f in files if resolved_within(f, bound)]
+    named_files = {safe_resolve(f) for f in named.files}
+    return [
+        f
+        for f in files
+        if resolved_within(f, bound)
+        and (safe_resolve(f) in named_files or any(resolved_within(f, d) for d in named.dirs))
+    ]
+
+
 def suppressed_by_path(files: Iterable[Path], target: Path) -> dict[Path, set[int]]:
     """The lines each file annotated with an `ails-disable-line` directive, keyed by resolved path."""
     raw = suppressed_lines([str(f) for f in files], target)
@@ -131,15 +160,19 @@ def apply_keyed_heal(
 
 
 def heal_workflow_within(
-    ruleset_map: RulesetMap, workflow: RemediationWorkflow | None, target: Path, scan_root: Path
+    ruleset_map: RulesetMap,
+    workflow: RemediationWorkflow | None,
+    target: Path,
+    scan_root: Path,
+    named: NamedTargets | None = None,
 ) -> KeyedResult:
-    """Write the workflow's keyed fixes to the mapped files inside `target`'s scope (`heal_bound`).
+    """Write the workflow's keyed fixes to the mapped files inside `target`'s scope (`heal_scope_files`).
 
     A file `heal_exclude` matches is never written and a line annotated with `ails-disable-line` is left
     alone; a written file is re-mapped and checked against its plan, and one that departs is put back.
     """
     files = sorted({Path(a.file_path) for a in ruleset_map.atoms})
-    files = [f for f in files if resolved_within(f, heal_bound(target, scan_root))]
+    files = heal_scope_files(files, target, scan_root, named)
     return apply_keyed_heal(
         ruleset_map,
         scan_root,

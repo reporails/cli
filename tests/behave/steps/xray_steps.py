@@ -405,6 +405,73 @@ def step_session_without_requests(context):
     _write_session(context, False)
 
 
+COMPACTED_SESSION = "11111111-2222-3333-4444-555555555555"
+SUMMARIES = (
+    "SUMMARY-MANUAL: the session set up a project and wrote its notes. " * 3,
+    "SUMMARY-AUTO: the session continued with checks. " * 5,
+)
+
+
+@when('the session\'s PostCompact hook payload carrying the summary text is piped into "ails hook"')
+def step_hook_with_summary(context):
+    payload = {
+        "session_id": COMPACTED_SESSION,
+        "hook_event_name": "PostCompact",
+        "trigger": "manual",
+        "cwd": str(context.project),
+        "compact_summary": SUMMARIES[0],
+    }
+    env = {**suite_env(os.environ), "HOME": str(context.home), "USERPROFILE": str(context.home)}
+    done = subprocess.run(
+        [str(AILS_BIN), "hook", "--agent", "claude"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        env=env,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+
+
+@then("the page shows the manual and the automatic compaction's summary text verbatim with its size beside it")
+def step_summaries_on_page(context):
+    seen = _layout_script(context, "summaries")
+    if seen is None:
+        return
+    assert seen["ready"], "the page did not draw"
+    assert seen["texts"] == list(SUMMARIES), seen["texts"]
+    for row, text in zip(seen["rows"], SUMMARIES, strict=True):
+        assert _k1(len(text) // 4) in row, (row, len(text) // 4)
+
+
+@then("clicking the first compaction marker's summary control opens that summary in the main agent's inspector")
+def step_marker_opens_summary(context):
+    seen = _layout_script(context, "summarylink")
+    if seen is None:
+        return
+    assert seen["ready"], "the page did not draw"
+    assert seen["texts"] == [SUMMARIES[0]], seen["texts"]
+
+
+@then('the summary route returns the summary text, and the view, the event log and "ails events" hold none of it')
+def step_summaries_nowhere_else(context):
+    token = re.search(r'name="xray-token" content="([^"]+)"', _get(context.url)[1]).group(1)
+    view = _get(context.url + "view", token)[1]
+    held = next(s["compactions"] for s in json.loads(view)["stations"] if s["node"] == "main")
+    assert len(held) == 2 and [c["summary_tokens"] for c in held] == [len(t) // 4 for t in SUMMARIES], held
+    for item, text in zip(held, SUMMARIES, strict=True):
+        status, body = _get(context.url + "summary?id=" + item["summary_id"], token)
+        assert status == 200 and json.loads(body)["text"] == text, (status, body)
+    assert "SUMMARY-" not in view
+    logged = [p for p in (context.home / ".reporails").rglob("*") if p.is_file() and b"SUMMARY-" in p.read_bytes()]
+    assert not logged, logged
+    events = run_ails(context.tmpdir, "events", "--session", COMPACTED_SESSION, "-f", "json", home=context.home)
+    assert '"post_compact"' in events.stdout, events.stdout
+    assert "SUMMARY-" not in events.stdout + events.stderr, events.stdout
+
+
 def _k1(n: int) -> str:
     """A token count as the page writes it (`format.js` `k1`) for counts under ten thousand."""
     return str(n) if n < 1000 else f"{n / 1000:.1f}".rstrip("0").rstrip(".") + "k"
@@ -1684,3 +1751,166 @@ def step_earlier_request_sizes(context):
     shares = expected["system_prompt"] + expected["tool_definitions"]
     assert abs(last["system_tools"] - shares) <= 1, (last, shares)
     assert last["conversation"] >= main["total"] - shares - 1000, last
+
+
+# ---- the loading skeleton: the page driven before any view has landed ----
+
+
+@then(
+    "with the first view held back the first paint is the graph layout as a skeleton, "
+    "and once it lands no skeleton remains and the top card is drawn"
+)
+def step_skeleton_then_graph(context):
+    seen = _page(context, "skeleton-hold")
+    if seen is None:
+        return
+    first, after = seen["first"], seen["after"]
+    assert seen["held"] >= 1, "the first view was not held back"
+    assert first["graph"] is True, first
+    assert first["calls"] is False and first["sources"] is False, f"a table tab shows on first paint: {first}"
+    assert first["hint"] is False, f"the hint line shows with nothing to hover: {first}"
+    assert first["busy"] == "true", f"main is not aria-busy on first paint: {first}"
+    assert first["skeletons"] > 0 and all(first["regions"]), f"a region has no skeleton: {first}"
+    assert first["topCard"] is False, first
+    assert after["skeletons"] == 0, f"a skeleton remains after the view landed: {after}"
+    assert after["busy"] is None, f"aria-busy is not cleared: {after}"
+    assert after["topCard"] is True, after
+
+
+@then("a view answered with 409 shows the notice text and no skeleton")
+def step_409_notice(context):
+    seen = _page(context, "skeleton-409")
+    if seen is None:
+        return
+    after = seen["after"]
+    assert "ails changed" in after["changed"], after
+    assert "No view is shown" in after["canvas"], after
+    assert after["skeletons"] == 0 and after["busy"] is None, after
+
+
+@then("a view that is never answered shows the notice text and no skeleton")
+def step_no_answer_notice(context):
+    seen = _page(context, "skeleton-none")
+    if seen is None:
+        return
+    after = seen["after"]
+    assert "did not answer" in after["canvas"], after
+    assert after["skeletons"] == 0 and after["busy"] is None, after
+
+
+@then("under reduced motion the skeleton has no running animation")
+def step_reduced_motion(context):
+    seen = _page(context, "skeleton-motion")
+    if seen is None:
+        return
+    assert seen["skeletons"] > 0, "no skeleton was drawn to test"
+    assert seen["animatedByDefault"] > 0, "the skeleton does not animate without the preference"
+    assert seen["animatedReduced"] == 0, f"{seen['animatedReduced']} animations still run under reduced motion"
+
+
+# ---- the state each instruction file is in after a compaction ----
+
+
+def _write_compacted_session(context, *, recorded: bool) -> None:
+    """A session that loaded its root file and two nested ones, compacted, reloaded the root file, and whose first
+    request after the compaction replays the read result of one nested file (rows with request layouts only when
+    `recorded`)."""
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    project = context.project
+    version = "2.1.309" if recorded else "2.1.301"
+    for name, size in (("CLAUDE.md", 400), ("sub/CLAUDE.md", 8000), ("kept/CLAUDE.md", 400)):
+        target = project / name
+        target.parent.mkdir(exist_ok=True)
+        target.write_text("x" * size + "\n", encoding="utf-8")
+    kept = str(project / "kept" / "CLAUDE.md")
+    ask = "synthetic prompt"
+    blobs = {
+        "blob-summary": {"role": "user", "content": "synthetic summary"},
+        "blob-use": {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "id": "toolu_kept", "name": "Read", "input": {"file_path": kept}}],
+        },
+        "blob-result": {
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": "toolu_kept", "content": "synthetic file text"}],
+        },
+    }
+    loads = {"type": "instructions", "files": [{"path": str(project / "CLAUDE.md"), "type": "Project"}]}
+    rows = [
+        _row("attachment", 1, version, project, attachment=loads),
+        _row(
+            "attachment",
+            2,
+            version,
+            project,
+            attachment={"type": "nested_memory", "path": str(project / "sub" / "CLAUDE.md")},
+        ),
+        _row("attachment", 3, version, project, attachment={"type": "nested_memory", "path": kept}),
+    ]
+    if recorded:
+        rows += [
+            _shape_row("shape-main", "s" * 2000),
+            _row("user", 4, version, project, message={"role": "user", "content": ask}),
+            _request_row("req-1", "shape-main", 0, [message_hash("user", ask)], 5, project),
+        ]
+    first = _reply(6, version, project, "msg_1", [{"type": "text", "text": "ok"}], _usage(9000, 100), "req-1")
+    second = _reply(23, version, project, "msg_2", [{"type": "text", "text": "ok"}], _usage(900, 100), "req-2")
+    boundary = _row("system", 20, version, project, subtype="compact_boundary", compactMetadata={"trigger": "manual"})
+    rows += [first, boundary, _row("attachment", 20, version, project, attachment=loads)]
+    if recorded:
+        rows += [{"type": "api-request-blob", "hash": name, "message": message} for name, message in blobs.items()]
+        tail = ["blob-summary", "blob-use", "blob-result"]
+        rows.append(_request_row("req-2", "shape-main", 0, tail, 22, project))
+    rows.append(second)
+    if not recorded:
+        for row in rows:
+            row.pop("requestRef", None)
+    folder = context.home / ".claude" / "projects" / claude_project_folder_name(project)
+    folder.mkdir(parents=True)
+    (folder / "session.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+
+@given("a project with a session that compacted after loading three instruction files, recording requests")
+def step_compacted_recorded(context):
+    _write_compacted_session(context, recorded=True)
+
+
+@given("an older Claude Code session that compacted after loading three instruction files")
+def step_compacted_unrecorded(context):
+    _write_compacted_session(context, recorded=False)
+
+
+def _file_states(context) -> dict[str, str]:
+    view = _session_view(context)
+    stations = {station["node"]: station for station in view["stations"]}
+    (compaction,) = stations["main"]["compactions"]
+    by_id = {item["id"]: item["name"] for item in view["sources"]}
+    return {by_id[item["source"]]: item["state"] for item in compaction["files"]}
+
+
+@then("the compaction lists the root file reloaded, the file read again kept and the other nested file unknown")
+def step_states_recorded(context):
+    states = _file_states(context)
+    assert states == {"CLAUDE.md": "reloaded", "kept/CLAUDE.md": "kept", "sub/CLAUDE.md": "unknown"}, states
+
+
+@then("the compaction lists each nested file as unknown and the root file as reloaded")
+def step_states_unrecorded(context):
+    states = _file_states(context)
+    assert states == {"CLAUDE.md": "reloaded", "kept/CLAUDE.md": "unknown", "sub/CLAUDE.md": "unknown"}, states
+
+
+@then("the chart's instruction files keep the unsettled file's tokens after the compaction")
+def step_chart_drops_file(context):
+    view = _session_view(context)
+    composition = next(node for node in view["nodes"] if node["id"] == "main")["detail"]["composition"]
+    before, after = (dict(zip(composition["keys"], reply[5:], strict=False)) for reply in composition["replies"])
+    assert before["instructions"] == after["instructions"], (before, after)
+
+
+@then("the chart's instruction files after the compaction still hold each nested file")
+def step_chart_drops_unknown(context):
+    view = _session_view(context)
+    composition = next(node for node in view["nodes"] if node["id"] == "main")["detail"]["composition"]
+    before, after = (dict(zip(composition["keys"], reply[5:], strict=False)) for reply in composition["replies"])
+    assert before["instructions"] == after["instructions"], (before, after)

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from reporails_cli.core.heal.apply import heal_server_replied, heal_withheld_for_run, heal_workflow_within
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.heal import NamedTargets
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.formatters.mcp_view import render_heal_apply
 from reporails_cli.interfaces.mcp import snapshots
@@ -38,10 +39,12 @@ def heal_apply_message(payload: JsonObject, *, mapped: bool = True) -> str:
     return f"heal_apply: {message}"
 
 
-def heal_apply_write(ruleset_map: RulesetMap, workflow: JsonObject, target: Path, scan_root: Path) -> str:
-    """Write the workflow's keyed fixes within `target`'s scope; the text view of what was done."""
+def heal_apply_write(
+    ruleset_map: RulesetMap, workflow: JsonObject, target: Path, scan_root: Path, named: NamedTargets | None = None
+) -> str:
+    """Write the workflow's keyed fixes within `target`'s scope (only what `named` names when given); the text view."""
 
-    result = heal_workflow_within(ruleset_map, deserialize_workflow({"workflow": workflow}), target, scan_root)
+    result = heal_workflow_within(ruleset_map, deserialize_workflow({"workflow": workflow}), target, scan_root, named)
     return render_heal_apply(result.fixes, result.decisions, result.put_back, scan_root)
 
 

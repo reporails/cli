@@ -10,6 +10,7 @@ from pathlib import Path
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessEntry, HarnessKind
 from reporails_cli.core.platform.dto.mcp import McpDeclaration
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary
+from reporails_cli.core.platform.dto.xray_compaction import XrayCompaction
 from reporails_cli.core.platform.dto.xray_cost import PriceList
 from reporails_cli.core.platform.dto.xray_graph import (
     AgentOutcome,
@@ -17,7 +18,6 @@ from reporails_cli.core.platform.dto.xray_graph import (
     LoadEvent,
     NodeKind,
     SourceKind,
-    XrayCompaction,
     XrayDetail,
     XrayDown,
     XrayEdge,
@@ -44,6 +44,9 @@ class Frame:
     mcp_off: frozenset[str] = frozenset()
     # The settings files that exist, which can declare hooks.
     settings_files: tuple[Path, ...] = ()
+    # The size in characters of each compaction summary of a node's transcript in order, by subagent id ("" for the
+    # main session).
+    summary_chars: Mapping[str, tuple[int, ...]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

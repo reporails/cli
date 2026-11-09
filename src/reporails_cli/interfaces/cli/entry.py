@@ -39,7 +39,7 @@ def _run_hook(args: list[str]) -> None:
         # pylint: disable-next=import-outside-toplevel  # startup: the hook path must not load the CLI
         from reporails_cli.core.platform.observability.stage_timer import get_stage_timer, mark_event
 
-        configure_logging()
+        configure_logging(stage_timing_only=True)
         agent = _hook_agent(args)
         subscribe(mark_event)
         with get_stage_timer().run(f"hook {agent}"):

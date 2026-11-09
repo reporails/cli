@@ -50,6 +50,7 @@ def xray_command(
         False, "--background", help="Start the page detached, or reuse the running one, print its address and return"
     ),
     no_open: bool = typer.Option(False, "--no-open", help="Print the address without opening a browser"),
+    launch: str | None = typer.Option(None, "--launch", hidden=True, help="The id the page records for its start"),
 ) -> None:
     """Open a local page showing how a Claude Code session handed work between agents: each agent on a timeline,
     what it was handed, what came back, and which instruction files, MCP servers and hooks reached its context.
@@ -77,4 +78,4 @@ def xray_command(
         serve,
     )
 
-    serve(picked.root, picked.transcript, picked.picked, open_page=not no_open)
+    serve(picked.root, picked.transcript, picked.picked, open_page=not no_open, launch=launch)

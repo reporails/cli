@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
+import queue
 import re
-import selectors
 import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -312,12 +314,12 @@ def step_foreground_page(context):
 
     context.add_cleanup(stop)
     assert proc.stdout is not None
-    selector = selectors.DefaultSelector()
-    selector.register(proc.stdout, selectors.EVENT_READ)
+    lines: queue.Queue[str] = queue.Queue()  # a reader thread: `select` takes only sockets on Windows
+    threading.Thread(target=lambda out=proc.stdout: [lines.put(line) for line in out], daemon=True).start()
     deadline, seen = time.monotonic() + PAGE_START_S, ""
     while time.monotonic() < deadline and not PAGE_ADDRESS.search(seen):
-        if selector.select(timeout=0.5):
-            seen += proc.stdout.readline()
+        with contextlib.suppress(queue.Empty):
+            seen += lines.get(timeout=0.5)
     found = PAGE_ADDRESS.search(seen)
     assert found, f"no page address printed: {seen!r}"
     context.foreground_url = found.group(0)

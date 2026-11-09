@@ -124,6 +124,7 @@ def test_fixture_rebuilds_each_request_by_part(tmp_path: Path) -> None:
         ("A",),
         None,
         system_digest=_SYSTEM_DIGEST,
+        reads=("/x",),
     )
 
 

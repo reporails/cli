@@ -48,6 +48,7 @@ from reporails_cli.core.xray.derive import (
     start_loads,
     tokens_of,
 )
+from reporails_cli.core.xray.graph.compaction_files import file_states
 from reporails_cli.core.xray.graph.composition import build_in_context, composition_series
 from reporails_cli.core.xray.graph.hook_sources import hook_id
 from reporails_cli.core.xray.graph.mcp_sources import mcp_id
@@ -182,7 +183,7 @@ def _own(key: str, group: list[EventRecord], frame: Frame, sources: SourceTable)
         results=results,
         calls=_calls(group, frame, sources, results),
         loads=tuple(load for record in group for load in _record_loads(record, reading)),
-        compactions=build_compactions(group, replies, frame),
+        compactions=build_compactions(group, replies, frame, file_states(group, sources)),
         times=tuple(sorted(moment for record in group if (moment := frame_time(frame, record)) is not None)),
         reply=_final_reply(group, frame),
     )

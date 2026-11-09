@@ -13,6 +13,7 @@ from reporails_cli.core.platform.config.claude_settings import (
     MODE_CLAUDE_MD_AND_AGENTS_MD,
     MODE_CLAUDE_MD_OR_AGENTS_MD,
     claude_instruction_files_mode,
+    claude_settings_files,
 )
 from reporails_cli.core.platform.contract.errors import ClaudeSettingsUnreadableError
 
@@ -81,3 +82,39 @@ def test_malformed_remote_cache_is_refused_naming_the_file(tiers: dict[str, Path
     _put(tiers["remote"], text)
     with pytest.raises(ClaudeSettingsUnreadableError, match=r"remote-settings\.json"):
         claude_instruction_files_mode()
+
+
+def test_a_subfolder_of_a_git_repository_reads_the_repository_roots_local_settings_but_not_its_shared_ones(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        claude_settings,
+        "_settings_patterns",
+        lambda: {"project": [".claude/settings.json"], "local": [".claude/settings.local.json"]},
+    )
+    repo = tmp_path / "repo"
+    folder = repo / "packages" / "app"
+    (repo / ".git").mkdir(parents=True)
+    for place in (repo, folder):
+        (place / ".claude").mkdir(parents=True)
+        _put(place / ".claude" / "settings.json", {})
+        _put(place / ".claude" / "settings.local.json", {})
+    assert claude_settings_files(folder) == (
+        folder / ".claude" / "settings.json",
+        repo / ".claude" / "settings.local.json",
+        folder / ".claude" / "settings.local.json",
+    )
+    assert claude_settings_files(repo) == (repo / ".claude" / "settings.json", repo / ".claude" / "settings.local.json")
+
+
+def test_a_worktree_folder_whose_git_marker_is_a_file_still_roots_the_local_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(claude_settings, "_settings_patterns", lambda: {"local": [".claude/settings.local.json"]})
+    worktree = tmp_path / "worktree"
+    folder = worktree / "app"
+    (folder / ".claude").mkdir(parents=True)
+    (worktree / ".claude").mkdir()
+    (worktree / ".git").write_text("gitdir: ../main/.git/worktrees/worktree\n", encoding="utf-8")
+    _put(worktree / ".claude" / "settings.local.json", {})
+    assert claude_settings_files(folder) == (worktree / ".claude" / "settings.local.json",)

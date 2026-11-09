@@ -10,6 +10,8 @@ from reporails_cli.core.discovery.plugin_roots import installed_plugin_roots
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.eventbus.transcript import (
     call_detail,
+    compact_summaries,
+    compact_summary_sizes,
     first_prompt_text,
     hook_output_text,
     last_write,
@@ -73,15 +75,39 @@ LIVE_WINDOW_S = 300.0
 HOOK_OUTPUT_CHARS = 20_000
 
 
+class _FileReads:
+    """Where the reads of one session's transcript files stopped: the cursor of the record read and, per file (a
+    subagent id, None for the main one), the byte offset scanned for compaction summaries and the sizes in
+    characters found so far."""
+
+    def __init__(self) -> None:
+        self._cursor = TranscriptCursor()
+        self._found: dict[str | None, tuple[int, list[int]]] = {}
+
+    def records(self, file: Path) -> list[EventRecord]:
+        """The records the transcript gained since the last read."""
+        records, self._cursor = read_transcript(AGENT, file, self._cursor)
+        return records
+
+    def sizes(self, file: Path, owner: str | None) -> tuple[int, ...]:
+        """The sizes of every summary of the file, reading it from where the last read stopped."""
+        offset, found = self._found.get(owner, (0, []))
+        more, offset = compact_summary_sizes(AGENT, file, owner, offset)
+        found = [*found, *more]
+        self._found[owner] = (offset, found)
+        return tuple(found)
+
+
 class XraySession:
     """The records of one session of a project and the view built from them."""
 
     def __init__(self, project_root: Path, session_file: Path) -> None:
         self._root = project_root
         self._file = session_file
-        self._cursor = TranscriptCursor()
         self._transcript: list[EventRecord] = []
+        self._reads = _FileReads()
         self._files: tuple[ArtifactFile, ...] | None = None
+        self._shown: dict[str, ArtifactFile] | None = None
         self._problems: tuple[str, ...] = ()
         self._settings: tuple[Path, ...] = ()
         self._plugins: list[tuple[str, Path]] = []
@@ -91,11 +117,12 @@ class XraySession:
 
     def refresh(self) -> bool:
         """Read what the transcript gained since the last read; True when anything new arrived."""
-        records, self._cursor = read_transcript(AGENT, self._file, self._cursor)
+        records = self._reads.records(self._file)
         if not records:
             return False
         self._transcript.extend(records)
         self._files = None
+        self._shown = None
         self.version += 1
         return True
 
@@ -118,28 +145,30 @@ class XraySession:
             self._problems = tuple(problems)
         return self._files
 
-    def _listed(self, path: str) -> ArtifactFile | None:
-        """The listed file the page shows as `path`, or None when the page lists none."""
-        return next((item for item in self._listing() if relative_wire_path(item.path, self._root) == path), None)
+    def _shown_as(self, path: str) -> ArtifactFile | None:
+        """The listed file the page shows as `path`, else the instruction or memory file the transcript recorded as
+        loaded that the listing leaves out and the page shows as `path`; None when the page shows none. The shown
+        names are worked out once per listing and kept until the transcript grows."""
+        if self._shown is None:
+            listing = self._listing()
+            known = {real_path(item.path, self._root) for item in listing}
+            loads = unlisted_loads(self._transcript, known, self._root)
+            self._shown = {}
+            for item in (*listing, *loads):
+                self._shown.setdefault(relative_wire_path(item.path, self._root), item)
+        return self._shown.get(path)
 
     def acts_on(self, path: str) -> bool:
         """True when the page lists `path` (project-relative), or the session recorded it as loaded, as a file it may
         check or fix."""
-        item = self._listed(path) or self._recorded(path)
+        item = self._shown_as(path)
         return item is not None and is_actionable(item, self._root)
-
-    def _recorded(self, path: str) -> ArtifactFile | None:
-        """The instruction or memory file the transcript recorded as loaded, the listing leaves out and the page
-        shows as `path`."""
-        known = {real_path(item.path, self._root) for item in self._listing()}
-        loads = unlisted_loads(self._transcript, known, self._root)
-        return next((item for item in loads if relative_wire_path(item.path, self._root) == path), None)
 
     def peek(self, path: str) -> XrayPeek | None:
         """The text of the file shown as `path`, whether it was cut and its frontmatter split from its body; None
         unless the page lists it as an instruction, memory, skill or agent file that exists, or the session
         recorded it as loaded. The text is not kept."""
-        item = self._listed(path) or self._recorded(path)
+        item = self._shown_as(path)
         return None if item is None or item.kind == "hook" else peek_text(item, self._root)
 
     def brief(self, subagent_id: str) -> str | None:
@@ -175,6 +204,19 @@ class XraySession:
         ):
             return None
         return prompt_text(AGENT, self._file, prompt_id)
+
+    def summary(self, summary_id: str) -> str | None:
+        """The compaction summary a compaction record names by `<subagent id>:<index>` (the main session's subagent
+        id is empty); None for any other id. Raises `PayloadRefused` when the agent is unknown. The text is not
+        kept."""
+        node, _, position = summary_id.rpartition(":")
+        if not (position.isascii() and position.isdigit()):
+            return None
+        owner = node or None
+        if not any(r.event == "post_compact" and r.subagent_id == owner for r in self._transcript):
+            return None
+        found = compact_summaries(AGENT, self._file, owner)
+        return found[int(position)] if int(position) < len(found) else None
 
     def hook_output(self, row_id: str) -> tuple[str, bool] | None:
         """The text one hook firing the records name left in the transcript, cut at `HOOK_OUTPUT_CHARS`, and whether
@@ -264,7 +306,18 @@ class XraySession:
             mcp_declarations(self._root, self._plugins),
             mcp_turned_off(self._root),
             self._settings,
+            self._summary_chars(records),
         )
+
+    def _summary_chars(self, records: list[EventRecord]) -> dict[str, tuple[int, ...]]:
+        """The size in characters of each compaction summary of every transcript file that records a compaction,
+        by subagent id (empty for the main session); each file is read from where the last read stopped. The
+        texts are not kept."""
+        owners = {record.subagent_id for record in records if record.event == "post_compact"}
+        sizes: dict[str, tuple[int, ...]] = {}
+        for owner in owners:
+            sizes[owner or ""] = self._reads.sizes(self._file, owner)
+        return sizes
 
     def _verdict(
         self, table: SourceTable, graph: Graph, records: list[EventRecord], vocabulary: AdapterVocabulary

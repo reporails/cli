@@ -3,7 +3,7 @@
 import { el, svg, sync } from '../dom.js';
 import { clock, k1, tk, usd, range, plural } from '../format.js';
 import { childrenOf, peakOf, typeOf } from '../views.js';
-import { promptUrl } from '../api.js';
+import { promptUrl, summaryUrl } from '../api.js';
 import { tile } from './nodes/agent.js';
 import { textBlock } from './textblock.js';
 
@@ -205,6 +205,19 @@ function activity(node, env) {
       b.append(el('span', 'lb', `prompt at ${clock(p.t)}`), el('span', 'mono ix-s', tk(p.tokens_est, true)));
       sec.append(b);
       if (env.opened.has(key)) sec.append(textBlock(env.text, key, promptUrl(p.id)));
+    }
+  }
+  const summarised = ((env.ix.stations.get(node.id) || { compactions: [] }).compactions).filter(c => c.summary_id);
+  if (summarised.length) {
+    sec.append(el('div', 'ix-sub', 'Compaction summaries'));
+    for (const c of summarised) {
+      const key = `summary:${c.summary_id}`;
+      const b = el('button', 'ix-kid');
+      b.type = 'button';
+      b.dataset.open = key;
+      b.append(el('span', 'lb', `compaction at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`), el('span', 'mono ix-s', tk(c.summary_tokens, true)));
+      sec.append(b);
+      if (env.opened.has(key)) sec.append(textBlock(env.text, key, summaryUrl(c.summary_id)));
     }
   }
   const kids = childrenOf(env.ix, node);
