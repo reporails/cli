@@ -185,6 +185,8 @@ document.addEventListener('click', e => {
   if (jump) return rail.jump(jump.dataset.jump);
   if (t.closest('a[href]')) return;
   if (t.closest('[data-back]')) { location.hash = lastAgentHash; return; }
+  const summary = t.closest('[data-summary]');
+  if (summary) { state.sel = summary.dataset.summaryNode; opened.add(`summary:${summary.dataset.summary}`); return render(); }
   const open = t.closest('[data-open]');
   if (open) { toggle(opened, open.dataset.open); return render(); }
   if (t.closest('[data-clear]')) { state.pinned = null; return render(); }

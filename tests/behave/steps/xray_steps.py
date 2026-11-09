@@ -446,6 +446,15 @@ def step_summaries_on_page(context):
         assert _k1(len(text) // 4) in row, (row, len(text) // 4)
 
 
+@then("clicking the first compaction marker's summary control opens that summary in the main agent's inspector")
+def step_marker_opens_summary(context):
+    seen = _layout_script(context, "summarylink")
+    if seen is None:
+        return
+    assert seen["ready"], "the page did not draw"
+    assert seen["texts"] == [SUMMARIES[0]], seen["texts"]
+
+
 @then('the summary route returns the summary text, and the view, the event log and "ails events" hold none of it')
 def step_summaries_nowhere_else(context):
     token = re.search(r'name="xray-token" content="([^"]+)"', _get(context.url)[1]).group(1)
@@ -1885,10 +1894,10 @@ def step_states_recorded(context):
     assert states == {"CLAUDE.md": "reloaded", "kept/CLAUDE.md": "kept", "sub/CLAUDE.md": "unknown"}, states
 
 
-@then("the compaction lists each nested file as unknown and the root file as reloaded")
+@then("the compaction lists each nested file as pending and the root file as reloaded")
 def step_states_unrecorded(context):
     states = _file_states(context)
-    assert states == {"CLAUDE.md": "reloaded", "kept/CLAUDE.md": "unknown", "sub/CLAUDE.md": "unknown"}, states
+    assert states == {"CLAUDE.md": "reloaded", "kept/CLAUDE.md": "pending", "sub/CLAUDE.md": "pending"}, states
 
 
 @then("the chart's instruction files keep the unsettled file's tokens after the compaction")

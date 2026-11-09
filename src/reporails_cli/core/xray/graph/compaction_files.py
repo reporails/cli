@@ -25,12 +25,14 @@ def _state(
     source: str, reloaded: set[str], request: RequestSize | None, read: set[str], indirect: set[str]
 ) -> FileState:
     """The state of one file after a compaction: loaded again, its read result in the first request after it, or
-    gone. A request that names a message the file never recorded, or no request at all, cannot settle it, nor can
-    one settle a file that arrived beside the read of another file (`indirect`): the request holds no read result
-    of its own path for it, kept or not."""
+    gone. With no request since the compaction it is pending until the next one. A request that names a message the
+    file never recorded cannot settle it, nor can one settle a file that arrived beside the read of another file
+    (`indirect`): the request holds no read result of its own path for it, kept or not."""
     if source in reloaded:
         return "reloaded"
-    if request is None or request.unresolved:
+    if request is None:
+        return "pending"
+    if request.unresolved:
         return "unknown"
     if source in indirect and source not in read:
         return "unknown"

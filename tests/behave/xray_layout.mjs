@@ -1,4 +1,4 @@
-// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions|summaries|recorded|excluded|agent> [source id]
+// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions|summaries|summarylink|recorded|excluded|agent> [source id]
 // Drives the real `ails xray` page in headless Chrome and prints one JSON object describing what it drew.
 import { openPage, toGraph } from './xray_cdp.mjs';
 
@@ -93,6 +93,13 @@ if (mode === 'summaries' && ready) {
     await page.until(`document.querySelectorAll('pre.peek').length === ${i + 1}`);
   }
   out.rows = await page.ev(`[...document.querySelectorAll('[data-open^="summary:"]')].map(b => b.textContent)`);
+  out.texts = await page.ev(`[...document.querySelectorAll('pre.peek')].map(e => e.textContent)`);
+}
+
+if (mode === 'summarylink' && ready) {
+  await page.until(`!!document.querySelector('.compact-summary')`);
+  await page.ev(`document.querySelector('.compact-summary').click(); 0`);
+  await page.until(`document.querySelectorAll('pre.peek').length === 1`);
   out.texts = await page.ev(`[...document.querySelectorAll('pre.peek')].map(e => e.textContent)`);
 }
 

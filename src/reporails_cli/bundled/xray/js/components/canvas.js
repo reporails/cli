@@ -432,18 +432,38 @@ function stations(env, cur, scale) {
     const m = abs('compact', 0, scale.y(c.t));
     const sizes = c.before != null && c.after != null ? ` · ${k1(c.before)} → ${k1(c.after)}` : '';
     m.append(el('span', null, `compacted${sizes} · at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`));
+    if (c.summary_id) {
+      const b = el('button', 'compact-summary', `summary · ${tk(c.summary_tokens, true)}`);
+      b.type = 'button';
+      b.dataset.summary = c.summary_id;
+      b.dataset.summaryNode = cur.id;
+      b.title = 'Open what is left after the compaction';
+      m.firstChild.append(' · ', b);
+    }
     out.push(m);
     if (c.files && c.files.length) out.push(compactionFiles(env, c, scale));
   }
   return out;
 }
 
+// What the page says of each state an instruction file can be in after a compaction, and why.
+const FILE_STATE_WORDS = {
+  kept: ['still in context', 'its read result is in the first request after the compaction'],
+  reloaded: ['loaded again', 'it was loaded again after the compaction'],
+  dropped: ['dropped', 'not in the first request after the compaction'],
+  pending: ['settles at the next request', 'no request has been sent since the compaction yet'],
+  unknown: ["can't tell", 'the transcript does not show whether it survived'],
+};
+
 // The instruction files a compaction found loaded, each with the state the view holds for it after the compaction.
 function compactionFiles(env, c, scale) {
   const box = abs('compact-files', 84, scale.y(c.t) + 8);
   for (const f of c.files) {
     const s = env.ix.sources.get(f.source);
-    box.append(el('span', `fs fs-${f.state}`, `${s ? s.label : f.source} · ${f.state}`));
+    const [words, why] = FILE_STATE_WORDS[f.state] || [f.state, ''];
+    const row = el('span', `fs fs-${f.state}`, `${s ? s.label : f.source} · ${words}`);
+    row.title = why;
+    box.append(row);
   }
   return box;
 }

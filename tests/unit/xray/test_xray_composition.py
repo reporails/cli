@@ -351,3 +351,16 @@ def test_an_unknown_file_keeps_its_chart_share_and_is_listed_by_the_next_compact
     first, second = next(item for item in graph.stations if item.node == "main").compactions
     assert {item.source: item.state for item in first.files}["rules/r.md"] == "unknown"
     assert {item.source: item.state for item in second.files}["rules/r.md"] == "unknown"
+
+
+def test_a_file_is_pending_while_no_request_follows_the_compaction(tmp_path: Path) -> None:
+    claude, rule, _ = _files(tmp_path)
+    records = [
+        load(0.1, claude),
+        load(0.2, rule, memory_type="nested"),
+        reply(1, context=10000),
+        rec("post_compact", 2, source="manual"),
+    ]
+    graph = _graph(tmp_path, records, _files(tmp_path))
+    (compaction,) = next(item for item in graph.stations if item.node == "main").compactions
+    assert {item.source: item.state for item in compaction.files} == {"CLAUDE.md": "pending", "rules/r.md": "pending"}

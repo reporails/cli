@@ -58,6 +58,13 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And the page draws a compaction marker for each of the two compactions with the sizes the view holds
 
   @e2e @browser
+  Scenario: The compaction marker's summary control opens the summary in the inspector
+    Given a project with a recorded Claude Code session that compacted twice
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And clicking the first compaction marker's summary control opens that summary in the main agent's inspector
+
+  @e2e @browser
   Scenario: Each compaction shows its summary text verbatim with its size in tokens
     Given a project with a recorded Claude Code session that compacted twice
     When "ails xray --no-open" is started in the project
@@ -392,9 +399,9 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And the chart's instruction files keep the unsettled file's tokens after the compaction
 
   @e2e
-  Scenario: A compaction in a session that recorded no requests cannot settle its nested files
+  Scenario: A compaction with no request after it leaves its files pending
     Given an older Claude Code session that compacted after loading three instruction files
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
-    And the compaction lists each nested file as unknown and the root file as reloaded
+    And the compaction lists each nested file as pending and the root file as reloaded
     And the chart's instruction files after the compaction still hold each nested file
