@@ -10,7 +10,6 @@ from pathlib import Path, PurePosixPath
 
 from reporails_cli.core.platform.config.claude_settings import claude_synced_account_folder
 from reporails_cli.core.platform.contract.glob_pattern import escape_glob, literal_segment
-from reporails_cli.core.platform.utils.utils import expand_home_pattern
 
 # The scope of the skills synced from the signed-in claude.ai account.
 SYNCED_SCOPE = "synced"
@@ -36,8 +35,7 @@ def external_anchor(pattern: str) -> tuple[Path, str]:
     or a drive, then each leading segment that names a plain folder) and the glob left under it."""
     parts = PurePosixPath(pattern).parts
     head = parts[0]
-    drive_root = head + ("/" if head.endswith(":") else "")
-    anchor = Path(expand_home_pattern(head) if head.startswith("~") else drive_root)
+    anchor = Path(head).expanduser() if head.startswith("~") else Path(head + ("/" if head.endswith(":") else ""))
     used = 1
     for segment in parts[1:-1]:
         folder = literal_segment(segment)

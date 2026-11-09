@@ -182,7 +182,7 @@ def step_other_project_with_rule(context):
 @then('the notice names "{name}" and says to run ails check in the project\'s folder')
 def step_unlisted_file_notice(context, name):
     output = context.result.stdout + context.result.stderr
-    file = str((context.elsewhere / name).resolve())  # the notice names the file as it resolves
+    file = str(context.elsewhere / name)
     assert f"{file} is not an instruction file in the project at " in output, output
     assert "run ails check in that project's folder." in output, output
 

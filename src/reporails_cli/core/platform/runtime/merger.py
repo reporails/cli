@@ -29,7 +29,6 @@ from reporails_cli.core.platform.dto.diagnostics import (
 )
 from reporails_cli.core.platform.dto.models import Level, LocalFinding
 from reporails_cli.core.platform.dto.platform import CombinedResult, CombinedStats, ServerReply, SeverityCounts
-from reporails_cli.core.platform.utils.utils import home_relative
 
 
 def normalize_finding_path(file_path: str, project_root: Path | None = None) -> str:
@@ -58,10 +57,12 @@ def normalize_finding_path(file_path: str, project_root: Path | None = None) -> 
             pass  # Not within project — fall through
 
     # External paths (outside project) — shorten with ~/
+    home = Path.home()
     if resolved.is_absolute():
-        under_home = home_relative(resolved)
-        if under_home is not None:
-            return "~/" + under_home
+        try:
+            return "~/" + resolved.relative_to(home).as_posix()
+        except ValueError:
+            pass
 
     # Already relative or fallback
     return p.as_posix()

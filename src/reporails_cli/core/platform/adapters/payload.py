@@ -29,7 +29,6 @@ from reporails_cli.core.platform.dto.ruleset import (
     int8_bytes,
 )
 from reporails_cli.core.platform.policy.negative_headings import in_negative_section, is_negative_heading
-from reporails_cli.core.platform.utils.utils import home_relative
 
 if TYPE_CHECKING:
     from reporails_cli.core.platform.dto.ruleset import RulesetMap
@@ -140,9 +139,9 @@ def relative_wire_path(path: str, root: Path) -> str:
     p = Path(path)
     if p.is_relative_to(root):
         return p.relative_to(root).as_posix()
-    under_home = home_relative(p)
-    if under_home is not None:
-        return "~/" + under_home
+    home = Path.home()
+    if p.is_relative_to(home):
+        return "~/" + p.relative_to(home).as_posix()
     return path
 
 

@@ -31,7 +31,6 @@
 - Skills synced from another claude.ai account are left out of the x-ray and `ails expected-loads`.
 - `ails check` on a folder inside a git repository no longer warns `CORE:G:0001 Not a git repository`.
 - On Windows, `ails xray --background` and the agent's `xray` tool open the page at once instead of reporting after 30 seconds that it did not start.
-- On Windows, `ails check` names a file relative to its project, finds the files of a `~/.claude` folder and keeps a linked rule inside its project when the folder is spelled with a short (8.3) name; a file in the folder the command runs in is named with `/`, not its full path.
 
 ### Internal
 

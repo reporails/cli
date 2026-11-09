@@ -256,38 +256,13 @@ def read_frontmatter_file(path: Path, *, lenient: bool = False) -> Frontmatter |
     return read_frontmatter(text, lenient=lenient)
 
 
-def home_folder() -> Path | None:
-    """The user's home folder, resolved (as discovered paths spell it); None when it cannot be determined."""
-    try:
-        return Path.home().resolve()
-    except (RuntimeError, OSError):
-        return None
-
-
-def home_relative(path: Path) -> str | None:
-    """`path` relative to the user's home folder, `/`-separated; None when it is not under it.
-
-    The home folder is tried as it resolves and as the environment spells it, so a path written either
-    way (a Windows short `RUNNER~1` folder name, a symlinked home) reads as under it.
-    """
-    for home in (home_folder(), Path.home()):
-        if home is not None and path.is_relative_to(home):
-            return path.relative_to(home).as_posix()
-    return None
-
-
 def expand_home_pattern(pattern: str) -> str:
-    """A `~`-rooted glob pattern with `~` resolved to the user's resolved home folder.
+    """A `~`-rooted glob pattern with `~` resolved to the user's home directory.
 
     Lets a pattern be compared against a file outside the scan root, whose relative path falls
     back to its absolute path string. A pattern with no leading `~` is returned unchanged.
     """
-    if not pattern.startswith("~"):
-        return pattern
-    home = home_folder()
-    if home is None or pattern[1:2] not in ("", "/"):
-        return Path(pattern).expanduser().as_posix()
-    return (home / pattern[2:]).as_posix() if pattern[2:] else home.as_posix()
+    return Path(pattern).expanduser().as_posix() if pattern.startswith("~") else pattern
 
 
 def is_rooted_pattern(pattern: str) -> bool:
