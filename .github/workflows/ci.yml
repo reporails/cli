@@ -70,6 +70,14 @@ jobs:
       - name: Behavioral tests
         run: uv run poe test_behave
 
+      # Manual runs only: the scenarios skipped on Windows, run there with full output so each failure shows its cause.
+      - name: Windows-unverified scenarios (manual)
+        if: github.event_name == 'workflow_dispatch' && matrix.os == 'windows-latest'
+        continue-on-error: true
+        env:
+          AILS_RUN_WINDOWS_UNVERIFIED: "1"
+        run: uv run behave tests/behave --tags=windows_unverified --no-capture --no-capture-stderr --format plain --show-timings
+
       # Smoke suite is hermetic: tests/smoke/conftest.py forces offline
       # diagnostics (no network), HOME is isolated, and tests that can only
       # be observed via the mapper model declare `requires_model` so they

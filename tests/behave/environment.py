@@ -51,7 +51,8 @@ def before_scenario(context, scenario) -> None:
         context.api_skipped.append(scenario.name)
         scenario.skip(f"local api not answering at {LOCAL_API_URL} — api-backed scenario NOT run")
         return  # nothing is built for a skipped scenario, so nothing is left to tear down
-    if "windows_unverified" in scenario.tags and sys.platform == "win32":
+    run_anyway = os.environ.get("AILS_RUN_WINDOWS_UNVERIFIED")
+    if "windows_unverified" in scenario.tags and sys.platform == "win32" and not run_anyway:
         scenario.skip("not yet verified on Windows: this scenario fails there and is tracked for a fix")
         return
     context.tmpdir = Path(tempfile.mkdtemp(prefix="ails-behave-"))
