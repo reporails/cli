@@ -361,6 +361,7 @@ def test_a_page_started_above_the_home_folder_runs_no_whole_tree_check(
     home = project / "home" / "user"
     home.mkdir(parents=True)
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     app = xray_server.build_app(
         project,
         tmp_path / "session" / "session.jsonl",
@@ -380,6 +381,7 @@ def test_a_page_started_in_the_home_folder_runs_no_whole_home_check(
     project: Path, tmp_path: Path, calls: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("HOME", str(project))
+    monkeypatch.setenv("USERPROFILE", str(project))
     app = xray_server.build_app(
         project,
         tmp_path / "session" / "session.jsonl",
