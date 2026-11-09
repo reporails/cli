@@ -31,6 +31,10 @@
 - Skills synced from another claude.ai account are left out of the x-ray and `ails expected-loads`.
 - `ails check` on a folder inside a git repository no longer warns `CORE:G:0001 Not a git repository`.
 
+### Internal
+
+- The x-ray home-folder skip tests pin the home folder on Windows too (`USERPROFILE` beside `HOME`).
+
 ## 0.6.6
 
 ### Added
