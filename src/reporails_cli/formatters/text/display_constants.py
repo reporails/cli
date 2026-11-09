@@ -21,6 +21,7 @@ from reporails_cli.core.platform.dto.diagnostics import BOLD_CHECK, CLIENT_CHECK
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path, overlapping_pairs
+from reporails_cli.core.platform.utils.utils import home_relative
 
 # ── Aggregate rule sets ───────────────────────────────────────────────
 
@@ -202,16 +203,12 @@ def friendly_name(filepath: str, tag: str, skill_dir: str | None = None) -> str:
 def short_path(file_path: str) -> str:
     """Extract short display path for file headers."""
     p = Path(file_path)
-    home = Path.home()
-    if p.is_absolute():
-        try:
-            rel = p.relative_to(home).as_posix()
-            if "memory" in p.parts:
-                idx = p.parts.index("memory")
-                return "~/" + PurePosixPath(*p.parts[idx:]).as_posix()
-            return "~/" + rel
-        except ValueError:
-            pass
+    under_home = home_relative(p) if p.is_absolute() else None
+    if under_home is not None:
+        if "memory" in p.parts:
+            idx = p.parts.index("memory")
+            return "~/" + PurePosixPath(*p.parts[idx:]).as_posix()
+        return "~/" + under_home
     parts = p.parts
     if "memory" in parts:
         idx = parts.index("memory")

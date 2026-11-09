@@ -12,7 +12,6 @@ in this module.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from pathlib import Path
 
@@ -23,7 +22,7 @@ from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusi
 from reporails_cli.core.discovery.memory_locator import memory_entries_for_agent
 from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.read_gates import apply_read_gate
-from reporails_cli.core.discovery.walk import Pruner, safe_resolve, walk_glob_matches
+from reporails_cli.core.discovery.walk import Pruner, logical_path, safe_resolve, walk_glob_matches
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 from reporails_cli.core.platform.dto.discovery import RunExclusions
@@ -126,7 +125,7 @@ def classify_target_token(
         p = Path(raw)
         full = p if p.is_absolute() or base is None else base / p
         # A linked file keeps its own path; the run's project root decides whether it is read there or at its target.
-        return Path(os.path.abspath(full)) if full.is_file() and full.is_symlink() else safe_resolve(full)
+        return logical_path(full) if full.is_file() and full.is_symlink() else safe_resolve(full)
 
     if token.startswith("file:"):
         return "path", _path(token[len("file:") :])

@@ -65,7 +65,8 @@ def _emit_unlisted_file(file: Path, root: Path, run_folder: Path, output_format:
     of another project is told to run the check in that project's folder.
     Under json/github the diagnosis owns stdout, so the notice goes to stderr."""
     if root == run_folder:
-        message = f"{file} is not an instruction file of this project."
+        shown = file.relative_to(root).as_posix() if file.is_relative_to(root) else str(file)
+        message = f"{shown} is not an instruction file of this project."
     else:
         message = (
             f"{file} is not an instruction file in the project at {root}; run ails check in that project's folder."

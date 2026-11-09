@@ -40,6 +40,16 @@ def safe_resolve(path: Path) -> Path:
         return path
 
 
+def logical_path(path: Path) -> Path:
+    """The absolute path of `path` that keeps a link's own name: its folder resolved, its last name as written.
+
+    A resolved path and a link kept under its own name then share one spelling of every folder above it,
+    whatever alias the folders were reached through (a Windows short `RUNNER~1` name, a symlinked folder).
+    """
+    absolute = Path(os.path.abspath(path))
+    return safe_resolve(absolute.parent) / absolute.name
+
+
 def inside_git_repository(target: Path) -> bool:
     """Whether the target or any folder above it holds a `.git`."""
     try:
@@ -55,7 +65,7 @@ def file_under_target(f: Path, tgt: Path) -> bool:
     Tests the file's logical absolute path alongside its symlink-resolved path, so a folder target keeps
     in-tree symlinked files whose real location is elsewhere.
     """
-    candidates = [Path(os.path.abspath(f))]
+    candidates = [logical_path(f)]
     # A symlink loop resolves nowhere; its logical path stands alone.
     with contextlib.suppress(OSError, RuntimeError):
         candidates.append(safe_resolve(f))

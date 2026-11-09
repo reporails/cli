@@ -9,13 +9,12 @@ naming why nothing was checked, and words the reply itself; no formatter or inte
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import replace
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import get_known_agents
 from reporails_cli.core.discovery.project_root import user_level_agent_dir
-from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
+from reporails_cli.core.discovery.walk import file_under_target, logical_path, safe_resolve
 from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.lint.regex.not_evaluated import not_evaluated_scope
 from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes_over_pairs
@@ -69,7 +68,7 @@ def resolve_scan_target(target: Path, project_root: Path) -> tuple[Path, Path | 
     """
 
     if target.is_file() and target.is_symlink():
-        logical = Path(os.path.abspath(target))
+        logical = logical_path(target)
         in_place = logical.is_relative_to(project_root) or user_level_agent_dir(logical) is not None
         target = logical if in_place else safe_resolve(target)
     user_dir = user_level_agent_dir(target)
