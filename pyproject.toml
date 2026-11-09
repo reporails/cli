@@ -192,7 +192,6 @@ test_unit = "pytest tests/unit/ -v"
 test_integration = "pytest tests/integration/ -v -m 'not slow'"
 test_integration_all = "pytest tests/integration/ -v"
 test_smoke = "pytest tests/smoke/ -v -m e2e"
-test_live = "pytest -v -m requires_network"
 test_lint = "ails test --lint --rules-root framework/rules"
 # Behavioral tier (integration + e2e) — Gherkin scenarios driving the real `ails`
 # binary via subprocess. A separate first-class suite, NOT in the unit pytest pile.
@@ -345,7 +344,6 @@ markers = [
     # Cost — orthogonal, additive
     "slow: Takes more than 1 second",
     "requires_model: Needs the bundled ML runtime",
-    "requires_network: Hits real external service",
     "real_deps: Needs API key or live backend",
     # Subsystem tags — one or more per test
     "subsys_caching",

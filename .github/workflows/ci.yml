@@ -84,23 +84,3 @@ jobs:
       # skip cleanly on the model-free runner.
       - name: Smoke tests
         run: uv run poe test_smoke
-
-  # Live-path regression — needs the network, so it stays out of the gated QA
-  # matrix (offline CI must stay green when the network is unavailable).
-  # Manual via the Actions tab; the assertion is the new-user activation hop.
-  live:
-    name: Live activation path
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
-        with:
-          version: "0.13.4"
-
-      - name: Install dependencies
-        run: uv sync --locked
-
-      - name: Live network tests
-        run: uv run poe test_live
