@@ -4,6 +4,20 @@
 > 
 > *Beta phase - moving fast, feedback welcome.*
 
+## X-ray
+
+```bash
+npx @reporails/cli xray
+# or
+uvx --from reporails-cli ails xray
+```
+
+`xray` opens a local page on `127.0.0.1` that shows what filled a Claude Code session's context window, over time. It is built from the transcripts Claude Code keeps under `~/.claude/projects/`, so it covers Claude Code sessions. Pass `--session <id>` to pick a session; the newest is the default.
+
+[![Reporails x-ray demo](https://raw.githubusercontent.com/reporails/cli/main/docs/media/xray-demo.gif)](https://www.youtube.com/watch?v=2PmPI4rZCgM)
+
+The full 28-second demo is [on YouTube](https://www.youtube.com/watch?v=2PmPI4rZCgM).
+
 ## Quick Start
 
 ```bash
@@ -72,20 +86,6 @@ Reporails — Diagnostics
   Pro adds the remedies and the order to apply them.
   → sign in with ails login, then upgrade to Pro
 ```
-
-## X-ray
-
-```bash
-npx @reporails/cli xray
-# or
-uvx --from reporails-cli ails xray
-```
-
-`xray` opens a local page on `127.0.0.1` that shows what filled a Claude Code session's context window, over time. It is built from the transcripts Claude Code keeps under `~/.claude/projects/`, so it covers Claude Code sessions. Pass `--session <id>` to pick a session; the newest is the default.
-
-[![Reporails x-ray demo](https://raw.githubusercontent.com/reporails/cli/main/docs/media/xray-demo.gif)](https://www.youtube.com/watch?v=2PmPI4rZCgM)
-
-The full 28-second demo is [on YouTube](https://www.youtube.com/watch?v=2PmPI4rZCgM).
 
 ## Install permanently
 
