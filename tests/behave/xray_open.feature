@@ -15,7 +15,7 @@ Feature: Any session of a project opens in x-ray without typing an id, from a te
     Then the printed address is on 127.0.0.1
     And picking the older session in the header shows that session on the page
 
-  @e2e
+  @e2e @windows_unverified
   Scenario: The MCP xray tool returns the page address at once and a second call reuses the page
     Given a project with two recorded Claude Code sessions, the older one written first
     When the MCP server's xray tool is called twice one after the other
