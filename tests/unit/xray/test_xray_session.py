@@ -19,6 +19,7 @@ from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTa
 from reporails_cli.core.xray.artifacts import PEEK_LIMIT, agent_file_tokens, artifact_files, build_artifacts
 from reporails_cli.core.xray.derive import BYTES_PER_TOKEN
 from reporails_cli.core.xray.session import XraySession
+from tests.unit.xray.test_xray_graph import rec
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 
@@ -520,3 +521,10 @@ def test_a_hook_that_fired_without_adding_to_the_context_counts_as_fired(tmp_pat
     assert hook.availability == "loaded"
     (row,) = [row for row in view.verdict.funnel if row.kind == "hook"]
     assert row.loaded == row.on_disk
+
+
+def test_a_summary_id_with_a_non_ascii_digit_is_no_summary_not_an_error(tmp_path: Path) -> None:
+    session = _session(tmp_path, HANDOFFS, _project(tmp_path))
+    session.refresh()
+    session._transcript.append(rec("post_compact", 1, source="auto"))
+    assert session.summary(":²") is None

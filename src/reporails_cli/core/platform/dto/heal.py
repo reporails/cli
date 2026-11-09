@@ -20,6 +20,13 @@ class HealOutcome(NamedTuple):
     scan_root: Path
 
 
+class NamedTargets(NamedTuple):
+    """The resolved files and folders a run's targets name; heal writes what they name and nothing beside."""
+
+    files: frozenset[Path]
+    dirs: frozenset[Path]
+
+
 @dataclass(frozen=True)
 class Suggestion:
     """A missing section a file's finding points at — not written."""

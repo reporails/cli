@@ -25,6 +25,7 @@ from reporails_cli.core.platform.dto.xray_build import (
     HarnessSlot,
     SourceTable,
 )
+from reporails_cli.core.platform.dto.xray_compaction import HELD_FILE_STATES, XrayCompaction
 from reporails_cli.core.platform.dto.xray_composition import (
     COMPOSITION_KEYS,
     ESTIMATED_KEYS,
@@ -60,23 +61,34 @@ _LOAD_CATEGORY: dict[SourceKind, CompositionKey] = {
 
 # (time, category, tokens, source id or None): a size that enters the context at a time and stays.
 type Added = tuple[float, CompositionKey, int, str | None]
-# (time, category, tokens): conversation and tool-result sizes; a category of None is a compaction.
-type Spoken = tuple[float, CompositionKey | None, int]
+# (time, category, tokens, left): conversation and tool-result sizes; a category of None is a compaction, and `left`
+# holds the sources it takes out of the context (loaded files that did not survive it).
+type Spoken = tuple[float, CompositionKey | None, int, frozenset[str]]
+
+
+def _left(compaction: XrayCompaction) -> frozenset[str]:
+    """The sources `compaction` took out of the agent's context: its files that are dropped."""
+    return frozenset(item.source for item in compaction.files if item.state not in HELD_FILE_STATES)
+
+
+def _left_between(own: AgentRecords, source: str, after: float, before: float) -> bool:
+    """Whether a compaction between the two times took `source` out of the agent's context."""
+    return any(after < item.t < before and source in _left(item) for item in own.compactions)
 
 
 def _load_deltas(own: AgentRecords, sources: SourceTable) -> list[Added]:
     """The loads of the agent in time order: a file counts once however often it loads, a hook firing each time."""
     found: list[Added] = []
-    seen: set[str] = set()
+    seen: dict[str, float] = {}
     for load in sorted((item for item in own.loads if item.t is not None), key=lambda item: item.t or 0.0):
         entry = sources.get(load.source)
         category = None if entry is None else _LOAD_CATEGORY.get(entry.kind)
         if category is None or load.t is None:
             continue
         if category != "hook_notes":
-            if load.source in seen:
+            if load.source in seen and not _left_between(own, load.source, seen[load.source], load.t):
                 continue
-            seen.add(load.source)
+            seen[load.source] = load.t
         found.append((load.t, category, load.tokens_est or 0, load.source))
     return found
 
@@ -110,20 +122,22 @@ def _skill_listing_deltas(own: AgentRecords, frame: Frame) -> list[Added]:
 def _spoken_deltas(own: AgentRecords, frame: Frame, brief_chars: int | None) -> list[Spoken]:
     """What the conversation and the tool results grew by at each record, and every compaction."""
     found: list[Spoken] = []
+    none: frozenset[str] = frozenset()
+    left = {item.t: _left(item) for item in own.compactions}
     if brief_chars is not None:
-        found.append((float("-inf"), "conversation", tokens_of(brief_chars)))
+        found.append((float("-inf"), "conversation", tokens_of(brief_chars), none))
     for record in own.records:
         moment = frame_time(frame, record)
         if moment is None:
             continue
         if record.event == "post_compact":
-            found.append((moment, None, 0))
+            found.append((moment, None, 0, left.get(moment, none)))
         elif record.event == "prompt_submit" and record.prompt is not None:
-            found.append((moment, "conversation", tokens_of(record.prompt.chars)))
+            found.append((moment, "conversation", tokens_of(record.prompt.chars), none))
         elif record.event == "assistant_text" and record.reply is not None:
-            found.append((moment, "conversation", tokens_of(record.reply.chars)))
+            found.append((moment, "conversation", tokens_of(record.reply.chars), none))
         elif record.event == "tool_result" and record.tool is not None and record.tool.chars is not None:
-            found.append((moment, "tool_results", tokens_of(record.tool.chars)))
+            found.append((moment, "tool_results", tokens_of(record.tool.chars), none))
     return found
 
 
@@ -138,27 +152,40 @@ def _usages(records: Sequence[EventRecord], frame: Frame) -> list[tuple[float, T
     return sorted(found, key=lambda item: item[0])
 
 
-def _take_load(held: dict[CompositionKey, int], carried: dict[str, int], hooks: set[str], load: Added) -> None:
+def _take_load(
+    held: dict[CompositionKey, int],
+    carried: dict[str, int],
+    homes: dict[str, CompositionKey],
+    hooks: set[str],
+    load: Added,
+) -> None:
     """Apply one load: its tokens join its category and, with an id, its source's carried tokens."""
     _, category, tokens, source = load
     held[category] += tokens
     if source is None:
         return
+    homes[source] = category
     carried[source] = carried.get(source, 0) + tokens
     if category == "hook_notes":
         hooks.add(source)
 
 
 def _take_spoken(
-    held: dict[CompositionKey, int], carried: dict[str, int], hooks: set[str], item: Spoken
+    held: dict[CompositionKey, int],
+    carried: dict[str, int],
+    homes: dict[str, CompositionKey],
+    hooks: set[str],
+    item: Spoken,
 ) -> dict[str, int]:
     """Apply one conversation, tool result or compaction entry; returns the carried tokens after it."""
-    _, grown, size = item
+    _, grown, size, left = item
     if grown is not None:
         held[grown] += size
         return carried
     held["conversation"] = held["tool_results"] = held["hook_notes"] = 0
-    kept = {source: tokens for source, tokens in carried.items() if source not in hooks}
+    for source in left & carried.keys():
+        held[homes[source]] -= carried[source]
+    kept = {source: tokens for source, tokens in carried.items() if source not in hooks and source not in left}
     hooks.clear()
     return kept
 
@@ -169,11 +196,13 @@ def _sweep(
     """For each reply, what each estimated category holds at it: loads, hook notes and the skills
     listing up to and including the reply's time, conversation and tool results strictly before it; and the tokens
     each source that has an id contributed. A compaction empties the conversation, the tool results and the hook
-    notes with the hook sources' tokens; loaded files stay. The two streams are applied in time order, so a hook
-    note landing after a compaction survives it; at equal times the compaction goes first, because a note stamped
-    with the compaction's own instant is what the compaction's aftermath loads."""
+    notes with the hook sources' tokens, and takes out the loaded files that were neither kept nor reloaded. The two
+    streams are applied in time order, so a hook note landing after a compaction survives it; at equal times the
+    compaction goes first, because a note stamped with the compaction's own instant is what the compaction's
+    aftermath loads."""
     held: dict[CompositionKey, int] = dict.fromkeys(ESTIMATED_KEYS, 0)
     carried: dict[str, int] = {}
+    homes: dict[str, CompositionKey] = {}
     hooks: set[str] = set()
     ahead = 0
     behind = 0
@@ -184,10 +213,10 @@ def _sweep(
             if not (load_due or spoken_due):
                 break
             if spoken_due and not (load_due and added[ahead][0] < spoken[behind][0]):
-                carried = _take_spoken(held, carried, hooks, spoken[behind])
+                carried = _take_spoken(held, carried, homes, hooks, spoken[behind])
                 behind += 1
             else:
-                _take_load(held, carried, hooks, added[ahead])
+                _take_load(held, carried, homes, hooks, added[ahead])
                 ahead += 1
         yield moment, usage, held, dict(carried)
 

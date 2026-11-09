@@ -10,6 +10,8 @@ from reporails_cli.core.discovery.plugin_roots import installed_plugin_roots
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.eventbus.transcript import (
     call_detail,
+    compact_summaries,
+    compact_summary_sizes,
     first_prompt_text,
     hook_output_text,
     last_write,
@@ -73,14 +75,37 @@ LIVE_WINDOW_S = 300.0
 HOOK_OUTPUT_CHARS = 20_000
 
 
+class _FileReads:
+    """Where the reads of one session's transcript files stopped: the cursor of the record read and, per file (a
+    subagent id, None for the main one), the byte offset scanned for compaction summaries and the sizes in
+    characters found so far."""
+
+    def __init__(self) -> None:
+        self._cursor = TranscriptCursor()
+        self._found: dict[str | None, tuple[int, list[int]]] = {}
+
+    def records(self, file: Path) -> list[EventRecord]:
+        """The records the transcript gained since the last read."""
+        records, self._cursor = read_transcript(AGENT, file, self._cursor)
+        return records
+
+    def sizes(self, file: Path, owner: str | None) -> tuple[int, ...]:
+        """The sizes of every summary of the file, reading it from where the last read stopped."""
+        offset, found = self._found.get(owner, (0, []))
+        more, offset = compact_summary_sizes(AGENT, file, owner, offset)
+        found = [*found, *more]
+        self._found[owner] = (offset, found)
+        return tuple(found)
+
+
 class XraySession:
     """The records of one session of a project and the view built from them."""
 
     def __init__(self, project_root: Path, session_file: Path) -> None:
         self._root = project_root
         self._file = session_file
-        self._cursor = TranscriptCursor()
         self._transcript: list[EventRecord] = []
+        self._reads = _FileReads()
         self._files: tuple[ArtifactFile, ...] | None = None
         self._shown: dict[str, ArtifactFile] | None = None
         self._problems: tuple[str, ...] = ()
@@ -92,7 +117,7 @@ class XraySession:
 
     def refresh(self) -> bool:
         """Read what the transcript gained since the last read; True when anything new arrived."""
-        records, self._cursor = read_transcript(AGENT, self._file, self._cursor)
+        records = self._reads.records(self._file)
         if not records:
             return False
         self._transcript.extend(records)
@@ -179,6 +204,19 @@ class XraySession:
         ):
             return None
         return prompt_text(AGENT, self._file, prompt_id)
+
+    def summary(self, summary_id: str) -> str | None:
+        """The compaction summary a compaction record names by `<subagent id>:<index>` (the main session's subagent
+        id is empty); None for any other id. Raises `PayloadRefused` when the agent is unknown. The text is not
+        kept."""
+        node, _, position = summary_id.rpartition(":")
+        if not (position.isascii() and position.isdigit()):
+            return None
+        owner = node or None
+        if not any(r.event == "post_compact" and r.subagent_id == owner for r in self._transcript):
+            return None
+        found = compact_summaries(AGENT, self._file, owner)
+        return found[int(position)] if int(position) < len(found) else None
 
     def hook_output(self, row_id: str) -> tuple[str, bool] | None:
         """The text one hook firing the records name left in the transcript, cut at `HOOK_OUTPUT_CHARS`, and whether
@@ -268,7 +306,18 @@ class XraySession:
             mcp_declarations(self._root, self._plugins),
             mcp_turned_off(self._root),
             self._settings,
+            self._summary_chars(records),
         )
+
+    def _summary_chars(self, records: list[EventRecord]) -> dict[str, tuple[int, ...]]:
+        """The size in characters of each compaction summary of every transcript file that records a compaction,
+        by subagent id (empty for the main session); each file is read from where the last read stopped. The
+        texts are not kept."""
+        owners = {record.subagent_id for record in records if record.event == "post_compact"}
+        sizes: dict[str, tuple[int, ...]] = {}
+        for owner in owners:
+            sizes[owner or ""] = self._reads.sizes(self._file, owner)
+        return sizes
 
     def _verdict(
         self, table: SourceTable, graph: Graph, records: list[EventRecord], vocabulary: AdapterVocabulary

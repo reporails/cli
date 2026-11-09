@@ -156,7 +156,7 @@ class XrayServer:
         session_id, session, picked = chosen
         payload, version = await run_in_threadpool(self._build_view, session, picked)
         etag = f'"{session_id}:{version}"'
-        answered = BackgroundTask(self._first_view_answered.set)
+        answered = None if self._first_view_answered.is_set() else BackgroundTask(self._first_view_answered.set)
         if request.headers.get("if-none-match") == etag:
             return Response(status_code=304, headers={"ETag": etag}, background=answered)
         return JSONResponse(payload, headers={"ETag": etag, **NO_STORE}, background=answered)
@@ -306,6 +306,18 @@ class XrayServer:
             ),
         )
 
+    async def summary(self, request: Request) -> Response:
+        """The summary text of one compaction of the session."""
+        return await self._text_route(
+            request,
+            _TextRoute(
+                "id",
+                "the query is ?id=<summary id>",
+                _text_fields(XraySession.summary),
+                "not a compaction summary this page lists",
+            ),
+        )
+
     async def call(self, request: Request) -> Response:
         """One call of the session: its tool, command, input and result excerpt."""
         return await self._text_route(
@@ -377,8 +389,9 @@ class XrayServer:
 
     def _launch_outcome(self) -> tuple[XrayCheck, dict[str, FindingTally]]:
         """The launch check's state and the tally of every file it covers; a failed check is refused with its text,
-        and the home folder is not checked as a project."""
-        if self._root == home_folder():
+        and neither the home folder nor a folder holding it is checked as a project."""
+        home = home_folder()
+        if home is not None and home.is_relative_to(self._root):
             return XrayCheck("refused", HOME_SKIPPED), {}
         try:
             run = check_path(str(self._root), self._root)
@@ -498,6 +511,7 @@ def build_app(
             Route("/brief", server.brief, methods=["GET"]),
             Route("/system", server.system, methods=["GET"]),
             Route("/prompt", server.prompt, methods=["GET"]),
+            Route("/summary", server.summary, methods=["GET"]),
             Route("/call", server.call, methods=["GET"]),
             Route("/hook-output", server.hook_output, methods=["GET"]),
             Route("/sessions", server.sessions, methods=["GET"]),

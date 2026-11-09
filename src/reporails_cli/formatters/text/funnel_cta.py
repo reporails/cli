@@ -53,7 +53,7 @@ def upgrade_link_line() -> str:
 # Free-tier rejections where subscribing genuinely lifts the cap, so the CTA
 # carries the subscribe link. The atom cap is universal (no tier moves it), so
 # it is deliberately excluded — its copy makes no subscribe promise.
-_FREE_SUBSCRIBE_ERRORS = {"rate_limit_exceeded", "payload_too_large"}
+_FREE_SUBSCRIBE_ERRORS = {"rate_limit_exceeded", "payload_too_large", "file_budget_exceeded"}
 
 
 # Why a refused run carries no score, by error code. Any other error means the server was
@@ -170,7 +170,7 @@ def format_cta(err: FunnelError, *, command_line: bool = True) -> str:
     if err.retryable:
         return retry_text(err)
     url = merge_utm(_cta_upgrade_url(err))
-    if err.message and err.error != "file_budget_exceeded":
+    if err.message and err.error not in _LOCAL_TEMPLATE_ERRORS:
         return _with_url(escape_markup(err.message), url)
     tier = _cta_tier(err)
     template = _CTA_TEMPLATES.get((err.error, tier)) or _CTA_TEMPLATES.get((err.error, "*"))
@@ -256,6 +256,10 @@ def _with_url(text: str, url: str) -> str:
     return f"{text} → [link={url}][bold]{label}[/bold][/link]"
 
 
+# Errors whose local template is shown instead of the server's own message.
+_LOCAL_TEMPLATE_ERRORS = frozenset({"file_budget_exceeded"})
+
+
 _CTA_TEMPLATES: dict[tuple[str, str], str] = {
     (
         "rate_limit_exceeded",
@@ -285,8 +289,13 @@ _CTA_TEMPLATES: dict[tuple[str, str], str] = {
         "Project too dense ({err.size:,} atoms, {err.limit:,} cap). The cap is the same on every plan."
     ),
     ("atom_cap_exceeded", "pro"): "Project exceeds {err.limit:,}-atom cap ({err.size:,} atoms).",
+    ("file_budget_exceeded", "anonymous"): (
+        "This run would pass the hourly budget of {err.limit:,} files ({err.files:,} files this hour, "
+        "counting this run). {err.reset_phrase}A paid plan has no hourly file budget: sign in with `ails login`"
+    ),
     ("file_budget_exceeded", "*"): (
-        "Hourly file budget used up ({err.limit:,} files per hour, {err.files:,} files sent). {err.reset_phrase}"
+        "This run would pass the hourly budget of {err.limit:,} files ({err.files:,} files this hour, "
+        "counting this run). {err.reset_phrase}A paid plan has no hourly file budget"
     ),
     ("project_limit_reached", "*"): "Project limit reached — file an issue with your use case so we can raise it",
     ("file_cap_exceeded", "*"): (

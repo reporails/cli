@@ -80,6 +80,7 @@ export function callDetail(id) {
 export const systemUrl = type => sessionUrl('system', { type });
 export const briefUrl = id => sessionUrl('brief', { subagent: id });
 export const promptUrl = id => sessionUrl('prompt', { id });
+export const summaryUrl = id => sessionUrl('summary', { id });
 export const hookOutputUrl = id => sessionUrl('hook-output', { id });
 export const peekUrl = path => sessionUrl('peek', { path });
 export const sessionsUrl = () => sessionUrl('sessions');

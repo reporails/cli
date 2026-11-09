@@ -356,6 +356,20 @@ class RequestSize:
     # A digest of the request's system blocks, never their text; two requests sent with the same system prompt share
     # it whatever their tools.
     system_digest: str = ""
+    # The files whose read result sits among the request's messages, sorted; never the results themselves.
+    reads: tuple[str, ...] = ()
+
+
+@dataclass
+class AssistantMerge:
+    """The assistant message being merged from its rows: its id, the running hashes of its content with and without
+    the caller field, the blocks and the summed size so far."""
+
+    message_id: str | None = None
+    with_caller: _Hash | None = None
+    without_caller: _Hash | None = None
+    size: MessageSize = field(default_factory=MessageSize)
+    blocks: int = 0
 
 
 @dataclass
@@ -363,7 +377,7 @@ class RequestChain:
     """What a read of one transcript file knows to size its API requests: each recorded shape as its system
     characters, tool characters and tool count, each known message's size under its hash, the running sums of the
     previous request's messages (`prefix[i]` is the size of its first `i` messages) and
-    the assistant message being merged from its rows. Sizes only, no message text."""
+    the assistant message being merged from its rows (`merge`). Sizes only, no message text."""
 
     shapes: dict[str, tuple[int, int, int]] = field(default_factory=dict)
     tool_names: dict[str, tuple[str, ...]] = field(default_factory=dict)
@@ -371,11 +385,13 @@ class RequestChain:
     system_digests: dict[str, str] = field(default_factory=dict)
     pool: dict[str, MessageSize] = field(default_factory=dict)
     prefix: list[MessageSize] = field(default_factory=lambda: [MessageSize()])
-    merge_id: str | None = None
-    merge_with_caller: _Hash | None = None
-    merge_without_caller: _Hash | None = None
-    merge_size: MessageSize = field(default_factory=MessageSize)
-    merge_blocks: int = 0
+    merge: AssistantMerge = field(default_factory=AssistantMerge)
+    # The call ids of the tool results each known message holds, by message hash.
+    results: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # The file each file-reading call targeted, by call id.
+    read_paths: dict[str, str] = field(default_factory=dict)
+    # The call ids of the tool results in each message of the previous request, in order.
+    messages: list[tuple[str, ...]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

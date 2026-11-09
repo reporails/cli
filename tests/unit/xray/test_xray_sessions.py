@@ -187,8 +187,24 @@ def test_current_with_two_clears_beginning_at_its_last_write_shows_the_newest_an
     _timed_session(project, "mine", now - 600, now - 100)
     _timed_session(project, "clear-a", now - 100, now - 50, cleared=True)
     newest = _timed_session(project, "clear-b", now - 99, now - 10, cleared=True)
+    _timed_session(project, "unrelated", now - 5, now)
     monkeypatch.setenv(SESSION_ENV, "mine")
-    assert pick_session(project, None, current=True) == PickedSession(project, newest, "current_unknown")
+    assert pick_session(project, None, current=True) == PickedSession(project, newest, "current_ambiguous")
+
+
+def test_a_subagent_written_after_the_clear_does_not_hide_the_hand_off(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = time.time()
+    mine = _timed_session(project, "mine", now - 600, now - 100)
+    after = _timed_session(project, "after", now - 100, now - 10, cleared=True)
+    subagent = claude_project_dir(project) / "mine" / "subagents" / "agent-a1.jsonl"
+    subagent.parent.mkdir(parents=True)
+    subagent.write_text("{}\n", encoding="utf-8")
+    os.utime(subagent, (now - 5, now - 5))
+    assert mine.stat().st_mtime < now - 99
+    monkeypatch.setenv(SESSION_ENV, "mine")
+    assert pick_session(project, None, current=True) == PickedSession(project, after, "current")
 
 
 def test_current_opens_the_calling_session_even_when_a_newer_one_exists(
@@ -367,7 +383,7 @@ def test_the_detached_page_start_keeps_user_site_packages_and_not_the_working_fo
     start_page(project, "any")
     (command,) = started
     flags = command[: command.index("-m")]
-    env = {**os.environ, "PYTHONUSERBASE": str(user_base)}
+    env = {**os.environ, "PYTHONUSERBASE": str(user_base), "PYTHONPATH": str(project)}
 
     def imports(module: str) -> bool:
         probe = [*flags, "-c", f"import {module}"]

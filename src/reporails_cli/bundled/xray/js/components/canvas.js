@@ -433,8 +433,19 @@ function stations(env, cur, scale) {
     const sizes = c.before != null && c.after != null ? ` · ${k1(c.before)} → ${k1(c.after)}` : '';
     m.append(el('span', null, `compacted${sizes} · at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`));
     out.push(m);
+    if (c.files && c.files.length) out.push(compactionFiles(env, c, scale));
   }
   return out;
+}
+
+// The instruction files a compaction found loaded, each with the state the view holds for it after the compaction.
+function compactionFiles(env, c, scale) {
+  const box = abs('compact-files', 84, scale.y(c.t) + 8);
+  for (const f of c.files) {
+    const s = env.ix.sources.get(f.source);
+    box.append(el('span', `fs fs-${f.state}`, `${s ? s.label : f.source} · ${f.state}`));
+  }
+  return box;
 }
 
 // Places each drawn station pill by `stationSide` among the cards, once the page has measured its width.

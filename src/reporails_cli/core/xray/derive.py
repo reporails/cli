@@ -15,7 +15,7 @@ from reporails_cli.core.platform.dto.events import (
 )
 from reporails_cli.core.platform.dto.xray import XrayHarnessItem, XrayWindow
 from reporails_cli.core.platform.dto.xray_build import Frame, HarnessSlot, Replies
-from reporails_cli.core.platform.dto.xray_graph import XrayCompaction
+from reporails_cli.core.platform.dto.xray_compaction import XrayCompaction, XrayFileState
 from reporails_cli.core.platform.dto.xray_sources import FindingTally
 
 # How many bytes of file text one token stands for in a size estimate.
@@ -108,8 +108,14 @@ def window_of(replies: Replies) -> XrayWindow | None:
     return None
 
 
-def build_compactions(records: Sequence[EventRecord], replies: Replies, frame: Frame) -> tuple[XrayCompaction, ...]:
-    """Every compaction among `records` in time order, with the context before and after from `replies`."""
+def build_compactions(
+    records: Sequence[EventRecord],
+    replies: Replies,
+    frame: Frame,
+    files: Sequence[tuple[XrayFileState, ...]],
+) -> tuple[XrayCompaction, ...]:
+    """Every compaction among `records` in time order, with the context before and after from `replies` and the
+    file states `files` holds for it (one entry per compaction, in time order)."""
     found = sorted(
         (
             (moment, record)
@@ -120,13 +126,33 @@ def build_compactions(records: Sequence[EventRecord], replies: Replies, frame: F
         key=lambda found: found[0],
     )
     return tuple(
-        XrayCompaction(
-            t=moment - frame.t0,
-            trigger="manual" if record.source == "manual" else "auto" if record.source == "auto" else None,
-            before=replies.before(moment),
-            after=replies.after(moment),
-        )
-        for moment, record in found
+        _compaction(index, moment, record, replies, frame, files=held)
+        for index, ((moment, record), held) in enumerate(zip(found, files, strict=True))
+    )
+
+
+def _compaction(
+    index: int,
+    moment: float,
+    record: EventRecord,
+    replies: Replies,
+    frame: Frame,
+    *,
+    files: tuple[XrayFileState, ...],
+) -> XrayCompaction:
+    """The `index`-th compaction of a node, with its file states and the size of its summary when the transcript
+    holds one."""
+    node = record.subagent_id or ""
+    sizes = frame.summary_chars.get(node, ())
+    has_summary = index < len(sizes)
+    return XrayCompaction(
+        t=moment - frame.t0,
+        trigger="manual" if record.source == "manual" else "auto" if record.source == "auto" else None,
+        before=replies.before(moment),
+        after=replies.after(moment),
+        files=files,
+        summary_id=f"{node}:{index}" if has_summary else None,
+        summary_tokens=tokens_of(sizes[index]) if has_summary else None,
     )
 
 

@@ -1088,8 +1088,11 @@ def test_a_transcript_opens_with_clear_when_its_first_non_note_user_row_is_the_c
     opened.write_text("not json\n" + _user_row("note", isMeta=True) + _user_row(clear) + _user_row("hi"))
     typed = tmp_path / "b.jsonl"
     typed.write_text(_user_row("hi") + _user_row(clear))
+    quoted = tmp_path / "c.jsonl"
+    quoted.write_text(_user_row(f"why does {clear} reset the id?"))
     assert opens_with_clear("claude", opened) is True
     assert opens_with_clear("claude", typed) is False
+    assert opens_with_clear("claude", quoted) is False
     assert opens_with_clear("claude", tmp_path / "missing.jsonl") is False
     assert opens_with_clear("nobody", opened) is False
 

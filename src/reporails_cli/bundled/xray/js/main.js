@@ -37,8 +37,10 @@ function renderNotices() {
     b.title = v.refusals.join('\n');
   }
   const u = $('#picked');
-  u.hidden = v.picked !== 'current_unknown';
-  u.textContent = u.hidden ? '' : `Showing the folder's newest session because ${v.adapter.tool} did not say which session it is.`;
+  u.hidden = v.picked !== 'current_unknown' && v.picked !== 'current_ambiguous';
+  u.textContent = u.hidden ? '' : v.picked === 'current_ambiguous'
+    ? 'More than one session started from a /clear of this one; showing the newest of them.'
+    : `Showing the folder's newest session because ${v.adapter.tool} did not say which session it is.`;
   const c = v.check, chk = $('#chk');
   chk.hidden = !c || c.state === 'done';
   chk.textContent = !c ? '' : c.state === 'running' ? 'checking the project…' : (c.message || 'The project check was refused.');

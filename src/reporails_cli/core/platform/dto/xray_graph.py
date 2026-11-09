@@ -12,10 +12,10 @@ from typing import Literal, NamedTuple
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.events import ToolCategory
+from reporails_cli.core.platform.dto.xray_compaction import XrayCompaction
 from reporails_cli.core.platform.dto.xray_composition import XrayComposition
 from reporails_cli.core.platform.dto.xray_cost import XrayAgentCost
 
-CompactionTrigger = Literal["manual", "auto"]
 NodeKind = Literal["agent"]
 SourceKind = Literal["instructions", "rule", "skill", "agent", "memory", "mcp", "hook"]
 LoadTrigger = Literal["session_start", "path_match", "agent", "inherited", "hook"]
@@ -120,20 +120,6 @@ class XrayHookStretch:
             "count": self.count,
             "tokens_est": self.tokens_est,
         }
-
-
-@dataclass(frozen=True)
-class XrayCompaction:
-    """One compaction of a node's context: when, what started it and the context before and after."""
-
-    t: float
-    trigger: CompactionTrigger | None
-    before: int | None
-    after: int | None
-
-    def to_json(self) -> JsonObject:
-        """The compaction as a JSON object."""
-        return {"t": self.t, "trigger": self.trigger, "before": self.before, "after": self.after}
 
 
 @dataclass(frozen=True)

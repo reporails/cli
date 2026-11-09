@@ -355,6 +355,27 @@ def test_the_first_view_on_a_long_session_is_answered_in_under_two_seconds_besid
     assert checking, "the launch check never ran"
 
 
+def test_a_page_started_above_the_home_folder_runs_no_whole_tree_check(
+    project: Path, tmp_path: Path, calls: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = project / "home" / "user"
+    home.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    app = xray_server.build_app(
+        project,
+        tmp_path / "session" / "session.jsonl",
+        picked="newest",
+        token=TOKEN,
+        launch=LAUNCH,
+        port=PORT,
+        requests=xray_launch.RequestClock(),
+    )
+    with TestClient(app, base_url=ORIGIN) as client:
+        view = _settled_view(client)
+    assert calls.checked == []
+    assert view["check"]["state"] == "refused" and "home folder" in view["check"]["message"]
+
+
 def test_a_page_started_in_the_home_folder_runs_no_whole_home_check(
     project: Path, tmp_path: Path, calls: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -120,7 +120,7 @@ class XrayWindow:
         return {"size": self.size, "basis": self.basis}
 
 
-SessionPick = Literal["named", "current", "current_unknown", "newest"]
+SessionPick = Literal["named", "current", "current_unknown", "current_ambiguous", "newest"]
 
 
 @dataclass(frozen=True)

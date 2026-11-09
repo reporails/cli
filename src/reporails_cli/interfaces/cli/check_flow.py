@@ -22,7 +22,7 @@ import typer
 
 from reporails_cli.core.classify.capability_paths import canonicalize_capability, classify_target_token
 from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
-from reporails_cli.core.heal.apply import heal_scope_files
+from reporails_cli.core.heal.apply import heal_scope_files, heal_scope_outside
 from reporails_cli.core.pipeline.mapping import (
     apply_generic_scan,
     discover_scope,
@@ -389,7 +389,9 @@ def _flow_heal(state: CheckState) -> None:
         else state.scope.instruction_files
     )
     heal_files = heal_scope_files(candidate, heal_scope, state.targets.target)
-    _notify_heal_scope_skips(len(candidate) - len(heal_files), state.targets.output_format)
+    _notify_heal_scope_skips(
+        len(heal_scope_outside(candidate, heal_scope, state.targets.target)), state.targets.output_format
+    )
     _run_heal_pass(
         state.targets.target,
         HealScope(heal_files, state.scope.effective_agent, state.scope.exclusions),

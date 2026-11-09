@@ -16,7 +16,7 @@ def xray_page(path: str, session: str) -> JsonObject:
     With no `session`, the session of the calling agent, else the newest one. After `/clear` the calling agent's
     session is the one the `/clear` opened, followed through each later `/clear`; a session another terminal
     opens with `/clear` while the calling agent goes on writing its own is not taken. When two sessions opened
-    with `/clear` as one session ended, the newest one and `picked` is `current_unknown`.
+    with `/clear` as one session ended, the newest of those two and `picked` is `current_ambiguous`.
     Answers `no_session` when the project has none (or `session` is not one of them) and `page_not_started`
     when the page does not come up."""
     here = Path(path).resolve()

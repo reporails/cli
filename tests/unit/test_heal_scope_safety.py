@@ -15,6 +15,7 @@ from typer.testing import CliRunner
 
 from reporails_cli.core.heal.apply import heal_scope_files, heal_workflow_within
 from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
+from reporails_cli.core.platform.dto.heal import NamedTargets
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.interfaces.cli.main import app
 
@@ -241,3 +242,66 @@ def test_heal_scope_files_names_one_file_for_a_file_scope(tmp_path: Path) -> Non
     assert heal_scope_files([main, imported], project / "docs", project) == [imported]
     assert heal_scope_files([main, imported], project, project) == [main, imported]
     assert heal_scope_files([link, main], link, project) == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+@pytest.mark.requires_model
+def test_named_targets_on_a_folder_scope_write_only_the_named_file(tmp_path: Path) -> None:
+    """`heal_apply(path=<project>, targets=['CLAUDE.md'])` reaches heal with a folder scope: the named
+    file is written and the file it imports is left byte-identical."""
+    base = tmp_path.resolve()
+    (base / "docs").mkdir()
+    main, imported = base / "CLAUDE.md", base / "docs" / "rules.md"
+    main.write_text("# Doc\n@docs/rules.md\nRun pyproject.toml here.\n", encoding="utf-8")
+    imported.write_text("# Rules\n\nRun pyproject.toml here.\n", encoding="utf-8")
+    imported_before = imported.read_bytes()
+    rmap, wf = _two_file_map(main, imported)
+
+    fixes = heal_workflow_within(rmap, wf, base, base, NamedTargets(frozenset({main}), frozenset())).fixes
+
+    assert imported.read_bytes() == imported_before
+    assert {Path(f["file_path"]).resolve() for f in fixes} == {main}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_heal_scope_outside_counts_only_real_escapes_not_left_alone_imports(tmp_path: Path) -> None:
+    """A named-file heal leaves an import alone without calling it outside the scope; only a file whose
+    real path escapes the project is reported as outside."""
+    from reporails_cli.core.heal.apply import heal_scope_outside
+
+    project = (tmp_path / "proj").resolve()
+    (project / "docs").mkdir(parents=True)
+    main, imported = project / "CLAUDE.md", project / "docs" / "rules.md"
+    for f in (main, imported):
+        f.write_text("# Doc\n", encoding="utf-8")
+    outside = tmp_path / "outside.md"
+    outside.write_text("keep\n", encoding="utf-8")
+    link = project / "AGENTS.md"
+    link.symlink_to(outside)
+
+    assert heal_scope_outside([main, imported], main, project) == []
+    assert heal_scope_outside([main, imported, link], project, project) == [link]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_heal_scope_files_named_file_and_directory_keep_both_not_the_files_imports(tmp_path: Path) -> None:
+    """Targets naming one file and one folder narrow to that file and every file under the folder; a file
+    the named file imports from outside the folder is left alone."""
+    from reporails_cli.core.platform.dto.heal import NamedTargets
+
+    project = (tmp_path / "proj").resolve()
+    for sub in ("docs/deep", "other"):
+        (project / sub).mkdir(parents=True)
+    main = project / "CLAUDE.md"
+    in_docs, deep = project / "docs" / "a.md", project / "docs" / "deep" / "b.md"
+    imported = project / "other" / "imp.md"
+    for f in (main, in_docs, deep, imported):
+        f.write_text("# Doc\n", encoding="utf-8")
+    named = NamedTargets(frozenset({main}), frozenset({project / "docs"}))
+
+    kept = heal_scope_files([main, in_docs, deep, imported], project, project, named)
+
+    assert kept == [main, in_docs, deep]

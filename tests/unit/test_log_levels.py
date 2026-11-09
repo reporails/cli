@@ -15,10 +15,11 @@ from reporails_cli.core.platform.observability.stage_timer import StageTimer
 def package_logger(monkeypatch: pytest.MonkeyPatch) -> Iterator[logging.Logger]:
     """The `reporails_cli` logger with no handler of its own, restored afterwards."""
     log = logging.getLogger("reporails_cli")
-    saved = (list(log.handlers), log.level, log.propagate)
+    timer = logging.getLogger(stage_timer.__name__)
+    saved = (list(log.handlers), log.level, log.propagate, timer.level)
     log.handlers = []
     yield log
-    log.handlers, log.level, log.propagate = saved[0], saved[1], saved[2]
+    log.handlers, log.level, log.propagate, timer.level = saved
 
 
 @pytest.mark.unit

@@ -53,9 +53,9 @@ def _cleared_starts(root: Path, mine: Path) -> dict[Path, float]:
 
 
 def _replacing(session: Path, cleared: dict[Path, float]) -> list[Path]:
-    """The transcripts of `cleared` that replace `session`: the last write to `session` falls between
+    """The transcripts of `cleared` that replace `session`: the last write to its own transcript falls between
     `_REPLACED_BEFORE_S` before and `_REPLACED_AFTER_S` after their first row."""
-    left_at = last_write(session)
+    left_at = last_write(session, main_only=True)
     if left_at is None:
         return []
     return [path for path, began in cleared.items() if -_REPLACED_BEFORE_S <= left_at - began <= _REPLACED_AFTER_S]
@@ -63,12 +63,13 @@ def _replacing(session: Path, cleared: dict[Path, float]) -> list[Path]:
 
 def _in_use(folder: Path, mine: Path) -> PickedSession:
     """The session in use of the one the calling agent started with, following each `/clear` that replaced it;
-    the newest of `folder`, picked as `current_unknown`, when more than one transcript replaces a session."""
+    the newest of the transcripts replacing it, picked as `current_ambiguous`, when more than one does."""
     cleared = _cleared_starts(folder, mine)
     session = mine
     while replacing := _replacing(session, cleared):
         if len(replacing) > 1:
-            return PickedSession(folder, newest_session(folder) or session, "current_unknown")
+            newest = max(replacing, key=lambda path: last_write(path) or 0.0)
+            return PickedSession(folder, newest, "current_ambiguous")
         session = replacing[0]
         del cleared[session]
     return PickedSession(folder, session, "current")
@@ -83,8 +84,8 @@ def pick_session(root: Path, named: str | None, *, current: bool) -> PickedSessi
     `/clear`: a transcript of that folder that opens with a `/clear` command replaces a session whose last write
     falls between `_REPLACED_BEFORE_S` before and `_REPLACED_AFTER_S` after its first row, so a session written on
     after another terminal's `/clear` is not replaced. Each replacement is followed to the session no transcript
-    replaces; when more than one replaces a session, the newest of the folder is taken, picked as
-    `current_unknown`. When no transcript has the id it takes the newest session of `root`, picked as
+    replaces; when more than one replaces a session, the newest of those is taken, picked as
+    `current_ambiguous`. When no transcript has the id it takes the newest session of `root`, picked as
     `current_unknown`. With neither, the newest. None when `root` has none."""
     if named is not None:
         transcript = known_session(root, named)

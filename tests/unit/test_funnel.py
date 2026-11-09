@@ -997,8 +997,11 @@ class TestFileBudgetExceeded:
         err = parse_error_body(429, self.BODY)
         assert err is not None
         cta = format_cta(err)
-        assert "1,000 files" in cta and "hour" in cta
+        assert "hourly budget of 1,000 files" in cta
+        assert "1,200 files this hour, counting this run" in cta
         assert "30 min" in cta
+        assert "sent" not in cta and "used up" not in cta
+        assert "ails login" in cta and "A paid plan has no hourly file budget" in cta
         assert "issues" not in cta
         assert no_score_reason(err) == "hourly file budget reached"
 

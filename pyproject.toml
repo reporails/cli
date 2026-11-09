@@ -153,6 +153,7 @@ exclude = [
 exclude = [
     "/scripts",
     "/.githooks",
+    "/docs/media",
     "/.ails",
     "/.claude",
     "/.idea",

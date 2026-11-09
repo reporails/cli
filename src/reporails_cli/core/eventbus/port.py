@@ -64,6 +64,9 @@ class TranscriptAdapter(Protocol):
     def resolve_prompt(self, row: JsonObject) -> str:
         """The text of a typed prompt, from its row; raises `PayloadRefused` when the row is not one."""
 
+    def resolve_compact_summary(self, row: JsonObject) -> str | None:
+        """The summary text of a compaction summary row; None for any other row."""
+
     def opens_with_clear(self, row: JsonObject) -> bool | None:
         """For the row that opens a session's conversation, whether it is the agent's `/clear` command; None for a
         row that does not open it."""
