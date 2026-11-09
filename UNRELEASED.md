@@ -2,7 +2,7 @@
 
 ### Added
 
-- x-ray: the compaction marker opens its summary, and each instruction file under it says in words what the compaction did to it, including "settles at the next request" before the next prompt.
+- x-ray: the compaction marker opens its summary, and each instruction file under it says in words what the compaction did to it, including "settles at the next request" until the agent next replies.
 
 ### Changed
 

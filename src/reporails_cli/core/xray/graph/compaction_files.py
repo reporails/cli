@@ -22,16 +22,17 @@ def _instruction_source(path: str, sources: SourceTable) -> str | None:
 
 
 def _state(
-    source: str, reloaded: set[str], request: RequestSize | None, read: set[str], indirect: set[str]
+    source: str, reloaded: set[str], request: RequestSize | None, read: set[str], indirect: set[str], *, waiting: bool
 ) -> FileState:
     """The state of one file after a compaction: loaded again, its read result in the first request after it, or
-    gone. With no request since the compaction it is pending until the next one. A request that names a message the
-    file never recorded cannot settle it, nor can one settle a file that arrived beside the read of another file
+    gone. While the agent has not replied since the compaction (`waiting`) a file not loaded again is pending. A reply
+    with no request recorded before it cannot settle it, nor can a request that names a message the file never
+    recorded, nor can one settle a file that arrived beside the read of another file
     (`indirect`): the request holds no read result of its own path for it, kept or not."""
     if source in reloaded:
         return "reloaded"
     if request is None:
-        return "pending"
+        return "pending" if waiting else "unknown"
     if request.unresolved:
         return "unknown"
     if source in indirect and source not in read:
@@ -50,12 +51,14 @@ def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tu
     request: RequestSize | None = None
     done: list[tuple[float, tuple[XrayFileState, ...]]] = []
 
-    def settle() -> None:
+    def settle(*, waiting: bool = False) -> None:
         nonlocal held
         if pending is None:
             return
         read = {sid for path in (request.reads if request else ()) if (sid := _instruction_source(path, sources))}
-        states = tuple(XrayFileState(src, _state(src, reloaded, request, read, indirect)) for src in pending[1])
+        states = tuple(
+            XrayFileState(src, _state(src, reloaded, request, read, indirect, waiting=waiting)) for src in pending[1]
+        )
         done.append((pending[0], states))
         held = {item.source for item in states if item.state in HELD_FILE_STATES} | reloaded
 
@@ -80,5 +83,5 @@ def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tu
             if sid is not None:
                 held.add(sid)
                 indirect.discard(sid)
-    settle()
+    settle(waiting=True)
     return [states for _, states in sorted(done, key=lambda item: item[0])]

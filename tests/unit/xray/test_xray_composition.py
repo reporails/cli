@@ -364,3 +364,17 @@ def test_a_file_is_pending_while_no_request_follows_the_compaction(tmp_path: Pat
     graph = _graph(tmp_path, records, _files(tmp_path))
     (compaction,) = next(item for item in graph.stations if item.node == "main").compactions
     assert {item.source: item.state for item in compaction.files} == {"CLAUDE.md": "pending", "rules/r.md": "pending"}
+
+
+def test_a_reply_with_no_request_before_it_leaves_its_files_unknown(tmp_path: Path) -> None:
+    claude, rule, _ = _files(tmp_path)
+    records = [
+        load(0.1, claude),
+        load(0.2, rule, memory_type="nested"),
+        reply(1, context=10000),
+        rec("post_compact", 2, source="manual"),
+        reply(3, context=4000),
+    ]
+    graph = _graph(tmp_path, records, _files(tmp_path))
+    (compaction,) = next(item for item in graph.stations if item.node == "main").compactions
+    assert {item.source: item.state for item in compaction.files} == {"CLAUDE.md": "unknown", "rules/r.md": "unknown"}

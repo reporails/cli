@@ -1894,10 +1894,10 @@ def step_states_recorded(context):
     assert states == {"CLAUDE.md": "reloaded", "kept/CLAUDE.md": "kept", "sub/CLAUDE.md": "unknown"}, states
 
 
-@then("the compaction lists each nested file as pending and the root file as reloaded")
+@then("the compaction lists each nested file as unknown and the root file as reloaded")
 def step_states_unrecorded(context):
     states = _file_states(context)
-    assert states == {"CLAUDE.md": "reloaded", "kept/CLAUDE.md": "pending", "sub/CLAUDE.md": "pending"}, states
+    assert states == {"CLAUDE.md": "reloaded", "kept/CLAUDE.md": "unknown", "sub/CLAUDE.md": "unknown"}, states
 
 
 @then("the chart's instruction files keep the unsettled file's tokens after the compaction")
