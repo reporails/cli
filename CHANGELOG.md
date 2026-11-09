@@ -30,11 +30,14 @@
 - `ails hook` prints nothing, also when a settings file it reads is malformed, and records an event faster again.
 - Skills synced from another claude.ai account are left out of the x-ray and `ails expected-loads`.
 - `ails check` on a folder inside a git repository no longer warns `CORE:G:0001 Not a git repository`.
+- On Windows, `ails xray --background` and the agent's `xray` tool open the page at once instead of reporting after 30 seconds that it did not start.
+- On Windows, `ails check` names a file relative to its project, finds the files of a `~/.claude` folder and keeps a linked rule inside its project when the folder is spelled with a short (8.3) name; a file in the folder the command runs in is named with `/`, not its full path.
 
 ### Internal
 
 - The x-ray home-folder skip tests pin the home folder on Windows too (`USERPROFILE` beside `HOME`).
 - A manual CI run executes the behavioral scenarios skipped on Windows, with full output, without affecting push runs.
+- The x-ray open scenarios run on Windows: the foreground-page step reads the printed address without `select`, and the file-name markup scenario is skipped there because Windows cannot hold such a file name.
 
 ## 0.6.6
 
