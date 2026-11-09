@@ -6,8 +6,8 @@
 
 - The x-ray page shows a placeholder of its layout while the session loads, instead of empty boxes and every tab stacked at once; a page that cannot load shows its notice in place of the placeholder, and with reduced motion set the placeholder does not shimmer.
 - In the x-ray page, a hook that exited with an error without blocking counts as a firing and is listed as failed, with its exit code and error output.
-- At each compaction, the x-ray page shows the summary Claude Code wrote and its size in tokens. The text is read from the session's transcript when you open it and is not stored anywhere.
-- At each compaction, the x-ray page lists the instruction files loaded before it as kept, reloaded, dropped or unknown, and the context chart after it leaves out the dropped files. A file the transcript cannot settle shows as unknown and stays in the chart: any file on Claude Code older than 2.1.309, and a nested `CLAUDE.md` that came in with the read of another file.
+- At each compaction, the x-ray page shows the summary Claude Code wrote and its size in tokens; the marker's summary link opens it. The text is read from the session's transcript when you open it and is not stored anywhere.
+- At each compaction, the x-ray page says in words what happened to each instruction file loaded before it: still in context, loaded again, dropped, settles at the next request (until the agent next replies) or can't tell, with the reason on hover. The context chart after it leaves out the dropped files. A file the transcript cannot settle reads can't tell and stays in the chart: any file on Claude Code older than 2.1.309, and a nested `CLAUDE.md` that came in with the read of another file.
 - When a run would pass the free hourly file budget, `ails check` says so, with the budget, the files this hour counting the run, when it resets and that a paid plan has no hourly file budget, instead of an unknown error.
 
 ### Changed
@@ -34,6 +34,7 @@
 ### Internal
 
 - The x-ray home-folder skip tests pin the home folder on Windows too (`USERPROFILE` beside `HOME`).
+- A manual CI run executes the behavioral scenarios skipped on Windows, with full output, without affecting push runs.
 
 ## 0.6.6
 
