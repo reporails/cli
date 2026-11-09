@@ -55,6 +55,9 @@ def before_scenario(context, scenario) -> None:
     if "windows_unverified" in scenario.tags and sys.platform == "win32" and not run_anyway:
         scenario.skip("not yet verified on Windows: this scenario fails there and is tracked for a fix")
         return
+    if "posix_only" in scenario.tags and sys.platform == "win32":
+        scenario.skip("not run on Windows: its file names cannot hold these characters, so the case cannot arise there")
+        return
     context.tmpdir = Path(tempfile.mkdtemp(prefix="ails-behave-"))
     context.home = scenario_home(context.tmpdir, context.real_models)
     context.project = None  # the steps build it (a git project with instruction files)

@@ -317,11 +317,43 @@ def test_a_page_forgets_only_its_own_launch(project: Path) -> None:
 
 def test_a_second_start_waits_for_the_page_the_first_registers(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert pages._take_lock(project)  # pylint: disable=protected-access
-    page = XrayPage(7, 8, "launch-a")
+    page = XrayPage(8, "launch-a")
     answers = iter([None, None, page])
     monkeypatch.setattr(pages, "running_page", lambda _root: next(answers))
     monkeypatch.setattr(pages, "_POLL_S", 0.01)
     assert start_page(project, "any") == (page, True)
+
+
+def test_the_wait_accepts_the_page_registered_under_its_launch_whatever_its_pid(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Windows venv's python.exe starts the real interpreter as a child, so the page's pid is not the spawned one."""
+    register_page(project, 5, "launch-a")  # records this test process's pid, never the one the start returned
+    monkeypatch.setattr(pages, "_answers", lambda _page: True)
+    assert pages._wait_for_page(project, "launch-a") == XrayPage(5, "launch-a")  # pylint: disable=protected-access
+
+
+def test_the_wait_ignores_a_page_registered_under_another_launch(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    register_page(project, 5, "launch-b")
+    monkeypatch.setattr(pages, "_answers", lambda _page: True)
+    monkeypatch.setattr(pages, "PAGE_START_S", 0.2)
+    monkeypatch.setattr(pages, "_POLL_S", 0.01)
+    with pytest.raises(XrayPageError, match="did not answer"):
+        pages._wait_for_page(project, "launch-a")  # pylint: disable=protected-access
+
+
+def test_the_start_passes_its_launch_id_to_the_page_and_waits_for_it(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started: list[list[str]] = []
+    waited: list[str | None] = []
+    monkeypatch.setattr(pages, "launch_detached", lambda command, *, cwd: started.append(command) or 1)
+    monkeypatch.setattr(pages, "_wait_for_page", lambda _root, launch: waited.append(launch) or XrayPage(2, "x"))
+    start_page(project, "any")
+    (command,) = started
+    assert command[command.index("--launch") + 1] == waited[0]
 
 
 def test_a_second_start_gives_up_when_no_page_answers_by_the_deadline(
@@ -360,7 +392,7 @@ def test_a_start_in_an_unwritable_settings_folder_is_a_page_error_naming_the_fol
 
 
 def test_the_page_address_always_carries_how_the_session_was_chosen() -> None:
-    page = XrayPage(1, 2, "launch-a")
+    page = XrayPage(2, "launch-a")
     assert pages.page_url(page, "s", "current").endswith("/?session=s&pick=current")
     assert pages.page_url(page, "s", "named").endswith("/?session=s&pick=named")
 
@@ -379,7 +411,7 @@ def test_the_detached_page_start_keeps_user_site_packages_and_not_the_working_fo
     started: list[list[str]] = []
     monkeypatch.setattr(sys, "executable", base_python)
     monkeypatch.setattr(pages, "launch_detached", lambda command, *, cwd: started.append(command) or 1)
-    monkeypatch.setattr(pages, "_wait_for_page", lambda _root, _pid: XrayPage(1, 2, "launch-a"))
+    monkeypatch.setattr(pages, "_wait_for_page", lambda _root, _launch: XrayPage(2, "launch-a"))
     start_page(project, "any")
     (command,) = started
     flags = command[: command.index("-m")]

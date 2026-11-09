@@ -528,13 +528,13 @@ def build_app(
     )
 
 
-def serve(root: Path, session_file: Path, picked: SessionPick, *, open_page: bool) -> None:
+def serve(root: Path, session_file: Path, picked: SessionPick, *, open_page: bool, launch: str | None) -> None:
     """Serve the page opening on `session_file` until interrupted, or until no request has come for
     `AILS_XRAY_IDLE_S` seconds (30 minutes by default; 0 never stops); print its address and open it unless told
     not to. The project's page record names this process while it serves."""
     sock = bound_socket()
     port = sock.getsockname()[1]
-    launch = secrets.token_urlsafe(16)
+    launch = launch or secrets.token_urlsafe(16)
     requests = RequestClock()
     app = build_app(
         root,

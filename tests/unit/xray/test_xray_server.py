@@ -951,7 +951,7 @@ def test_a_page_whose_record_cannot_be_written_still_serves_and_forgets_nothing(
     monkeypatch.setattr(xray_server, "forget_page", lambda *_: forgotten.append("x"))
     monkeypatch.setattr(xray_server.uvicorn, "Server", FakeServer)
     with caplog.at_level("WARNING"):
-        xray_server.serve(project, tmp_path / "session" / "session.jsonl", "newest", open_page=False)
+        xray_server.serve(project, tmp_path / "session" / "session.jsonl", "newest", open_page=False, launch=None)
     assert served == [True] and forgotten == []
     assert any("will not be reused" in r.getMessage() for r in caplog.records)
 

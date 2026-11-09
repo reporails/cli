@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import secrets
 import sys
 import time
 from collections.abc import Callable
@@ -47,8 +48,8 @@ def _read_record(root: Path) -> XrayPage | None:
         data = as_object(json.loads(_record_path(root).read_text(encoding="utf-8")))
     except (OSError, ValueError):
         return None
-    pid, port, launch = opt_int(data.get("pid")), opt_int(data.get("port")), as_str(data.get("launch"))
-    return None if pid is None or port is None or not launch else XrayPage(pid, port, launch)
+    port, launch = opt_int(data.get("port")), as_str(data.get("launch"))
+    return None if port is None or not launch else XrayPage(port, launch)
 
 
 def register_page(root: Path, port: int, launch: str) -> None:
@@ -108,13 +109,15 @@ def _take_lock(root: Path) -> bool:
     return False
 
 
-def _wait_for_page(root: Path, pid: int | None) -> XrayPage:
-    """The page that answers for the project, the one process `pid` registered when given; raises `XrayPageError`
-    when none answers within `PAGE_START_S`."""
+def _wait_for_page(root: Path, launch: str | None) -> XrayPage:
+    """The page that answers for the project, the one registered under `launch` when given; raises `XrayPageError`
+    when none answers within `PAGE_START_S`. The launch id names the page, not a pid: a Windows virtual
+    environment's `python.exe` starts the real interpreter as a child, so the page's own pid is not the one the
+    start returned."""
     deadline = time.monotonic() + PAGE_START_S
     while time.monotonic() < deadline:
         page = running_page(root)
-        if page is not None and (pid is None or page.pid == pid):
+        if page is not None and (launch is None or page.launch == launch):
             return page
         time.sleep(_POLL_S)
     raise XrayPageError(f"the x-ray page did not answer within {PAGE_START_S:.0f} seconds")
@@ -146,12 +149,14 @@ def start_page(root: Path, session_id: str) -> tuple[XrayPage, bool]:
             return page, True
         # `-P` keeps the working folder off the import path and `-E` ignores PYTHONPATH and PYTHONHOME; the user
         # site stays on, so a `pip install --user` install still starts.
+        launch = secrets.token_urlsafe(16)
         command = [sys.executable, "-E", "-P", "-m", "reporails_cli", "xray", "--no-open", "--session", session_id]
+        command += ["--launch", launch]
         try:
-            pid = launch_detached(command, cwd=root)
+            launch_detached(command, cwd=root)
         except OSError as exc:
             raise _unwritable(exc) from exc
-        return _wait_for_page(root, pid), False
+        return _wait_for_page(root, launch), False
     finally:
         with contextlib.suppress(OSError):
             _lock_path(root).unlink()

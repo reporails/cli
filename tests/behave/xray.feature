@@ -32,7 +32,7 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Then the printed address is on 127.0.0.1
     And the page shows "first text" for the file, then "second text" once the file and the session change
 
-  @e2e @browser @windows_unverified
+  @e2e @browser @posix_only
   Scenario: Markup in a file name and in a prompt shows as text and builds no element
     Given a project with a recorded Claude Code session
     And the project's memory folder holds an unlinked note named "<img src=x onerror=window.__pwned=1>.md" reading "<b>bold</b>"

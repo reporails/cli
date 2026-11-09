@@ -166,9 +166,8 @@ class XraySessionEntry:
 
 @dataclass(frozen=True)
 class XrayPage:
-    """A running x-ray page: the process serving it, its port and the id of its launch."""
+    """A running x-ray page: its port and the id of its launch."""
 
-    pid: int
     port: int
     launch: str
 
