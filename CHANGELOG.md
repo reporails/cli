@@ -37,6 +37,7 @@
 - The x-ray home-folder skip tests pin the home folder on Windows too (`USERPROFILE` beside `HOME`).
 - A manual CI run executes the behavioral scenarios skipped on Windows, with full output, without affecting push runs.
 - The x-ray open scenarios run on Windows: the foreground-page step reads the printed address without `select`, and the file-name markup scenario is skipped there because Windows cannot hold such a file name.
+- The Windows check scenarios keep their skip tag until a path fix that keeps symlinked rule folders in scope.
 
 ## 0.6.6
 
