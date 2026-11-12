@@ -710,7 +710,7 @@ def test_a_brief_after_a_project_validate_takes_a_fresh_baseline(monkeypatch, tm
     _brief_with(monkeypatch, tmp_path, text, atoms, location)
     edited = "# T\n\nKeep `foo`.\n"
     file.write_text(edited, encoding="utf-8")
-    monkeypatch.setattr(server, "model_not_ready_error", lambda: None)
+    monkeypatch.setattr(server, "unserved_or_model_not_ready_error", lambda: None)
     monkeypatch.setattr(
         server,
         "run_pipeline_for_path",

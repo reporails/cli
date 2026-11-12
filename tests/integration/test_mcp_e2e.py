@@ -1643,7 +1643,7 @@ class TestFeedbackNewKinds:
             },
         }
         replies = iter([(project_payload, None, 5.0), (file_payload, None, 5.0)])
-        monkeypatch.setattr(server, "model_not_ready_error", lambda: None)
+        monkeypatch.setattr(server, "unserved_or_model_not_ready_error", lambda: None)
         monkeypatch.setattr(
             server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(), **_k: next(replies)
         )
@@ -1730,7 +1730,7 @@ class TestFeedbackFiredBefore:
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Project\n\nNever commit secrets.\n")
         replies = iter([(project_payload, None, 5.0), (file_payload, None, 5.0)])
-        monkeypatch.setattr(server, "model_not_ready_error", lambda: None)
+        monkeypatch.setattr(server, "unserved_or_model_not_ready_error", lambda: None)
         monkeypatch.setattr(
             server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(), **_k: next(replies)
         )
@@ -1844,7 +1844,7 @@ class TestProjectFolder:
             return {"files": {}}, None, None
 
         monkeypatch.setenv("AILS_PROJECT_DIR", str(tmp_path))
-        monkeypatch.setattr(server, "model_not_ready_error", lambda: None)
+        monkeypatch.setattr(server, "unserved_or_model_not_ready_error", lambda: None)
         monkeypatch.setattr(server, "run_pipeline_for_path", fake)
         _call_tool("validate", {})
         assert seen == [str(tmp_path.resolve())]

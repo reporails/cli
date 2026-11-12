@@ -40,7 +40,6 @@ from reporails_cli.interfaces.mcp.scan_fingerprint import (
 from reporails_cli.interfaces.mcp.strict_tool_args import StrictArgsMCPServer
 from reporails_cli.interfaces.mcp.tools import (
     is_retryable_reply,
-    model_not_ready_error,
     run_pipeline_for_path,
     unpaid_signed_in_reply,
     unserved_or_model_not_ready_error,
