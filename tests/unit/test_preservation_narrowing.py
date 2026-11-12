@@ -866,6 +866,57 @@ def test_a_rule_whose_verb_had_no_object_given_one_kind_its_section_names_narrow
     assert result["ok"] is False
 
 
+_GROUND = "\n\nThe `X` and `Y` names exist. Production builds and real stores exist.\n"
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_referent_the_sections_heading_names_is_not_a_narrowing(tmp_path) -> None:
+    before = "## Remote debugging\n\nEnable remote debugging with `--inspect`.\n\nOnly use on trusted machines.\n"
+    after = before.replace("Only use on", "Only use remote debugging on")
+    result = _compare_edit(tmp_path, before + _GROUND, after + _GROUND)
+    assert result["narrowed_instructions"] == []
+    assert result["ok"] is True
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_kind_named_only_in_another_section_of_the_same_heading_is_not_a_narrowing(tmp_path) -> None:
+    before = (
+        "## Hooks\n\n### Rules\n\nKeep hook scripts small.\n\n## Code\n\n### Rules\n\nEdit at canonical paths only.\n"
+    )
+    after = before.replace("Edit at", "Edit hook scripts at")
+    result = _compare_edit(tmp_path, before + _GROUND, after + _GROUND)
+    assert result["narrowed_instructions"] == []
+    assert result["ok"] is True
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (
+            "## Tasks\n\nRun `pytest` against Python modules.\n\nRun `shellcheck` against shell scripts.\n\n"
+            "Run at night only.\n",
+            "## Tasks\n\nRun `pytest` against Python modules.\n\nRun `shellcheck` against shell scripts.\n\n"
+            "Run shell scripts at night only.\n",
+        ),
+        (
+            "## Tasks\n\nLint Python modules, shell scripts, or Dockerfiles.\n\nRun at night only.\n",
+            "## Tasks\n\nLint Python modules, shell scripts, or Dockerfiles.\n\nRun shell scripts at night only.\n",
+        ),
+    ],
+)
+def test_a_kind_named_beside_others_in_its_section_narrows(tmp_path, before, after) -> None:
+    result = _compare_edit(tmp_path, before + _GROUND, after + _GROUND)
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
 @pytest.mark.integration
 @pytest.mark.subsys_server
 @pytest.mark.requires_model

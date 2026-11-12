@@ -131,6 +131,23 @@ class Condition:
 
 
 @dataclass(frozen=True)
+class SectionLine:
+    """One atom of a section: its 1-based line and its text with the markup read away."""
+
+    line: int
+    text: str
+
+
+@dataclass(frozen=True)
+class Section:
+    """The author's atoms under one heading line: the heading's text and every other atom up to the
+    next heading, in file order."""
+
+    heading: str
+    lines: tuple[SectionLine, ...]
+
+
+@dataclass(frozen=True)
 class RewriteWords:
     """The words one prohibition's rewrite is read against: those on the author's line (`known`),
     those the rewrite only moved within the sentence to label what it lists (`moved`), and those of

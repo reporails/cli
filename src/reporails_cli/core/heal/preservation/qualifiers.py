@@ -20,7 +20,7 @@ from reporails_cli.core.mapper.classify_lexicon import (
 )
 from reporails_cli.core.mapper.lexical import CLAUSE_DASH_RE, DASH_PAIR_RE
 from reporails_cli.core.mapper.md_parser import replace_code_spans
-from reporails_cli.core.platform.dto.heal import Pair, RewriteWords
+from reporails_cli.core.platform.dto.heal import Pair, RewriteWords, Section
 
 # Quantifiers a `for` may open without cutting what a rule covers (`For each file, run lint`).
 _FOR_QUANTIFIERS = DETERMINERS & GENERAL_QUANTIFIERS
@@ -177,23 +177,70 @@ def kinds_listed(p: Pair) -> bool:
     return False
 
 
-def object_added(p: Pair, section: AbstractSet[str]) -> bool:
+_LIST_SEPARATORS = frozenset({","}) | CONDITION_CONJUNCTIONS
+
+
+def _kept_tokens(text: str) -> list[str]:
+    """The lowered content words of `text` in order, with a `,` kept where one stood and `and` /
+    `or` kept as separators."""
+    tokens: list[str] = []
+    for i, part in enumerate(text.lower().split(",")):
+        if i:
+            tokens.append(",")
+        tokens.extend(w for w in WORD_RE.findall(part) if w in _LIST_SEPARATORS or _content([w]))
+    return tokens
+
+
+def _phrase_starts(tokens: list[str], phrase: list[str]) -> list[int]:
+    """Where `phrase` (content words, any singular / plural form) stands in `tokens`, as start indices."""
+    n = len(phrase)
+    return [k for k in range(len(tokens) - n + 1) if all(tokens[k + d] in word_forms(w) for d, w in enumerate(phrase))]
+
+
+def _listed(tokens: list[str], phrase: list[str]) -> bool:
+    """Whether `phrase` is an item of a coordinated list in `tokens` (`Lint Python, shell, or Docker`):
+    a `,` / `and` / `or` stands next to it."""
+    for k in _phrase_starts(tokens, phrase):
+        end = k + len(phrase)
+        if (k > 0 and tokens[k - 1] in _LIST_SEPARATORS) or (end < len(tokens) and tokens[end] in _LIST_SEPARATORS):
+            return True
+    return False
+
+
+def _named_beside_others(section: Section, own_line: int, phrase: list[str]) -> bool:
+    """Whether another line of `section` names `phrase` as one kind among several: as an item of a
+    coordinated list, or on one of two or more lines that open with the same verb and name different
+    objects (`Author Python ...`, `Author Bash hooks ...`)."""
+    siblings = [_kept_tokens(s.text) for s in section.lines if s.line != own_line]
+    siblings = [t for t in siblings if t]
+    if any(_listed(t, phrase) for t in siblings):
+        return True
+    objects_by_verb: dict[str, set[str]] = {}
+    for tokens in siblings:
+        if len(tokens) > 1:
+            objects_by_verb.setdefault(tokens[0], set()).add(tokens[1])
+    return any(len(objects_by_verb[t[0]]) >= 2 and bool(_phrase_starts(t, phrase)) for t in siblings if len(t) > 1)
+
+
+def object_added(p: Pair, section: Section) -> bool:
     """Whether the rewrite gives an object to an instruction whose verb took none, so it no longer
     covers everything the verb did: a list of objects (joined by `and` / `or`), or one kind the
-    section's other lines (`section`, their words) name beside others (`Edit at canonical paths
-    only` -> `Edit instruction surfaces at canonical paths only`, where the section also covers
-    hooks and code). An object nothing else in the section names is the referent the line left
-    implied (`Only use on trusted machines` -> `Only use remote debugging on trusted machines`)."""
+    section's other lines name beside others (`Edit at canonical paths only` -> `Edit instruction
+    surfaces at canonical paths only`, where the section also lists `Author Python ...` and `Author
+    Bash hooks ...`). An object the section's heading names, or that no other line names beside
+    others, is the referent the line left implied (`Only use on trusted machines` under `## Remote
+    debugging` -> `Only use remote debugging on trusted machines`)."""
     old, new = _sentence_words(p)
     verb = next((i for i, w in enumerate(old) if w not in STOPWORDS), None)
     if verb is None or verb + 1 >= len(old) or old[verb + 1] not in PHRASE_PREPOSITIONS:
         return False
+    heading = {f for w in WORD_RE.findall(section.heading.lower()) for f in word_forms(w)}
     for tag, i1, _, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
         content = _content(new[j1:j2])
         if tag != "insert" or i1 != verb + 1 or not content:
             continue
-        if (CONDITION_CONJUNCTIONS & set(new[j1:j2]) and len(content) >= 2) or all(
-            word_forms(w) & section for w in content
-        ):
+        if CONDITION_CONJUNCTIONS & set(new[j1:j2]) and len(content) >= 2:
+            return True
+        if not all(w in heading for w in content) and _named_beside_others(section, p.old.line, content):
             return True
     return False

@@ -53,7 +53,7 @@ from reporails_cli.core.mapper.classify_lexicon import (
 )
 from reporails_cli.core.mapper.prose_split import split_prose_sentences
 from reporails_cli.core.platform.contract.json_value import JsonObject
-from reporails_cli.core.platform.dto.heal import Condition, Pair, SnapshotAtom
+from reporails_cli.core.platform.dto.heal import Condition, Pair, Section, SectionLine, SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 # Thresholds.
@@ -291,17 +291,25 @@ def _same_sentence(p: Pair) -> bool:
     return " ".join(p.old_sentence.lower().split()) == " ".join(p.new_sentence.lower().split())
 
 
-def _section_words(old_by_line: ByLine, atom: AtomView) -> set[str]:
-    """The words, in every form, of the author's other lines under `atom`'s heading."""
-    words = {
-        w.lower()
-        for line, atoms in old_by_line.items()
-        if line != atom.line
-        for a in atoms
-        if a.heading_context == atom.heading_context
-        for w in WORD_RE.findall(a.plain_text)
-    }
-    return words | {f for w in words for f in word_forms(w)}
+def sections_by_line(old_by_line: ByLine) -> dict[int, Section]:
+    """The section each line of the author's file sits in, in file order: a heading atom opens one
+    (its own line is in it); atoms before the first heading share a section with an empty heading."""
+    opened: list[tuple[str, list[SectionLine]]] = [("", [])]
+    members: list[list[int]] = [[]]
+    for line in sorted(old_by_line):
+        for atom in old_by_line[line]:
+            if atom.format == "heading":
+                opened.append((atom.plain_text, []))
+                members.append([])
+            else:
+                opened[-1][1].append(SectionLine(line, atom.plain_text))
+            if line not in members[-1]:
+                members[-1].append(line)
+    out: dict[int, Section] = {}
+    for (heading, lines), line_numbers in zip(opened, members, strict=True):
+        section = Section(heading, tuple(lines))
+        out.update(dict.fromkeys(line_numbers, section))
+    return out
 
 
 def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonObject]:
@@ -316,17 +324,18 @@ def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonOb
     (`add tests` -> `add tests for src/`); or a prohibition given a list of kinds its sentence never
     named (`file plans` -> `file any plan — X, Y, or Z`)."""
     out: list[JsonObject] = []
+    sections = sections_by_line(old_by_line)
     for p in pairs:
         if _same_sentence(p):
             continue
         known = _known_words(old_by_line, p.old.line)
         known |= {f for w in known for f in word_forms(w)}
-        if _narrowed(p, known, _placed_words(old_by_line, p), old_by_line):
+        if _narrowed(p, known, _placed_words(old_by_line, p), sections.get(p.old.line, Section("", ()))):
             out.append(p.entry())
     return out
 
 
-def _narrowed(p: Pair, known: set[str], placed: set[str], old_by_line: ByLine) -> bool:
+def _narrowed(p: Pair, known: set[str], placed: set[str], section: Section) -> bool:
     """Whether any narrowing check fires on `p`, stopping at the first that does."""
     return (
         any(_narrows(clause, known, placed) for clause in _clauses(p.new))
@@ -334,7 +343,7 @@ def _narrowed(p: Pair, known: set[str], placed: set[str], old_by_line: ByLine) -
         or qualified_general_noun(p, known)
         or for_phrase_added(p)
         or kinds_listed(p)
-        or object_added(p, _section_words(old_by_line, p.old))
+        or object_added(p, section)
     )
 
 
