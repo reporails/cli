@@ -612,6 +612,11 @@ def test_a_prohibition_given_a_narrower_object_from_its_own_file_narrows(tmp_pat
         ("*Do not edit it by hand.*", "*Do not edit the config by hand.*"),
         ("*Never write a `signal` without `due`.*", "*Never write a `signal` artifact without `due`.*"),
         ("*Do not bypass `lead` on cross-cluster work.*", "*Never bypass `lead` on cross-cluster work.*"),
+        (
+            "*Do not modify any `specs/`, the dep-map, or `docs/` \u2014 "
+            "those are other-role, lead, or operator territory.*",
+            "*Do not modify other-role, lead, or operator territory: any `specs/`, the dep-map, or `docs/`.*",
+        ),
     ],
 )
 def test_a_named_referent_or_a_kept_object_does_not_narrow(tmp_path, before, after) -> None:
@@ -697,3 +702,46 @@ def test_a_then_step_with_a_comma_or_and_is_still_a_step(after: str) -> None:
 
     assert rewrite_cut("Run the tests, and then fix every failure.", after) == "step"
     assert rewrite_cut("Run the tests, then fix every failure.", after) == "step"
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_for_phrase_given_to_a_rule_that_had_none_narrows_it(tmp_path) -> None:
+    before = "Modify `src/`, add tests under `tests/`, and update the rules under `rules/`.\n"
+    after = "Modify `src/`. Add tests for `src/` under `tests/`. Update the rules under `rules/`.\n"
+    result = _compare_edit(tmp_path, before, after)
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("after", "dropped"),
+    [
+        ("For `all`, group the actions by direction. Give a count per direction, then list the open rules.", True),
+        (
+            "For `all`, group the actions by direction. "
+            "For `all`, give a count per direction, then list the open rules.",
+            False,
+        ),
+    ],
+)
+def test_a_split_keeps_the_scope_a_sentence_opens_with_on_every_piece(tmp_path, after, dropped) -> None:
+    before = "For `all`, group the actions by direction, give a count per direction, then list the open rules.\n"
+    result = _compare_edit(tmp_path, before, after + "\n")
+    assert bool(result["dropped_conditions"]) is dropped
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_split_sentence_made_specific_is_listed_with_every_piece_of_its_rewrite(tmp_path) -> None:
+    ground = "\n\nThe generator writes `.ails/backbone.yml`.\n"
+    before = "Review the generated backbone and mark uncertain entries with `# TODO: refine`." + ground
+    after = "Review the generated `.ails/backbone.yml`. Mark uncertain entries with `# TODO: refine`." + ground
+    listed = _compare_edit(tmp_path, before, after)["made_specific"]
+    assert listed
+    assert all("Mark uncertain entries" in e["after"] for e in listed)

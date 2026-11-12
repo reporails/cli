@@ -314,14 +314,20 @@ def _qualified_general_noun(p: Pair, known: set[str]) -> bool:
     the sentence already pointed at), from words that stand elsewhere on the line (`known`) —
     `file plans` -> `file X or Y plans`, `present a menu` -> `present a UX recommendation as a
     menu`; a forbidden noun replaced by such words (`file plans` -> `file X or Y`); or a new noun
-    phrase put before what it forbade (`treat a memory` -> `treat a prior orientation — a memory`)."""
+    phrase put before what it forbade (`treat a memory` -> `treat a prior orientation — a memory`).
+    Words the rewrite only moved within the sentence restrict nothing (`modify X — those are Y` ->
+    `modify Y: X`)."""
     if not NEGATION_RE.search(p.new_sentence):
         return False
     old, new = _sentence_words(p)
-    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+    ops = difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes()
+    removed = {w for _, i1, i2, _, _ in ops if i1 < i2 for w in _content(old[i1:i2])}
+    for tag, i1, i2, j1, j2 in ops:
         if j1 == 0 or j2 >= len(new):
             continue
         added = new[j1:j2]
+        if tag == "insert" and set(_content(added)) <= removed:
+            continue
         if tag == "insert" and new[j1 - 1] not in _DEFINITE and _known_qualifier(added, known):
             return True
         if tag == "insert" and _new_head_noun(new, j1, j2):
@@ -330,6 +336,20 @@ def _qualified_general_noun(p: Pair, known: set[str]) -> bool:
         if tag == "replace" and dropped and not set(dropped) & set(added) and _known_qualifier(added, known):
             return True
     return False
+
+
+# Words after a fronted `for` / scope preposition that make it an aside, not a scope (`For example,`).
+_NOT_A_SCOPE = frozenset({"example", "instance"})
+
+
+def _for_phrase_added(p: Pair) -> bool:
+    """Whether the rewrite gives the instruction a `for` phrase its author's sentence had none of:
+    what the verb covers is cut down to the phrase (`add tests under tests/` -> `add tests for src/
+    under tests/`)."""
+    old, new = _sentence_words(p)
+    if "for" in old:
+        return False
+    return any(w == "for" and i + 1 < len(new) and new[i + 1] not in _NOT_A_SCOPE for i, w in enumerate(new))
 
 
 def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonObject]:
@@ -349,7 +369,7 @@ def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonOb
         known |= {f for w in known for f in word_forms(w)}
         placed = _placed_words(old_by_line, p)
         narrows = any(_narrows(clause, known, placed) for clause in _clauses(p.new))
-        if narrows or _inserted_after_quantifier(p) or _qualified_general_noun(p, known):
+        if narrows or _inserted_after_quantifier(p) or _qualified_general_noun(p, known) or _for_phrase_added(p):
             out.append(p.entry())
     return out
 
@@ -359,14 +379,21 @@ def made_specific(
 ) -> list[JsonObject]:
     """Each kept instruction that gained a named construct the author's line lacked and that no
     other check flagged (`flagged` holds the `(line, new_line)` of narrowed pairs, `invented` the
-    lowered names reported as invented): allowed and listed so the report can show it."""
-    out: list[JsonObject] = []
+    lowered names reported as invented): allowed and listed so the report can show it, once per
+    sentence of the author's, with every sentence its rewrite became (a split shows all its pieces)."""
+    rewrites: dict[tuple[int, str], dict[str, None]] = {}
     for p in pairs:
-        if (p.old.line, p.new.line) in flagged:
+        rewrites.setdefault((p.old.line, p.old_sentence), {})[p.new_sentence] = None
+    out: list[JsonObject] = []
+    listed: set[tuple[int, str]] = set()
+    for p in pairs:
+        key = (p.old.line, p.old_sentence)
+        if (p.old.line, p.new.line) in flagged or key in listed:
             continue
         known = _line_named(old_by_line, p.old.line) | invented
         if any(named_key(t) not in known for t in p.new.named_tokens):
-            out.append({"line": p.old.line, "before": p.old_sentence, "after": p.new_sentence})
+            listed.add(key)
+            out.append({"line": p.old.line, "before": p.old_sentence, "after": " ".join(rewrites[key])})
     return out
 
 
@@ -453,6 +480,29 @@ def _holds(governed: Condition, rewrite_conditions: list[Condition], original_co
     )
 
 
+_FRAME_OPENERS = SCOPE_PREPOSITIONS | {"for"}
+_FRAME_REACH = 5  # words a fronted scope phrase may hold before its comma
+
+
+def _fronted_scope(sentence: str) -> list[str]:
+    """The words of the phrase a sentence opens with before its first comma, when `for` or a scope
+    preposition opens it (`For all,`, `In CI,`): it scopes every instruction of the sentence."""
+    head, comma, _ = sentence.partition(",")
+    words = [w.lower() for w in WORD_RE.findall(head)]
+    if not comma or not words or words[0] not in _FRAME_OPENERS or len(words) > _FRAME_REACH:
+        return []
+    return [] if _NOT_A_SCOPE & set(words) else words[1:]
+
+
+def _scope_dropped(p: Pair) -> bool:
+    """Whether the rewrite's sentence lost the scope phrase the author's sentence opened with, as
+    when a split leaves later instructions outside it (`For all, group X, count Y` -> `For all,
+    group X. Count Y`)."""
+    scope = _fronted_scope(p.old_sentence)
+    new = {w.lower() for w in WORD_RE.findall(p.new_sentence)}
+    return bool(scope) and not all(_is_word_of(w, new) for w in scope)
+
+
 def dropped_conditions(pairs: list[Pair]) -> list[JsonObject]:
     """Each matched instruction whose original holds a condition (if / when / before / after /
     unless / only ...) that its rewrite no longer holds: the rewrite has no condition at all, or no
@@ -463,6 +513,9 @@ def dropped_conditions(pairs: list[Pair]) -> list[JsonObject]:
     one that brings a word the original condition lacked is not."""
     out = []
     for p in pairs:
+        if _scope_dropped(p):
+            out.append(p.entry())
+            continue
         if not conditional(p.old):
             continue
         before = set(prose_words(p.old))
