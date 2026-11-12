@@ -30,7 +30,6 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from reporails_cli.bundled import get_xray_path
-from reporails_cli.core.discovery.project_root import home_folder
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.eventbus.transcript import known_session
@@ -46,6 +45,7 @@ from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.xray import PickedSession, SessionPick, XrayCheck
 from reporails_cli.core.platform.dto.xray_sources import FindingTally, XrayPeek
+from reporails_cli.core.platform.utils.utils import home_folder
 from reporails_cli.core.xray.pages import HOST, code_change_watch, forget_page, register_page
 from reporails_cli.core.xray.session import XraySession
 from reporails_cli.core.xray.sessions import session_entries

@@ -122,7 +122,9 @@ def _mcp_env(context, session: str = "") -> dict[str, str]:
     return {**suite_env(os.environ), "HOME": str(context.home), "USERPROFILE": str(context.home), SESSION_ENV: session}
 
 
-async def _xray_calls(project: Path, env: dict[str, str], *, together: bool) -> list[tuple[dict, float]]:
+async def _xray_calls(project: Path, env: dict[str, str], *, together: bool) -> tuple[list[tuple[dict, float]], str]:
+    """The two calls' replies with their durations, and the first reply's page `/launch` answer, read while the
+    agent's MCP server still runs: on Windows the client ends the server's whole process tree, the page with it."""
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
@@ -139,12 +141,16 @@ async def _xray_calls(project: Path, env: dict[str, str], *, together: bool) -> 
         async with stdio_client(params, errlog=server_log) as (read, write), ClientSession(read, write) as session:
             await session.initialize()
             if together:
-                return list(await asyncio.gather(call(session), call(session)))
-            return [await call(session), await call(session)]
+                replies = list(await asyncio.gather(call(session), call(session)))
+            else:
+                replies = [await call(session), await call(session)]
+            first = replies[0][0]
+            launch = await asyncio.to_thread(_get, _base(first["url"]) + "launch") if "url" in first else ""
+            return replies, launch
 
 
 def _mcp_calls(context, *, together: bool, session: str = "") -> None:
-    context.mcp = asyncio.run(
+    context.mcp, context.mcp_launch = asyncio.run(
         asyncio.wait_for(
             _xray_calls(context.project, _mcp_env(context, session), together=together), timeout=PAGE_START_S * 3
         )
@@ -177,7 +183,7 @@ def step_mcp_fast(context):
 
 @then("the address's page answers as the x-ray page")
 def step_mcp_page_answers(context):
-    launch = json.loads(_get(_base(context.url) + "launch"))
+    launch = json.loads(context.mcp_launch)
     assert launch["launch"], launch
 
 

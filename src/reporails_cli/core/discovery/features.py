@@ -25,7 +25,7 @@ from reporails_cli.core.platform.dto.hooks import HookConfig
 from reporails_cli.core.platform.dto.results import DetectedFeatures, HookEntry
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.core.platform.utils.hook_config import hook_sites, read_hook_config
-from reporails_cli.core.platform.utils.utils import is_rooted_pattern, matches_any_glob
+from reporails_cli.core.platform.utils.utils import home_relative, is_rooted_pattern, matches_any_glob
 
 logger = logging.getLogger(__name__)
 
@@ -251,10 +251,7 @@ def _agent_hook_files(target: Path, agent_id: str, scan: SurfaceScan | None = No
 def _hook_file_label(path: Path, target: Path) -> str:
     """A hook file as shown to the user: project-relative, `~/`-relative in the home folder, else absolute."""
     resolved, root = safe_resolve(path), safe_resolve(target)
-    home, real_home = Path.home(), safe_resolve(Path.home())
-    if resolved.is_relative_to(real_home) and not resolved.is_relative_to(root):
-        resolved = home / resolved.relative_to(real_home)
-    elif not resolved.is_relative_to(root):
+    if not resolved.is_relative_to(root) and home_relative(resolved) is None:
         return path.as_posix()
     return normalize_finding_path(resolved.as_posix(), root)
 

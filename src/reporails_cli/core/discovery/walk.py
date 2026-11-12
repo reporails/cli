@@ -40,6 +40,18 @@ def safe_resolve(path: Path) -> Path:
         return path
 
 
+def own_name_spellings(path: Path) -> tuple[Path, ...]:
+    """The absolute paths of `path` that keep its own last name: as written, then with its folder resolved.
+
+    The written spelling keeps a folder reached through a link (a `.claude` linked to a dotfiles folder);
+    the folder-resolved one shares its spelling of every folder with a resolved path, whatever alias the
+    folders were written through (a Windows short `RUNNER~1` name).
+    """
+    written = Path(os.path.abspath(path))
+    folder_resolved = safe_resolve(written.parent) / written.name
+    return (written,) if folder_resolved == written else (written, folder_resolved)
+
+
 def inside_git_repository(target: Path) -> bool:
     """Whether the target or any folder above it holds a `.git`."""
     try:
@@ -52,11 +64,11 @@ def inside_git_repository(target: Path) -> bool:
 def file_under_target(f: Path, tgt: Path) -> bool:
     """True when instruction file `f` is the target or sits beneath it.
 
-    Tests the file's logical absolute path alongside its symlink-resolved path, so a folder target keeps
+    Tests the file's own-name spellings alongside its symlink-resolved path, so a folder target keeps
     in-tree symlinked files whose real location is elsewhere.
     """
-    candidates = [Path(os.path.abspath(f))]
-    # A symlink loop resolves nowhere; its logical path stands alone.
+    candidates = list(own_name_spellings(f))
+    # A symlink loop resolves nowhere; its own-name spellings stand alone.
     with contextlib.suppress(OSError, RuntimeError):
         candidates.append(safe_resolve(f))
     if tgt.is_file():

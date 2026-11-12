@@ -18,6 +18,7 @@ from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, Rule, Violation
 from reporails_cli.core.platform.policy.matching import match_files
+from reporails_cli.core.platform.utils.utils import home_relative
 
 logger = logging.getLogger(__name__)
 
@@ -225,10 +226,9 @@ def _classified_display(cf: ClassifiedFile, root: Path | None) -> str:
         except ValueError:
             pass
     if cf.properties.get("precedence") == "user" and cf.path.is_absolute():
-        try:
-            return "~/" + cf.path.relative_to(Path.home()).as_posix()
-        except ValueError:
-            pass
+        under_home = home_relative(cf.path)
+        if under_home is not None:
+            return "~/" + under_home
     return cf.path.name
 
 

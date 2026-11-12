@@ -451,11 +451,11 @@ def install(
     with collaborators through the project's Claude Code settings; Codex
     installs for your user.
     """
-    from reporails_cli.core.discovery.project_root import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
-        home_folder,
-    )
     from reporails_cli.core.platform.adapters.api_key import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         has_api_key,
+    )
+    from reporails_cli.core.platform.utils.utils import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        home_folder,
     )
 
     if project and Path.cwd().resolve() == home_folder():
