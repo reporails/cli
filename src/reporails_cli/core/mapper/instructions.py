@@ -14,6 +14,7 @@ from reporails_cli.core.mapper.classify import is_conditional_frame
 from reporails_cli.core.mapper.classify_lexicon import (
     CLAUSE_JOINERS,
     DETERMINERS,
+    INDEFINITE_ARTICLES,
     VERBS_AMBIGUOUS,
     VERBS_CORE,
     VERBS_NAMING_TOOLS,
@@ -63,7 +64,7 @@ _UNLEXICONED_COMMAND_VERBS = frozenset(
 )
 _COMMAND_VERBS = frozenset(VERBS_CORE | VERBS_SUPPLEMENT | _UNLEXICONED_COMMAND_VERBS) - VERBS_NAMING_TOOLS
 _NOUN_OR_VERB = frozenset(VERBS_AMBIGUOUS | VERBS_NAMING_TOOLS)
-_OBJECT_OPENERS = frozenset(DETERMINERS | {"a", "an", "it", "them", "your", "its", "sure"})
+_OBJECT_OPENERS = frozenset(DETERMINERS | INDEFINITE_ARTICLES | {"it", "them", "your", "its", "sure"})
 # `to install`, `to build`: the verbs listed after it say what the one instruction is for.
 _PURPOSE_RE = re.compile(r"\bto\s+([a-z]+)\b", re.IGNORECASE)
 _WORD_START_RE = re.compile(r"\S+")

@@ -572,6 +572,54 @@ def test_a_qualifier_on_a_general_noun_narrows_even_when_the_line_uses_its_words
     assert result["ok"] is False
 
 
+_MEMORY_BEFORE = (
+    "Re-run `/orient` at each session source; a prior session's orientation does not carry forward.\n"
+    "*Do not treat a recalled memory or a prior-turn summary as a substitute for the live `/orient` load.*\n"
+)
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (_PO_BEFORE, _PO_BEFORE.replace("file plans", "file release-notes or build-work")),
+        (
+            _MEMORY_BEFORE,
+            _MEMORY_BEFORE.replace(
+                "treat a recalled memory or a prior-turn summary as",
+                "treat a prior session's orientation — a recalled memory or a prior-turn summary — as",
+            ),
+        ),
+    ],
+)
+def test_a_prohibition_given_a_narrower_object_from_its_own_file_narrows(tmp_path, before, after) -> None:
+    """A forbidden noun replaced by the kinds its line names, and a new head noun put before what a
+    prohibition forbade."""
+    ground = "\n\nThe `reviewer`, `/orient` and `AskUserQuestion` exist.\n"
+    result = _compare_edit(tmp_path, before + ground, after + ground)
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("*Do not edit it by hand.*", "*Do not edit the config by hand.*"),
+        ("*Never write a `signal` without `due`.*", "*Never write a `signal` artifact without `due`.*"),
+        ("*Do not bypass `lead` on cross-cluster work.*", "*Never bypass `lead` on cross-cluster work.*"),
+    ],
+)
+def test_a_named_referent_or_a_kept_object_does_not_narrow(tmp_path, before, after) -> None:
+    ground = "\n\nThe `signal`, `due`, `lead` and `CLAUDE.md` names exist.\n"
+    result = _compare_edit(tmp_path, before + ground, after + ground)
+    assert result["narrowed_instructions"] == []
+
+
 _THEN_BEFORE = (
     "*Do not silently skip an entry that fails to load \u2014 name the missing key and the paths tried, "
     "then ask the maintainer; do not add a fallback path \u2014 the loader is strict.*\n"

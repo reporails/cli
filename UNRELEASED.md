@@ -15,6 +15,7 @@
 - On Windows, `ails check` names a file relative to its project, finds the files of a `~/.claude` folder and keeps a linked rule inside its project when the folder is spelled with a short (8.3) name; a file in the folder the command runs in is named with `/`, not its full path.
 - With a home folder reached through a link, `ails check` on a `~/.claude` folder reports that folder's findings instead of none.
 - Heal in your agent leaves a line marked with `ails-disable-line` exactly as it is: the agent is given no fix and no decision on it.
+- Heal puts back a rewrite that narrows what a prohibition forbids: the forbidden thing swapped for the kinds the same line names (`Do not file plans` → `Do not file X or Y`), or a new noun put in front of it (`Do not treat a recalled memory …` → `Do not treat a prior orientation — a recalled memory …`).
 
 ### Removed
 

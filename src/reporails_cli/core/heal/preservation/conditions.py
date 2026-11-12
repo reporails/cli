@@ -40,6 +40,7 @@ from reporails_cli.core.mapper.classify_lexicon import (
     CONDITIONAL_MARKERS,
     DETERMINERS,
     GENERAL_QUANTIFIERS,
+    INDEFINITE_ARTICLES,
     PHRASE_PREPOSITIONS,
     SCOPE_PREPOSITIONS,
     STOPWORDS,
@@ -283,27 +284,52 @@ def _same_sentence(p: Pair) -> bool:
 _DEFINITE = DETERMINERS - GENERAL_QUANTIFIERS
 
 
+def _content(words: list[str]) -> list[str]:
+    """The content words of `words`: longer than two letters and not a function word."""
+    return [w for w in words if len(w) > 2 and w not in STOPWORDS]
+
+
 def _known_qualifier(words: list[str], known: set[str]) -> bool:
     """Whether `words` hold content words and every one of them is a word of the author's line."""
-    content = [w for w in words if len(w) > 2 and w not in STOPWORDS]
+    content = _content(words)
     return bool(content) and all(w in known for w in content)
 
 
+def _sentence_words(p: Pair) -> tuple[list[str], list[str]]:
+    """The lowered words of the author's sentence and of its rewrite."""
+    return [w.lower() for w in WORD_RE.findall(p.old_sentence)], [w.lower() for w in WORD_RE.findall(p.new_sentence)]
+
+
+def _new_head_noun(new: list[str], j1: int, j2: int) -> bool:
+    """Whether the words inserted at `new[j1:j2]` open a noun phrase of their own (an indefinite
+    article and a content word) placed before what the sentence already named, which then reads as
+    an example of the new phrase (`treat a memory` -> `treat a prior orientation — a memory`)."""
+    span = new[max(j1 - 1, 0) : j2 + 1]
+    return bool(INDEFINITE_ARTICLES & set(span)) and bool(_content(new[j1:j2])) and new[j2] not in PHRASE_PREPOSITIONS
+
+
 def _qualified_general_noun(p: Pair, known: set[str]) -> bool:
-    """Whether a prohibition's rewrite puts content words into its sentence anywhere but after a
-    definite reference (`the linter` -> `the ruff linter` names what the sentence already pointed
-    at): `file plans` -> `file X or Y plans`, `present a menu` -> `present a UX recommendation as a
-    menu` restrict what the rule forbids, though those words stand elsewhere on the line (`known`)."""
+    """Whether a prohibition's rewrite restricts what it forbids: content words put into its
+    sentence anywhere but after a definite reference (`the linter` -> `the ruff linter` names what
+    the sentence already pointed at), from words that stand elsewhere on the line (`known`) —
+    `file plans` -> `file X or Y plans`, `present a menu` -> `present a UX recommendation as a
+    menu`; a forbidden noun replaced by such words (`file plans` -> `file X or Y`); or a new noun
+    phrase put before what it forbade (`treat a memory` -> `treat a prior orientation — a memory`)."""
     if not NEGATION_RE.search(p.new_sentence):
         return False
-    old = [w.lower() for w in WORD_RE.findall(p.old_sentence)]
-    new = [w.lower() for w in WORD_RE.findall(p.new_sentence)]
-    ops = difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes()
-    return any(
-        _known_qualifier(new[j1:j2], known)
-        for tag, _, _, j1, j2 in ops
-        if tag == "insert" and j1 > 0 and j2 < len(new) and new[j1 - 1] not in _DEFINITE
-    )
+    old, new = _sentence_words(p)
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+        if j1 == 0 or j2 >= len(new):
+            continue
+        added = new[j1:j2]
+        if tag == "insert" and new[j1 - 1] not in _DEFINITE and _known_qualifier(added, known):
+            return True
+        if tag == "insert" and _new_head_noun(new, j1, j2):
+            return True
+        dropped = _content(old[i1:i2])
+        if tag == "replace" and dropped and not set(dropped) & set(added) and _known_qualifier(added, known):
+            return True
+    return False
 
 
 def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonObject]:

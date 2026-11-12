@@ -15,6 +15,7 @@ from reporails_cli.core.mapper.classify_lexicon import (
     CONDITIONAL_MARKERS,
     CONTEXT_WORDS,
     DETERMINERS,
+    INDEFINITE_ARTICLES,
     MODAL_ABSOLUTE,
     MODAL_HEDGED,
     PHRASE_PREPOSITIONS,
@@ -47,30 +48,31 @@ _PROBABLE_SUBJECTS = {
 
 # Determiners for verb-noun disambiguation in Phase 3c: the noun-phrase openers plus articles,
 # possessives and quantifiers.
-_VERB_NOUN_DETERMINERS: frozenset[str] = DETERMINERS | {
-    "a",
-    "an",
-    "your",
-    "our",
-    "my",
-    "its",
-    "their",
-    "his",
-    "her",
-    "no",
-    "some",
-    "both",
-    "either",
-    "neither",
-}
+_VERB_NOUN_DETERMINERS: frozenset[str] = (
+    DETERMINERS
+    | INDEFINITE_ARTICLES
+    | {
+        "your",
+        "our",
+        "my",
+        "its",
+        "their",
+        "his",
+        "her",
+        "no",
+        "some",
+        "both",
+        "either",
+        "neither",
+    }
+)
 
 # Declarative sentence starters for Phase 3g
 _DECLARATIVE_STARTS: frozenset[str] = frozenset(
     _PROBABLE_SUBJECTS
+    | INDEFINITE_ARTICLES
     | {
         "the",
-        "a",
-        "an",
         "its",
         "their",
         "our",

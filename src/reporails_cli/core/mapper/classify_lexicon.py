@@ -459,6 +459,8 @@ SCOPE_PREPOSITIONS: frozenset[str] = frozenset({"on", "in", "at", "during", "wit
 # right after one narrows what the line covers.
 GENERAL_QUANTIFIERS: frozenset[str] = frozenset({"every", "each", "all", "any", "no", "one"})
 DEFINITE_DETERMINERS: frozenset[str] = frozenset({"the", "this", "that", "these", "those"})
+# Words that open a noun phrase of their own (`a prior orientation`).
+INDEFINITE_ARTICLES: frozenset[str] = frozenset({"a", "an"})
 DETERMINERS: frozenset[str] = DEFINITE_DETERMINERS | (GENERAL_QUANTIFIERS - {"no", "one"})
 
 # Common English function words, dropped from content-word coverage: polarity already tracks
@@ -472,9 +474,10 @@ STOPWORDS: frozenset[str] = (
     | MODAL_HEDGED
     | GENERAL_QUANTIFIERS
     | DEFINITE_DETERMINERS
+    | INDEFINITE_ARTICLES
     | frozenset(
         {
-            "a", "after", "again", "also", "always", "an", "are", "as", "at", "be", "been", "before",
+            "after", "again", "also", "always", "are", "as", "at", "be", "been", "before",
             "being", "but", "by", "can", "did", "do", "does", "down", "few", "for", "from", "here", "if",
             "in", "into", "its", "just", "may", "more", "most", "never", "nor", "not", "of", "on", "once",
             "only", "onto", "other", "out", "over", "own", "per", "so", "some", "such", "than", "there",
