@@ -745,3 +745,91 @@ def test_a_split_sentence_made_specific_is_listed_with_every_piece_of_its_rewrit
     listed = _compare_edit(tmp_path, before, after)["made_specific"]
     assert listed
     assert all("Mark uncertain entries" in e["after"] for e in listed)
+
+
+_PLANS = (
+    "- Hand product-direction and build-work to the `reviewer` for filing; one owner keeps the queue coherent. "
+    "*Do not file plans directly into another team's surfaces, bypassing the `reviewer`.*\n"
+)
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (_PLANS, _PLANS.replace("file plans", "file any plan — product-direction, roadmap, or build-work —")),
+        (
+            "*Never encode a repo in the `logs/` path.*\n",
+            "*Never encode a repo name or a per-repo `<repo>` segment in any `logs/` path.*\n",
+        ),
+        (
+            "*Do not assert a business bet from this `notes.md` file alone.*\n",
+            "*Do not assert a business bet (a business-model, pricing, or positioning call) "
+            "from this `notes.md` file alone.*\n",
+        ),
+    ],
+)
+def test_a_prohibition_given_a_list_of_kinds_it_did_not_name_narrows(tmp_path, before, after) -> None:
+    ground = "\n\nThe `reviewer`, `logs/`, `<repo>` and `notes.md` names exist.\n"
+    result = _compare_edit(tmp_path, before + ground, after + ground)
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (
+            "*Do not assign a `cluster`, `type`, or `location` to any signal.*\n",
+            "*Do not assign any placement field (`cluster`, `type`, or `location`) to any signal.*\n",
+        ),
+        (
+            "*Do not commit secrets to the repo.*\n",
+            "*Do not commit secrets, such as tokens or passwords, to the repo.*\n",
+        ),
+    ],
+)
+def test_a_prohibition_listing_its_own_items_or_examples_does_not_narrow(tmp_path, before, after) -> None:
+    ground = "\n\nThe `cluster`, `type` and `location` fields exist.\n"
+    assert _compare_edit(tmp_path, before + ground, after + ground)["narrowed_instructions"] == []
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after", "check"),
+    [
+        ("*Do not file plans.*", "*Do not file release-notes or build-work.*", "narrowed_instructions"),
+        ("*Do not modify the docs — those are generated.*", "*Do not modify generated docs.*", "narrowed_instructions"),
+    ],
+)
+def test_a_prohibition_narrowed_at_its_end_or_by_a_moved_aside_is_caught(tmp_path, before, after, check) -> None:
+    assert _compare_edit(tmp_path, before + "\n", after + "\n")[check]
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("In a monorepo, run `ruff`.", "Run `ruff` in monorepos."),
+        ("Read the agent guide.", "Read the agent guide at `docs/for-agents.md`."),
+        ("Run lint on each file.", "For each file, run lint."),
+        (
+            "*Do not use a mock — prefer a fake for the store.*",
+            "*Do not use a mock — prefer a real in-memory fake for the store.*",
+        ),
+    ],
+)
+def test_a_kept_scope_a_code_for_or_a_change_outside_the_prohibition_is_not_flagged(tmp_path, before, after) -> None:
+    ground = "\n\nThe `ruff` linter and `docs/for-agents.md` exist.\n"
+    result = _compare_edit(tmp_path, before + ground, after + ground)
+    assert result["narrowed_instructions"] == []
+    assert result["dropped_conditions"] == []

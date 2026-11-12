@@ -9,14 +9,19 @@ mapper's classifier.
 
 from __future__ import annotations
 
-import difflib
 import os
 import re
 from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 
+from reporails_cli.core.heal.preservation.qualifiers import (
+    DEFINITE,
+    NOT_A_SCOPE,
+    for_phrase_added,
+    kinds_listed,
+    qualified_general_noun,
+)
 from reporails_cli.core.heal.preservation.words import (
-    NEGATION_RE,
     WORD_RE,
     AtomView,
     blank_named,
@@ -239,11 +244,15 @@ def _narrows(words: list[str], known: set[str], placed: set[str]) -> bool:
     return False
 
 
+# A hyphenated word opening with a scope preposition (`in-memory`, `on-call`) is one word, not a place.
+_PREPOSITION_COMPOUND_RE = re.compile(r"\b(" + "|".join(sorted(SCOPE_PREPOSITIONS)) + r")-(?=[a-z])", re.IGNORECASE)
+
+
 def _clauses(atom: AtomView, *, named: bool = False) -> list[list[str]]:
     """`atom`'s words, one list per comma / colon / parenthesis separated clause, each named
     construct a placeholder word unless `named` (a condition's words read the same backticked or
     not)."""
-    parts = _CLAUSE_RE.split(prose_text(atom, named=named, fill=f" {_NAMED} "))
+    parts = _CLAUSE_RE.split(_PREPOSITION_COMPOUND_RE.sub(r"\1", prose_text(atom, named=named, fill=f" {_NAMED} ")))
     return [w for w in ([t.lower() for t in WORD_RE.findall(part)] for part in parts) if w]
 
 
@@ -281,77 +290,6 @@ def _same_sentence(p: Pair) -> bool:
     return " ".join(p.old_sentence.lower().split()) == " ".join(p.new_sentence.lower().split())
 
 
-_DEFINITE = DETERMINERS - GENERAL_QUANTIFIERS
-
-
-def _content(words: list[str]) -> list[str]:
-    """The content words of `words`: longer than two letters and not a function word."""
-    return [w for w in words if len(w) > 2 and w not in STOPWORDS]
-
-
-def _known_qualifier(words: list[str], known: set[str]) -> bool:
-    """Whether `words` hold content words and every one of them is a word of the author's line."""
-    content = _content(words)
-    return bool(content) and all(w in known for w in content)
-
-
-def _sentence_words(p: Pair) -> tuple[list[str], list[str]]:
-    """The lowered words of the author's sentence and of its rewrite."""
-    return [w.lower() for w in WORD_RE.findall(p.old_sentence)], [w.lower() for w in WORD_RE.findall(p.new_sentence)]
-
-
-def _new_head_noun(new: list[str], j1: int, j2: int) -> bool:
-    """Whether the words inserted at `new[j1:j2]` open a noun phrase of their own (an indefinite
-    article and a content word) placed before what the sentence already named, which then reads as
-    an example of the new phrase (`treat a memory` -> `treat a prior orientation — a memory`)."""
-    span = new[max(j1 - 1, 0) : j2 + 1]
-    return bool(INDEFINITE_ARTICLES & set(span)) and bool(_content(new[j1:j2])) and new[j2] not in PHRASE_PREPOSITIONS
-
-
-def _qualified_general_noun(p: Pair, known: set[str]) -> bool:
-    """Whether a prohibition's rewrite restricts what it forbids: content words put into its
-    sentence anywhere but after a definite reference (`the linter` -> `the ruff linter` names what
-    the sentence already pointed at), from words that stand elsewhere on the line (`known`) —
-    `file plans` -> `file X or Y plans`, `present a menu` -> `present a UX recommendation as a
-    menu`; a forbidden noun replaced by such words (`file plans` -> `file X or Y`); or a new noun
-    phrase put before what it forbade (`treat a memory` -> `treat a prior orientation — a memory`).
-    Words the rewrite only moved within the sentence restrict nothing (`modify X — those are Y` ->
-    `modify Y: X`)."""
-    if not NEGATION_RE.search(p.new_sentence):
-        return False
-    old, new = _sentence_words(p)
-    ops = difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes()
-    removed = {w for _, i1, i2, _, _ in ops if i1 < i2 for w in _content(old[i1:i2])}
-    for tag, i1, i2, j1, j2 in ops:
-        if j1 == 0 or j2 >= len(new):
-            continue
-        added = new[j1:j2]
-        if tag == "insert" and set(_content(added)) <= removed:
-            continue
-        if tag == "insert" and new[j1 - 1] not in _DEFINITE and _known_qualifier(added, known):
-            return True
-        if tag == "insert" and _new_head_noun(new, j1, j2):
-            return True
-        dropped = _content(old[i1:i2])
-        if tag == "replace" and dropped and not set(dropped) & set(added) and _known_qualifier(added, known):
-            return True
-    return False
-
-
-# Words after a fronted `for` / scope preposition that make it an aside, not a scope (`For example,`).
-_NOT_A_SCOPE = frozenset({"example", "instance"})
-
-
-def _for_phrase_added(p: Pair) -> bool:
-    """Whether the rewrite gives the instruction a `for` phrase its author's sentence had none of:
-    what the verb covers is cut down to the phrase (`add tests under tests/` -> `add tests for src/
-    under tests/`)."""
-    old, new = _sentence_words(p)
-    if "for" in old:
-        return False
-    return any(w == "for" and i + 1 < len(new) and new[i + 1] not in _NOT_A_SCOPE for i, w in enumerate(new))
-
-
 def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonObject]:
     """Each matched instruction whose rewrite adds words that restrict where, when or to what it
     applies, without an if / when / before frame (which `added_conditions` already reports): a
@@ -359,8 +297,10 @@ def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonOb
     author's sentence did not already hold inside a prepositional phrase (`define WHAT to build` ->
     `define WHAT to build in that spec`, though `spec` is elsewhere on the line); or one that
     names a construct directly after a general quantifier the author's line already had (`every
-    gate` -> `every X gate`); or a prohibition that gains a qualifier before its noun from words
-    the line has elsewhere (`file plans` -> `file X or Y plans`)."""
+    gate` -> `every X gate`); a prohibition that gains a qualifier before its noun from words the
+    line has elsewhere (`file plans` -> `file X or Y plans`); a `for` phrase the sentence never had
+    (`add tests` -> `add tests for src/`); or a prohibition given a list of kinds its sentence never
+    named (`file plans` -> `file any plan — X, Y, or Z`)."""
     out: list[JsonObject] = []
     for p in pairs:
         if _same_sentence(p):
@@ -369,7 +309,13 @@ def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonOb
         known |= {f for w in known for f in word_forms(w)}
         placed = _placed_words(old_by_line, p)
         narrows = any(_narrows(clause, known, placed) for clause in _clauses(p.new))
-        if narrows or _inserted_after_quantifier(p) or _qualified_general_noun(p, known) or _for_phrase_added(p):
+        arms = (
+            _inserted_after_quantifier(p),
+            qualified_general_noun(p, known),
+            for_phrase_added(p),
+            kinds_listed(p),
+        )
+        if narrows or any(arms):
             out.append(p.entry())
     return out
 
@@ -491,7 +437,9 @@ def _fronted_scope(sentence: str) -> list[str]:
     words = [w.lower() for w in WORD_RE.findall(head)]
     if not comma or not words or words[0] not in _FRAME_OPENERS or len(words) > _FRAME_REACH:
         return []
-    return [] if _NOT_A_SCOPE & set(words) else words[1:]
+    if NOT_A_SCOPE & set(words):
+        return []
+    return [w for w in words[1:] if w not in INDEFINITE_ARTICLES and w not in DEFINITE]
 
 
 def _scope_dropped(p: Pair) -> bool:

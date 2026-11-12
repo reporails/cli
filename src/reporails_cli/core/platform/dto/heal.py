@@ -128,3 +128,14 @@ class Condition:
 
     words: frozenset[str]
     restriction: bool
+
+
+@dataclass(frozen=True)
+class RewriteWords:
+    """The words one prohibition's rewrite is read against: those on the author's line (`known`),
+    those the rewrite only moved within the sentence to label what it lists (`moved`), and those of
+    the parts of the rewrite that hold its negation (`negated`)."""
+
+    known: frozenset[str]
+    moved: frozenset[str]
+    negated: frozenset[str]
