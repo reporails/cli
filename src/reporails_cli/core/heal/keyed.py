@@ -130,7 +130,13 @@ def _partners(atoms_by_file: Mapping[str, list[Atom]]) -> dict[tuple[str, int], 
     return {(f, a.line): a for f, atoms in atoms_by_file.items() for a in atoms}
 
 
-def _drop_suppressed(plan: Plan, suppressed: Mapping[str, set[int]]) -> Plan:
+def drop_suppressed_ops(ops: Iterable[PlanOp], suppressed: Mapping[str, set[int]]) -> list[PlanOp]:
+    """The ops on no line its author annotated with an `ails-disable-line` directive."""
+    return [o for o in ops if o.line not in suppressed.get(o.file, set())]
+
+
+def drop_suppressed_edits(plan: Plan, suppressed: Mapping[str, set[int]]) -> Plan:
+    """The plan without any edit that touches an annotated line, so a reviewed line stays as it is."""
     kept = tuple(e for e in plan.edits if not _touched(e) & suppressed.get(e.file, set()))
     return Plan(kept, plan.slots, plan.refused)
 
@@ -160,8 +166,8 @@ def keyed_heal(
     raw, sup = _eligible(_group(ruleset_map.atoms), allowed_files, suppressed or {})
     eligible = {f: a for f, a in _group(ruleset_map.atoms).items() if f in raw}
     ops, workflow_keys = build_ops(workflow, eligible, target)
-    ops = [o for o in ops if o.file in raw and o.line not in sup[o.file]]
-    plan = _drop_suppressed(build_plan(ops, eligible, {f: r[0] for f, r in raw.items()}, _partners(eligible)), sup)
+    ops = drop_suppressed_ops((o for o in ops if o.file in raw), sup)
+    plan = drop_suppressed_edits(build_plan(ops, eligible, {f: r[0] for f, r in raw.items()}, _partners(eligible)), sup)
     result.decisions = [
         {"file": s.file, "line": s.line, "op": s.op, "rule": s.rule}
         for s in plan.slots

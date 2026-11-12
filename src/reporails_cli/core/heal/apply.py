@@ -107,7 +107,8 @@ def heal_scope_files(files: Iterable[Path], scope: Path, project_root: Path) -> 
     kept = [f for f in files if resolved_within(f, bound)]
     if scope.is_dir():
         return kept
-    return [f for f in kept if safe_resolve(f) == safe_resolve(scope)]
+    named = safe_resolve(scope)
+    return [f for f in kept if safe_resolve(f) == named]
 
 
 def suppressed_by_path(files: Iterable[Path], target: Path) -> dict[Path, set[int]]:

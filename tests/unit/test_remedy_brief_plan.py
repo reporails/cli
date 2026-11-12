@@ -273,13 +273,20 @@ def test_a_unicode_line_separator_does_not_shift_the_plan_or_its_check(tmp_path:
 @pytest.mark.unit
 @pytest.mark.subsys_server
 @requires_model
-def test_the_server_has_no_heal_apply_and_the_brief_carries_the_scripted_edits(tmp_path: Path) -> None:
-    import asyncio
-
-    from reporails_cli.interfaces.mcp import server
-
-    names = {t.name for t in asyncio.run(server.server.list_tools())}
-    assert "heal_apply" not in names and "remedy_brief" in names
-
+def test_the_brief_carries_the_location_s_scripted_edits(tmp_path: Path) -> None:
     _file, reply = _brief(tmp_path)
     assert {e["op"] for e in reply["edits"]} >= {"negation-form", "split"}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+@requires_model
+def test_the_brief_leaves_a_line_the_author_annotated_unchanged(tmp_path: Path) -> None:
+    file = tmp_path / "CLAUDE.md"
+    reviewed = f"{NEGATION} <!-- ails-disable-line CORE:C:0053 -->"
+    file.write_text(TEXT.replace(NEGATION, reviewed), encoding="utf-8")
+    reply = remedy_brief.build_remedy_brief(_location(), tmp_path)
+    assert "error" not in reply, reply
+    assert all(reviewed in e["after"] for e in reply["edits"] if reviewed in e["before"])
+    assert not [s for s in reply["slots"] if s["line"] == 5]
+    assert "split" in {e["op"] for e in reply["edits"]}

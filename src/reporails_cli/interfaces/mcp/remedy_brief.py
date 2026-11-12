@@ -16,8 +16,16 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.heal.apply import suppressed_by_path
 from reporails_cli.core.heal.file_io import split_lines
-from reporails_cli.core.heal.keyed import heal_op, mapped_path_resolver, resolve_expect
+from reporails_cli.core.heal.keyed import (
+    drop_suppressed_edits,
+    drop_suppressed_ops,
+    heal_op,
+    mapped_path_resolver,
+    resolve_expect,
+)
 from reporails_cli.core.heal.op_guide import change_lines, op_lines
 from reporails_cli.core.heal.plan import PartnerKey, apply_edits, build_plan, leaving_lines
 from reporails_cli.core.heal.preservation import PRESERVATION_CONTRACT
@@ -382,6 +390,12 @@ def _commit_snapshots(built: list[_BuiltFile], held: dict[str, tuple[str, Plan]]
         )
 
 
+def _annotated_lines(built: list[_BuiltFile], scan_root: Path) -> dict[str, set[int]]:
+    """Each briefed file's lines its author marked with an `ails-disable-line` directive."""
+    annotated = suppressed_by_path([f.abs_file for f in built], scan_root)
+    return {str(f.abs_file): annotated.get(safe_resolve(f.abs_file), set()) for f in built}
+
+
 def build_remedy_brief(location: JsonObject, scan_root: Path, project_map: RulesetMap | None = None) -> JsonObject:
     """Build the `remedy_brief` reply for one already-resolved workflow `location` (a location dict
     from the stored full `validate` payload, so its findings and relations are already
@@ -400,7 +414,9 @@ def build_remedy_brief(location: JsonObject, scan_root: Path, project_map: Rules
     built = _build_files(location, scan_root)
     if isinstance(built, dict):
         return built
+    suppressed = _annotated_lines(built, scan_root)
     ops, names = _location_ops(location, scan_root, [str(f.abs_file) for f in built])
+    ops = drop_suppressed_ops(ops, suppressed)
     # A file already briefed and edited since keeps its stored baseline and plan, shown against the text
     # they were made from.
     held = {str(f.abs_file): h for f in built if (h := snapshots.held_brief(f.abs_file, f.text)) is not None}
@@ -408,10 +424,18 @@ def build_remedy_brief(location: JsonObject, scan_root: Path, project_map: Rules
     lines_by_file = {str(f.abs_file): f.lines for f in built}
     lines_by_file.update({name: split_lines(text)[0] for name, (text, _) in held.items()})
     maps = [m for m in (project_map, *(f.ruleset_map for f in built)) if m is not None]
-    planned = build_plan(
-        [o for o in ops if o.file not in held], atoms_by_file, lines_by_file, _partner_atoms(ops, scan_root, maps)
+    plan = _with_held_plans(
+        drop_suppressed_edits(
+            build_plan(
+                [o for o in ops if o.file not in held],
+                atoms_by_file,
+                lines_by_file,
+                _partner_atoms(ops, scan_root, maps),
+            ),
+            suppressed,
+        ),
+        held,
     )
-    plan = _with_held_plans(planned, held)
     names.update({str(f.abs_file): f.rel for f in built})
     _commit_snapshots(built, held, plan)
 
