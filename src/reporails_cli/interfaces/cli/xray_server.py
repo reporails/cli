@@ -35,6 +35,7 @@ from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.eventbus.transcript import known_session
 from reporails_cli.core.heal.apply import heal_one, resolved_within
 from reporails_cli.core.pipeline.check_one import check_path, file_findings
+from reporails_cli.core.pipeline.server_gate import server_gate
 from reporails_cli.core.platform.adapters.programs import open_in_browser
 from reporails_cli.core.platform.adapters.registry import file_level_check_ids
 from reporails_cli.core.platform.adapters.rules_query import rule_category, rule_title
@@ -394,6 +395,9 @@ class XrayServer:
         if home is not None and home.is_relative_to(self._root):
             return XrayCheck("refused", HOME_SKIPPED), {}
         try:
+            refusal = server_gate("xray")
+            if refusal is not None:
+                return XrayCheck("refused", refusal.text), {}
             run = check_path(str(self._root), self._root)
             if isinstance(run, Refusal):
                 return XrayCheck("refused", run.text), {}

@@ -15,7 +15,12 @@ from rich.markup import escape as escape_markup
 from rich.markup import render as render_markup
 
 from reporails_cli.core.platform.adapters.api_key import has_api_key
-from reporails_cli.core.platform.dto.diagnostics import DEFAULT_RETRY_AFTER_S, UNENTITLED_TIERS, FunnelError
+from reporails_cli.core.platform.dto.diagnostics import (
+    DEFAULT_RETRY_AFTER_S,
+    OFFLINE_REQUESTED,
+    UNENTITLED_TIERS,
+    FunnelError,
+)
 from reporails_cli.core.platform.utils.version import installed_version
 
 # URL schemes the terminal renders as a clickable link.
@@ -65,6 +70,7 @@ _REFUSAL_REASONS = {
     "file_cap_exceeded": "project over the size cap",
     "file_budget_exceeded": "hourly file budget reached",
     "scoring_limit_exceeded": "project too large to score",
+    OFFLINE_REQUESTED: "local checks only",
 }
 
 

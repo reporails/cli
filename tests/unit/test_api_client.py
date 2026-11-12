@@ -26,6 +26,8 @@ from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap, Rule
 from reporails_cli.core.platform.policy.preflight import UNIVERSAL_ATOM_CAP, WIRE_MAX_FILES, preflight_oversized
 from tests.conftest import ails_client
 
+pytestmark = pytest.mark.usefixtures("server_reachable")
+
 _ROOT = Path("/tmp/reporails-test-scan-root")
 
 

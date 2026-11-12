@@ -98,7 +98,9 @@ def _ok_body() -> dict[str, Any]:
     ("status", "body"),
     [(200, _ok_body()), (429, {"error": "rate_limit_exceeded"}), (401, {"error": "invalid_api_key"})],
 )
-def test_header_notices_ride_on_success_and_error_replies(status: int, body: dict[str, Any]) -> None:
+def test_header_notices_ride_on_success_and_error_replies(
+    server_reachable: None, status: int, body: dict[str, Any]
+) -> None:
     response = _lint(status, body, {NOTICES_HEADER: _header()})
     assert response.notices == (WARN, INFO)
     assert (response.funnel_error is None) == (status == 200)
@@ -221,7 +223,7 @@ _REJECTION = {"error": "invalid_api_key", "message": "Your sign-in ended."}
 
 @pytest.mark.unit
 @pytest.mark.subsys_api
-def test_key_rejected_within_two_minutes_of_sign_in_reads_as_a_delay() -> None:
+def test_key_rejected_within_two_minutes_of_sign_in_reads_as_a_delay(server_reachable: None) -> None:
     from reporails_cli.formatters.text.funnel_cta import plain_cta
 
     _store_key(datetime.now(UTC) - timedelta(seconds=30))
@@ -234,7 +236,7 @@ def test_key_rejected_within_two_minutes_of_sign_in_reads_as_a_delay() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_api
-def test_key_rejected_long_after_sign_in_keeps_the_servers_message() -> None:
+def test_key_rejected_long_after_sign_in_keeps_the_servers_message(server_reachable: None) -> None:
     _store_key(datetime.now(UTC) - timedelta(minutes=10))
     err = _lint(401, _REJECTION, {}, key="k1").funnel_error
     assert err is not None
@@ -243,7 +245,7 @@ def test_key_rejected_long_after_sign_in_keeps_the_servers_message() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_api
-def test_other_rejections_are_not_reworded_after_sign_in() -> None:
+def test_other_rejections_are_not_reworded_after_sign_in(server_reachable: None) -> None:
     _store_key(datetime.now(UTC))
     err = _lint(429, {"error": "rate_limit_exceeded", "message": "Slow down"}, {}, key="k1").funnel_error
     assert err is not None

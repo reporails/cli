@@ -205,6 +205,7 @@ def test_enc_a_repairs_cache_once_and_retries_after_a_corrupted_load(monkeypatch
     # tests/conftest.py defaults AILS_MODEL_OFFLINE=1 for the whole suite; this
     # test exercises the online repair path.
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
 
     attempts = {"n": 0}
 

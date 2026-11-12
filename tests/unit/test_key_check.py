@@ -8,7 +8,7 @@ import json
 import httpx
 import pytest
 
-from reporails_cli.core.platform.adapters.key_check import check_api_key
+from reporails_cli.core.platform.adapters.key_check import check_api_key, handshake
 
 
 def _reply(status: int, body: object = None, *, text: str | None = None, headers: dict[str, str] | None = None):
@@ -135,3 +135,69 @@ def test_probe_goes_where_the_client_goes(monkeypatch: pytest.MonkeyPatch) -> No
     assert seen["url"] == "http://localhost:8001/diagnose"
     assert seen["content"] == b"{}"
     assert seen["headers"]["Content-Type"] == "application/json"
+
+
+def _handshake_reply(status: int, body: object = None, *, text: str | None = None) -> httpx.Response:
+    request = httpx.Request("GET", "http://srv/v1/handshake")
+    if text is not None:
+        return httpx.Response(status, text=text, request=request)
+    return httpx.Response(status, json=body, request=request)
+
+
+_REFUSED = {"verdict": "refused", "reason": "rate", "message": "Sign up with `ails login`", "tier": "anonymous"}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.parametrize(
+    ("reply", "expected"),
+    [
+        (_handshake_reply(200, {"verdict": "ok", "reason": None, "message": None, "tier": "free"}), ("ok", "", "free")),
+        (_handshake_reply(200, _REFUSED), ("refused", "rate", "anonymous")),
+        (_handshake_reply(401, {"error": "invalid_api_key", "message": "nope"}), ("rejected", "", "")),
+        (_handshake_reply(403, {"error": "forbidden"}), ("no_verdict", "", "")),
+        (_handshake_reply(404, text="Not Found"), ("no_verdict", "", "")),
+        (_handshake_reply(500, text="boom"), ("no_verdict", "", "")),
+        (_handshake_reply(200, text="<html>proxy</html>"), ("no_verdict", "", "")),
+        (_handshake_reply(200, {"verdict": "maybe"}), ("no_verdict", "", "")),
+        (_handshake_reply(200, ["ok"]), ("no_verdict", "", "")),
+        (httpx.ReadTimeout("slow"), ("unreachable", "", "")),
+        (httpx.ConnectError("refused"), ("unreachable", "", "")),
+    ],
+    ids=["ok", "refused", "401", "403", "404", "500", "html-200", "unknown-verdict", "list-200", "timeout", "no-reply"],
+)
+def test_handshake_classifies_every_reply(
+    monkeypatch: pytest.MonkeyPatch, reply: httpx.Response | Exception, expected: tuple[str, str, str]
+) -> None:
+    seen: dict[str, object] = {}
+
+    def fake_get(url: str, **kwargs: object) -> httpx.Response:
+        seen["url"] = url
+        seen.update(kwargs)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setenv("AILS_SERVER_URL", "http://srv/")
+    answer = handshake("mcp")
+    assert (answer.status, answer.reason, answer.tier) == expected
+    assert seen["url"] == "http://srv/v1/handshake"
+    headers = seen["headers"]
+    assert isinstance(headers, dict)
+    assert headers["X-Reporails-Surface"] == "mcp"
+    assert seen["timeout"] == 5.0
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_a_refused_handshake_carries_the_servers_message_and_a_rejected_one_its_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(httpx, "get", lambda url, **kw: _handshake_reply(200, _REFUSED))
+    assert handshake("cli").message == "Sign up with `ails login`"
+    monkeypatch.setattr(
+        httpx, "get", lambda url, **kw: _handshake_reply(401, {"error": "invalid_api_key", "message": "nope"})
+    )
+    rejected = handshake("cli")
+    assert (rejected.error, rejected.message) == ("invalid_api_key", "nope")

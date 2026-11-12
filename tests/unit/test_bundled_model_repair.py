@@ -37,6 +37,7 @@ def _reset_repair_state(monkeypatch):
     monkeypatch.setattr(model_store, "_known_unrepairable", {}, raising=False)
     monkeypatch.setattr(model_manifest, "in_package_tree_present", lambda: False)
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
 
 
 @pytest.mark.unit

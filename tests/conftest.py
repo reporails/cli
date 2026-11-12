@@ -389,6 +389,12 @@ def create_temp_rule_file(tmp_path: Path, content: str, name: str = "test-rule.y
     return rule_path
 
 
+@pytest.fixture
+def server_reachable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Lets the test's own server stand-in be asked: the suite default runs every check offline."""
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
+
+
 def ails_client(base_url: str, *, tier: str | None = None, api_key: str | None = None) -> Any:
     """An `AilsClient` built with the server URL (and tier) set in the environment, as a user sets them."""
     from reporails_cli.core.platform.adapters.api_client import AilsClient

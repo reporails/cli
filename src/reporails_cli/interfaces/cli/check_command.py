@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,8 +24,8 @@ def _checked_exclude_dirs(values: list[str] | None) -> list[str] | None:
 
 
 @dataclass
-class CheckOptions:
-    """The options of `ails check`; each default is the `typer.Option` / `typer.Argument` that declares it."""
+class CheckScopeOptions:
+    """The options of `ails check` that choose what is checked and how it is reported."""
 
     targets: list[str] = typer.Argument(  # noqa: RUF009
         None,
@@ -52,6 +53,12 @@ class CheckOptions:
     exclude_files: list[str] | None = typer.Option(  # noqa: RUF009
         None, "--exclude-files", help="File globs to exclude"
     )
+
+
+@dataclass
+class CheckOptions(CheckScopeOptions):
+    """The options of `ails check`; each default is the `typer.Option` / `typer.Argument` that declares it."""
+
     ascii_mode: bool = typer.Option(False, "--ascii", "-a", help="ASCII characters only")
     strict: bool = typer.Option(False, "--strict", help="Exit code 1 on any finding in scope, or a rejected API key")
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show details")
@@ -68,6 +75,11 @@ class CheckOptions:
     )
     dry_run: bool = typer.Option(False, "--dry-run", help="With --heal: preview fixes without writing.")
     cwd: bool = typer.Option(False, "--cwd", help="With --heal: opt into rewriting the whole project.")
+    offline: bool = typer.Option(
+        False,
+        "--offline",
+        help="Run local checks only, with no network call. Same as AILS_OFFLINE=1.",
+    )
 
 
 @app.command(rich_help_panel="Get started")
@@ -90,6 +102,8 @@ def check(options: CheckOptions) -> None:
         _arm_check_timeout,
     )
 
+    if options.offline:
+        os.environ["AILS_OFFLINE"] = "1"
     # a retired/misspelled format is a usage error, not a silent text run
     _validate_output_format(options.output_format)
     _arm_check_timeout()  # wall-clock backstop against a runaway/hung check (POSIX)

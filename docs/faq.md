@@ -66,7 +66,9 @@ See the [privacy notice](https://reporails.com/privacy-policy).
 
 The local rules (mechanical and structural) run fully offline. The semantic rules (reinforcement patterns, content-quality checks, cross-file analysis) require a request to the diagnostic backend. There is no offline-only mode for those, the analysis and diagnostics runs server-side.
 
-When the analysis backend is unreachable, the run degrades gracefully: the headline reads `Quality n/a` and the per-surface and per-item score bars are suppressed (there's no single quality score without the analysis service). You still get the findings from the local rules, the scope summary, and the local (mechanical and structural) rule results — just no score.
+To run only the local rules, pass `--offline` (or set `AILS_OFFLINE=1`). Reporails then makes no network call: the headline reads `Quality n/a (local checks only)` and the summary says the server analysis did not run. You still get the findings from the local rules and the scope summary, just no score.
+
+When the analysis backend cannot be reached and you did not ask for `--offline`, `ails check` stops before reading your files and tells you to run with `--offline`.
 
 ## Is my instruction file ever stored on the diagnostic backend?
 

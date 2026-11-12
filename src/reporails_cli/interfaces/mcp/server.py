@@ -43,6 +43,7 @@ from reporails_cli.interfaces.mcp.tools import (
     model_not_ready_error,
     run_pipeline_for_path,
     unpaid_signed_in_reply,
+    unserved_or_model_not_ready_error,
 )
 from reporails_cli.interfaces.mcp.validate_state import (
     MAX_CALLS,
@@ -237,9 +238,8 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None, proj
     """
     target = Path(path).resolve()
 
-    # A model that is not ready yet is not a validate attempt: answer before the
-    # circuit-breaker counters move, so retries during a first download never trip it.
-    model_error = await asyncio.to_thread(model_not_ready_error)
+    # A refusal or a model not ready yet is not a validate attempt: answer before the counters move.
+    model_error = await asyncio.to_thread(unserved_or_model_not_ready_error)
     if model_error is not None:
         return model_error
 

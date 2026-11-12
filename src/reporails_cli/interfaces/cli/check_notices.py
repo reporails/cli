@@ -13,10 +13,13 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from rich.markup import escape as escape_markup
+
 from reporails_cli.core.discovery.walk import own_name_spellings
 from reporails_cli.core.heal.apply import heal_withheld_for_run
 from reporails_cli.core.pipeline.assemble import with_exclusions
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.formatters.text.verdict import render_excluded_line
 from reporails_cli.interfaces.cli.check_orchestration import RenderContext, _dispatch_output
@@ -98,6 +101,17 @@ def _emit_heal_scope_refusal(output_format: str) -> None:
         "  preview the whole project with [bold]--dry-run[/bold], or opt into a "
         "whole-project rewrite with [bold]--cwd[/bold]."
     )
+
+
+def _emit_server_refusal(output_format: str, refusal: Refusal) -> None:
+    """Emit the server's refusal to serve this run in the active output format."""
+    if output_format == "json":
+        print(json.dumps({"error": refusal.kind, "message": refusal.message}))
+        return
+    if output_format == "github":
+        print(f"::error::{refusal.message.replace(chr(10), '%0A')}")
+        return
+    console.print(f"[red]\u2717[/red] {escape_markup(refusal.message)}")
 
 
 def _agent_is_pinned(state: CheckState) -> bool:

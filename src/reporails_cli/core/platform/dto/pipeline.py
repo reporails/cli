@@ -23,6 +23,8 @@ RefusalKind = Literal[
     "empty_project",
     "model_downloading",
     "model_unavailable",
+    "server_refused",
+    "server_unreachable",
     "failed",
 ]
 

@@ -45,7 +45,12 @@ from reporails_cli.core.mapper.model_manifest import (
     models_present,
 )
 from reporails_cli.core.platform.adapters.api_key import default_server_api_key
-from reporails_cli.core.platform.config.bootstrap import env_flag, env_text, running_in_github_actions
+from reporails_cli.core.platform.config.bootstrap import (
+    env_flag,
+    env_text,
+    running_in_github_actions,
+)
+from reporails_cli.core.platform.config.bootstrap import offline_requested as run_offline_requested
 
 # ─── Host ───────────────────────────────────────────────────
 
@@ -81,7 +86,9 @@ _CI_CACHE_HINT = (
 _STALE_STAGING_S = 6 * 3600
 
 
-offline_requested = functools.partial(env_flag, _ENV_OFFLINE)  # AILS_MODEL_OFFLINE: never download
+def offline_requested() -> bool:
+    """True when the model is never downloaded: `AILS_MODEL_OFFLINE` is set, or local checks only were asked for."""
+    return env_flag(_ENV_OFFLINE) or run_offline_requested()
 
 
 # One fetch at a time: concurrent first uses in one process (e.g. MCP worker threads) wait

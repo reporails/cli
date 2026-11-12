@@ -40,4 +40,4 @@ def test_a_malformed_header_is_not_read_as_a_propagation_delay(monkeypatch: pyte
     client = ails_client("http://srv", api_key="k")
     for token, rewritten in (("invalid_api_key", True), ("missing_or_invalid_api_key", False)):
         err = diagnostics.FunnelError(error=token, message="m")
-        assert (client._early_rejection(err).message == diagnostics.STILL_REACHING_MESSAGE) is rewritten
+        assert (client.early_rejection(err).message == diagnostics.STILL_REACHING_MESSAGE) is rewritten

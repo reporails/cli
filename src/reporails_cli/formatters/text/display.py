@@ -14,7 +14,14 @@ from pathlib import Path
 from rich.console import Console
 
 from reporails_cli.core.platform.adapters.api_key import has_api_key
-from reporails_cli.core.platform.dto.diagnostics import KNOWN_ERRORS, UNENTITLED_TIERS, FindingItem, FunnelError, Notice
+from reporails_cli.core.platform.dto.diagnostics import (
+    KNOWN_ERRORS,
+    OFFLINE_REQUESTED,
+    UNENTITLED_TIERS,
+    FindingItem,
+    FunnelError,
+    Notice,
+)
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
@@ -482,6 +489,11 @@ def _render_funnel_cta(funnel_error: FunnelError | None) -> bool:
     cta = format_cta(funnel_error)
     if not cta:
         return False
+    if funnel_error.error == OFFLINE_REQUESTED:
+        console.print()
+        console.print(f"  [dim]{cta}[/dim]")
+        console.print()
+        return True
     if funnel_error.retryable:
         console.print()
         console.print(f"  [yellow]⚠[/yellow]  {cta}")

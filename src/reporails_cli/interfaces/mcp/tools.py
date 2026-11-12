@@ -9,6 +9,7 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.agents import get_known_agents
 from reporails_cli.core.pipeline.check_one import check_path, model_refusal, rules_missing_message
+from reporails_cli.core.pipeline.server_gate import server_gate
 from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import FunnelError, tiers_unpaid
@@ -52,7 +53,7 @@ def refusal_payload(refusal: Refusal) -> JsonObject:
             return json_formatter.empty_result_payload(refusal.target, refusal.excluded)
         case "model_downloading":
             return {"error": refusal.kind, "message": _MODEL_DOWNLOADING}
-        case "model_unavailable":
+        case "model_unavailable" | "server_refused" | "server_unreachable":
             return {"error": refusal.kind, "message": refusal.message}
         case "path_not_found" | "failed":
             return {"error": refusal.message}
@@ -62,6 +63,12 @@ def model_not_ready_error() -> JsonObject | None:
     """The error payload when the model set is not ready (downloading it once first), else `None`."""
     refusal = model_refusal()
     return None if refusal is None else refusal_payload(refusal)
+
+
+def unserved_or_model_not_ready_error() -> JsonObject | None:
+    """The error payload when the server will not serve this caller, else when the model set is not ready."""
+    refusal = server_gate("mcp")
+    return refusal_payload(refusal) if refusal is not None else model_not_ready_error()
 
 
 def with_host_hooks(payload: JsonObject, result: CombinedResult) -> JsonObject:

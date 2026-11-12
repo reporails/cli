@@ -19,6 +19,8 @@ from reporails_cli.core.platform.adapters.api_client import (
 )
 from tests.conftest import ails_client
 
+pytestmark = pytest.mark.usefixtures("server_reachable")
+
 # --- L517: per_file diagnostic required-field guard (or -> and, 3 sites) ---
 
 

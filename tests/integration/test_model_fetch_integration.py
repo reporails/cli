@@ -78,6 +78,7 @@ def test_first_use_fetches_then_loads_from_cache(tmp_path, monkeypatch):
         functools.cache(model_manifest.in_package_tree_present.__wrapped__),
     )
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
 
     cache_root = tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION
     monkeypatch.setattr(model_fetch, "cache_models_dir", lambda version=model_fetch.MODEL_VERSION: cache_root)

@@ -47,6 +47,11 @@ def env_flag(var_name: str) -> bool:
     return env_text(var_name).lower() not in ("", "0", "false", "no", "off")
 
 
+def offline_requested() -> bool:
+    """True when the caller asked for local checks only (`AILS_OFFLINE`)."""
+    return env_flag("AILS_OFFLINE")
+
+
 @cache
 def consume_npm_launch() -> bool:
     """Whether the npm package started this process; the first call reads and clears the launch variable."""

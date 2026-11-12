@@ -40,7 +40,8 @@ FIXTURE_PROJECTS = Path(__file__).resolve().parents[1] / "fixtures" / "projects"
 
 # The local dev stack the api-backed scenarios run against; never a hosted address.
 LOCAL_API_URL = os.environ.get("AILS_LOCAL_API_URL", "http://localhost:8001")
-LOCAL_API_ENV = {"AILS_SERVER_URL": LOCAL_API_URL, "AILS_DEV_MODE": "true", "AILS_TIER": "pro"}
+# `AILS_OFFLINE` is cleared so these runs reach the server the suite default keeps them off.
+LOCAL_API_ENV = {"AILS_SERVER_URL": LOCAL_API_URL, "AILS_DEV_MODE": "true", "AILS_TIER": "pro", "AILS_OFFLINE": ""}
 
 
 def _encode_budget() -> dict[str, str]:

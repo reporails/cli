@@ -63,6 +63,8 @@ class Notice:
 RETRYABLE_ERRORS = frozenset({"server_busy", "scoring_timeout", "timeout"})
 # The 401 tokens: the server did not accept the key it was sent.
 AUTH_REJECTED_ERRORS = frozenset({"invalid_api_key", "missing_or_invalid_api_key"})
+# The token of a run that was asked to make no server request; a choice, never a failure.
+OFFLINE_REQUESTED = "offline_requested"
 # Shown instead of "the sign-in ended" when a key made moments ago is rejected.
 STILL_REACHING_MESSAGE = "Your sign-in is still reaching the server — try again in a minute."
 # Error tokens kept verbatim (with the body's own tier / limits / message). Anything else

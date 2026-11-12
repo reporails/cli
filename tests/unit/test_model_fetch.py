@@ -362,6 +362,7 @@ def test_repair_cache_redownloads_only_the_mismatched_file(tmp_path, monkeypatch
     # tests/conftest.py defaults AILS_MODEL_OFFLINE=1 for the whole suite (never
     # hit the network by accident); this test exercises the online repair path.
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
     root = _cache_at(monkeypatch, tmp_path / "models" / model_fetch.MODEL_VERSION)
     fake = _FakeClient()
     _use_fake(monkeypatch, fake)
@@ -441,6 +442,7 @@ def test_cache_damaged_true_for_a_same_size_corrupted_file(tmp_path, monkeypatch
     fake = _FakeClient()
     _use_fake(monkeypatch, fake)
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
     model_fetch.ensure_models_present()
     good = (root / "charge_encoder_encA.onnx").read_bytes()
     (root / "charge_encoder_encA.onnx").write_bytes(bytes(b ^ 0xFF for b in good))
@@ -455,6 +457,7 @@ def test_cache_damaged_false_when_every_pinned_file_matches(tmp_path, monkeypatc
     fake = _FakeClient()
     _use_fake(monkeypatch, fake)
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
     model_fetch.ensure_models_present()
 
     assert model_fetch.cache_damaged() is False
@@ -471,6 +474,7 @@ def test_repair_cache_skips_the_swap_when_already_valid_after_the_lock(tmp_path,
     (another thread or process) having just repaired the set while this call
     waited. `_download_all` (and its rmtree) must never run in that case."""
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
     root = _cache_at(monkeypatch, tmp_path / "models" / model_fetch.MODEL_VERSION)
     fake = _FakeClient()
     _use_fake(monkeypatch, fake)
@@ -503,6 +507,7 @@ def test_two_threads_repairing_the_same_corruption_never_get_filenotfound(tmp_pa
     used to open a window where the file did not exist and a concurrent
     retry saw `FileNotFoundError`."""
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
     root = _cache_at(monkeypatch, tmp_path / "models" / model_fetch.MODEL_VERSION)
     fake = _FakeClient()
     _use_fake(monkeypatch, fake)
@@ -600,6 +605,7 @@ def test_resolver_never_downloads(tmp_path, monkeypatch, _bundled):
 @pytest.mark.subsys_map
 def test_ensure_downloads_when_absent(tmp_path, monkeypatch, _bundled):
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
     monkeypatch.setattr(model_manifest, "get_bundled_path", lambda: tmp_path / "empty")
     root = _cache_at(monkeypatch, tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION)
     _use_fake(monkeypatch, _FakeClient())
@@ -638,6 +644,7 @@ def test_ensure_offline_uses_a_model_on_disk(tmp_path, monkeypatch, _bundled):
 def test_ensure_repairs_a_same_size_damaged_file_in_the_cache(tmp_path, monkeypatch, _bundled):
     """A cached file damaged at the same size is re-fetched when the set is made available."""
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
     monkeypatch.setattr(model_manifest, "get_bundled_path", lambda: tmp_path / "empty")
     root = _cache_at(monkeypatch, tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION)
     fake = _FakeClient()
@@ -658,6 +665,7 @@ def test_ensure_rehashes_nothing_for_an_unchanged_cache(tmp_path, monkeypatch, _
     from reporails_cli.core.mapper import graph_hash
 
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
     monkeypatch.setattr(model_manifest, "get_bundled_path", lambda: tmp_path / "empty")
     root = _cache_at(monkeypatch, tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION)
     _use_fake(monkeypatch, _FakeClient())

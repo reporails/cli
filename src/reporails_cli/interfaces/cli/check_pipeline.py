@@ -18,7 +18,7 @@ from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_
 from reporails_cli.core.mapper.skills import skill_membership
 from reporails_cli.core.pipeline.assemble import assemble_result, lint_request_local, with_exclusions
 from reporails_cli.core.pipeline.mapping import agent_file_pairs, map_instruction_files
-from reporails_cli.core.platform.adapters.api_client import AilsClient
+from reporails_cli.core.platform.adapters.api_client import AilsClient, offline_reply
 from reporails_cli.core.platform.adapters.notices_seen import visible_notices
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs
 from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
@@ -145,8 +145,9 @@ def _flow_server_lint(state: CheckState, spinner: Status | None) -> None:
 
     if spinner is not None:
         spinner.update("[bold]Diagnosing...[/bold]")
-    response = None
-    if state.pipeline.ruleset_map is not None:
+    if state.pipeline.ruleset_map is None:
+        response = offline_reply()
+    else:
         local, structural_required = lint_request_local(_assemble_inputs(state))
         response = AilsClient().lint(state.pipeline.ruleset_map, local, structural_required, root=state.targets.target)
     state.pipeline.lint_result = response.result if response else None
