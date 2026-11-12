@@ -9,6 +9,7 @@ from collections.abc import Set as AbstractSet
 
 from reporails_cli.core.heal.preservation.words import NEGATION_RE, WORD_RE, word_forms
 from reporails_cli.core.mapper.classify_lexicon import (
+    CONDITION_CONJUNCTIONS,
     DETERMINERS,
     GENERAL_QUANTIFIERS,
     INDEFINITE_ARTICLES,
@@ -135,5 +136,22 @@ def kinds_listed(p: Pair) -> bool:
         if tag == "equal" or "or" not in added or _EXAMPLE_LEADS & set(new[max(j1 - 3, 0) : j2]):
             continue
         if len([w for w in _content(added) if not word_forms(w) & named]) >= 2:
+            return True
+    return False
+
+
+def object_list_added(p: Pair) -> bool:
+    """Whether the rewrite gives a list of objects (joined by `and` / `or`) to an instruction whose
+    verb took none, so the kinds it lists read as all it covers (`Edit at canonical paths only` ->
+    `Edit instruction surfaces and hook scripts at canonical paths only`). One named object is the
+    referent the line left implied (`Only use on trusted machines` -> `Only use remote debugging on
+    trusted machines`)."""
+    old, new = _sentence_words(p)
+    verb = next((i for i, w in enumerate(old) if w not in STOPWORDS), None)
+    if verb is None or verb + 1 >= len(old) or old[verb + 1] not in PHRASE_PREPOSITIONS:
+        return False
+    for tag, i1, _, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+        added = new[j1:j2]
+        if tag == "insert" and i1 == verb + 1 and CONDITION_CONJUNCTIONS & set(added) and len(_content(added)) >= 2:
             return True
     return False

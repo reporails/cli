@@ -833,3 +833,23 @@ def test_a_kept_scope_a_code_for_or_a_change_outside_the_prohibition_is_not_flag
     result = _compare_edit(tmp_path, before + ground, after + ground)
     assert result["narrowed_instructions"] == []
     assert result["dropped_conditions"] == []
+
+
+_CONVENTIONS = (
+    "Author `Python` under `pkg/` against `ruff`.\n"
+    "Author `Bash` hooks against `shellcheck`.\n"
+    "Author instruction surfaces (`CLAUDE.md`, `.claude/agents/`) per the style guide.\n"
+    "*Never edit linked copies.*\n"
+    "*Edit at canonical paths only.*\n"
+)
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_rule_whose_verb_had_no_object_given_a_list_of_objects_narrows(tmp_path) -> None:
+    """The rule covered every edit the section names; two of its kinds read as all it covers."""
+    after = _CONVENTIONS.replace("*Edit at", "*Edit instruction surfaces and hook scripts at")
+    result = _compare_edit(tmp_path, _CONVENTIONS, after)
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False

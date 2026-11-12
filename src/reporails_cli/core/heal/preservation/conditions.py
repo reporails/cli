@@ -19,6 +19,7 @@ from reporails_cli.core.heal.preservation.qualifiers import (
     NOT_A_SCOPE,
     for_phrase_added,
     kinds_listed,
+    object_list_added,
     qualified_general_noun,
 )
 from reporails_cli.core.heal.preservation.words import (
@@ -314,6 +315,7 @@ def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonOb
             qualified_general_noun(p, known),
             for_phrase_added(p),
             kinds_listed(p),
+            object_list_added(p),
         )
         if narrows or any(arms):
             out.append(p.entry())
