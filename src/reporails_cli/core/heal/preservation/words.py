@@ -61,6 +61,10 @@ class AtomView(Protocol):
     def scope_conditional(self) -> bool:
         """Whether a conditional frame governs it."""
 
+    @property
+    def heading_context(self) -> str:
+        """The text of the heading its section sits under."""
+
 
 def content_words(text: str) -> set[str]:
     """`text`'s content words: stopwords, hedges/filler, and short tokens dropped, the rest lowered."""

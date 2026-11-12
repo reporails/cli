@@ -5,21 +5,25 @@ never named."""
 from __future__ import annotations
 
 import difflib
+import re
 from collections.abc import Set as AbstractSet
 
 from reporails_cli.core.heal.preservation.words import NEGATION_RE, WORD_RE, word_forms
 from reporails_cli.core.mapper.classify_lexicon import (
     CONDITION_CONJUNCTIONS,
+    DEFINITE_DETERMINERS,
     DETERMINERS,
     GENERAL_QUANTIFIERS,
     INDEFINITE_ARTICLES,
     PHRASE_PREPOSITIONS,
     STOPWORDS,
 )
+from reporails_cli.core.mapper.lexical import DASH_MARKS
 from reporails_cli.core.mapper.md_parser import replace_code_spans
 from reporails_cli.core.platform.dto.heal import Pair, RewriteWords
 
-DEFINITE = DETERMINERS - GENERAL_QUANTIFIERS
+# Quantifiers a `for` may open without cutting what a rule covers (`For each file, run lint`).
+_FOR_QUANTIFIERS = DETERMINERS & GENERAL_QUANTIFIERS
 
 
 def _content(words: list[str]) -> list[str]:
@@ -46,10 +50,19 @@ def _new_head_noun(new: list[str], j1: int, j2: int) -> bool:
     return bool(INDEFINITE_ARTICLES & set(span)) and bool(_content(new[j1:j2])) and new[j2] not in PHRASE_PREPOSITIONS
 
 
+_DASHES = "".join(sorted(DASH_MARKS))
+# A pair of dashes sets an aside off inside its clause (`file any plan — X, Y, or Z — into`).
+_DASH_PAIR_RE = re.compile(f"[{_DASHES}]([^{_DASHES}]+)[{_DASHES}]")
+
+
 def _negated_words(sentence: str) -> set[str]:
-    """The lowered words of the parts of `sentence` (cut at `;`, `:` and `—`) that hold its
-    negation: a clause after the dash (`Do not use a mock — prefer a fake`) is not what it forbids."""
-    parts = sentence.replace(";", "\n").replace(":", "\n").replace("\u2014", "\n").split("\n")
+    """The lowered words of the parts of `sentence` (cut at `;`, `:` and a single dash) that hold
+    its negation: a clause after the dash (`Do not use a mock — prefer a fake`) is not what it
+    forbids, while an aside between two dashes stays in its clause."""
+    text = _DASH_PAIR_RE.sub(r" \1 ", sentence)
+    for mark in (";", ":", " -- ", " - ", *DASH_MARKS):
+        text = text.replace(mark, "\n")
+    parts = text.split("\n")
     return {w.lower() for part in parts if NEGATION_RE.search(part) for w in WORD_RE.findall(part)}
 
 
@@ -82,16 +95,16 @@ def _op_restricts(tag: str, old_span: list[str], new: list[str], at: tuple[int, 
     j1, j2 = at
     added = new[j1:j2]
     dropped = _content(old_span)
+    content = set(_content(added))
+    if tag == "equal" or not added or not content <= words.negated:
+        return False
     if tag == "replace" and dropped:
         return not set(dropped) & set(added) and _known_qualifier(added, words.known)
-    if tag == "equal" or not added:
-        return False
-    content = set(_content(added))
     if words.moved and content <= words.moved:
         return False
-    if new[j1 - 1] not in DEFINITE and _known_qualifier(added, words.known):
+    if new[j1 - 1] not in DEFINITE_DETERMINERS and _known_qualifier(added, words.known):
         return True
-    return content <= words.negated and _new_head_noun(new, j1, j2)
+    return _new_head_noun(new, j1, j2)
 
 
 # Words after a fronted `for` / scope preposition that make it an aside, not a scope (`For example,`,
@@ -105,7 +118,7 @@ _TOKEN_EDGES = ".,;:()[]*_\"'\u2014"
 def _prose_tokens(sentence: str) -> list[str]:
     """The lowered whitespace tokens of `sentence` outside code spans, a hyphenated word kept whole
     (`ready-for-review` holds no `for`)."""
-    return [t.strip(_TOKEN_EDGES).lower() for t in replace_code_spans(sentence, " ").split()]
+    return [t.strip(_TOKEN_EDGES).lower() for t in replace_code_spans(sentence, " code ").split()]
 
 
 def for_phrase_added(p: Pair) -> bool:
@@ -115,7 +128,7 @@ def for_phrase_added(p: Pair) -> bool:
     old, new = _prose_tokens(p.old_sentence), _prose_tokens(p.new_sentence)
     if "for" in old:
         return False
-    leads = NOT_A_SCOPE | GENERAL_QUANTIFIERS
+    leads = _FOR_QUANTIFIERS | {"example", "instance"}
     return any(w == "for" and i + 1 < len(new) and new[i + 1] not in leads for i, w in enumerate(new))
 
 
@@ -131,27 +144,34 @@ def kinds_listed(p: Pair) -> bool:
         return False
     old, new = _sentence_words(p)
     named = set(old) | {f for w in old for f in word_forms(w)}
+    negated = _negated_words(p.new_sentence)
     for tag, _, _, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
         added = new[j1:j2]
         if tag == "equal" or "or" not in added or _EXAMPLE_LEADS & set(new[max(j1 - 3, 0) : j2]):
             continue
-        if len([w for w in _content(added) if not word_forms(w) & named]) >= 2:
+        fresh = [w for w in _content(added) if not word_forms(w) & named]
+        if fresh and set(fresh) <= negated:
             return True
     return False
 
 
-def object_list_added(p: Pair) -> bool:
-    """Whether the rewrite gives a list of objects (joined by `and` / `or`) to an instruction whose
-    verb took none, so the kinds it lists read as all it covers (`Edit at canonical paths only` ->
-    `Edit instruction surfaces and hook scripts at canonical paths only`). One named object is the
-    referent the line left implied (`Only use on trusted machines` -> `Only use remote debugging on
-    trusted machines`)."""
+def object_added(p: Pair, section: AbstractSet[str]) -> bool:
+    """Whether the rewrite gives an object to an instruction whose verb took none, so it no longer
+    covers everything the verb did: a list of objects (joined by `and` / `or`), or one kind the
+    section's other lines (`section`, their words) name beside others (`Edit at canonical paths
+    only` -> `Edit instruction surfaces at canonical paths only`, where the section also covers
+    hooks and code). An object nothing else in the section names is the referent the line left
+    implied (`Only use on trusted machines` -> `Only use remote debugging on trusted machines`)."""
     old, new = _sentence_words(p)
     verb = next((i for i, w in enumerate(old) if w not in STOPWORDS), None)
     if verb is None or verb + 1 >= len(old) or old[verb + 1] not in PHRASE_PREPOSITIONS:
         return False
     for tag, i1, _, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
-        added = new[j1:j2]
-        if tag == "insert" and i1 == verb + 1 and CONDITION_CONJUNCTIONS & set(added) and len(_content(added)) >= 2:
+        content = _content(new[j1:j2])
+        if tag != "insert" or i1 != verb + 1 or not content:
+            continue
+        if (CONDITION_CONJUNCTIONS & set(new[j1:j2]) and len(content) >= 2) or all(
+            word_forms(w) & section for w in content
+        ):
             return True
     return False

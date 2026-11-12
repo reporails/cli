@@ -853,3 +853,40 @@ def test_a_rule_whose_verb_had_no_object_given_a_list_of_objects_narrows(tmp_pat
     result = _compare_edit(tmp_path, _CONVENTIONS, after)
     assert result["narrowed_instructions"]
     assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_rule_whose_verb_had_no_object_given_one_kind_its_section_names_narrows(tmp_path) -> None:
+    """The section's other lines name several kinds the rule covered; one of them reads as all it covers."""
+    after = _CONVENTIONS.replace("*Edit at", "*Edit instruction surfaces at")
+    result = _compare_edit(tmp_path, _CONVENTIONS, after)
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after", "narrowed"),
+    [
+        ("*Do not use a mock — prefer a fake.*", "*Do not use a mock — prefer a fake server or stub client.*", False),
+        ("*Do not use a mock - prefer a fake.*", "*Do not use a mock - prefer a real fake.*", False),
+        ("Add tests under `tests/`.", "Add tests under `tests/` for `src/`", True),
+        ("Add tests.", "Add tests for particular modules.", True),
+        ("Add tests.", "Add tests for one module.", True),
+    ],
+)
+def test_review_shapes_of_the_prohibition_and_for_phrase_arms(tmp_path, before, after, narrowed) -> None:
+    result = _compare_edit(tmp_path, before + "\n", after + "\n")
+    assert bool(result["narrowed_instructions"]) is narrowed
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_sentence_opening_with_a_preposition_compound_has_no_fronted_scope(tmp_path) -> None:
+    result = _compare_edit(tmp_path, "In-memory caches, flush on exit.\n", "Flush in-memory caches on exit.\n")
+    assert result["dropped_conditions"] == []

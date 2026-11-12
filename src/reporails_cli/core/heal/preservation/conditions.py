@@ -15,11 +15,10 @@ from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 
 from reporails_cli.core.heal.preservation.qualifiers import (
-    DEFINITE,
     NOT_A_SCOPE,
     for_phrase_added,
     kinds_listed,
-    object_list_added,
+    object_added,
     qualified_general_noun,
 )
 from reporails_cli.core.heal.preservation.words import (
@@ -44,6 +43,7 @@ from reporails_cli.core.mapper.classify_lexicon import (
     CONDITION_OPENERS,
     CONDITION_QUANTIFIERS,
     CONDITIONAL_MARKERS,
+    DEFINITE_DETERMINERS,
     DETERMINERS,
     GENERAL_QUANTIFIERS,
     INDEFINITE_ARTICLES,
@@ -291,6 +291,19 @@ def _same_sentence(p: Pair) -> bool:
     return " ".join(p.old_sentence.lower().split()) == " ".join(p.new_sentence.lower().split())
 
 
+def _section_words(old_by_line: ByLine, atom: AtomView) -> set[str]:
+    """The words, in every form, of the author's other lines under `atom`'s heading."""
+    words = {
+        w.lower()
+        for line, atoms in old_by_line.items()
+        if line != atom.line
+        for a in atoms
+        if a.heading_context == atom.heading_context
+        for w in WORD_RE.findall(a.plain_text)
+    }
+    return words | {f for w in words for f in word_forms(w)}
+
+
 def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonObject]:
     """Each matched instruction whose rewrite adds words that restrict where, when or to what it
     applies, without an if / when / before frame (which `added_conditions` already reports): a
@@ -308,18 +321,21 @@ def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonOb
             continue
         known = _known_words(old_by_line, p.old.line)
         known |= {f for w in known for f in word_forms(w)}
-        placed = _placed_words(old_by_line, p)
-        narrows = any(_narrows(clause, known, placed) for clause in _clauses(p.new))
-        arms = (
-            _inserted_after_quantifier(p),
-            qualified_general_noun(p, known),
-            for_phrase_added(p),
-            kinds_listed(p),
-            object_list_added(p),
-        )
-        if narrows or any(arms):
+        if _narrowed(p, known, _placed_words(old_by_line, p), old_by_line):
             out.append(p.entry())
     return out
+
+
+def _narrowed(p: Pair, known: set[str], placed: set[str], old_by_line: ByLine) -> bool:
+    """Whether any narrowing check fires on `p`, stopping at the first that does."""
+    return (
+        any(_narrows(clause, known, placed) for clause in _clauses(p.new))
+        or _inserted_after_quantifier(p)
+        or qualified_general_noun(p, known)
+        or for_phrase_added(p)
+        or kinds_listed(p)
+        or object_added(p, _section_words(old_by_line, p.old))
+    )
 
 
 def made_specific(
@@ -436,12 +452,12 @@ def _fronted_scope(sentence: str) -> list[str]:
     """The words of the phrase a sentence opens with before its first comma, when `for` or a scope
     preposition opens it (`For all,`, `In CI,`): it scopes every instruction of the sentence."""
     head, comma, _ = sentence.partition(",")
-    words = [w.lower() for w in WORD_RE.findall(head)]
+    words = [w.lower() for w in WORD_RE.findall(_PREPOSITION_COMPOUND_RE.sub(r"\1", head))]
     if not comma or not words or words[0] not in _FRAME_OPENERS or len(words) > _FRAME_REACH:
         return []
     if NOT_A_SCOPE & set(words):
         return []
-    return [w for w in words[1:] if w not in INDEFINITE_ARTICLES and w not in DEFINITE]
+    return [w for w in words[1:] if w not in INDEFINITE_ARTICLES and w not in DEFINITE_DETERMINERS]
 
 
 def _scope_dropped(p: Pair) -> bool:

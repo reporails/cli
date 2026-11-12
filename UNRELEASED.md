@@ -19,7 +19,8 @@
 - Heal puts back a rewrite that gives a rule a `for` phrase it never had (`add tests` → `add tests for src/`), and a split that leaves part of a sentence outside the scope it opened with (`For all, group X, count Y` → `For all, group X. Count Y.`).
 - Heal keeps a rewrite that only reorders a prohibition's words (`Do not modify X — those are Y` → `Do not modify Y: X`).
 - Heal puts back a prohibition given a list of kinds it never named (`Do not file plans` → `Do not file any plan — X, Y, or Z`), or an aside turned into a qualifier (`Do not modify the docs — those are generated` → `Do not modify generated docs`); a list led by `such as` or `e.g.` still passes.
-- Heal puts back a rewrite that gives a rule covering every case a list of objects (`Edit at canonical paths only` → `Edit X and Y at canonical paths only`); naming the one thing the line left implied still passes.
+- Heal puts back a rewrite that gives a rule covering every case a list of objects, or one of the kinds its section names (`Edit at canonical paths only` → `Edit X at canonical paths only`); naming the one thing the line left implied still passes.
+- Heal keeps a rewrite that only changes the part of a prohibition after a single dash (ASCII and en dashes included), and still reads a list set off between two dashes as part of what is forbidden.
 - Heal keeps a rewrite that moves a sentence's scope to its end (`In a monorepo, run X` → `Run X in monorepos`), names a path holding `for` (`docs/for-agents.md`), opens with `For each …`, or changes only the part of a sentence after a prohibition's dash, and reads `in-memory` as one word, not a place.
 - Heal's report lists a sentence it made specific once, with every sentence it was split into, so a split no longer reads as a dropped instruction.
 
