@@ -50,7 +50,7 @@ from reporails_cli.core.xray.pages import HOST, code_change_watch, forget_page, 
 from reporails_cli.core.xray.session import XraySession
 from reporails_cli.core.xray.sessions import session_entries
 from reporails_cli.core.xray.tally import tallies_by_file, tally_of
-from reporails_cli.formatters.mcp_view import render_heal_apply
+from reporails_cli.formatters.mcp_view import render_heal_receipt
 from reporails_cli.formatters.text.rule_meta import rule_docs_url
 from reporails_cli.interfaces.cli.xray_launch import RequestClock, bound_socket, mark_requests, run_until_idle, span
 from reporails_cli.interfaces.cli.xray_line import xray_line
@@ -418,7 +418,7 @@ class XrayServer:
                 receipt = [outcome.withheld]
             else:
                 written = outcome.written
-                text = render_heal_apply(written.fixes, written.decisions, written.put_back, outcome.scan_root)
+                text = render_heal_receipt(written.fixes, written.decisions, written.put_back, outcome.scan_root)
                 receipt = text.split("\n")
             return JSONResponse({"path": str(target), "receipt": receipt})
 

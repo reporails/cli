@@ -423,13 +423,13 @@ def _truncated_lines(payload: JsonObject) -> list[str]:
     return [f"truncated.hint: {hint}"] if hint else []
 
 
-def render_heal_apply(
+def render_heal_receipt(
     fixes: list[JsonObject],
     decisions: list[JsonObject],
     put_back: list[JsonObject],
     project_root: Path,
 ) -> str:
-    """The `heal_apply` reply: a count line, one line per changed file, one line per file put back."""
+    """A heal's receipt: a count line, one line per changed file, one line per file put back."""
 
     def rel(file: str) -> str:
         try:
@@ -441,11 +441,7 @@ def render_heal_apply(
     for fix in fixes:
         name = rel(str(fix.get("file_path", "")))
         per_file[name] = per_file.get(name, 0) + 1
-    lines = [
-        _dot(
-            "heal_apply: " + f"{len(fixes)} fixed", f"{len(decisions)} left for a decision", f"{len(put_back)} put back"
-        )
-    ]
+    lines = [_dot(f"{len(fixes)} fixed", f"{len(decisions)} left for a decision", f"{len(put_back)} put back")]
     lines += [f"{name}  {count} fixed" for name, count in sorted(per_file.items())]
     lines += [put_back_line(b, rel(str(b.get("file", "")))) for b in put_back]
     return "\n".join(lines)

@@ -149,7 +149,7 @@ class TestListTools:
 
         tools = _run_async(mcp_server.list_tools())
         names = {t.name for t in tools}
-        assert names == {"validate", "prepare", "remedy_brief", "heal_apply", "preflight", "explain", "xray"}
+        assert names == {"validate", "prepare", "remedy_brief", "preflight", "explain", "xray"}
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
@@ -1210,7 +1210,9 @@ class TestPreservationWiring:
     @pytest.mark.subsys_server
     @requires_model
     @requires_rules
-    def test_a_snapshotted_file_carries_preservation_on_both_bounded_and_full_replies(self, tmp_path: Path) -> None:
+    def test_a_snapshotted_file_carries_preservation_on_both_bounded_and_full_replies(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from reporails_cli.interfaces.mcp import snapshots, tools
 
         target = tmp_path / "CLAUDE.md"
@@ -1219,7 +1221,7 @@ class TestPreservationWiring:
         bounded_before = _bounded_reply(target)
         assert "preservation" not in bounded_before, "not yet briefed"
 
-        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True)
+        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True, project_root=tmp_path)
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
         bounded_after = _bounded_reply(target)
@@ -1227,6 +1229,7 @@ class TestPreservationWiring:
         assert bounded_after["preservation"]["ok"] is True, "nothing changed since the snapshot"
         assert bounded_after["preservation"]["score_before"] == score
 
+        monkeypatch.setenv("AILS_PROJECT_DIR", str(tmp_path))
         full = json.loads(_call_tool("validate", {"path": str(target), "full": True}))
         assert "preservation" in full
 
@@ -1239,7 +1242,7 @@ class TestPreservationWiring:
 
         target = tmp_path / "CLAUDE.md"
         target.write_text("## Don'ts\n\n- Use mock objects in tests.\n- Use test doubles in the test suite.\n")
-        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True)
+        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True, project_root=tmp_path)
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
         target.write_text(
@@ -1263,7 +1266,7 @@ class TestPreservationWiring:
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Project\n\nNever commit secrets.\n")
 
-        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True)
+        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True, project_root=tmp_path)
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
         calls = {"n": 0}
@@ -1552,7 +1555,9 @@ class TestFeedbackWiring:
     @pytest.mark.subsys_server
     @requires_model
     @requires_rules
-    def test_a_snapshotted_file_carries_feedback_on_both_bounded_and_full_replies(self, tmp_path: Path) -> None:
+    def test_a_snapshotted_file_carries_feedback_on_both_bounded_and_full_replies(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from reporails_cli.interfaces.mcp import snapshots, tools
 
         target = tmp_path / "CLAUDE.md"
@@ -1561,13 +1566,14 @@ class TestFeedbackWiring:
         bounded_before = _bounded_reply(target)
         assert "feedback" not in bounded_before, "not yet briefed"
 
-        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True)
+        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True, project_root=tmp_path)
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
         bounded_after = _bounded_reply(target)
         assert "feedback" in bounded_after
         assert isinstance(bounded_after["feedback"], list)
 
+        monkeypatch.setenv("AILS_PROJECT_DIR", str(tmp_path))
         full = json.loads(_call_tool("validate", {"path": str(target), "full": True}))
         assert "feedback" in full
 
@@ -1808,16 +1814,13 @@ class TestProjectFolder:
 
     @pytest.mark.e2e
     @pytest.mark.subsys_server
-    @pytest.mark.parametrize("tool", ["validate", "prepare", "heal_apply", "xray"])
+    @pytest.mark.parametrize("tool", ["validate", "prepare", "xray"])
     def test_a_call_that_names_no_folder_is_refused(self, tool: str, tmp_path: Path, monkeypatch) -> None:
         monkeypatch.delenv("AILS_PROJECT_DIR", raising=False)
         monkeypatch.chdir(tmp_path)
         (tmp_path / "CLAUDE.md").write_text("# P\n\nRun tests.\n")
         for arguments in ({}, {"path": "."}, {"path": "CLAUDE.md"}):
             text = _call_tool(tool, arguments)
-            if tool == "heal_apply":  # a text reply, like every `heal_apply` refusal
-                assert "Pass the project folder as path" in text, (arguments, text)
-                continue
             data = json.loads(text)
             assert data["error"] == "no_project", (tool, arguments, data)
 

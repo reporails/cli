@@ -24,11 +24,20 @@ from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workf
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult
 from reporails_cli.core.platform.dto.pipeline import Refusal
+from reporails_cli.formatters.mcp_view import render_heal_receipt
 from reporails_cli.formatters.text.rule_meta import rule_docs_url
 from reporails_cli.interfaces.cli import xray_launch, xray_server
-from tests.unit.test_mcp_heal_apply import DOC, _wire
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
+
+DOC = """# Demo
+
+Always run the **linter** before you commit.
+
+Never edit **generated** files by hand.
+
+Run build.sh before every commit.
+"""
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "eventbus" / "transcript" / "2.1.308"
 TOKEN = "launch-token"
@@ -430,7 +439,7 @@ def test_heal_replies_with_the_receipt_or_the_reason_nothing_was_written(
 ) -> None:
     headers = {"X-Xray-Token": TOKEN, "Origin": ORIGIN}
     reply = client.post("/heal", json={"path": "CLAUDE.md"}, headers=headers).json()
-    assert reply["receipt"][0].startswith("heal_apply: 0 fixed")
+    assert reply["receipt"][0].startswith("0 fixed")
     monkeypatch.setattr(
         xray_server, "heal_one", lambda path, root: HealOutcome(None, "Applying fixes needs a Pro account.", Path())
     )
@@ -438,12 +447,30 @@ def test_heal_replies_with_the_receipt_or_the_reason_nothing_was_written(
     assert reply["receipt"] == ["Applying fixes needs a Pro account."]
 
 
+def _wire(m: Any, rows: tuple[tuple[int, str, str], ...]) -> dict[str, Any]:
+    def pi(line: int) -> int | None:
+        return next((a.position_index for a in m.atoms if a.line == line), None)
+
+    findings = [
+        {"rule": r, "file": "CLAUDE.md", "line": ln, "pi": pi(ln), "op": op, "expect": {}} for ln, op, r in rows
+    ]
+    loc = {"order": 1, "element": "CLAUDE.md", "kind": "main", "loading": "always", "files": ["CLAUDE.md"]}
+    return {"summary": "", "locations": [{**loc, "importance": "", "findings": findings, "relations": []}]}
+
+
+def test_put_back_line_names_the_failed_check_when_no_op_is_named() -> None:
+    entry = {"file": "A.md", "op": "", "rule": "", "line": 5, "check": "preservation:order"}
+    assert "put back: A.md (preservation:order line 5)" in render_heal_receipt([], [], [entry], Path("."))
+    named = {"file": "A.md", "op": "bold", "rule": "CORE:S:0001", "line": 3, "check": "conformance"}
+    assert "put back: A.md (bold CORE:S:0001 line 3)" in render_heal_receipt([], [], [named], Path("."))
+
+
 def _real_heal(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Leave `heal_one` and the keyed write real; only the server-backed check returns a fixture run."""
     path = project / "CLAUDE.md"
     path.write_text(DOC)
     m = map_instruction_files(project, [path], spawn_daemon=False)
-    wire = _wire(project, m, ((3, "unbold", "bold"), (7, "code", "format")))
+    wire = _wire(m, ((3, "unbold", "bold"), (7, "code", "format")))
     reply = SimpleNamespace(workflow=deserialize_workflow({"workflow": wire}), tier="pro")
     result = SimpleNamespace(reply=reply, offline=False)
     run = SimpleNamespace(ruleset_map=m, result=result, funnel_error=None, scope=SimpleNamespace(scan_root=project))
@@ -458,7 +485,7 @@ def test_heal_button_writes_every_fix_through_the_real_heal(
     headers = {"X-Xray-Token": TOKEN, "Origin": ORIGIN}
     reply = client.post("/heal", json={"path": "CLAUDE.md"}, headers=headers).json()
     assert reply["receipt"] == [
-        "heal_apply: 2 fixed \u00b7 0 left for a decision \u00b7 0 put back",
+        "2 fixed \u00b7 0 left for a decision \u00b7 0 put back",
         "CLAUDE.md  2 fixed",
     ]
     body = (project / "CLAUDE.md").read_text()
@@ -482,7 +509,7 @@ def test_heal_button_puts_back_a_file_that_departs(
     _real_heal(project, monkeypatch)
     headers = {"X-Xray-Token": TOKEN, "Origin": ORIGIN}
     reply = client.post("/heal", json={"path": "CLAUDE.md"}, headers=headers).json()
-    assert reply["receipt"][0] == "heal_apply: 0 fixed \u00b7 0 left for a decision \u00b7 1 put back"
+    assert reply["receipt"][0] == "0 fixed \u00b7 0 left for a decision \u00b7 1 put back"
     assert "put back: CLAUDE.md (outside  line 1)" in reply["receipt"]
     assert (project / "CLAUDE.md").read_bytes() == DOC.encode()
 

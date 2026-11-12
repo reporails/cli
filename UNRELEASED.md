@@ -4,12 +4,16 @@
 
 ### Changed
 
+- Heal in your agent now makes every change through your agent's own edits, so your edit approvals and hooks see each one.
+
 ### Fixed
 
 - On Windows, `ails check` names a file relative to its project, finds the files of a `~/.claude` folder and keeps a linked rule inside its project when the folder is spelled with a short (8.3) name; a file in the folder the command runs in is named with `/`, not its full path.
 - With a home folder reached through a link, `ails check` on a `~/.claude` folder reports that folder's findings instead of none.
 
 ### Removed
+
+- The `heal_apply` tool is removed; update the reporails plugin to its matching version.
 
 ### Internal
 

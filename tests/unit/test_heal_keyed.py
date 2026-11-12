@@ -195,9 +195,9 @@ def test_a_written_file_is_put_back_when_the_remap_yields_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """No mapper can check the result: every written file is restored and reported under the `remap` check."""
-    import reporails_cli.core.heal.apply as heal_apply
+    import reporails_cli.core.heal.apply as heal_apply_mod
 
-    monkeypatch.setattr(heal_apply, "map_instruction_files", lambda *_a, **_k: None)
+    monkeypatch.setattr(heal_apply_mod, "map_instruction_files", lambda *_a, **_k: None)
     path = tmp_path / "CLAUDE.md"
     path.write_bytes(DOC.encode())
     res, _ = _run(tmp_path, (7, "code", "format"))

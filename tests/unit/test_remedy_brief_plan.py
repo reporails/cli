@@ -268,3 +268,18 @@ def test_a_unicode_line_separator_does_not_shift_the_plan_or_its_check(tmp_path:
     file.write_text(text, encoding="utf-8")
     fresh = map_instruction_files(tmp_path, [file], spawn_daemon=False)
     assert snapshots.check_conformance(file, fresh, text, tmp_path) == {"ok": True, "deviations": []}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+@requires_model
+def test_the_server_has_no_heal_apply_and_the_brief_carries_the_scripted_edits(tmp_path: Path) -> None:
+    import asyncio
+
+    from reporails_cli.interfaces.mcp import server
+
+    names = {t.name for t in asyncio.run(server.server.list_tools())}
+    assert "heal_apply" not in names and "remedy_brief" in names
+
+    _file, reply = _brief(tmp_path)
+    assert {e["op"] for e in reply["edits"]} >= {"negation-form", "split"}

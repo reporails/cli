@@ -1,4 +1,4 @@
-"""One owner for applying a workflow's keyed fixes: `ails check --heal` and the MCP `heal_apply` call it."""
+"""One owner for applying a workflow's keyed fixes: `ails check --heal` and the x-ray page's per-file heal."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, RemediationWorkflow, tiers_unpaid
-from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult, NamedTargets
+from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.utils.utils import matches_any_glob
@@ -98,27 +98,16 @@ def heal_scope_outside(files: Iterable[Path], scope: Path, project_root: Path) -
     return [f for f in files if not resolved_within(f, bound)]
 
 
-def heal_scope_files(
-    files: Iterable[Path], scope: Path, project_root: Path, named: NamedTargets | None = None
-) -> list[Path]:
-    """The files heal may write for `scope`: those within `heal_bound`, narrowed to what is named.
+def heal_scope_files(files: Iterable[Path], scope: Path, project_root: Path) -> list[Path]:
+    """The files heal may write for `scope`: those within `heal_bound`.
 
-    A file scope names that file alone; `named` (resolved targets) names files and folders, and a file
-    is kept when it is a named file or lies under a named folder. One named file is one written file: a
-    file it `@import`s, though mapped with it, is left alone.
+    A file scope names that file alone: a file it `@import`s, though mapped with it, is left alone.
     """
     bound = heal_bound(scope, project_root)
-    if not scope.is_dir():
-        named = NamedTargets(frozenset({safe_resolve(scope)}), frozenset())
-    if named is None:
-        return [f for f in files if resolved_within(f, bound)]
-    named_files = {safe_resolve(f) for f in named.files}
-    return [
-        f
-        for f in files
-        if resolved_within(f, bound)
-        and (safe_resolve(f) in named_files or any(resolved_within(f, d) for d in named.dirs))
-    ]
+    kept = [f for f in files if resolved_within(f, bound)]
+    if scope.is_dir():
+        return kept
+    return [f for f in kept if safe_resolve(f) == safe_resolve(scope)]
 
 
 def suppressed_by_path(files: Iterable[Path], target: Path) -> dict[Path, set[int]]:
@@ -164,7 +153,6 @@ def heal_workflow_within(
     workflow: RemediationWorkflow | None,
     target: Path,
     scan_root: Path,
-    named: NamedTargets | None = None,
 ) -> KeyedResult:
     """Write the workflow's keyed fixes to the mapped files inside `target`'s scope (`heal_scope_files`).
 
@@ -172,7 +160,7 @@ def heal_workflow_within(
     alone; a written file is re-mapped and checked against its plan, and one that departs is put back.
     """
     files = sorted({Path(a.file_path) for a in ruleset_map.atoms})
-    files = heal_scope_files(files, target, scan_root, named)
+    files = heal_scope_files(files, target, scan_root)
     return apply_keyed_heal(
         ruleset_map,
         scan_root,
@@ -184,7 +172,7 @@ def heal_workflow_within(
 
 
 def heal_one(path: str, project_root: Path) -> HealOutcome:
-    """Check one file and write the fixes the reply carries for it, as `heal_apply` does.
+    """Check one file and write the fixes the reply carries for it.
 
     A refused check, a run with no map or no workflow writes nothing and says why in the words
     `ails check --heal` uses.

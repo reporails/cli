@@ -113,7 +113,7 @@ def test_the_heal_pass_receives_the_run_exclusions(monkeypatch: pytest.MonkeyPat
 @pytest.mark.unit
 @pytest.mark.requires_model
 @pytest.mark.subsys_heal
-def test_heal_apply_writes_only_files_the_run_mapped(tmp_path: Path) -> None:
+def test_a_run_maps_only_the_files_it_is_given(tmp_path: Path) -> None:
     project = _gs_project(tmp_path)
     m = map_instruction_files(project, [project / "CLAUDE.md"], spawn_daemon=False)
     files = {Path(a.file_path).name for a in m.atoms}

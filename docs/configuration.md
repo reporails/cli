@@ -9,7 +9,7 @@ last_updated: 2026-10-14
 
 Reporails *provides* two configuration surfaces: global (per-user) and project (per-repo). Global supplies the defaults and project overrides them per-repo: a single-value setting takes the project value, and a list setting combines both files.
 
-A config file that cannot be read (a YAML syntax error, a file that is not a mapping, a file that is not UTF-8) stops `ails check` with an error naming the file, the line and the problem, and exit code 2; `ails config` and the MCP `validate` and `heal_apply` tools report the same error. Nothing runs on defaults in its place. This holds for `.ails/config.yml`, `.ails/config.local.yml` and `~/.reporails/config.yml`.
+A config file that cannot be read (a YAML syntax error, a file that is not a mapping, a file that is not UTF-8) stops `ails check` with an error naming the file, the line and the problem, and exit code 2; `ails config` and the MCP `validate` tool report the same error. Nothing runs on defaults in its place. This holds for `.ails/config.yml`, `.ails/config.local.yml` and `~/.reporails/config.yml`.
 
 ## Project config — `.ails/config.yml`
 

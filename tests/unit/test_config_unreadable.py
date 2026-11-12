@@ -107,14 +107,12 @@ def test_a_tab_before_an_inline_comment_gets_one_outcome_from_check_and_config(
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_mcp_validate_returns_the_structured_error(tmp_path: Path, global_path: Path) -> None:
-    from reporails_cli.interfaces.mcp.server import _run_heal_apply, _run_validate
+    from reporails_cli.interfaces.mcp.server import _run_validate
 
     root = _project(tmp_path, "config.yml")
     payload = asyncio.run(_run_validate(str(root), False, None, root))
     assert payload["error"] == "config_unreadable"
     assert str(root / ".ails" / "config.yml") in payload["message"]
-    healed = asyncio.run(_run_heal_apply(str(root), None, root))
-    assert healed.startswith("heal_apply: ") and str(root / ".ails" / "config.yml") in healed
 
 
 @pytest.mark.unit

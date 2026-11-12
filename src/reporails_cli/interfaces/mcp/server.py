@@ -1,6 +1,6 @@
 """MCP server for reporails — exposes validation tools to MCP clients.
 
-Registers `validate` / `prepare` / `remedy_brief` / `heal_apply` / `preflight` / `explain` / `xray` on the
+Registers `validate` / `prepare` / `remedy_brief` / `preflight` / `explain` / `xray` on the
 mcp 2.x high-level `MCPServer`. Tools return a pre-built `CallToolResult` (see `_result`): the wire
 payload as `structured_content` plus a compact text mirror, with no derived output schema.
 """
@@ -17,7 +17,6 @@ from reporails_cli.core.mapper.model_manifest import ModelFetchError
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list
-from reporails_cli.core.platform.dto.heal import NamedTargets
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.observability.log_levels import configure_logging
 from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
@@ -27,7 +26,6 @@ from reporails_cli.formatters.mcp import bound_validate_payload, with_rule_label
 from reporails_cli.formatters.mcp_view import has_text_view, render_text_view, unseen_notices
 from reporails_cli.interfaces.mcp import snapshots
 from reporails_cli.interfaces.mcp.feedback import file_feedback
-from reporails_cli.interfaces.mcp.heal_apply import heal_apply_message, heal_apply_write, release_written
 from reporails_cli.interfaces.mcp.idle_release import lifespan, touch_activity
 from reporails_cli.interfaces.mcp.prepare import prepare_for_path
 from reporails_cli.interfaces.mcp.preservation import with_preservation
@@ -150,13 +148,12 @@ async def _fresh_validate_payload(
     tokens: tuple[str, ...],
     scan_root: Path,
     state: CircuitState,
-    selection: tuple[set[Path], set[Path]] | None = None,
 ) -> JsonObject | tuple[JsonObject, RulesetMap | None, float | None]:
     """Run the pipeline fresh (never served from `state.full_payload`): resolve `tokens` first,
     narrow `workflow.locations` to them (`keep_target_locations`) and memoize the map/score on
-    `state`. A `selection` the caller already resolved is used as is. Returns `(payload, ruleset_map,
-    score)`, or the target-resolution error payload."""
-    if selection is None and tokens:
+    `state`. Returns `(payload, ruleset_map, score)`, or the target-resolution error payload."""
+    selection: tuple[set[Path], set[Path]] | None = None
+    if tokens:
         resolved = await asyncio.to_thread(resolve_validate_targets, tokens, scan_root)
         if isinstance(resolved, dict):
             return resolved
@@ -303,42 +300,6 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None, proj
     return with_rule_labels(payload) if full else bound_validate_payload(payload)
 
 
-async def _run_heal_apply(path: str, targets: list[str] | None, project_root: Path) -> str:
-    """`heal_apply`'s reply; an unreadable config file is reported with the file and line."""
-    try:
-        return await _heal_apply_reply(path, targets, project_root)
-    except ConfigUnreadableError as exc:
-        return heal_apply_message(_config_unreadable(exc))
-
-
-async def _heal_apply_reply(path: str, targets: list[str] | None, project_root: Path) -> str:
-    """`heal_apply`'s body: the pipeline `validate` runs, then the keyed heal the CLI runs."""
-    target = Path(path).resolve()
-    model_error = await asyncio.to_thread(model_not_ready_error)
-    if model_error is not None or not target.exists():
-        return heal_apply_message(model_error or {"error": f"Path not found: {target}"})
-    scan_root = resolve_scan_target(target, project_root)[0]
-    tokens = target_tokens(targets)
-    selection: tuple[set[Path], set[Path]] | None = None
-    if tokens:
-        resolved = await asyncio.to_thread(resolve_validate_targets, tokens, scan_root)
-        if isinstance(resolved, dict):
-            return heal_apply_message(resolved)  # never write when the named targets cannot be resolved
-        selection = resolved
-    result = await _fresh_validate_payload(path, tokens, scan_root, CircuitState(), selection)
-    if isinstance(result, dict):
-        return heal_apply_message(result)
-    payload, ruleset_map, _score = result
-    workflow = payload.get("workflow")
-    if ruleset_map is None or not isinstance(workflow, dict):
-        return heal_apply_message(payload, mapped=ruleset_map is not None)
-    named = NamedTargets(frozenset(selection[0]), frozenset(selection[1])) if selection is not None else None
-    try:
-        return await asyncio.to_thread(heal_apply_write, ruleset_map, workflow, target, scan_root, named)
-    finally:
-        release_written(scan_root, validate_states)
-
-
 # ─────────────────────────────────────────────────────────────────────
 # Server + tool registration (mcp 2.x high-level).
 # ─────────────────────────────────────────────────────────────────────
@@ -482,28 +443,6 @@ async def remedy_brief(
             project_root=folder.root,
         )
         return _result(brief)
-
-
-@server.tool(
-    name="heal_apply",
-    description=(
-        "Make every fix that needs no judgment across the project at `path` in one call, then count what"
-        " is left for a decision (it counts them and does not list them)."
-        " Pro only: without a Pro account it changes nothing and says so."
-        " Each file it writes is checked and put back if it departs from the plan."
-        " `targets` narrows the files, read the way `validate` reads them. Run it before rewriting"
-        " locations by hand, then call `validate` again. Returns text: a count line"
-        " (`heal_apply: <n> fixed · <m> left for a decision · <k> put back`), then a line per file."
-    ),
-)
-async def heal_apply(ctx: ToolContext, path: str = ".", targets: list[str] | None = None) -> CallToolResult:
-    """Apply the project's deterministic fixes; see the tool description."""
-    touch_activity()
-    with get_stage_timer().run("mcp heal_apply"):
-        folder = await resolve_project_folder(path, ctx)
-        if not isinstance(folder, ProjectFolder):
-            return _text_result(heal_apply_message(folder))
-        return _text_result(await _run_heal_apply(str(folder.target), targets, folder.root))
 
 
 @server.tool(
