@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from reporails_cli.core.discovery.walk import own_name_spellings
 from reporails_cli.core.heal.apply import heal_withheld_for_run
 from reporails_cli.core.pipeline.assemble import with_exclusions
 from reporails_cli.core.platform.config.config import get_project_config
@@ -65,7 +66,8 @@ def _emit_unlisted_file(file: Path, root: Path, run_folder: Path, output_format:
     of another project is told to run the check in that project's folder.
     Under json/github the diagnosis owns stdout, so the notice goes to stderr."""
     if root == run_folder:
-        shown = file.relative_to(root).as_posix() if file.is_relative_to(root) else str(file)
+        inside = [p for p in (file, *own_name_spellings(file)) if p.is_relative_to(root)]
+        shown = inside[0].relative_to(root).as_posix() if inside else str(file)
         message = f"{shown} is not an instruction file of this project."
     else:
         message = (

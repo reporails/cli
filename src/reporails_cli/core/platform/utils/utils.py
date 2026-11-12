@@ -5,6 +5,7 @@ All functions are pure (no I/O) except where noted.
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import math
@@ -256,38 +257,54 @@ def read_frontmatter_file(path: Path, *, lenient: bool = False) -> Frontmatter |
     return read_frontmatter(text, lenient=lenient)
 
 
-def home_folder() -> Path | None:
-    """The user's home folder, resolved (as discovered paths spell it); None when it cannot be determined."""
+@functools.lru_cache(maxsize=8)
+def _home_spellings(written: str) -> tuple[Path, ...]:
+    home = Path(written)
     try:
-        return Path.home().resolve()
+        resolved = home.resolve()
     except (RuntimeError, OSError):
-        return None
+        return (home,)
+    return (resolved,) if resolved == home else (resolved, home)
+
+
+def home_spellings() -> tuple[Path, ...]:
+    """The user's home folder as it resolves, then as the environment spells it when that differs (a Windows
+    short `RUNNER~1` folder name, a symlinked home); empty when no home folder can be determined."""
+    try:
+        written = Path.home()
+    except RuntimeError:
+        return ()
+    return _home_spellings(str(written))
+
+
+def home_folder() -> Path | None:
+    """The user's home folder, resolved where it can be; None when it cannot be determined."""
+    spellings = home_spellings()
+    return spellings[0] if spellings else None
 
 
 def home_relative(path: Path) -> str | None:
-    """`path` relative to the user's home folder, `/`-separated; None when it is not under it.
-
-    The home folder is tried as it resolves and as the environment spells it, so a path written either
-    way (a Windows short `RUNNER~1` folder name, a symlinked home) reads as under it.
-    """
-    for home in (home_folder(), Path.home()):
-        if home is not None and path.is_relative_to(home):
+    """`path` relative to the user's home folder, `/`-separated, whichever way the home is spelled in it;
+    None when it is not under it."""
+    for home in home_spellings():
+        if path.is_relative_to(home):
             return path.relative_to(home).as_posix()
     return None
 
 
-def expand_home_pattern(pattern: str) -> str:
-    """A `~`-rooted glob pattern with `~` resolved to the user's resolved home folder.
+def expand_home_pattern(pattern: str) -> tuple[str, ...]:
+    """A glob pattern with a leading `~` written out once per spelling of the home folder, the resolved one first.
 
-    Lets a pattern be compared against a file outside the scan root, whose relative path falls
-    back to its absolute path string. A pattern with no leading `~` is returned unchanged.
+    Lets a pattern be compared against a file outside the scan root, whose relative path falls back to
+    its absolute path string, however that path spells the home folder. A pattern with no leading `~`
+    is its own only spelling; a `~user` pattern expands as the system does.
     """
     if not pattern.startswith("~"):
-        return pattern
-    home = home_folder()
-    if home is None or pattern[1:2] not in ("", "/"):
-        return Path(pattern).expanduser().as_posix()
-    return (home / pattern[2:]).as_posix() if pattern[2:] else home.as_posix()
+        return (pattern,)
+    homes = home_spellings()
+    if not homes or pattern[1:2] not in ("", "/"):
+        return (Path(pattern).expanduser().as_posix(),)
+    return tuple((home / pattern[2:]).as_posix() if pattern[2:] else home.as_posix() for home in homes)
 
 
 def is_rooted_pattern(pattern: str) -> bool:
@@ -326,11 +343,14 @@ def config_pattern_matches(
     `ignore_case` lower-cases both sides.
     """
     clean = pattern.removeprefix("./")
-    expanded = expand_home_pattern(clean + "**/*.md" if clean.endswith("/") else clean)
     subject = full_path if full_path is not None and clean.startswith("~") else rel
-    if ignore_case:
-        subject, expanded = subject.lower(), expanded.lower()
-    return glob_matches(subject, expanded, anchored=anchor_loose_leaf or not is_loose_leaf_pattern(clean))
+    anchored = anchor_loose_leaf or not is_loose_leaf_pattern(clean)
+    for expanded in expand_home_pattern(clean + "**/*.md" if clean.endswith("/") else clean):
+        if ignore_case:
+            subject, expanded = subject.lower(), expanded.lower()
+        if glob_matches(subject, expanded, anchored=anchored):
+            return True
+    return False
 
 
 def matches_any_glob(path: Path, patterns: list[str], target: Path, *, root_anchored: bool = False) -> bool:

@@ -78,6 +78,14 @@ Feature: `ails check` scores and validates instruction files end-to-end
     And the json files map contains only "skills/demo/SKILL.md"
 
   @e2e @regression
+  Scenario: A folder inside ~/.claude checks its files when the home folder is reached through a link
+    Given the home folder is reached through a link
+    And a home agent folder with a CLAUDE.md and a "skills/demo/SKILL.md"
+    When I run "ails check" on the home "skills" folder from a project folder
+    Then the check exits 0
+    And the json files map contains only "skills/demo/SKILL.md"
+
+  @e2e @regression
   Scenario: A rule file linked from outside its project is checked within that project
     Given a git project whose ".claude/rules/style.md" links to a file outside it
     When I run "ails check" on the linked file from the project folder

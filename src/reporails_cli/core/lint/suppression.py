@@ -53,7 +53,7 @@ from reporails_cli.core.platform.dto.models import Rule
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.runtime.merger import drop_findings, normalize_finding_path, rebuild_cross_file_stats
 from reporails_cli.core.platform.utils.directives import parse_directives
-from reporails_cli.core.platform.utils.utils import matches_any_glob
+from reporails_cli.core.platform.utils.utils import home_folder, matches_any_glob
 
 
 class SuppressionIndex(dict[tuple[str, int], set[str]]):
@@ -559,8 +559,9 @@ def apply_surface_mutations(
 
 def resolve_finding_path(rel: str, project_root: Path | None) -> Path | None:
     """Reconstruct an absolute path from a normalized finding path."""
-    if rel.startswith("~/"):
-        return Path.home() / rel[2:]
+    home = home_folder()
+    if rel.startswith("~/") and home is not None:
+        return home / rel[2:]
     p = Path(rel)
     if p.is_absolute():
         return p

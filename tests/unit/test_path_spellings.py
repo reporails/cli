@@ -9,11 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.external_patterns import external_anchor
 from reporails_cli.core.discovery.walk import own_name_spellings
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-from reporails_cli.core.platform.utils.utils import expand_home_pattern, home_relative
+from reporails_cli.core.platform.utils.utils import config_pattern_matches, expand_home_pattern, home_relative
 from reporails_cli.formatters.text.display_constants import short_path
 from reporails_cli.interfaces.cli.check_notices import _emit_unlisted_file
 
@@ -40,18 +39,23 @@ def aliased_home(aliased: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) ->
     return real / "home", alias / "home"
 
 
-def test_a_home_pattern_expands_to_the_resolved_home(aliased_home: tuple[Path, Path]) -> None:
-    home, _written = aliased_home
-    assert expand_home_pattern("~/.claude/skills/*/SKILL.md") == f"{home.as_posix()}/.claude/skills/*/SKILL.md"
-    assert expand_home_pattern("~") == home.as_posix()
-    assert expand_home_pattern("src/*.md") == "src/*.md"
+@pytest.mark.parametrize("spelling", ["resolved", "written"])
+def test_a_file_under_the_home_folder_matches_its_home_pattern_whichever_way_it_is_spelled(
+    aliased_home: tuple[Path, Path], spelling: str
+) -> None:
+    home = dict(zip(("resolved", "written"), aliased_home, strict=True))[spelling]
+    memory = (home / ".claude" / "projects" / "p" / "memory" / "a.md").as_posix()
+    assert config_pattern_matches("a.md", "~/.claude/projects/*/memory/", full_path=memory)
+    assert not config_pattern_matches("a.md", "~/.codex/memory/", full_path=memory)
 
 
-def test_an_external_anchor_is_the_resolved_home_folder(aliased_home: tuple[Path, Path]) -> None:
-    home, _written = aliased_home
-    anchor, below = external_anchor("~/.claude/skills/*/SKILL.md")
-    assert anchor == home / ".claude" / "skills"
-    assert below == "*/SKILL.md"
+def test_a_home_pattern_is_written_out_once_per_home_spelling(aliased_home: tuple[Path, Path]) -> None:
+    home, written = aliased_home
+    assert expand_home_pattern("~/.claude/*.md") == (
+        f"{home.as_posix()}/.claude/*.md",
+        f"{written.as_posix()}/.claude/*.md",
+    )
+    assert expand_home_pattern("src/*.md") == ("src/*.md",)
 
 
 def test_a_path_is_home_relative_whichever_way_it_is_spelled(aliased_home: tuple[Path, Path]) -> None:

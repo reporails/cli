@@ -68,6 +68,13 @@ def step_linked_home_claude_folder(context):
     context.project = build_project(context.tmpdir)
 
 
+@given("the home folder is reached through a link")
+def step_home_through_link(context):
+    alias = context.tmpdir / "alias"
+    alias.symlink_to(context.tmpdir, target_is_directory=True)
+    context.home = alias / context.home.relative_to(context.tmpdir)
+
+
 @when('I run "ails check" on the home "{name}" file from a project folder')
 def step_run_home_file(context, name):
     target = str(context.home / ".claude" / name)
