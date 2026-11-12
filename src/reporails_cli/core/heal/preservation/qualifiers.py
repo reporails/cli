@@ -50,7 +50,7 @@ def _new_head_noun(new: list[str], j1: int, j2: int) -> bool:
     return bool(INDEFINITE_ARTICLES & set(span)) and bool(_content(new[j1:j2])) and new[j2] not in PHRASE_PREPOSITIONS
 
 
-_LIST_RE = re.compile(r",|\b(?:or|and)\b")
+_LIST_RE = re.compile(r",|\b(?:" + "|".join(sorted(CONDITION_CONJUNCTIONS)) + r")\b")
 
 
 def _keep_list_aside(match: re.Match[str]) -> str:
