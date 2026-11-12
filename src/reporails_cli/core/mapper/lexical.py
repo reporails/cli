@@ -13,6 +13,13 @@ import re
 # The em dash and the en dash, which set a clause off from the one before it.
 DASH_MARKS = frozenset({"\u2014", "\u2013"})
 
+# A dash that cuts a clause: an em dash anywhere, an en dash or `-` / `--` only with a space on each
+# side (an unspaced `client-server` or number range stays whole).
+_CUT_DASH = r"(?:\u2014|(?<=\s)(?:\u2013|--?)(?=\s))"
+CLAUSE_DASH_RE = re.compile(_CUT_DASH)
+# Two clause dashes around text that holds no dash (`file any plan — X, Y, or Z — into`).
+DASH_PAIR_RE = re.compile(f"{_CUT_DASH}((?:(?!{_CUT_DASH}).)+?){_CUT_DASH}")
+
 # ── Clause-split markers ───────────────────────────────────────────────
 # STRONG markers: space-flanked em/en-dash, semicolon, colon. Punctuation only, so
 # consuming the marker itself loses no word.

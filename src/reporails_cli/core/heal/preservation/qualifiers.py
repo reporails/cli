@@ -18,7 +18,7 @@ from reporails_cli.core.mapper.classify_lexicon import (
     PHRASE_PREPOSITIONS,
     STOPWORDS,
 )
-from reporails_cli.core.mapper.lexical import DASH_MARKS
+from reporails_cli.core.mapper.lexical import CLAUSE_DASH_RE, DASH_PAIR_RE
 from reporails_cli.core.mapper.md_parser import replace_code_spans
 from reporails_cli.core.platform.dto.heal import Pair, RewriteWords
 
@@ -50,20 +50,24 @@ def _new_head_noun(new: list[str], j1: int, j2: int) -> bool:
     return bool(INDEFINITE_ARTICLES & set(span)) and bool(_content(new[j1:j2])) and new[j2] not in PHRASE_PREPOSITIONS
 
 
-_DASHES = "".join(sorted(DASH_MARKS))
-# A pair of dashes sets an aside off inside its clause (`file any plan — X, Y, or Z — into`).
-_DASH_PAIR_RE = re.compile(f"[{_DASHES}]([^{_DASHES}]+)[{_DASHES}]")
+_LIST_RE = re.compile(r",|\b(?:or|and)\b")
+
+
+def _keep_list_aside(match: re.Match[str]) -> str:
+    """The text between two dashes as an aside when it holds a list (`— X, Y, or Z —`); two clauses
+    (`— prefer a fake —`) stay cut."""
+    inner = match.group(1)
+    return f" {inner} " if _LIST_RE.search(inner) else match.group(0)
 
 
 def _negated_words(sentence: str) -> set[str]:
     """The lowered words of the parts of `sentence` (cut at `;`, `:` and a single dash) that hold
     its negation: a clause after the dash (`Do not use a mock — prefer a fake`) is not what it
-    forbids, while an aside between two dashes stays in its clause."""
-    text = _DASH_PAIR_RE.sub(r" \1 ", sentence)
-    for mark in (";", ":", " -- ", " - ", *DASH_MARKS):
-        text = text.replace(mark, "\n")
-    parts = text.split("\n")
-    return {w.lower() for part in parts if NEGATION_RE.search(part) for w in WORD_RE.findall(part)}
+    forbids, while a list between two dashes stays in its clause. An unspaced en dash or hyphen
+    (`client-server`, a number range) cuts nothing."""
+    text = DASH_PAIR_RE.sub(_keep_list_aside, sentence)
+    text = CLAUSE_DASH_RE.sub("\n", text.replace(";", "\n").replace(":", "\n"))
+    return {w.lower() for part in text.split("\n") if NEGATION_RE.search(part) for w in WORD_RE.findall(part)}
 
 
 def qualified_general_noun(p: Pair, known: set[str]) -> bool:
@@ -109,16 +113,19 @@ def _op_restricts(tag: str, old_span: list[str], new: list[str], at: tuple[int, 
 
 # Words after a fronted `for` / scope preposition that make it an aside, not a scope (`For example,`,
 # `In general,`).
-NOT_A_SCOPE = frozenset(
-    {"example", "instance", "general", "short", "particular", "practice", "summary", "addition", "fact", "times"}
+FOR_ASIDES = frozenset({"example", "instance"})
+NOT_A_SCOPE = FOR_ASIDES | frozenset(
+    {"general", "short", "particular", "practice", "summary", "addition", "fact", "times"}
 )
+_SEE_ASIDE_RE = re.compile(r"\(\s*see\b[^)]*\)", re.IGNORECASE)
 _TOKEN_EDGES = ".,;:()[]*_\"'\u2014"
 
 
 def _prose_tokens(sentence: str) -> list[str]:
     """The lowered whitespace tokens of `sentence` outside code spans, a hyphenated word kept whole
-    (`ready-for-review` holds no `for`)."""
-    return [t.strip(_TOKEN_EDGES).lower() for t in replace_code_spans(sentence, " code ").split()]
+    (`ready-for-review` holds no `for`), a `(see …)` reference aside left out."""
+    text = _SEE_ASIDE_RE.sub(" ", replace_code_spans(sentence, " code "))
+    return [t.strip(_TOKEN_EDGES).lower() for t in text.split()]
 
 
 def for_phrase_added(p: Pair) -> bool:
@@ -128,7 +135,7 @@ def for_phrase_added(p: Pair) -> bool:
     old, new = _prose_tokens(p.old_sentence), _prose_tokens(p.new_sentence)
     if "for" in old:
         return False
-    leads = _FOR_QUANTIFIERS | {"example", "instance"}
+    leads = _FOR_QUANTIFIERS | FOR_ASIDES
     return any(w == "for" and i + 1 < len(new) and new[i + 1] not in leads for i, w in enumerate(new))
 
 
@@ -136,9 +143,22 @@ def for_phrase_added(p: Pair) -> bool:
 _EXAMPLE_LEADS = frozenset({"such", "e", "g", "eg", "including", "like", "example", "examples"})
 
 
+def _extends_author_noun(new: list[str], j1: int, j2: int, named: set[str]) -> bool:
+    """Whether the words inserted at `new[j1:j2]` only add bare alternatives to the author's own
+    noun before them (`secrets` -> `secrets or credentials`, `secrets, keys or credentials`): a
+    content word of the author's sentence, then words that are all `or`, `and` or content words
+    (`repo` -> `repo name or a per-repo segment` has function words and is a list of its own)."""
+    noun = new[j1 - 1]
+    if not _content([noun]) or not word_forms(noun) & named:
+        return False
+    return all(w in CONDITION_CONJUNCTIONS or (len(w) > 2 and w not in STOPWORDS) for w in new[j1:j2])
+
+
 def kinds_listed(p: Pair) -> bool:
     """Whether a prohibition's rewrite lists, joined by `or`, kinds its author's sentence did not
-    name, which then read as all the rule forbids (`file plans` -> `file any plan — X, Y, or Z`); a
+    name, which then read as all the rule forbids (`file plans` -> `file any plan — X, Y, or Z`); an
+    `or` list put right after the author's own noun keeps it as an alternative (`commit secrets` ->
+    `commit secrets or credentials`) and widens the rule; a
     list led by `such as`, `e.g.` or `including` gives examples and restricts nothing."""
     if not NEGATION_RE.search(p.new_sentence):
         return False
@@ -148,6 +168,8 @@ def kinds_listed(p: Pair) -> bool:
     for tag, _, _, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
         added = new[j1:j2]
         if tag == "equal" or "or" not in added or _EXAMPLE_LEADS & set(new[max(j1 - 3, 0) : j2]):
+            continue
+        if tag == "insert" and j1 > 0 and _extends_author_noun(new, j1, j2, named):
             continue
         fresh = [w for w in _content(added) if not word_forms(w) & named]
         if fresh and set(fresh) <= negated:

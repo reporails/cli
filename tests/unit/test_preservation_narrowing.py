@@ -890,3 +890,38 @@ def test_review_shapes_of_the_prohibition_and_for_phrase_arms(tmp_path, before, 
 def test_a_sentence_opening_with_a_preposition_compound_has_no_fronted_scope(tmp_path) -> None:
     result = _compare_edit(tmp_path, "In-memory caches, flush on exit.\n", "Flush in-memory caches on exit.\n")
     assert result["dropped_conditions"] == []
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after", "narrowed"),
+    [
+        ("*Do not commit secrets.*", "*Do not commit secrets or credentials.*", False),
+        ("*Do not commit secrets.*", "*Do not commit secrets, keys or credentials.*", False),
+        ("*Do not pin Python 3.10\u20133.12 in CI.*", "*Do not pin Python 3.10\u20133.12 in production CI.*", True),
+        ("*Do not edit client\u2013server plans.*", "*Do not edit client\u2013server specs or docs.*", True),
+        ("*Do not edit shared plans.*", "*Do not edit shared specs or docs.*", True),
+        (
+            "*Do not file plans.*",
+            "*Do not file any plan -- release notes, build work, or hub notes -- into the hub.*",
+            True,
+        ),
+        (
+            "*Do not file plans.*",
+            "*Do not file any plan \u2014 release notes, build work, or hub notes \u2014 into the hub.*",
+            True,
+        ),
+        (
+            "*Do not use a mock \u2014 prefer a fake \u2014 it is faster.*",
+            "*Do not use a mock \u2014 prefer a real fake \u2014 it is faster.*",
+            False,
+        ),
+        ("Run the CLI.", "Run the CLI (see `ails --help` for usage).", False),
+        ("Add tests under `tests/`.", "Add tests under `tests/` for `src/`", True),
+    ],
+)
+def test_dash_cuts_dash_pairs_widening_lists_and_see_asides(tmp_path, before, after, narrowed) -> None:
+    result = _compare_edit(tmp_path, before + "\n", after + "\n")
+    assert bool(result["narrowed_instructions"]) is narrowed
