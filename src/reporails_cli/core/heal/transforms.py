@@ -28,6 +28,7 @@ from reporails_cli.core.mapper.instructions import (
     opens_command_after_hedge,
     without_joining_word,
 )
+from reporails_cli.core.mapper.lexical import DASH_MARKS
 from reporails_cli.core.mapper.md_parser import code_spans, emphasis_runs, link_spans
 from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark
 from reporails_cli.core.mapper.structure import in_any_span, paragraph_lines, read_structure
@@ -178,7 +179,22 @@ def _cuts_series(content: str, sentence: Sequence[Atom], starts: Sequence[int]) 
         at = _joint_at(content, sentence[k], starts[k])
         if at is not None and "," in sentence[k].joint and holds_comma_series(content[starts[k - 1] : at]):
             return True
+        if _opens_series(sentence, k):
+            return True
     return False
+
+
+def _opens_series(sentence: Sequence[Atom], k: int) -> bool:
+    """Whether the atom `k` is set off by a dash from an atom of its own charge and the atom after it is joined
+    to it by a comma: the dash opens a comma series that spells out the lead-in, and a cut at the dash would
+    leave the lead-in without it."""
+    joint = sentence[k].joint.strip()
+    return (
+        joint in DASH_MARKS
+        and sentence[k - 1].charge_value == sentence[k].charge_value
+        and k + 1 < len(sentence)
+        and "," in sentence[k + 1].joint
+    )
 
 
 def _hazard(content: str, sentences: Sequence[Sequence[Atom]], starts: Sequence[int]) -> str | None:

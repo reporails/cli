@@ -15,6 +15,7 @@
 
 - Heal no longer reports a lone `Consider` or `You should` as a lost instruction when a hedged sentence is rewritten as a direct one, and a rewrite that gives a reason (`, because ...`) or restates a condition with a pronoun is kept.
 - Heal reads a phrase opened by `only`, `except`, `excluding`, `outside`, `solely` or `absent` as a condition: it puts back a rewrite that drops one or widens an exclusion, and a dropped condition is reported as a dropped condition rather than a lost instruction.
+- Heal keeps a near-duplicate line flagged when a preposition differs, accepts a hedged sentence split into a directive and a prohibition that names the tool the original called "the linter", and refuses to split a line at a dash that opens a series of same-kind prohibitions.
 - On Windows, `ails check` names a file relative to its project, finds the files of a `~/.claude` folder and keeps a linked rule inside its project when the folder is spelled with a short (8.3) name; a file in the folder the command runs in is named with `/`, not its full path.
 - With a home folder reached through a link, `ails check` on a `~/.claude` folder reports that folder's findings instead of none.
 - Heal in your agent leaves a line marked with `ails-disable-line` exactly as it is: the agent is given no fix and no decision on it.

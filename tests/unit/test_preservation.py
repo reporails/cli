@@ -2085,11 +2085,13 @@ def test_a_like_the_x_example_below_pointer_stays_ok(tmp_path) -> None:
 
 
 def _snap_item(line: int, text: str) -> Any:
-    return SnapshotAtom(line, text, 1, (), "list", None)
+    return SnapshotAtom(line, text, 1, (), "list", None, plain_text=text)
 
 
 def _new_item(line: int, text: str) -> Any:
-    return SimpleNamespace(line=line, text=text, named_tokens=(), embedding_int8=None)
+    return SimpleNamespace(
+        line=line, text=text, plain_text=text, named_tokens=(), embedding_int8=None, slots=None, aside_spans=()
+    )
 
 
 def _moved(snap: list[Any], new: list[Any], pairs: dict[int, int], before: str, after: str) -> list[int]:

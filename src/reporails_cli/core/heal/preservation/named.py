@@ -12,7 +12,7 @@ from collections.abc import Sequence
 
 from reporails_cli.core.heal.preservation.words import AtomView, named_key, slot_words
 from reporails_cli.core.mapper.classify import condition_text
-from reporails_cli.core.mapper.classify_lexicon import words_of
+from reporails_cli.core.mapper.classify_lexicon import DEFINITE_DETERMINERS, words_of
 from reporails_cli.core.platform.contract.environment import ProjectEnvironment
 from reporails_cli.core.platform.contract.glob_pattern import GLOB_CHARS
 from reporails_cli.core.platform.contract.json_value import JsonObject
@@ -224,6 +224,17 @@ def _names_an_existing_referent(token_key: str, old_text: str) -> bool:
     return bool(token_words & _subwords(old_text))
 
 
+def _names_the_definite_object(old: AtomView, new: AtomView, token_key: str) -> bool:
+    """Whether `token_key` is the whole object of `new` and `old`'s object is a definite reference
+    (`the linter`): the rewrite names the one thing the original already pointed to, where a bare
+    category (`secrets`) or a construct added beside other object words widens what is forbidden."""
+    old_object = slot_words(old, "object")
+    new_object = slot_words(new, "object")
+    return bool(old_object and new_object and old_object[0] in DEFINITE_DETERMINERS) and set(new_object) <= set(
+        words_of(token_key)
+    )
+
+
 def _governed(atom: AtomView) -> set[str]:
     """The lowered named constructs of `atom` that sit in the object, the scope or the condition the
     mapper read: a construct outside all three (an example or a reason tacked on) illustrates or justifies the
@@ -262,7 +273,9 @@ def prohibition_scope_changes(snap_atoms: list[SnapshotAtom], matched_new_for: d
         added = sorted(
             t
             for t in _governed(match)
-            if not token_present_ci(t, sa.text) and not _names_an_existing_referent(t, sa.text)
+            if not token_present_ci(t, sa.text)
+            and not _names_an_existing_referent(t, sa.text)
+            and not _names_the_definite_object(sa, match, t)
         )
         dropped = sorted(t for t in _governed(sa) if not token_present_ci(t, match.text))
         if added or dropped:

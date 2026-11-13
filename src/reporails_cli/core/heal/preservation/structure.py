@@ -13,7 +13,7 @@ from collections.abc import Sequence
 
 from reporails_cli.core.heal.preservation.conditions import by_line
 from reporails_cli.core.heal.preservation.match import pair_score
-from reporails_cli.core.heal.preservation.words import AtomView, atom_words
+from reporails_cli.core.heal.preservation.words import AtomView, atom_words, is_content_word
 from reporails_cli.core.mapper.negative_headings import heading_label
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.heal import SnapshotAtom
@@ -221,7 +221,10 @@ def _near_copy(a: frozenset[str], b: frozenset[str]) -> bool:
 def _duplicates[T: AtomView](atoms: list[T]) -> list[T]:
     """Each prose / list atom that copies (word for word, or all but a word in five) an atom before it."""
     bodies = [
-        (a, w) for a in atoms if a.format in PROSE_OR_LIST_FORMATS and len(w := atom_words(a)) >= _DUPLICATE_MIN_WORDS
+        (a, w)
+        for a in atoms
+        if a.format in PROSE_OR_LIST_FORMATS
+        and len(w := frozenset(x for x in atom_words(a) if is_content_word(x))) >= _DUPLICATE_MIN_WORDS
     ]
     return [a for i, (a, words) in enumerate(bodies) if any(_near_copy(words, earlier) for _a, earlier in bodies[:i])]
 

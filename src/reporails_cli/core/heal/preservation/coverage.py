@@ -86,7 +86,8 @@ def past_the_slots(atom: AtomView) -> list[str]:
 def moved_before_head(p: Pair) -> bool:
     """Whether a prohibition's rewrite puts, before the noun the author's object opens with, a word
     the author's object had after it, right in front of that noun (`the docs - those are generated` ->
-    `generated docs`): a word that qualified the object from aside now cuts what it covers."""
+    `generated docs`): a word that qualified the object from aside now cuts what it covers. A word the
+    author's object already had in front of that noun moved nowhere."""
     old = slot_words(p.old, "object")
     new = slot_words(p.new, "object")
     named = words_of_named(p.old)
@@ -98,7 +99,7 @@ def moved_before_head(p: Pair) -> bool:
         return False
     behind = [*old[head + 1 :], *token_words(past_the_slots(p.old))]
     after = {f for w in behind if is_content_word(w) for f in word_forms(w)}
-    return at > 0 and is_content_word(new[at - 1]) and new[at - 1] in after
+    return at > 0 and is_content_word(new[at - 1]) and new[at - 1] in after and new[at - 1] not in old[:head]
 
 
 def tail_after(covered: Covered, anchor: int) -> range:
