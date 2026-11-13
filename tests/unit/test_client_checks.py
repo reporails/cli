@@ -195,6 +195,29 @@ class TestBroadScope:
         assert findings == []
 
 
+class TestBroadScopeReadsNoObjectRestriction:
+    """A restricting word the mapper records inside the object (`only the staging database`)
+    limits what the instruction acts on; it is no conditional scope."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_restrictor_inside_the_object_is_no_broad_scope(self) -> None:
+        text = "Use only the staging database,"
+        slots = AtomSlots(predicate_span=(0, 2), object_span=(1, 5))
+        atoms = [_atom(10, -1, text=text, scope_conditional=True, plain_text=text, slots=slots)]
+        findings = [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
+        assert findings == [], [f.message for f in findings]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_restrictor_after_the_object_still_scopes_the_instruction(self) -> None:
+        text = "Run all tests except external services."
+        slots = AtomSlots(predicate_span=(0, 1), object_span=(1, 3))
+        atoms = [_atom(10, +1, text=text, scope_conditional=True, plain_text=text, slots=slots)]
+        findings = [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
+        assert len(findings) == 1, [f.message for f in findings]
+
+
 class TestBroadScopeWordingsRestrictedToOpposition:
     """The scope check fires on outside systems (external services, third-party
     integrations, dependencies, database or SQL code) and stays quiet on the

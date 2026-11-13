@@ -240,3 +240,19 @@ def test_duplicates_the_original_already_had_are_not_padding() -> None:
     ]
     text = "# A\n\n- Run the tests.\n- Run the tests.\n"
     assert _verdict(atoms, atoms, text, text)["padded_lines"] == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+@pytest.mark.parametrize(
+    ("hedge", "rewrite", "failed"),
+    [
+        ("you should probably run the linter.", "Always run the linter.", True),
+        ("you should always run the linter.", "Always run the linter.", False),
+    ],
+)
+def test_an_absolute_cue_on_the_line_excuses_only_the_same_cue(hedge: str, rewrite: str, failed: bool) -> None:
+    old = [_atom(3, "Never commit secrets;", -1, "absolute"), _atom(3, hedge, 1, "hedged")]
+    new = _atom(3, rewrite, 1, "absolute")
+    result = _verdict(old, [new], f"# A\n\nNever commit secrets; {hedge}\n", f"# A\n\n{rewrite}\n")
+    assert bool(result["hedge_made_absolute"]) is failed

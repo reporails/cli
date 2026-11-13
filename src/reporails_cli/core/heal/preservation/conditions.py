@@ -14,6 +14,7 @@ from collections.abc import Set as AbstractSet
 from functools import cache
 
 from reporails_cli.core.heal.preservation.coverage import (
+    Covered,
     after_definite_modifier,
     covered_tokens,
     fresh_place,
@@ -170,21 +171,21 @@ def _made_direct_from_prose(
 
 
 def hedge_made_absolute(pairs: list[Pair], old_by_line: ByLine) -> list[JsonObject]:
-    """Each matched suggestion whose rewrite is an absolute where no atom of the author's line is, or
-    holds an absolute cue."""
+    """Each matched suggestion whose rewrite is an absolute (`Never`, `Always`) carrying a cue word
+    that no atom of the author's line has."""
     return [
         p.entry()
         for p in pairs
         if p.old.modality == "hedged"
         and p.new.modality == "absolute"
-        and not any(_absolute(a) for a in old_by_line.get(p.old.line, ()))
+        and _absolute_cues(p.new) - {c for a in old_by_line.get(p.old.line, ()) for c in _absolute_cues(a)}
     ]
 
 
-def _absolute(atom: AtomView) -> bool:
-    """Whether `atom` is absolute, or carries an absolute cue the mapper's hedge reading outranked
-    (`You should always run X` reads hedged)."""
-    return atom.modality == "absolute" or not ABSOLUTE_CUES.isdisjoint(words_of(atom.plain_text))
+def _absolute_cues(atom: AtomView) -> frozenset[str]:
+    """The absolute cue words (`always`, `never`) the atom's plain text holds, including those the
+    mapper's hedge reading outranked (`You should always run X` reads hedged)."""
+    return ABSOLUTE_CUES & frozenset(words_of(atom.plain_text))
 
 
 def _same_sentence(p: Pair) -> bool:
@@ -245,11 +246,10 @@ def _listed_heads(atom: AtomView, known: set[str]) -> set[str]:
     return heads
 
 
-def _gained_unsafe(p: Pair, known: set[str], heading: set[str]) -> list[int]:
+def _gained_unsafe(p: Pair, covered: Covered, known: set[str], heading: set[str]) -> list[int]:
     """The indices of the rewrite's covered words that are content words the author's instruction lacks
     and that no safe shape explains (a possessive, `the user's`, names the owner it points at). The words
-    themselves are in `covered_tokens(p)`."""
-    covered = covered_tokens(p)
+    themselves are in `covered`."""
     heads = _listed_heads(p.new, known)
     gained = [
         i
@@ -301,11 +301,11 @@ def _narrows(p: Pair, known: set[str], section: Section) -> bool:
         return True
     heading = _heading(p, section)
     referent = set() if lists_kinds(heading) else {f for w in heading for f in word_forms(w)}
-    unsafe = _gained_unsafe(p, known, referent)
+    covered = covered_tokens(p)
+    unsafe = _gained_unsafe(p, covered, known, referent)
     if not unsafe:
-        return fresh_place(p, covered_tokens(p))
+        return fresh_place(p, covered)
     if took_no_object(p.old):
-        covered = covered_tokens(p)
         span = [w for w, _c, _s, _p in covered[unsafe[0] : unsafe[-1] + 1]]
         return _kind_narrows(p, [covered[i][0] for i in unsafe], span, section)
     return True
@@ -362,36 +362,53 @@ def _marker_words() -> frozenset[str]:
     return frozenset(w for marker in CONDITIONAL_MARKERS for w in marker.split())
 
 
-def _condition_words(atom: AtomView) -> frozenset[str] | None:
-    """The content words of the condition the mapper read on `atom` (`classify.condition_text`),
-    markers and function words left out; None when it read none."""
-    text = condition_text(atom)
+def _condition_words(text: str | None) -> list[str] | None:
+    """The words of a condition (`classify.condition_text`) in order, markers and function words left
+    out; a short name (`CI`) is one. None when the atom has no condition."""
     if text is None:
         return None
-    return frozenset(w for w in words_of(text) if is_content_word(w) and w not in _marker_words())
+    markers = _marker_words()
+    return [w for w in words_of(text) if not is_function_word(w) and w not in markers]
+
+
+def _only_leading_missing(governed: list[str], rewrite: AbstractSet[str]) -> bool:
+    """Whether every word of `governed` the rewrite lacks comes before the first one it keeps: a
+    pronoun stands for the subject phrase that opens a condition (`the build` -> `it`), never for a
+    second condition that follows it."""
+    kept = next((i for i, w in enumerate(governed) if is_word_of(w, rewrite)), len(governed))
+    return all(is_word_of(w, rewrite) for w in governed[kept:])
+
+
+def _condition_dropped(p: Pair) -> bool:
+    """Whether the original's condition is no longer held by the rewrite (`dropped_conditions`)."""
+    old_text, new_text = condition_text(p.old), condition_text(p.new)
+    governed = _condition_words(old_text)
+    if governed is None:
+        return False
+    rewrite = _condition_words(new_text)
+    if rewrite is None:
+        return True
+    if not governed:
+        return False
+    held = set(rewrite)
+    restated = not SUBJECT_PRONOUNS.isdisjoint(words_of(new_text or ""))
+    if not (all(is_word_of(w, held) for w in governed) or (restated and _only_leading_missing(governed, held))):
+        return True
+    limiting = bool(set(words_of(old_text or "")) & LIMITING_RESTRICTORS)
+    old_set = set(governed)
+    return not limiting and not all(w in SUBJECT_PRONOUNS or is_word_of(w, old_set) for w in rewrite)
 
 
 def dropped_conditions(pairs: list[Pair]) -> list[JsonObject]:
     """Each matched instruction whose original holds a condition that its rewrite no longer holds:
     the words of the original's condition are not all in the rewrite's condition (`If the build
     fails, run X before Y` rewritten `Run X before Y` has none of `build` and `fails`), or the
-    rewrite has no condition, or the rewrite's condition names a word the original's lacks (`If the
-    build passes` for `If the build fails`; an `only` condition may name more of its limit). A condition
-    restated with its marker swapped or another form of its words is held."""
-    out = []
-    for p in pairs:
-        governed = _condition_words(p.old)
-        if not governed:
-            continue
-        rewrite = _condition_words(p.new)
-        restated = rewrite is not None and not SUBJECT_PRONOUNS.isdisjoint(words_of(condition_text(p.new) or ""))
-        if (
-            rewrite is None
-            or not (restated or all(is_word_of(w, rewrite) for w in governed))
-            or (not _limiting(p.old) and not all(w in SUBJECT_PRONOUNS or is_word_of(w, governed) for w in rewrite))
-        ):
-            out.append(p.entry())
-    return out
+    rewrite has no condition (whatever the length of the original's condition words: `If in CI`), or
+    the rewrite's condition names a word the original's lacks (`If the build passes` for `If the
+    build fails`; an `only` condition may name more of its limit). A condition restated with its
+    marker swapped or another form of its words is held, and a pronoun may stand for the subject
+    phrase that opens the condition."""
+    return [p.entry() for p in pairs if _condition_dropped(p)]
 
 
 def _opening_scope(line_atoms: Sequence[AtomView]) -> frozenset[str]:
@@ -425,12 +442,6 @@ def dropped_scopes(pairs: list[Pair], sentences: tuple[ByLine, ByLine]) -> list[
     return out
 
 
-def _limiting(atom: AtomView) -> bool:
-    """Whether the condition the mapper read on `atom` holds a limiting word (`only`)."""
-    text = condition_text(atom)
-    return text is not None and bool(set(words_of(text)) & LIMITING_RESTRICTORS)
-
-
 def added_conditions(snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom]) -> list[JsonObject]:
     """Each matched instruction that was not conditional, whose rewrite is conditional and carries
     a content word the author's line never had in its condition or its object (every snapshot atom on that line
@@ -442,9 +453,8 @@ def added_conditions(snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, 
         match = matched_new_for.get(id(sa))
         if sa.charge_value == 0 or match is None or sa.scope_conditional:
             continue
-        words = _condition_words(match)
-        if words is not None:
-            words = words | {w for w in slot_words(match, "object") if is_content_word(w)}
+        cond = _condition_words(condition_text(match))
+        words = None if cond is None else {w for w in (*cond, *slot_words(match, "object")) if is_content_word(w)}
         known = {w for other in snap_atoms if other.line == sa.line for w in words_of(other.plain_text)}
         if words and any(not word_forms(w) & known for w in words):
             out.append({"line": sa.line, "text": sa.text, "new_line": match.line, "new_text": match.text})

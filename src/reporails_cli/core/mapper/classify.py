@@ -16,6 +16,7 @@ from typing import Protocol
 from reporails_cli.core.mapper.classify_lexicon import (
     ADDRESSEE_SUBJECTS,
     ALL_VERBS,
+    CONDITION_CONJUNCTIONS,
     CONDITION_OPENERS,
     CONDITIONAL_MARKERS,
     HEDGE_POSSIBLE_LEADS,
@@ -155,7 +156,7 @@ def conditional_clause(text: str) -> str | None:
     return head[: close.start()] if close else None
 
 
-# A restricting phrase runs on through its commas (`only modify a, b and c`); a semicolon or a `then` ends it.
+# A restricting phrase runs on through the commas of a list (`only modify a, b and c`); a semicolon or a `then` ends it.
 _RESTRICTOR_CLOSE_RE = re.compile(r";\s*\S|\s+then\s+\S", re.IGNORECASE)
 
 
@@ -180,6 +181,13 @@ def restrictor_clause(
     used as an adjective or a correlative (`the only option`, `not only X`), nor one inside an aside
     (word spans `aside_spans`), which illustrates the instruction and restricts nothing.
     """
+    return (restrictor_at(plain_text, named_tokens, aside_spans) or (0, None))[1]
+
+
+def restrictor_at(
+    plain_text: str, named_tokens: Sequence[str], aside_spans: Sequence[tuple[int, int]]
+) -> tuple[int, str] | None:
+    """The word index of the restricting word and its phrase, as `restrictor_clause` reads them."""
     mask = _named_char_mask(plain_text, named_tokens)
     tokens = [(m.start(), m.group()) for m in re.finditer(r"\S+", plain_text)]
     previous = ""
@@ -191,8 +199,21 @@ def restrictor_clause(
             continue
         head = " ".join(t for _s, t in tokens[i : i + _COND_CLAUSE_MAX_WORDS])
         close = _RESTRICTOR_CLOSE_RE.search(head)
-        return head[: close.start()] if close else head
+        return i, _closed_at_comma(head[: close.start()] if close else head)
     return None
+
+
+def _closed_at_comma(phrase: str) -> str:
+    """`phrase` cut at the first comma that does not continue a list: a comma followed by a
+    list item (`a, b and c`: a comma-ended word or a conjunction within its next two words) stays
+    inside it; any other comma hands off to the clause the phrase fronts (`Only on main, run X`)."""
+    words = phrase.split()
+    for k, word in enumerate(words[:-1]):
+        ahead = words[k + 1 : k + 3]
+        listed = ahead[0].endswith(",") or any(w.lower().strip(".,;:") in CONDITION_CONJUNCTIONS for w in ahead)
+        if word.endswith(",") and not listed:
+            return " ".join([*words[:k], word.rstrip(",")])
+    return phrase
 
 
 class ConditionRead(Protocol):
@@ -232,11 +253,12 @@ def _last_frame(scope: str) -> str:
     return scope
 
 
-def condition_text(atom: ConditionRead) -> str | None:
+def condition_text(atom: ConditionRead, *, object_restriction: bool = True) -> str | None:
     """The condition the mapper read on a conditional atom: its decoded scope when that scope
     opens a conditional frame, else the frame that closes the sentence's opening; None when the
     atom is not conditional. A phrase a restricting word (`only`, `except`) opens is part of the
-    condition too."""
+    condition too, unless `object_restriction` is False and the word sits inside the atom's object
+    (`use only the staging database`), where it limits what the instruction acts on."""
     if not atom.scope_conditional:
         return None
     frame = conditional_clause(atom.plain_text)
@@ -245,7 +267,10 @@ def condition_text(atom: ConditionRead) -> str | None:
         scope = words_between(atom.plain_text, *slots.scope_span)
         if is_conditional_frame(scope):
             frame = _last_frame(scope)
-    restriction = restrictor_clause(atom.plain_text, atom.named_tokens, slots.aside_spans if slots else ())
+    found = restrictor_at(atom.plain_text, atom.named_tokens, slots.aside_spans if slots else ())
+    obj = slots.object_span if slots is not None else None
+    inside = found and obj is not None and obj[0] <= found[0] < obj[1]
+    restriction = found[1] if found and (object_restriction or not inside) else None
     return " ".join(part for part in (frame, restriction) if part) or None
 
 

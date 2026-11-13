@@ -376,7 +376,7 @@ def _check_broad_scope(charged: list[Atom], filepath: str) -> list[LocalFinding]
     """Check for overly broad conditional scope terms in the condition the mapper read."""
     findings: list[LocalFinding] = []
     for a in charged:
-        condition = condition_text(a)
+        condition = condition_text(a, object_restriction=False)
         if condition is None:
             continue
         scope_text = condition.strip(" ,;:")

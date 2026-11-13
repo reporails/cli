@@ -213,6 +213,9 @@ def test_reordered_joined_conditions_hold(original: str, rewrite: str, dropped: 
         ("If the build fails, run make clean.", "Run make clean.", (), True),
         ("If the build fails, run make clean.", "If the build passes, run make clean.", (), True),
         ("When tests fail and the branch is main, stop.", "When tests fail, stop.", (), True),
+        ("If the build fails and the branch is main, stop.", "If it fails, stop.", (), True),
+        ("If the build fails, stop.", "If it fails, stop.", (), False),
+        ("If in CI, run lint.", "Run lint.", (), True),
     ],
 )
 def test_a_name_in_backticks_or_a_named_object_never_changes_a_condition(
@@ -244,6 +247,8 @@ def test_a_name_in_backticks_or_a_named_object_never_changes_a_condition(
         ("Run all tests except integration tests.", "Run all tests except slow integration tests.", False),
         ("Wrap file reads in `try`/`except`.", "Wrap file reads in try/except.", True),
         ("Only run unit tests.", "Run unit tests.", False),
+        ("If the build fails and the branch is main, stop.", "If it fails, stop.", False),
+        ("If in CI, run lint.", "Run lint.", False),
         (
             "Check the tool list for the `reporails` MCP `explain` tool first (its name ends in `reporails__explain`).",
             "Check the tool list for the `reporails` MCP `explain` tool first (its name ends in `reporails__explain`).",

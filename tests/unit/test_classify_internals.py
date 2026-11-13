@@ -203,3 +203,20 @@ def test_the_verb_noun_determiners_extend_the_public_determiner_list() -> None:
 
     assert not hasattr(classify, "_DETERMINERS")
     assert classify_lexicon.DETERMINERS < classify_phases._VERB_NOUN_DETERMINERS
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+@pytest.mark.parametrize(
+    ("text", "phrase"),
+    [
+        ("Only on main, run the deploy script.", "Only on main"),
+        ("Unless told otherwise, run the full suite.", "Unless told otherwise"),
+        ("Run the deploy script only on main.", "only on main."),
+        ("Only modify a, b and c.", "Only modify a, b and c."),
+    ],
+)
+def test_a_fronted_restrictor_phrase_ends_at_its_closing_comma(text: str, phrase: str) -> None:
+    from reporails_cli.core.mapper.classify import restrictor_clause
+
+    assert restrictor_clause(text, (), ()) == phrase
