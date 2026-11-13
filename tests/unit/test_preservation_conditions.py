@@ -266,9 +266,21 @@ def test_condition_verdicts_on_the_real_mapper(tmp_path, original: str, rewrite:
 @pytest.mark.unit
 @pytest.mark.subsys_server
 @pytest.mark.parametrize(
-    ("original", "old_named", "rewrite", "new_named", "dropped", "narrowed"),
+    ("original", "old_named", "rewrite", "new_named", "dropped", "narrowed", "slots"),
     [
-        ("Wrap file reads in `try`/`except`.", ("try", "except"), "Catch errors on file reads.", (), False, False),
+        (
+            "Wrap file reads in `try`/`except`.",
+            ("try", "except"),
+            "Catch errors on file reads.",
+            (),
+            False,
+            False,
+            # the slots the mapper reads: `Catch` over `errors`, where `Wrap` has `file reads in try/except`
+            (
+                AtomSlots(predicate_span=(0, 1), object_span=(1, 5)),
+                AtomSlots(predicate_span=(0, 1), object_span=(1, 2)),
+            ),
+        ),
         (
             "Wrap file reads in `try`/`except`.",
             ("try", "except"),
@@ -276,6 +288,7 @@ def test_condition_verdicts_on_the_real_mapper(tmp_path, original: str, rewrite:
             (),
             False,
             False,
+            (None, None),
         ),
         (
             "Run the linter, configured in `src/lint.toml`.",
@@ -284,6 +297,7 @@ def test_condition_verdicts_on_the_real_mapper(tmp_path, original: str, rewrite:
             ("src/lint.toml",),
             False,
             True,
+            (None, None),
         ),
         (
             "Deploy with `deploy.sh staging`.",
@@ -292,16 +306,32 @@ def test_condition_verdicts_on_the_real_mapper(tmp_path, original: str, rewrite:
             ("deploy.sh staging",),
             False,
             True,
+            (None, None),
         ),
     ],
 )
 def test_a_code_token_never_opens_a_condition_or_narrows(
-    original: str, old_named: tuple[str, ...], rewrite: str, new_named: tuple[str, ...], dropped: bool, narrowed: bool
+    original: str,
+    old_named: tuple[str, ...],
+    rewrite: str,
+    new_named: tuple[str, ...],
+    dropped: bool,
+    narrowed: bool,
+    slots: tuple[AtomSlots | None, AtomSlots | None],
 ) -> None:
     from reporails_cli.core.heal.preservation.conditions import by_line, narrowed_instructions
 
-    old = _atom(1, original, 1, named=old_named)
-    new = SimpleNamespace(line=1, plain_text=rewrite, named_tokens=new_named, scope_conditional=False, slots=None)
+    old = _atom(1, original, 1, named=old_named, slots=slots[0])
+    new = SimpleNamespace(
+        line=1,
+        plain_text=rewrite,
+        named_tokens=new_named,
+        scope_conditional=False,
+        slots=slots[1],
+        charge_value=1,
+        modality="direct",
+        heading_context="",
+    )
     pair = Pair(old, new, original, rewrite)
     assert bool(dropped_conditions([pair])) is dropped
     assert bool(narrowed_instructions([pair], by_line([old]))) is narrowed

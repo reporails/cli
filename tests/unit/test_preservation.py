@@ -230,7 +230,14 @@ _TWIN_BEFORE = (
     "compare the report against the baseline before proposing. *Do not edit files without explicit approval.*\n"
 )
 _TWIN_SNAP_ATOMS = (
-    _atom(5, "Run the audit script against the output.", 1, heading_context="Steps"),
+    # the slots the mapper reads: `Run` over everything after it
+    _atom(
+        5,
+        "Run the audit script against the output.",
+        1,
+        heading_context="Steps",
+        slots=AtomSlots(predicate_span=(0, 1), object_span=(1, 7)),
+    ),
     _atom(6, "Present the result.", 1, heading_context="Steps"),
     _atom(10, "Present each change for approval before editing files.", 1, heading_context="Constraints"),
     _atom(10, "Run the audit script", 1, heading_context="Constraints"),
@@ -251,7 +258,14 @@ def _twin_after(
     text = head + (_TWIN_EXAMPLE if grown else "") + "\n\n## Constraints\n\n" + bullet + "\n"
     bullet_line = text.split("\n").index(bullet) + 1
     step_atoms = (
-        _new_atom(5, 0, "Run the audit script against the drafted release notes.", 1, heading_context="Steps"),
+        _new_atom(
+            5,
+            0,
+            "Run the audit script against the drafted release notes.",
+            1,
+            heading_context="Steps",
+            slots=AtomSlots(predicate_span=(0, 1), object_span=(1, 9)),
+        ),
         _new_atom(6, 1, "Present the result.", 1, heading_context="Steps"),
     )
     charges = (1,) * (len(bullet_atoms) - 1) + (-1,)

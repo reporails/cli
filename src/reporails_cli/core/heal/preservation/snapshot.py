@@ -34,7 +34,7 @@ def take_snapshot(
     file_path: str, text: str, ruleset_map: RulesetMap | None, score: float | None, relation_lines: Iterable[int] = ()
 ) -> Snapshot:
     """The baseline of `file_path`, whose content is `text` and whose atoms `ruleset_map` holds
-    (`None` for a file with none): list objects and neutral or bare negative headings left out."""
+    (`None` for a file with none): list objects left out, every heading kept."""
     atoms = tuple(
         SnapshotAtom(
             line=a.line,
@@ -51,7 +51,6 @@ def take_snapshot(
             slots=a.slots,
         )
         for a in (instruction_atoms_for_file(ruleset_map, file_path, own=True) if ruleset_map is not None else ())
-        if (a.kind != "heading" or a.charge_value != 0 or a.negative_heading)
     )
     return make_snapshot(file_path, text, atoms, score, relation_lines)
 

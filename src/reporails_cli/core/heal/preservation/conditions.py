@@ -14,15 +14,31 @@ from collections.abc import Iterable, Sequence
 from collections.abc import Set as AbstractSet
 from functools import cache
 
+from reporails_cli.core.heal.preservation.coverage import (
+    after_definite_modifier,
+    covered_tokens,
+    fresh_place,
+    last_index,
+    moved_before_head,
+    names_a_place,
+    quantified_insert,
+    replaced,
+    tail_after,
+    took_no_object,
+    words_of_named,
+)
+from reporails_cli.core.heal.preservation.kinds import (
+    Section,
+    heading_words,
+    lists_kinds,
+    named_beside_others,
+    sections_by_line,
+)
 from reporails_cli.core.heal.preservation.words import (
     AtomView,
     atom_words,
     is_content_word,
-    is_function_word,
     named_key,
-    prose_text,
-    slot_prose_tokens,
-    slot_tokens,
     slot_words,
     token_words,
 )
@@ -30,9 +46,8 @@ from reporails_cli.core.mapper.classify import ABSOLUTE_CUES, condition_text
 from reporails_cli.core.mapper.classify_lexicon import (
     CONDITION_CONJUNCTIONS,
     CONDITIONAL_MARKERS,
-    DEFINITE_DETERMINERS,
-    INDEFINITE_ARTICLES,
     LIMITING_RESTRICTORS,
+    SUBJECT_PRONOUNS,
     words_of,
 )
 from reporails_cli.core.mapper.lexical import word_forms
@@ -172,60 +187,66 @@ def _same_sentence(p: Pair) -> bool:
     return " ".join(p.old_sentence.lower().split()) == " ".join(p.new_sentence.lower().split())
 
 
-def _line_words(old_by_line: ByLine, line: int) -> set[str]:
-    """The words the author's line has, each with its singular and plural spelling."""
-    atoms = old_by_line.get(line, ())
-    # The author's prose words, and each construct they named that is one word (`try`): a rewrite
-    # that writes it without backticks has said nothing new.
-    known = {w for atom in atoms for w in words_of(prose_text(atom))}
-    known |= {named_key(t) for atom in atoms for t in atom.named_tokens if words_of(t) == [named_key(t)]}
+def _known_words(old_by_line: ByLine, p: Pair) -> set[str]:
+    """The words the author's instruction has, each with its singular and plural spelling: for a
+    prohibition its own plain text and the uncharged atoms that continue it (a word only a
+    neighbouring instruction has is not among them), for any other instruction every atom of its
+    line."""
+    atoms = old_by_line.get(p.old.line, ())
+    if p.old.charge_value < 0:
+        known = set(words_of(p.old.plain_text)) | set(continuation(atoms, p.old))
+    else:
+        known = {w for atom in atoms for w in words_of(atom.plain_text)}
     return known | {f for w in known for f in word_forms(w)}
 
 
-def _covered_tokens(p: Pair) -> list[tuple[str, bool]]:
-    """What the rewrite's instruction covers, in order, as `(word, a comma follows it)`: the words of
-    its object and scope slots, then those of the uncharged atoms that continue it when it is a
-    prohibition. A scope that is a condition the author's instruction lacked is left to
-    `added_conditions`."""
-    if p.new.slots is None:
-        tokens = prose_text(p.new).split()
-    else:
-        added_condition = condition_text(p.new) is not None and condition_text(p.old) is None
-        tokens = slot_prose_tokens(p.new, "object") + ([] if added_condition else slot_prose_tokens(p.new, "scope"))
-    out = [(w, token.endswith(",")) for token in tokens for w in token_words([token])]
-    return out + [(w, False) for w in p.continued]
+def _heading(p: Pair, section: Section) -> list[str]:
+    """The words of the heading `p`'s original sits under: its section's heading atom, else the heading
+    the mapper gave the atom."""
+    return heading_words(section) or words_of(p.old.heading_context)
 
 
-def _tail_after(covered: list[tuple[str, bool]], anchor: int) -> range:
-    """The indices of the alternatives an `or` / `and` list adds after `covered[anchor]`: empty
-    unless a conjunction (or a comma) follows the word at once; the list runs through the
-    conjunction to the end of the phrase."""
-    nxt = covered[anchor + 1][0] if anchor + 1 < len(covered) else ""
-    if nxt not in CONDITION_CONJUNCTIONS and not covered[anchor][1]:
-        return range(0)
-    stop = len(covered)
-    conj = next((k for k in range(anchor + 1, len(covered)) if covered[k][0] in CONDITION_CONJUNCTIONS), None)
-    if conj is not None:
-        stop = next(
-            (k for k in range(conj + 1, len(covered)) if is_function_word(covered[k][0])),
-            len(covered),
-        )
-    return range(anchor + 1, stop)
+def _kind_narrows(p: Pair, kind: list[str], span: list[str], section: Section) -> bool:
+    """Whether words given to an instruction whose verb took no object narrow it: they are a list
+    (`span`, from the first to the last of them, holds an `and` / `or`), the section's heading lists
+    kinds and `kind` is one of them, or another line of the section names `kind` beside others.
+    A kind nothing else names is the referent the line left implied."""
+    if CONDITION_CONJUNCTIONS & set(span):
+        return True
+    heading = _heading(p, section)
+    forms = {f for w in heading for f in word_forms(w)}
+    if lists_kinds(heading) and all(w in forms for w in kind):
+        return True
+    return named_beside_others(section, p.old, kind)
 
 
-def _last_index(covered: list[tuple[str, bool]], word: str) -> int | None:
-    """The last index of `word`, in a singular or plural spelling, in `covered`."""
-    forms = word_forms(word)
-    return max((i for i, (w, _comma) in enumerate(covered) if w in forms), default=None)
-
-
-def _after_definite(covered: list[tuple[str, bool]], at: int, named: set[str]) -> bool:
-    """Whether the named construct word at `covered[at]` follows a definite determiner, directly or
-    through the other words of its own construct."""
-    k = at - 1
-    while k >= 0 and covered[k][0] in named:
-        k -= 1
-    return k >= 0 and covered[k][0] in DEFINITE_DETERMINERS
+def _gained_unsafe(p: Pair, known: set[str], heading: set[str]) -> list[int]:
+    """The indices of the rewrite's covered words that are content words the author's instruction lacks
+    and that no safe shape explains (a possessive, `the user's`, names the owner it points at). The words
+    themselves are in `covered_tokens(p)`."""
+    covered = covered_tokens(p)
+    gained = [
+        i
+        for i, (w, _c, _s, prose) in enumerate(covered)
+        if is_content_word(w) and prose and not word_forms(w) & known and not w.endswith("'s")
+    ]
+    if not gained:
+        return []
+    old_object = slot_words(p.old, "object")
+    anchor = last_index(covered, old_object[-1]) if old_object else None
+    widened = set(tail_after(covered, anchor)) if anchor is not None else set()
+    own_named = words_of_named(p.old)
+    skip = widened | replaced(covered, p, gained)
+    pool = set(gained)
+    return [
+        i
+        for i in gained
+        if i not in skip
+        and covered[i][0] not in heading
+        and not (i > 0 and covered[i - 1][0] in own_named)
+        and not (old_object and after_definite_modifier(covered, pool, i, old_object[-1]))
+        and not names_a_place(covered, i)
+    ]
 
 
 def _scope_gains_construct(p: Pair) -> bool:
@@ -236,41 +257,45 @@ def _scope_gains_construct(p: Pair) -> bool:
     return any(named_key(t) in scope and named_key(t) not in old for t in p.new.named_tokens)
 
 
-def _narrows(p: Pair, known: set[str]) -> bool:
-    """Whether the rewrite's object or scope gains a content word the author's line lacks that is no
-    safe shape: an alternative after the author's own object (`secrets` -> `secrets or credentials`,
-    which widens), a word of the section heading (the referent it names) or a named construct directly
-    after a definite determiner (`the gate` -> `the AskUserQuestion gate`)."""
-    if _scope_gains_construct(p):
-        return True
-    covered = _covered_tokens(p)
-    scope = set(token_words(slot_prose_tokens(p.new, "scope")))
-    gained = [
-        i
-        for i, (w, _comma) in enumerate(covered)
-        if (is_content_word(w) or (w in scope and not is_function_word(w))) and not word_forms(w) & known
-    ]
-    if not gained:
+def _narrows(p: Pair, known: set[str], section: Section) -> bool:
+    """Whether the rewrite's object or scope gains a content word the author's instruction lacks that
+    is no safe shape: an alternative after the author's own object (`secrets` -> `secrets or
+    credentials`, which widens), a construct named after a general quantifier (`any file` -> `any
+    .env file`), a word of the section heading that names one referent, a word after a named
+    construct the author's instruction names (`signal` -> `signal artifact`), a modifier of the
+    referent a definite determiner points at (`the API` -> `the REST API`), the words that describe
+    a place a named construct gives (`the install notes at setup.md`), or a reword that puts new
+    words where author words left. A suggestion is not narrowed by its own wording, nor an
+    instruction whose object the author gave as a bare pronoun. An object given to a verb that took
+    none is read against the section (`_kind_narrows`). Any other shape is put back."""
+    old_object = slot_words(p.old, "object")
+    if p.new.modality == "hedged" or (old_object and all(w in SUBJECT_PRONOUNS for w in old_object)):
         return False
-    object_words = [w for token in slot_tokens(p.old, "object", "scope") for w in token_words([token])]
-    anchor = _last_index(covered, object_words[-1]) if object_words else None
-    widened = set(_tail_after(covered, anchor)) if anchor is not None else set()
-    heading = {f for w in words_of(p.old.heading_context) for f in word_forms(w)}
-    named = {w for t in p.new.named_tokens for w in words_of(t)}
-    return any(
-        i not in widened
-        and covered[i][0] not in heading
-        and not (covered[i][0] in named and _after_definite(covered, i, named))
-        for i in gained
-    )
+    if quantified_insert(p) or moved_before_head(p) or _scope_gains_construct(p):
+        return True
+    heading = _heading(p, section)
+    referent = set() if lists_kinds(heading) else {f for w in heading for f in word_forms(w)}
+    unsafe = _gained_unsafe(p, known, referent)
+    if not unsafe:
+        return fresh_place(p, covered_tokens(p))
+    if took_no_object(p.old):
+        covered = covered_tokens(p)
+        span = [w for w, _c, _s, _p in covered[unsafe[0] : unsafe[-1] + 1]]
+        return _kind_narrows(p, [covered[i][0] for i in unsafe], span, section)
+    return True
 
 
 def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonObject]:
     """Each matched instruction whose rewrite gains, in its object or scope slot (and, for a
-    prohibition, in the uncharged atoms that continue it), a content word the author's line does not
-    have anywhere, unless the gain is a safe shape (`_narrows`). An unknown shape is put back: the
-    default is narrowed."""
-    return [p.entry() for p in pairs if not _same_sentence(p) and _narrows(p, _line_words(old_by_line, p.old.line))]
+    prohibition, in the uncharged atoms that continue it), a content word the author's own
+    instruction does not have, unless the gain is a safe shape (`_narrows`). An unknown shape is put
+    back: the default is narrowed."""
+    sections = sections_by_line(old_by_line)
+    return [
+        p.entry()
+        for p in pairs
+        if not _same_sentence(p) and _narrows(p, _known_words(old_by_line, p), sections.get(p.old.line, []))
+    ]
 
 
 def made_specific(
@@ -387,9 +412,9 @@ def dropped_scopes(pairs: list[Pair], sentences: tuple[ByLine, ByLine]) -> list[
 
 
 def _limiting(atom: AtomView) -> bool:
-    """Whether the condition the mapper read on `atom` is opened by a limiting word (`only`)."""
+    """Whether the condition the mapper read on `atom` holds a limiting word (`only`)."""
     text = condition_text(atom)
-    return text is not None and bool(set(words_of(text)[:1]) & LIMITING_RESTRICTORS)
+    return text is not None and bool(set(words_of(text)) & LIMITING_RESTRICTORS)
 
 
 def added_conditions(snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom]) -> list[JsonObject]:
