@@ -65,8 +65,8 @@ def content_words(text: str) -> set[str]:
 
 
 def named_key(token: str) -> str:
-    """A named token's comparison key: backticks stripped, lowered."""
-    return token.strip("`").lower()
+    """A named token's comparison key: lowered."""
+    return token.lower()
 
 
 # Marks a blanked token until every token is done, so a shorter token never matches inside the fill.
@@ -74,10 +74,10 @@ _BLANKED = "\ue010"
 
 
 def blank_named(text: str, tokens: Iterable[str], fill: str = " ") -> str:
-    """`text` with each named token (backticks stripped) blanked, or replaced by `fill`, the longest
+    """`text` with each named token blanked, or replaced by `fill`, the longest
     first so a token inside a longer one (`reporails` in `reporails__explain`) leaves none of the
     longer one behind."""
-    for token in sorted((t.strip("`") for t in tokens), key=len, reverse=True):
+    for token in sorted(tokens, key=len, reverse=True):
         if token:
             text = text.replace(token, _BLANKED)
     return text.replace(_BLANKED, fill)

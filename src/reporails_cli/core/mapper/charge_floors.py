@@ -131,7 +131,6 @@ _META_LABEL_RE = re.compile(
 )
 _LABEL_ONLY_RE = re.compile(r"^[A-Z][a-z\s]{0,30}:\s*$")
 _LABEL_ONLY_FIRST_WORD_RE = re.compile(r"^[A-Za-z]+")
-_CLAUSE_SPLIT_RE = re.compile(r"\s[\u2014\u2013]\s|:\s*[\"'\u201c]")
 
 
 def _label_only_opens_command(md_text: str) -> bool:

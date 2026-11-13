@@ -34,4 +34,5 @@
 ### Internal
 
 - The Windows check scenarios and the MCP x-ray two-call scenario lose their skip tag. The two-call scenario reads the page while the agent's MCP server still runs, because on Windows the test client ends the server's process tree, the page with it.
+- Heal's rewrite check reads each named construct as the parser recorded it, without stripping backticks again, and its test fixtures carry named constructs in that same shape.
 - Three check scenarios guard linked folders: a `.claude/rules` folder linked to a dotfiles folder stays part of `ails check .claude`, a linked file under a `~/.claude` linked to a dotfiles folder keeps its user-level root, and a `~/.claude` folder keeps its findings when the home folder is reached through a link.

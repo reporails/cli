@@ -348,7 +348,7 @@ def move(op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str]) -> Edit | None
 
 
 def _named(atom: Atom) -> frozenset[str]:
-    return frozenset(t.strip("`") for t in atom.named_tokens)
+    return frozenset(atom.named_tokens)
 
 
 def _paragraph_line_removal(op: PlanOp, lines: Sequence[str]) -> Edit | None:

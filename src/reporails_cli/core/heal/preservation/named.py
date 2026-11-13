@@ -41,8 +41,8 @@ def _span_present(inner: str, text: str, *, fold: bool = False) -> bool:
 
 
 def _token_inners(atoms: Sequence[AtomView]) -> set[str]:
-    """The inner text (backticks stripped) of every named token of `atoms`."""
-    return {tok.strip("`") for a in atoms for tok in a.named_tokens}
+    """The inner text of every named token of `atoms`."""
+    return {tok for a in atoms for tok in a.named_tokens}
 
 
 def lost_named_tokens(snap_atoms: list[SnapshotAtom], new_text: str, new_atoms: Sequence[Atom] = ()) -> list[str]:
@@ -53,8 +53,7 @@ def lost_named_tokens(snap_atoms: list[SnapshotAtom], new_text: str, new_atoms: 
     lost: list[str] = []
     for sa in snap_atoms:
         for tok in sa.named_tokens:
-            inner = tok.strip("`")
-            if inner and inner not in new_inners and not _span_present(inner, new_text) and tok not in lost:
+            if tok and tok not in new_inners and not _span_present(tok, new_text) and tok not in lost:
                 lost.append(tok)
     return lost
 
@@ -118,13 +117,13 @@ def repeated_named(
     allowance: Counter[str] = Counter()
     order: list[str] = []
     for sa in snap_atoms:
-        for inner in dict.fromkeys(t.strip("`") for t in sa.named_tokens):
+        for inner in dict.fromkeys(sa.named_tokens):
             if inner and not wordless(inner):
                 allowance[inner] += sa.charge_value != 0
                 order.append(inner)
     was_unnamed = _unnamed_counterparts(snap_atoms, matched_new_for, split_covering_for)
     for na in new_atoms:
-        for inner in dict.fromkeys(t.strip("`") for t in na.named_tokens):
+        for inner in dict.fromkeys(na.named_tokens):
             if inner and not wordless(inner) and token_present(inner, original_text):
                 order.append(inner)
                 allowance[inner] += id(na) in was_unnamed and na.charge_value != 0
@@ -179,8 +178,7 @@ def invented_named(
     for na in new_atoms:
         if na.format == "code_block":
             continue
-        for tok in na.named_tokens:
-            inner = tok.strip("`")
+        for inner in na.named_tokens:
             key = inner.lower()
             if not inner or key in seen or key in snap_inners:
                 continue
@@ -190,7 +188,7 @@ def invented_named(
             ):
                 continue
             seen.add(key)
-            out.append({"line": na.line, "token": tok})
+            out.append({"line": na.line, "token": inner})
     return out
 
 

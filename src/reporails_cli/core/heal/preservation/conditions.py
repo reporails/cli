@@ -198,7 +198,7 @@ def _known_words(old_by_line: ByLine, line: int) -> set[str]:
     is one plain word (`except`); a path, a dotted name or a multi-word token adds none."""
     known: set[str] = set()
     for atom in old_by_line.get(line, ()):
-        blanked = [t for t in atom.named_tokens if not SINGLE_WORD_RE.fullmatch(t.strip("`"))]
+        blanked = [t for t in atom.named_tokens if not SINGLE_WORD_RE.fullmatch(t)]
         text = blank_named(atom.plain_text, blanked)
         known.update(w.lower() for w in CODE_WORD_RE.findall(text))
     return known
@@ -218,7 +218,7 @@ def _placed_words(old_by_line: ByLine, pair: Pair) -> set[str]:
     is one plain word (`except`) is a word of the line, as in `_known_words`."""
     placed: set[str] = set()
     for atom in old_by_line.get(pair.old.line, ()):
-        placed.update(t.strip("`").lower() for t in atom.named_tokens if SINGLE_WORD_RE.fullmatch(t.strip("`")))
+        placed.update(t.lower() for t in atom.named_tokens if SINGLE_WORD_RE.fullmatch(t))
         for clause in _clauses(atom):
             for i, word in enumerate(clause):
                 if word in PHRASE_PREPOSITIONS:
@@ -300,7 +300,7 @@ def _inserted_after_quantifier(p: Pair) -> bool:
     for token in p.new.named_tokens:
         if named_key(token) in known:
             continue
-        for match in re.finditer(re.escape(token.strip("`")), text):
+        for match in re.finditer(re.escape(token), text):
             quantifier = _quantifier_before(text, match.start())
             if quantifier in GENERAL_QUANTIFIERS & old_words:
                 return True

@@ -566,7 +566,7 @@ def _atom(file: Path, line: int, text: str, pi: int = 0, fmt: str = "prose") -> 
         position_index=pi,
         text=text,
         charge_value=0,
-        named_tokens=["`foo`"],
+        named_tokens=["foo"],
         embedding_int8=None,
         unformatted_code=[],
         kind="excitation",

@@ -243,10 +243,10 @@ def test_condition_verdicts_on_the_real_mapper(tmp_path, original: str, rewrite:
 @pytest.mark.parametrize(
     ("original", "old_named", "rewrite", "new_named", "dropped", "narrowed"),
     [
-        ("Wrap file reads in `try`/`except`.", ("`try`", "`except`"), "Catch errors on file reads.", (), False, False),
+        ("Wrap file reads in `try`/`except`.", ("try", "except"), "Catch errors on file reads.", (), False, False),
         (
             "Wrap file reads in `try`/`except`.",
-            ("`try`", "`except`"),
+            ("try", "except"),
             "Wrap file reads in try/except.",
             (),
             False,
@@ -254,17 +254,17 @@ def test_condition_verdicts_on_the_real_mapper(tmp_path, original: str, rewrite:
         ),
         (
             "Run the linter, configured in `src/lint.toml`.",
-            ("`src/lint.toml`",),
+            ("src/lint.toml",),
             "Run the linter on src, configured in `src/lint.toml`.",
-            ("`src/lint.toml`",),
+            ("src/lint.toml",),
             False,
             True,
         ),
         (
             "Deploy with `deploy.sh staging`.",
-            ("`deploy.sh staging`",),
+            ("deploy.sh staging",),
             "Deploy with `deploy.sh staging` in staging.",
-            ("`deploy.sh staging`",),
+            ("deploy.sh staging",),
             False,
             True,
         ),
@@ -352,5 +352,5 @@ def test_whole_line_quotation_maps_as_one_neutral_atom_structure_aware(tmp_path)
 def test_blank_named_fills_each_token_once_even_when_a_short_token_sits_inside_the_fill() -> None:
     from reporails_cli.core.heal.preservation.words import blank_named
 
-    out = blank_named("Use struct and const here", ["`struct`", "`const`"], " namedconstruct ")
+    out = blank_named("Use struct and const here", ["struct", "const"], " namedconstruct ")
     assert out == "Use  namedconstruct  and  namedconstruct  here"
