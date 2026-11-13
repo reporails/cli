@@ -59,7 +59,7 @@ def relabelled_negative_headings(
     lines = before_text.split("\n")
     out: list[JsonObject] = []
     for atom in before_headings:
-        label = heading_label(atom.text)
+        label = heading_label(atom.plain_text)
         if kept[label] > 0:
             kept[label] -= 1
         else:

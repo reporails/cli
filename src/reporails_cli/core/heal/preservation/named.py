@@ -273,11 +273,11 @@ def prohibition_scope_changes(snap_atoms: list[SnapshotAtom], matched_new_for: d
         added = sorted(
             t
             for t in _governed(match)
-            if not token_present_ci(t, sa.text)
-            and not _names_an_existing_referent(t, sa.text)
+            if not token_present_ci(t, sa.plain_text)
+            and not _names_an_existing_referent(t, sa.plain_text)
             and not _names_the_definite_object(sa, match, t)
         )
-        dropped = sorted(t for t in _governed(sa) if not token_present_ci(t, match.text))
+        dropped = sorted(t for t in _governed(sa) if not token_present_ci(t, match.plain_text))
         if added or dropped:
             out.append(
                 {

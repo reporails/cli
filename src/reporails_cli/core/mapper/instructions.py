@@ -228,6 +228,29 @@ def _clauses(sentence: str, plain: str | None = None) -> list[tuple[int, str, st
     return clauses
 
 
+def comma_items(text: str) -> list[str]:
+    """`text` cut at the commas the clause cut honours (outside quotes, parentheses and code, followed by
+    a space), the commas dropped (`a (b, c), d` -> `['a (b, c)', ' d']`)."""
+    items: list[str] = []
+    start = 0
+    for begin, _, joint, _ in _clauses(text)[1:]:
+        if joint.strip() == ",":
+            items.append(text[start : begin - len(joint)])
+            start = begin
+    return [*items, text[start:]]
+
+
+def sentence_openers(text: str) -> list[tuple[int, int]]:
+    """The `(start, end)` columns of each mark in `text` that opens a list or a closing clause: a colon,
+    or a dash set off by spaces, outside quotes, parentheses and code."""
+    inside = _cut_mask(text)
+    marks = [(i, i + 1) for i, ch in enumerate(text) if ch == ":" and not inside[i]]
+    for begin, _, joint, _ in _clauses(text)[1:]:
+        if joint.strip() in DASH_MARKS:
+            marks.append((begin - len(joint), begin))
+    return sorted(marks)
+
+
 def _is_prohibition(clause: str) -> bool:
     text = _LEAD_CONNECTOR_RE.sub("", _clause_text(clause))
     return _NEGATION_ONSET_RE.match(text) is not None and _CONTRAST_RE.match(text) is None

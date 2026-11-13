@@ -1,4 +1,4 @@
-"""Embedding-free text helpers for the mapper: cutting a sentence into clauses, and the spellings of a word.
+"""Embedding-free text helpers for the mapper: cutting a sentence into clauses.
 
 - ``split_clauses`` — marker-based clause splitter: strong markers (em/en-dash,
   ``;`` ``:``) cut between clauses, and a coordinating (``, and/but/or/then``) or
@@ -13,9 +13,6 @@ import re
 # The em dash and the en dash, which set a clause off from the one before it.
 DASH_MARKS = frozenset({chr(0x2014), chr(0x2013)})
 
-# What opens a list or a closing clause: a colon, or a dash set off by spaces.
-OPENER_RE = re.compile(":|\\s[" + "".join(sorted(DASH_MARKS)) + "]\\s")
-
 # ── Clause-split markers ───────────────────────────────────────────────
 # STRONG markers: space-flanked em/en-dash, semicolon, colon. Punctuation only, so
 # consuming the marker itself loses no word.
@@ -28,27 +25,6 @@ _SUBORD_RE = re.compile(
     r"\s+(?=(?:before|after|when|while|unless|until|although|because|rather than|instead of)\s)",
     re.IGNORECASE,
 )
-
-
-def split_items(text: str) -> list[str]:
-    """`text` cut at its commas outside parentheses, the commas dropped (`a (b, c), d` -> `['a (b, c)', ' d']`)."""
-    depth, start, out = 0, 0, []
-    for i, ch in enumerate(text):
-        depth += (ch == "(") - (ch == ")")
-        if ch == "," and depth <= 0:
-            out.append(text[start:i])
-            start = i + 1
-    return [*out, text[start:]]
-
-
-def word_forms(word: str) -> set[str]:
-    """`word` with its plain singular and plural spellings (`test` / `tests`, `match` / `matches`)."""
-    forms = {word, word + "s", word + "es"}
-    if word.endswith("es"):
-        forms.add(word[:-2])
-    if word.endswith("s"):
-        forms.add(word[:-1])
-    return forms
 
 
 def split_clauses(text: str) -> list[str]:

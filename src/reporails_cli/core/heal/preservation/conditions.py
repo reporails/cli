@@ -44,6 +44,7 @@ from reporails_cli.core.heal.preservation.words import (
     slot_tokens,
     slot_words,
     token_words,
+    word_forms,
 )
 from reporails_cli.core.mapper.classify import ABSOLUTE_CUES, condition_text, covers_predicate
 from reporails_cli.core.mapper.classify_lexicon import (
@@ -55,7 +56,6 @@ from reporails_cli.core.mapper.classify_lexicon import (
     SUBJECT_PRONOUNS,
     words_of,
 )
-from reporails_cli.core.mapper.lexical import word_forms
 from reporails_cli.core.mapper.prose_split import split_prose_sentences
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.heal import Pair, SnapshotAtom
@@ -406,8 +406,7 @@ def _opening_scope(line_atoms: Sequence[AtomView]) -> frozenset[str]:
 
 def _sentence_scope(new_by_line: ByLine, p: Pair) -> frozenset[str]:
     """The words of the scope phrases of the rewrite's atoms that sit in the sentence holding `p.new`."""
-    sentence = p.new_sentence.lower()
-    atoms = [a for a in new_by_line.get(p.new.line, ()) if a is p.new or a.text.strip().lower() in sentence]
+    atoms = [a for a in new_by_line.get(p.new.line, ()) if a is p.new or sentence_of(new_by_line, a) == p.new_sentence]
     return frozenset(w for a in atoms for w in slot_words(a, "scope"))
 
 

@@ -44,6 +44,7 @@
 - The rewrite-check tests build named constructs as a real check reads them.
 - Heal's split fix reads from the map whether each instruction was cut at a comma, semicolon or dash.
 - Heal's split, direct and negation fixes place each instruction in its line from the map, and their tests place each instruction the way a real map does.
+- The rewrite check reads list items and lead-ins from the map's clause cut and reads the plain text of each instruction, never its markdown.
 - Heal's rewrite check reads each instruction's subject, action, object and scope from the map.
 - A build check fails when code outside the map reads instruction text again: a copy of the map's word data it never uses, markdown stripped outside the parser, or a word list, prose pattern or clause split outside the map.
 - Three check scenarios guard linked folders: a `.claude/rules` folder linked to a dotfiles folder stays part of `ails check .claude`, a linked file under a `~/.claude` linked to a dotfiles folder keeps its user-level root, and a `~/.claude` folder keeps its findings when the home folder is reached through a link.

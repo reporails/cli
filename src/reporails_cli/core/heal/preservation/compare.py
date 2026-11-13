@@ -50,7 +50,7 @@ def _negative_heading_texts(new_map: RulesetMap | None, file_path: str) -> list[
     """The text of each bare negative heading the mapper reads in `new_map`'s `file_path`,
     whatever its markdown style (`##`, underlined, inside a quote)."""
     atoms = own_atoms_for_file(new_map, file_path) if new_map is not None else ()
-    return [a.text for a in atoms if a.negative_heading]
+    return [a.plain_text for a in atoms if a.negative_heading]
 
 
 def _pair_checks(

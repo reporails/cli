@@ -18,6 +18,7 @@ from reporails_cli.core.heal.preservation.words import (
     slot_tokens,
     slot_words,
     token_words,
+    word_forms,
 )
 from reporails_cli.core.mapper.classify import condition_text
 from reporails_cli.core.mapper.classify_lexicon import (
@@ -28,7 +29,6 @@ from reporails_cli.core.mapper.classify_lexicon import (
     SCOPE_PREPOSITIONS,
     words_of,
 )
-from reporails_cli.core.mapper.lexical import word_forms
 from reporails_cli.core.platform.dto.heal import Pair
 
 # One word an instruction covers: the word, whether a comma follows it, the slot it sits in, and

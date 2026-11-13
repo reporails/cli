@@ -8,10 +8,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from reporails_cli.core.heal.preservation.words import AtomView
+from reporails_cli.core.heal.preservation.words import AtomView, word_forms
 from reporails_cli.core.mapper.classify_lexicon import CONDITION_CONJUNCTIONS, words_of
 from reporails_cli.core.mapper.instructions import opens_command
-from reporails_cli.core.mapper.lexical import word_forms
 
 # Atoms of a section in file order, its heading atom first when it has one.
 Section = list[AtomView]

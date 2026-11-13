@@ -22,7 +22,6 @@ from reporails_cli.core.mapper.classify_lexicon import (
     PHRASE_PREPOSITIONS,
     words_of,
 )
-from reporails_cli.core.mapper.lexical import word_forms
 from reporails_cli.core.platform.dto.ruleset import AtomFormat, AtomSlots, Modality
 
 
@@ -163,6 +162,16 @@ def is_function_word(word: str) -> bool:
 def is_content_word(word: str) -> bool:
     """Whether `word` is longer than two letters and not a function word."""
     return len(word) >= _MIN_WORD and not is_function_word(word)
+
+
+def word_forms(word: str) -> set[str]:
+    """`word` with its plain singular and plural spellings (`test` / `tests`, `match` / `matches`)."""
+    forms = {word, word + "s", word + "es"}
+    if word.endswith("es"):
+        forms.add(word[:-2])
+    if word.endswith("s"):
+        forms.add(word[:-1])
+    return forms
 
 
 _ENDING_REACH = 4  # letters an ending may add to a word and still be that word
