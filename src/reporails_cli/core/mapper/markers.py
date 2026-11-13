@@ -162,25 +162,27 @@ def reformat_span(span: str, start: int, markers: list[Marker]) -> str:
     return "".join(parts)
 
 
-def reformat_spans(md_text: str, plain_text: str, spans: list[str]) -> list[str]:
-    """The formatted form of each span, walked in order through ``plain_text``.
+def reformat_located(md_text: str, plain_text: str, spans: list[str]) -> list[tuple[str, int | None]]:
+    """The formatted form of each span and where it starts in ``plain_text``, walked in order.
 
     ``spans`` are in-order substrings of ``plain_text`` (sentence frames, clauses).
     A parent with no markers, or a span not found from the running cursor, comes
-    back unchanged — it is already the best text available.
+    back unchanged — it is already the best text available — and a span not found
+    has no start.
     """
-    if md_text == plain_text:
-        return list(spans)
-    markers = project_markers(md_text, plain_text)
-    if not markers:
-        return list(spans)
-    out: list[str] = []
+    markers = project_markers(md_text, plain_text) if md_text != plain_text else []
+    out: list[tuple[str, int | None]] = []
     cursor = 0
     for span in spans:
         idx = plain_text.find(span, cursor)
         if idx < 0:
-            out.append(span)
+            out.append((span, None))
             continue
         cursor = idx + len(span)
-        out.append(reformat_span(span, idx, markers))
+        out.append((reformat_span(span, idx, markers) if markers else span, idx))
     return out
+
+
+def reformat_spans(md_text: str, plain_text: str, spans: list[str]) -> list[str]:
+    """The formatted form of each span, walked in order through ``plain_text`` (:func:`reformat_located`)."""
+    return [text for text, _start in reformat_located(md_text, plain_text, spans)]

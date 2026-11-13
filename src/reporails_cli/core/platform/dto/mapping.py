@@ -62,13 +62,22 @@ class HeadEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class InstructionUnit:
+    """One instruction cut from a sentence: its text, and how many chars before it the cut that started it
+    matched (0 for the first of a sentence)."""
+
+    text: str
+    lead: int
+
+
+@dataclass(frozen=True, slots=True)
 class SentEntry:
     """An instruction atom split into `units`, decoded from the texts from `start`."""
 
     atom: Atom
     plain: bool
     start: int
-    units: list[str]
+    units: list[InstructionUnit]
 
 
 type PlanEntry = PassEntry | HeadEntry | SentEntry

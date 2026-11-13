@@ -11,11 +11,13 @@ from typing import TYPE_CHECKING
 
 from reporails_cli.core.mapper.annotate import check_specificity
 from reporails_cli.core.mapper.charge_floors import _classify_content
+from reporails_cli.core.mapper.classify import hedge_cue_words
 from reporails_cli.core.mapper.classify_phases import ChargeVerdict
 from reporails_cli.core.mapper.md_parser import replace_code_spans
 from reporails_cli.core.mapper.model_manifest import get_models_path
+from reporails_cli.core.mapper.word_spans import word_offsets
 from reporails_cli.core.platform.dto.mapping import AppearanceFields, SpecificityFields
-from reporails_cli.core.platform.dto.ruleset import Atom, AtomFormat, Specificity
+from reporails_cli.core.platform.dto.ruleset import Atom, AtomFormat, PlainPlacement, Specificity
 
 if TYPE_CHECKING:
     import tokenizers
@@ -153,6 +155,52 @@ def _make_inline_atom(
         rule=rule_trace,
         ambiguous=rule_trace.endswith("!amb"),
     )
+
+
+def _hedge_cue(placement: PlainPlacement, plain: str, start: int) -> tuple[int, int] | None:
+    """The file columns of the hedge cue `plain` (the plain text of an instruction starting at `start`
+    in the placed line) opens with, and of the separator after it; None when it opens with none, the cue
+    is not written as one run, or nothing follows it."""
+    cue = hedge_cue_words(plain[start:])
+    words = word_offsets(plain[start:])
+    if not cue or len(words) <= cue:
+        return None
+    last = start + words[cue - 1][1] - 1
+    cols, line = placement.columns, placement.line
+    if any(line[cols[i] + 1 : cols[i + 1]].strip() for i in range(start, last)):
+        return None
+    after = line[cols[last] + 1 :]
+    stop = cols[last] + 1 + len(after) - len(after.lstrip(" \t,"))
+    return (cols[start], stop) if stop > cols[last] + 1 else None
+
+
+def _joint(placement: PlainPlacement, before: tuple[int, int], start: int, lead: int) -> str:
+    """The source text that joins the instruction starting at `start` to the one ending at `before`'s end:
+    where the cut that started it matched (`lead` chars before it), else everything between the two."""
+    cols = placement.columns
+    if 0 < lead <= start:
+        return placement.line[cols[start - lead] : cols[start]]
+    return placement.line[cols[before[1] - 1] + 1 : cols[start]]
+
+
+def place_units(units: list[Atom], parent: Atom, spans: list[tuple[int, int] | None], leads: list[int]) -> None:
+    """Record where each instruction atom of `parent` sits in its file line: its columns, the joint to
+    the instruction before it and its hedge cue. `spans` are the `[start, end)` offsets of each atom's
+    words in the parent's plain text, None for an atom the parse did not locate (it stays unplaced);
+    `leads` say how many chars before each atom the cut that started it matched."""
+    placement = parent.placement
+    if placement is None:
+        return
+    before: tuple[int, int] | None = None
+    for unit, span, lead in zip(units, spans, leads, strict=True):
+        before, prev = span, before
+        if span is None:
+            continue
+        start, end = span
+        unit.source_columns = (placement.columns[start], placement.columns[end - 1] + 1)
+        unit.hedge_cue = _hedge_cue(placement, parent.plain_text[:end], start)
+        if prev is not None:
+            unit.joint = _joint(placement, prev, start, lead)
 
 
 def _ends_with_colon(plain_text: str) -> bool:

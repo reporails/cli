@@ -328,6 +328,18 @@ def _classify_phase3(
     return "NEUTRAL", 0, "none", "p3_no_verb", False
 
 
+def hedge_cue_words(text: str) -> int:
+    """How many words open `text` as a hedge cue a reader can drop (`You should`, `Try to`, `Perhaps`,
+    `Please`), 0 when it opens with none. `You should` counts only when the classifier reads the text
+    as hedged with it."""
+    lowers = words_of(text)
+    if lowers[:2] == ["you", "should"]:
+        return 2 if hedges_with_should(text) else 0
+    if lowers[:2] == ["try", "to"]:
+        return 2
+    return 1 if lowers[:1] and lowers[0] in DROPPABLE_LEADS else 0
+
+
 def hedges_with_should(text: str) -> bool:
     """True when `text` gives its instruction with `should` (`You should run the linter`).
 

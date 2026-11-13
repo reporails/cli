@@ -108,6 +108,13 @@ class AtomSlots(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel
         )
 
 
+class PlainPlacement(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
+    """Where each char of a line's plain text sits in the file line that holds it."""
+
+    line: str  # the file line
+    columns: tuple[int, ...]  # the column in `line` of each char of the plain text
+
+
 # A list item read as the object of the instruction that introduces it: it stays a line of its file
 # for the line checks, and takes no place among the file's instructions and context.
 LIST_OBJECT_ROLE = "object"
@@ -167,6 +174,20 @@ class Atom(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__in
     slots: AtomSlots | None = (
         None  # 5-tuple slots (subject/predicate/object/scope + compound), when available (dev-preview)
     )
+    # Where each char of `plain_text` sits in the file line, kept from the parse until the atom is cut
+    # into its instructions; the instructions take their own columns from it. Not carried past the cut,
+    # and never dumped (the cache and the wire carry the columns each atom took from it).
+    placement: PlainPlacement | None = Field(default=None, exclude=True)
+    # Where the atom sits in its file line, as the file wrote it: the columns [start, end) of its words,
+    # past the emphasis marks the mapper re-wraps around each atom. None for an atom that is not one run of
+    # its own line (a table row, a fence, an imported line, a sentence cut from a longer line).
+    source_columns: tuple[int, int] | None = None
+    # The source text between the instruction before it on the line and the atom: the mark (comma, semicolon,
+    # dash) that joined them and the space around it. "" on the first atom of a line, or when not placed.
+    joint: str = ""
+    # The source columns [start, end) of the hedge cue the atom opens with (`try to `, `perhaps, `), with
+    # the separator up to the next word; None when it opens with none, or when not placed.
+    hedge_cue: tuple[int, int] | None = None
 
 
 class FileRecord(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any

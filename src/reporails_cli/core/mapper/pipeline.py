@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 
@@ -64,12 +65,16 @@ def _translate_atom_lines(
     directory) and its line there, so a finding on it can name them. A no-op on
     a file with no imports, since the map is then the identity map.
     """
+    expanded = {n for n, count in Counter(line_map).items() if count > 1}
     for a in atoms:
         idx = a.line - 1
         if not 0 <= idx < len(line_map):
             continue
         a.line = line_map[idx]
         origin = origins[idx]
+        if origin is not None or a.line in expanded:  # its text is not the importing file's own line
+            a.source_columns, a.joint, a.hedge_cue = None, "", None
+            a.placement = None
         if origin is not None:
             a.imported_from = Path(os.path.relpath(origin[0], safe_resolve(path).parent)).as_posix()
             a.imported_line = origin[1]

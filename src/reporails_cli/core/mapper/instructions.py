@@ -158,10 +158,15 @@ def _states_purpose(clause: str) -> bool:
     return any(m.group(1).lower() in _COMMAND_VERBS | _NOUN_OR_VERB for m in _PURPOSE_RE.finditer(clause))
 
 
+def _joint_lead(joint: str) -> int:
+    """How many chars of a cut's match come before the next instruction's text: all of it after a comma,
+    semicolon or dash; the space before a joining word."""
+    return len(joint) - len(joint.lstrip()) if joint.strip().lower() in CLAUSE_JOINERS else len(joint)
+
+
 def _boundary(cut: re.Match[str]) -> int:
     """Where the next instruction's text begins: after a comma, semicolon or dash; before a joining word."""
-    joined_by_word = cut.group().strip().lower() in CLAUSE_JOINERS
-    return cut.start() + len(cut.group()) - len(cut.group().lstrip()) if joined_by_word else cut.end()
+    return cut.start() + _joint_lead(cut.group())
 
 
 def _clauses(sentence: str) -> list[tuple[int, str, str]]:
@@ -247,15 +252,21 @@ def _closes_item_list(clauses: list[tuple[int, str, str]], k: int) -> bool:
     return joined_by_and and listed and not _acts_on_an_object(clause)
 
 
-def _with_condition(clauses: list[tuple[int, str, str]], k: int) -> int:
-    """Where instruction ``k`` begins: at the conditions set just before its command (`if they fail, fix them`)."""
+def _with_condition(clauses: list[tuple[int, str, str]], k: int) -> tuple[int, str]:
+    """Where instruction ``k`` begins, and the joint before that: at the conditions set just before its
+    command (`if they fail, fix them`)."""
     j = k
     while j > 0 and _sets_condition(clauses[j - 1][1]):
         j -= 1
-    return clauses[j][0]
+    return clauses[j][0], clauses[j][2]
 
 
 def instruction_starts(sentence: str) -> list[int]:
+    """The offset where each instruction of the sentence starts (:func:`_instruction_cuts`)."""
+    return [start for start, _joint in _instruction_cuts(sentence)]
+
+
+def _instruction_cuts(sentence: str) -> list[tuple[int, str]]:
     """The offset where each instruction of the sentence starts, one per clause that opens with a command.
 
     Verbs listed after `to` (`Use uv to install packages, add dependencies, and run scripts`) say what one
@@ -266,7 +277,7 @@ def instruction_starts(sentence: str) -> list[int]:
     """
     clauses = _clauses(sentence)
     items = _prohibited_items(clauses)
-    starts: list[int] = []
+    starts: list[tuple[int, str]] = []
     purpose = titled = False
     for k, (_, clause, joint) in enumerate(clauses):
         sequenced = "then" in joint.lower() or re.match(r"\s*then\b", clause, re.IGNORECASE) is not None
@@ -306,6 +317,11 @@ def cut_at_words(text: str, cuts: list[int]) -> list[str]:
     return [p for p in pieces if p.strip()]
 
 
+def _cut_source(sentence: str, written: str | None) -> str:
+    """The text the instruction cuts are read in: ``written`` when it is the same sentence with its markdown."""
+    return written if written is not None and len(written.split()) == len(sentence.split()) else sentence
+
+
 def instruction_texts(sentence: str, written: str | None = None) -> list[str]:
     """The sentence's instructions, in order, each a verbatim slice of ``sentence``; together they cover it.
 
@@ -313,8 +329,17 @@ def instruction_texts(sentence: str, written: str | None = None) -> list[str]:
     reading of it: where each instruction starts is read there, so a comma inside a code span never cuts,
     and the cut lands on the same word of ``sentence``.
     """
-    source = written if written is not None and len(written.split()) == len(sentence.split()) else sentence
-    return cut_at_words(sentence, instruction_word_cuts(source))
+    return cut_at_words(sentence, instruction_word_cuts(_cut_source(sentence, written)))
+
+
+def instruction_leads(sentence: str, written: str | None = None) -> list[int]:
+    """For each instruction :func:`instruction_texts` returns, how many chars before its text the cut that
+    started it matched (the comma and space, the dash, the space before a joining word); 0 for the first."""
+    source = _cut_source(sentence, written)
+    cuts = _instruction_cuts(source)[1:]
+    leads = [0, *(_joint_lead(joint) for _start, joint in cuts)]
+    pieces = cut_at_words(sentence, [len(source[:start].split()) for start, _joint in cuts])
+    return leads if len(leads) == len(pieces) else [0] * len(pieces)
 
 
 def without_joining_word(instruction: str) -> str:

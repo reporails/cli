@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
-from reporails_cli.core.mapper.atom_build import _atom_from_sentence
+from reporails_cli.core.mapper.atom_build import _atom_from_sentence, place_units
 from reporails_cli.core.mapper.bio_graphs import multislot_available
 from reporails_cli.core.mapper.charge_floors import (
     TABLE_HEADER_RULE,
@@ -32,8 +32,13 @@ from reporails_cli.core.mapper.classify_lexicon import WORD_RE
 from reporails_cli.core.mapper.classify_no import is_terse_no_prohibition
 from reporails_cli.core.mapper.fence_atoms import is_fence_block
 from reporails_cli.core.mapper.heading_labels import neutralize_paired_label_headings
-from reporails_cli.core.mapper.instructions import fold_lead_ins, instruction_texts, without_joining_word
-from reporails_cli.core.mapper.markers import reformat_spans
+from reporails_cli.core.mapper.instructions import (
+    fold_lead_ins,
+    instruction_leads,
+    instruction_texts,
+    without_joining_word,
+)
+from reporails_cli.core.mapper.markers import reformat_located, reformat_spans
 from reporails_cli.core.mapper.multislot_frames import (
     _decode_logits_batch,
     _Decoded,
@@ -46,7 +51,15 @@ from reporails_cli.core.mapper.parse import (
     reindex_positions,
 )
 from reporails_cli.core.mapper.prose_split import split_prose_sentences
-from reporails_cli.core.platform.dto.mapping import AtomTuple, HeadEntry, PassEntry, PlanEntry, SentEntry, Span
+from reporails_cli.core.platform.dto.mapping import (
+    AtomTuple,
+    HeadEntry,
+    InstructionUnit,
+    PassEntry,
+    PlanEntry,
+    SentEntry,
+    Span,
+)
 from reporails_cli.core.platform.dto.ruleset import RUNNING_TEXT_FORMATS, Atom, AtomSlots, Charge
 
 # Running-text formats this module rebuilds into spans. Headings are read too, but
@@ -229,7 +242,15 @@ def _merge_cell_edge_frames(frames: list[AtomTuple]) -> list[AtomTuple]:
     return merged
 
 
-def _span_atoms(atom: Atom, frames: list[list[AtomTuple]], *, plain: bool) -> list[Atom]:
+def _words_at(text: str, start: int | None) -> tuple[int, int] | None:
+    """The `[start, end)` offsets of the words of `text`, which begins at `start` in its parent's plain text;
+    None when it was not located or holds no word."""
+    if start is None or not text.strip():
+        return None
+    return start + len(text) - len(text.lstrip()), start + len(text.rstrip())
+
+
+def _span_atoms(atom: Atom, frames: list[list[AtomTuple]], leads: list[int], *, plain: bool) -> list[Atom]:
     """The span atoms of one parent, each built from its formatted text.
 
     The head decoded the parent's AST-clean ``plain_text``, so each frame's text is
@@ -247,24 +268,28 @@ def _span_atoms(atom: Atom, frames: list[list[AtomTuple]], *, plain: bool) -> li
     if atom.format == "table":
         frames = [_merge_cell_edge_frames(sent) for sent in frames]
     tuples = [t for sent in frames for t in sent]
+    cut_leads = [lead if k == 0 else 0 for sent, lead in zip(frames, leads, strict=True) for k, _ in enumerate(sent)]
     if not plain:  # decoded from the formatted text itself — the sentence already carries its markers
         spans = [_atom_from_tuple(t, atom, already_plain=False) for t in tuples]
     else:
-        formatted = reformat_spans(atom.text, atom.plain_text, [t.text for t in tuples])
+        located = reformat_located(atom.text, atom.plain_text, [t.text for t in tuples])
         spans = [
-            _atom_from_tuple(t, atom, already_plain=True, formatted=f) for t, f in zip(tuples, formatted, strict=True)
+            _atom_from_tuple(t, atom, already_plain=True, formatted=f)
+            for t, (f, _start) in zip(tuples, located, strict=True)
         ]
+        words = [_words_at(t.text, start) for t, (_f, start) in zip(tuples, located, strict=True)]
+        place_units(spans, atom, words, cut_leads)
     keep_lead_in_on_last(spans)
     return spans
 
 
-def _instruction_units(atom: Atom, sents: list[str]) -> list[str]:
+def _instruction_units(atom: Atom, sents: list[str]) -> list[InstructionUnit]:
     """Each sentence of ``atom`` cut into its instructions, as in-order slices of the decoded text."""
     written = reformat_spans(atom.text, atom.plain_text, sents) if atom.plain_text else sents
     return [
-        unit
+        InstructionUnit(unit, lead)
         for sent, md in zip(sents, written, strict=True)
-        for unit in instruction_texts(sent, md)
+        for unit, lead in zip(instruction_texts(sent, md), instruction_leads(sent, md), strict=True)
         if _span_has_content(unit)
     ]
 
@@ -302,7 +327,7 @@ def _decode_plan(atoms: list[Atom]) -> tuple[list[str], list[PlanEntry]]:
             sents = [s for s in (split_prose_sentences(text, atom.named_tokens) or [text]) if _span_has_content(s)]
             units = _instruction_units(atom, sents)
             plan.append(SentEntry(atom, bool(atom.plain_text), len(texts), units))
-            texts.extend(without_joining_word(u) for u in units)
+            texts.extend(without_joining_word(u.text) for u in units)
     return texts, plan
 
 
@@ -325,10 +350,10 @@ def _reconstruct_atoms(texts: list[str], plan: list[PlanEntry], decoded: list[_D
         else:
             start = entry.start
             frames = [
-                _with_joining_word(_frames_from_decoded(decoded[start + j], texts[start + j]), unit)
+                _with_joining_word(_frames_from_decoded(decoded[start + j], texts[start + j]), unit.text)
                 for j, unit in enumerate(entry.units)
             ]
-            result.extend(_span_atoms(entry.atom, frames, plain=entry.plain))
+            result.extend(_span_atoms(entry.atom, frames, [u.lead for u in entry.units], plain=entry.plain))
 
     # Deterministic charge floors, in the regex path's own order. The terse-prohibition
     # floor runs first (a verbless `No <what> <where>` the head read as a statement is
