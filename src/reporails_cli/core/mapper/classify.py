@@ -203,6 +203,13 @@ def _classify_phase1(
 
 # Words that negate the word before them (`should not`, `must never`, `would n't`, `must cannot`).
 NEGATION_WORDS: frozenset[str] = frozenset({"not", "never", "n't", "cannot"})
+# Prepositions that negate what follows them (`run it without flags`).
+NEGATING_PREPOSITIONS: frozenset[str] = frozenset({"without"})
+# A negation cue: the `n't` contraction suffix, or a standalone negation word.
+NEGATION_RE = re.compile(
+    r"n't\b|\b(?:" + "|".join(sorted((NEGATION_WORDS - {"n't"}) | NEGATING_PREPOSITIONS)) + r")\b",
+    re.IGNORECASE,
+)
 # Lowered words whose presence as a line's first word gives it as an order: absolute and negation
 # cues, constraint words and the modals the classifier reads as a directive.
 DIRECTIVE_CUES: frozenset[str] = (

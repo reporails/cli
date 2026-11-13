@@ -9,21 +9,18 @@ inside a code span opens nothing, and an item that begins with `then` is a next 
 
 from __future__ import annotations
 
-import re
 from collections import Counter
 from collections.abc import Iterable, Sequence
 
-from reporails_cli.core.heal.preservation.words import WORD_RE, AtomView, content_words, word_forms
-from reporails_cli.core.mapper.classify_lexicon import CLAUSE_JOINERS, STEP_JOINER
-from reporails_cli.core.mapper.lexical import DASH_MARKS
+from reporails_cli.core.heal.preservation.words import AtomView, content_words
+from reporails_cli.core.mapper.classify_lexicon import CLAUSE_JOINERS, CODE_WORD_RE, STEP_JOINER
+from reporails_cli.core.mapper.lexical import DASH_MARKS, OPENER_RE, split_items, word_forms
 from reporails_cli.core.mapper.markers import without_list_marker
 from reporails_cli.core.mapper.md_parser import replace_code_spans
 from reporails_cli.core.mapper.parse import inline_plain_text
 from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark, split_prose_sentences
 from reporails_cli.core.platform.contract.json_value import JsonObject
 
-# What opens a list or a closing clause: a colon, or a dash set off by spaces.
-_OPENER_RE = re.compile(":|\\s[" + "".join(sorted(DASH_MARKS)) + "]\\s")
 _TRIM = " \t.;:*_"
 
 # Stand-ins for the opener marks inside a code span, so a colon or a dash there opens nothing.
@@ -64,17 +61,6 @@ def _normal(text: str) -> str:
     return " ".join(text.lower().split()).strip(_TRIM)
 
 
-def _items(tail: str) -> list[str]:
-    """`tail` cut at its commas outside parentheses."""
-    depth, start, out = 0, 0, []
-    for i, ch in enumerate(tail):
-        depth += (ch == "(") - (ch == ")")
-        if ch == "," and depth <= 0:
-            out.append(tail[start:i])
-            start = i + 1
-    return [*out, tail[start:]]
-
-
 def _bare(item: str) -> str:
     """`item` normalised, without a leading `and` / `or`."""
     text = _normal(item)
@@ -85,7 +71,7 @@ def _bare(item: str) -> str:
 
 def _openers(text: str) -> Iterable[tuple[str, str]]:
     """Each `(lead-in with its opener, what follows)` split of `text`."""
-    for match in _OPENER_RE.finditer(text):
+    for match in OPENER_RE.finditer(text):
         yield text[: match.end()], text[match.end() :]
 
 
@@ -94,7 +80,7 @@ def _items_after(old_text: str, lead: str) -> list[str]:
     start = " ".join(old_text.lower().split()).find(" ".join(lead.lower().split()))
     if start < 0:
         return []
-    return _items(" ".join(old_text.split())[start + len(" ".join(lead.split())) :])
+    return split_items(" ".join(old_text.split())[start + len(" ".join(lead.split())) :])
 
 
 def _carries(new_sentences: list[str], lead: str, item: str) -> bool:
@@ -131,7 +117,7 @@ def _shares(words: set[str], sentence_words: set[str]) -> bool:
 
 def _words_of(text: str) -> set[str]:
     """The lowered words of `text`."""
-    return {w.lower() for w in WORD_RE.findall(text)}
+    return {w.lower() for w in CODE_WORD_RE.findall(text)}
 
 
 def _rephrased_cut(old_text: str, new_text: str, new_sentences: list[str]) -> bool:
@@ -140,7 +126,7 @@ def _rephrased_cut(old_text: str, new_text: str, new_sentences: list[str]) -> bo
     that holds the lead-in (the lead-in rephrased, the first item hung off it, the rest split off)."""
     mine = _words_of(new_text)
     for lead, tail in _openers(old_text):
-        first, *later = _items(tail)
+        first, *later = split_items(tail)
         if later and _next_step(later[0]):
             continue
         lead_words = content_words(lead)
@@ -186,7 +172,7 @@ def _series_cut(old_text: str, new: str, new_sentences: list[str]) -> bool:
     after a lead-in, a later item is not carried by a rewrite sentence that repeats the lead-in.
     Only a series the author closed with `and` / `or` counts: one that runs on with `then`, or has
     no closing conjunction, is no list to cut short."""
-    old_items, new_items = _items(old_text), _items(new)
+    old_items, new_items = split_items(old_text), split_items(new)
     k = len(new_items)
     if k < 2 or len(old_items) <= k or _bare(old_items[-1]) == _normal(old_items[-1]) or _next_step(old_items[k]):
         return False
@@ -213,10 +199,10 @@ def _lead_stands_alone(old_text: str, new: str, new_sentences: list[str]) -> boo
     (`... deliberate intent — ask, don't refactor.` -> `... deliberate intent. Ask ... Do not
     refactor ...`), which is no fragment."""
     rest = set().union(*(_words_of(n) for n in new_sentences if n is not new))
-    for match in _OPENER_RE.finditer(old_text):
+    for match in OPENER_RE.finditer(old_text):
         if _normal(old_text[: match.start()]) != _normal(new):
             continue
-        words = [content_words(i) for i in _items(old_text[match.end() :])]
+        words = [content_words(i) for i in split_items(old_text[match.end() :])]
         if any(words) and all(_shares(w, rest) for w in words if w):
             return True
     return False

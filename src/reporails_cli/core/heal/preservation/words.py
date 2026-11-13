@@ -1,29 +1,18 @@
 """Word-level reading shared by the preservation checks: the content words of an instruction
-(stopwords and hedges left out), a prose atom's words with its named constructs removed, and the
-negation cue.
+(stopwords and hedges left out) and a prose atom's words with its named constructs removed.
 """
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable, Sequence
 from typing import Protocol
 
-from reporails_cli.core.mapper.classify import DROPPABLE_LEADS, HEDGE_WORDS, NEGATION_WORDS
-from reporails_cli.core.mapper.classify_lexicon import STOPWORDS
+from reporails_cli.core.mapper.classify import DROPPABLE_LEADS, HEDGE_WORDS
+from reporails_cli.core.mapper.classify_lexicon import CODE_WORD_RE, STOPWORDS
 from reporails_cli.core.platform.dto.ruleset import AtomFormat, Modality
-
-WORD_RE = re.compile(r"[a-zA-Z0-9_']+")
 
 # Hedge words and `please` are dropped from content words too: a rewrite removes them.
 _SKIPPED = STOPWORDS | HEDGE_WORDS | DROPPABLE_LEADS
-
-# A negation cue: the `n't` contraction suffix, or a standalone negation word (the classifier's
-# negation words, and `without`).
-NEGATION_RE = re.compile(
-    r"n't\b|\b(?:" + "|".join(sorted((NEGATION_WORDS - {"n't"}) | {"without"})) + r")\b",
-    re.IGNORECASE,
-)
 
 
 class AtomView(Protocol):
@@ -68,7 +57,7 @@ class AtomView(Protocol):
 
 def content_words(text: str) -> set[str]:
     """`text`'s content words: stopwords, hedges/filler, and short tokens dropped, the rest lowered."""
-    return {w for w in (t.lower() for t in WORD_RE.findall(text)) if len(w) > 2 and w not in _SKIPPED}
+    return {w for w in (t.lower() for t in CODE_WORD_RE.findall(text)) if len(w) > 2 and w not in _SKIPPED}
 
 
 def named_key(token: str) -> str:
@@ -99,14 +88,4 @@ def prose_text(atom: AtomView, *, named: bool = False, fill: str = " ") -> str:
 
 def prose_words(atom: AtomView, *, named: bool = False) -> list[str]:
     """`atom`'s lowered words in order, its named constructs left out unless `named`."""
-    return [w.lower() for w in WORD_RE.findall(prose_text(atom, named=named))]
-
-
-def word_forms(word: str) -> set[str]:
-    """`word` with its plain singular and plural spellings (`test` / `tests`, `match` / `matches`)."""
-    forms = {word, word + "s", word + "es"}
-    if word.endswith("es"):
-        forms.add(word[:-2])
-    if word.endswith("s"):
-        forms.add(word[:-1])
-    return forms
+    return [w.lower() for w in CODE_WORD_RE.findall(prose_text(atom, named=named))]

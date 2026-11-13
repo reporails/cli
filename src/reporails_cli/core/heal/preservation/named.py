@@ -11,7 +11,9 @@ from collections import Counter
 from collections.abc import Sequence
 
 from reporails_cli.core.heal.preservation.words import AtomView, content_words, named_key
+from reporails_cli.core.mapper.classify_lexicon import ALNUM_WORD_RE, EXAMPLE_OR_REASON_RE
 from reporails_cli.core.platform.contract.environment import ProjectEnvironment
+from reporails_cli.core.platform.contract.glob_pattern import GLOB_CHARS
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.heal import SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import Atom
@@ -129,9 +131,6 @@ def repeated_named(
     return _flag_overruns(order, allowance, original_text, new_text)
 
 
-_GLOB_CHARS = frozenset("*?[]")
-
-
 def token_present_ci(inner: str, text: str) -> bool:
     """Whole-word, case-insensitive occurrence of `inner` in `text` — an invented-token check
     compares the rewrite's own casing against the snapshot's, never demanding an exact match."""
@@ -143,7 +142,7 @@ def _is_existing_path(inner: str, environment: ProjectEnvironment) -> bool:
     reference), and a path carrying a glob character never counts (a glob pattern is not itself a
     path that "exists")."""
     candidate = inner.rstrip("/")
-    if not candidate or any(c in _GLOB_CHARS for c in candidate):
+    if not candidate or any(c in GLOB_CHARS for c in candidate):
         return False
     return environment.path_exists(candidate)
 
@@ -195,15 +194,12 @@ def invented_named(
     return out
 
 
-_SUBWORD_RE = re.compile(r"[a-zA-Z0-9]+")
-
-
 def _subwords(text: str) -> set[str]:
     """`text` split into its own alphanumeric sub-words, three-plus letters, lowered —
     underscores, slashes, dots and backticks are all boundaries here (unlike `content_words`,
     which keeps `snake_case` and `dotted.paths` joined), the finer split a path segment or an
     identifier needs to expose the plain word it carries."""
-    return {w.lower() for w in _SUBWORD_RE.findall(text) if len(w) > 2}
+    return {w.lower() for w in ALNUM_WORD_RE.findall(text) if len(w) > 2}
 
 
 def _names_an_existing_referent(token_key: str, old_text: str) -> bool:
@@ -223,25 +219,11 @@ def _names_an_existing_referent(token_key: str, old_text: str) -> bool:
     return bool(token_words & old_words)
 
 
-# An example marker — `e.g.`, `for example`, `such as`, `like`, `for instance`, bare or opening a
-# parenthetical — or a reason-clause marker — `because`, `since`, `so that`, `to avoid`,
-# `otherwise`, or a `,`/`—` before a clause-opening `so`. Once one of these opens, the rest of
-# the instruction's own text is an illustration or a justification, not more of what the
-# instruction itself forbids or permits.
-_EXAMPLE_OR_REASON_RE = re.compile(
-    r"\((?:e\.g\.|for example|such as|like|for instance)(?!\w)"
-    r"|\b(?:e\.g\.|for example|such as|like|for instance)(?!\w)"
-    r"|\b(?:because|since|so that|to avoid|otherwise)\b"
-    r"|[,—-]\s*so\b",
-    re.IGNORECASE,
-)
-
-
 def _governing_clause_end(text: str) -> int | None:
     """The position in `text` where an example or reason-clause marker opens, or `None` when
     none does — a named token at or past this position sits outside the instruction's own
     governing clause."""
-    starts = [m.start() for m in _EXAMPLE_OR_REASON_RE.finditer(text)]
+    starts = [m.start() for m in EXAMPLE_OR_REASON_RE.finditer(text)]
     return min(starts) if starts else None
 
 

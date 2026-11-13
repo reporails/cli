@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from reporails_cli.core.heal.preservation.words import NEGATION_RE, AtomView, content_words
+from reporails_cli.core.heal.preservation.words import AtomView, content_words
 from reporails_cli.core.lint.content_queries import instruction_atoms_for_file
+from reporails_cli.core.mapper.classify import NEGATION_RE
 from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import read_structure
 from reporails_cli.core.platform.dto.heal import Snapshot, SnapshotAtom

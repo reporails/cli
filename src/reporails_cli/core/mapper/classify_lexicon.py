@@ -7,8 +7,11 @@ precede an imperative verb without blocking its detection.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
+from collections.abc import Set as AbstractSet
 
 from reporails_cli.core.mapper.classify_no import NO_CLAUSE_OPENERS, NO_DESCRIPTIVE_PREPS
+from reporails_cli.core.mapper.md_parser import replace_code_spans
 
 # CORE: high-confidence charged verbs
 VERBS_CORE: set[str] = {
@@ -381,64 +384,15 @@ CONTEXT_WORDS = (
         "alternatively",
         "additionally",
         # CLI tools — invocation context preceding a verb
-        "npm",
-        "npx",
-        "bun",
-        "pnpm",
-        "yarn",
-        "cargo",
-        "pip",
-        "uv",
-        "dotnet",
-        "docker",
-        "git",
-        "go",
-        "python",
-        "node",
-        "deno",
-        "make",
-        "composer",
-        "mix",
-        "flutter",
-        "dart",
-        "swift",
-        "java",
-        "mvn",
-        "gradle",
-        "gradlew",
-        "ruby",
-        "zig",
-        "nix",
-        "brew",
-        "apt",
-        "snap",
-        "curl",
-        "wget",
-        "pytest",
-        "ruff",
-        "eslint",
-        "prettier",
-        "vitest",
-        "jest",
-        "mocha",
-        "turbo",
-        "nx",
-        "lerna",
-        "rushx",
-        "hatch",
-        "poetry",
-        "pipx",
-        "uvx",
-        "helm",
-        "kubectl",
-        "terraform",
-        "ansible",
-        "ssh",
-        "scp",
+        "npm", "npx", "bun", "pnpm", "yarn", "cargo", "pip", "uv", "dotnet", "docker", "git", "go",
+        "python", "node", "deno", "make", "composer", "mix", "flutter", "dart", "swift", "java", "mvn",
+        "gradle", "gradlew", "ruby", "zig", "nix", "brew", "apt", "snap", "curl", "wget", "pytest", "ruff",
+        "eslint", "prettier", "vitest", "jest", "mocha", "turbo", "nx", "lerna", "rushx", "hatch", "poetry",
+        "pipx", "uvx", "helm", "kubectl", "terraform", "ansible", "ssh", "scp",
     }
     | CONDITION_CONJUNCTIONS
     | CLAUSE_JOINERS
-)
+)  # fmt: skip
 
 # The words that open a condition clause; a bare `for` opens none.
 CONDITION_OPENERS = CONDITIONAL_MARKERS - {"for"}
@@ -496,11 +450,120 @@ PHRASE_PREPOSITIONS: frozenset[str] = (
     | frozenset({"into", "onto", "over", "through", "against", "between", "via"})
 )
 
+# Quantifiers a `for` may open without cutting what a rule covers (`For each file, run lint`).
+FOR_QUANTIFIERS: frozenset[str] = DETERMINERS & GENERAL_QUANTIFIERS
+# Words after a fronted `for` / scope preposition that make it an aside, not a scope (`For example,`,
+# `In general,`).
+FOR_ASIDES: frozenset[str] = frozenset({"example", "instance"})
+NOT_A_SCOPE: frozenset[str] = FOR_ASIDES | frozenset(
+    {"general", "short", "particular", "practice", "summary", "addition", "fact", "times"}
+)
+# Words that make a list a set of examples rather than the whole of what a rule covers.
+EXAMPLE_LEADS: frozenset[str] = frozenset({"such", "e", "g", "eg", "including", "like", "example", "examples"})
+# Words that only mark a condition or a quantifier over it: swapping one marker for another
+# ("every time" -> "whenever", "prior to" -> "before") adds no content of its own.
+CONDITION_WORDS: frozenset[str] = frozenset(CONDITIONAL_MARKERS) | CONDITION_QUANTIFIERS
+# What ends the phrase a scope preposition opens.
+PHRASE_END: frozenset[str] = PHRASE_PREPOSITIONS | CONDITION_CONJUNCTIONS
+# Words that open a fronted scope phrase (`For all,`, `In CI,`).
+FRAME_OPENERS: frozenset[str] = SCOPE_PREPOSITIONS | {"for"}
 
 # The alphabetic words of a line.
 WORD_RE = re.compile(r"[a-zA-Z']+")
+# A word as written in code-aware prose: letters, digits, underscores and apostrophes (`python3`, `snake_case`).
+CODE_WORD_RE = re.compile(r"[a-zA-Z0-9_']+")
+# A word of letters and digits only: the sub-words of an identifier or a path segment.
+ALNUM_WORD_RE = re.compile(r"[a-zA-Z0-9]+")
+# A token that is one plain word (`except`), as against a path, a dotted name or a multi-word token.
+SINGLE_WORD_RE = re.compile(r"\w+")
+# A hyphenated word opening with a scope preposition (`in-memory`, `on-call`) is one word, not a place.
+PREPOSITION_COMPOUND_RE = re.compile(r"\b(" + "|".join(sorted(SCOPE_PREPOSITIONS)) + r")-(?=[a-z])", re.IGNORECASE)
+# A `(see ...)` reference aside.
+SEE_ASIDE_RE = re.compile(r"\(\s*see\b[^)]*\)", re.IGNORECASE)
+# An example marker (`e.g.`, `for example`, `such as`, `like`, `for instance`, bare or opening a
+# parenthetical) or a reason-clause marker (`because`, `since`, `so that`, `to avoid`, `otherwise`, or
+# a `,` / `—` before a clause-opening `so`): once one opens, the rest of an instruction is an
+# illustration or a justification.
+EXAMPLE_OR_REASON_RE = re.compile(
+    r"\((?:e\.g\.|for example|such as|like|for instance)(?!\w)"
+    r"|\b(?:e\.g\.|for example|such as|like|for instance)(?!\w)"
+    r"|\b(?:because|since|so that|to avoid|otherwise)\b"
+    r"|[,—-]\s*so\b",
+    re.IGNORECASE,
+)
+# Punctuation a whitespace token carries around its word.
+TOKEN_EDGES = ".,;:()[]*_\"'—"
 
 
 def words_of(text: str) -> list[str]:
     """`text`'s alphabetic words, lowered, in order."""
     return [w.lower() for w in WORD_RE.findall(text)]
+
+
+def prose_tokens(sentence: str) -> list[str]:
+    """The lowered whitespace tokens of `sentence` outside code spans, a hyphenated word kept whole
+    (`ready-for-review` holds no `for`), a `(see ...)` reference aside left out."""
+    text = SEE_ASIDE_RE.sub(" ", replace_code_spans(sentence, " code "))
+    return [t.strip(TOKEN_EDGES).lower() for t in text.split()]
+
+
+def word_forms(word: str) -> set[str]:
+    """`word` with its plain singular and plural spellings (`test` / `tests`, `match` / `matches`)."""
+    forms = {word, word + "s", word + "es"}
+    if word.endswith("es"):
+        forms.add(word[:-2])
+    if word.endswith("s"):
+        forms.add(word[:-1])
+    return forms
+
+
+def is_content_word(word: str) -> bool:
+    """Whether `word` is longer than two letters and not a function word."""
+    return len(word) > 2 and word not in STOPWORDS
+
+
+COMMA: frozenset[str] = frozenset({","})
+# What stands between the items of a coordinated list.
+LIST_SEPARATORS: frozenset[str] = COMMA | CONDITION_CONJUNCTIONS
+# Words that open the next clause after a joiner (`Build docs and push`), told from the nouns a verb-like
+# word may also be.
+_CLAUSE_OPENING_VERBS: frozenset[str] = frozenset(VERBS_CORE | VERBS_SUPPLEMENT)
+
+
+def list_tokens(text: str) -> list[str]:
+    """The lowered content words of `text` in order, with a `,` kept where one stood and `and` / `or`
+    kept as separators, except an `and` that joins clauses (`CLAUSE_JOINERS`, followed by a verb:
+    `Build docs and push`), which separates no items."""
+    tokens: list[str] = []
+    for i, part in enumerate(text.lower().split(",")):
+        if i:
+            tokens.append(",")
+        words = CODE_WORD_RE.findall(part)
+        for k, w in enumerate(words):
+            joins_clauses = w in CLAUSE_JOINERS and words[k + 1 : k + 2] and words[k + 1] in _CLAUSE_OPENING_VERBS
+            if not joins_clauses and (w in LIST_SEPARATORS or is_content_word(w)):
+                tokens.append(w)
+    return tokens
+
+
+def phrase_starts(tokens: Sequence[str], phrase: Sequence[str]) -> list[int]:
+    """Where `phrase` (content words, any singular / plural form) stands in `tokens`, as start indices."""
+    n = len(phrase)
+    return [k for k in range(len(tokens) - n + 1) if all(tokens[k + d] in word_forms(w) for d, w in enumerate(phrase))]
+
+
+def is_list_item(
+    tokens: Sequence[str],
+    phrase: Sequence[str],
+    *,
+    before: AbstractSet[str] = LIST_SEPARATORS,
+    after: AbstractSet[str] = LIST_SEPARATORS,
+) -> bool:
+    """Whether `phrase` stands as an item of a coordinated list in `tokens` (`list_tokens` of a text;
+    `Lint Python, shell, or Docker`): a separator stands right before it (one of `before`) or right
+    after it (one of `after`)."""
+    for k in phrase_starts(tokens, phrase):
+        end = k + len(phrase)
+        if (k > 0 and tokens[k - 1] in before) or (end < len(tokens) and tokens[end] in after):
+            return True
+    return False

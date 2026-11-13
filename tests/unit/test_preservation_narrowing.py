@@ -1031,3 +1031,14 @@ def test_a_heading_that_lists_kinds_does_not_name_one_of_them_as_the_referent(tm
     after = "## Hooks and scripts\n\nEdit hooks at canonical paths only.\n"
     result = _compare_edit(tmp_path, before + _G, after + _G)
     assert result["narrowed_instructions"]
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_an_and_that_opens_a_clause_does_not_list_the_word_before_it_as_one_kind_among_others(tmp_path) -> None:
+    siblings = "In CI, lint the docs.\n\nBuild docs and push.\n\n"
+    before = f"## Rules\n\n{siblings}Run at night only.\n"
+    after = f"## Rules\n\n{siblings}Run docs at night only.\n"
+    result = _compare_edit(tmp_path, before, after)
+    assert result["narrowed_instructions"] == []

@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.heal.preservation.match import _leading_polarity_sign
-from reporails_cli.core.heal.preservation.words import NEGATION_RE
 from reporails_cli.core.mapper.classify import (
     _ABSOLUTE_ADVERBS,
     ABSOLUTE_CUES,
     AFFIRMATIVE_ABSOLUTES,
     HEDGE_WORDS,
+    NEGATION_RE,
     NEGATION_WORDS,
 )
 from reporails_cli.core.mapper.classify_lexicon import MODAL_HEDGED

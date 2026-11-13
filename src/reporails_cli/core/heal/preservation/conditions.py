@@ -15,22 +15,18 @@ from collections.abc import Iterable, Sequence
 from collections.abc import Set as AbstractSet
 
 from reporails_cli.core.heal.preservation.qualifiers import (
-    NOT_A_SCOPE,
     for_phrase_added,
-    kept_tokens,
     kinds_listed,
     object_added,
     qualified_general_noun,
 )
 from reporails_cli.core.heal.preservation.words import (
-    WORD_RE,
     AtomView,
     blank_named,
     content_words,
     named_key,
     prose_text,
     prose_words,
-    word_forms,
 )
 from reporails_cli.core.mapper.classify import (
     COVERAGE_RESTRICTORS,
@@ -40,20 +36,26 @@ from reporails_cli.core.mapper.classify import (
     has_hedge_cue,
 )
 from reporails_cli.core.mapper.classify_lexicon import (
-    CLAUSE_JOINERS,
+    CODE_WORD_RE,
+    COMMA,
     CONDITION_CONJUNCTIONS,
     CONDITION_OPENERS,
-    CONDITION_QUANTIFIERS,
-    CONDITIONAL_MARKERS,
+    CONDITION_WORDS,
     DEFINITE_DETERMINERS,
     DETERMINERS,
+    FRAME_OPENERS,
     GENERAL_QUANTIFIERS,
     INDEFINITE_ARTICLES,
+    NOT_A_SCOPE,
+    PHRASE_END,
     PHRASE_PREPOSITIONS,
+    PREPOSITION_COMPOUND_RE,
     SCOPE_PREPOSITIONS,
+    SENTENCE_JOINERS,
+    SINGLE_WORD_RE,
     STOPWORDS,
 )
-from reporails_cli.core.mapper.lexical import COMMA, split_at_marks
+from reporails_cli.core.mapper.lexical import list_tokens, split_at_marks, word_forms
 from reporails_cli.core.mapper.prose_split import split_prose_sentences
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.heal import Condition, Pair, Section, SectionLine, SnapshotAtom
@@ -66,9 +68,6 @@ _NEUTRAL_COVERAGE = 0.75  # share of a new instruction's words a hedged line the
 # Stands in a clause for each named construct that was there, so the words after it do not fall
 # into the reach of the word before it.
 _NAMED = "namedconstruct"
-_JOINERS = CONDITION_CONJUNCTIONS | CLAUSE_JOINERS
-# What ends the phrase a scope preposition opens.
-_PHRASE_END = PHRASE_PREPOSITIONS | CONDITION_CONJUNCTIONS
 
 # Atoms of a file by line number, in file order.
 ByLine = dict[int, list[AtomView]]
@@ -111,7 +110,7 @@ def negated_words(line_atoms: Sequence[AtomView], atom: AtomView) -> frozenset[s
         if a.charge_value != 0:
             break
         covered.append(a)
-    return frozenset(w.lower() for a in covered for w in WORD_RE.findall(a.text))
+    return frozenset(w.lower() for a in covered for w in CODE_WORD_RE.findall(a.text))
 
 
 def pair_up(
@@ -194,17 +193,14 @@ def hedge_made_absolute(pairs: list[Pair], old_by_line: ByLine) -> list[JsonObje
     return out
 
 
-_PLAIN_WORD_RE = re.compile(r"\w+")
-
-
 def _known_words(old_by_line: ByLine, line: int) -> set[str]:
     """The words the author's line has: those of every snapshot atom on it, plus a code token that
     is one plain word (`except`); a path, a dotted name or a multi-word token adds none."""
     known: set[str] = set()
     for atom in old_by_line.get(line, ()):
-        blanked = [t for t in atom.named_tokens if not _PLAIN_WORD_RE.fullmatch(t.strip("`"))]
+        blanked = [t for t in atom.named_tokens if not SINGLE_WORD_RE.fullmatch(t.strip("`"))]
         text = blank_named(atom.plain_text, blanked)
-        known.update(w.lower() for w in WORD_RE.findall(text))
+        known.update(w.lower() for w in CODE_WORD_RE.findall(text))
     return known
 
 
@@ -222,7 +218,7 @@ def _placed_words(old_by_line: ByLine, pair: Pair) -> set[str]:
     is one plain word (`except`) is a word of the line, as in `_known_words`."""
     placed: set[str] = set()
     for atom in old_by_line.get(pair.old.line, ()):
-        placed.update(t.strip("`").lower() for t in atom.named_tokens if _PLAIN_WORD_RE.fullmatch(t.strip("`")))
+        placed.update(t.strip("`").lower() for t in atom.named_tokens if SINGLE_WORD_RE.fullmatch(t.strip("`")))
         for clause in _clauses(atom):
             for i, word in enumerate(clause):
                 if word in PHRASE_PREPOSITIONS:
@@ -235,13 +231,14 @@ def _placed_words(old_by_line: ByLine, pair: Pair) -> set[str]:
 def _goes_on(sentence: str) -> bool:
     """Whether `sentence` goes on to another clause: a phrase mark stands in it, or a word that joins
     clauses (`and`, `or`, `then`)."""
-    return len(split_at_marks(sentence)) > 1 or bool(_JOINERS & {w.lower() for w in WORD_RE.findall(sentence)})
+    words = {w.lower() for w in CODE_WORD_RE.findall(sentence)}
+    return len(split_at_marks(sentence)) > 1 or bool(SENTENCE_JOINERS & words)
 
 
 def _phrase(tail: list[str]) -> list[str]:
     """`tail` up to the next preposition or conjunction: the words of the phrase a preposition opens."""
     for i, word in enumerate(tail):
-        if word in _PHRASE_END:
+        if word in PHRASE_END:
             return tail[:i]
     return tail
 
@@ -273,16 +270,12 @@ def _narrows(words: list[str], known: set[str], placed: set[str]) -> bool:
     return False
 
 
-# A hyphenated word opening with a scope preposition (`in-memory`, `on-call`) is one word, not a place.
-_PREPOSITION_COMPOUND_RE = re.compile(r"\b(" + "|".join(sorted(SCOPE_PREPOSITIONS)) + r")-(?=[a-z])", re.IGNORECASE)
-
-
 def _clauses(atom: AtomView, *, named: bool = False) -> list[list[str]]:
     """`atom`'s words, one list per comma / colon / parenthesis separated clause, each named
     construct a placeholder word unless `named` (a condition's words read the same backticked or
     not)."""
-    parts = split_at_marks(_PREPOSITION_COMPOUND_RE.sub(r"\1", prose_text(atom, named=named, fill=f" {_NAMED} ")))
-    return [w for w in ([t.lower() for t in WORD_RE.findall(part)] for part in parts) if w]
+    parts = split_at_marks(PREPOSITION_COMPOUND_RE.sub(r"\1", prose_text(atom, named=named, fill=f" {_NAMED} ")))
+    return [w for w in ([t.lower() for t in CODE_WORD_RE.findall(part)] for part in parts) if w]
 
 
 def _line_named(old_by_line: ByLine, line: int) -> set[str]:
@@ -292,7 +285,7 @@ def _line_named(old_by_line: ByLine, line: int) -> set[str]:
 
 def _quantifier_before(text: str, start: int) -> str:
     """The word that ends `text` before offset `start`, lowered; empty when there is none."""
-    words = WORD_RE.findall(text[:start])
+    words = CODE_WORD_RE.findall(text[:start])
     return words[-1].lower() if words else ""
 
 
@@ -303,7 +296,7 @@ def _inserted_after_quantifier(p: Pair) -> bool:
     referent and narrows nothing."""
     text = p.new.plain_text
     known = {named_key(t) for t in p.old.named_tokens}
-    old_words = {w.lower() for w in WORD_RE.findall(p.old.plain_text)}
+    old_words = {w.lower() for w in CODE_WORD_RE.findall(p.old.plain_text)}
     for token in p.new.named_tokens:
         if named_key(token) in known:
             continue
@@ -335,7 +328,7 @@ def sections_by_line(old_by_line: ByLine, headings: Iterable[int]) -> dict[int, 
             if atom.format == "heading":
                 heading[:] = [atom.plain_text]
                 continue
-            lines.append(SectionLine(line, atom.plain_text, tuple(kept_tokens(atom.plain_text))))
+            lines.append(SectionLine(line, atom.plain_text, tuple(list_tokens(atom.plain_text))))
             if not heading:
                 heading.append(atom.heading_context)
     out: dict[int, Section] = {}
@@ -415,10 +408,6 @@ def conditional(atom: AtomView, marked_before: AbstractSet[str] = frozenset()) -
     return atom.scope_conditional or bool(_marker_words(atom, marked_before) & SCOPE_RESTRICTORS)
 
 
-# Words that only mark a condition or a quantifier over it: swapping one marker for another
-# ("every time" -> "whenever", "prior to" -> "before") adds no content of its own.
-_CONDITION_WORDS = frozenset(CONDITIONAL_MARKERS) | CONDITION_QUANTIFIERS
-
 _ENDING_REACH = 4  # letters an ending may add to a word and still be that word
 _CONDITION_COVERAGE = 0.5  # share of the words a condition governs that its rewrite must still hold
 
@@ -441,7 +430,7 @@ def _conditions(atom: AtomView, marked_before: AbstractSet[str] = frozenset()) -
                     else:
                         conjuncts[-1].append(tail_word)
                 restriction = word in SCOPE_RESTRICTORS and word not in EXCLUDING_RESTRICTORS
-                words = (content_words(" ".join(c)) - _CONDITION_WORDS for c in conjuncts)
+                words = (content_words(" ".join(c)) - CONDITION_WORDS for c in conjuncts)
                 out.extend(Condition(frozenset(g), restriction) for g in words if g)
                 break
     return out
@@ -486,7 +475,6 @@ def _holds(governed: Condition, rewrite_conditions: list[Condition], original_co
     )
 
 
-_FRAME_OPENERS = SCOPE_PREPOSITIONS | {"for"}
 _FRAME_REACH = 5  # words a fronted scope phrase may hold before its comma
 
 
@@ -494,8 +482,8 @@ def _fronted_scope(sentence: str) -> list[str]:
     """The words of the phrase a sentence opens with before its first comma, when `for` or a scope
     preposition opens it (`For all,`, `In CI,`): it scopes every instruction of the sentence."""
     head, *rest = split_at_marks(sentence, COMMA)
-    words = [w.lower() for w in WORD_RE.findall(_PREPOSITION_COMPOUND_RE.sub(r"\1", head))]
-    if not rest or not words or words[0] not in _FRAME_OPENERS or len(words) > _FRAME_REACH:
+    words = [w.lower() for w in CODE_WORD_RE.findall(PREPOSITION_COMPOUND_RE.sub(r"\1", head))]
+    if not rest or not words or words[0] not in FRAME_OPENERS or len(words) > _FRAME_REACH:
         return []
     if NOT_A_SCOPE & set(words):
         return []
@@ -507,7 +495,7 @@ def _scope_dropped(p: Pair) -> bool:
     when a split leaves later instructions outside it (`For all, group X, count Y` -> `For all,
     group X. Count Y`)."""
     scope = _fronted_scope(p.old_sentence)
-    new = {w.lower() for w in WORD_RE.findall(p.new_sentence)}
+    new = {w.lower() for w in CODE_WORD_RE.findall(p.new_sentence)}
     return bool(scope) and not all(_is_word_of(w, new) for w in scope)
 
 
@@ -539,7 +527,7 @@ def dropped_conditions(pairs: list[Pair]) -> list[JsonObject]:
 def _new_content_words(rewrite: str, original_words: set[str]) -> set[str]:
     """Content words of `rewrite` that neither the original line nor a plain singular/plural form
     of them has, leaving out words that only mark a condition."""
-    return {w for w in content_words(rewrite) - _CONDITION_WORDS if not word_forms(w) & original_words}
+    return {w for w in content_words(rewrite) - CONDITION_WORDS if not word_forms(w) & original_words}
 
 
 def added_conditions(snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom]) -> list[JsonObject]:

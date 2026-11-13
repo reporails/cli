@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import math
 
-from reporails_cli.core.heal.preservation.words import NEGATION_RE, content_words, named_key
-from reporails_cli.core.mapper.classify import AFFIRMATIVE_ABSOLUTES, leading_prohibition
+from reporails_cli.core.heal.preservation.words import content_words, named_key
+from reporails_cli.core.mapper.classify import AFFIRMATIVE_ABSOLUTES, NEGATION_RE, leading_prohibition
 from reporails_cli.core.mapper.classify_lexicon import words_of
 from reporails_cli.core.mapper.prose_split import sentence_spans
 from reporails_cli.core.platform.contract.json_value import JsonObject
