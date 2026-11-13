@@ -71,7 +71,7 @@ def take_snapshot(
         tuple(_snapshot_atom(a) for a in instruction_atoms_for_file(ruleset_map, file_path, own=True)),
         score,
         relation_lines,
-        tuple(_snapshot_atom(a) for a in list_object_atoms_for_file(ruleset_map, file_path)),
+        list_objects=tuple(_snapshot_atom(a) for a in list_object_atoms_for_file(ruleset_map, file_path)),
     )
 
 
@@ -81,6 +81,7 @@ def make_snapshot(
     atoms: tuple[SnapshotAtom, ...],
     score: float | None,
     relation_lines: Iterable[int] = (),
+    *,
     list_objects: tuple[SnapshotAtom, ...] = (),
 ) -> Snapshot:
     """A baseline of `file_path` holding `atoms` (and the list items read as an instruction's object,
