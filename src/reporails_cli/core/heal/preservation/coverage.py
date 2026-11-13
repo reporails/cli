@@ -242,7 +242,11 @@ def fresh_place(p: Pair, covered: Covered) -> bool:
 
 
 def took_no_object(old: AtomView) -> bool:
-    """Whether the author's instruction names no object for its verb (`Edit at canonical paths`,
-    whose phrase the mapper reads as scope)."""
+    """Whether the author's instruction names no object for its verb: it has none, or its predicate
+    runs on into a preposition (`Only use on trusted machines`)."""
     slots = old.slots
-    return slots is not None and slots.predicate_span is not None and slots.object_span is None
+    if slots is None or slots.predicate_span is None:
+        return False
+    predicate = slot_tokens(old, "predicate")
+    last = words_of(predicate[-1])[-1:] if predicate else []
+    return slots.object_span is None or bool(set(last) & PHRASE_PREPOSITIONS)

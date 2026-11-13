@@ -45,5 +45,6 @@
 - Heal's split fix reads from the map whether each instruction was cut at a comma, semicolon or dash.
 - Heal's split, direct and negation fixes place each instruction in its line from the map, and their tests place each instruction the way a real map does.
 - Heal's rewrite check reads each instruction's subject, action, object and scope from the map.
+- A build check fails when code outside the map reads instruction text again: a copy of the map's word data it never uses, markdown stripped outside the parser, or a word list, prose pattern or clause split outside the map.
 - Three check scenarios guard linked folders: a `.claude/rules` folder linked to a dotfiles folder stays part of `ails check .claude`, a linked file under a `~/.claude` linked to a dotfiles folder keeps its user-level root, and a `~/.claude` folder keeps its findings when the home folder is reached through a link.
 - The map records a place, time or target phrase (`In CI,` before the clause, `in staging` or `for src/` after its object) as the instruction's scope, and heal's rewrite check reads it.
