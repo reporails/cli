@@ -73,7 +73,7 @@ def _translate_atom_lines(
         a.line = line_map[idx]
         origin = origins[idx]
         if origin is not None or a.line in expanded:  # its text is not the importing file's own line
-            a.source_columns, a.joint, a.hedge_cue = None, "", None
+            a.source_columns, a.joint, a.joint_mark, a.hedge_cue = None, "", False, None
             a.placement = None
         if origin is not None:
             a.imported_from = Path(os.path.relpath(origin[0], safe_resolve(path).parent)).as_posix()

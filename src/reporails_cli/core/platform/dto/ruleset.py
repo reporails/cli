@@ -185,6 +185,9 @@ class Atom(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__in
     # The source text between the instruction before it on the line and the atom: the mark (comma, semicolon,
     # dash) that joined them and the space around it. "" on the first atom of a line, or when not placed.
     joint: str = ""
+    # Whether the joint is a comma, semicolon or spaced dash rather than a joining word or the text between
+    # two atoms. False on the first atom of a line, or when not placed.
+    joint_mark: bool = False
     # The source columns [start, end) of the hedge cue the atom opens with (`try to `, `perhaps, `), with
     # the separator up to the next word; None when it opens with none, or when not placed.
     hedge_cue: tuple[int, int] | None = None

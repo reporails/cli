@@ -98,6 +98,8 @@ def _pack_granularity_and_span_fields(atom: Atom, d: JsonObject) -> None:
         d["source_columns"] = [*atom.source_columns]
     if atom.joint:
         d["joint"] = atom.joint
+    if atom.joint_mark:
+        d["joint_mark"] = True
     if atom.hedge_cue is not None:
         d["hedge_cue"] = [*atom.hedge_cue]
     _pack_slot_coords(atom, d)

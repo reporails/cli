@@ -22,8 +22,12 @@ from reporails_cli.core.heal.preservation.conditions import conditional
 from reporails_cli.core.heal.preservation.fragments import opens_step, rewrite_cut
 from reporails_cli.core.lint.client_checks import running_sentences
 from reporails_cli.core.mapper.classify_lexicon import words_of
-from reporails_cli.core.mapper.instructions import holds_comma_series, opens_command, without_joining_word
-from reporails_cli.core.mapper.lexical import PHRASE_MARKS
+from reporails_cli.core.mapper.instructions import (
+    holds_comma_series,
+    opens_command,
+    opens_command_after_hedge,
+    without_joining_word,
+)
 from reporails_cli.core.mapper.md_parser import code_spans, emphasis_runs, link_spans
 from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark
 from reporails_cli.core.mapper.structure import in_any_span, paragraph_lines, read_structure
@@ -110,11 +114,10 @@ def _starts(content: str, sentences: Sequence[Sequence[Atom]]) -> list[int] | No
 def _joint_at(content: str, atom: Atom, start: int) -> int | None:
     """Where the joint the mapper recorded for `atom` begins in `content`, which holds the atom at `start`;
     None when no mark joins the atom to the instruction before it, or the line no longer holds the joint."""
+    if not atom.joint_mark:
+        return None
     joint = atom.joint
     at = start - len(joint)
-    mark = joint.lstrip()[:1]
-    if not mark or mark not in PHRASE_MARKS or joint.lstrip()[1:].strip():
-        return None
     return at if at >= 0 and content[at:start] == joint else None
 
 
@@ -264,9 +267,9 @@ def negation_form(op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str]) -> Ed
     target = _single_target(atoms, op, lines)
     if target is None:
         return None
-    _, content, start = target
+    atom, content, start = target
     m = _NEVER_RE.match(content, start)
-    if m is None or not opens_command(content[start:]):
+    if m is None or not opens_command(atom.plain_text or atom.text):
         return None
     swap = "Do not" if m.group(1) == "Never" else "do not"
     after = content[:start] + swap + content[m.end() :]
@@ -285,7 +288,7 @@ def direct(op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str]) -> Edit | No
     if atom.hedge_cue is None or atom.hedge_cue[0] != start:
         return None
     rest = content[atom.hedge_cue[1] :]
-    if not opens_command(rest):
+    if not opens_command_after_hedge(atom):
         return None
     if content[start].isupper():
         rest = _upper_first(rest) or ""

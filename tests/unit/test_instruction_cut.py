@@ -37,7 +37,7 @@ def _charged(atoms: list[Atom]) -> list[str]:
         "Use `ruff` for linting, run `pytest` before committing, and never push to `main`.",
         "Read the file, then edit it.",
         "Build the image, then test it.",
-        "*Do not edit generated files; do not commit secrets.*",
+        "Do not edit generated files; do not commit secrets.",
         "- Run `uv run poe qa_fast` and commit with `git commit --only`.",
         "Run the tests, then commit.",
         "Make sure the tests pass, then push the branch.",

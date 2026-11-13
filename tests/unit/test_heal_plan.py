@@ -20,6 +20,8 @@ from reporails_cli.core.heal.transforms import (
     unbold,
 )
 from reporails_cli.core.mapper.annotate import check_specificity
+from reporails_cli.core.mapper.instructions import joint_is_mark
+from reporails_cli.core.mapper.parse import inline_plain_text
 from reporails_cli.core.platform.dto.heal_plan import Edit, Plan, PlanOp, Slot
 from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots
 
@@ -38,6 +40,7 @@ def _atom(text: str, line: int = 1, charge: int = -1, fmt: str = "prose", pi: in
     return Atom(
         line=line,
         text=text,
+        plain_text=inline_plain_text(text),
         kind="excitation",
         charge={-1: "CONSTRAINT", 0: "NEUTRAL", 1: "DIRECTIVE"}[charge],
         charge_value=charge,
@@ -96,6 +99,7 @@ def _placed(atoms: list[Atom], *columns: tuple[int, int], joints: tuple[str, ...
         atom.source_columns = cols
     for atom, joint in zip(atoms[1:], joints, strict=True):
         atom.joint = joint
+        atom.joint_mark = joint_is_mark(joint)
     return atoms
 
 
@@ -277,6 +281,7 @@ def test_a_refused_split_of_pieces_sharing_an_object_allows_repeating_it() -> No
 @pytest.mark.subsys_heal
 def test_a_refused_split_with_an_unreadable_object_allows_no_change() -> None:
     first, second = _placed(_pieces("Run the tests;", "fix every failure."), (0, 14), (15, 33), joints=("; ",))
+    first.plain_text = ""
     second.slots = AtomSlots(predicate_span=(0, 1))
     assert _slot_change([first, second], "Run the tests; fix every failure.") == ""
 

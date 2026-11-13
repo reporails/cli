@@ -36,6 +36,7 @@ from reporails_cli.core.mapper.instructions import (
     fold_lead_ins,
     instruction_leads,
     instruction_texts,
+    joint_is_mark,
     without_joining_word,
 )
 from reporails_cli.core.mapper.markers import reformat_located, reformat_spans
@@ -279,6 +280,8 @@ def _span_atoms(atom: Atom, frames: list[list[AtomTuple]], leads: list[int], *, 
         ]
         words = [_words_at(t.text, start) for t, (_f, start) in zip(tuples, located, strict=True)]
         place_units(spans, atom, words, cut_leads)
+        for unit in spans:
+            unit.joint_mark = joint_is_mark(unit.joint)
     keep_lead_in_on_last(spans)
     return spans
 
