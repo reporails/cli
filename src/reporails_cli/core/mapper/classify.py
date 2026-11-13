@@ -214,15 +214,22 @@ class ConditionRead(Protocol):
     def slots(self) -> AtomSlots | None:
         """The slots the mapper read, as word spans of `plain_text`."""
 
-    @property
-    def aside_spans(self) -> tuple[tuple[int, int], ...]:
-        """The word spans of `plain_text` that illustrate the instruction."""
 
-
-def _covers_predicate(slots: AtomSlots) -> bool:
+def covers_predicate(slots: AtomSlots) -> bool:
     """Whether the decoded scope runs over the predicate: it then holds the clause as well as its frame."""
     scope, predicate = slots.scope_span, slots.predicate_span
     return scope is not None and predicate is not None and scope[0] < predicate[1] and predicate[0] < scope[1]
+
+
+def _last_frame(scope: str) -> str:
+    """`scope` from the conditional opener that follows a comma in it, when a frame already closed
+    before it (`before running X again, whenever the build fails.`): that opener's frame is the
+    condition; the phrase before it only orders the work. `scope` itself when it holds one frame."""
+    words = scope.split()
+    for i in range(1, len(words)):
+        if words[i - 1].endswith(",") and is_conditional_frame(words[i]):
+            return " ".join(words[i:])
+    return scope
 
 
 def condition_text(atom: ConditionRead) -> str | None:
@@ -234,11 +241,11 @@ def condition_text(atom: ConditionRead) -> str | None:
         return None
     frame = conditional_clause(atom.plain_text)
     slots = atom.slots
-    if slots is not None and slots.scope_span is not None and not _covers_predicate(slots):
+    if slots is not None and slots.scope_span is not None and not covers_predicate(slots):
         scope = words_between(atom.plain_text, *slots.scope_span)
         if is_conditional_frame(scope):
-            frame = scope
-    restriction = restrictor_clause(atom.plain_text, atom.named_tokens, atom.aside_spans)
+            frame = _last_frame(scope)
+    restriction = restrictor_clause(atom.plain_text, atom.named_tokens, slots.aside_spans if slots else ())
     return " ".join(part for part in (frame, restriction) if part) or None
 
 

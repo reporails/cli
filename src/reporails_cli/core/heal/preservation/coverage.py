@@ -10,6 +10,7 @@ from collections.abc import Set as AbstractSet
 
 from reporails_cli.core.heal.preservation.words import (
     AtomView,
+    asides_of,
     blank_named,
     is_content_word,
     is_function_word,
@@ -79,7 +80,7 @@ def past_the_slots(atom: AtomView) -> list[str]:
     ends = [span[1] for span in spans if span is not None]
     start = max(ends, default=0)
     words = atom.plain_text.split()
-    return [w for i, w in enumerate(words) if i >= start and not any(a <= i < b for a, b in atom.aside_spans)]
+    return [w for i, w in enumerate(words) if i >= start and not any(a <= i < b for a, b in asides_of(atom))]
 
 
 def moved_before_head(p: Pair) -> bool:
@@ -240,10 +241,7 @@ def fresh_place(p: Pair, covered: Covered) -> bool:
 
 
 def took_no_object(old: AtomView) -> bool:
-    """Whether the author's instruction names no object for its verb: it has none, or its predicate
-    runs on into a preposition (`Edit at canonical paths`)."""
+    """Whether the author's instruction names no object for its verb (`Edit at canonical paths`,
+    whose phrase the mapper reads as scope)."""
     slots = old.slots
-    if slots is None or slots.predicate_span is None:
-        return False
-    last = words_of(slot_tokens(old, "predicate")[-1])[-1:] if slot_tokens(old, "predicate") else []
-    return slots.object_span is None or bool(set(last) & PHRASE_PREPOSITIONS)
+    return slots is not None and slots.predicate_span is not None and slots.object_span is None

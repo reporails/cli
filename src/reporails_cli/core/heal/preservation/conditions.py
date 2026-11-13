@@ -35,6 +35,7 @@ from reporails_cli.core.heal.preservation.kinds import (
 )
 from reporails_cli.core.heal.preservation.words import (
     AtomView,
+    asides_of,
     atom_words,
     is_content_word,
     is_function_word,
@@ -44,7 +45,7 @@ from reporails_cli.core.heal.preservation.words import (
     slot_words,
     token_words,
 )
-from reporails_cli.core.mapper.classify import ABSOLUTE_CUES, condition_text
+from reporails_cli.core.mapper.classify import ABSOLUTE_CUES, condition_text, covers_predicate
 from reporails_cli.core.mapper.classify_lexicon import (
     CONDITION_CONJUNCTIONS,
     CONDITIONAL_MARKERS,
@@ -230,7 +231,7 @@ def _listed_heads(atom: AtomView, known: set[str]) -> set[str]:
     placement field (cluster, type, or location)`), back to the nearest function word."""
     words = atom.plain_text.split()
     heads: set[str] = set()
-    for start, end in atom.aside_spans:
+    for start, end in asides_of(atom):
         listed = {w for token in words[start:end] for w in words_of(token) if is_content_word(w)}
         if not listed or not all(word_forms(w) & known for w in listed):
             continue
@@ -398,6 +399,8 @@ def _opening_scope(line_atoms: Sequence[AtomView]) -> frozenset[str]:
     first = next((a for a in line_atoms if a.charge_value != 0), None)
     if first is None or first.slots is None or first.slots.scope_span is None or first.slots.scope_span[0] != 0:
         return frozenset()
+    if covers_predicate(first.slots):
+        return frozenset()  # the scope holds the clause as well as its frame: a condition, read as one
     return frozenset(w for w in slot_words(first, "scope") if w not in _ARTICLES)
 
 

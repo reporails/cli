@@ -49,6 +49,12 @@ def test_preservation_contract_is_byte_identical_to_the_plugin_s_quoted_text() -
 _FILE = "/proj/.claude/agents/reviewer.md"
 
 
+def _with_asides(slots: AtomSlots | None, text: str, named: tuple[str, ...]) -> AtomSlots | None:
+    """`slots` carrying the asides the mapper reads from `text`."""
+    asides = aside_spans(text.replace("`", ""), named)
+    return (slots or AtomSlots()).model_copy(update={"aside_spans": asides}) if asides else slots
+
+
 def _atom(
     line: int,
     text: str,
@@ -75,8 +81,7 @@ def _atom(
         negative_heading=heading and is_negative_heading(text),
         plain_text=text.replace("`", ""),
         modality=modality or ("direct" if charge_value else "none"),
-        slots=slots,
-        aside_spans=aside_spans(text.replace("`", ""), named),
+        slots=_with_asides(slots, text, named),
     )
 
 
@@ -113,8 +118,7 @@ def _new_atom(
         negative_heading=False,
         plain_text=text.replace("`", ""),
         modality="direct" if charge_value else "none",
-        slots=slots,
-        aside_spans=aside_spans(text.replace("`", ""), named),
+        slots=_with_asides(slots, text, named),
         imported_from="",
     )
 

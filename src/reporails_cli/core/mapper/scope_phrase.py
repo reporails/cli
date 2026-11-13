@@ -8,7 +8,12 @@ backticked construct are not scope.
 
 from __future__ import annotations
 
-from reporails_cli.core.mapper.classify_lexicon import MEANS_PREPOSITIONS, SCOPE_PHRASE_PREPOSITIONS, words_of
+from reporails_cli.core.mapper.classify_lexicon import (
+    CLAUSE_JOINERS,
+    MEANS_PREPOSITIONS,
+    SCOPE_PHRASE_PREPOSITIONS,
+    words_of,
+)
 from reporails_cli.core.mapper.lexical import DASH_MARKS
 from reporails_cli.core.mapper.word_spans import word_offsets
 from reporails_cli.core.platform.dto.mapping import AtomTuple, Span
@@ -102,13 +107,61 @@ def _trailing(t: AtomTuple, words: list[str], flags: list[bool], offsets: list[t
     return _with(t, t.object, _span(t.text, offsets, obj[1], left_out, t.object.conf))
 
 
+def _ends_in_preposition(words: list[str], flags: list[bool], t: AtomTuple) -> bool:
+    """Whether the predicate runs into a preposition (`Run at`): its verb took no object, and the
+    preposition opens a phrase naming where or when."""
+    pred = t.predicate.offset
+    if pred is None or pred[1] - pred[0] < 2 or pred[1] > len(words) or t.scope.offset is not None:
+        return False
+    return _is_preposition(words[pred[1] - 1]) and not flags[pred[1] - 1] and not words[pred[1] - 1].endswith(_BREAKS)
+
+
+def _object_is_scope(t: AtomTuple, words: list[str], flags: list[bool], offsets: list[tuple[int, int]]) -> AtomTuple:
+    """``t`` with the preposition its predicate ends in, and what follows it to the end of the
+    sentence, read as scope; the verb has no object."""
+    pred = t.predicate.offset
+    if pred is None or not _ends_in_preposition(words, flags, t):
+        return t
+    tail = words[pred[1] :]
+    if not tail or any(w.endswith(_BREAKS) for w in tail[:-1]):
+        return t
+    start = pred[1] - 1
+    predicate = _span(t.text, offsets, pred[0], start, t.predicate.conf)
+    scope = _span(t.text, offsets, start, len(words), t.predicate.conf)
+    return AtomTuple(t.polarity, t.modality, t.subject, predicate, Span("", 0.0, None), scope, t.text)
+
+
+def _extend_scope(t: AtomTuple, words: list[str], offsets: list[tuple[int, int]]) -> AtomTuple:
+    """``t`` with a trailing scope run over the words after it that sit in no slot, to the end of the
+    sentence: the decoded scope stops short of the sentence's last words (`before committing on this`
+    of `before committing on this branch.`)."""
+    scope = t.scope.offset
+    if scope is None or scope[1] >= len(words):
+        return t
+    others = [s.offset for s in (t.subject, t.predicate, t.object) if s.offset is not None]
+    if any(o[1] > scope[0] for o in others):
+        return t
+    tail = words[scope[1] :]
+    if words[scope[1] - 1].endswith(_BREAKS) or any(w.endswith(_BREAKS) for w in tail[:-1]):
+        return t
+    if not CLAUSE_JOINERS.isdisjoint(words_of(" ".join(tail))):
+        return t  # a joiner opens a clause of its own, which the scope does not cover
+    return _with(t, t.object, _span(t.text, offsets, scope[0], len(words), t.scope.conf))
+
+
 def record_scope_phrase(t: AtomTuple) -> AtomTuple:
-    """``t`` with its scope set to the fronted or trailing place/time/target phrase, when it has none."""
+    """``t`` with its scope set to the fronted or trailing place/time/target phrase, when it has none,
+    and a trailing scope run to the end of the sentence."""
     words = t.text.split()
-    if t.polarity == 0 or t.scope.offset is not None or t.predicate.offset is None or len(words) < 3:
+    if t.polarity == 0 or t.predicate.offset is None or len(words) < 3:
         return t
     flags = _in_code(t.text)
     offsets = word_offsets(t.text)
+    if t.scope.offset is not None:
+        return _extend_scope(t, words, offsets)
+    moved = _object_is_scope(t, words, flags, offsets)
+    if moved is not t:
+        return moved
     end = _fronted_end(words, flags, t)
     if end is None:
         return _trailing(t, words, flags, offsets)

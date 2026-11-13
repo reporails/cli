@@ -103,7 +103,7 @@ def _span_has_content(text: str) -> bool:
 _POLARITY_CHARGE: dict[int, tuple[Charge, int]] = {1: ("DIRECTIVE", 1), -1: ("CONSTRAINT", -1), 0: ("NEUTRAL", 0)}
 
 
-def _slots_from_tuple(t: AtomTuple) -> AtomSlots:
+def _slots_from_tuple(t: AtomTuple, atom: Atom) -> AtomSlots:
     return AtomSlots(
         subject=t.subject.text,
         predicate=t.predicate.text,
@@ -117,6 +117,7 @@ def _slots_from_tuple(t: AtomTuple) -> AtomSlots:
         predicate_conf=t.predicate.conf,
         object_conf=t.object.conf,
         scope_conf=t.scope.conf,
+        aside_spans=aside_spans(atom.plain_text, atom.named_tokens),
     )
 
 
@@ -143,9 +144,8 @@ def _tuple_scope_conditional(t: AtomTuple) -> bool:
 def _restricted(atom: Atom) -> bool:
     """Whether a restricting word (`only`, `except`) opens a phrase in a charged atom's text, which
     is then a condition on the instruction."""
-    return (
-        atom.charge_value != 0 and restrictor_clause(atom.plain_text, atom.named_tokens, atom.aside_spans) is not None
-    )
+    asides = atom.slots.aside_spans if atom.slots else ()
+    return atom.charge_value != 0 and restrictor_clause(atom.plain_text, atom.named_tokens, asides) is not None
 
 
 def _atom_from_tuple(t: AtomTuple, parent: Atom, *, already_plain: bool, formatted: str | None = None) -> Atom:
@@ -166,8 +166,7 @@ def _atom_from_tuple(t: AtomTuple, parent: Atom, *, already_plain: bool, formatt
     )
     atom.file_path = parent.file_path
     atom.stage = "multislot"
-    atom.slots = _slots_from_tuple(t)
-    atom.aside_spans = aside_spans(atom.plain_text, atom.named_tokens)
+    atom.slots = _slots_from_tuple(t, atom)
     atom.scope_conditional = atom.scope_conditional or _restricted(atom)
     return atom
 
@@ -197,8 +196,7 @@ def _apply_heading_tuple(atom: Atom, t: AtomTuple) -> Atom:
     atom.charge, atom.charge_value = charge, cv
     atom.modality = t.modality if polarity != 0 else "none"
     atom.rule, atom.stage = "multislot", "multislot"
-    atom.slots = _slots_from_tuple(t)
-    atom.aside_spans = aside_spans(atom.plain_text, atom.named_tokens)
+    atom.slots = _slots_from_tuple(t, atom)
     atom.scope_conditional = _tuple_scope_conditional(t) or _restricted(atom)
     return atom
 

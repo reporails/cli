@@ -87,7 +87,6 @@ class SnapshotAtom:
     plain_text: str = ""
     modality: Modality = "none"
     slots: AtomSlots | None = None
-    aside_spans: tuple[tuple[int, int], ...] = ()
 
     @property
     def heading(self) -> bool:

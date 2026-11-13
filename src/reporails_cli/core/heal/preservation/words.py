@@ -73,10 +73,6 @@ class AtomView(Protocol):
     def slots(self) -> AtomSlots | None:
         """The subject, predicate, object and scope the mapper read, as word spans of `plain_text`."""
 
-    @property
-    def aside_spans(self) -> tuple[tuple[int, int], ...]:
-        """The word spans of `plain_text` that illustrate the instruction."""
-
 
 _MIN_WORD = 3  # letters a word needs to be a content word
 
@@ -93,6 +89,11 @@ def blank_named(text: str, tokens: Iterable[str]) -> str:
     return text.replace(_BLANKED, " ")
 
 
+def asides_of(atom: AtomView) -> tuple[tuple[int, int], ...]:
+    """The word spans of `atom`'s plain text that illustrate the instruction (none without slots)."""
+    return () if atom.slots is None else atom.slots.aside_spans
+
+
 def slot_tokens(atom: AtomView, *names: str) -> list[str]:
     """The words of `plain_text`, as written and in order, that the spans of the slots `names`
     (`subject`, `predicate`, `object`, `scope`) of `atom` cover, less the words of its asides: a slot
@@ -104,7 +105,7 @@ def slot_tokens(atom: AtomView, *names: str) -> list[str]:
     for name in names:
         span = getattr(atom.slots, f"{name}_span")
         if span is not None and 0 <= span[0] < span[1] <= len(words):
-            out.extend(words[i] for i in range(*span) if not any(start <= i < end for start, end in atom.aside_spans))
+            out.extend(words[i] for i in range(*span) if not any(start <= i < end for start, end in asides_of(atom)))
     return out
 
 

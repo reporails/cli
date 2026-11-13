@@ -50,9 +50,10 @@ def _atom(
     if plain and place is not None and "`" not in text.split()[place]:
         # What the mapper reads: a place, time or target phrase after the object is the atom's scope.
         slots = AtomSlots(predicate_span=(0, 1), object_span=(1, place), scope_span=(place, words))
+    if asides:
+        slots = (slots or AtomSlots()).model_copy(update={"aside_spans": asides})
     return Atom(
         slots=slots,
-        aside_spans=asides,
         line=line,
         text=text,
         kind="excitation",

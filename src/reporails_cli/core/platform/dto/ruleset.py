@@ -54,7 +54,7 @@ InlineFormat = Literal["backtick", "bold", "italic", "plain"]
 # confidence) — the only part of `slots` that is stored. Slot TEXT (the
 # subject/predicate/object/scope strings) stays local to the run.
 SLOT_SPAN_FIELDS = ("subject_span", "predicate_span", "object_span", "scope_span")
-SLOT_COORD_FIELDS = (*SLOT_SPAN_FIELDS, "subject_conf", "predicate_conf", "object_conf", "scope_conf")
+SLOT_COORD_FIELDS = (*SLOT_SPAN_FIELDS, "subject_conf", "predicate_conf", "object_conf", "scope_conf", "aside_spans")
 
 
 def _as_offset(v: JsonValue) -> tuple[int, int] | None:
@@ -64,6 +64,15 @@ def _as_offset(v: JsonValue) -> tuple[int, int] | None:
     if isinstance(v, (list, tuple)) and len(v) == 2 and isinstance(v[0], int) and isinstance(v[1], int):
         return (v[0], v[1])
     raise ValueError(f"a stored token offset is a pair of integers, got {v!r}")
+
+
+def _as_offsets(v: JsonValue) -> tuple[tuple[int, int], ...]:
+    """Stored token offsets come back from JSON as a list of pairs; restore the tuples."""
+    if v is None:
+        return ()
+    if not isinstance(v, (list, tuple)):
+        raise ValueError(f"stored token offsets are a list of pairs, got {v!r}")
+    return tuple(o for o in (_as_offset(item) for item in v) if o is not None)
 
 
 def _as_conf(v: JsonValue) -> float:
@@ -94,6 +103,9 @@ class AtomSlots(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel
     predicate_conf: float = 0.0
     object_conf: float = 0.0
     scope_conf: float = 0.0
+    # The word spans [start, end) of `plain_text` that illustrate or list members of what the instruction
+    # is about: a parenthesised run, or an example a cue opens (`such as`, `e.g.`, `, like`). Empty when none.
+    aside_spans: tuple[tuple[int, int], ...] = ()
 
     @classmethod
     def from_coords(cls, coords: JsonObject) -> AtomSlots:
@@ -107,6 +119,7 @@ class AtomSlots(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel
             predicate_conf=_as_conf(coords.get("predicate_conf", 0.0)),
             object_conf=_as_conf(coords.get("object_conf", 0.0)),
             scope_conf=_as_conf(coords.get("scope_conf", 0.0)),
+            aside_spans=_as_offsets(coords.get("aside_spans")),
         )
 
 
@@ -193,9 +206,6 @@ class Atom(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__in
     # The source columns [start, end) of the hedge cue the atom opens with (`try to `, `perhaps, `), with
     # the separator up to the next word; None when it opens with none, or when not placed.
     hedge_cue: tuple[int, int] | None = None
-    # The word spans [start, end) of `plain_text` that illustrate or list members of what the instruction
-    # is about: a parenthesised run, or an example a cue opens (`such as`, `e.g.`, `, like`). Empty when none.
-    aside_spans: tuple[tuple[int, int], ...] = ()
 
 
 class FileRecord(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
