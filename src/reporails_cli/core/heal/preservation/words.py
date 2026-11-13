@@ -79,6 +79,11 @@ _MIN_WORD = 3  # letters a word needs to be a content word
 _BLANKED = ""
 
 
+def code_ranges(atom: AtomView) -> tuple[tuple[int, int], ...]:
+    """The character ranges of `plain_text` that code spans fill, as the mapper recorded them."""
+    return () if atom.slots is None else atom.slots.code_ranges
+
+
 def blank_named(text: str, tokens: Iterable[str]) -> str:
     """`text` with each named token blanked, the longest first so a token inside a longer one
     (`reporails` in `reporails__explain`) leaves none of the longer one behind."""

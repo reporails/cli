@@ -40,6 +40,7 @@ from reporails_cli.core.mapper.instructions import (
     joint_is_mark,
     without_joining_word,
 )
+from reporails_cli.core.mapper.markdown_extract import plain_code_ranges
 from reporails_cli.core.mapper.markers import reformat_located, reformat_spans
 from reporails_cli.core.mapper.multislot_frames import (
     _decode_logits_batch,
@@ -118,6 +119,7 @@ def _slots_from_tuple(t: AtomTuple, atom: Atom) -> AtomSlots:
         object_conf=t.object.conf,
         scope_conf=t.scope.conf,
         aside_spans=aside_spans(atom.plain_text, atom.named_tokens),
+        code_ranges=plain_code_ranges(atom.text, atom.plain_text),
     )
 
 
@@ -299,12 +301,18 @@ def _span_atoms(atom: Atom, frames: list[list[AtomTuple]], leads: list[int], *, 
 def _instruction_units(atom: Atom, sents: list[str]) -> list[InstructionUnit]:
     """Each sentence of ``atom`` cut into its instructions, as in-order slices of the decoded text."""
     written = reformat_spans(atom.text, atom.plain_text, sents) if atom.plain_text else sents
-    return [
-        InstructionUnit(unit, lead)
-        for sent, md in zip(sents, written, strict=True)
-        for unit, lead in zip(instruction_texts(sent, md), instruction_leads(sent, md), strict=True)
-        if _span_has_content(unit)
-    ]
+    units: list[InstructionUnit] = []
+    ranges, cursor = plain_code_ranges(atom.text, atom.plain_text), 0
+    for sent, md in zip(sents, written, strict=True):
+        at = atom.plain_text.find(sent, cursor)
+        code = [(a - at, b - at) for a, b in ranges if at <= a and b <= at + len(sent)] if at >= 0 else []
+        cursor = max(cursor, at + len(sent))
+        units += [
+            InstructionUnit(unit, lead)
+            for unit, lead in zip(instruction_texts(sent, md, code), instruction_leads(sent, md, code), strict=True)
+            if _span_has_content(unit)
+        ]
+    return units
 
 
 def _with_joining_word(frames: list[AtomTuple], unit: str) -> list[AtomTuple]:

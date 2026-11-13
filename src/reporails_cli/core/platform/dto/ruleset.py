@@ -54,7 +54,15 @@ InlineFormat = Literal["backtick", "bold", "italic", "plain"]
 # confidence) — the only part of `slots` that is stored. Slot TEXT (the
 # subject/predicate/object/scope strings) stays local to the run.
 SLOT_SPAN_FIELDS = ("subject_span", "predicate_span", "object_span", "scope_span")
-SLOT_COORD_FIELDS = (*SLOT_SPAN_FIELDS, "subject_conf", "predicate_conf", "object_conf", "scope_conf", "aside_spans")
+SLOT_COORD_FIELDS = (
+    *SLOT_SPAN_FIELDS,
+    "subject_conf",
+    "predicate_conf",
+    "object_conf",
+    "scope_conf",
+    "aside_spans",
+    "code_ranges",
+)
 
 
 def _as_offset(v: JsonValue) -> tuple[int, int] | None:
@@ -106,6 +114,8 @@ class AtomSlots(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel
     # The word spans [start, end) of `plain_text` that illustrate or list members of what the instruction
     # is about: a parenthesised run, or an example a cue opens (`such as`, `e.g.`, `, like`). Empty when none.
     aside_spans: tuple[tuple[int, int], ...] = ()
+    # The character ranges [start, end) of `plain_text` that code spans fill. Empty when it has none.
+    code_ranges: tuple[tuple[int, int], ...] = ()
 
     @classmethod
     def from_coords(cls, coords: JsonObject) -> AtomSlots:
@@ -120,6 +130,7 @@ class AtomSlots(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel
             object_conf=_as_conf(coords.get("object_conf", 0.0)),
             scope_conf=_as_conf(coords.get("scope_conf", 0.0)),
             aside_spans=_as_offsets(coords.get("aside_spans")),
+            code_ranges=_as_offsets(coords.get("code_ranges")),
         )
 
 

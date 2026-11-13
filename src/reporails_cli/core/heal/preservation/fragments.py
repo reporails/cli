@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable, Sequence
 
-from reporails_cli.core.heal.preservation.words import AtomView, is_content_word, word_forms
+from reporails_cli.core.heal.preservation.words import AtomView, code_ranges, is_content_word, word_forms
 from reporails_cli.core.mapper.classify_lexicon import CLAUSE_JOINERS, STEP_JOINER, words_of
 from reporails_cli.core.mapper.instructions import comma_items, sentence_openers
 from reporails_cli.core.mapper.lexical import DASH_MARKS
@@ -48,13 +48,12 @@ def _masked_plain(text: str) -> str:
 
 
 def _plain(atom: AtomView) -> str:
-    """The atom's plain text with the opener marks inside its code spans masked: each span is masked
-    where it stands in the atom's marked-up text, then the markup is read away. An atom whose plain
-    text is not its inline reading (a heading, a fenced block) keeps its own."""
-    text: str = atom.text
-    if inline_plain_text(text) != atom.plain_text:
-        return str(atom.plain_text)
-    return _masked_plain(text)
+    """The atom's plain text with the opener marks inside its code spans masked, each span read at the
+    range the mapper recorded for it."""
+    text: str = atom.plain_text
+    for start, end in code_ranges(atom):
+        text = text[:start] + _masked(text[start:end]) + text[end:]
+    return text
 
 
 def _normal(text: str) -> str:

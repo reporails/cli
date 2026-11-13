@@ -8,6 +8,7 @@ reader what to do. A sentence holding two such clauses holds two instructions, w
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
 from reporails_cli.core.mapper.charge_floors import _SEE_POINTER_RE
 from reporails_cli.core.mapper.classify import hedge_cue_words, is_conditional_frame
@@ -161,12 +162,13 @@ def _pipe_cuts(sentence: str, inside: list[bool], reading: str) -> list[re.Match
     ]
 
 
-def _cut_mask(sentence: str) -> list[bool]:
+def _cut_mask(sentence: str, code: Sequence[tuple[int, int]] | None = None) -> list[bool]:
     """Where a comma or dash belongs to an aside, an example or a command: inside quotes, parentheses or
-    a code span."""
+    a code span. `code` is the character ranges of the code spans when the sentence is plain text that
+    no longer shows them; omitted, the sentence's own code spans are read."""
     inside = _build_scope_mask(sentence)
-    for span in code_spans(sentence):
-        inside[span.start : span.end] = [True] * (span.end - span.start)
+    for start, end in code if code is not None else [(span.start, span.end) for span in code_spans(sentence)]:
+        inside[start:end] = [True] * (end - start)
     return inside
 
 
@@ -201,7 +203,9 @@ def _plain_clause(source: str, plain: str, start: int, end: int) -> str:
     return plain[words[first].start() : words[last - 1].end()] if 0 <= first < last <= len(words) else ""
 
 
-def _clauses(sentence: str, plain: str | None = None) -> list[tuple[int, str, str, bool]]:
+def _clauses(
+    sentence: str, plain: str | None = None, code: Sequence[tuple[int, int]] | None = None
+) -> list[tuple[int, str, str, bool]]:
     """Each clause as ``(where its text begins, its plain text, the joint before it, whether the clause as
     written is only a bold label)``.
 
@@ -209,7 +213,7 @@ def _clauses(sentence: str, plain: str | None = None) -> list[tuple[int, str, st
     or dash inside quotes, parentheses or a code span starts no clause.
     """
     reading = sentence if plain is None or len(plain.split()) != len(sentence.split()) else plain
-    inside = _cut_mask(sentence)
+    inside = _cut_mask(sentence, code)
     cuts = sorted(
         [m for m in _CLAUSE_CUT_RE.finditer(sentence) if not inside[m.start()]] + _pipe_cuts(sentence, inside, reading),
         key=lambda m: m.start(),
@@ -324,12 +328,14 @@ def _with_condition(clauses: list[tuple[int, str, str, bool]], k: int) -> tuple[
     return clauses[j][0], clauses[j][2]
 
 
-def instruction_starts(sentence: str, plain: str | None = None) -> list[int]:
+def instruction_starts(sentence: str) -> list[int]:
     """The offset where each instruction of the sentence starts (:func:`_instruction_cuts`)."""
-    return [start for start, _joint in _instruction_cuts(sentence, plain)]
+    return [start for start, _joint in _instruction_cuts(sentence)]
 
 
-def _instruction_cuts(sentence: str, plain: str | None = None) -> list[tuple[int, str]]:
+def _instruction_cuts(
+    sentence: str, plain: str | None = None, code: Sequence[tuple[int, int]] | None = None
+) -> list[tuple[int, str]]:
     """The offset where each instruction of the sentence starts, one per clause that opens with a command.
 
     Verbs listed after `to` (`Use uv to install packages, add dependencies, and run scripts`) say what one
@@ -338,7 +344,7 @@ def _instruction_cuts(sentence: str, plain: str | None = None) -> list[tuple[int
     command (`…; when the build fails, run it again`) starts the instruction it leads into. What a
     `See …` pointer names runs to the next punctuation (`See the build and deploy guide`).
     """
-    clauses = _clauses(sentence, plain)
+    clauses = _clauses(sentence, plain, code)
     items = _prohibited_items(clauses)
     starts: list[tuple[int, str]] = []
     purpose = titled = False
@@ -363,15 +369,6 @@ def holds_comma_series(text: str) -> bool:
     )
 
 
-def instruction_word_cuts(sentence: str, plain: str | None = None) -> list[int]:
-    """The word index where each instruction after the first begins.
-
-    Text before the first instruction (`Before merging, run the tests`) and a clause that gives no command
-    stay with the instruction they lead into or follow.
-    """
-    return [len(sentence[:start].split()) for start in instruction_starts(sentence, plain)[1:]]
-
-
 def cut_at_words(text: str, cuts: list[int]) -> list[str]:
     """``text`` cut before each word index in ``cuts``; every piece is a verbatim slice of ``text``."""
     words = [m.start() for m in _WORD_START_RE.finditer(text)]
@@ -385,21 +382,28 @@ def _cut_source(sentence: str, written: str | None) -> str:
     return written if written is not None and len(written.split()) == len(sentence.split()) else sentence
 
 
-def instruction_texts(sentence: str, written: str | None = None) -> list[str]:
+def instruction_texts(
+    sentence: str, written: str | None = None, code: Sequence[tuple[int, int]] | None = None
+) -> list[str]:
     """The sentence's instructions, in order, each a verbatim slice of ``sentence``; together they cover it.
 
     ``written`` is the same sentence with its markdown (code spans, emphasis) when ``sentence`` is the plain
     reading of it: where each instruction starts is read there, so a comma inside a code span never cuts,
-    and the cut lands on the same word of ``sentence``.
+    and the cut lands on the same word of ``sentence``. Without ``written``, ``code`` gives the character
+    ranges of ``sentence`` that code spans fill.
     """
-    return cut_at_words(sentence, instruction_word_cuts(_cut_source(sentence, written), sentence))
+    source = _cut_source(sentence, written)
+    cuts = _instruction_cuts(source, sentence, code if source is sentence else None)[1:]
+    return cut_at_words(sentence, [len(source[:start].split()) for start, _joint in cuts])
 
 
-def instruction_leads(sentence: str, written: str | None = None) -> list[int]:
+def instruction_leads(
+    sentence: str, written: str | None = None, code: Sequence[tuple[int, int]] | None = None
+) -> list[int]:
     """For each instruction :func:`instruction_texts` returns, how many chars before its text the cut that
     started it matched (the comma and space, the dash, the space before a joining word); 0 for the first."""
     source = _cut_source(sentence, written)
-    cuts = _instruction_cuts(source, sentence)[1:]
+    cuts = _instruction_cuts(source, sentence, code if source is sentence else None)[1:]
     leads = [0, *(_joint_lead(joint) for _start, joint in cuts)]
     pieces = cut_at_words(sentence, [len(source[:start].split()) for start, _joint in cuts])
     return leads if len(leads) == len(pieces) else [0] * len(pieces)

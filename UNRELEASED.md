@@ -42,6 +42,7 @@
 
 - The Windows check scenarios and the MCP x-ray two-call scenario lose their skip tag. The two-call scenario reads the page while the agent's MCP server still runs, because on Windows the test client ends the server's process tree, the page with it.
 - The rewrite-check tests build named constructs as a real check reads them.
+- The mapper records where each code span sits in an instruction's plain text, and the rewrite check reads a colon or dash inside code from that record instead of re-reading the markdown.
 - Heal's split fix reads from the map whether each instruction was cut at a comma, semicolon or dash.
 - Heal's split, direct and negation fixes place each instruction in its line from the map, and their tests place each instruction the way a real map does.
 - The rewrite check reads list items and lead-ins from the map's clause cut and reads the plain text of each instruction, never its markdown.

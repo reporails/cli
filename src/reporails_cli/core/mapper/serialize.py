@@ -111,12 +111,12 @@ def _pack_slot_coords(atom: Atom, d: JsonObject) -> None:
 
     Stores `SLOT_COORD_FIELDS`: token-offset spans + per-span
     confidences only — never the slot text (subject/predicate/object/scope
-    strings). Omitted entirely when every span offset is absent.
+    strings). Omitted entirely when every span offset and code range is absent.
     """
     slots = atom.slots
     if slots is None:
         return
-    if not any(getattr(slots, f) is not None for f in SLOT_SPAN_FIELDS):
+    if not slots.code_ranges and not any(getattr(slots, f) is not None for f in SLOT_SPAN_FIELDS):
         return
     d["slot_coords"] = {f: getattr(slots, f) for f in SLOT_COORD_FIELDS}
 
