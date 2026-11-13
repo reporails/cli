@@ -9,7 +9,6 @@ Each reads what the mapper recorded on the atoms: `modality` for hedged and abso
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterable, Sequence
 from collections.abc import Set as AbstractSet
 from functools import cache
@@ -39,6 +38,7 @@ from reporails_cli.core.heal.preservation.words import (
     atom_words,
     is_content_word,
     is_function_word,
+    is_word_of,
     named_key,
     slot_tokens,
     slot_words,
@@ -352,7 +352,6 @@ def conditional(atom: AtomView) -> bool:
 
 
 _ARTICLES = DEFINITE_DETERMINERS | INDEFINITE_ARTICLES
-_ENDING_REACH = 4  # letters an ending may add to a word and still be that word
 
 
 @cache
@@ -371,19 +370,6 @@ def _condition_words(atom: AtomView) -> frozenset[str] | None:
     return frozenset(w for w in words_of(text) if is_content_word(w) and w not in _marker_words())
 
 
-def _is_word_of(word: str, words: AbstractSet[str]) -> bool:
-    """Whether `word` is one of `words`, in a plain singular / plural form or with a short ending
-    added or dropped (`edit` / `editing`)."""
-    if word_forms(word) & words:
-        return True
-    for other in words:
-        short, long_ = sorted((word, other), key=len)
-        shared = len(os.path.commonprefix([short, long_]))
-        if shared >= max(3, len(short) - 1) and len(long_) - len(short) <= _ENDING_REACH:
-            return True
-    return False
-
-
 def dropped_conditions(pairs: list[Pair]) -> list[JsonObject]:
     """Each matched instruction whose original holds a condition that its rewrite no longer holds:
     the words of the original's condition are not all in the rewrite's condition (`If the build
@@ -397,10 +383,11 @@ def dropped_conditions(pairs: list[Pair]) -> list[JsonObject]:
         if not governed:
             continue
         rewrite = _condition_words(p.new)
+        restated = rewrite is not None and not SUBJECT_PRONOUNS.isdisjoint(words_of(condition_text(p.new) or ""))
         if (
             rewrite is None
-            or not all(_is_word_of(w, rewrite) for w in governed)
-            or (not _limiting(p.old) and not all(_is_word_of(w, governed) for w in rewrite))
+            or not (restated or all(is_word_of(w, rewrite) for w in governed))
+            or (not _limiting(p.old) and not all(w in SUBJECT_PRONOUNS or is_word_of(w, governed) for w in rewrite))
         ):
             out.append(p.entry())
     return out
@@ -431,7 +418,7 @@ def dropped_scopes(pairs: list[Pair], sentences: tuple[ByLine, ByLine]) -> list[
         opening = _opening_scope(old_by_line.get(p.old.line, ()))
         if opening:
             held = _sentence_scope(new_by_line, p)
-            if not all(_is_word_of(w, held) for w in opening):
+            if not all(is_word_of(w, held) for w in opening):
                 out.append(p.entry())
     return out
 

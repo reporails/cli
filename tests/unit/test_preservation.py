@@ -95,11 +95,8 @@ def _new_atom(
     words = text.split()
     # The scope the mapper decodes on a conditional atom: from its condition opener to the end.
     opener = next((i for i, w in enumerate(words) if i and scope_conditional and w.lower() in CONDITION_OPENERS), None)
-    slots = (
-        None
-        if opener is None
-        else AtomSlots(predicate_span=(0, 1), object_span=(1, opener), scope_span=(opener, len(words)))
-    )
+    if slots is None and opener is not None:
+        slots = AtomSlots(predicate_span=(0, 1), object_span=(1, opener), scope_span=(opener, len(words)))
     return SimpleNamespace(
         line=line,
         position_index=pi,

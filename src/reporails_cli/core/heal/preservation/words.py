@@ -4,7 +4,9 @@ slots hold them, and a prose atom's text with its named constructs removed.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable, Sequence
+from collections.abc import Set as AbstractSet
 from functools import cache
 from typing import Protocol
 
@@ -20,6 +22,7 @@ from reporails_cli.core.mapper.classify_lexicon import (
     PHRASE_PREPOSITIONS,
     words_of,
 )
+from reporails_cli.core.mapper.lexical import word_forms
 from reporails_cli.core.platform.dto.ruleset import AtomFormat, AtomSlots, Modality
 
 
@@ -159,6 +162,22 @@ def is_function_word(word: str) -> bool:
 def is_content_word(word: str) -> bool:
     """Whether `word` is longer than two letters and not a function word."""
     return len(word) >= _MIN_WORD and not is_function_word(word)
+
+
+_ENDING_REACH = 4  # letters an ending may add to a word and still be that word
+
+
+def is_word_of(word: str, words: AbstractSet[str]) -> bool:
+    """Whether `word` is one of `words`, in a plain singular / plural form or with a short ending
+    added or dropped (`edit` / `editing`)."""
+    if word_forms(word) & words:
+        return True
+    for other in words:
+        short, long_ = sorted((word, other), key=len)
+        shared = len(os.path.commonprefix([short, long_]))
+        if shared >= max(3, len(short) - 1) and len(long_) - len(short) <= _ENDING_REACH:
+            return True
+    return False
 
 
 def named_key(token: str) -> str:

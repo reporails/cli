@@ -10,6 +10,7 @@ from collections.abc import Iterable
 
 from reporails_cli.core.heal.preservation.words import AtomView
 from reporails_cli.core.lint.content_queries import instruction_atoms_for_file
+from reporails_cli.core.mapper.classify import hedge_cue_words
 from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import read_structure
 from reporails_cli.core.platform.dto.heal import Snapshot, SnapshotAtom
@@ -24,10 +25,18 @@ def is_instruction_heading(atom: AtomView) -> bool:
 
 def is_hedge_fragment(atom: AtomView) -> bool:
     """Whether `atom` is nothing but a hedge (`Consider`, `You should`) — the lead-in the mapper
-    reads as an instruction of its own when it cuts a hedged sentence in two: a hedged atom whose
-    slots hold no predicate and no object."""
+    reads as an instruction of its own when it cuts a hedged sentence in two: a hedged atom with no
+    object whose predicate, when it has one, lies inside the hedge cue or is the whole atom."""
     slots = atom.slots
-    return atom.modality == "hedged" and (slots is None or (slots.predicate_span is None and slots.object_span is None))
+    if atom.modality != "hedged":
+        return False
+    if slots is None:
+        return True
+    predicate = slots.predicate_span
+    whole = predicate is not None and atom.charge_value >= 0 and predicate[1] >= len(atom.plain_text.split())
+    return slots.object_span is None and (
+        predicate is None or whole or predicate[1] <= hedge_cue_words(atom.plain_text)
+    )
 
 
 def take_snapshot(

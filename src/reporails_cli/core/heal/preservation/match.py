@@ -12,6 +12,7 @@ from reporails_cli.core.heal.preservation.words import (
     atom_words,
     core_words,
     is_content_word,
+    is_word_of,
     named_key,
     prose_text,
 )
@@ -104,7 +105,8 @@ def _content_coverage(sa: AtomView, na: AtomView) -> float:
         wa = wa - set(words_of(condition)) or wa
     if not wa:
         return 0.0
-    return len(wa & (atom_words(na) | set(words_of(prose_text(na))))) / len(wa)
+    have = atom_words(na) | set(words_of(prose_text(na)))
+    return len({w for w in wa if w in have or is_word_of(w, have)}) / len(wa)
 
 
 def pair_score(sa: SnapshotAtom, na: Atom) -> float | None:

@@ -219,6 +219,12 @@ class ConditionRead(Protocol):
         """The word spans of `plain_text` that illustrate the instruction."""
 
 
+def _covers_predicate(slots: AtomSlots) -> bool:
+    """Whether the decoded scope runs over the predicate: it then holds the clause as well as its frame."""
+    scope, predicate = slots.scope_span, slots.predicate_span
+    return scope is not None and predicate is not None and scope[0] < predicate[1] and predicate[0] < scope[1]
+
+
 def condition_text(atom: ConditionRead) -> str | None:
     """The condition the mapper read on a conditional atom: its decoded scope when that scope
     opens a conditional frame, else the frame that closes the sentence's opening; None when the
@@ -227,8 +233,9 @@ def condition_text(atom: ConditionRead) -> str | None:
     if not atom.scope_conditional:
         return None
     frame = conditional_clause(atom.plain_text)
-    if atom.slots is not None and atom.slots.scope_span is not None:
-        scope = words_between(atom.plain_text, *atom.slots.scope_span)
+    slots = atom.slots
+    if slots is not None and slots.scope_span is not None and not _covers_predicate(slots):
+        scope = words_between(atom.plain_text, *slots.scope_span)
         if is_conditional_frame(scope):
             frame = scope
     restriction = restrictor_clause(atom.plain_text, atom.named_tokens, atom.aside_spans)

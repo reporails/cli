@@ -21,8 +21,8 @@ _OPEN_CUES: tuple[tuple[str, ...], ...] = (
     ("for", "example"),
     ("for", "instance"),
 )
-# Cues that open one only after a comma (`, like the X below`); bare they are an ordinary verb or preposition.
-_SET_OFF_CUES: tuple[tuple[str, ...], ...] = (("like",), ("including",))
+# Cues that open one only after a comma (`, like the X below`, `, because X`); bare they are ordinary words.
+_SET_OFF_CUES: tuple[tuple[str, ...], ...] = (("like",), ("including",), ("because",))
 _PARENTHESIS_CUES: tuple[tuple[str, ...], ...] = (("see",), ("cf.",), ("cf",))
 _ARTICLES = INDEFINITE_ARTICLES | DEFINITE_DETERMINERS
 _EDGE_PUNCT = ",;:!?()[]\"'"
