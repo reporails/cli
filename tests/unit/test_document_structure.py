@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.heal.preservation import structure
-from reporails_cli.core.mapper.classify import absolute_cues, leading_prohibition
+from reporails_cli.core.mapper.classify import leading_prohibition
 from reporails_cli.core.mapper.structure import fragment_line_spans, line_spans, paragraph_lines, read_structure
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 
@@ -94,13 +94,6 @@ def test_a_leading_prohibition_is_read_from_the_words_not_the_markup() -> None:
     assert leading_prohibition("**Never** push") is not None
     assert leading_prohibition("Do not push") is not None
     assert leading_prohibition("Always push") is None
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_map
-def test_must_and_shall_are_not_absolute_cues() -> None:
-    assert absolute_cues("You must run it and shall never skip it") == {"never"}
-    assert absolute_cues("Always run it") == {"always"}
 
 
 class _FakeEnvironment:

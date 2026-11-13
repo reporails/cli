@@ -263,6 +263,7 @@ def test_a_dilution_finding_does_not_make_its_line_deletable(monkeypatch, tmp_pa
         negative_heading=False,
         plain_text="The api runs on port 8001 and reloads from the source tree on every edit.",
         modality="none",
+        slots=None,
         imported_from="",
     )
     control = SimpleNamespace(
@@ -282,6 +283,7 @@ def test_a_dilution_finding_does_not_make_its_line_deletable(monkeypatch, tmp_pa
         negative_heading=False,
         plain_text="The build uses a local cache that survives restarts.",
         modality="none",
+        slots=None,
         imported_from="",
     )
     fake_map = SimpleNamespace(atoms=(trimmable, control), files=())
@@ -578,6 +580,7 @@ def _atom(file: Path, line: int, text: str, pi: int = 0, fmt: str = "prose") -> 
         negative_heading=False,
         plain_text=text,
         modality="none",
+        slots=None,
         lead_in="",
         list_depth=0,
         imported_from="",

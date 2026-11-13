@@ -23,9 +23,10 @@ from reporails_cli.core.heal.preservation.words import (
     prose_text,
     slot_prose_tokens,
     slot_tokens,
+    slot_words,
     token_words,
 )
-from reporails_cli.core.mapper.classify import condition_text
+from reporails_cli.core.mapper.classify import ABSOLUTE_CUES, condition_text
 from reporails_cli.core.mapper.classify_lexicon import (
     CONDITION_CONJUNCTIONS,
     CONDITIONAL_MARKERS,
@@ -148,14 +149,21 @@ def _made_direct_from_prose(
 
 
 def hedge_made_absolute(pairs: list[Pair], old_by_line: ByLine) -> list[JsonObject]:
-    """Each matched suggestion whose rewrite is an absolute where no atom of the author's line is."""
+    """Each matched suggestion whose rewrite is an absolute where no atom of the author's line is, or
+    holds an absolute cue."""
     return [
         p.entry()
         for p in pairs
         if p.old.modality == "hedged"
         and p.new.modality == "absolute"
-        and not any(a.modality == "absolute" for a in old_by_line.get(p.old.line, ()))
+        and not any(_absolute(a) for a in old_by_line.get(p.old.line, ()))
     ]
+
+
+def _absolute(atom: AtomView) -> bool:
+    """Whether `atom` is absolute, or carries an absolute cue the mapper's hedge reading outranked
+    (`You should always run X` reads hedged)."""
+    return atom.modality == "absolute" or not ABSOLUTE_CUES.isdisjoint(words_of(atom.plain_text))
 
 
 def _same_sentence(p: Pair) -> bool:
@@ -339,7 +347,7 @@ def _limiting(atom: AtomView) -> bool:
 
 def added_conditions(snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom]) -> list[JsonObject]:
     """Each matched instruction that was not conditional, whose rewrite is conditional and carries
-    a content word the author's line never had in its condition (every snapshot atom on that line
+    a content word the author's line never had in its condition or its object (every snapshot atom on that line
     counts as the author's line; singular and plural forms are the same word, and words that only
     mark a condition are not content). A rewrite that restates the author's own condition in other
     words, or spreads it over several lines, is not listed."""
@@ -349,6 +357,8 @@ def added_conditions(snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, 
         if sa.charge_value == 0 or match is None or sa.scope_conditional:
             continue
         words = _condition_words(match)
+        if words is not None:
+            words = words | {w for w in slot_words(match, "object") if is_content_word(w)}
         known = {w for other in snap_atoms if other.line == sa.line for w in words_of(other.plain_text)}
         if words and any(not word_forms(w) & known for w in words):
             out.append({"line": sa.line, "text": sa.text, "new_line": match.line, "new_text": match.text})

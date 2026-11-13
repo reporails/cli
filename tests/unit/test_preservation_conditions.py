@@ -16,13 +16,16 @@ from reporails_cli.core.platform.dto.ruleset import AtomSlots
 from tests.unit.test_preservation import _atom
 
 
-def _listed(original_line: list[SnapshotAtom], rewrite_text: str, *, index: int = 0) -> bool:
-    """Whether `original_line[index]` is listed when it matches a conditional rewrite."""
+def _listed(
+    original_line: list[SnapshotAtom], rewrite_text: str, *, index: int = 0, slots: AtomSlots | None = None
+) -> bool:
+    """Whether `original_line[index]` is listed when it matches a conditional rewrite; `slots` are
+    the spans the mapper records on the rewrite (the real atom always carries them)."""
     sa = original_line[index]
     words = rewrite_text.split()
     # The scope the mapper decodes for a condition that follows its clause: from the opener to the end.
     opener = next((i for i, w in enumerate(words) if i and w.lower().strip(".,") in CONDITION_OPENERS), None)
-    slots = (
+    slots = slots or (
         None
         if opener is None
         else AtomSlots(predicate_span=(0, 1), object_span=(1, opener), scope_span=(opener, len(words)))
@@ -49,7 +52,8 @@ def test_a_rewrite_with_no_new_content_word_is_not_listed() -> None:
 @pytest.mark.subsys_server
 def test_a_rewrite_with_one_new_content_word_is_listed() -> None:
     line = [_atom(3, "Run pytest before every commit.", 1)]
-    assert _listed(line, "Before every commit, run pytest nightly.")
+    slots = AtomSlots(scope_span=(0, 3), predicate_span=(3, 4), object_span=(4, 6))  # mapper dump
+    assert _listed(line, "Before every commit, run pytest nightly.", slots=slots)
 
 
 @pytest.mark.unit
@@ -85,7 +89,10 @@ def test_the_other_parts_of_the_authors_line_count_as_the_authors_words() -> Non
 @pytest.mark.subsys_server
 def test_a_word_only_another_line_has_is_new() -> None:
     line = [_atom(3, "Use real objects in tests.", 1), _atom(5, "Touch the database sparingly.", 1)]
-    assert _listed(line, "Use real objects in tests whenever a test touches the database.")
+    slots = AtomSlots(  # mapper dump
+        subject_span=(4, 5), predicate_span=(0, 1), object_span=(1, 5), scope_span=(5, 11)
+    )
+    assert _listed(line, "Use real objects in tests whenever a test touches the database.", slots=slots)
 
 
 _ROWS = [
@@ -127,9 +134,9 @@ def test_added_conditions_on_the_real_mapper(tmp_path, name: str, original: str,
     assert bool(result["added_conditions"]) is listed
 
 
-def _hedge_pair(old_text: str, new_text: str) -> Pair:
+def _hedge_pair(old_text: str, new_text: str, new_modality: str = "absolute") -> Pair:
     old = _atom(3, old_text, 1, modality="hedged")
-    new = SimpleNamespace(line=3, text=new_text, plain_text=new_text, modality="absolute", slots=None)
+    new = SimpleNamespace(line=3, text=new_text, plain_text=new_text, modality=new_modality, slots=None)
     return Pair(old, new, old_text, new_text)
 
 
@@ -145,7 +152,8 @@ def test_a_hedge_made_never_or_always_is_listed(word: str) -> None:
 @pytest.mark.subsys_server
 @pytest.mark.parametrize("word", ["must", "shall"])
 def test_a_hedge_made_must_or_shall_is_not_an_absolute(word: str) -> None:
-    pair = _hedge_pair("You should run the linter.", f"You {word} run the linter.")
+    # the mapper reads `You must run the linter.` as `direct` (and `You shall …` as no instruction)
+    pair = _hedge_pair("You should run the linter.", f"You {word} run the linter.", "direct")
     assert hedge_made_absolute([pair], {3: [pair.old]}) == []
 
 

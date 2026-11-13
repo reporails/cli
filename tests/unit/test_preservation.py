@@ -60,6 +60,7 @@ def _atom(
     scope_conditional: bool = False,
     heading: bool = False,
     modality: str | None = None,
+    slots: AtomSlots | None = None,
 ) -> SnapshotAtom:
     return SnapshotAtom(
         line=line,
@@ -73,6 +74,7 @@ def _atom(
         negative_heading=heading and is_negative_heading(text),
         plain_text=text.replace("`", ""),
         modality=modality or ("direct" if charge_value else "none"),
+        slots=slots,
     )
 
 
@@ -85,6 +87,7 @@ def _new_atom(
     file_path: str = _FILE,
     heading_context: str = "",
     scope_conditional: bool = False,
+    slots: AtomSlots | None = None,
 ) -> SimpleNamespace:
     """A stand-in for a mapper `Atom` — `compare()` / `snapshot_file()` only read these fields."""
     words = text.split()
@@ -400,13 +403,21 @@ def test_a_clean_ideal_rewrite_is_ok() -> None:
     snap = _snapshot(
         _IDEAL_BEFORE,
         (
-            _atom(5, "Maybe run the qa suite and check coverage before you push.", 1, modality="hedged"),
+            # the slots the mapper reads on a hedged sentence that carries its instruction: a predicate and an object
+            _atom(
+                5,
+                "Maybe run the qa suite and check coverage before you push.",
+                1,
+                modality="hedged",
+                slots=AtomSlots(predicate_span=(1, 2), object_span=(2, 8), scope_span=(8, 11)),
+            ),
             _atom(11, "Keep commits small.", 1),
         ),
     )
     new_atoms = (
         _new_atom(5, 0, "Run the `qa suite` before you push.", 1),
-        _new_atom(6, 1, "Check coverage too.", 1),
+        # the mapper's slots for `Check coverage too.`: `too` sits in no slot
+        _new_atom(6, 1, "Check coverage too.", 1, slots=AtomSlots(predicate_span=(0, 1), object_span=(1, 2))),
         _new_atom(12, 2, "Keep commits small.", 1),
     )
     result = compare(snap, _new_map(new_atoms), _IDEAL_AFTER, score_after=7.9)
@@ -1365,6 +1376,10 @@ def test_compare_against_the_real_mapper(tmp_path) -> None:
                 a.embedding_int8,
                 a.heading_context,
                 a.scope_conditional,
+                a.negative_heading,
+                a.plain_text,
+                a.modality,
+                a.slots,
             )
             for a in before_map.atoms
             if a.kind != "heading"

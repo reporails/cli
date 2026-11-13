@@ -159,6 +159,7 @@ def _make_heading_atom(
     atom = Atom(
         line=tok_line(tok, line_offset),
         text=heading_text,
+        plain_text=plain_heading,
         kind="heading",
         charge=charge,
         charge_value=cv,
