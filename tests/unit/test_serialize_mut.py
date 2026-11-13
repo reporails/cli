@@ -268,8 +268,8 @@ def test_charged_value_with_neutral_charge_flags(  # L332
 @pytest.mark.subsys_map
 def test_neutral_with_nonnone_modality_flags(  # L333
 ) -> None:
-    atom = _atom(charge_value=0, charge="NEUTRAL", modality="hedged")
-    assert "NEUTRAL with modality=hedged" in _consistency_msgs(atom)
+    atom = _atom(charge_value=0, charge="NEUTRAL", modality="imperative")
+    assert "NEUTRAL with modality=imperative" in _consistency_msgs(atom)
 
 
 @pytest.mark.unit

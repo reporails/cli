@@ -77,7 +77,9 @@ def past_the_slots(atom: AtomView) -> list[str]:
     slots = atom.slots
     spans = [] if slots is None else [slots.object_span, slots.scope_span, slots.predicate_span]
     ends = [span[1] for span in spans if span is not None]
-    return atom.plain_text.split()[max(ends, default=0) :]
+    start = max(ends, default=0)
+    words = atom.plain_text.split()
+    return [w for i, w in enumerate(words) if i >= start and not any(a <= i < b for a, b in atom.aside_spans)]
 
 
 def moved_before_head(p: Pair) -> bool:

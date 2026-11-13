@@ -460,6 +460,8 @@ SCOPE_PREPOSITIONS: frozenset[str] = frozenset({"on", "in", "at", "during", "wit
 # Prepositions whose phrase names where, when or to what an instruction applies (`in CI`, `on main`,
 # `for src/`); `with` / `by` / `via` name a means and are not among them.
 SCOPE_PHRASE_PREPOSITIONS: frozenset[str] = SCOPE_PREPOSITIONS | frozenset({"for"})
+# Prepositions whose phrase names the means of an instruction (`with pytest`, `by hand`, `via the API`).
+MEANS_PREPOSITIONS: frozenset[str] = frozenset({"with", "by", "via"})
 # Words that open a noun phrase (`for the api module`).
 # Words that quantify over a whole class (`every gate`, `any file`, `no exception`): naming one member
 # right after one narrows what the line covers.

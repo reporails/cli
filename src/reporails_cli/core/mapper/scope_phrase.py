@@ -8,7 +8,7 @@ backticked construct are not scope.
 
 from __future__ import annotations
 
-from reporails_cli.core.mapper.classify_lexicon import SCOPE_PHRASE_PREPOSITIONS, words_of
+from reporails_cli.core.mapper.classify_lexicon import MEANS_PREPOSITIONS, SCOPE_PHRASE_PREPOSITIONS, words_of
 from reporails_cli.core.mapper.lexical import DASH_MARKS
 from reporails_cli.core.mapper.word_spans import word_offsets
 from reporails_cli.core.platform.dto.mapping import AtomTuple, Span
@@ -32,6 +32,16 @@ def _in_code(text: str) -> list[bool]:
 def _is_preposition(word: str) -> bool:
     letters = words_of(word)
     return len(letters) == 1 and letters[0] in SCOPE_PHRASE_PREPOSITIONS
+
+
+def _is_means(word: str) -> bool:
+    letters = words_of(word)
+    return len(letters) == 1 and letters[0] in MEANS_PREPOSITIONS
+
+
+def _means_start(words: list[str], flags: list[bool], start: int, end: int) -> int:
+    """Index of the first means preposition (`by hand`) in ``words[start:end]``, else ``end``."""
+    return next((i for i in range(start, end) if _is_means(words[i]) and not flags[i]), end)
 
 
 def _span(text: str, offsets: list[tuple[int, int]], lo: int, hi: int, conf: float) -> Span:
@@ -84,7 +94,8 @@ def _trailing(t: AtomTuple, words: list[str], flags: list[bool], offsets: list[t
         if subject.offset is not None and subject.offset[0] >= start:
             subject = Span("", 0.0, None)
         object_ = _span(t.text, offsets, obj[0], start, t.object.conf)
-        return _with(t, object_, _span(t.text, offsets, start, obj[1], t.object.conf), subject)
+        stop = _means_start(words, flags, start, obj[1])
+        return _with(t, object_, _span(t.text, offsets, start, stop, t.object.conf), subject)
     left_out = _after_object_end(words, flags, obj)
     if left_out is None:
         return t
