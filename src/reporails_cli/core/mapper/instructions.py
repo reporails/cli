@@ -244,6 +244,15 @@ def comma_items(text: str) -> list[str]:
     return [*items, text[start:]]
 
 
+def list_items(text: str) -> list[str]:
+    """The items of the list `text` runs on as: `comma_items` of what comes before the first semicolon the
+    clause cut honours, which ends the list (`a, b; c, d` -> `['a', ' b']`)."""
+    for begin, _, joint, _ in _clauses(text)[1:]:
+        if joint.strip() == ";":
+            return comma_items(text[: begin - len(joint)])
+    return comma_items(text)
+
+
 def sentence_openers(text: str) -> list[tuple[int, int]]:
     """The `(start, end)` columns of each mark in `text` that opens a list or a closing clause: a colon,
     or a dash set off by spaces, outside quotes, parentheses and code."""

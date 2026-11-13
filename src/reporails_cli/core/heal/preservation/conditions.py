@@ -412,7 +412,7 @@ def dropped_conditions(pairs: list[Pair]) -> list[JsonObject]:
 
 
 def _opening_scope(line_atoms: Sequence[AtomView]) -> frozenset[str]:
-    """The words of the scope phrase the line's first instruction opens with (`For all,`); empty when it has none."""
+    """The words of the scope phrase the first instruction of `line_atoms` opens with (`For all,`); empty if none."""
     first = next((a for a in line_atoms if a.charge_value != 0), None)
     if first is None or first.slots is None or first.slots.scope_span is None or first.slots.scope_span[0] != 0:
         return frozenset()
@@ -421,24 +421,24 @@ def _opening_scope(line_atoms: Sequence[AtomView]) -> frozenset[str]:
     return frozenset(w for w in slot_words(first, "scope") if w not in _ARTICLES)
 
 
-def _sentence_scope(new_by_line: ByLine, p: Pair) -> frozenset[str]:
-    """The words of the scope phrases of the rewrite's atoms that sit in the sentence holding `p.new`."""
-    atoms = [a for a in new_by_line.get(p.new.line, ()) if a is p.new or sentence_of(new_by_line, a) == p.new_sentence]
-    return frozenset(w for a in atoms for w in slot_words(a, "scope"))
+def _in_sentence(atoms_by_line: ByLine, atom: AtomView, sentence: str) -> list[AtomView]:
+    """The atoms on `atom`'s line that sit in `sentence`."""
+    return [a for a in atoms_by_line.get(atom.line, ()) if a is atom or sentence_of(atoms_by_line, a) == sentence]
 
 
 def dropped_scopes(pairs: list[Pair], sentences: tuple[ByLine, ByLine]) -> list[JsonObject]:
-    """Each matched instruction on a line that opens with a scope phrase (`For all, do A, do B`) whose
-    rewrite's sentence does not hold that scope: a split that leaves a sentence outside the scope the
-    original opened with."""
+    """Each matched instruction whose original sentence opens with a scope phrase (`For all, do A, do B`)
+    and whose rewrite's sentence does not hold that scope: a split that leaves a sentence outside the
+    scope the original opened with. A sentence that opens with no scope phrase has none to lose."""
     old_by_line, new_by_line = sentences
     out = []
     for p in pairs:
-        opening = _opening_scope(old_by_line.get(p.old.line, ()))
-        if opening:
-            held = _sentence_scope(new_by_line, p)
-            if not all(is_word_of(w, held) for w in opening):
-                out.append(p.entry())
+        opening = _opening_scope(_in_sentence(old_by_line, p.old, p.old_sentence))
+        if not opening:
+            continue
+        held = frozenset(w for a in _in_sentence(new_by_line, p.new, p.new_sentence) for w in slot_words(a, "scope"))
+        if not all(is_word_of(w, held) for w in opening):
+            out.append(p.entry())
     return out
 
 

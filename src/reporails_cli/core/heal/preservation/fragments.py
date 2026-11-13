@@ -14,7 +14,7 @@ from collections.abc import Iterable, Sequence
 
 from reporails_cli.core.heal.preservation.words import AtomView, code_ranges, is_content_word, word_forms
 from reporails_cli.core.mapper.classify_lexicon import CLAUSE_JOINERS, STEP_JOINER, words_of
-from reporails_cli.core.mapper.instructions import comma_items, sentence_openers
+from reporails_cli.core.mapper.instructions import comma_items, list_items, sentence_openers
 from reporails_cli.core.mapper.lexical import DASH_MARKS
 from reporails_cli.core.mapper.markers import without_list_marker
 from reporails_cli.core.mapper.md_parser import replace_code_spans
@@ -80,7 +80,7 @@ def _items_after(old_text: str, lead: str) -> list[str]:
     start = " ".join(old_text.lower().split()).find(" ".join(lead.lower().split()))
     if start < 0:
         return []
-    return comma_items(" ".join(old_text.split())[start + len(" ".join(lead.split())) :])
+    return list_items(" ".join(old_text.split())[start + len(" ".join(lead.split())) :])
 
 
 def _carries(new_sentences: list[str], lead: str, item: str) -> bool:
@@ -131,7 +131,7 @@ def _rephrased_cut(old_text: str, new_text: str, new_sentences: list[str]) -> bo
     that holds the lead-in (the lead-in rephrased, the first item hung off it, the rest split off)."""
     mine = _words_of(new_text)
     for lead, tail in _openers(old_text):
-        first, *later = comma_items(tail)
+        first, *later = list_items(tail)
         if later and _next_step(later[0]):
             continue
         lead_words = content_words(lead)
@@ -207,7 +207,7 @@ def _lead_stands_alone(old_text: str, new: str, new_sentences: list[str]) -> boo
     for start, end in sentence_openers(old_text):
         if _normal(old_text[:start]) != _normal(new):
             continue
-        words = [content_words(i) for i in comma_items(old_text[end:])]
+        words = [content_words(i) for i in list_items(old_text[end:])]
         if any(words) and all(_shares(w, rest) for w in words if w):
             return True
     return False
