@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from reporails_cli.core.heal.preservation.compare import rewrite_accepted
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.interfaces.mcp import snapshots
@@ -11,7 +12,8 @@ def with_preservation(
     payload: JsonObject, target: Path, ruleset_map: RulesetMap | None, score: float | None, scan_root: Path | None
 ) -> JsonObject:
     """Add the `preservation` block, and the `conformance` block (the file against the plan its
-    brief listed), to `payload` when `target` is a file `remedy_brief` snapshotted.
+    brief listed), and `accepted` (whether the file is kept), to `payload` when `target` is a file
+    `remedy_brief` snapshotted.
     Carried on both the bounded and full replies — the caller bounds afterward.
 
     Runs entirely off the event loop (the caller wraps this whole function in
@@ -39,4 +41,5 @@ def with_preservation(
     conformance = snapshots.check_conformance(target, ruleset_map, new_text, scan_root)
     if conformance is not None:
         out["conformance"] = conformance
+    out["accepted"] = rewrite_accepted(block, conformance)
     return out

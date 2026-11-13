@@ -69,6 +69,7 @@ def render_text_view(payload: JsonObject) -> str:
         _hook_lines(payload),
         _preservation_lines(payload),
         _conformance_lines(payload),
+        _accepted_lines(payload),
         _feedback_lines(payload, rules),
         _not_evaluated_lines(payload),
         _truncated_lines(payload),
@@ -393,6 +394,11 @@ def _conformance_lines(payload: JsonObject) -> list[str]:
                 f"conformance.deviation: {where} — {what} — expected {d.get('expected')}, found {d.get('found')}"
             )
     return lines
+
+
+def _accepted_lines(payload: JsonObject) -> list[str]:
+    accepted = payload.get("accepted")
+    return [f"accepted: {_flag(accepted)}"] if isinstance(accepted, bool) else []
 
 
 def _feedback_lines(payload: JsonObject, rules: JsonObject) -> list[str]:

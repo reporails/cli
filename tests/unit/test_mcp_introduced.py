@@ -59,3 +59,17 @@ def test_introduced_is_zero_when_the_rewrite_adds_nothing(monkeypatch, tmp_path:
     file = _brief(monkeypatch, tmp_path, "CORE:C:0042", "CORE:C:0049")
 
     assert _after(file, tmp_path, "CORE:C:0042")["introduced"] == 0
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_the_file_reply_carries_accepted_and_a_lower_score_refuses_it(monkeypatch, tmp_path: Path) -> None:
+    file = _brief(monkeypatch, tmp_path)
+    fake_map = SimpleNamespace(atoms=(), files=())
+
+    kept = with_preservation(_payload(), file, fake_map, 5.0, tmp_path)
+    lowered = with_preservation(_payload(), file, fake_map, 1.0, tmp_path)
+
+    assert kept["preservation"]["ok"] is True
+    assert kept["accepted"] is True
+    assert lowered["accepted"] is False
