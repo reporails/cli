@@ -170,12 +170,15 @@ def _named_char_mask(text: str, named_tokens: Sequence[str]) -> list[bool]:
     return mask
 
 
-def restrictor_clause(plain_text: str, named_tokens: Sequence[str]) -> str | None:
+def restrictor_clause(
+    plain_text: str, named_tokens: Sequence[str], aside_spans: Sequence[tuple[int, int]]
+) -> str | None:
     """The phrase a restricting word opens (`only on main`, `except integration tests`), from the
     word through the word before the comma that closes it; None when the text has none.
 
     A word inside a named token (`try`/`except` in backticks) restricts nothing, nor does one
-    used as an adjective or a correlative (`the only option`, `not only X`).
+    used as an adjective or a correlative (`the only option`, `not only X`), nor one inside an aside
+    (word spans `aside_spans`), which illustrates the instruction and restricts nothing.
     """
     mask = _named_char_mask(plain_text, named_tokens)
     tokens = [(m.start(), m.group()) for m in re.finditer(r"\S+", plain_text)]
@@ -184,7 +187,7 @@ def restrictor_clause(plain_text: str, named_tokens: Sequence[str]) -> str | Non
         word = (WORD_RE.findall(token) or [""])[0].lower()
         blocked = previous in RESTRICTOR_BLOCKERS
         previous = word
-        if word not in SCOPE_RESTRICTORS or blocked or mask[start]:
+        if word not in SCOPE_RESTRICTORS or blocked or mask[start] or any(a <= i < b for a, b in aside_spans):
             continue
         head = " ".join(t for _s, t in tokens[i : i + _COND_CLAUSE_MAX_WORDS])
         close = _RESTRICTOR_CLOSE_RE.search(head)
@@ -211,6 +214,10 @@ class ConditionRead(Protocol):
     def slots(self) -> AtomSlots | None:
         """The slots the mapper read, as word spans of `plain_text`."""
 
+    @property
+    def aside_spans(self) -> tuple[tuple[int, int], ...]:
+        """The word spans of `plain_text` that illustrate the instruction."""
+
 
 def condition_text(atom: ConditionRead) -> str | None:
     """The condition the mapper read on a conditional atom: its decoded scope when that scope
@@ -224,7 +231,7 @@ def condition_text(atom: ConditionRead) -> str | None:
         scope = words_between(atom.plain_text, *atom.slots.scope_span)
         if is_conditional_frame(scope):
             frame = scope
-    restriction = restrictor_clause(atom.plain_text, atom.named_tokens)
+    restriction = restrictor_clause(atom.plain_text, atom.named_tokens, atom.aside_spans)
     return " ".join(part for part in (frame, restriction) if part) or None
 
 
@@ -402,6 +409,13 @@ def hedges_with_should(text: str) -> bool:
         return False
     _charge, _cv, _mod, trace, _scope = classify_charge(text, plain_text=text)
     return trace.startswith("p2_hedged_should")
+
+
+def predicate_opens_hedge(predicate: str) -> bool:
+    """True when a predicate (`might want to run`, `consider running`) opens with a hedge: a hedged modal
+    (`should`, `could`, `might`) or one of `HEDGE_LEADS`."""
+    lowers = words_of(predicate)
+    return bool(lowers) and (lowers[0] in MODAL_HEDGED or lowers[0] in HEDGE_LEADS)
 
 
 def hedges_with_lead(text: str) -> bool:

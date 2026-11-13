@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
+from reporails_cli.core.mapper.asides import aside_spans
 from reporails_cli.core.mapper.atom_build import _atom_from_sentence, place_units
 from reporails_cli.core.mapper.bio_graphs import multislot_available
 from reporails_cli.core.mapper.charge_floors import (
@@ -142,7 +143,9 @@ def _tuple_scope_conditional(t: AtomTuple) -> bool:
 def _restricted(atom: Atom) -> bool:
     """Whether a restricting word (`only`, `except`) opens a phrase in a charged atom's text, which
     is then a condition on the instruction."""
-    return atom.charge_value != 0 and restrictor_clause(atom.plain_text, atom.named_tokens) is not None
+    return (
+        atom.charge_value != 0 and restrictor_clause(atom.plain_text, atom.named_tokens, atom.aside_spans) is not None
+    )
 
 
 def _atom_from_tuple(t: AtomTuple, parent: Atom, *, already_plain: bool, formatted: str | None = None) -> Atom:
@@ -164,6 +167,7 @@ def _atom_from_tuple(t: AtomTuple, parent: Atom, *, already_plain: bool, formatt
     atom.file_path = parent.file_path
     atom.stage = "multislot"
     atom.slots = _slots_from_tuple(t)
+    atom.aside_spans = aside_spans(atom.plain_text, atom.named_tokens)
     atom.scope_conditional = atom.scope_conditional or _restricted(atom)
     return atom
 
@@ -194,6 +198,7 @@ def _apply_heading_tuple(atom: Atom, t: AtomTuple) -> Atom:
     atom.modality = t.modality if polarity != 0 else "none"
     atom.rule, atom.stage = "multislot", "multislot"
     atom.slots = _slots_from_tuple(t)
+    atom.aside_spans = aside_spans(atom.plain_text, atom.named_tokens)
     atom.scope_conditional = _tuple_scope_conditional(t) or _restricted(atom)
     return atom
 

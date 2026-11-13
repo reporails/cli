@@ -7,7 +7,14 @@ from __future__ import annotations
 
 import math
 
-from reporails_cli.core.heal.preservation.words import AtomView, atom_words, core_words, named_key, prose_text
+from reporails_cli.core.heal.preservation.words import (
+    AtomView,
+    atom_words,
+    core_words,
+    is_content_word,
+    named_key,
+    prose_text,
+)
 from reporails_cli.core.mapper.classify import (
     AFFIRMATIVE_ABSOLUTES,
     condition_text,
@@ -91,7 +98,7 @@ def _content_coverage(sa: AtomView, na: AtomView) -> float:
     the two word sets, so a short survivor sharing one word with a long lost instruction cannot
     pass the threshold. A rewrite that only drops or adds a condition still pairs, and the
     condition checks report it."""
-    wa = core_words(sa)
+    wa = {w for w in core_words(sa) if is_content_word(w)}
     condition = condition_text(sa)
     if condition is not None:
         wa = wa - set(words_of(condition)) or wa

@@ -19,6 +19,7 @@ from reporails_cli.core.heal.preservation import match as preservation_match
 from reporails_cli.core.heal.preservation import named as preservation_named
 from reporails_cli.core.heal.preservation import structure as preservation_structure
 from reporails_cli.core.heal.preservation.snapshot import make_snapshot
+from reporails_cli.core.mapper.asides import aside_spans
 from reporails_cli.core.mapper.classify_lexicon import CONDITION_OPENERS
 from reporails_cli.core.mapper.negative_headings import is_negative_heading
 from reporails_cli.core.mapper.structure import read_structure
@@ -75,6 +76,7 @@ def _atom(
         plain_text=text.replace("`", ""),
         modality=modality or ("direct" if charge_value else "none"),
         slots=slots,
+        aside_spans=aside_spans(text.replace("`", ""), named),
     )
 
 
@@ -115,6 +117,7 @@ def _new_atom(
         plain_text=text.replace("`", ""),
         modality="direct" if charge_value else "none",
         slots=slots,
+        aside_spans=aside_spans(text.replace("`", ""), named),
         imported_from="",
     )
 
@@ -2196,8 +2199,10 @@ def test_a_near_duplicate_paired_with_its_twin_in_another_list_is_not_moved_whil
 def test_dropping_an_example_from_a_prohibition_is_not_a_scope_change() -> None:
     """A construct the original gave only as an example is not something the rewrite stopped
     forbidding: the same prohibition without its example still forbids the same thing."""
-    prohibition = _atom(5, "Never commit secrets (e.g. `.env`).", -1, named=(".env",))
-    rewritten = _new_atom(5, 0, "Never commit secrets.", -1, named=())
+    # The slots the mapper reads for this sentence: the object is `secrets`, the example sits outside it.
+    slots = AtomSlots(predicate_span=(0, 2), object_span=(2, 3))
+    prohibition = _atom(5, "Never commit secrets (e.g. `.env`).", -1, named=(".env",), slots=slots)
+    rewritten = _new_atom(5, 0, "Never commit secrets.", -1, named=(), slots=slots)
     assert preservation_named.prohibition_scope_changes([prohibition], {id(prohibition): rewritten}) == []
 
 

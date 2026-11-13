@@ -29,6 +29,7 @@
 - Heal's report lists a sentence it made specific once, with every sentence it was split into, so a split no longer reads as a dropped instruction.
 - Heal keeps a rewrite that names the referent its section heading gives (`Only use on trusted machines` under `## Remote debugging` → `Only use remote debugging on trusted machines`), and puts back one that turns a forbidden noun into a modifier of a new noun (`Do not edit config` → `Do not edit config files or schemas`), even when the sentence holds a comma elsewhere, or names one of the kinds its heading lists.
 - Heal keeps a rewrite that names an object another line of its section mentions only before an `and` that starts a new clause (`Build docs and push`): that `and` does not make the object one kind among several.
+- A `(see …)` or `(e.g. …)` aside, an example led by `such as`, `e.g.` or `, like`, and a `(`a`, `b`, `c`)` list of constructs no longer count as a restriction on an instruction; a `You might want to …` line reads as hedged prose, and a packed `Maybe run X, and never skip Y` sentence is read as two instructions.
 
 ### Removed
 

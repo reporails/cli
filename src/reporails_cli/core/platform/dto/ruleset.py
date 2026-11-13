@@ -42,6 +42,8 @@ Charge = Literal["CONSTRAINT", "DIRECTIVE", "IMPERATIVE", "NEUTRAL", "AMBIGUOUS"
 NO_CHARGE: frozenset[Charge] = frozenset({"NEUTRAL", "AMBIGUOUS"})
 # How firmly an atom states its instruction.
 Modality = Literal["imperative", "direct", "absolute", "hedged", "none"]
+# The modalities an uncharged atom may carry: none, or hedged prose (`You might want to run the linter`).
+UNCHARGED_MODALITIES: frozenset[Modality] = frozenset({"none", "hedged"})
 # Whether an atom names a concrete construct.
 Specificity = Literal["named", "abstract"]
 # How a word of an inline segment is set.
@@ -191,6 +193,9 @@ class Atom(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__in
     # The source columns [start, end) of the hedge cue the atom opens with (`try to `, `perhaps, `), with
     # the separator up to the next word; None when it opens with none, or when not placed.
     hedge_cue: tuple[int, int] | None = None
+    # The word spans [start, end) of `plain_text` that illustrate or list members of what the instruction
+    # is about: a parenthesised run, or an example a cue opens (`such as`, `e.g.`, `, like`). Empty when none.
+    aside_spans: tuple[tuple[int, int], ...] = ()
 
 
 class FileRecord(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any

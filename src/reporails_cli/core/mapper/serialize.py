@@ -38,6 +38,7 @@ from reporails_cli.core.platform.dto.ruleset import (
     NO_CHARGE,
     SLOT_COORD_FIELDS,
     SLOT_SPAN_FIELDS,
+    UNCHARGED_MODALITIES,
     Atom,
     AtomSlots,
     Charge,
@@ -102,6 +103,8 @@ def _pack_granularity_and_span_fields(atom: Atom, d: JsonObject) -> None:
         d["joint_mark"] = True
     if atom.hedge_cue is not None:
         d["hedge_cue"] = [*atom.hedge_cue]
+    if atom.aside_spans:
+        d["aside_spans"] = [[*span] for span in atom.aside_spans]
     _pack_slot_coords(atom, d)
 
 
@@ -304,7 +307,7 @@ def _validate_atom_schema(a: Atom, findings: list[MapFinding]) -> None:
         (cv not in (-1, 0, 1), "schema", f"Invalid charge_value: {cv}"),
         (cv == 0 and chg not in NO_CHARGE, "consistency", f"charge_value=0 but charge={chg}"),
         (cv != 0 and chg == "NEUTRAL", "consistency", "charge_value!=0 but charge=NEUTRAL"),
-        (cv == 0 and mod != "none", "consistency", f"NEUTRAL with modality={mod}"),
+        (cv == 0 and mod not in UNCHARGED_MODALITIES, "consistency", f"NEUTRAL with modality={mod}"),
         (cv != 0 and mod == "none", "consistency", "Charged with modality=none"),
     ]
     for condition, rule, message in _checks:

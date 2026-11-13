@@ -49,6 +49,7 @@ def take_snapshot(
             plain_text=a.plain_text,
             modality=a.modality,
             slots=a.slots,
+            aside_spans=a.aside_spans,
         )
         for a in (instruction_atoms_for_file(ruleset_map, file_path, own=True) if ruleset_map is not None else ())
     )

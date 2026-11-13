@@ -75,12 +75,20 @@ def mentions(inner: str, text: str) -> int:
 
 
 def _unnamed_counterparts(
-    snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom], split_covering_for: dict[int, list[Atom]]
+    snap_atoms: list[SnapshotAtom],
+    new_atoms: Sequence[Atom],
+    matched_new_for: dict[int, Atom],
+    split_covering_for: dict[int, list[Atom]],
 ) -> set[int]:
     """`id()`s of every new atom that stands in for an originally-unnamed snapshot instruction
-    — its direct match, or every atom in the split window that covers it — `repeated_named`'s
+    — its direct match, every atom in the split window that covers it, and every atom the mapper
+    cut from the same line as its direct match that no instruction claimed — `repeated_named`'s
     credit-eligible set for the vague-instruction-concretized allowance."""
-    was_unnamed = {id(match) for sa in snap_atoms if not sa.named_tokens if (match := matched_new_for.get(id(sa)))}
+    matches = [match for sa in snap_atoms if not sa.named_tokens if (match := matched_new_for.get(id(sa)))]
+    was_unnamed = {id(match) for match in matches}
+    claimed = {id(m) for m in matched_new_for.values()}
+    lines = {match.line for match in matches}
+    was_unnamed.update(id(na) for na in new_atoms if na.line in lines and id(na) not in claimed)
     for sa in snap_atoms:
         if not sa.named_tokens:
             was_unnamed.update(id(na) for na in split_covering_for.get(id(sa), ()))
@@ -122,7 +130,7 @@ def repeated_named(
             if inner and not wordless(inner):
                 allowance[inner] += sa.charge_value != 0
                 order.append(inner)
-    was_unnamed = _unnamed_counterparts(snap_atoms, matched_new_for, split_covering_for)
+    was_unnamed = _unnamed_counterparts(snap_atoms, new_atoms, matched_new_for, split_covering_for)
     for na in new_atoms:
         for inner in dict.fromkeys(na.named_tokens):
             if inner and not wordless(inner) and token_present(inner, original_text):

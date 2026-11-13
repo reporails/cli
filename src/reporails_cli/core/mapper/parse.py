@@ -433,8 +433,9 @@ def tokenize(content: str, segmentation: str = "legacy") -> list[Atom]:
     return atoms
 
 
-def _build_scope_mask(text: str) -> list[bool]:
-    """Build a per-character mask: True where the character is inside quotes or parens.
+def _build_scope_mask(text: str, *, quotes: bool = True) -> list[bool]:
+    """Build a per-character mask: True where the character is inside quotes or parens
+    (inside parens only when ``quotes`` is False).
 
     Tracks: "..." (straight quotes toggle), \u201c...\u201d (curly), (...).
     Backtick spans are not tracked here — they're handled by inline_tokens.
@@ -444,14 +445,14 @@ def _build_scope_mask(text: str) -> list[bool]:
     in_curly_quote = False
     paren_depth = 0
     for i, ch in enumerate(text):
-        if ch == '"':
+        if quotes and ch == '"':
             if in_straight_quote:
                 # Closing — mark this char as inside, then exit
                 mask[i] = True
                 in_straight_quote = False
                 continue
             in_straight_quote = True
-        elif ch == "\u201c":
+        elif quotes and ch == "\u201c":
             in_curly_quote = True
         elif ch == "\u201d" and in_curly_quote:
             mask[i] = True

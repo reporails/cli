@@ -15,6 +15,7 @@ import pytest
 
 from reporails_cli.core.heal.preservation import compare, take_snapshot
 from reporails_cli.core.heal.preservation.snapshot import is_hedge_fragment
+from reporails_cli.core.mapper.asides import aside_spans
 from reporails_cli.core.mapper.classify import restrictor_clause
 from reporails_cli.core.mapper.classify_lexicon import CONDITION_OPENERS, SCOPE_PHRASE_PREPOSITIONS, words_of
 from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots, RulesetMap
@@ -42,14 +43,16 @@ def _atom(
         # A fronted condition ends at its comma; one that follows the clause runs to the end.
         end = next((i + 1 for i, w in enumerate(text.split()) if w.endswith(",")), words) if opener == 0 else words
         slots = AtomSlots(predicate_span=(0, 1), object_span=(1, opener), scope_span=(opener, end))
+    asides = aside_spans(text.replace("`", ""), named)
     place = next((i for i, w in enumerate(words_of(text)[:words]) if i > 1 and w in SCOPE_PHRASE_PREPOSITIONS), None)
     plain = slots is not None and slots.scope_span is None and "," not in text
-    plain = plain and restrictor_clause(text, named) is None
+    plain = plain and restrictor_clause(text, named, asides) is None
     if plain and place is not None and "`" not in text.split()[place]:
         # What the mapper reads: a place, time or target phrase after the object is the atom's scope.
         slots = AtomSlots(predicate_span=(0, 1), object_span=(1, place), scope_span=(place, words))
     return Atom(
         slots=slots,
+        aside_spans=asides,
         line=line,
         text=text,
         kind="excitation",
@@ -58,7 +61,7 @@ def _atom(
         modality=modality,
         specificity="named" if named else "abstract",
         # The mapper reads a restricting word's phrase (`only on main`) as a condition on a charged atom.
-        scope_conditional=cond or (charge_value != 0 and restrictor_clause(text, named) is not None),
+        scope_conditional=cond or (charge_value != 0 and restrictor_clause(text, named, asides) is not None),
         format=fmt,
         named_tokens=list(named),
         plain_text=text.replace("`", ""),
@@ -129,7 +132,7 @@ def test_a_hedge_cut_into_a_lead_in_atom_and_a_clause_is_one_sentence_made_direc
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_a_hedged_line_the_mapper_read_as_prose_is_listed_when_the_rewrite_states_it_directly() -> None:
-    old = _atom(3, "You might want to run the linter before a commit.", 0, "none")
+    old = _atom(3, "You might want to run the linter before a commit.", 0, "hedged")
     new = _atom(3, "Run the linter before a commit.", 1, "imperative")
     result = _verdict([old], [new], f"# A\n\n{old.text}\n", f"# A\n\n{new.text}\n")
     assert [e["new_text"] for e in result["made_direct"]] == [new.text]

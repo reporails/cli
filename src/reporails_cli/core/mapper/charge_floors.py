@@ -16,11 +16,13 @@ from reporails_cli.core.mapper.classify import (
     hedges_with_lead,
     hedges_with_phrase,
     hedges_with_should,
+    predicate_opens_hedge,
 )
 from reporails_cli.core.mapper.classify_lexicon import ALL_VERBS, MODAL_ABSOLUTE, WORD_RE
 from reporails_cli.core.mapper.classify_no import is_terse_no_prohibition, starts_bare_no_status
 from reporails_cli.core.mapper.classify_phases import ChargeVerdict
 from reporails_cli.core.mapper.md_parser import code_spans, leading_bold_run
+from reporails_cli.core.mapper.word_spans import words_between
 from reporails_cli.core.platform.dto.ruleset import Atom, AtomFormat
 
 # Rule trace of a table header row: a column-label row, kept neutral.
@@ -431,6 +433,12 @@ def _apply_structural_neutral_floor(atoms: list[Atom]) -> None:
             atom.charge, atom.charge_value, atom.modality = "NEUTRAL", 0, "none"
 
 
+def _hedged_predicate(atom: Atom) -> bool:
+    """Whether the predicate the mapper read on `atom` opens with a hedge."""
+    span = atom.slots.predicate_span if atom.slots is not None else None
+    return span is not None and predicate_opens_hedge(words_between(atom.plain_text, *span))
+
+
 def _apply_hedged_should_floor(atoms: list[Atom]) -> None:
     """Read an instruction given with `should`, opening with a hedge word (`Prefer …`, `Try
     to …`, `Perhaps …`), or carrying `where possible` / `It's best (not) to …`, as hedged.
@@ -440,8 +448,12 @@ def _apply_hedged_should_floor(atoms: list[Atom]) -> None:
     `where possible`, `It's best (not) to …`) takes modality `hedged`. `might` and `could` keep the
     modality the atom has. The one charge it sets is on a running-text `It's best to <verb> …` (or
     `… best not to …`) atom that carries none: that lead is an instruction, so it takes its direction.
+    An uncharged atom whose predicate opens with a hedge (`You might want to run the linter`) is hedged
+    prose: it takes modality `hedged` and no charge.
     """
     for atom in atoms:
+        if atom.charge_value == 0 and atom.modality == "none" and atom.kind != "heading" and _hedged_predicate(atom):
+            atom.modality = "hedged"
         text = atom.plain_text or atom.text
         sign = best_to_sign(atom.text)
         if sign and atom.charge_value == 0 and atom.kind != "heading" and not _is_structural(atom.text, atom.format):

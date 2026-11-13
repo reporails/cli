@@ -8,6 +8,7 @@ from collections.abc import Iterable, Sequence
 from functools import cache
 from typing import Protocol
 
+from reporails_cli.core.mapper.classify import hedge_cue_words
 from reporails_cli.core.mapper.classify_lexicon import (
     CLAUSE_JOINERS,
     CONDITION_CONJUNCTIONS,
@@ -19,7 +20,6 @@ from reporails_cli.core.mapper.classify_lexicon import (
     PHRASE_PREPOSITIONS,
     words_of,
 )
-from reporails_cli.core.mapper.word_spans import words_between
 from reporails_cli.core.platform.dto.ruleset import AtomFormat, AtomSlots, Modality
 
 
@@ -70,6 +70,10 @@ class AtomView(Protocol):
     def slots(self) -> AtomSlots | None:
         """The subject, predicate, object and scope the mapper read, as word spans of `plain_text`."""
 
+    @property
+    def aside_spans(self) -> tuple[tuple[int, int], ...]:
+        """The word spans of `plain_text` that illustrate the instruction."""
+
 
 _MIN_WORD = 3  # letters a word needs to be a content word
 
@@ -88,14 +92,16 @@ def blank_named(text: str, tokens: Iterable[str]) -> str:
 
 def slot_tokens(atom: AtomView, *names: str) -> list[str]:
     """The words of `plain_text`, as written and in order, that the spans of the slots `names`
-    (`subject`, `predicate`, `object`, `scope`) of `atom` cover: a slot with no span adds none."""
+    (`subject`, `predicate`, `object`, `scope`) of `atom` cover, less the words of its asides: a slot
+    with no span adds none."""
     if atom.slots is None:
         return []
+    words = atom.plain_text.split()
     out: list[str] = []
     for name in names:
         span = getattr(atom.slots, f"{name}_span")
-        if span is not None:
-            out.extend(words_between(atom.plain_text, *span).split())
+        if span is not None and 0 <= span[0] < span[1] <= len(words):
+            out.extend(words[i] for i in range(*span) if not any(start <= i < end for start, end in atom.aside_spans))
     return out
 
 
@@ -109,18 +115,24 @@ def slot_words(atom: AtomView, *names: str) -> list[str]:
     return token_words(slot_tokens(atom, *names))
 
 
+def _hedge_cue(atom: AtomView) -> frozenset[str]:
+    """The lowered words of the hedge cue `atom` opens with (`maybe`, `you should`): a hedge says how
+    firmly the instruction is asked, not what it covers."""
+    return frozenset(words_of(" ".join(atom.plain_text.split()[: hedge_cue_words(atom.plain_text)])))
+
+
 def atom_words(atom: AtomView) -> frozenset[str]:
-    """An atom's content words: the words of its four slots; an atom with none read contributes the
-    words of its plain text less its named constructs."""
+    """An atom's content words: the words of its four slots, less its hedge cue; an atom with none read
+    contributes the words of its plain text less its named constructs."""
     words = slot_words(atom, "subject", "predicate", "object", "scope")
-    return frozenset(words or words_of(prose_text(atom)))
+    return frozenset(words or words_of(prose_text(atom))) - _hedge_cue(atom)
 
 
 def core_words(atom: AtomView) -> frozenset[str]:
-    """An instruction's core: the words of its subject, predicate and object slots, without the
-    scope that restricts it; an atom with none read contributes what `atom_words` does."""
+    """An instruction's core: the words of its subject, predicate and object slots, less its hedge cue and
+    without the scope that restricts it; an atom with none read contributes what `atom_words` does."""
     words = slot_words(atom, "subject", "predicate", "object")
-    return frozenset(words) if words else atom_words(atom)
+    return frozenset(words) - _hedge_cue(atom) if words else atom_words(atom)
 
 
 @cache

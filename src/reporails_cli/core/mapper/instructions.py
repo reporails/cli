@@ -117,9 +117,10 @@ def opens_command(clause: str, *, sequenced: bool = False) -> bool:
     """Whether a clause starts with a command: a prohibition, or a verb telling the reader what to do.
 
     A clause of one bare word is a command only when `then` sets it after another (`…, then commit.`);
-    otherwise it is an item of a list.
+    otherwise it is an item of a list. A hedge cue the clause opens with (`Maybe`, `Try to`) is read past.
     """
     text = _LEAD_CONNECTOR_RE.sub("", _clause_text(clause))
+    text = " ".join(text.split()[hedge_cue_words(text) :])
     if _NEGATION_ONSET_RE.match(text):
         return _CONTRAST_RE.match(text) is None
     words = _WORD_RE.findall(text)[:2]

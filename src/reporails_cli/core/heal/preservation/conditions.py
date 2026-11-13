@@ -38,7 +38,9 @@ from reporails_cli.core.heal.preservation.words import (
     AtomView,
     atom_words,
     is_content_word,
+    is_function_word,
     named_key,
+    slot_tokens,
     slot_words,
     token_words,
 )
@@ -46,6 +48,8 @@ from reporails_cli.core.mapper.classify import ABSOLUTE_CUES, condition_text
 from reporails_cli.core.mapper.classify_lexicon import (
     CONDITION_CONJUNCTIONS,
     CONDITIONAL_MARKERS,
+    DEFINITE_DETERMINERS,
+    INDEFINITE_ARTICLES,
     LIMITING_RESTRICTORS,
     SUBJECT_PRONOUNS,
     words_of,
@@ -220,15 +224,36 @@ def _kind_narrows(p: Pair, kind: list[str], span: list[str], section: Section) -
     return named_beside_others(section, p.old, kind)
 
 
+def _listed_heads(atom: AtomView, known: set[str]) -> set[str]:
+    """The lowered words that name the kind an aside of `atom` lists members of: the words right before
+    an aside whose own content words the author's line already has (`placement field` in `any
+    placement field (cluster, type, or location)`), back to the nearest function word."""
+    words = atom.plain_text.split()
+    heads: set[str] = set()
+    for start, end in atom.aside_spans:
+        listed = {w for token in words[start:end] for w in words_of(token) if is_content_word(w)}
+        if not listed or not all(word_forms(w) & known for w in listed):
+            continue
+        k = start - 1
+        while k >= 0 and not words[k].endswith(","):
+            own = words_of(words[k])
+            if not own or is_function_word(own[0]):
+                break
+            heads.update(own)
+            k -= 1
+    return heads
+
+
 def _gained_unsafe(p: Pair, known: set[str], heading: set[str]) -> list[int]:
     """The indices of the rewrite's covered words that are content words the author's instruction lacks
     and that no safe shape explains (a possessive, `the user's`, names the owner it points at). The words
     themselves are in `covered_tokens(p)`."""
     covered = covered_tokens(p)
+    heads = _listed_heads(p.new, known)
     gained = [
         i
         for i, (w, _c, _s, prose) in enumerate(covered)
-        if is_content_word(w) and prose and not word_forms(w) & known and not w.endswith("'s")
+        if is_content_word(w) and prose and not word_forms(w) & known and not w.endswith("'s") and w not in heads
     ]
     if not gained:
         return []

@@ -37,6 +37,7 @@ def _listed(
         named_tokens=(),
         scope_conditional=True,
         slots=slots,
+        aside_spans=(),
     )
     return bool(added_conditions(original_line, {id(sa): match}))
 
@@ -136,7 +137,7 @@ def test_added_conditions_on_the_real_mapper(tmp_path, name: str, original: str,
 
 def _hedge_pair(old_text: str, new_text: str, new_modality: str = "absolute") -> Pair:
     old = _atom(3, old_text, 1, modality="hedged")
-    new = SimpleNamespace(line=3, text=new_text, plain_text=new_text, modality=new_modality, slots=None)
+    new = SimpleNamespace(line=3, text=new_text, plain_text=new_text, modality=new_modality, slots=None, aside_spans=())
     return Pair(old, new, old_text, new_text)
 
 
@@ -172,8 +173,12 @@ def test_a_hedge_made_must_or_shall_is_not_an_absolute(word: str) -> None:
     ],
 )
 def test_reordered_joined_conditions_hold(original: str, rewrite: str, dropped: bool) -> None:
-    old = SimpleNamespace(line=1, plain_text=original, named_tokens=(), scope_conditional=True, slots=None)
-    new = SimpleNamespace(line=1, plain_text=rewrite, named_tokens=(), scope_conditional=True, slots=None)
+    old = SimpleNamespace(
+        line=1, plain_text=original, named_tokens=(), scope_conditional=True, slots=None, aside_spans=()
+    )
+    new = SimpleNamespace(
+        line=1, plain_text=rewrite, named_tokens=(), scope_conditional=True, slots=None, aside_spans=()
+    )
     assert bool(dropped_conditions([Pair(old, new, original, rewrite)])) is dropped
 
 
@@ -218,8 +223,12 @@ def test_reordered_joined_conditions_hold(original: str, rewrite: str, dropped: 
 def test_a_name_in_backticks_or_a_named_object_never_changes_a_condition(
     original: str, rewrite: str, named: tuple[str, ...], dropped: bool
 ) -> None:
-    old = SimpleNamespace(line=1, plain_text=original, named_tokens=(), scope_conditional=True, slots=None)
-    new = SimpleNamespace(line=1, plain_text=rewrite, named_tokens=named, scope_conditional=True, slots=None)
+    old = SimpleNamespace(
+        line=1, plain_text=original, named_tokens=(), scope_conditional=True, slots=None, aside_spans=()
+    )
+    new = SimpleNamespace(
+        line=1, plain_text=rewrite, named_tokens=named, scope_conditional=True, slots=None, aside_spans=()
+    )
     assert bool(dropped_conditions([Pair(old, new, original, rewrite)])) is dropped
 
 
@@ -331,6 +340,7 @@ def test_a_code_token_never_opens_a_condition_or_narrows(
         charge_value=1,
         modality="direct",
         heading_context="",
+        aside_spans=(),
     )
     pair = Pair(old, new, original, rewrite)
     assert bool(dropped_conditions([pair])) is dropped
@@ -400,12 +410,3 @@ def test_whole_line_quotation_maps_as_one_neutral_atom_structure_aware(tmp_path)
     on_line = [a for a in mapped.atoms if a.line == 5]
     assert len(on_line) == 1
     assert on_line[0].charge_value == 0
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_server
-def test_blank_named_fills_each_token_once_even_when_a_short_token_sits_inside_the_fill() -> None:
-    from reporails_cli.core.heal.preservation.words import blank_named
-
-    out = blank_named("Use struct and const here", ["struct", "const"], " namedconstruct ")
-    assert out == "Use  namedconstruct  and  namedconstruct  here"
