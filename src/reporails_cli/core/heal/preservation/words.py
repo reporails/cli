@@ -130,10 +130,11 @@ def _hedge_cue(atom: AtomView) -> frozenset[str]:
 
 
 def atom_words(atom: AtomView) -> frozenset[str]:
-    """An atom's content words: the words of its four slots, less its hedge cue; an atom with none read
-    contributes the words of its plain text less its named constructs."""
+    """An atom's content words: the words of its four slots that are not function words or shorter than three
+    letters, less its hedge cue; an atom with none read contributes the words of its plain text less its
+    named constructs."""
     words = slot_words(atom, "subject", "predicate", "object", "scope")
-    return frozenset(words or words_of(prose_text(atom))) - _hedge_cue(atom)
+    return frozenset(w for w in words or words_of(prose_text(atom)) if is_content_word(w)) - _hedge_cue(atom)
 
 
 def core_words(atom: AtomView) -> frozenset[str]:

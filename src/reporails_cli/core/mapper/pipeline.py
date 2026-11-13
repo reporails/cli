@@ -17,7 +17,7 @@ from reporails_cli.core.discovery.file_tags import classify_file
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.assemble import build_ruleset_map
 from reporails_cli.core.mapper.bio_graphs import multislot_available, multislot_fingerprint
-from reporails_cli.core.mapper.bio_pipeline import apply_multislot, apply_multislot_groups
+from reporails_cli.core.mapper.bio_pipeline import apply_multislot, apply_multislot_groups, read_text_spans
 from reporails_cli.core.mapper.embed import _embed_atoms_deduped, _embed_file_descriptions
 from reporails_cli.core.mapper.granularity import audit_over_merged
 from reporails_cli.core.mapper.imports import expand_imports_with_origins
@@ -117,6 +117,7 @@ def _tokenize_and_cache(
     through every step) or a fully-charged one.
     """
     atoms = tokenize(content, segmentation)
+    read_text_spans(atoms)
     _translate_atom_lines(atoms, line_map, origins, path)
     for a in atoms:
         a.file_path = path.as_posix()

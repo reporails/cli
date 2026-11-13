@@ -26,12 +26,13 @@ def is_instruction_heading(atom: AtomView) -> bool:
 def is_hedge_fragment(atom: AtomView) -> bool:
     """Whether `atom` is nothing but a hedge (`Consider`, `You should`) — the lead-in the mapper
     reads as an instruction of its own when it cuts a hedged sentence in two: a hedged atom with no
-    object whose predicate, when it has one, lies inside the hedge cue or is the whole atom."""
+    object whose predicate, when it has one, lies inside the hedge cue or is the whole atom; one with no
+    slots read is a fragment only when its words end with the hedge cue (a hedged atom of one word is one)."""
     slots = atom.slots
     if atom.modality != "hedged":
         return False
-    if slots is None:
-        return True
+    if slots is None or not slots.decoded:
+        return len(atom.plain_text.split()) <= max(1, hedge_cue_words(atom.plain_text))
     predicate = slots.predicate_span
     whole = predicate is not None and atom.charge_value >= 0 and predicate[1] >= len(atom.plain_text.split())
     return slots.object_span is None and (

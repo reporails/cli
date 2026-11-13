@@ -239,7 +239,7 @@ def _governed(atom: AtomView) -> set[str]:
     """The lowered named constructs of `atom` that sit in the object, the scope or the condition the
     mapper read: a construct outside all three (an example or a reason tacked on) illustrates or justifies the
     instruction and is no part of what it forbids. An atom with no slots read governs all of them."""
-    if atom.slots is None:
+    if atom.slots is None or not atom.slots.decoded:
         return {named_key(t) for t in atom.named_tokens}
     words = set(slot_words(atom, "object", "scope")) | set(words_of(condition_text(atom) or ""))
     return {named_key(t) for t in atom.named_tokens if not (own := words_of(t)) or set(own) <= words}

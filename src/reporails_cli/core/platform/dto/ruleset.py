@@ -117,6 +117,12 @@ class AtomSlots(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel
     # The character ranges [start, end) of `plain_text` that code spans fill. Empty when it has none.
     code_ranges: tuple[tuple[int, int], ...] = ()
 
+    @property
+    def decoded(self) -> bool:
+        """Whether the slot model read any of the four slots (an atom it left alone carries only the
+        code ranges and asides its text holds)."""
+        return any(getattr(self, f) is not None for f in SLOT_SPAN_FIELDS)
+
     @classmethod
     def from_coords(cls, coords: JsonObject) -> AtomSlots:
         """Rebuild slots from stored span coordinates (JSON hands each offset back as a list)."""

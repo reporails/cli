@@ -54,7 +54,7 @@ def covered_tokens(p: Pair) -> Covered:
     """What the rewrite's instruction covers, in order: the words of its object and scope slots, then
     those of the uncharged atoms that continue it when it is a prohibition. A scope that is a
     condition the author's instruction lacked is left to `added_conditions`."""
-    if p.new.slots is None:
+    if p.new.slots is None or not p.new.slots.decoded:
         tokens = [("object", t) for t in p.new.plain_text.split()]
     else:
         added_condition = condition_text(p.new) is not None and condition_text(p.old) is None

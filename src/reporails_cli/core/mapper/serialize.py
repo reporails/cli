@@ -116,7 +116,11 @@ def _pack_slot_coords(atom: Atom, d: JsonObject) -> None:
     slots = atom.slots
     if slots is None:
         return
-    if not slots.code_ranges and not any(getattr(slots, f) is not None for f in SLOT_SPAN_FIELDS):
+    if (
+        not slots.code_ranges
+        and not slots.aside_spans
+        and not any(getattr(slots, f) is not None for f in SLOT_SPAN_FIELDS)
+    ):
         return
     d["slot_coords"] = {f: getattr(slots, f) for f in SLOT_COORD_FIELDS}
 

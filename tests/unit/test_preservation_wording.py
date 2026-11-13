@@ -96,6 +96,14 @@ def test_a_lead_in_hedge_alone_is_a_fragment_not_an_instruction() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
+def test_a_slotless_hedged_instruction_is_no_fragment_while_a_slotless_cue_alone_is() -> None:
+    whole = _atom(3, "You should run the linter before pushing", 1, "hedged").model_copy(update={"slots": None})
+    assert not is_hedge_fragment(whole)
+    assert is_hedge_fragment(_atom(3, "You should", 1, "hedged").model_copy(update={"slots": None}))
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
 @pytest.mark.parametrize(
     ("old_text", "new_text", "new_modality"),
     [
@@ -256,3 +264,22 @@ def test_an_absolute_cue_on_the_line_excuses_only_the_same_cue(hedge: str, rewri
     new = _atom(3, rewrite, 1, "absolute")
     result = _verdict(old, [new], f"# A\n\nNever commit secrets; {hedge}\n", f"# A\n\n{rewrite}\n")
     assert bool(result["hedge_made_absolute"]) is failed
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_a_code_colon_in_an_atom_the_slot_model_did_not_decode_opens_no_list() -> None:
+    from reporails_cli.core.heal.preservation.fragments import dangling_fragments
+    from reporails_cli.core.mapper.bio_pipeline import read_text_spans
+    from reporails_cli.core.mapper.parse import tokenize
+
+    def prose(text: str) -> list[Any]:
+        atoms = [a for a in tokenize(text + "\n") if a.plain_text]
+        read_text_spans(atoms)
+        return atoms
+
+    before = "Read `docs:guides/install` before changing any build script, and add `docs:guides/cache` for slow builds."
+    after = "Read `docs:guides/install` before changing any build script.\n\nAdd `docs:guides/cache` for slow builds."
+    old, new = prose(before), prose(after)
+    assert all(a.slots is not None and a.slots.code_ranges and not a.slots.decoded for a in [*old, *new])
+    assert dangling_fragments(old, new) == []

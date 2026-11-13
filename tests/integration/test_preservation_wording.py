@@ -220,3 +220,15 @@ def test_a_hedge_made_direct_never_fails_the_rewrite_by_itself(tmp_path) -> None
     assert result["made_direct"] == [
         {"line": 3, "text": "Consider avoiding global state.", "new_line": 3, "new_text": "Avoid global state."}
     ]
+
+
+@pytest.mark.subsys_server
+@pytest.mark.integration
+@pytest.mark.requires_model
+def test_a_dropped_context_line_is_lost_even_when_the_rewrite_keeps_its_function_words(tmp_path) -> None:
+    result = _verdict(
+        tmp_path,
+        "The cache is rebuilt on the next run.\nRun the linter.",
+        "Run the linter.\nIt is on the day.",
+    )
+    assert [c["text"] for c in result["lost_context"]] == ["The cache is rebuilt on the next run."]

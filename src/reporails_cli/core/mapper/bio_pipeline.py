@@ -123,6 +123,17 @@ def _slots_from_tuple(t: AtomTuple, atom: Atom) -> AtomSlots:
     )
 
 
+def read_text_spans(atoms: list[Atom]) -> None:
+    """Give each atom the slot model has not read (none yet) the code ranges and asides its text holds,
+    in slots with no word span set."""
+    for atom in atoms:
+        if atom.slots is None:
+            atom.slots = AtomSlots(
+                aside_spans=aside_spans(atom.plain_text, atom.named_tokens),
+                code_ranges=plain_code_ranges(atom.text, atom.plain_text),
+            )
+
+
 def _tuple_scope_conditional(t: AtomTuple) -> bool:
     """Whether the decoded tuple frames its instruction with a condition.
 

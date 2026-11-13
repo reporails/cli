@@ -667,3 +667,31 @@ def test_conformance_accepts_a_dedupe_whose_kept_copy_is_in_the_same_file() -> N
     new = ["# T", "- Run `make test` first.", "- Other"]
     assert check_plan(plan, {F: _lines(*old)}, {F: new}, {F: []}) == []
     assert [d.found for d in check_plan(plan, {F: _lines(*old)}, {F: old}, {F: []})] != []
+
+
+def _hedged_pair() -> list[Atom]:
+    first = _atom("Try to lint code;", charge=1, pi=0)
+    first.source_columns, first.hedge_cue = (0, 17), (0, 7)
+    second = _atom("perhaps run tests.", charge=1, pi=1)
+    second.source_columns, second.hedge_cue = (18, 36), (18, 26)
+    return [first, second]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_two_direct_ops_on_one_line_run_the_second_at_its_shifted_columns() -> None:
+    line = "Try to lint code; perhaps run tests, then stop."
+    plan = build_plan([_op("direct", 1, 0), _op("direct", 1, 1)], {F: _hedged_pair()}, {F: _lines(line)})
+    assert [e.after for e in plan.edits] == ["Lint code; run tests, then stop."]
+    assert not plan.slots
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_a_folded_direct_whose_atom_lies_in_the_earlier_edit_becomes_a_slot() -> None:
+    line = "Try to lint code; perhaps run tests, then stop."
+    atoms = _hedged_pair()
+    atoms[1].source_columns = (3, 36)
+    plan = build_plan([_op("direct", 1, 0), _op("direct", 1, 1)], {F: atoms}, {F: _lines(line)})
+    assert [e.after for e in plan.edits] == ["Lint code; perhaps run tests, then stop."]
+    assert [s.pi for s in plan.slots] == [1]
