@@ -43,6 +43,7 @@
 
 ### Internal
 
+- CI now runs the model-backed integration tests on a fetched model.
 - The Windows check scenarios and the MCP x-ray two-call scenario lose their skip tag. The two-call scenario reads the page while the agent's MCP server still runs, because on Windows the test client ends the server's process tree, the page with it.
 - The rewrite-check tests build named constructs as a real check reads them.
 - Heal's rewrite check reads each instruction from the map, and a test suite holds rewrites that keep the words but change the meaning.
