@@ -48,7 +48,10 @@ class _RealServingClient:
     def stream(self, method: str, url: str):
         self._calls.append(url)
         rel = url.rsplit("/", 1)[-1].replace("__", "/")
-        yield _Resp(200, (self._root / rel).read_bytes())
+        source = self._root / rel
+        # A dev tree holds the model files; the licence texts ship with the release host only.
+        body = source.read_bytes() if source.is_file() or rel not in model_manifest.LICENSE_FILES else b"licence text"
+        yield _Resp(200, body)
 
     def __enter__(self) -> _RealServingClient:
         return self
