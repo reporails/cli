@@ -42,6 +42,7 @@ from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
         ("Unless the cache is warm then rebuild it.", "Unless the cache is warm"),
         ("While loops must be bounded.", None),
         ("When to use", None),
+        ("When a batch holds over 1,000 rows, paginate it.", "When a batch holds over 1,000 rows"),
     ],
 )
 def test_conditional_clause_is_the_frame_up_to_its_closing_comma_or_then(text: str, clause: str | None) -> None:

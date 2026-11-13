@@ -151,7 +151,8 @@ def is_conditional_frame(text: str) -> bool:
 # `Unless X, then Y`. The comma (or `then`) is what makes the opener a frame at
 # all — without it the word is the sentence's own subject or a section label
 # (`While loops must be bounded`, `Before hooks run on every commit`, `When to use`).
-_COND_CLAUSE_CLOSE_RE = re.compile(r"[,;]\s*\S|\s+then\s+\S", re.IGNORECASE)
+# A comma inside a number (`1,000`) closes nothing.
+_COND_CLAUSE_CLOSE_RE = re.compile(r"(?:,(?!\d)|;)\s*\S|\s+then\s+\S", re.IGNORECASE)
 # The governing clause is short; past that the comma belongs to the main clause.
 _COND_CLAUSE_MAX_WORDS = 12
 

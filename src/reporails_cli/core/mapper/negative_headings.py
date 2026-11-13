@@ -1,7 +1,5 @@
-"""Bare negative headings: a heading such as `## Don'ts` that labels a list of prohibitions.
-
-The map reads each heading once and records the result on its atoms (`Atom.negative_heading`,
-`Atom.in_negative_section`); every outer layer reads those fields.
+"""Bare negative headings: a heading such as `## Don'ts` that labels a list of prohibitions,
+and whether an atom sits under one (`Atom.negative_heading`, `Atom.in_negative_section`).
 """
 
 from __future__ import annotations

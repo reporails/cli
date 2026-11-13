@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 
 from reporails_cli.core.mapper.annotate import backticked_words, is_unbacked_library_name
-from reporails_cli.core.mapper.classify import conditional_clause
+from reporails_cli.core.mapper.classify import conditional_clause, is_conditional_frame
 from reporails_cli.core.mapper.imports import IMPORT_REF_RE
 from reporails_cli.core.mapper.instructions import instruction_starts, without_lead
 from reporails_cli.core.mapper.markers import strip_markdown_inline
@@ -374,12 +374,15 @@ def _check_bold_patterns(charged: list[Atom], filepath: str) -> list[LocalFindin
 
 
 def _condition_text(atom: Atom) -> str | None:
-    """The condition the mapper read on a conditional atom: its decoded span, else the frame
-    that closes the sentence's opening; None when the atom is not conditional."""
+    """The condition the mapper read on a conditional atom: its decoded scope when that scope
+    opens a conditional frame, else the frame that closes the sentence's opening; None when the
+    atom is not conditional."""
     if not atom.scope_conditional:
         return None
     if atom.slots is not None and atom.slots.scope_span is not None:
-        return words_between(atom.plain_text, *atom.slots.scope_span)
+        scope = words_between(atom.plain_text, *atom.slots.scope_span)
+        if is_conditional_frame(scope):
+            return scope
     return conditional_clause(atom.plain_text)
 
 
