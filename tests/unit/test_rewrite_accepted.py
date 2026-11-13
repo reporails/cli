@@ -26,7 +26,9 @@ def _pres(ok: bool = True, before: float | None = 5.0, after: float | None = 5.0
         (_pres(), None, True),
         (_pres(ok=False), None, False),
         (_pres(after=4.9), None, False),
-        (_pres(before=None, after=None), None, True),
+        (_pres(before=None, after=None), None, False),
+        (_pres(before=None, after=5.0), {"ok": True}, False),
+        (_pres(before=5.0, after=None), {"ok": True}, False),
     ],
 )
 def test_rewrite_accepted_needs_every_present_check(

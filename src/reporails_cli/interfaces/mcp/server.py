@@ -206,6 +206,29 @@ def _config_unreadable(exc: ConfigUnreadableError) -> JsonObject:
     return {"error": "config_unreadable", "message": str(exc)}
 
 
+async def _breaker_reply(state: CircuitState, target: Path, scan_root: Path) -> JsonObject:
+    """The `circuit_breaker` reply. For a file `remedy_brief` snapshotted whose last full reply the
+    state still holds, it also carries `accepted`, decided from that reply by `with_preservation`."""
+    reply: JsonObject = {
+        "error": "circuit_breaker",
+        "message": (
+            "STOP — circuit breaker triggered. "
+            f"Validated this path {state.call_count} times "
+            f"({state.consecutive_unchanged} consecutive unchanged). "
+            "DO NOT call validate again for this path. Instead: "
+            "1. Report the remaining violations to the user. "
+            "2. Explain which ones you could not resolve and why. "
+            "3. Let the user decide how to proceed."
+        ),
+    }
+    if state.full_payload is None:
+        return reply
+    kept = await asyncio.to_thread(
+        with_preservation, state.full_payload, target, state.last_ruleset_map, state.last_score, scan_root
+    )
+    return {**reply, "accepted": kept["accepted"]} if "accepted" in kept else reply
+
+
 async def _run_validate(path: str, full: bool, targets: list[str] | None, project_root: Path) -> JsonObject:
     """The `validate` payload; an unreadable config file answers `config_unreadable` naming the file and line."""
     try:
@@ -224,9 +247,9 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None, proj
 
     Path-existence checks emit structured errors the slash command body can branch on. The
     circuit breaker (`MAX_CALLS` total, `MAX_UNCHANGED` consecutive no-op validates per path)
-    catches a model that re-validates without applying fixes; the mtime-tracker resets on any
-    file edit. A `full=true` call for unchanged content is served from the memoized full payload,
-    not counted as another unchanged repeat.
+    catches a model that re-validates without applying fixes, and its reply for a briefed file
+    still carries `accepted`; the mtime-tracker resets on any file edit. A `full=true` call for
+    unchanged content is served from the memoized full payload, not counted as another unchanged repeat.
 
     The circuit-breaker state read-modify-write runs inline on the event loop (no `await`
     between the `validate_states` read and its write), so concurrent same-path calls serialize;
@@ -253,18 +276,7 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None, proj
     )
 
     if state.call_count > MAX_CALLS or state.consecutive_unchanged >= MAX_UNCHANGED:
-        return {
-            "error": "circuit_breaker",
-            "message": (
-                "STOP — circuit breaker triggered. "
-                f"Validated this path {state.call_count} times "
-                f"({state.consecutive_unchanged} consecutive unchanged). "
-                "DO NOT call validate again for this path. Instead: "
-                "1. Report the remaining violations to the user. "
-                "2. Explain which ones you could not resolve and why. "
-                "3. Let the user decide how to proceed."
-            ),
-        }
+        return await _breaker_reply(state, target, scan_root)
 
     if not target.exists():
         return {"error": "path_not_found", "message": f"Path not found: {target}"}

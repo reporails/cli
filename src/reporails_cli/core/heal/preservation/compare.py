@@ -201,16 +201,16 @@ def compare(
 
 def rewrite_accepted(preservation: JsonObject, conformance: JsonObject | None) -> bool:
     """Whether a rewritten file is kept: its `preservation` block is ok, its `conformance` block
-    is ok when the file was briefed with a plan (`None` otherwise), and its score did not fall.
-    A score missing on either side is no fall."""
+    is ok when the file was briefed with a plan (`None` otherwise), and both scores are numbers
+    with the score after at least the score before. A missing score refuses."""
     if preservation.get("ok") is not True:
         return False
     if conformance is not None and conformance.get("ok") is not True:
         return False
     before, after = preservation.get("score_before"), preservation.get("score_after")
-    if isinstance(before, (int, float)) and isinstance(after, (int, float)):
-        return after >= before
-    return True
+    if not isinstance(before, (int, float)) or not isinstance(after, (int, float)):
+        return False
+    return after >= before
 
 
 def check_rewrite(
