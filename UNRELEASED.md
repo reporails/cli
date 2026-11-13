@@ -6,7 +6,7 @@
 
 ### Changed
 
-- Checking a rewritten file with the MCP `validate` tool now answers `accepted`: whether the rewrite is kept, so the agent no longer weighs the preservation, plan and score results itself. A rewrite whose score is missing is not accepted, and a repeated check that stops at the repeat limit still answers `accepted` for a file heal rewrote.
+- Checking a rewritten file with the MCP `validate` tool now answers `accepted`: whether the rewrite is kept, so the agent no longer weighs the preservation, plan and score results itself. A rewrite whose score is missing is not accepted, and a repeated check of an unchanged file that stops at the repeat limit still answers `accepted`.
 - Heal in your agent now makes every change through your agent's own edits, so your edit approvals and hooks see each one.
 - `ails check`, the MCP `validate` tool and opening `ails xray` now ask the reporails service first, before reading your files or downloading the model. When this hour's allowance is used up, or your version is no longer supported, the run stops right away and names the next step: signing up, when the allowance resets, or `ails update`.
 - When the reporails service cannot be reached, `ails check` stops and tells you to run with `--offline` for local checks only.

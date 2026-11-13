@@ -246,7 +246,7 @@ def comma_items(text: str) -> list[str]:
 
 def list_items(text: str) -> list[str]:
     """The items of the list `text` runs on as: `comma_items` of what comes before the first semicolon the
-    clause cut honours, which ends the list (`a, b; c, d` -> `['a', ' b']`)."""
+    clause cut honours, which ends the list (`a, b; c, d` -> `['a', 'b']`)."""
     for begin, _, joint, _ in _clauses(text)[1:]:
         if joint.strip() == ";":
             return comma_items(text[: begin - len(joint)])
