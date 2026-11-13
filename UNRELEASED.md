@@ -45,13 +45,5 @@
 
 - The Windows check scenarios and the MCP x-ray two-call scenario lose their skip tag. The two-call scenario reads the page while the agent's MCP server still runs, because on Windows the test client ends the server's process tree, the page with it.
 - The rewrite-check tests build named constructs as a real check reads them.
-- The mapper records where each code span sits in an instruction's plain text, and the rewrite check reads a colon or dash inside code from that record instead of re-reading the markdown.
-- Heal's split fix reads from the map whether each instruction was cut at a comma, semicolon or dash.
-- Heal's split, direct and negation fixes place each instruction in its line from the map, and their tests place each instruction the way a real map does.
-- The rewrite check reads list items and lead-ins from the map's clause cut and reads the plain text of each instruction, never its markdown.
-- Heal's rewrite check reads each instruction's subject, action, object and scope from the map.
-- A build check fails when code outside the map reads instruction text again: a copy of the map's word data it never uses, markdown stripped outside the parser, or a word list, prose pattern or clause split outside the map.
+- Heal's rewrite check is rebuilt on the map's reading of each instruction, with tests for rewrites that keep the words but change the meaning.
 - Three check scenarios guard linked folders: a `.claude/rules` folder linked to a dotfiles folder stays part of `ails check .claude`, a linked file under a `~/.claude` linked to a dotfiles folder keeps its user-level root, and a `~/.claude` folder keeps its findings when the home folder is reached through a link.
-- The map records a place, time or target phrase (`In CI,` before the clause, `in staging` or `for src/` after its object) as the instruction's scope, and heal's rewrite check reads it.
-
-- The rewrite check is held by a seeded suite of meaning-drift rewrites (swapped actor, statement turned into an order, modal shift, dropped `only`, narrowed scope).
