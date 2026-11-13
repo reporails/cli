@@ -1,18 +1,26 @@
-"""Word-level reading shared by the preservation checks: the content words of an instruction
-(stopwords and hedges left out) and a prose atom's words with its named constructs removed.
+"""Word-level reading shared by the preservation checks: an instruction's words as the mapper's
+slots hold them, and a prose atom's text with its named constructs removed.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from functools import cache
 from typing import Protocol
 
-from reporails_cli.core.mapper.classify import DROPPABLE_LEADS, HEDGE_WORDS
-from reporails_cli.core.mapper.classify_lexicon import CODE_WORD_RE, STOPWORDS
-from reporails_cli.core.platform.dto.ruleset import AtomFormat, Modality
-
-# Hedge words and `please` are dropped from content words too: a rewrite removes them.
-_SKIPPED = STOPWORDS | HEDGE_WORDS | DROPPABLE_LEADS
+from reporails_cli.core.mapper.classify_lexicon import (
+    CLAUSE_JOINERS,
+    CONDITION_CONJUNCTIONS,
+    CONDITION_OPENERS,
+    DEFINITE_DETERMINERS,
+    DETERMINERS,
+    GENERAL_QUANTIFIERS,
+    INDEFINITE_ARTICLES,
+    PHRASE_PREPOSITIONS,
+    words_of,
+)
+from reporails_cli.core.mapper.word_spans import words_between
+from reporails_cli.core.platform.dto.ruleset import AtomFormat, AtomSlots, Modality
 
 
 class AtomView(Protocol):
@@ -58,10 +66,80 @@ class AtomView(Protocol):
     def negative_heading(self) -> bool:
         """Whether it is a heading that is a bare negative label."""
 
+    @property
+    def slots(self) -> AtomSlots | None:
+        """The subject, predicate, object and scope the mapper read, as word spans of `plain_text`."""
 
-def content_words(text: str) -> set[str]:
-    """`text`'s content words: stopwords, hedges/filler, and short tokens dropped, the rest lowered."""
-    return {w for w in (t.lower() for t in CODE_WORD_RE.findall(text)) if len(w) > 2 and w not in _SKIPPED}
+
+_MIN_WORD = 3  # letters a word needs to be a content word
+
+# Marks a blanked token until every token is done, so a shorter token never matches inside the fill.
+_BLANKED = ""
+
+
+def blank_named(text: str, tokens: Iterable[str]) -> str:
+    """`text` with each named token blanked, the longest first so a token inside a longer one
+    (`reporails` in `reporails__explain`) leaves none of the longer one behind."""
+    for token in sorted(tokens, key=len, reverse=True):
+        if token:
+            text = text.replace(token, _BLANKED)
+    return text.replace(_BLANKED, " ")
+
+
+def slot_tokens(atom: AtomView, *names: str) -> list[str]:
+    """The words of `plain_text`, as written and in order, that the spans of the slots `names`
+    (`subject`, `predicate`, `object`, `scope`) of `atom` cover: a slot with no span adds none."""
+    if atom.slots is None:
+        return []
+    out: list[str] = []
+    for name in names:
+        span = getattr(atom.slots, f"{name}_span")
+        if span is not None:
+            out.extend(words_between(atom.plain_text, *span).split())
+    return out
+
+
+def token_words(tokens: Iterable[str]) -> list[str]:
+    """The lowered words, in order, of each of `tokens`."""
+    return [w for token in tokens for w in words_of(token)]
+
+
+def slot_words(atom: AtomView, *names: str) -> list[str]:
+    """The lowered words, in order, of the slots `names` of `atom`."""
+    return token_words(slot_tokens(atom, *names))
+
+
+def atom_words(atom: AtomView) -> frozenset[str]:
+    """An atom's content words: the words of its four slots; an atom with none read contributes the
+    words of its plain text less its named constructs."""
+    words = slot_words(atom, "subject", "predicate", "object", "scope")
+    return frozenset(words or words_of(prose_text(atom)))
+
+
+@cache
+def _function_words() -> frozenset[str]:
+    """The mapper's function words: determiners, quantifiers, prepositions, conjunctions, condition
+    openers."""
+    return (
+        DETERMINERS
+        | DEFINITE_DETERMINERS
+        | INDEFINITE_ARTICLES
+        | GENERAL_QUANTIFIERS
+        | PHRASE_PREPOSITIONS
+        | CONDITION_CONJUNCTIONS
+        | CLAUSE_JOINERS
+        | CONDITION_OPENERS
+    )
+
+
+def is_function_word(word: str) -> bool:
+    """Whether `word` is one of the mapper's function words."""
+    return word in _function_words()
+
+
+def is_content_word(word: str) -> bool:
+    """Whether `word` is longer than two letters and not a function word."""
+    return len(word) >= _MIN_WORD and not is_function_word(word)
 
 
 def named_key(token: str) -> str:
@@ -69,27 +147,6 @@ def named_key(token: str) -> str:
     return token.lower()
 
 
-# Marks a blanked token until every token is done, so a shorter token never matches inside the fill.
-_BLANKED = "\ue010"
-
-
-def blank_named(text: str, tokens: Iterable[str], fill: str = " ") -> str:
-    """`text` with each named token blanked, or replaced by `fill`, the longest
-    first so a token inside a longer one (`reporails` in `reporails__explain`) leaves none of the
-    longer one behind."""
-    for token in sorted(tokens, key=len, reverse=True):
-        if token:
-            text = text.replace(token, _BLANKED)
-    return text.replace(_BLANKED, fill)
-
-
-def prose_text(atom: AtomView, *, named: bool = False, fill: str = " ") -> str:
-    """`atom`'s plain text with its named constructs (backticked in the source) blanked out (or
-    replaced by `fill`), or kept when `named` (a word reads the same backticked or not)."""
-    text: str = atom.plain_text
-    return text if named else blank_named(text, atom.named_tokens, fill)
-
-
-def prose_words(atom: AtomView, *, named: bool = False) -> list[str]:
-    """`atom`'s lowered words in order, its named constructs left out unless `named`."""
-    return [w.lower() for w in CODE_WORD_RE.findall(prose_text(atom, named=named))]
+def prose_text(atom: AtomView) -> str:
+    """`atom`'s plain text with its named constructs (backticked in the source) blanked out."""
+    return blank_named(atom.plain_text, atom.named_tokens)

@@ -8,7 +8,7 @@ from typing import NamedTuple
 
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.mapping import LineSpans
-from reporails_cli.core.platform.dto.ruleset import Atom, AtomFormat, Modality
+from reporails_cli.core.platform.dto.ruleset import Atom, AtomFormat, AtomSlots, Modality
 from reporails_cli.core.platform.dto.structure import DocumentStructure
 
 
@@ -83,10 +83,15 @@ class SnapshotAtom:
     embedding_int8: tuple[int, ...] | None
     heading_context: str = ""
     scope_conditional: bool = False
-    heading: bool = False
     negative_heading: bool = False
     plain_text: str = ""
     modality: Modality = "none"
+    slots: AtomSlots | None = None
+
+    @property
+    def heading(self) -> bool:
+        """Whether the atom is a heading."""
+        return self.format == "heading"
 
 
 @dataclass(frozen=True)
@@ -105,14 +110,14 @@ class Snapshot:
 @dataclass(frozen=True)
 class Pair:
     """A matched instruction: the original atom and its rewrite, each with the sentence it sits in,
-    and the lowered words of the rewrite that its prohibition covers (`negated`: those of the
-    constraint atom holding the rewrite, with the neutral atoms that follow it on the line)."""
+    and the lowered words, in order, of the uncharged atoms that continue the rewrite when it is a
+    prohibition (`continued`: those that follow it on its line before the next charged atom)."""
 
     old: SnapshotAtom
     new: Atom
     old_sentence: str
     new_sentence: str
-    negated: frozenset[str] = frozenset()
+    continued: tuple[str, ...] = ()
 
     def entry(self) -> JsonObject:
         """The pair as a report entry: each side's line and sentence."""
@@ -122,43 +127,3 @@ class Pair:
             "new_line": self.new.line,
             "new_text": self.new_sentence,
         }
-
-
-@dataclass(frozen=True)
-class Condition:
-    """The content words a condition governs; `restriction` when a restricting word that
-    limits where or to what the instruction applies (`only`) opens it rather than a frame marker
-    or an exclusion."""
-
-    words: frozenset[str]
-    restriction: bool
-
-
-@dataclass(frozen=True)
-class SectionLine:
-    """One atom of a section: its 1-based line, its text with the markup read away, and the content
-    words of that text in order (`,` / `and` / `or` kept as separators)."""
-
-    line: int
-    text: str
-    tokens: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class Section:
-    """The author's atoms under one heading line: the heading's text and every other atom up to the
-    next heading, in file order."""
-
-    heading: str
-    lines: tuple[SectionLine, ...]
-
-
-@dataclass(frozen=True)
-class RewriteWords:
-    """The words one prohibition's rewrite is read against: those on the author's line (`known`),
-    those the rewrite only moved within the sentence to label what it lists (`moved`), and those of
-    the parts of the rewrite that hold its negation (`negated`)."""
-
-    known: frozenset[str]
-    moved: frozenset[str]
-    negated: frozenset[str]

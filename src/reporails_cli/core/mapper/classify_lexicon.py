@@ -321,22 +321,11 @@ CONDITIONAL_MARKERS: set[str] = set(SITUATIONAL_OPENERS) | {
     "for",
 }
 
-# Words that only join or quantify a condition (`every time`, `prior to`, `whenever`): swapping one
-# for a marker above adds no content of its own.
-CONDITION_QUANTIFIERS: frozenset[str] = frozenset(
-    {
-        "wherever", "whilst", "till", "since", "otherwise", "then", "each", "every", "time", "case",
-        "soon", "prior", "else", "only",
-    }
-)  # fmt: skip
-
 # Words that join two conditions of one frame (`If the tests fail and the branch is main, ...`).
 CONDITION_CONJUNCTIONS: frozenset[str] = frozenset({"and", "or"})
 # Words that start the next clause of a packed sentence (`Bump the version and update the docs`, `lint, then test`).
 STEP_JOINER = "then"
 CLAUSE_JOINERS: frozenset[str] = frozenset({"and", STEP_JOINER})
-# Words that join a sentence's conditions or clauses.
-SENTENCE_JOINERS: frozenset[str] = CONDITION_CONJUNCTIONS | CLAUSE_JOINERS
 # The pronoun and copula of `it is` / `it's`.
 IT_IS: tuple[str, str] = ("it", "is")
 
@@ -466,30 +455,6 @@ DEFINITE_DETERMINERS: frozenset[str] = frozenset({"the", "this", "that", "these"
 INDEFINITE_ARTICLES: frozenset[str] = frozenset({"a", "an"})
 DETERMINERS: frozenset[str] = DEFINITE_DETERMINERS | (GENERAL_QUANTIFIERS - {"no", "one"})
 
-# Common English function words, dropped from content-word coverage: polarity already tracks
-# negation/modality (`charge_value`), so these words would only pad an overlap between two
-# otherwise-unrelated instructions without adding topic signal.
-STOPWORDS: frozenset[str] = (
-    CONDITION_CONJUNCTIONS
-    | CLAUSE_JOINERS
-    | frozenset(IT_IS)
-    | MODAL_ABSOLUTE
-    | MODAL_HEDGED
-    | GENERAL_QUANTIFIERS
-    | DEFINITE_DETERMINERS
-    | INDEFINITE_ARTICLES
-    | frozenset(
-        {
-            "after", "again", "also", "always", "are", "as", "at", "be", "been", "before",
-            "being", "but", "by", "can", "did", "do", "does", "down", "few", "for", "from", "here", "if",
-            "in", "into", "its", "just", "may", "more", "most", "never", "nor", "not", "of", "on", "once",
-            "only", "onto", "other", "out", "over", "own", "per", "so", "some", "such", "than", "there",
-            "to", "too", "under", "up", "very", "was", "were", "when", "will", "with", "would", "you",
-            "your",
-        }
-    )
-)  # fmt: skip
-
 # scope prepositions and the prepositions above less the words that open a clause rather than a phrase
 # (`unless`, `when`, `while`, `except`, `since`; `before` / `after` stay, opening a time phrase), with a few more.
 PHRASE_PREPOSITIONS: frozenset[str] = (
@@ -498,60 +463,10 @@ PHRASE_PREPOSITIONS: frozenset[str] = (
     | frozenset({"into", "onto", "over", "through", "against", "between", "via"})
 )
 
-# Quantifiers a `for` may open without cutting what a rule covers (`For each file, run lint`).
-FOR_QUANTIFIERS: frozenset[str] = DETERMINERS & GENERAL_QUANTIFIERS
-# Words after a fronted `for` / scope preposition that make it an aside, not a scope (`For example,`,
-# `In general,`).
-FOR_ASIDES: frozenset[str] = frozenset({"example", "instance"})
-NOT_A_SCOPE: frozenset[str] = FOR_ASIDES | frozenset(
-    {"general", "short", "particular", "practice", "summary", "addition", "fact", "times"}
-)
-# Words that make a list a set of examples rather than the whole of what a rule covers.
-EXAMPLE_LEADS: frozenset[str] = frozenset({"such", "e", "g", "eg", "including", "like", "example", "examples"})
-# Words that only mark a condition or a quantifier over it: swapping one marker for another
-# ("every time" -> "whenever", "prior to" -> "before") adds no content of its own.
-CONDITION_WORDS: frozenset[str] = frozenset(CONDITIONAL_MARKERS) | CONDITION_QUANTIFIERS
-# What ends the phrase a scope preposition opens.
-PHRASE_END: frozenset[str] = PHRASE_PREPOSITIONS | CONDITION_CONJUNCTIONS
-# Words that open a fronted scope phrase (`For all,`, `In CI,`).
-FRAME_OPENERS: frozenset[str] = SCOPE_PREPOSITIONS | {"for"}
-
 # The alphabetic words of a line.
 WORD_RE = re.compile(r"[a-zA-Z']+")
-# A word as written in code-aware prose: letters, digits, underscores and apostrophes (`python3`, `snake_case`).
-CODE_WORD_RE = re.compile(r"[a-zA-Z0-9_']+")
-# A word of letters and digits only: the sub-words of an identifier or a path segment.
-ALNUM_WORD_RE = re.compile(r"[a-zA-Z0-9]+")
-# A token that is one plain word (`except`), as against a path, a dotted name or a multi-word token.
-SINGLE_WORD_RE = re.compile(r"\w+")
-# A hyphenated word opening with a scope preposition (`in-memory`, `on-call`) is one word, not a place.
-PREPOSITION_COMPOUND_RE = re.compile(r"\b(" + "|".join(sorted(SCOPE_PREPOSITIONS)) + r")-(?=[a-z])", re.IGNORECASE)
-# A `(see ...)` reference aside.
-SEE_ASIDE_RE = re.compile(r"\(\s*see\b[^)]*\)", re.IGNORECASE)
-# An example marker (`e.g.`, `for example`, `such as`, `like`, `for instance`, bare or opening a
-# parenthetical) or a reason-clause marker (`because`, `since`, `so that`, `to avoid`, `otherwise`, or
-# a `,` / `—` before a clause-opening `so`): once one opens, the rest of an instruction is an
-# illustration or a justification.
-EXAMPLE_OR_REASON_RE = re.compile(
-    r"\((?:e\.g\.|for example|such as|like|for instance)(?!\w)"
-    r"|\b(?:e\.g\.|for example|such as|like|for instance)(?!\w)"
-    r"|\b(?:because|since|so that|to avoid|otherwise)\b"
-    r"|[,—-]\s*so\b",
-    re.IGNORECASE,
-)
-# Punctuation a whitespace token carries around its word.
-TOKEN_EDGES = ".,;:()[]*_\"'—"
 
 
 def words_of(text: str) -> list[str]:
     """`text`'s alphabetic words, lowered, in order."""
     return [w.lower() for w in WORD_RE.findall(text)]
-
-
-# The comma that separates the items of a list and the phrases of a sentence.
-COMMA = ","
-# What stands between the items of a coordinated list.
-LIST_SEPARATORS: frozenset[str] = frozenset({COMMA}) | CONDITION_CONJUNCTIONS
-# Words that open the next clause after a joiner (`Build docs and push`), told from the nouns a verb-like
-# word may also be.
-CLAUSE_OPENING_VERBS: frozenset[str] = frozenset(VERBS_CORE | VERBS_SUPPLEMENT)

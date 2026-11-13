@@ -12,8 +12,8 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable, Sequence
 
-from reporails_cli.core.heal.preservation.words import AtomView, content_words
-from reporails_cli.core.mapper.classify_lexicon import CLAUSE_JOINERS, CODE_WORD_RE, STEP_JOINER
+from reporails_cli.core.heal.preservation.words import AtomView, is_content_word
+from reporails_cli.core.mapper.classify_lexicon import CLAUSE_JOINERS, STEP_JOINER, words_of
 from reporails_cli.core.mapper.lexical import DASH_MARKS, OPENER_RE, split_items, word_forms
 from reporails_cli.core.mapper.markers import without_list_marker
 from reporails_cli.core.mapper.md_parser import replace_code_spans
@@ -21,7 +21,7 @@ from reporails_cli.core.mapper.parse import inline_plain_text
 from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark, split_prose_sentences
 from reporails_cli.core.platform.contract.json_value import JsonObject
 
-_TRIM = " \t.;:*_"
+_TRIM = " \t.;:"
 
 # Stand-ins for the opener marks inside a code span, so a colon or a dash there opens nothing.
 _STAND_INS = {mark: chr(0xE000 + i) for i, mark in enumerate((":", *sorted(DASH_MARKS)))}
@@ -117,7 +117,12 @@ def _shares(words: set[str], sentence_words: set[str]) -> bool:
 
 def _words_of(text: str) -> set[str]:
     """The lowered words of `text`."""
-    return {w.lower() for w in CODE_WORD_RE.findall(text)}
+    return set(words_of(text))
+
+
+def content_words(text: str) -> set[str]:
+    """The content words of `text`: longer than two letters and not a function word."""
+    return {w for w in words_of(text) if is_content_word(w)}
 
 
 def _rephrased_cut(old_text: str, new_text: str, new_sentences: list[str]) -> bool:
@@ -221,7 +226,7 @@ def _step_at(words: list[str], i: int) -> str | None:
 
 def _step_body(sentence: str) -> str | None:
     """What a sentence that opens with `then`, `then,` or `and then` goes on to say; None for any other."""
-    words = _normal(sentence).lstrip("*_- ").split()
+    words = _normal(sentence).lstrip("- ").split()
     return _step_at(words, 1 if words and words[0] in _LEAD_JOINERS else 0)
 
 

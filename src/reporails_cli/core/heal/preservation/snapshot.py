@@ -8,9 +8,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from reporails_cli.core.heal.preservation.words import AtomView, content_words
+from reporails_cli.core.heal.preservation.words import AtomView
 from reporails_cli.core.lint.content_queries import instruction_atoms_for_file
-from reporails_cli.core.mapper.classify import NEGATION_RE
 from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import read_structure
 from reporails_cli.core.platform.dto.heal import Snapshot, SnapshotAtom
@@ -25,8 +24,10 @@ def is_instruction_heading(atom: AtomView) -> bool:
 
 def is_hedge_fragment(atom: AtomView) -> bool:
     """Whether `atom` is nothing but a hedge (`Consider`, `You should`) — the lead-in the mapper
-    reads as an instruction of its own when it cuts a hedged sentence in two."""
-    return atom.modality == "hedged" and not content_words(atom.plain_text) and not NEGATION_RE.search(atom.plain_text)
+    reads as an instruction of its own when it cuts a hedged sentence in two: a hedged atom whose
+    slots hold no predicate and no object."""
+    slots = atom.slots
+    return atom.modality == "hedged" and (slots is None or (slots.predicate_span is None and slots.object_span is None))
 
 
 def take_snapshot(
@@ -44,10 +45,10 @@ def take_snapshot(
             embedding_int8=a.embedding_int8,
             heading_context=a.heading_context,
             scope_conditional=a.scope_conditional,
-            heading=a.kind == "heading",
             negative_heading=a.negative_heading,
             plain_text=a.plain_text,
             modality=a.modality,
+            slots=a.slots,
         )
         for a in (instruction_atoms_for_file(ruleset_map, file_path, own=True) if ruleset_map is not None else ())
         if (a.kind != "heading" or a.charge_value != 0 or a.negative_heading)

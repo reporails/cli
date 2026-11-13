@@ -326,6 +326,7 @@ def _hand_map(*files: Path) -> tuple[Any, RemediationWorkflow]:
         Atom(
             line=2,
             text="Run build.sh before every commit.",
+            plain_text="Run build.sh before every commit.",
             kind="paragraph",
             charge="IMPERATIVE",
             charge_value=1,

@@ -10,8 +10,8 @@ import re
 from collections import Counter
 from collections.abc import Sequence
 
-from reporails_cli.core.heal.preservation.words import AtomView, content_words, named_key
-from reporails_cli.core.mapper.classify_lexicon import ALNUM_WORD_RE, EXAMPLE_OR_REASON_RE
+from reporails_cli.core.heal.preservation.words import AtomView, named_key, slot_words
+from reporails_cli.core.mapper.classify_lexicon import words_of
 from reporails_cli.core.platform.contract.environment import ProjectEnvironment
 from reporails_cli.core.platform.contract.glob_pattern import GLOB_CHARS
 from reporails_cli.core.platform.contract.json_value import JsonObject
@@ -193,11 +193,10 @@ def invented_named(
 
 
 def _subwords(text: str) -> set[str]:
-    """`text` split into its own alphanumeric sub-words, three-plus letters, lowered —
-    underscores, slashes, dots and backticks are all boundaries here (unlike `content_words`,
-    which keeps `snake_case` and `dotted.paths` joined), the finer split a path segment or an
-    identifier needs to expose the plain word it carries."""
-    return {w.lower() for w in ALNUM_WORD_RE.findall(text) if len(w) > 2}
+    """The three-plus letter words of `text`, lowered — underscores, slashes, dots and backticks
+    are all boundaries here, the split a path segment or an identifier needs to expose the plain
+    word it carries."""
+    return {w for w in words_of(text) if len(w) > 2}
 
 
 def _names_an_existing_referent(token_key: str, old_text: str) -> bool:
@@ -213,26 +212,17 @@ def _names_an_existing_referent(token_key: str, old_text: str) -> bool:
     token_words = _subwords(token_key)
     if not token_words:
         return False
-    old_words = content_words(old_text)
-    return bool(token_words & old_words)
+    return bool(token_words & _subwords(old_text))
 
 
-def _governing_clause_end(text: str) -> int | None:
-    """The position in `text` where an example or reason-clause marker opens, or `None` when
-    none does — a named token at or past this position sits outside the instruction's own
-    governing clause."""
-    starts = [m.start() for m in EXAMPLE_OR_REASON_RE.finditer(text)]
-    return min(starts) if starts else None
-
-
-def _in_trailing_illustration(token: str, text: str, clause_end: int | None) -> bool:
-    """Whether `token` (its own backtick-quoted span) first occurs in `text` at or after
-    `clause_end` — an example or a reason the rewrite tacked on, not part of what the
-    instruction's governing clause itself forbids or permits."""
-    if clause_end is None:
-        return False
-    pos = text.find(token)
-    return pos != -1 and pos >= clause_end
+def _governed(atom: AtomView) -> set[str]:
+    """The lowered named constructs of `atom` that sit in the object or scope the mapper read: a
+    construct outside both (an example or a reason tacked on) illustrates or justifies the
+    instruction and is no part of what it forbids. An atom with no slots read governs all of them."""
+    if atom.slots is None:
+        return {named_key(t) for t in atom.named_tokens}
+    words = set(slot_words(atom, "object", "scope"))
+    return {named_key(t) for t in atom.named_tokens if not (own := words_of(t)) or set(own) <= words}
 
 
 def prohibition_scope_changes(snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom]) -> list[JsonObject]:
@@ -248,12 +238,9 @@ def prohibition_scope_changes(snap_atoms: list[SnapshotAtom], matched_new_for: d
     a scope change — AND (on the added side only) the token neither merely spells out a referent
     the old instruction's own words already carried (`_names_an_existing_referent`: "per the
     template" naming itself as a file path is concretizing a referent already in the sentence,
-    not banning something new) NOR sits inside a trailing example or reason clause the rewrite
-    tacked onto the instruction's own governing clause (`_in_trailing_illustration`: "such as
-    `X`" or "— because `X`" illustrates or justifies the SAME prohibition, it does not widen
-    what the instruction itself forbids). The dropped side reads the original the same way: a
-    construct the original only gave as an example or a reason is not something the rewrite
-    dropped from what is forbidden. Each entry is `{line, text, new_line, new_text, added,
+    not banning something new). Only the constructs in the object or scope the mapper read count
+    (`_governed`): one outside both illustrates or justifies the SAME prohibition and does not
+    change what it forbids. Each entry is `{line, text, new_line, new_text, added,
     dropped}` (`added`/`dropped` are lowercased construct keys); `line` names the original
     prohibition so a caller can quote it."""
     out: list[JsonObject] = []
@@ -263,18 +250,12 @@ def prohibition_scope_changes(snap_atoms: list[SnapshotAtom], matched_new_for: d
         match = matched_new_for.get(id(sa))
         if match is None:
             continue
-        old_clause_end = _governing_clause_end(sa.text)
-        old_named = {named_key(t) for t in sa.named_tokens if not _in_trailing_illustration(t, sa.text, old_clause_end)}
-        new_tokens = match.named_tokens
-        new_named = {named_key(t) for t in new_tokens}
-        clause_end = _governing_clause_end(match.text)
-        illustrated = {named_key(t) for t in new_tokens if _in_trailing_illustration(t, match.text, clause_end)}
         added = sorted(
             t
-            for t in new_named
-            if not token_present_ci(t, sa.text) and not _names_an_existing_referent(t, sa.text) and t not in illustrated
+            for t in _governed(match)
+            if not token_present_ci(t, sa.text) and not _names_an_existing_referent(t, sa.text)
         )
-        dropped = sorted(t for t in old_named if not token_present_ci(t, match.text))
+        dropped = sorted(t for t in _governed(sa) if not token_present_ci(t, match.text))
         if added or dropped:
             out.append(
                 {

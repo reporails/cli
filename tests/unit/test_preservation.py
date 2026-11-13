@@ -68,7 +68,6 @@ def _atom(
         embedding_int8=embedding,
         heading_context=heading_context,
         scope_conditional=scope_conditional,
-        heading=heading,
         negative_heading=heading and is_negative_heading(text),
         plain_text=text.replace("`", ""),
         modality=modality or ("direct" if charge_value else "none"),
@@ -102,6 +101,7 @@ def _new_atom(
         negative_heading=False,
         plain_text=text.replace("`", ""),
         modality="direct" if charge_value else "none",
+        slots=None,
         imported_from="",
     )
 
@@ -2230,6 +2230,7 @@ def _heading_atoms(text: str) -> tuple[SimpleNamespace, ...]:
             heading_context="",
             scope_conditional=False,
             negative_heading=is_negative_heading(line.lstrip("# ").strip()),
+            slots=None,
             imported_from="",
         )
         for n, line in enumerate(text.split("\n"), start=1)

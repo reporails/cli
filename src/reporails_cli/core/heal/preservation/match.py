@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import math
 
-from reporails_cli.core.heal.preservation.words import content_words, named_key
-from reporails_cli.core.mapper.classify import AFFIRMATIVE_ABSOLUTES, NEGATION_RE, leading_prohibition
+from reporails_cli.core.heal.preservation.words import AtomView, atom_words, named_key
+from reporails_cli.core.mapper.classify import AFFIRMATIVE_ABSOLUTES, has_negation_cue, leading_prohibition
 from reporails_cli.core.mapper.classify_lexicon import words_of
 from reporails_cli.core.mapper.prose_split import sentence_spans
 from reporails_cli.core.platform.contract.json_value import JsonObject
@@ -77,19 +77,17 @@ def _mixed_polarity_restated(sa_text: str, na_text: str) -> bool:
     already paired as one instruction; negation symmetry alone is too weak a signal to pair on."""
     if (_leading_polarity_sign(sa_text) == -1) != (_leading_polarity_sign(na_text) == -1):
         return False
-    return bool(NEGATION_RE.search(_without_leading_marker(sa_text))) and bool(
-        NEGATION_RE.search(_without_leading_marker(na_text))
-    )
+    return has_negation_cue(_without_leading_marker(sa_text)) and has_negation_cue(_without_leading_marker(na_text))
 
 
-def _content_coverage(sa_text: str, na_text: str) -> float:
-    """The fraction of `sa_text`'s content words (stopwords removed) present in `na_text` —
-    of the SNAPSHOT side only, never normalized by the shorter of the two word sets, so a
-    short survivor sharing one word with a long lost instruction cannot pass the threshold."""
-    wa = content_words(sa_text)
+def _content_coverage(sa: AtomView, na: AtomView) -> float:
+    """The fraction of `sa`'s content words (the words of its slots) present in `na` — of the
+    SNAPSHOT side only, never normalized by the shorter of the two word sets, so a short survivor
+    sharing one word with a long lost instruction cannot pass the threshold."""
+    wa = atom_words(sa)
     if not wa:
         return 0.0
-    return len(wa & content_words(na_text)) / len(wa)
+    return len(wa & atom_words(na)) / len(wa)
 
 
 def pair_score(sa: SnapshotAtom, na: Atom) -> float | None:
@@ -97,7 +95,7 @@ def pair_score(sa: SnapshotAtom, na: Atom) -> float | None:
     content-word coverage of the snapshot instruction, or embedding cosine. A shared named
     token raises the score but never qualifies a pair by itself."""
     cos = _cosine(sa.embedding_int8, na.embedding_int8)
-    coverage = _content_coverage(sa.text, na.text)
+    coverage = _content_coverage(sa, na)
     if coverage < OVERLAP_THRESHOLD and (cos is None or cos < COSINE_THRESHOLD):
         return None
     score = max(coverage, cos or 0.0)
@@ -151,7 +149,7 @@ def _split_window(sa: SnapshotAtom, new_atoms: list[Atom]) -> list[Atom] | None:
     atoms are never part of the window. Returns the covering window (`sa`'s counterparts for
     `repeated_named`'s vague-instruction-concretized credit), or `None` when no window clears
     the coverage threshold."""
-    words = content_words(sa.text)
+    words = atom_words(sa)
     if not words:
         return None
     charged = [na for na in new_atoms if na.charge_value != 0]
@@ -161,7 +159,7 @@ def _split_window(sa: SnapshotAtom, new_atoms: list[Atom]) -> list[Atom] | None:
         for j in range(i, min(i + SPLIT_WINDOW, len(charged))):
             na = charged[j]
             has_polarity = has_polarity or na.charge_value == sa.charge_value
-            union |= content_words(na.text)
+            union |= atom_words(na)
             if has_polarity and len(words & union) / len(words) >= SPLIT_COVERAGE:
                 return charged[i : j + 1]
     return None
@@ -231,14 +229,14 @@ def added_instructions(
     orig_sentences = [
         w
         for line in snapshot_text.split("\n")
-        for w in (content_words(line[a:b]) for a, b in sentence_spans(line))
+        for w in (set(words_of(line[a:b])) for a, b in sentence_spans(line))
         if w
     ]
     out: list[JsonObject] = []
     for na in new_atoms:
         if na.charge_value == 0 or id(na) in claimed_na or id(na) in used_in_split:
             continue
-        words = content_words(na.text)
+        words = atom_words(na)
         if not words:
             continue
         coverage = max((len(words & sentence) / len(words) for sentence in orig_sentences), default=0.0)
@@ -252,12 +250,12 @@ def lost_context(snap_atoms: list[SnapshotAtom], new_text: str) -> list[JsonObje
     than half present in the new file's text — factual context a rewrite silently dropped.
     Relation-allowed lines are already excluded from `snap_atoms` by the caller, the same as
     every other check."""
-    new_words = content_words(new_text)
+    new_words = set(words_of(new_text))
     out: list[JsonObject] = []
     for a in snap_atoms:
         if a.charge_value != 0 or a.format != "prose":
             continue
-        words = content_words(a.text)
+        words = atom_words(a)
         if not words:
             continue
         if len(words & new_words) / len(words) < OVERLAP_THRESHOLD:

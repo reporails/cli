@@ -10,14 +10,13 @@ import re
 from pathlib import Path
 
 from reporails_cli.core.mapper.annotate import backticked_words, is_unbacked_library_name
-from reporails_cli.core.mapper.classify import conditional_clause, is_conditional_frame
+from reporails_cli.core.mapper.classify import condition_text
 from reporails_cli.core.mapper.imports import IMPORT_REF_RE
 from reporails_cli.core.mapper.instructions import instruction_starts, without_lead
 from reporails_cli.core.mapper.markers import strip_markdown_inline
 from reporails_cli.core.mapper.md_parser import emphasis_runs, has_bold_label, wrapping_runs
 from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark
 from reporails_cli.core.mapper.structure import fragment_line_spans, in_any_span, line_spans
-from reporails_cli.core.mapper.word_spans import words_between
 from reporails_cli.core.platform.dto.diagnostics import BOLD_CHECK, FORMAT_CHECK, SEVERITY_RANK
 from reporails_cli.core.platform.dto.mapping import LineSpans
 from reporails_cli.core.platform.dto.models import LocalFinding
@@ -373,24 +372,11 @@ def _check_bold_patterns(charged: list[Atom], filepath: str) -> list[LocalFindin
     return findings
 
 
-def _condition_text(atom: Atom) -> str | None:
-    """The condition the mapper read on a conditional atom: its decoded scope when that scope
-    opens a conditional frame, else the frame that closes the sentence's opening; None when the
-    atom is not conditional."""
-    if not atom.scope_conditional:
-        return None
-    if atom.slots is not None and atom.slots.scope_span is not None:
-        scope = words_between(atom.plain_text, *atom.slots.scope_span)
-        if is_conditional_frame(scope):
-            return scope
-    return conditional_clause(atom.plain_text)
-
-
 def _check_broad_scope(charged: list[Atom], filepath: str) -> list[LocalFinding]:
     """Check for overly broad conditional scope terms in the condition the mapper read."""
     findings: list[LocalFinding] = []
     for a in charged:
-        condition = _condition_text(a)
+        condition = condition_text(a)
         if condition is None:
             continue
         scope_text = condition.strip(" ,;:")

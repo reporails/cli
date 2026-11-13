@@ -15,7 +15,8 @@ import pytest
 
 from reporails_cli.core.heal.preservation import compare, take_snapshot
 from reporails_cli.core.heal.preservation.snapshot import is_hedge_fragment
-from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
+from reporails_cli.core.mapper.classify_lexicon import CONDITION_OPENERS, words_of
+from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots, RulesetMap
 
 _FILE = "/proj/CLAUDE.md"
 
@@ -31,7 +32,15 @@ def _atom(
     fmt: str = "prose",
 ) -> Atom:
     charge = {1: "DIRECTIVE", -1: "CONSTRAINT", 0: "NEUTRAL"}[charge_value]
+    # What the mapper reads: a predicate and an object on a clause with words after its verb, none on a
+    # lead-in (`Consider`, `You should`).
+    words = len(text.split())
+    slots = AtomSlots(predicate_span=(0, 1), object_span=(1, words)) if words > 2 or charge_value < 0 else None
+    opener = next((i for i, w in enumerate(words_of(text)) if cond and w in CONDITION_OPENERS), None)
+    if slots is not None and opener is not None:
+        slots = AtomSlots(predicate_span=(0, 1), object_span=(1, opener), scope_span=(opener, words))
     return Atom(
+        slots=slots,
         line=line,
         text=text,
         kind="excitation",

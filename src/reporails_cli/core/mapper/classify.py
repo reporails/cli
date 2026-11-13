@@ -10,6 +10,7 @@ Public entry point: `classify_charge(md_text, plain_text=...)`.
 from __future__ import annotations
 
 import re
+from typing import Protocol
 
 from reporails_cli.core.mapper.classify_lexicon import (
     ADDRESSEE_SUBJECTS,
@@ -31,8 +32,8 @@ from reporails_cli.core.mapper.classify_phases import (
 )
 from reporails_cli.core.mapper.markers import strip_markdown_inline, without_list_marker
 from reporails_cli.core.mapper.md_parser import leading_bold_run, replace_code_spans
-from reporails_cli.core.platform.dto.mapping import CoverageRestrictor
-from reporails_cli.core.platform.dto.ruleset import Modality
+from reporails_cli.core.mapper.word_spans import words_between
+from reporails_cli.core.platform.dto.ruleset import AtomSlots, Modality
 
 # ──────────────────────────────────────────────────────────────────
 # RULE-BASED CHARGE CLASSIFIER
@@ -62,8 +63,6 @@ DROPPABLE_LEADS: frozenset[str] = HEDGE_ADVERB_LEADS | {"please"}
 # The hedge words that, opening an instruction (after `you` / `we` / `please`), make all of it a
 # suggestion (`Prefer real objects`, `Try not to mock`, `Perhaps run the linter`).
 HEDGE_LEADS: frozenset[str] = HEDGE_ADVERB_LEADS | {"prefer", "preferably", "consider", "try"}
-# Words that make an instruction a suggestion rather than an order.
-HEDGE_WORDS: frozenset[str] = MODAL_HEDGED | HEDGE_LEADS | frozenset({"probably", "generally", "usually"})
 _HEDGE_LEAD_SKIP = ADDRESSEE_SUBJECTS | {"please"}
 # Words that give an instruction as an order that admits no exception. `must` and `shall` read as
 # absolute modality in the classifier but are not among these cues.
@@ -73,25 +72,6 @@ AFFIRMATIVE_ABSOLUTES: frozenset[str] = ABSOLUTE_CUES - {"never"}
 # Capitalised words that mark a line as a hard constraint.
 CONSTRAINT_WORDS: frozenset[str] = frozenset({"MUST", "NEVER", "ALWAYS", "IMPORTANT"})
 _ABSOLUTE_ADVERBS: frozenset[str] = AFFIRMATIVE_ABSOLUTES | {"only"}
-# Restricting words that exclude (`except`, `excluding`, `outside`): what they open is a condition
-# on its own, so an addition to it widens the instruction.
-EXCLUDING_RESTRICTORS: frozenset[str] = frozenset({"except", "excluding", "outside"})
-# Words that narrow where, when or to what an instruction applies, whatever follows them ...
-SCOPE_RESTRICTORS: frozenset[str] = (
-    EXCLUDING_RESTRICTORS | frozenset({"solely", "absent"}) | (_ABSOLUTE_ADVERBS - {"always"})
-)
-# ... and prepositions that narrow it when followed by a place, time or thing the line did not name.
-
-
-# Words that cut a rule's coverage down to part of what it named (`the rest of the output`,
-# `the remaining tests`); read only as narrowing, since they open no condition. `rest` cuts only as
-# `rest of` (`the REST API` and `rest between retries` cut nothing); `remaining` cuts unless the
-# author's line already carries the sense (`the time left` -> `the remaining time`).
-COVERAGE_RESTRICTORS: dict[str, CoverageRestrictor] = {
-    "rest": CoverageRestrictor(frozenset({"of"}), frozenset({"rest"})),
-    "remaining": CoverageRestrictor(frozenset(), frozenset({"remaining", "rest", "left"})),
-}
-# Prepositions that open a phrase naming a place, a target or a means (`to the scratch dir`): the
 
 
 def _strip_md_for_classify(text: str) -> str:
@@ -172,6 +152,35 @@ def conditional_clause(text: str) -> str | None:
     return head[: close.start()] if close else None
 
 
+class ConditionRead(Protocol):
+    """The fields `condition_text` reads, shared by a mapper atom and a snapshotted one."""
+
+    @property
+    def scope_conditional(self) -> bool:
+        """Whether a conditional frame governs the atom."""
+
+    @property
+    def plain_text(self) -> str:
+        """The text with its markup read away."""
+
+    @property
+    def slots(self) -> AtomSlots | None:
+        """The slots the mapper read, as word spans of `plain_text`."""
+
+
+def condition_text(atom: ConditionRead) -> str | None:
+    """The condition the mapper read on a conditional atom: its decoded scope when that scope
+    opens a conditional frame, else the frame that closes the sentence's opening; None when the
+    atom is not conditional."""
+    if not atom.scope_conditional:
+        return None
+    if atom.slots is not None and atom.slots.scope_span is not None:
+        scope = words_between(atom.plain_text, *atom.slots.scope_span)
+        if is_conditional_frame(scope):
+            return scope
+    return conditional_clause(atom.plain_text)
+
+
 def opens_conditional_clause(text: str) -> bool:
     """True when ``text`` opens a conditional frame AND closes it before its clause.
 
@@ -215,11 +224,6 @@ def _classify_phase1(
 NEGATION_WORDS: frozenset[str] = frozenset({"not", "never", "n't", "cannot"})
 # Prepositions that negate what follows them (`run it without flags`).
 NEGATING_PREPOSITIONS: frozenset[str] = frozenset({"without"})
-# A negation cue: the `n't` contraction suffix, or a standalone negation word.
-NEGATION_RE = re.compile(
-    r"n't\b|\b(?:" + "|".join(sorted((NEGATION_WORDS - {"n't"}) | NEGATING_PREPOSITIONS)) + r")\b",
-    re.IGNORECASE,
-)
 # Lowered words whose presence as a line's first word gives it as an order: absolute and negation
 # cues, constraint words and the modals the classifier reads as a directive.
 DIRECTIVE_CUES: frozenset[str] = (
@@ -411,11 +415,10 @@ def hedges_with_phrase(text: str) -> bool:
     return hedges_with_possible(text) or best_to_sign(text) != 0
 
 
-def has_hedge_cue(text: str) -> bool:
-    """True when any word of `text` is a hedge word — how a line the mapper read as plain prose
-    (`You might want to run the linter`) shows it was a suggestion; so is `where possible` or
-    `It's best (not) to …`. A phrase inside a code span of the markdown `text` is not read."""
-    return any(w in HEDGE_WORDS for w in words_of(text)) or hedges_with_phrase(text)
+def has_negation_cue(text: str) -> bool:
+    """True when `text` holds a negation cue: a negation word, a word ending in the `n't` contraction
+    suffix, or a negating preposition."""
+    return any(w in NEGATION_WORDS or w in NEGATING_PREPOSITIONS or w.endswith("n't") for w in words_of(text))
 
 
 def leading_prohibition(text: str) -> re.Match[str] | None:
@@ -423,11 +426,6 @@ def leading_prohibition(text: str) -> re.Match[str] | None:
     the match's `string` is the words rejoined, so `string[end():]` is what follows the marker."""
     clean = " ".join(words_of(text))
     return _NEGATION_PHRASES_RE.match(clean) or _PROHIBITION_START_RE.match(clean)
-
-
-def absolute_cues(text: str) -> set[str]:
-    """The words of `text` that give its instruction as an order without exception."""
-    return {w for w in words_of(text) if w in ABSOLUTE_CUES}
 
 
 def classify_charge(

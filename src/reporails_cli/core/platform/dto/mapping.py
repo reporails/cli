@@ -119,14 +119,6 @@ class AtomTuple:
     text: str
 
 
-class CoverageRestrictor(NamedTuple):
-    """When a word cuts a rule's coverage down: it must be followed by one of `next_words` (any word
-    when empty), and the author's line must hold none of `already` (the senses it already carries)."""
-
-    next_words: frozenset[str]
-    already: frozenset[str]
-
-
 class FileTypeSpec(NamedTuple):
     """A registry file type read for matching."""
 
