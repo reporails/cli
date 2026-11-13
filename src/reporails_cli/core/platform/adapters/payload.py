@@ -28,7 +28,6 @@ from reporails_cli.core.platform.dto.ruleset import (
     file_record_scalars,
     int8_bytes,
 )
-from reporails_cli.core.platform.policy.negative_headings import in_negative_section, is_negative_heading
 from reporails_cli.core.platform.utils.utils import home_relative
 
 if TYPE_CHECKING:
@@ -105,9 +104,7 @@ def _project_atom(a: Atom, file_idx: dict[str, int]) -> WireObject:
         d["d"] = a.depth
     if a.ambiguous:
         d["a"] = True
-    if (a.kind == "heading" and is_negative_heading(a.text)) or in_negative_section(
-        a.kind, a.format, a.heading_context
-    ):
+    if a.negative_heading or a.in_negative_section:
         d["ns"] = True  # a bare negative heading, or a list item directly under one
     if a.lead_in:
         d["li"] = True  # a line ending with a colon that introduces the list, code block or table after it

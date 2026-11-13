@@ -153,6 +153,8 @@ class Atom(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__in
     # table follows that paragraph in the file
     lead_in: bool = False
     plain_text: str = ""  # AST-stripped text for NLP/embedding
+    negative_heading: bool = False  # a heading atom that is a bare negative label (`## Don'ts`)
+    in_negative_section: bool = False  # a list item directly under a bare negative heading
     rule: str = ""  # which classifier rule fired (p1_negation_phrase, p3c_verb0_use, etc.)
     ambiguous: bool = False  # True when charge depends on verb-noun interpretation
     embedded_charge_markers: list[str] = Field(default_factory=list)  # opposite-direction markers

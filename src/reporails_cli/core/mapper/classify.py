@@ -156,19 +156,28 @@ _COND_CLAUSE_CLOSE_RE = re.compile(r"[,;]\s*\S|\s+then\s+\S", re.IGNORECASE)
 _COND_CLAUSE_MAX_WORDS = 12
 
 
+def conditional_clause(text: str) -> str | None:
+    """The conditional frame ``text`` opens, from its start through the word before the
+    comma or `then` that closes it; None when no frame closes before its clause.
+
+    A frame marker at the head settles nothing on its own, because the same words
+    open a noun phrase (`While loops …`) or a heading (`When to use`). A real frame
+    hands off to the clause it governs at a comma or a `then`.
+    """
+    if not is_conditional_frame(text):
+        return None
+    head = " ".join(text.split()[:_COND_CLAUSE_MAX_WORDS])
+    close = _COND_CLAUSE_CLOSE_RE.search(head)
+    return head[: close.start()] if close else None
+
+
 def opens_conditional_clause(text: str) -> bool:
     """True when ``text`` opens a conditional frame AND closes it before its clause.
 
     The stricter reading of :func:`is_conditional_frame`, for the case where the
-    whole sentence is the evidence: a frame marker at the head settles nothing on
-    its own, because the same words open a noun phrase (`While loops …`) or a
-    heading (`When to use`). A real frame hands off to the clause it governs at a
-    comma or a `then`.
+    whole sentence is the evidence (see :func:`conditional_clause`).
     """
-    if not is_conditional_frame(text):
-        return False
-    head = " ".join(text.split()[:_COND_CLAUSE_MAX_WORDS])
-    return bool(_COND_CLAUSE_CLOSE_RE.search(head))
+    return conditional_clause(text) is not None
 
 
 def _classify_phase1(

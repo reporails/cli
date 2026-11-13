@@ -84,6 +84,7 @@ class SnapshotAtom:
     heading_context: str = ""
     scope_conditional: bool = False
     heading: bool = False
+    negative_heading: bool = False
     plain_text: str = ""
     modality: Modality = "none"
 

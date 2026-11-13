@@ -14,7 +14,6 @@ from reporails_cli.core.mapper.md_parser import wrapping_runs
 from reporails_cli.core.platform.contract.json_value import JsonValue, as_int, as_str, str_list
 from reporails_cli.core.platform.dto.lint import QueryResult
 from reporails_cli.core.platform.dto.ruleset import DESCRIPTION_FORMATS, LIST_OBJECT_ROLE, Atom, RulesetMap
-from reporails_cli.core.platform.policy.negative_headings import is_negative_heading
 
 # A check's `args` mapping, as the rule file wrote it.
 QueryArgs = Mapping[str, JsonValue]
@@ -259,7 +258,7 @@ def has_charged_headings(rm: RulesetMap, file_path: str, _args: QueryArgs) -> Qu
         [
             QueryResult(True, file_path, a.line, a.text[:50])
             for a in atoms_for_file(rm, file_path)
-            if a.kind == "heading" and a.charge_value != 0 and not is_negative_heading(a.text)
+            if a.kind == "heading" and a.charge_value != 0 and not a.negative_heading
         ],
     )
 

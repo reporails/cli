@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.platform.policy.negative_headings import in_negative_section, is_negative_heading
+from reporails_cli.core.mapper.negative_headings import in_negative_section, is_negative_heading
 
 
 @pytest.mark.unit

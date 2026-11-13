@@ -15,13 +15,12 @@ from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import read_structure
 from reporails_cli.core.platform.dto.heal import Snapshot, SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
-from reporails_cli.core.platform.policy.negative_headings import is_negative_heading
 
 
 def is_instruction_heading(atom: AtomView) -> bool:
     """Whether a heading atom is an instruction of its own: charged, and not a bare negative label.
     A neutral heading and a bare negative heading are left to the structure checks."""
-    return atom.charge_value != 0 and not is_negative_heading(atom.text)
+    return atom.charge_value != 0 and not atom.negative_heading
 
 
 def is_hedge_fragment(atom: AtomView) -> bool:
@@ -46,11 +45,12 @@ def take_snapshot(
             heading_context=a.heading_context,
             scope_conditional=a.scope_conditional,
             heading=a.kind == "heading",
+            negative_heading=a.negative_heading,
             plain_text=a.plain_text,
             modality=a.modality,
         )
         for a in (instruction_atoms_for_file(ruleset_map, file_path, own=True) if ruleset_map is not None else ())
-        if (a.kind != "heading" or a.charge_value != 0 or is_negative_heading(a.text))
+        if (a.kind != "heading" or a.charge_value != 0 or a.negative_heading)
     )
     return make_snapshot(file_path, text, atoms, score, relation_lines)
 

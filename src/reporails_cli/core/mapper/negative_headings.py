@@ -1,10 +1,14 @@
-"""Bare negative headings: a heading such as `## Don'ts` that labels a list of prohibitions."""
+"""Bare negative headings: a heading such as `## Don'ts` that labels a list of prohibitions.
+
+The map reads each heading once and records the result on its atoms (`Atom.negative_heading`,
+`Atom.in_negative_section`); every outer layer reads those fields.
+"""
 
 from __future__ import annotations
 
 import re
 
-from reporails_cli.core.platform.dto.ruleset import LIST_ITEM_FORMATS
+from reporails_cli.core.platform.dto.ruleset import LIST_ITEM_FORMATS, Atom
 
 # The adjectives that label a prohibition (`## Forbidden`).
 PROHIBITION_ADJECTIVES: frozenset[str] = frozenset({"prohibited", "forbidden"})
@@ -44,3 +48,11 @@ def is_negative_heading(heading: str) -> bool:
 def in_negative_section(kind: str, fmt: str, heading_context: str) -> bool:
     """True for a list item that sits directly under a bare negative heading."""
     return kind != "heading" and fmt in LIST_ITEM_FORMATS and is_negative_heading(heading_context)
+
+
+def read_negative_headings(atoms: list[Atom]) -> None:
+    """Record on each atom whether it is a bare negative heading and whether it is a list item
+    that sits directly under one, in place."""
+    for atom in atoms:
+        atom.negative_heading = atom.kind == "heading" and is_negative_heading(atom.text)
+        atom.in_negative_section = in_negative_section(atom.kind, atom.format, atom.heading_context)

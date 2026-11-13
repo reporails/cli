@@ -26,7 +26,6 @@ from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, 
 from reporails_cli.core.platform.dto.heal import Pair, Snapshot, SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.core.platform.dto.structure import DocumentStructure
-from reporails_cli.core.platform.policy.negative_headings import is_negative_heading
 
 # The fixed preservation-contract text shown in the `remedy_brief` reply. Byte-identical —
 # the plugin quotes it verbatim.
@@ -51,7 +50,7 @@ def _negative_heading_texts(new_map: RulesetMap | None, file_path: str) -> list[
     """The text of each bare negative heading the mapper reads in `new_map`'s `file_path`,
     whatever its markdown style (`##`, underlined, inside a quote)."""
     atoms = own_atoms_for_file(new_map, file_path) if new_map is not None else ()
-    return [a.text for a in atoms if a.kind == "heading" and is_negative_heading(a.text)]
+    return [a.text for a in atoms if a.negative_heading]
 
 
 def _pair_checks(
@@ -184,7 +183,7 @@ def compare(
     new_atoms = rewritten_atoms(new_map, snapshot.file_path)
     new_all = own_atoms_for_file(new_map, snapshot.file_path) if new_map is not None else []
     negative_headings = (
-        [a for a in live if a.heading and is_negative_heading(a.text)],
+        [a for a in live if a.negative_heading],
         _negative_heading_texts(new_map, snapshot.file_path),
     )
     checks = _run_checks(

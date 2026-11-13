@@ -8,6 +8,7 @@ import msgpack
 import pytest
 
 from reporails_cli.core.mapper.map_cache import atoms_to_dicts, dicts_to_atoms
+from reporails_cli.core.mapper.negative_headings import read_negative_headings
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.mapper.serialize import load_ruleset_map, save_ruleset_map
 from reporails_cli.core.platform.adapters.payload import (
@@ -179,6 +180,7 @@ class TestNegativeSectionKey:
             )
             for i, (kind, fmt, text, ctx) in enumerate(specs)
         )
+        read_negative_headings(list(atoms))
         rm.atoms = atoms
         return project_payload(rm, _ROOT)["atoms"]
 

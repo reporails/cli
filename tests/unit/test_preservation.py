@@ -19,6 +19,7 @@ from reporails_cli.core.heal.preservation import match as preservation_match
 from reporails_cli.core.heal.preservation import named as preservation_named
 from reporails_cli.core.heal.preservation import structure as preservation_structure
 from reporails_cli.core.heal.preservation.snapshot import make_snapshot
+from reporails_cli.core.mapper.negative_headings import is_negative_heading
 from reporails_cli.core.mapper.structure import read_structure
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 from reporails_cli.core.platform.dto.heal import Snapshot, SnapshotAtom
@@ -68,6 +69,7 @@ def _atom(
         heading_context=heading_context,
         scope_conditional=scope_conditional,
         heading=heading,
+        negative_heading=heading and is_negative_heading(text),
         plain_text=text.replace("`", ""),
         modality=modality or ("direct" if charge_value else "none"),
     )
@@ -97,6 +99,7 @@ def _new_atom(
         format="prose",
         heading_context=heading_context,
         scope_conditional=scope_conditional,
+        negative_heading=False,
         plain_text=text.replace("`", ""),
         modality="direct" if charge_value else "none",
         imported_from="",
@@ -2228,6 +2231,7 @@ def _heading_atoms(text: str) -> tuple[SimpleNamespace, ...]:
             format="heading",
             heading_context="",
             scope_conditional=False,
+            negative_heading=is_negative_heading(line.lstrip("# ").strip()),
             imported_from="",
         )
         for n, line in enumerate(text.split("\n"), start=1)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.lint.content_checker import run_content_checks
+from reporails_cli.core.mapper.negative_headings import read_negative_headings
 from reporails_cli.core.platform.dto.models import Category, Check, FileMatch, Rule, RuleType, Severity
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap, RulesetSummary
 
@@ -91,7 +92,7 @@ def test_every_non_italic_prohibition_gets_its_own_finding() -> None:
 
 
 def _heading(line: int, text: str, charge_value: int) -> Atom:
-    return Atom(
+    atom = Atom(
         line=line,
         text=text,
         kind="heading",
@@ -101,6 +102,8 @@ def _heading(line: int, text: str, charge_value: int) -> Atom:
         specificity="abstract",
         file_path="CLAUDE.md",
     )
+    read_negative_headings([atom])
+    return atom
 
 
 def _heading_rule() -> Rule:

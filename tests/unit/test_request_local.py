@@ -123,7 +123,7 @@ class TestBroadScopeIsSent:
     @pytest.mark.subsys_diagnostic
     def test_broad_scope_finding_is_one_entry(self) -> None:
         from reporails_cli.core.lint.client_checks import run_client_checks
-        from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap, RulesetSummary
+        from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots, FileRecord, RulesetMap, RulesetSummary
 
         atom = Atom(
             line=3,
@@ -136,6 +136,8 @@ class TestBroadScopeIsSent:
             position_index=0,
             file_path="a.md",
             scope_conditional=True,
+            plain_text="When any external service fails, retry the request.",
+            slots=AtomSlots(scope_span=(0, 5)),
         )
         ruleset = RulesetMap(
             schema_version="1.0.0",

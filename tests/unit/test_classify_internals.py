@@ -27,9 +27,26 @@ from reporails_cli.core.classify import (
     _parse_file_types,
     location_matches_mode,
 )
+from reporails_cli.core.mapper.classify import conditional_clause
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, FileTypeDeclaration
 from reporails_cli.core.platform.policy.matching import file_matches, prop_matches
 from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+@pytest.mark.parametrize(
+    ("text", "clause"),
+    [
+        ("Where external services are slow, retry the request.", "Where external services are slow"),
+        ("Unless the cache is warm then rebuild it.", "Unless the cache is warm"),
+        ("While loops must be bounded.", None),
+        ("When to use", None),
+    ],
+)
+def test_conditional_clause_is_the_frame_up_to_its_closing_comma_or_then(text: str, clause: str | None) -> None:
+    assert conditional_clause(text) == clause
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # is_loose_leaf_pattern — location-ambiguous glob detection (L223, L225)

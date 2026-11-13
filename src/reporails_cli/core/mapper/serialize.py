@@ -31,6 +31,7 @@ from reporails_cli.core.mapper.classify import (
 )
 from reporails_cli.core.mapper.classify_lexicon import MODAL_ABSOLUTE, words_of
 from reporails_cli.core.mapper.classify_no import starts_bare_no_status, starts_descriptive_no
+from reporails_cli.core.mapper.negative_headings import PROHIBITION_ADJECTIVES
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str, opt_str
 from reporails_cli.core.platform.dto.mapping import MapFinding
 from reporails_cli.core.platform.dto.ruleset import (
@@ -47,7 +48,6 @@ from reporails_cli.core.platform.dto.ruleset import (
     file_record_scalars,
     int8_bytes,
 )
-from reporails_cli.core.platform.policy.negative_headings import PROHIBITION_ADJECTIVES
 
 # ──────────────────────────────────────────────────────────────────
 # SERIALIZATION
@@ -68,6 +68,10 @@ def _pack_optional_atom_fields(atom: Atom, d: JsonObject) -> None:
         d["list_depth"] = atom.list_depth
     if atom.lead_in:
         d["lead_in"] = True
+    if atom.negative_heading:
+        d["negative_heading"] = True
+    if atom.in_negative_section:
+        d["in_negative_section"] = True
     if atom.rule:
         d["rule"] = atom.rule
     if atom.ambiguous:

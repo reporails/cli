@@ -22,7 +22,6 @@ from reporails_cli.core.mapper.classify_no import is_terse_no_prohibition, start
 from reporails_cli.core.mapper.classify_phases import ChargeVerdict
 from reporails_cli.core.mapper.md_parser import code_spans, leading_bold_run
 from reporails_cli.core.platform.dto.ruleset import Atom, AtomFormat
-from reporails_cli.core.platform.policy.negative_headings import in_negative_section
 
 # Rule trace of a table header row: a column-label row, kept neutral.
 TABLE_HEADER_RULE = "table_header"
@@ -250,7 +249,7 @@ def _apply_deontic_floor(atoms: list[Atom]) -> None:
     Positive headings carry no floor. Runs AFTER charge assignment.
     """
     for atom in atoms:
-        if not in_negative_section(atom.kind, atom.format, atom.heading_context):
+        if not atom.in_negative_section:
             continue
         atom.charge, atom.charge_value = "CONSTRAINT", -1
         if atom.modality == "none":

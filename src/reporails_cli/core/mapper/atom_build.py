@@ -215,6 +215,7 @@ def _atom_from_sentence(
         position_index=atom.position_index,
         token_count=_count_tokens(sent if literal_markdown else plain),
         heading_context=atom.heading_context,
+        in_negative_section=atom.in_negative_section,
         list_depth=atom.list_depth,
         lead_in=atom.lead_in and _ends_with_colon(plain),
         plain_text=plain,

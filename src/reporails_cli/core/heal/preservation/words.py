@@ -54,6 +54,10 @@ class AtomView(Protocol):
     def heading_context(self) -> str:
         """The text of the heading its section sits under."""
 
+    @property
+    def negative_heading(self) -> bool:
+        """Whether it is a heading that is a bare negative label."""
+
 
 def content_words(text: str) -> set[str]:
     """`text`'s content words: stopwords, hedges/filler, and short tokens dropped, the rest lowered."""

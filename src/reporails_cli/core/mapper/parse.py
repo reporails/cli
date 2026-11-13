@@ -45,6 +45,7 @@ from reporails_cli.core.mapper.md_parser import (
     replace_code_spans,
     tok_line,
 )
+from reporails_cli.core.mapper.negative_headings import read_negative_headings
 from reporails_cli.core.mapper.prose_split import SEGMENTATION_STRUCTURE_AWARE, carries_word, split_prose_sentences
 from reporails_cli.core.platform.dto.ruleset import LIST_OBJECT_ROLE, SENTENCE_SPLIT_FORMATS, Atom, AtomFormat
 
@@ -402,6 +403,7 @@ def tokenize(content: str, segmentation: str = "legacy") -> list[Atom]:
     if segmentation == SEGMENTATION_STRUCTURE_AWARE:
         atoms = _segment_structure_aware(atoms)
 
+    read_negative_headings(atoms)
     _scan_neutral_for_embedded_markers(atoms)
     _scan_charged_for_compound_markers(atoms)
 
