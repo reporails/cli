@@ -19,7 +19,6 @@ from reporails_cli.core.mapper.classify_lexicon import (
     PHRASE_PREPOSITIONS,
     STOPWORDS,
 )
-from reporails_cli.core.mapper.lexical import CLAUSE_DASH_RE, DASH_PAIR_RE
 from reporails_cli.core.mapper.md_parser import replace_code_spans
 from reporails_cli.core.platform.dto.heal import Pair, RewriteWords, Section
 
@@ -51,26 +50,6 @@ def _new_head_noun(new: list[str], j1: int, j2: int) -> bool:
     return bool(INDEFINITE_ARTICLES & set(span)) and bool(_content(new[j1:j2])) and new[j2] not in PHRASE_PREPOSITIONS
 
 
-_LIST_RE = re.compile(r",|\b(?:" + "|".join(sorted(CONDITION_CONJUNCTIONS)) + r")\b")
-
-
-def _keep_list_aside(match: re.Match[str]) -> str:
-    """The text between two dashes as an aside when it holds a list (`— X, Y, or Z —`); two clauses
-    (`— prefer a fake —`) stay cut."""
-    inner = match.group(1)
-    return f" {inner} " if _LIST_RE.search(inner) else match.group(0)
-
-
-def _negated_words(sentence: str) -> set[str]:
-    """The lowered words of the parts of `sentence` (cut at `;`, `:` and a single dash) that hold
-    its negation: a clause after the dash (`Do not use a mock — prefer a fake`) is not what it
-    forbids, while a list between two dashes stays in its clause. An unspaced en dash or hyphen
-    (`client-server`, a number range) cuts nothing."""
-    text = DASH_PAIR_RE.sub(_keep_list_aside, sentence)
-    text = CLAUSE_DASH_RE.sub("\n", text.replace(";", "\n").replace(":", "\n"))
-    return {w.lower() for part in text.split("\n") if NEGATION_RE.search(part) for w in WORD_RE.findall(part)}
-
-
 def qualified_general_noun(p: Pair, known: set[str]) -> bool:
     """Whether a prohibition's rewrite restricts what it forbids: content words put into its
     sentence anywhere but after a definite reference (`the linter` -> `the ruff linter` names what
@@ -87,7 +66,7 @@ def qualified_general_noun(p: Pair, known: set[str]) -> bool:
     ops = difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes()
     removed = {w for _, i1, i2, _, _ in ops if i1 < i2 for w in _content(old[i1:i2])}
     moved = removed if ":" in p.new_sentence and ":" not in p.old_sentence else set()
-    words = RewriteWords(frozenset(known), frozenset(moved), frozenset(_negated_words(p.new_sentence)))
+    words = RewriteWords(frozenset(known), frozenset(moved), p.negated)
     return any(
         _op_restricts(tag, old[i1:i2], new, (j1, j2), words) for tag, i1, i2, j1, j2 in ops if j1 > 0 and j2 < len(new)
     )
@@ -169,7 +148,6 @@ def kinds_listed(p: Pair) -> bool:
         return False
     old, new = _sentence_words(p)
     named = set(old) | {f for w in old for f in word_forms(w)}
-    negated = _negated_words(p.new_sentence)
     for tag, _, _, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
         added = new[j1:j2]
         if tag == "equal" or "or" not in added or _EXAMPLE_LEADS & set(new[max(j1 - 3, 0) : j2]):
@@ -177,7 +155,7 @@ def kinds_listed(p: Pair) -> bool:
         if tag == "insert" and j1 > 0 and _extends_author_noun(new, j1, j2, named, p.new_sentence):
             continue
         fresh = [w for w in _content(added) if not word_forms(w) & named]
-        if fresh and set(fresh) <= negated:
+        if fresh and set(fresh) <= p.negated:
             return True
     return False
 

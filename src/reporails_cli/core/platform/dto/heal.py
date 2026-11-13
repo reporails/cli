@@ -103,12 +103,15 @@ class Snapshot:
 
 @dataclass(frozen=True)
 class Pair:
-    """A matched instruction: the original atom and its rewrite, each with the sentence it sits in."""
+    """A matched instruction: the original atom and its rewrite, each with the sentence it sits in,
+    and the lowered words of the rewrite that its prohibition covers (`negated`: those of the
+    constraint atom holding the rewrite, with the neutral atoms that follow it on the line)."""
 
     old: SnapshotAtom
     new: Atom
     old_sentence: str
     new_sentence: str
+    negated: frozenset[str] = frozenset()
 
     def entry(self) -> JsonObject:
         """The pair as a report entry: each side's line and sentence."""

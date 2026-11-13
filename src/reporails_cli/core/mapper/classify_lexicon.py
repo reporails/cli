@@ -333,7 +333,8 @@ CONDITION_QUANTIFIERS: frozenset[str] = frozenset(
 # Words that join two conditions of one frame (`If the tests fail and the branch is main, ...`).
 CONDITION_CONJUNCTIONS: frozenset[str] = frozenset({"and", "or"})
 # Words that start the next clause of a packed sentence (`Bump the version and update the docs`, `lint, then test`).
-CLAUSE_JOINERS: frozenset[str] = frozenset({"and", "then"})
+STEP_JOINER = "then"
+CLAUSE_JOINERS: frozenset[str] = frozenset({"and", STEP_JOINER})
 # The pronoun and copula of `it is` / `it's`.
 IT_IS: tuple[str, str] = ("it", "is")
 

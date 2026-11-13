@@ -13,12 +13,9 @@ import re
 # The em dash and the en dash, which set a clause off from the one before it.
 DASH_MARKS = frozenset({"\u2014", "\u2013"})
 
-# A dash that cuts a clause: an em dash anywhere, an en dash or `-` / `--` only with a space on each
-# side (an unspaced `client-server` or number range stays whole).
-_CUT_DASH = r"(?:\u2014|(?<=\s)(?:\u2013|--?)(?=\s))"
-CLAUSE_DASH_RE = re.compile(_CUT_DASH)
-# Two clause dashes around text that holds no dash (`file any plan — X, Y, or Z — into`).
-DASH_PAIR_RE = re.compile(f"{_CUT_DASH}((?:(?!{_CUT_DASH}).)+?){_CUT_DASH}")
+COMMA = ","
+# Marks that end a phrase: a comma, `;`, `:`, a parenthesis or a dash.
+PHRASE_MARKS = COMMA + ";:()" + "".join(sorted(DASH_MARKS))
 
 # ── Clause-split markers ───────────────────────────────────────────────
 # STRONG markers: space-flanked em/en-dash, semicolon, colon. Punctuation only, so
@@ -32,6 +29,12 @@ _SUBORD_RE = re.compile(
     r"\s+(?=(?:before|after|when|while|unless|until|although|because|rather than|instead of)\s)",
     re.IGNORECASE,
 )
+
+
+def split_at_marks(text: str, marks: str = PHRASE_MARKS) -> list[str]:
+    """`text` cut at every one of the characters `marks`, which are dropped; the pieces keep their
+    spacing and may be empty (`a, (b)` -> `['a', ' ', 'b', '']`). More than one piece means a mark stood."""
+    return re.split("[" + re.escape(marks) + "]", text)
 
 
 def split_clauses(text: str) -> list[str]:

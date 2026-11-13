@@ -14,6 +14,7 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 
 from reporails_cli.core.heal.preservation.words import WORD_RE, AtomView, content_words, word_forms
+from reporails_cli.core.mapper.classify_lexicon import CLAUSE_JOINERS, STEP_JOINER
 from reporails_cli.core.mapper.lexical import DASH_MARKS
 from reporails_cli.core.mapper.markers import without_list_marker
 from reporails_cli.core.mapper.md_parser import replace_code_spans
@@ -22,20 +23,18 @@ from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark, split
 from reporails_cli.core.platform.contract.json_value import JsonObject
 
 # What opens a list or a closing clause: a colon, or a dash set off by spaces.
-_OPENER_RE = re.compile(r":|\s[—\u2013-]\s")
+_OPENER_RE = re.compile(":|\\s[" + "".join(sorted(DASH_MARKS)) + "]\\s")
 _TRIM = " \t.;:*_"
 
 # Stand-ins for the opener marks inside a code span, so a colon or a dash there opens nothing.
-_STAND_INS = {mark: chr(0xE000 + i) for i, mark in enumerate((":", *sorted(DASH_MARKS), "-"))}
-_MASK = str.maketrans({mark: stand_in for mark, stand_in in _STAND_INS.items() if mark != "-"})
+_STAND_INS = {mark: chr(0xE000 + i) for i, mark in enumerate((":", *sorted(DASH_MARKS)))}
+_MASK = str.maketrans(_STAND_INS)
 _UNMASK = {stand_in: mark for mark, stand_in in _STAND_INS.items()}
-_LONE_DASH_STAND_IN = _STAND_INS["-"]
-_LONE_DASH_RE = re.compile(r"(?<=\s)-(?=\s)")
 
 
 def _masked(content: str) -> str:
     """`content` (a code span's text) with its opener marks replaced by stand-ins."""
-    return _LONE_DASH_RE.sub(_LONE_DASH_STAND_IN, content.translate(_MASK))
+    return content.translate(_MASK)
 
 
 def _unmasked(text: str) -> str:
@@ -223,14 +222,21 @@ def _lead_stands_alone(old_text: str, new: str, new_sentences: list[str]) -> boo
     return False
 
 
-_STEP_RE = re.compile(r"(?:and\s+)?then,?\s+")
+_LEAD_JOINERS = CLAUSE_JOINERS - {STEP_JOINER}
+
+
+def _step_at(words: list[str], i: int) -> str | None:
+    """What the step that `words[i]` opens goes on to say: `then` or `then,` followed by a word;
+    None when `words[i]` opens none."""
+    if i >= len(words) or words[i].removesuffix(",") != STEP_JOINER or i + 1 >= len(words):
+        return None
+    return " ".join(words[i + 1 :])
 
 
 def _step_body(sentence: str) -> str | None:
     """What a sentence that opens with `then`, `then,` or `and then` goes on to say; None for any other."""
-    text = _normal(sentence).lstrip("*_- ")
-    found = _STEP_RE.match(text)
-    return text[found.end() :] if found else None
+    words = _normal(sentence).lstrip("*_- ").split()
+    return _step_at(words, 1 if words and words[0] in _LEAD_JOINERS else 0)
 
 
 def opens_step(text: str) -> bool:
@@ -241,9 +247,10 @@ def opens_step(text: str) -> bool:
 def _continues(whole: str, body: str) -> bool:
     """Whether the author's sentence `whole` carries on into the step `body` after something, with
     `then`, `then,` or `and then` (not at the start of a sentence)."""
-    old = _normal(whole)
-    for found in re.finditer(rf"(?<!\w)(?:and\s+)?then,?\s+{re.escape(body)}", old):
-        if found.start() > 0 and old[: found.start()].rstrip()[-1:] not in ".!?:":
+    words = _normal(whole).split()
+    for i in range(len(words)):
+        start = i - 1 if i > 0 and words[i - 1] in _LEAD_JOINERS else i
+        if (_step_at(words, i) or "").startswith(body) and start > 0 and words[start - 1][-1:] not in ".!?:":
             return True
     return False
 

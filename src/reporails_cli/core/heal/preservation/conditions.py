@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from collections.abc import Set as AbstractSet
 
 from reporails_cli.core.heal.preservation.qualifiers import (
@@ -40,6 +40,7 @@ from reporails_cli.core.mapper.classify import (
     has_hedge_cue,
 )
 from reporails_cli.core.mapper.classify_lexicon import (
+    CLAUSE_JOINERS,
     CONDITION_CONJUNCTIONS,
     CONDITION_OPENERS,
     CONDITION_QUANTIFIERS,
@@ -52,6 +53,7 @@ from reporails_cli.core.mapper.classify_lexicon import (
     SCOPE_PREPOSITIONS,
     STOPWORDS,
 )
+from reporails_cli.core.mapper.lexical import COMMA, split_at_marks
 from reporails_cli.core.mapper.prose_split import split_prose_sentences
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.heal import Condition, Pair, Section, SectionLine, SnapshotAtom
@@ -61,13 +63,10 @@ from reporails_cli.core.platform.dto.ruleset import Atom
 _SCOPE_REACH = 3  # words after a scope cue that make the scope it adds
 _NEUTRAL_COVERAGE = 0.75  # share of a new instruction's words a hedged line the mapper read as prose must hold
 
-_CLAUSE_RE = re.compile(r"[,;:()—]")
 # Stands in a clause for each named construct that was there, so the words after it do not fall
 # into the reach of the word before it.
 _NAMED = "namedconstruct"
-_SEGMENT_RE = re.compile(
-    f"{_CLAUSE_RE.pattern}|\\b(?:{'|'.join(sorted(CONDITION_CONJUNCTIONS | {'then'}))})\\b", re.IGNORECASE
-)
+_JOINERS = CONDITION_CONJUNCTIONS | CLAUSE_JOINERS
 # What ends the phrase a scope preposition opens.
 _PHRASE_END = PHRASE_PREPOSITIONS | CONDITION_CONJUNCTIONS
 
@@ -94,6 +93,27 @@ def sentence_of(atoms_by_line: ByLine, atom: AtomView) -> str:
     return line
 
 
+def negated_words(line_atoms: Sequence[AtomView], atom: AtomView) -> frozenset[str]:
+    """The lowered words a prohibition covers, from the mapper's atoms of `atom`'s line: those of the
+    constraint atom holding `atom`, then those of the uncharged atoms that follow it before the next
+    charged one (`Do not file any plan —` and the `release notes, build work, or hub notes — into the
+    hub.` after it, while a directive after the dash, `prefer a fake`, is no part of it). Empty
+    when `atom` is not part of a constraint."""
+    start = next((i for i, a in enumerate(line_atoms) if a is atom), None)
+    if start is None:
+        return frozenset()
+    while start >= 0 and line_atoms[start].charge_value == 0:
+        start -= 1
+    if start < 0 or line_atoms[start].charge_value != -1:
+        return frozenset()
+    covered = [line_atoms[start]]
+    for a in line_atoms[start + 1 :]:
+        if a.charge_value != 0:
+            break
+        covered.append(a)
+    return frozenset(w.lower() for a in covered for w in WORD_RE.findall(a.text))
+
+
 def pair_up(
     snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom], old_by_line: ByLine, new_by_line: ByLine
 ) -> list[Pair]:
@@ -102,7 +122,8 @@ def pair_up(
     for sa in snap_atoms:
         match = matched_new_for.get(id(sa))
         if sa.charge_value != 0 and match is not None:
-            out.append(Pair(sa, match, sentence_of(old_by_line, sa), sentence_of(new_by_line, match)))
+            negated = negated_words(new_by_line.get(match.line, ()), match)
+            out.append(Pair(sa, match, sentence_of(old_by_line, sa), sentence_of(new_by_line, match), negated))
     return out
 
 
@@ -206,9 +227,15 @@ def _placed_words(old_by_line: ByLine, pair: Pair) -> set[str]:
             for i, word in enumerate(clause):
                 if word in PHRASE_PREPOSITIONS:
                     placed.update(clause[i + 1 : i + 1 + _SCOPE_REACH])
-    if not _SEGMENT_RE.search(pair.old_sentence):
+    if not _goes_on(pair.old_sentence):
         placed.update(w for clause in _clauses(pair.old) for w in clause)
     return placed | {f for w in placed for f in word_forms(w)}
+
+
+def _goes_on(sentence: str) -> bool:
+    """Whether `sentence` goes on to another clause: a phrase mark stands in it, or a word that joins
+    clauses (`and`, `or`, `then`)."""
+    return len(split_at_marks(sentence)) > 1 or bool(_JOINERS & {w.lower() for w in WORD_RE.findall(sentence)})
 
 
 def _phrase(tail: list[str]) -> list[str]:
@@ -254,7 +281,7 @@ def _clauses(atom: AtomView, *, named: bool = False) -> list[list[str]]:
     """`atom`'s words, one list per comma / colon / parenthesis separated clause, each named
     construct a placeholder word unless `named` (a condition's words read the same backticked or
     not)."""
-    parts = _CLAUSE_RE.split(_PREPOSITION_COMPOUND_RE.sub(r"\1", prose_text(atom, named=named, fill=f" {_NAMED} ")))
+    parts = split_at_marks(_PREPOSITION_COMPOUND_RE.sub(r"\1", prose_text(atom, named=named, fill=f" {_NAMED} ")))
     return [w for w in ([t.lower() for t in WORD_RE.findall(part)] for part in parts) if w]
 
 
@@ -466,9 +493,9 @@ _FRAME_REACH = 5  # words a fronted scope phrase may hold before its comma
 def _fronted_scope(sentence: str) -> list[str]:
     """The words of the phrase a sentence opens with before its first comma, when `for` or a scope
     preposition opens it (`For all,`, `In CI,`): it scopes every instruction of the sentence."""
-    head, comma, _ = sentence.partition(",")
+    head, *rest = split_at_marks(sentence, COMMA)
     words = [w.lower() for w in WORD_RE.findall(_PREPOSITION_COMPOUND_RE.sub(r"\1", head))]
-    if not comma or not words or words[0] not in _FRAME_OPENERS or len(words) > _FRAME_REACH:
+    if not rest or not words or words[0] not in _FRAME_OPENERS or len(words) > _FRAME_REACH:
         return []
     if NOT_A_SCOPE & set(words):
         return []

@@ -924,7 +924,8 @@ def test_a_kind_named_beside_others_in_its_section_narrows(tmp_path, before, aft
     ("before", "after", "narrowed"),
     [
         ("*Do not use a mock — prefer a fake.*", "*Do not use a mock — prefer a fake server or stub client.*", False),
-        ("*Do not use a mock - prefer a fake.*", "*Do not use a mock - prefer a real fake.*", False),
+        # A spaced hyphen is no clause break to the mapper, so the whole line is the prohibition.
+        ("*Do not use a mock - prefer a fake.*", "*Do not use a mock - prefer a real fake.*", True),
         ("Add tests under `tests/`.", "Add tests under `tests/` for `src/`", True),
         ("Add tests.", "Add tests for particular modules.", True),
         ("Add tests.", "Add tests for one module.", True),
