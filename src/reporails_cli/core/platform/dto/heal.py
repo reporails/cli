@@ -105,6 +105,7 @@ class Snapshot:
     structure: DocumentStructure
     imports: tuple[str, ...]
     relation_lines: frozenset[int] = field(default_factory=frozenset)
+    list_objects: tuple[SnapshotAtom, ...] = ()
 
 
 @dataclass(frozen=True)

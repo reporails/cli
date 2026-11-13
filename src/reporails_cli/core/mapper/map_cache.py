@@ -88,7 +88,7 @@ _ATOM_FIELD_NAMES = frozenset(Atom.model_fields)
 
 # Bump when the cached atom shape or the way atoms are read changes: every entry
 # stored under an older version then misses and is rebuilt on the next run.
-CACHE_VERSION = 50
+CACHE_VERSION = 51
 _MAX_CACHE_ENTRIES = 5000  # global cache serves all projects
 _STALE_IDENTITY_DAYS = 30  # a sibling configuration's folder unused this long is removed
 

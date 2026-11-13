@@ -88,7 +88,7 @@ def _run_checks(
     return {
         "lost_instructions": [*lost_instructions],
         "polarity_flips": [*polarity_flips],
-        "added_instructions": [*added_instructions(snapshot.text, new_atoms, matched_new_for, split_covering_for)],
+        "added_instructions": [*added_instructions(snapshot, new_atoms, matched_new_for, split_covering_for)],
         "lost_named": [*lost_named_tokens(snap_atoms, new_text, new_atoms)],
         "invented_named": [*invented],
         "repeated_named": [
@@ -109,7 +109,7 @@ def _run_checks(
         "padded_lines": [*structure.padded_lines(list(snapshot.atoms), new_atoms)],
         "made_direct": [*conditions.made_direct(pairs, snap_atoms, new_atoms, matched_new_for, sentences)],
         "relabelled_negative_headings": [*structure.relabelled_negative_headings(snapshot.text, *negative_headings)],
-        "lost_context": [*lost_context(snap_atoms, new_text)],
+        "lost_context": [*lost_context(snap_atoms, new_all)],
         "moved_list_items": [
             *structure.moved_list_items(snap_atoms, matched_new_for, snapshot.structure, new[3], new_atoms)
         ],

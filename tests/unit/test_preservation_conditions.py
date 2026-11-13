@@ -159,6 +159,15 @@ def test_a_hedge_made_must_or_shall_is_not_an_absolute(word: str) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
+@pytest.mark.parametrize("word", ["must", "shall"])
+def test_must_and_shall_are_no_absolute_cue_in_a_rewrite_read_absolute(word: str) -> None:
+    # `must` / `shall` read as absolute modality, but only `never` / `always` / `exclusively` are cues
+    pair = _hedge_pair("You should run the linter.", f"You {word} run the linter.", "absolute")
+    assert hedge_made_absolute([pair], {3: [pair.old]}) == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
 @pytest.mark.parametrize(
     ("original", "rewrite", "dropped"),
     [

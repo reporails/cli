@@ -6,6 +6,7 @@ rewrite added with no basis in the original, and which prose it dropped.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 
 from reporails_cli.core.heal.preservation.words import (
     AtomView,
@@ -23,9 +24,9 @@ from reporails_cli.core.mapper.classify import (
     leading_prohibition,
 )
 from reporails_cli.core.mapper.classify_lexicon import words_of
-from reporails_cli.core.mapper.prose_split import sentence_spans
+from reporails_cli.core.mapper.prose_split import split_prose_sentences
 from reporails_cli.core.platform.contract.json_value import JsonObject
-from reporails_cli.core.platform.dto.heal import SnapshotAtom
+from reporails_cli.core.platform.dto.heal import Snapshot, SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 # Matching thresholds, pinned by tests.
@@ -220,8 +221,24 @@ def instruction_diffs(
     return lost, flips, matched_new_for, split_covering_for
 
 
+def _sentence_words(atoms: Iterable[SnapshotAtom]) -> list[set[str]]:
+    """The words of each sentence of `atoms`' plain text: each line's atoms joined and cut by the
+    mapper's sentence splitter."""
+    by_line: dict[int, list[SnapshotAtom]] = {}
+    for atom in atoms:
+        by_line.setdefault(atom.line, []).append(atom)
+    return [
+        words
+        for line_atoms in by_line.values()
+        for sentence in split_prose_sentences(
+            " ".join(a.plain_text for a in line_atoms), [t for a in line_atoms for t in a.named_tokens]
+        )
+        if (words := set(words_of(sentence)))
+    ]
+
+
 def added_instructions(
-    snapshot_text: str,
+    snapshot: Snapshot,
     new_atoms: list[Atom],
     matched_new_for: dict[int, Atom],
     split_covering_for: dict[int, list[Atom]],
@@ -229,7 +246,8 @@ def added_instructions(
     """Every charged new atom the rewrite carries with no snapshot counterpart at all — not a
     direct or flipped match (`matched_new_for`'s values), not part of a packed-sentence split's
     covering window (`split_covering_for`'s values) — and whose content words are mostly absent
-    from every single sentence of `snapshot_text`: an instruction (a prohibition or a directive)
+    from every single sentence of the snapshot's atoms (list items included): an instruction (a
+    prohibition or a directive)
     the rewrite added that the original gave it no basis for. Words scattered over unrelated
     sentences of the original do not make a new instruction a restatement. A reworded, split, or
     reheaded instruction still traces most of its words to one original sentence and clears the
@@ -245,12 +263,7 @@ def added_instructions(
     miss a genuinely added instruction instead."""
     claimed_na = {id(m) for m in matched_new_for.values()}
     used_in_split = {id(x) for window in split_covering_for.values() for x in window}
-    orig_sentences = [
-        w
-        for line in snapshot_text.split("\n")
-        for w in (set(words_of(line[a:b])) for a, b in sentence_spans(line))
-        if w
-    ]
+    orig_sentences = _sentence_words((*snapshot.atoms, *snapshot.list_objects))
     out: list[JsonObject] = []
     for na in new_atoms:
         if na.charge_value == 0 or id(na) in claimed_na or id(na) in used_in_split:
@@ -264,12 +277,12 @@ def added_instructions(
     return out
 
 
-def lost_context(snap_atoms: list[SnapshotAtom], new_text: str) -> list[JsonObject]:
+def lost_context(snap_atoms: list[SnapshotAtom], new_atoms: Iterable[AtomView]) -> list[JsonObject]:
     """Snapshot neutral prose atoms (charge 0, format `prose`) whose content words are less
-    than half present in the new file's text — factual context a rewrite silently dropped.
+    than half present in the new file's atoms — factual context a rewrite silently dropped.
     Relation-allowed lines are already excluded from `snap_atoms` by the caller, the same as
     every other check."""
-    new_words = set(words_of(new_text))
+    new_words = {w for a in new_atoms for w in words_of(a.plain_text)}
     out: list[JsonObject] = []
     for a in snap_atoms:
         if a.charge_value != 0 or a.format != "prose":

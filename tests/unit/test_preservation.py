@@ -139,6 +139,11 @@ def _snapshot(
     return make_snapshot(file_path=_FILE, text=text, atoms=atoms, score=6.0, relation_lines=relation_lines)
 
 
+def _original(*lines: str) -> Snapshot:
+    """A baseline whose atoms are `lines`, one atom each, from line 3 on."""
+    return _snapshot("", tuple(_atom(3 + i, text, 0) for i, text in enumerate(lines)))
+
+
 # ---------------------------------------------------------------------------
 # (a) an agent file whose role table loses 3 rows
 # ---------------------------------------------------------------------------
@@ -343,7 +348,7 @@ def test_a_prohibition_replaced_by_an_unrelated_directive_is_not_ok() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_an_added_instruction_with_no_snapshot_counterpart_is_flagged() -> None:
-    snapshot_text = "# Agent\n\nRun the linter before every commit.\n"
+    snapshot_text = _original("Run the linter before every commit.")
     added = _new_atom(5, 1, "Rotate the deployment keys every quarter.", -1)
     result = preservation_match.added_instructions(snapshot_text, (added,), {}, {})
     assert result == [{"line": 5, "text": "Rotate the deployment keys every quarter."}]
@@ -354,7 +359,7 @@ def test_an_added_instruction_with_no_snapshot_counterpart_is_flagged() -> None:
 def test_a_new_atom_covering_a_snapshot_instruction_s_split_window_is_not_flagged() -> None:
     """`split_covering_for`'s values are excluded outright, regardless of word overlap — the
     split-coverage decision already happened upstream in `_instruction_diffs`."""
-    snapshot_text = "# Agent\n\nRotate the deployment keys and audit access every quarter.\n"
+    snapshot_text = _original("Rotate the deployment keys and audit access every quarter.")
     piece = _new_atom(3, 0, "Rotate the deployment keys every quarter.", 1)
     result = preservation_match.added_instructions(snapshot_text, (piece,), {}, {12345: [piece]})
     assert result == []
@@ -365,7 +370,7 @@ def test_a_new_atom_covering_a_snapshot_instruction_s_split_window_is_not_flagge
 def test_a_directly_matched_instruction_is_not_flagged_even_with_low_word_overlap() -> None:
     """`matched_new_for`'s values are excluded outright — a match the matcher already made
     (even a heavy reword the coverage heuristic alone would not clear) is never an addition."""
-    snapshot_text = "# Agent\n\nRun the linter before every commit.\n"
+    snapshot_text = _original("Run the linter before every commit.")
     reworded = _new_atom(3, 0, "Scan the codebase automatically prior to integration.", 1)
     result = preservation_match.added_instructions(snapshot_text, (reworded,), {987: reworded}, {})
     assert result == []
@@ -2223,9 +2228,9 @@ def test_dropping_a_governing_construct_from_a_prohibition_is_still_flagged() ->
 def test_a_prohibition_whose_words_are_scattered_over_the_file_is_still_added() -> None:
     """A prohibition appended to a bullet is new when its words trace to several unrelated
     sentences of the original rather than to one sentence that already says it."""
-    snapshot_text = (
-        "# Agent\n\n- Merge the pull request into main after review.\n"
-        "- Teams push release tags from the release branch. Never skip review. CI runs directly on every branch.\n"
+    snapshot_text = _original(
+        "Merge the pull request into main after review.",
+        "Teams push release tags from the release branch. Never skip review. CI runs directly on every branch.",
     )
     added = _new_atom(3, 1, "Never push to `main` directly.", -1)
     result = preservation_match.added_instructions(snapshot_text, (added,), {}, {})
@@ -2235,7 +2240,7 @@ def test_a_prohibition_whose_words_are_scattered_over_the_file_is_still_added() 
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_a_prohibition_the_original_line_already_states_is_not_added() -> None:
-    snapshot_text = "# Agent\n\n- Never push directly to main.\n"
+    snapshot_text = _original("Never push directly to main.")
     restated = _new_atom(3, 1, "Never push to `main` directly.", -1)
     assert preservation_match.added_instructions(snapshot_text, (restated,), {}, {}) == []
 

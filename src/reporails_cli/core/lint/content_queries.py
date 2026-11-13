@@ -61,6 +61,12 @@ def instruction_atoms_for_file(rm: RulesetMap, file_path: str, *, own: bool = Fa
     return [a for a in atoms if a.role != LIST_OBJECT_ROLE]
 
 
+def list_object_atoms_for_file(rm: RulesetMap, file_path: str) -> list[Atom]:
+    """`file_path`'s own atoms that are list items read as an instruction's object: the atoms
+    `instruction_atoms_for_file` leaves out."""
+    return [a for a in own_atoms_for_file(rm, file_path) if a.role == LIST_OBJECT_ROLE]
+
+
 # ──────────────────────────────────────────────────────────────────
 # QUERY FUNCTIONS
 # Each takes (rm, file_path, **args) and returns QueryResult.

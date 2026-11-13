@@ -208,7 +208,7 @@ class Atom(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__in
     )
     # Where each char of `plain_text` sits in the file line, kept from the parse until the atom is cut
     # into its instructions; the instructions take their own columns from it. Not carried past the cut,
-    # and never dumped (the cache and the wire carry the columns each atom took from it).
+    # and never dumped; the columns each atom took from it are its own fields.
     placement: PlainPlacement | None = Field(default=None, exclude=True)
     # Where the atom sits in its file line, as the file wrote it: the columns [start, end) of its words,
     # past the emphasis marks the mapper re-wraps around each atom. None for an atom that is not one run of

@@ -15,6 +15,7 @@ from reporails_cli.core.mapper.classify_lexicon import (
     words_of,
 )
 from reporails_cli.core.mapper.lexical import DASH_MARKS
+from reporails_cli.core.mapper.md_parser import code_spans
 from reporails_cli.core.mapper.word_spans import word_offsets
 from reporails_cli.core.platform.dto.mapping import AtomTuple, Span
 
@@ -23,15 +24,9 @@ _BREAKS = (",", ";", ":", *DASH_MARKS)
 
 
 def _in_code(text: str) -> list[bool]:
-    """Per word of ``text``: whether it sits inside a backticked construct."""
-    flags: list[bool] = []
-    inside = False
-    for lo, hi in word_offsets(text):
-        word = text[lo:hi]
-        flags.append(inside or word.startswith("`"))
-        if word.count("`") % 2 == 1:
-            inside = not inside
-    return flags
+    """Per word of ``text``: whether it overlaps a code span the markdown parse reads."""
+    spans = code_spans(text)
+    return [any(lo < span.end and hi > span.start for span in spans) for lo, hi in word_offsets(text)]
 
 
 def _is_preposition(word: str) -> bool:
