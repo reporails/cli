@@ -158,7 +158,7 @@ def test_a_user_level_file_draws_the_findings_it_draws_as_a_project_file(scratch
     for user_file, project_file in ((main, project / "CLAUDE.md"), (config, project / ".claude" / "settings.json")):
         user_findings = _findings(_check(elsewhere, user_file))
         assert user_findings
-        assert user_findings == _findings(_check(elsewhere, project_file))
+        assert user_findings == _findings(_check(project, project_file))
 
 
 @pytest.mark.integration
