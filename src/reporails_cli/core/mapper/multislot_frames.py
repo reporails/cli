@@ -43,6 +43,7 @@ from reporails_cli.core.mapper.bio_tagger import (
     _softmax_rows,
 )
 from reporails_cli.core.mapper.encode_pool import run_buckets
+from reporails_cli.core.mapper.scope_phrase import record_scope_phrase
 from reporails_cli.core.platform.dto.mapping import AtomTuple, Span
 from reporails_cli.core.platform.dto.ruleset import Modality
 
@@ -224,7 +225,9 @@ def _atom_from_charge_run(
     atom_text = text[word_spans[cs][0] : word_spans[ce - 1][1]]
     mod = _atom_modality(cls, modality)
     sp = {axis: _assign_span(axis_runs[axis], cs, ce, word_spans, text) for axis in _SOAS_AXES}
-    return AtomTuple(_POLARITY[cls], mod, sp["subject"], sp["predicate"], sp["object"], sp["scope"], atom_text)
+    return record_scope_phrase(
+        AtomTuple(_POLARITY[cls], mod, sp["subject"], sp["predicate"], sp["object"], sp["scope"], atom_text)
+    )
 
 
 _Decoded = tuple[dict[str, Float32Array], list[tuple[int, int]], list[bool]]

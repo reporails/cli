@@ -53,13 +53,16 @@ def _negative_heading_texts(new_map: RulesetMap | None, file_path: str) -> list[
     return [a.text for a in atoms if a.negative_heading]
 
 
-def _pair_checks(pairs: list[Pair], old_by_line: conditions.ByLine, invented: set[str]) -> JsonObject:
+def _pair_checks(
+    pairs: list[Pair], sentences: tuple[conditions.ByLine, conditions.ByLine], invented: set[str]
+) -> JsonObject:
     """The checks that read each matched instruction against its rewrite; `invented` is the lowered
     names reported as invented."""
+    old_by_line = sentences[0]
     narrowed = conditions.narrowed_instructions(pairs, old_by_line)
     flagged = {(as_int(e["line"], 0), as_int(e["new_line"], 0)) for e in narrowed}
     return {
-        "dropped_conditions": [*conditions.dropped_conditions(pairs)],
+        "dropped_conditions": [*conditions.dropped_conditions(pairs), *conditions.dropped_scopes(pairs, sentences)],
         "narrowed_instructions": [*narrowed],
         "hedge_made_absolute": [*conditions.hedge_made_absolute(pairs, old_by_line)],
         "made_specific": [*conditions.made_specific(pairs, old_by_line, flagged, invented)],
@@ -101,7 +104,7 @@ def _run_checks(
         "detached_constraints": [*structure.detached_constraints(snap_atoms, matched_new_for, new[3])],
         "prohibition_scope_changed": [*prohibition_scope_changes(snap_atoms, matched_new_for)],
         "added_conditions": [*conditions.added_conditions(snap_atoms, matched_new_for)],
-        **_pair_checks(pairs, sentences[0], {named_key(as_str(e["token"])) for e in invented}),
+        **_pair_checks(pairs, sentences, {named_key(as_str(e["token"])) for e in invented}),
         "dangling_fragments": [*dangling_fragments(snapshot.atoms, new_all)],
         "padded_lines": [*structure.padded_lines(list(snapshot.atoms), new_atoms)],
         "made_direct": [*conditions.made_direct(pairs, snap_atoms, new_atoms, matched_new_for, sentences)],

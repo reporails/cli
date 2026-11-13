@@ -31,6 +31,7 @@ from reporails_cli.core.mapper.classify_lexicon import (
     CONDITION_CONJUNCTIONS,
     CONDITIONAL_MARKERS,
     DEFINITE_DETERMINERS,
+    INDEFINITE_ARTICLES,
     LIMITING_RESTRICTORS,
     words_of,
 )
@@ -227,16 +228,31 @@ def _after_definite(covered: list[tuple[str, bool]], at: int, named: set[str]) -
     return k >= 0 and covered[k][0] in DEFINITE_DETERMINERS
 
 
+def _scope_gains_construct(p: Pair) -> bool:
+    """Whether the rewrite's scope names a target (`for src/`) the author's instruction does not name."""
+    tokens = [t.lower() for t in slot_tokens(p.new, "scope")]
+    scope = " ".join(tokens[tokens.index("for") :]) if "for" in tokens else ""
+    old = {named_key(t) for t in p.old.named_tokens}
+    return any(named_key(t) in scope and named_key(t) not in old for t in p.new.named_tokens)
+
+
 def _narrows(p: Pair, known: set[str]) -> bool:
     """Whether the rewrite's object or scope gains a content word the author's line lacks that is no
     safe shape: an alternative after the author's own object (`secrets` -> `secrets or credentials`,
     which widens), a word of the section heading (the referent it names) or a named construct directly
     after a definite determiner (`the gate` -> `the AskUserQuestion gate`)."""
+    if _scope_gains_construct(p):
+        return True
     covered = _covered_tokens(p)
-    gained = [i for i, (w, _comma) in enumerate(covered) if is_content_word(w) and not word_forms(w) & known]
+    scope = set(token_words(slot_prose_tokens(p.new, "scope")))
+    gained = [
+        i
+        for i, (w, _comma) in enumerate(covered)
+        if (is_content_word(w) or (w in scope and not is_function_word(w))) and not word_forms(w) & known
+    ]
     if not gained:
         return False
-    object_words = [w for token in slot_tokens(p.old, "object") for w in token_words([token])]
+    object_words = [w for token in slot_tokens(p.old, "object", "scope") for w in token_words([token])]
     anchor = _last_index(covered, object_words[-1]) if object_words else None
     widened = set(_tail_after(covered, anchor)) if anchor is not None else set()
     heading = {f for w in words_of(p.old.heading_context) for f in word_forms(w)}
@@ -285,6 +301,7 @@ def conditional(atom: AtomView) -> bool:
     return atom.scope_conditional
 
 
+_ARTICLES = DEFINITE_DETERMINERS | INDEFINITE_ARTICLES
 _ENDING_REACH = 4  # letters an ending may add to a word and still be that word
 
 
@@ -336,6 +353,36 @@ def dropped_conditions(pairs: list[Pair]) -> list[JsonObject]:
             or (not _limiting(p.old) and not all(_is_word_of(w, governed) for w in rewrite))
         ):
             out.append(p.entry())
+    return out
+
+
+def _opening_scope(line_atoms: Sequence[AtomView]) -> frozenset[str]:
+    """The words of the scope phrase the line's first instruction opens with (`For all,`); empty when it has none."""
+    first = next((a for a in line_atoms if a.charge_value != 0), None)
+    if first is None or first.slots is None or first.slots.scope_span is None or first.slots.scope_span[0] != 0:
+        return frozenset()
+    return frozenset(w for w in slot_words(first, "scope") if w not in _ARTICLES)
+
+
+def _sentence_scope(new_by_line: ByLine, p: Pair) -> frozenset[str]:
+    """The words of the scope phrases of the rewrite's atoms that sit in the sentence holding `p.new`."""
+    sentence = p.new_sentence.lower()
+    atoms = [a for a in new_by_line.get(p.new.line, ()) if a is p.new or a.text.strip().lower() in sentence]
+    return frozenset(w for a in atoms for w in slot_words(a, "scope"))
+
+
+def dropped_scopes(pairs: list[Pair], sentences: tuple[ByLine, ByLine]) -> list[JsonObject]:
+    """Each matched instruction on a line that opens with a scope phrase (`For all, do A, do B`) whose
+    rewrite's sentence does not hold that scope: a split that leaves a sentence outside the scope the
+    original opened with."""
+    old_by_line, new_by_line = sentences
+    out = []
+    for p in pairs:
+        opening = _opening_scope(old_by_line.get(p.old.line, ()))
+        if opening:
+            held = _sentence_scope(new_by_line, p)
+            if not all(_is_word_of(w, held) for w in opening):
+                out.append(p.entry())
     return out
 
 

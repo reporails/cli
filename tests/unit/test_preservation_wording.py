@@ -16,7 +16,7 @@ import pytest
 from reporails_cli.core.heal.preservation import compare, take_snapshot
 from reporails_cli.core.heal.preservation.snapshot import is_hedge_fragment
 from reporails_cli.core.mapper.classify import restrictor_clause
-from reporails_cli.core.mapper.classify_lexicon import CONDITION_OPENERS, words_of
+from reporails_cli.core.mapper.classify_lexicon import CONDITION_OPENERS, SCOPE_PHRASE_PREPOSITIONS, words_of
 from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots, RulesetMap
 
 _FILE = "/proj/CLAUDE.md"
@@ -42,6 +42,12 @@ def _atom(
         # A fronted condition ends at its comma; one that follows the clause runs to the end.
         end = next((i + 1 for i, w in enumerate(text.split()) if w.endswith(",")), words) if opener == 0 else words
         slots = AtomSlots(predicate_span=(0, 1), object_span=(1, opener), scope_span=(opener, end))
+    place = next((i for i, w in enumerate(words_of(text)[:words]) if i > 1 and w in SCOPE_PHRASE_PREPOSITIONS), None)
+    plain = slots is not None and slots.scope_span is None and "," not in text
+    plain = plain and restrictor_clause(text, named) is None
+    if plain and place is not None and "`" not in text.split()[place]:
+        # What the mapper reads: a place, time or target phrase after the object is the atom's scope.
+        slots = AtomSlots(predicate_span=(0, 1), object_span=(1, place), scope_span=(place, words))
     return Atom(
         slots=slots,
         line=line,

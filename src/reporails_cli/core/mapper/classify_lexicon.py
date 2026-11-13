@@ -457,6 +457,9 @@ MODAL_HEDGED: frozenset[str] = frozenset({"should", "could", "might"})
 # Removed: "can" (capability), "may" (possibility) — not instructions.
 
 SCOPE_PREPOSITIONS: frozenset[str] = frozenset({"on", "in", "at", "during", "within", "inside", "across", "under"})
+# Prepositions whose phrase names where, when or to what an instruction applies (`in CI`, `on main`,
+# `for src/`); `with` / `by` / `via` name a means and are not among them.
+SCOPE_PHRASE_PREPOSITIONS: frozenset[str] = SCOPE_PREPOSITIONS | frozenset({"for"})
 # Words that open a noun phrase (`for the api module`).
 # Words that quantify over a whole class (`every gate`, `any file`, `no exception`): naming one member
 # right after one narrows what the line covers.
