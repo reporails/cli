@@ -17,6 +17,7 @@ from collections.abc import Set as AbstractSet
 from reporails_cli.core.heal.preservation.qualifiers import (
     NOT_A_SCOPE,
     for_phrase_added,
+    kept_tokens,
     kinds_listed,
     object_added,
     qualified_general_noun,
@@ -291,28 +292,33 @@ def _same_sentence(p: Pair) -> bool:
     return " ".join(p.old_sentence.lower().split()) == " ".join(p.new_sentence.lower().split())
 
 
-def sections_by_line(old_by_line: ByLine) -> dict[int, Section]:
-    """The section each line of the author's file sits in, in file order: a heading atom opens one
-    (its own line is in it); atoms before the first heading share a section with an empty heading."""
-    opened: list[tuple[str, list[SectionLine]]] = [("", [])]
-    members: list[list[int]] = [[]]
-    for line in sorted(old_by_line):
-        for atom in old_by_line[line]:
+def sections_by_line(old_by_line: ByLine, headings: Iterable[int]) -> dict[int, Section]:
+    """The section each line of the author's file sits in, in file order: a heading line (`headings`,
+    every one the mapper read, neutral ones included) opens one and its own line is in it; lines before
+    the first heading share a section with an empty heading. A section's heading is the text of its
+    heading atom, else the heading the mapper gave its first atom."""
+    opens = set(headings)
+    sections: list[tuple[list[int], list[SectionLine], list[str]]] = [([], [], [""])]
+    for line in sorted(opens | old_by_line.keys()):
+        if line in opens:
+            sections.append(([], [], []))
+        numbers, lines, heading = sections[-1]
+        numbers.append(line)
+        for atom in old_by_line.get(line, ()):
             if atom.format == "heading":
-                opened.append((atom.plain_text, []))
-                members.append([])
-            else:
-                opened[-1][1].append(SectionLine(line, atom.plain_text))
-            if line not in members[-1]:
-                members[-1].append(line)
+                heading[:] = [atom.plain_text]
+                continue
+            lines.append(SectionLine(line, atom.plain_text, tuple(kept_tokens(atom.plain_text))))
+            if not heading:
+                heading.append(atom.heading_context)
     out: dict[int, Section] = {}
-    for (heading, lines), line_numbers in zip(opened, members, strict=True):
-        section = Section(heading, tuple(lines))
-        out.update(dict.fromkeys(line_numbers, section))
+    for numbers, lines, heading in sections:
+        section = Section(heading[0] if heading else "", tuple(lines))
+        out.update(dict.fromkeys(numbers, section))
     return out
 
 
-def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonObject]:
+def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine, headings: Iterable[int]) -> list[JsonObject]:
     """Each matched instruction whose rewrite adds words that restrict where, when or to what it
     applies, without an if / when / before frame (which `added_conditions` already reports): a
     restricting word the line never used, or a scope preposition whose phrase holds a word the
@@ -324,7 +330,7 @@ def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonOb
     (`add tests` -> `add tests for src/`); or a prohibition given a list of kinds its sentence never
     named (`file plans` -> `file any plan — X, Y, or Z`)."""
     out: list[JsonObject] = []
-    sections = sections_by_line(old_by_line)
+    sections = sections_by_line(old_by_line, headings)
     for p in pairs:
         if _same_sentence(p):
             continue

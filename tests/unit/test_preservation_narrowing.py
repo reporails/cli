@@ -976,3 +976,47 @@ def test_a_sentence_opening_with_a_preposition_compound_has_no_fronted_scope(tmp
 def test_dash_cuts_dash_pairs_widening_lists_and_see_asides(tmp_path, before, after, narrowed) -> None:
     result = _compare_edit(tmp_path, before + "\n", after + "\n")
     assert bool(result["narrowed_instructions"]) is narrowed
+
+
+_G = "\n\nThe `X` and `Y` names exist. Production builds and real stores exist.\n"
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_referent_the_section_heading_names_is_kept_in_a_file_of_several_sections(tmp_path) -> None:
+    before = (
+        "## Remote debugging\n\nRun remote debugging, profiling, or tracing with flags.\n\n"
+        "Only use on trusted machines.\n"
+    )
+    after = before.replace("Only use on", "Only use remote debugging on")
+    result = _compare_edit(tmp_path, before + _G, after + _G)
+    assert result["narrowed_instructions"] == []
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_kind_listed_under_another_section_does_not_narrow_a_line_of_this_one(tmp_path) -> None:
+    before = "## Hooks\n\nAuthor hooks, scripts, or plans with care.\n\n## Code\n\nEdit at canonical paths only.\n"
+    after = before.replace("Edit at", "Edit hooks at")
+    result = _compare_edit(tmp_path, before + _G, after + _G)
+    assert result["narrowed_instructions"] == []
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_new_head_noun_that_takes_the_forbidden_noun_as_modifier_is_narrowed(tmp_path) -> None:
+    result = _compare_edit(tmp_path, "*Do not edit config.*\n", "*Do not edit config files or schemas.*\n")
+    assert result["narrowed_instructions"]
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_heading_that_lists_kinds_does_not_name_one_of_them_as_the_referent(tmp_path) -> None:
+    before = "## Hooks and scripts\n\nEdit at canonical paths only.\n"
+    after = "## Hooks and scripts\n\nEdit hooks at canonical paths only.\n"
+    result = _compare_edit(tmp_path, before + _G, after + _G)
+    assert result["narrowed_instructions"]

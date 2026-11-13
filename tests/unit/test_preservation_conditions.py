@@ -279,7 +279,7 @@ def test_a_code_token_never_opens_a_condition_or_narrows(
     new = SimpleNamespace(line=1, plain_text=rewrite, named_tokens=new_named, scope_conditional=False)
     pair = Pair(old, new, original, rewrite)
     assert bool(dropped_conditions([pair])) is dropped
-    assert bool(narrowed_instructions([pair], by_line([old]))) is narrowed
+    assert bool(narrowed_instructions([pair], by_line([old]), ())) is narrowed
 
 
 @pytest.mark.subsys_map

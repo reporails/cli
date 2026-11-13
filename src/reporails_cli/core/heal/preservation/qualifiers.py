@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import difflib
 import re
+from collections.abc import Sequence
 from collections.abc import Set as AbstractSet
 
 from reporails_cli.core.heal.preservation.words import NEGATION_RE, WORD_RE, word_forms
@@ -143,13 +144,17 @@ def for_phrase_added(p: Pair) -> bool:
 _EXAMPLE_LEADS = frozenset({"such", "e", "g", "eg", "including", "like", "example", "examples"})
 
 
-def _extends_author_noun(new: list[str], j1: int, j2: int, named: set[str]) -> bool:
+def _extends_author_noun(new: list[str], j1: int, j2: int, named: set[str], *, comma: bool) -> bool:
     """Whether the words inserted at `new[j1:j2]` only add bare alternatives to the author's own
     noun before them (`secrets` -> `secrets or credentials`, `secrets, keys or credentials`): a
-    content word of the author's sentence, then words that are all `or`, `and` or content words
-    (`repo` -> `repo name or a per-repo segment` has function words and is a list of its own)."""
+    content word of the author's sentence, an alternative that opens right after it with `or` /
+    `and` (or the sentence holds a comma), then words that are all `or`, `and` or content words
+    (`repo` -> `repo name or a per-repo segment` has function words and is a list of its own;
+    `config` -> `config files or schemas` makes `config` a modifier of the new noun `files`)."""
     noun = new[j1 - 1]
     if not _content([noun]) or not word_forms(noun) & named:
+        return False
+    if new[j1] not in CONDITION_CONJUNCTIONS and not comma:
         return False
     return all(w in CONDITION_CONJUNCTIONS or (len(w) > 2 and w not in STOPWORDS) for w in new[j1:j2])
 
@@ -169,7 +174,7 @@ def kinds_listed(p: Pair) -> bool:
         added = new[j1:j2]
         if tag == "equal" or "or" not in added or _EXAMPLE_LEADS & set(new[max(j1 - 3, 0) : j2]):
             continue
-        if tag == "insert" and j1 > 0 and _extends_author_noun(new, j1, j2, named):
+        if tag == "insert" and j1 > 0 and _extends_author_noun(new, j1, j2, named, comma="," in p.new_sentence):
             continue
         fresh = [w for w in _content(added) if not word_forms(w) & named]
         if fresh and set(fresh) <= negated:
@@ -180,7 +185,7 @@ def kinds_listed(p: Pair) -> bool:
 _LIST_SEPARATORS = frozenset({","}) | CONDITION_CONJUNCTIONS
 
 
-def _kept_tokens(text: str) -> list[str]:
+def kept_tokens(text: str) -> list[str]:
     """The lowered content words of `text` in order, with a `,` kept where one stood and `and` /
     `or` kept as separators."""
     tokens: list[str] = []
@@ -191,13 +196,13 @@ def _kept_tokens(text: str) -> list[str]:
     return tokens
 
 
-def _phrase_starts(tokens: list[str], phrase: list[str]) -> list[int]:
+def _phrase_starts(tokens: Sequence[str], phrase: list[str]) -> list[int]:
     """Where `phrase` (content words, any singular / plural form) stands in `tokens`, as start indices."""
     n = len(phrase)
     return [k for k in range(len(tokens) - n + 1) if all(tokens[k + d] in word_forms(w) for d, w in enumerate(phrase))]
 
 
-def _listed(tokens: list[str], phrase: list[str]) -> bool:
+def _listed(tokens: Sequence[str], phrase: list[str]) -> bool:
     """Whether `phrase` is an item of a coordinated list in `tokens` (`Lint Python, shell, or Docker`):
     a `,` / `and` / `or` stands next to it."""
     for k in _phrase_starts(tokens, phrase):
@@ -211,8 +216,7 @@ def _named_beside_others(section: Section, own_line: int, phrase: list[str]) -> 
     """Whether another line of `section` names `phrase` as one kind among several: as an item of a
     coordinated list, or on one of two or more lines that open with the same verb and name different
     objects (`Author Python ...`, `Author Bash hooks ...`)."""
-    siblings = [_kept_tokens(s.text) for s in section.lines if s.line != own_line]
-    siblings = [t for t in siblings if t]
+    siblings = [s.tokens for s in section.lines if s.line != own_line and s.tokens]
     if any(_listed(t, phrase) for t in siblings):
         return True
     objects_by_verb: dict[str, set[str]] = {}
@@ -229,7 +233,8 @@ def object_added(p: Pair, section: Section) -> bool:
     surfaces at canonical paths only`, where the section also lists `Author Python ...` and `Author
     Bash hooks ...`). An object the section's heading names, or that no other line names beside
     others, is the referent the line left implied (`Only use on trusted machines` under `## Remote
-    debugging` -> `Only use remote debugging on trusted machines`)."""
+    debugging` -> `Only use remote debugging on trusted machines`); a heading that lists kinds
+    (`## Hooks and scripts`) names several, so one of them given to the line narrows it."""
     old, new = _sentence_words(p)
     verb = next((i for i, w in enumerate(old) if w not in STOPWORDS), None)
     if verb is None or verb + 1 >= len(old) or old[verb + 1] not in PHRASE_PREPOSITIONS:
@@ -241,6 +246,10 @@ def object_added(p: Pair, section: Section) -> bool:
             continue
         if CONDITION_CONJUNCTIONS & set(new[j1:j2]) and len(content) >= 2:
             return True
-        if not all(w in heading for w in content) and _named_beside_others(section, p.old.line, content):
+        if all(w in heading for w in content):
+            if _listed(kept_tokens(section.heading), content):
+                return True
+            continue
+        if _named_beside_others(section, p.old.line, content):
             return True
     return False

@@ -132,10 +132,12 @@ class Condition:
 
 @dataclass(frozen=True)
 class SectionLine:
-    """One atom of a section: its 1-based line and its text with the markup read away."""
+    """One atom of a section: its 1-based line, its text with the markup read away, and the content
+    words of that text in order (`,` / `and` / `or` kept as separators)."""
 
     line: int
     text: str
+    tokens: tuple[str, ...]
 
 
 @dataclass(frozen=True)
