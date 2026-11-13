@@ -7,11 +7,8 @@ precede an imperative verb without blocking its detection.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
-from collections.abc import Set as AbstractSet
 
 from reporails_cli.core.mapper.classify_no import NO_CLAUSE_OPENERS, NO_DESCRIPTIVE_PREPS
-from reporails_cli.core.mapper.md_parser import replace_code_spans
 
 # CORE: high-confidence charged verbs
 VERBS_CORE: set[str] = {
@@ -338,6 +335,8 @@ CONDITION_CONJUNCTIONS: frozenset[str] = frozenset({"and", "or"})
 # Words that start the next clause of a packed sentence (`Bump the version and update the docs`, `lint, then test`).
 STEP_JOINER = "then"
 CLAUSE_JOINERS: frozenset[str] = frozenset({"and", STEP_JOINER})
+# Words that join a sentence's conditions or clauses.
+SENTENCE_JOINERS: frozenset[str] = CONDITION_CONJUNCTIONS | CLAUSE_JOINERS
 # The pronoun and copula of `it is` / `it's`.
 IT_IS: tuple[str, str] = ("it", "is")
 
@@ -384,15 +383,64 @@ CONTEXT_WORDS = (
         "alternatively",
         "additionally",
         # CLI tools — invocation context preceding a verb
-        "npm", "npx", "bun", "pnpm", "yarn", "cargo", "pip", "uv", "dotnet", "docker", "git", "go",
-        "python", "node", "deno", "make", "composer", "mix", "flutter", "dart", "swift", "java", "mvn",
-        "gradle", "gradlew", "ruby", "zig", "nix", "brew", "apt", "snap", "curl", "wget", "pytest", "ruff",
-        "eslint", "prettier", "vitest", "jest", "mocha", "turbo", "nx", "lerna", "rushx", "hatch", "poetry",
-        "pipx", "uvx", "helm", "kubectl", "terraform", "ansible", "ssh", "scp",
+        "npm",
+        "npx",
+        "bun",
+        "pnpm",
+        "yarn",
+        "cargo",
+        "pip",
+        "uv",
+        "dotnet",
+        "docker",
+        "git",
+        "go",
+        "python",
+        "node",
+        "deno",
+        "make",
+        "composer",
+        "mix",
+        "flutter",
+        "dart",
+        "swift",
+        "java",
+        "mvn",
+        "gradle",
+        "gradlew",
+        "ruby",
+        "zig",
+        "nix",
+        "brew",
+        "apt",
+        "snap",
+        "curl",
+        "wget",
+        "pytest",
+        "ruff",
+        "eslint",
+        "prettier",
+        "vitest",
+        "jest",
+        "mocha",
+        "turbo",
+        "nx",
+        "lerna",
+        "rushx",
+        "hatch",
+        "poetry",
+        "pipx",
+        "uvx",
+        "helm",
+        "kubectl",
+        "terraform",
+        "ansible",
+        "ssh",
+        "scp",
     }
     | CONDITION_CONJUNCTIONS
     | CLAUSE_JOINERS
-)  # fmt: skip
+)
 
 # The words that open a condition clause; a bare `for` opens none.
 CONDITION_OPENERS = CONDITIONAL_MARKERS - {"for"}
@@ -500,70 +548,10 @@ def words_of(text: str) -> list[str]:
     return [w.lower() for w in WORD_RE.findall(text)]
 
 
-def prose_tokens(sentence: str) -> list[str]:
-    """The lowered whitespace tokens of `sentence` outside code spans, a hyphenated word kept whole
-    (`ready-for-review` holds no `for`), a `(see ...)` reference aside left out."""
-    text = SEE_ASIDE_RE.sub(" ", replace_code_spans(sentence, " code "))
-    return [t.strip(TOKEN_EDGES).lower() for t in text.split()]
-
-
-def word_forms(word: str) -> set[str]:
-    """`word` with its plain singular and plural spellings (`test` / `tests`, `match` / `matches`)."""
-    forms = {word, word + "s", word + "es"}
-    if word.endswith("es"):
-        forms.add(word[:-2])
-    if word.endswith("s"):
-        forms.add(word[:-1])
-    return forms
-
-
-def is_content_word(word: str) -> bool:
-    """Whether `word` is longer than two letters and not a function word."""
-    return len(word) > 2 and word not in STOPWORDS
-
-
-COMMA: frozenset[str] = frozenset({","})
+# The comma that separates the items of a list and the phrases of a sentence.
+COMMA = ","
 # What stands between the items of a coordinated list.
-LIST_SEPARATORS: frozenset[str] = COMMA | CONDITION_CONJUNCTIONS
+LIST_SEPARATORS: frozenset[str] = frozenset({COMMA}) | CONDITION_CONJUNCTIONS
 # Words that open the next clause after a joiner (`Build docs and push`), told from the nouns a verb-like
 # word may also be.
-_CLAUSE_OPENING_VERBS: frozenset[str] = frozenset(VERBS_CORE | VERBS_SUPPLEMENT)
-
-
-def list_tokens(text: str) -> list[str]:
-    """The lowered content words of `text` in order, with a `,` kept where one stood and `and` / `or`
-    kept as separators, except an `and` that joins clauses (`CLAUSE_JOINERS`, followed by a verb:
-    `Build docs and push`), which separates no items."""
-    tokens: list[str] = []
-    for i, part in enumerate(text.lower().split(",")):
-        if i:
-            tokens.append(",")
-        words = CODE_WORD_RE.findall(part)
-        for k, w in enumerate(words):
-            joins_clauses = w in CLAUSE_JOINERS and words[k + 1 : k + 2] and words[k + 1] in _CLAUSE_OPENING_VERBS
-            if not joins_clauses and (w in LIST_SEPARATORS or is_content_word(w)):
-                tokens.append(w)
-    return tokens
-
-
-def phrase_starts(tokens: Sequence[str], phrase: Sequence[str]) -> list[int]:
-    """Where `phrase` (content words, any singular / plural form) stands in `tokens`, as start indices."""
-    n = len(phrase)
-    return [k for k in range(len(tokens) - n + 1) if all(tokens[k + d] in word_forms(w) for d, w in enumerate(phrase))]
-
-
-def is_list_item(
-    tokens: Sequence[str],
-    phrase: Sequence[str],
-    *,
-    before: AbstractSet[str] = LIST_SEPARATORS,
-    after: AbstractSet[str] = LIST_SEPARATORS,
-) -> bool:
-    """Whether `phrase` stands as an item of a coordinated list in `tokens` (`list_tokens` of a text;
-    `Lint Python, shell, or Docker`): a separator stands right before it (one of `before`) or right
-    after it (one of `after`)."""
-    for k in phrase_starts(tokens, phrase):
-        end = k + len(phrase)
-        if (k > 0 and tokens[k - 1] in before) or (end < len(tokens) and tokens[end] in after):
-            return True
-    return False
+CLAUSE_OPENING_VERBS: frozenset[str] = frozenset(VERBS_CORE | VERBS_SUPPLEMENT)
