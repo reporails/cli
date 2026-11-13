@@ -1015,6 +1015,16 @@ def test_a_new_head_noun_that_takes_the_forbidden_noun_as_modifier_is_narrowed(t
 @pytest.mark.integration
 @pytest.mark.subsys_server
 @pytest.mark.requires_model
+def test_a_comma_elsewhere_in_the_sentence_does_not_make_a_new_head_noun_an_alternative(tmp_path) -> None:
+    before = "*Do not edit config, even in a hurry.*\n"
+    after = "*Do not edit config files or schemas, even in a hurry.*\n"
+    result = _compare_edit(tmp_path, before, after)
+    assert result["narrowed_instructions"]
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
 def test_a_heading_that_lists_kinds_does_not_name_one_of_them_as_the_referent(tmp_path) -> None:
     before = "## Hooks and scripts\n\nEdit at canonical paths only.\n"
     after = "## Hooks and scripts\n\nEdit hooks at canonical paths only.\n"

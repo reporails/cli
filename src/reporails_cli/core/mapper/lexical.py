@@ -23,7 +23,7 @@ DASH_PAIR_RE = re.compile(f"{_CUT_DASH}((?:(?!{_CUT_DASH}).)+?){_CUT_DASH}")
 # ── Clause-split markers ───────────────────────────────────────────────
 # STRONG markers: space-flanked em/en-dash, semicolon, colon. Punctuation only, so
 # consuming the marker itself loses no word.
-_STRONG_RE = re.compile(r"\s+[\u2014\u2013]\s+|;\s+|:\s+")
+_STRONG_RE = re.compile(r"\s+[" + "".join(sorted(DASH_MARKS)) + r"]\s+|;\s+|:\s+")
 # COORD / SUBORD markers are WORDS (`and`, `before`, …): the cut sits on the whitespace
 # just ahead of the marker (a lookahead, not a capture), so the marker word itself opens
 # the clause that follows rather than being consumed by the split.

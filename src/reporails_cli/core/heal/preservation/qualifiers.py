@@ -144,17 +144,17 @@ def for_phrase_added(p: Pair) -> bool:
 _EXAMPLE_LEADS = frozenset({"such", "e", "g", "eg", "including", "like", "example", "examples"})
 
 
-def _extends_author_noun(new: list[str], j1: int, j2: int, named: set[str], *, comma: bool) -> bool:
+def _extends_author_noun(new: list[str], j1: int, j2: int, named: set[str], sentence: str) -> bool:
     """Whether the words inserted at `new[j1:j2]` only add bare alternatives to the author's own
     noun before them (`secrets` -> `secrets or credentials`, `secrets, keys or credentials`): a
     content word of the author's sentence, an alternative that opens right after it with `or` /
-    `and` (or the sentence holds a comma), then words that are all `or`, `and` or content words
+    `and` or a comma in `sentence`, then words that are all `or`, `and` or content words
     (`repo` -> `repo name or a per-repo segment` has function words and is a list of its own;
     `config` -> `config files or schemas` makes `config` a modifier of the new noun `files`)."""
     noun = new[j1 - 1]
     if not _content([noun]) or not word_forms(noun) & named:
         return False
-    if new[j1] not in CONDITION_CONJUNCTIONS and not comma:
+    if new[j1] not in CONDITION_CONJUNCTIONS and not re.search(rf"\b{re.escape(noun)}\W*,", sentence, re.IGNORECASE):
         return False
     return all(w in CONDITION_CONJUNCTIONS or (len(w) > 2 and w not in STOPWORDS) for w in new[j1:j2])
 
@@ -174,7 +174,7 @@ def kinds_listed(p: Pair) -> bool:
         added = new[j1:j2]
         if tag == "equal" or "or" not in added or _EXAMPLE_LEADS & set(new[max(j1 - 3, 0) : j2]):
             continue
-        if tag == "insert" and j1 > 0 and _extends_author_noun(new, j1, j2, named, comma="," in p.new_sentence):
+        if tag == "insert" and j1 > 0 and _extends_author_noun(new, j1, j2, named, p.new_sentence):
             continue
         fresh = [w for w in _content(added) if not word_forms(w) & named]
         if fresh and set(fresh) <= negated:
