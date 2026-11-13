@@ -20,6 +20,8 @@ from reporails_cli.core.heal.preservation.words import (
     is_content_word,
     is_function_word,
     named_key,
+    prose_text,
+    slot_prose_tokens,
     slot_tokens,
     token_words,
 )
@@ -28,6 +30,7 @@ from reporails_cli.core.mapper.classify_lexicon import (
     CONDITION_CONJUNCTIONS,
     CONDITIONAL_MARKERS,
     DEFINITE_DETERMINERS,
+    LIMITING_RESTRICTORS,
     words_of,
 )
 from reporails_cli.core.mapper.lexical import word_forms
@@ -162,7 +165,11 @@ def _same_sentence(p: Pair) -> bool:
 
 def _line_words(old_by_line: ByLine, line: int) -> set[str]:
     """The words the author's line has, each with its singular and plural spelling."""
-    known = {w for atom in old_by_line.get(line, ()) for w in words_of(atom.plain_text)}
+    atoms = old_by_line.get(line, ())
+    # The author's prose words, and each construct they named that is one word (`try`): a rewrite
+    # that writes it without backticks has said nothing new.
+    known = {w for atom in atoms for w in words_of(prose_text(atom))}
+    known |= {named_key(t) for atom in atoms for t in atom.named_tokens if words_of(t) == [named_key(t)]}
     return known | {f for w in known for f in word_forms(w)}
 
 
@@ -172,10 +179,10 @@ def _covered_tokens(p: Pair) -> list[tuple[str, bool]]:
     prohibition. A scope that is a condition the author's instruction lacked is left to
     `added_conditions`."""
     if p.new.slots is None:
-        tokens = p.new.plain_text.split()
+        tokens = prose_text(p.new).split()
     else:
         added_condition = condition_text(p.new) is not None and condition_text(p.old) is None
-        tokens = slot_tokens(p.new, "object") + ([] if added_condition else slot_tokens(p.new, "scope"))
+        tokens = slot_prose_tokens(p.new, "object") + ([] if added_condition else slot_prose_tokens(p.new, "scope"))
     out = [(w, token.endswith(",")) for token in tokens for w in token_words([token])]
     return out + [(w, False) for w in p.continued]
 
@@ -306,17 +313,28 @@ def dropped_conditions(pairs: list[Pair]) -> list[JsonObject]:
     """Each matched instruction whose original holds a condition that its rewrite no longer holds:
     the words of the original's condition are not all in the rewrite's condition (`If the build
     fails, run X before Y` rewritten `Run X before Y` has none of `build` and `fails`), or the
-    rewrite has no condition. A condition restated with its marker swapped or another form of its
-    words is held."""
+    rewrite has no condition, or the rewrite's condition names a word the original's lacks (`If the
+    build passes` for `If the build fails`; an `only` condition may name more of its limit). A condition
+    restated with its marker swapped or another form of its words is held."""
     out = []
     for p in pairs:
         governed = _condition_words(p.old)
         if not governed:
             continue
         rewrite = _condition_words(p.new)
-        if rewrite is None or not all(_is_word_of(w, rewrite) for w in governed):
+        if (
+            rewrite is None
+            or not all(_is_word_of(w, rewrite) for w in governed)
+            or (not _limiting(p.old) and not all(_is_word_of(w, governed) for w in rewrite))
+        ):
             out.append(p.entry())
     return out
+
+
+def _limiting(atom: AtomView) -> bool:
+    """Whether the condition the mapper read on `atom` is opened by a limiting word (`only`)."""
+    text = condition_text(atom)
+    return text is not None and bool(set(words_of(text)[:1]) & LIMITING_RESTRICTORS)
 
 
 def added_conditions(snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom]) -> list[JsonObject]:

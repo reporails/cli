@@ -15,6 +15,7 @@ import pytest
 
 from reporails_cli.core.heal.preservation import compare, take_snapshot
 from reporails_cli.core.heal.preservation.snapshot import is_hedge_fragment
+from reporails_cli.core.mapper.classify import restrictor_clause
 from reporails_cli.core.mapper.classify_lexicon import CONDITION_OPENERS, words_of
 from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots, RulesetMap
 
@@ -38,7 +39,9 @@ def _atom(
     slots = AtomSlots(predicate_span=(0, 1), object_span=(1, words)) if words > 2 or charge_value < 0 else None
     opener = next((i for i, w in enumerate(words_of(text)) if cond and w in CONDITION_OPENERS), None)
     if slots is not None and opener is not None:
-        slots = AtomSlots(predicate_span=(0, 1), object_span=(1, opener), scope_span=(opener, words))
+        # A fronted condition ends at its comma; one that follows the clause runs to the end.
+        end = next((i + 1 for i, w in enumerate(text.split()) if w.endswith(",")), words) if opener == 0 else words
+        slots = AtomSlots(predicate_span=(0, 1), object_span=(1, opener), scope_span=(opener, end))
     return Atom(
         slots=slots,
         line=line,
@@ -48,7 +51,8 @@ def _atom(
         charge_value=charge_value,
         modality=modality,
         specificity="named" if named else "abstract",
-        scope_conditional=cond,
+        # The mapper reads a restricting word's phrase (`only on main`) as a condition on a charged atom.
+        scope_conditional=cond or (charge_value != 0 and restrictor_clause(text, named) is not None),
         format=fmt,
         named_tokens=list(named),
         plain_text=text.replace("`", ""),

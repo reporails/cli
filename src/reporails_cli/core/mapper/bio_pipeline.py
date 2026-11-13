@@ -27,7 +27,7 @@ from reporails_cli.core.mapper.charge_floors import (
     _apply_structural_neutral_floor,
     is_quoted_line,
 )
-from reporails_cli.core.mapper.classify import is_conditional_frame, opens_conditional_clause
+from reporails_cli.core.mapper.classify import is_conditional_frame, opens_conditional_clause, restrictor_clause
 from reporails_cli.core.mapper.classify_lexicon import WORD_RE
 from reporails_cli.core.mapper.classify_no import is_terse_no_prohibition
 from reporails_cli.core.mapper.fence_atoms import is_fence_block
@@ -139,6 +139,12 @@ def _tuple_scope_conditional(t: AtomTuple) -> bool:
     return opens_conditional_clause(t.text)
 
 
+def _restricted(atom: Atom) -> bool:
+    """Whether a restricting word (`only`, `except`) opens a phrase in a charged atom's text, which
+    is then a condition on the instruction."""
+    return atom.charge_value != 0 and restrictor_clause(atom.plain_text, atom.named_tokens) is not None
+
+
 def _atom_from_tuple(t: AtomTuple, parent: Atom, *, already_plain: bool, formatted: str | None = None) -> Atom:
     """Build one per-sentence atom from a decoded tuple, carrying parent context.
 
@@ -158,6 +164,7 @@ def _atom_from_tuple(t: AtomTuple, parent: Atom, *, already_plain: bool, formatt
     atom.file_path = parent.file_path
     atom.stage = "multislot"
     atom.slots = _slots_from_tuple(t)
+    atom.scope_conditional = atom.scope_conditional or _restricted(atom)
     return atom
 
 
@@ -186,8 +193,8 @@ def _apply_heading_tuple(atom: Atom, t: AtomTuple) -> Atom:
     atom.charge, atom.charge_value = charge, cv
     atom.modality = t.modality if polarity != 0 else "none"
     atom.rule, atom.stage = "multislot", "multislot"
-    atom.scope_conditional = _tuple_scope_conditional(t)
     atom.slots = _slots_from_tuple(t)
+    atom.scope_conditional = _tuple_scope_conditional(t) or _restricted(atom)
     return atom
 
 

@@ -9,16 +9,31 @@ import pytest
 
 from reporails_cli.core.heal.preservation import compare, take_snapshot
 from reporails_cli.core.heal.preservation.conditions import added_conditions, dropped_conditions, hedge_made_absolute
+from reporails_cli.core.mapper.classify_lexicon import CONDITION_OPENERS
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 from reporails_cli.core.platform.dto.heal import Pair, Snapshot, SnapshotAtom
+from reporails_cli.core.platform.dto.ruleset import AtomSlots
 from tests.unit.test_preservation import _atom
 
 
 def _listed(original_line: list[SnapshotAtom], rewrite_text: str, *, index: int = 0) -> bool:
     """Whether `original_line[index]` is listed when it matches a conditional rewrite."""
     sa = original_line[index]
+    words = rewrite_text.split()
+    # The scope the mapper decodes for a condition that follows its clause: from the opener to the end.
+    opener = next((i for i, w in enumerate(words) if i and w.lower().strip(".,") in CONDITION_OPENERS), None)
+    slots = (
+        None
+        if opener is None
+        else AtomSlots(predicate_span=(0, 1), object_span=(1, opener), scope_span=(opener, len(words)))
+    )
     match = SimpleNamespace(
-        line=sa.line, text=rewrite_text, plain_text=rewrite_text, scope_conditional=True, slots=None
+        line=sa.line,
+        text=rewrite_text,
+        plain_text=rewrite_text,
+        named_tokens=(),
+        scope_conditional=True,
+        slots=slots,
     )
     return bool(added_conditions(original_line, {id(sa): match}))
 

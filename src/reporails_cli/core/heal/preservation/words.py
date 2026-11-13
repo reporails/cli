@@ -99,6 +99,19 @@ def slot_tokens(atom: AtomView, *names: str) -> list[str]:
     return out
 
 
+def slot_prose_tokens(atom: AtomView, *names: str) -> list[str]:
+    """The words of the slots `names` of `atom`, as `slot_tokens` reads them, with each named construct
+    blanked: what the author wrote around the constructs."""
+    if atom.slots is None:
+        return []
+    out: list[str] = []
+    for name in names:
+        span = getattr(atom.slots, f"{name}_span")
+        if span is not None:
+            out.extend(blank_named(words_between(atom.plain_text, *span), atom.named_tokens).split())
+    return out
+
+
 def token_words(tokens: Iterable[str]) -> list[str]:
     """The lowered words, in order, of each of `tokens`."""
     return [w for token in tokens for w in words_of(token)]
@@ -114,6 +127,13 @@ def atom_words(atom: AtomView) -> frozenset[str]:
     words of its plain text less its named constructs."""
     words = slot_words(atom, "subject", "predicate", "object", "scope")
     return frozenset(words or words_of(prose_text(atom)))
+
+
+def core_words(atom: AtomView) -> frozenset[str]:
+    """An instruction's core: the words of its subject, predicate and object slots, without the
+    scope that restricts it; an atom with none read contributes what `atom_words` does."""
+    words = slot_words(atom, "subject", "predicate", "object")
+    return frozenset(words) if words else atom_words(atom)
 
 
 @cache

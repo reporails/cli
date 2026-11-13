@@ -434,6 +434,17 @@ CONTEXT_WORDS = (
 # The words that open a condition clause; a bare `for` opens none.
 CONDITION_OPENERS = CONDITIONAL_MARKERS - {"for"}
 
+# Words that restrict where, when or to what an instruction applies, whatever follows them: the
+# phrase one opens is a condition on the instruction. The excluding ones cut part of its coverage
+# out, so a word added to what they open widens the instruction; the limiting ones state the scope
+# itself, so naming more of it (`Only use remote debugging on trusted machines`) restates the limit.
+EXCLUDING_RESTRICTORS: frozenset[str] = frozenset({"except", "excluding", "outside"})
+LIMITING_RESTRICTORS: frozenset[str] = frozenset({"only", "solely", "absent"})
+SCOPE_RESTRICTORS: frozenset[str] = EXCLUDING_RESTRICTORS | LIMITING_RESTRICTORS | frozenset({"unless"})
+# What may stand before a restrictor word without making it an adjective or a correlative (`the only
+# option`, `not only X but Y`).
+RESTRICTOR_BLOCKERS: frozenset[str] = frozenset({"the", "a", "an", "not", "but", "its", "their", "our", "your"})
+
 # The people an instruction addresses or speaks for (`you must`, `we always`).
 ADDRESSEE_SUBJECTS: frozenset[str] = frozenset({"you", "we"})
 # Personal pronouns: after an ambiguous opening verb they start a clause of their own (`Fix tests you can reproduce`).

@@ -19,10 +19,12 @@ from reporails_cli.core.heal.preservation import match as preservation_match
 from reporails_cli.core.heal.preservation import named as preservation_named
 from reporails_cli.core.heal.preservation import structure as preservation_structure
 from reporails_cli.core.heal.preservation.snapshot import make_snapshot
+from reporails_cli.core.mapper.classify_lexicon import CONDITION_OPENERS
 from reporails_cli.core.mapper.negative_headings import is_negative_heading
 from reporails_cli.core.mapper.structure import read_structure
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 from reporails_cli.core.platform.dto.heal import Snapshot, SnapshotAtom
+from reporails_cli.core.platform.dto.ruleset import AtomSlots
 from reporails_cli.interfaces.mcp import snapshots
 
 
@@ -85,6 +87,14 @@ def _new_atom(
     scope_conditional: bool = False,
 ) -> SimpleNamespace:
     """A stand-in for a mapper `Atom` — `compare()` / `snapshot_file()` only read these fields."""
+    words = text.split()
+    # The scope the mapper decodes on a conditional atom: from its condition opener to the end.
+    opener = next((i for i, w in enumerate(words) if i and scope_conditional and w.lower() in CONDITION_OPENERS), None)
+    slots = (
+        None
+        if opener is None
+        else AtomSlots(predicate_span=(0, 1), object_span=(1, opener), scope_span=(opener, len(words)))
+    )
     return SimpleNamespace(
         line=line,
         position_index=pi,
@@ -101,7 +111,7 @@ def _new_atom(
         negative_heading=False,
         plain_text=text.replace("`", ""),
         modality="direct" if charge_value else "none",
-        slots=None,
+        slots=slots,
         imported_from="",
     )
 

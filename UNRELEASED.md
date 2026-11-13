@@ -13,6 +13,7 @@
 
 ### Fixed
 
+- Heal reads a phrase opened by `only`, `except`, `excluding`, `outside`, `solely` or `absent` as a condition: it puts back a rewrite that drops one or widens an exclusion, and a dropped condition is reported as a dropped condition rather than a lost instruction.
 - On Windows, `ails check` names a file relative to its project, finds the files of a `~/.claude` folder and keeps a linked rule inside its project when the folder is spelled with a short (8.3) name; a file in the folder the command runs in is named with `/`, not its full path.
 - With a home folder reached through a link, `ails check` on a `~/.claude` folder reports that folder's findings instead of none.
 - Heal in your agent leaves a line marked with `ails-disable-line` exactly as it is: the agent is given no fix and no decision on it.

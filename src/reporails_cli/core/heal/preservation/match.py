@@ -7,8 +7,13 @@ from __future__ import annotations
 
 import math
 
-from reporails_cli.core.heal.preservation.words import AtomView, atom_words, named_key
-from reporails_cli.core.mapper.classify import AFFIRMATIVE_ABSOLUTES, has_negation_cue, leading_prohibition
+from reporails_cli.core.heal.preservation.words import AtomView, atom_words, core_words, named_key, prose_text
+from reporails_cli.core.mapper.classify import (
+    AFFIRMATIVE_ABSOLUTES,
+    condition_text,
+    has_negation_cue,
+    leading_prohibition,
+)
 from reporails_cli.core.mapper.classify_lexicon import words_of
 from reporails_cli.core.mapper.prose_split import sentence_spans
 from reporails_cli.core.platform.contract.json_value import JsonObject
@@ -81,13 +86,18 @@ def _mixed_polarity_restated(sa_text: str, na_text: str) -> bool:
 
 
 def _content_coverage(sa: AtomView, na: AtomView) -> float:
-    """The fraction of `sa`'s content words (the words of its slots) present in `na` — of the
-    SNAPSHOT side only, never normalized by the shorter of the two word sets, so a short survivor
-    sharing one word with a long lost instruction cannot pass the threshold."""
-    wa = atom_words(sa)
+    """The fraction of `sa`'s core words (its subject, predicate and object, not the condition that
+    restricts it) present in `na` — of the SNAPSHOT side only, never normalized by the shorter of
+    the two word sets, so a short survivor sharing one word with a long lost instruction cannot
+    pass the threshold. A rewrite that only drops or adds a condition still pairs, and the
+    condition checks report it."""
+    wa = core_words(sa)
+    condition = condition_text(sa)
+    if condition is not None:
+        wa = wa - set(words_of(condition)) or wa
     if not wa:
         return 0.0
-    return len(wa & atom_words(na)) / len(wa)
+    return len(wa & (atom_words(na) | set(words_of(prose_text(na))))) / len(wa)
 
 
 def pair_score(sa: SnapshotAtom, na: Atom) -> float | None:

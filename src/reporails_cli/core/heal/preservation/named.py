@@ -11,6 +11,7 @@ from collections import Counter
 from collections.abc import Sequence
 
 from reporails_cli.core.heal.preservation.words import AtomView, named_key, slot_words
+from reporails_cli.core.mapper.classify import condition_text
 from reporails_cli.core.mapper.classify_lexicon import words_of
 from reporails_cli.core.platform.contract.environment import ProjectEnvironment
 from reporails_cli.core.platform.contract.glob_pattern import GLOB_CHARS
@@ -216,12 +217,12 @@ def _names_an_existing_referent(token_key: str, old_text: str) -> bool:
 
 
 def _governed(atom: AtomView) -> set[str]:
-    """The lowered named constructs of `atom` that sit in the object or scope the mapper read: a
-    construct outside both (an example or a reason tacked on) illustrates or justifies the
+    """The lowered named constructs of `atom` that sit in the object, the scope or the condition the
+    mapper read: a construct outside all three (an example or a reason tacked on) illustrates or justifies the
     instruction and is no part of what it forbids. An atom with no slots read governs all of them."""
     if atom.slots is None:
         return {named_key(t) for t in atom.named_tokens}
-    words = set(slot_words(atom, "object", "scope"))
+    words = set(slot_words(atom, "object", "scope")) | set(words_of(condition_text(atom) or ""))
     return {named_key(t) for t in atom.named_tokens if not (own := words_of(t)) or set(own) <= words}
 
 

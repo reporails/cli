@@ -10,6 +10,7 @@ Public entry point: `classify_charge(md_text, plain_text=...)`.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import Protocol
 
 from reporails_cli.core.mapper.classify_lexicon import (
@@ -21,6 +22,8 @@ from reporails_cli.core.mapper.classify_lexicon import (
     IT_IS,
     MODAL_ABSOLUTE,
     MODAL_HEDGED,
+    RESTRICTOR_BLOCKERS,
+    SCOPE_RESTRICTORS,
     WORD_RE,
     words_of,
 )
@@ -152,6 +155,43 @@ def conditional_clause(text: str) -> str | None:
     return head[: close.start()] if close else None
 
 
+# A restricting phrase runs on through its commas (`only modify a, b and c`); a semicolon or a `then` ends it.
+_RESTRICTOR_CLOSE_RE = re.compile(r";\s*\S|\s+then\s+\S", re.IGNORECASE)
+
+
+def _named_char_mask(text: str, named_tokens: Sequence[str]) -> list[bool]:
+    """Per character of ``text``, whether it lies inside one of the named tokens."""
+    mask = [False] * len(text)
+    for token in named_tokens:
+        start = text.find(token) if token else -1
+        while start >= 0:
+            mask[start : start + len(token)] = [True] * len(token)
+            start = text.find(token, start + len(token))
+    return mask
+
+
+def restrictor_clause(plain_text: str, named_tokens: Sequence[str]) -> str | None:
+    """The phrase a restricting word opens (`only on main`, `except integration tests`), from the
+    word through the word before the comma that closes it; None when the text has none.
+
+    A word inside a named token (`try`/`except` in backticks) restricts nothing, nor does one
+    used as an adjective or a correlative (`the only option`, `not only X`).
+    """
+    mask = _named_char_mask(plain_text, named_tokens)
+    tokens = [(m.start(), m.group()) for m in re.finditer(r"\S+", plain_text)]
+    previous = ""
+    for i, (start, token) in enumerate(tokens):
+        word = (WORD_RE.findall(token) or [""])[0].lower()
+        blocked = previous in RESTRICTOR_BLOCKERS
+        previous = word
+        if word not in SCOPE_RESTRICTORS or blocked or mask[start]:
+            continue
+        head = " ".join(t for _s, t in tokens[i : i + _COND_CLAUSE_MAX_WORDS])
+        close = _RESTRICTOR_CLOSE_RE.search(head)
+        return head[: close.start()] if close else head
+    return None
+
+
 class ConditionRead(Protocol):
     """The fields `condition_text` reads, shared by a mapper atom and a snapshotted one."""
 
@@ -164,6 +204,10 @@ class ConditionRead(Protocol):
         """The text with its markup read away."""
 
     @property
+    def named_tokens(self) -> Sequence[str]:
+        """The backticked constructs it names."""
+
+    @property
     def slots(self) -> AtomSlots | None:
         """The slots the mapper read, as word spans of `plain_text`."""
 
@@ -171,14 +215,17 @@ class ConditionRead(Protocol):
 def condition_text(atom: ConditionRead) -> str | None:
     """The condition the mapper read on a conditional atom: its decoded scope when that scope
     opens a conditional frame, else the frame that closes the sentence's opening; None when the
-    atom is not conditional."""
+    atom is not conditional. A phrase a restricting word (`only`, `except`) opens is part of the
+    condition too."""
     if not atom.scope_conditional:
         return None
+    frame = conditional_clause(atom.plain_text)
     if atom.slots is not None and atom.slots.scope_span is not None:
         scope = words_between(atom.plain_text, *atom.slots.scope_span)
         if is_conditional_frame(scope):
-            return scope
-    return conditional_clause(atom.plain_text)
+            frame = scope
+    restriction = restrictor_clause(atom.plain_text, atom.named_tokens)
+    return " ".join(part for part in (frame, restriction) if part) or None
 
 
 def opens_conditional_clause(text: str) -> bool:
