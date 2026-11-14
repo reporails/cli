@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.markup import escape
 
 from reporails_cli.core.platform.dto.heal import HealRegression
+from reporails_cli.core.platform.utils.utils import format_score
 from reporails_cli.formatters.text.chars import get_chars
 
 # The most rules one line names; the rest are counted.
@@ -18,7 +19,7 @@ def heal_regression_sentence(regression: HealRegression, arrow: str) -> str:
     """`Since the last heal: <file> score 8.4 → 7.9; findings back: <rule> +2, ...`, plain text."""
     parts: list[str] = []
     if regression.score_before is not None and regression.score_after is not None:
-        parts.append(f"score {regression.score_before:.1f} {arrow} {regression.score_after:.1f}")
+        parts.append(f"score {format_score(regression.score_before)} {arrow} {format_score(regression.score_after)}")
     if regression.rules:
         ranked = sorted(regression.rules.items(), key=lambda item: -item[1])
         named = ", ".join(f"{rule} +{n}" for rule, n in ranked[:_RULES_NAMED])

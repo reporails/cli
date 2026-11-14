@@ -5,31 +5,25 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping
+from collections import Counter
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
 from reporails_cli.core.platform.config.bootstrap import get_heal_record_path
-from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_object, as_str
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_object, as_str, opt_float
 from reporails_cli.core.platform.dto.heal import HealedFile, HealRegression
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+from reporails_cli.core.platform.utils.utils import SCORE_DECIMALS
 
 logger = logging.getLogger(__name__)
-
-# Scores print to one decimal; a drop smaller than that is not a drop.
-SCORE_DECIMALS = 1
 
 
 def _healed_file(entry: JsonObject) -> HealedFile:
     """One record entry; a score that is not a number reads as unscored."""
-    score = entry.get("score")
     rules = {rule: as_int(n, 0) for rule, n in as_object(entry.get("rules")).items()}
-    return HealedFile(
-        float(score) if isinstance(score, (int, float)) and not isinstance(score, bool) else None,
-        rules,
-        as_str(entry.get("healed_at")),
-    )
+    return HealedFile(opt_float(entry.get("score")), rules, as_str(entry.get("healed_at")))
 
 
 def read_record(root: Path) -> dict[str, HealedFile]:
@@ -98,15 +92,28 @@ def regressions(
     return tuple(found)
 
 
+def count_rules(rules: Iterable[str]) -> dict[str, int]:
+    """How many times each rule id appears in `rules`."""
+    return dict(Counter(rules))
+
+
+def file_scores(result: CombinedResult, root: Path) -> dict[str, float]:
+    """The 0-10 score of each scored file of `result` by its path relative to `root`; empty offline."""
+    return {
+        normalize_finding_path(fa.file, root): float(fa.display_score)
+        for fa in result.per_file_analysis
+        if fa.display_score is not None
+    }
+
+
 def heal_regressions(result: CombinedResult, root: Path) -> tuple[HealRegression, ...]:
     """The healed files `result` (an `ails check` run of the project at `root`) shows slipping since the
     heal; none when the project has no heal record."""
     record = read_record(root)
     if not record:
         return ()
-    scores = {normalize_finding_path(fa.file, root): fa.display_score for fa in result.per_file_analysis}
-    counts: dict[str, dict[str, int]] = {}
+    rules_of: dict[str, list[str]] = {}
     for finding in result.findings:
-        per_rule = counts.setdefault(normalize_finding_path(finding.file, root), {})
-        per_rule[finding.rule] = per_rule.get(finding.rule, 0) + 1
-    return regressions(record, scores, counts)
+        rules_of.setdefault(normalize_finding_path(finding.file, root), []).append(finding.rule)
+    counts = {name: count_rules(rules) for name, rules in rules_of.items()}
+    return regressions(record, file_scores(result, root), counts)

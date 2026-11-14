@@ -3,7 +3,7 @@
 ### Added
 
 - `ails check --offline` (or `AILS_OFFLINE=1`) runs local checks only and makes no network call; the summary says the server analysis did not run.
-- After a heal, `ails check` names each healed file whose score fell or whose findings came back since the heal, one line per file (`Since the last heal: CLAUDE.md score 8.4 → 7.9; findings back: CORE:C:0058 +2`), and `--format json` carries them under `heal_regressions`.
+- After a heal run through your agent, `ails check` names each healed file whose score fell or whose findings came back since the heal, one line per file (`Since the last heal: CLAUDE.md score 8.4 → 7.9; findings back: CORE:C:0058 +2`), and `--format json` carries them under `heal_regressions` and each file's score under `file_scores`.
 
 ### Changed
 

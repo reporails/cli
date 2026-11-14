@@ -45,6 +45,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path
         store.clear()
     snapshots._released.clear()
     snapshots._accepted_text.clear()
+    snapshots._recorded.clear()
 
     def pipeline(path: Any, *_a: Any, **_k: Any) -> tuple[dict, Any, float]:
         ruleset_map = map_ruleset([Path(path)], models=get_models(), root=root, cache_dir=None)

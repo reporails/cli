@@ -9,7 +9,6 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 from contextlib import nullcontext
-from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -207,7 +206,4 @@ def _flow_assemble(state: CheckState) -> None:
         state.render.display_result = state.render.result
         state.render.display_map = state.pipeline.ruleset_map
     shown = state.render.display_result
-    state.render.display_result = replace(
-        shown,
-        omissions=replace(shown.omissions, heal_regressions=heal_regressions(shown, state.targets.target)),
-    )
+    state.render.heal_regressions = heal_regressions(shown, state.targets.target)

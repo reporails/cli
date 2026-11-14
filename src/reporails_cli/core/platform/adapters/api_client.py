@@ -27,7 +27,15 @@ from reporails_cli.core.platform.config.credentials import (
     signed_in_recently,
 )
 from reporails_cli.core.platform.config.endpoints import DEFAULT_SERVER_URL, server_url
-from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_int, as_object, as_str, opt_int
+from reporails_cli.core.platform.contract.json_value import (
+    JsonObject,
+    JsonValue,
+    as_int,
+    as_object,
+    as_str,
+    opt_float,
+    opt_int,
+)
 from reporails_cli.core.platform.dto.diagnostics import (
     DEFAULT_RETRY_AFTER_S,
     OFFLINE_REQUESTED,
@@ -263,11 +271,6 @@ def _section(data: JsonObject, key: str) -> list[JsonValue]:
     return raw
 
 
-def _score(value: JsonValue) -> float | None:
-    """`value` when it is a number (not a bool), else None."""
-    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
-
-
 def _diagnostic(d: JsonObject, fa_file: str) -> Diagnostic | None:
     """One `diagnostics[]` row of a file; None (with a warning) when a required field is missing or mistyped."""
     d_line, d_severity, d_rule = opt_int(d.get("line")), d.get("severity"), d.get("rule")
@@ -314,7 +317,7 @@ def _deserialize_per_file(report_data: JsonObject) -> tuple[FileAnalysis, ...]:
                 file=fa_file,
                 diagnostics=tuple(diagnostics),
                 stats=as_object(fa.get("stats", {})),
-                display_score=_score(fa.get("display_score")),
+                display_score=opt_float(fa.get("display_score")),
             )
         )
     return tuple(items)
@@ -373,7 +376,7 @@ def _deserialize_quality(report_data: JsonObject) -> QualityResult | None:
     q_data = report_data.get("quality")
     if not isinstance(q_data, dict):
         return None
-    return QualityResult(display_score=_score(q_data.get("display_score")))
+    return QualityResult(display_score=opt_float(q_data.get("display_score")))
 
 
 def _hint(h: JsonObject) -> Hint | None:

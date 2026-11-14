@@ -27,13 +27,14 @@ from reporails_cli.core.platform.adapters.notices_seen import due_notices
 from reporails_cli.core.platform.dto.classify import UnresolvedSkill
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, FunnelError
 from reporails_cli.core.platform.dto.discovery import RunExclusions
+from reporails_cli.core.platform.dto.heal import HealRegression
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.observability.log_levels import quiet_loggers
 from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.formatters import github as github_formatter
 from reporails_cli.formatters import json as json_formatter
-from reporails_cli.formatters.text.display import print_text_result
+from reporails_cli.formatters.text.display import TextExtras, print_text_result
 from reporails_cli.interfaces.cli.heal import (
     _apply_keyed_fixes,
     _collect_section_suggestions,
@@ -181,6 +182,7 @@ class RenderContext(NamedTuple):
     file_type_by_path: dict[str, str] | None = None
     ascii_mode: bool = False
     verbose: bool = False
+    heal_regressions: tuple[HealRegression, ...] = ()
 
 
 def _emit_json(
@@ -192,6 +194,7 @@ def _emit_json(
         ruleset_map=ruleset_map,
         project_root=context.project_root,
         file_type_by_path=context.file_type_by_path,
+        heal_regressions=context.heal_regressions,
     )
     data["elapsed_ms"] = round(elapsed_ms, 1)
     timer = get_stage_timer()
@@ -248,7 +251,7 @@ def _dispatch_output(
         ruleset_map=ruleset_map,
         funnel_error=funnel_error,
         project_root=context.project_root,
-        file_type_by_path=context.file_type_by_path,
+        extras=TextExtras(context.file_type_by_path, context.heal_regressions),
     )
 
 

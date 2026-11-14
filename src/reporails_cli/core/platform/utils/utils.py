@@ -25,6 +25,15 @@ from reporails_cli.core.platform.dto.frontmatter import Frontmatter, Frontmatter
 
 logger = logging.getLogger(__name__)
 
+# Scores are shown to one decimal; a change smaller than that is not a change.
+SCORE_DECIMALS = 1
+
+
+def format_score(score: float) -> str:
+    """A 0-10 score as shown: `8.4`."""
+    return f"{score:.{SCORE_DECIMALS}f}"
+
+
 _TIMESTAMP_TAG = "tag:yaml.org,2002:timestamp"
 # Explicit tags whose constructors build values JSON cannot hold (bytes, sets, tuples, dates).
 _NON_JSON_TAGS = frozenset(f"tag:yaml.org,2002:{name}" for name in ("binary", "set", "omap", "pairs", "timestamp"))

@@ -31,6 +31,7 @@ from reporails_cli.core.pipeline.mapping import (
 from reporails_cli.core.pipeline.server_gate import server_gate
 from reporails_cli.core.platform.config.bootstrap import running_in_ci
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.dto.heal import HealRegression
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
 from reporails_cli.interfaces.cli.check_notices import (
@@ -154,6 +155,8 @@ class CheckRender:
     result: CombinedResult = field(default_factory=CombinedResult)
     display_result: CombinedResult = field(default_factory=CombinedResult)
     display_map: RulesetMap | None = None
+    # The healed files the shown result has slipping since the heal.
+    heal_regressions: tuple[HealRegression, ...] = ()
     capability_paths: set[Path] = field(default_factory=set)
     # The `(folders, file globs)` the run left out because the user set them, recorded where scope resolves.
     excluded: tuple[tuple[str, ...], tuple[str, ...]] = ((), ())
@@ -352,6 +355,7 @@ def _flow_render(state: CheckState) -> None:
                 file_type_by_path=state.scope.file_type_by_path,
                 ascii_mode=state.inputs.ascii_mode,
                 verbose=state.inputs.verbose,
+                heal_regressions=state.render.heal_regressions,
             ),
         )
     state.pipeline.stage_timer.mark("render")

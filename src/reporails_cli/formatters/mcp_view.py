@@ -16,7 +16,7 @@ from pathlib import Path
 from reporails_cli.core.heal.keyed import put_back_line
 from reporails_cli.core.heal.preservation.compare import SUMMARY_KEYS
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_int, as_list, as_object, str_list
-from reporails_cli.core.platform.utils.utils import compact_json
+from reporails_cli.core.platform.utils.utils import compact_json, format_score
 from reporails_cli.formatters.text.display_constants import excluded_phrase
 from reporails_cli.formatters.text.not_evaluated import group_not_evaluated, not_evaluated_sentence
 
@@ -99,7 +99,7 @@ def _status_lines(payload: JsonObject) -> list[str]:
     file_count = sum(as_int(s.get("file_count"), 0) for s in as_list(surfaces) if isinstance(s, dict))
     parts = (
         f"tier {payload['tier']}" if payload.get("tier") else "",
-        f"score {quality:.1f}/10" if isinstance(quality, (int, float)) else "",
+        f"score {format_score(quality)}/10" if isinstance(quality, (int, float)) else "",
         f"{findings} findings" if findings is not None else "",
         f"level {payload['level']}" if payload.get("level") else "",
         f"{file_count} files" if file_count else "",

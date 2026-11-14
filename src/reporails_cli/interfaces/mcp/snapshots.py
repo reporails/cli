@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterable
+from collections.abc import Container, Iterable
 from pathlib import Path
 
 from reporails_cli.core.heal.conformance import check_plan
 from reporails_cli.core.heal.file_io import split_lines
 from reporails_cli.core.heal.preservation import check_rewrite as judge_rewrite
 from reporails_cli.core.heal.preservation import take_snapshot
+from reporails_cli.core.heal.record import count_rules
 from reporails_cli.core.lint.content_queries import atoms_for_file
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object
 from reporails_cli.core.platform.dto.heal import Snapshot
@@ -33,6 +34,8 @@ _plans: dict[str, Plan] = {}
 _released: set[str] = set()
 # Per briefed file, the text a `validate` reply last judged accepted: a release counts the file settled at it.
 _accepted_text: dict[str, str] = {}
+# Files whose accepted text the heal record already holds: one acceptance is recorded once.
+_recorded: set[str] = set()
 
 
 def _key(file_path: Path | str) -> str:
@@ -42,14 +45,12 @@ def _key(file_path: Path | str) -> str:
 def file_rule_counts(payload: JsonObject, file: str | None = None) -> dict[str, int]:
     """How many findings each rule has in `payload`'s per-file findings: a single-file run's, or just
     those of the project-relative `file` in a project run."""
-    counts: dict[str, int] = {}
-    for name, entry in as_object(payload.get("files")).items():
-        if file is not None and name != file:
-            continue
-        for finding in as_list(as_object(entry).get("findings")):
-            rule = str(as_object(finding).get("rule") or "")
-            counts[rule] = counts.get(rule, 0) + 1
-    return counts
+    return count_rules(
+        str(as_object(finding).get("rule") or "")
+        for name, entry in as_object(payload.get("files")).items()
+        if file is None or name == file
+        for finding in as_list(as_object(entry).get("findings"))
+    )
 
 
 def introduced_count(file_path: Path, payload: JsonObject) -> int:
@@ -82,28 +83,39 @@ def snapshot_file(
     _plans[_key(file_path)] = plan or Plan()
     _released.discard(_key(file_path))
     _accepted_text.pop(_key(file_path), None)
+    _recorded.discard(_key(file_path))
 
 
 def record_accepted(file_path: Path, text: str) -> None:
     """Remember `text` as what a `validate` reply last judged accepted for `file_path`."""
     _accepted_text[_key(file_path)] = text
+    _recorded.discard(_key(file_path))
 
 
-def kept_files(root: Path) -> list[str]:
-    """The project-relative paths of the briefed files under `root` still at the text a `validate` last accepted."""
-    base = Path(_key(root))
-    kept: list[str] = []
+def kept_files(root: Path, covered: Container[str]) -> dict[str, str]:
+    """The briefed files under `root` still at the text a `validate` last accepted, not yet in the heal
+    record, and named by `covered`: project-relative path as the file was briefed (case kept) -> its key."""
+    base = Path(os.path.normpath(str(root)))
+    kept: dict[str, str] = {}
     for key, text in _accepted_text.items():
-        path = Path(key)
-        if not path.is_relative_to(base):
+        snap = _snapshots.get(key)
+        if snap is None or key in _recorded:
+            continue
+        path = Path(os.path.normpath(snap.file_path))
+        if not path.is_relative_to(base) or path.relative_to(base).as_posix() not in covered:
             continue
         try:
             current = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
         if current == text:
-            kept.append(path.relative_to(base).as_posix())
+            kept[path.relative_to(base).as_posix()] = key
     return kept
+
+
+def mark_recorded(keys: Iterable[str]) -> None:
+    """Note that the heal record now holds the accepted text of each file under `keys`."""
+    _recorded.update(keys)
 
 
 def held_brief(file_path: Path, current_text: str) -> tuple[str, Plan] | None:

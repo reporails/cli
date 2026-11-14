@@ -308,7 +308,7 @@ def _compression(payload: JsonObject) -> JsonObject | None:
 
 def bound_validate_payload(payload: JsonObject, **limits: int) -> JsonObject:
     """`_bounded_payload` plus the reply's `compression` block, counted from the unbounded payload."""
-    bounded = _bounded_payload(payload, **limits)
+    bounded = {k: v for k, v in _bounded_payload(payload, **limits).items() if k != "file_scores"}
     compression = _compression(payload)
     return {**bounded, "compression": compression} if compression else bounded
 

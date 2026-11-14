@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 from rich.console import Console
 
@@ -22,6 +23,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     FunnelError,
     Notice,
 )
+from reporails_cli.core.platform.dto.heal import HealRegression
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
@@ -308,6 +310,13 @@ def _print_notices(notices: Sequence[Notice], ascii_mode: bool, *, blank_before:
     print_notices(console, notices, ascii_mode=ascii_mode)
 
 
+class TextExtras(NamedTuple):
+    """What a text run also shows: the generic-scan file types, and the healed files that slipped since the heal."""
+
+    file_type_by_path: dict[str, str] | None = None
+    heal_regressions: tuple[HealRegression, ...] = ()
+
+
 def print_text_result(
     result: CombinedResult,
     elapsed_ms: float,
@@ -317,7 +326,7 @@ def print_text_result(
     ruleset_map: RulesetMap | None = None,
     funnel_error: FunnelError | None = None,
     project_root: Path | None = None,
-    file_type_by_path: dict[str, str] | None = None,
+    extras: TextExtras | None = None,
 ) -> None:
     """Print compact text output: files sorted worst-first, aggregated counts, scorecard at bottom.
 
@@ -330,6 +339,7 @@ def print_text_result(
     instead of falling back to the neutral view. Defaults to cwd.
     """
 
+    extras = extras or TextExtras()
     root = project_root or Path.cwd()
     all_files, scope = _collect_files_and_scope(result, ruleset_map, root)
     has_quality = result.quality is not None
@@ -342,7 +352,7 @@ def print_text_result(
         console.print(f"  {'ok' if ascii_mode else chr(0x2713)}  No findings.")
         render_excluded_line(result, scored=False)
         print_not_evaluated(console, result.omissions.not_evaluated)
-        print_heal_regressions(console, result.omissions.heal_regressions, ascii_mode)
+        print_heal_regressions(console, extras.heal_regressions, ascii_mode)
         _print_notices(result.reply.notices, ascii_mode, blank_before=not _render_funnel_cta(funnel_error))
         return
 
@@ -353,15 +363,15 @@ def print_text_result(
         verbose=verbose,
         summary=_SummaryInputs(scope=scope, tier=tier, elapsed_ms=elapsed_ms),
         project_root=root,
-        file_type_by_path=file_type_by_path or {},
+        file_type_by_path=extras.file_type_by_path or {},
         skill_of=skill_of,
     )
     print_not_evaluated(console, result.omissions.not_evaluated)
-    print_heal_regressions(console, result.omissions.heal_regressions, ascii_mode)
+    print_heal_regressions(console, extras.heal_regressions, ascii_mode)
     # The scorecard ends on a blank line; the lines above, when printed, end the output without one.
     ends_blank = not (
         not_evaluated_lines(result.omissions.not_evaluated)
-        or heal_regression_lines(result.omissions.heal_regressions, ascii_mode)
+        or heal_regression_lines(extras.heal_regressions, ascii_mode)
     )
     _print_notices(result.reply.notices, ascii_mode, blank_before=not (_render_funnel_cta(funnel_error) or ends_blank))
 

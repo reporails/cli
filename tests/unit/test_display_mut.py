@@ -556,7 +556,7 @@ class TestPrintTextResultHasQuality:
                 ascii_mode=True,
                 verbose=False,
                 project_root=tmp_path,
-                file_type_by_path={"x.md": "generic"},
+                extras=display.TextExtras({"x.md": "generic"}),
             )
         out = cap.get()
         # `or -> and` at L361 makes root=cwd (key mismatch); `or -> and` at L374 passes {}
