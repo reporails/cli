@@ -13,6 +13,7 @@
 - The finding for a condition that names an outside system quotes the whole condition, its opening word included (`When external services fail`).
 
 ### Fixed
+- A heal rewrite that fails the meaning check is no longer accepted after the project is re-validated mid-run.
 - Heal puts back a rewrite that puts a plain word in front of what a prohibition forbids (`Never modify the docs` → `Never modify the generated docs`); a named construct there still passes.
 
 - `ails check` no longer warns about broad conditional scope on an instruction that only limits what it acts on, such as `Use only the staging database, never production.`

@@ -31,6 +31,8 @@ _rule_counts: dict[str, dict[str, int]] = {}
 _plans: dict[str, Plan] = {}
 # Briefed files whose held baseline a project `validate` released: the next brief re-snapshots them.
 _released: set[str] = set()
+# Per briefed file, the text a `validate` reply last judged accepted: a release frees the baseline only at that text.
+_accepted_text: dict[str, str] = {}
 
 
 def _key(file_path: Path | str) -> str:
@@ -76,21 +78,31 @@ def snapshot_file(
     _rule_counts[_key(file_path)] = dict(rule_counts or {})
     _plans[_key(file_path)] = plan or Plan()
     _released.discard(_key(file_path))
+    _accepted_text.pop(_key(file_path), None)
+
+
+def record_accepted(file_path: Path, text: str) -> None:
+    """Remember `text` as what a `validate` reply last judged accepted for `file_path`."""
+    _accepted_text[_key(file_path)] = text
 
 
 def held_brief(file_path: Path, current_text: str) -> tuple[str, Plan] | None:
     """The original text and the plan an earlier brief of `file_path` stored, when the file has changed
     since — a repeated brief for it keeps that baseline instead of replacing it with the half-edited file.
-    `None` when the file was never briefed or has not changed."""
-    snap, plan = _snapshots.get(_key(file_path)), _plans.get(_key(file_path))
-    if snap is None or plan is None or snap.text == current_text or _key(file_path) in _released:
+    `None` when the file was never briefed or has not changed, or when its baseline was released and the
+    file is at the text last judged accepted."""
+    key = _key(file_path)
+    snap, plan = _snapshots.get(key), _plans.get(key)
+    if snap is None or plan is None or snap.text == current_text:
+        return None
+    if key in _released and _accepted_text.get(key) == current_text:
         return None
     return snap.text, plan
 
 
 def release_holds(root: Path) -> None:
-    """Release the held baseline of every briefed file under `root`: the project is being validated
-    afresh, so the next brief of each takes a new snapshot of the file as it is then."""
+    """Mark every briefed file under `root` released: the next brief of one takes a new snapshot only
+    if the file is unchanged or at its last accepted text; any other file keeps its baseline and plan."""
     base = Path(_key(root))
     _released.update(k for k in _snapshots if Path(k).is_relative_to(base))
 

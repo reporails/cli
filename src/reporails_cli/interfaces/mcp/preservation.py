@@ -42,4 +42,6 @@ def with_preservation(
     if conformance is not None:
         out["conformance"] = conformance
     out["accepted"] = rewrite_accepted(block, conformance)
+    if out["accepted"] is True:
+        snapshots.record_accepted(target, new_text)
     return out
