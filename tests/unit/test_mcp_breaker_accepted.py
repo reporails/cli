@@ -35,7 +35,7 @@ def briefed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "order": 1, "element": "CLAUDE.md", "kind": "main", "loading": "session_start", "files": ["CLAUDE.md"],
         "importance": "gate_mover", "findings": [], "relations": [],
     }  # fmt: skip
-    assert "error" not in remedy_brief.build_remedy_brief(location, root)
+    assert "error" not in remedy_brief.build_remedy_brief(location, root, preservation_contract="stand-in")
 
     score = {"value": 5.0}
 

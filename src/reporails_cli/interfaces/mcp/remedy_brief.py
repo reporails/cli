@@ -28,7 +28,6 @@ from reporails_cli.core.heal.keyed import (
 )
 from reporails_cli.core.heal.op_guide import change_lines, op_lines
 from reporails_cli.core.heal.plan import PartnerKey, apply_edits, build_plan, leaving_lines
-from reporails_cli.core.heal.preservation import PRESERVATION_CONTRACT
 from reporails_cli.core.heal.transforms import atoms_at
 from reporails_cli.core.lint.content_queries import atoms_for_file
 from reporails_cli.core.lint.rule_pages import EXAMPLE_KINDS, load_rule_examples
@@ -396,13 +395,15 @@ def _annotated_lines(built: list[_BuiltFile], scan_root: Path) -> dict[str, set[
     return {str(f.abs_file): annotated.get(safe_resolve(f.abs_file), set()) for f in built}
 
 
-def build_remedy_brief(location: JsonObject, scan_root: Path, project_map: RulesetMap | None = None) -> JsonObject:
+def build_remedy_brief(
+    location: JsonObject, scan_root: Path, project_map: RulesetMap | None = None, *, preservation_contract: str
+) -> JsonObject:
     """Build the `remedy_brief` reply for one already-resolved workflow `location` (a location dict
     from the stored full `validate` payload, so its findings and relations are already
     relative-pathed): the plan's exact edits, the slots that need a decision with each slot rule's
-    guide and one line per op, the refused ops, and the preservation contract. `project_map` is
-    the project's ruleset map, where a dedupe or keep-cut op finds its partner line. A structured
-    `brief_unavailable` error, naming the file, when any of the location's files yields no map.
+    guide and one line per op, the refused ops, and `preservation_contract` (the server's text, passed
+    through). `project_map` is the project's ruleset map, where a dedupe or keep-cut op finds its partner
+    line. A structured `brief_unavailable` error, naming the file, when any of the location's files yields no map.
 
     Runs the location's own file pipeline, and commits the preservation snapshots with each
     file's plan, exactly once.
@@ -439,7 +440,6 @@ def build_remedy_brief(location: JsonObject, scan_root: Path, project_map: Rules
     names.update({str(f.abs_file): f.rel for f in built})
     _commit_snapshots(built, held, plan)
 
-    slots = _slot_entries(plan, names, ops, scan_root, lines_by_file)
     location_out: JsonObject = {
         **{k: location[k] for k in LOCATION_INDEX_KEYS if k in location},
         "root": str(scan_root),
@@ -447,9 +447,9 @@ def build_remedy_brief(location: JsonObject, scan_root: Path, project_map: Rules
     return remedy_brief_payload(
         location=location_out,
         edits=_edit_entries(plan, lines_by_file, names),
-        slots=slots,
+        slots=_slot_entries(plan, names, ops, scan_root, lines_by_file),
         guides=_guides({s.rule for s in plan.slots}),
         ops={**op_lines({s.op for s in plan.slots}), **change_lines({s.change for s in plan.slots if s.change})},
         refused=_refused_entries(plan, names),
-        preservation_contract=PRESERVATION_CONTRACT,
+        preservation_contract=preservation_contract,
     )

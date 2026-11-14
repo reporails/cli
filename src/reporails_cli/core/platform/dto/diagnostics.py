@@ -370,6 +370,7 @@ class RemediationWorkflow:
     locations: tuple[WorkflowLocation, ...] = ()
     listed: tuple[ListedFinding, ...] = ()  # every firing rule that takes no location, with its reason
     summary: str = ""
+    preservation_contract: str = ""  # the rules a rewrite is held to; the remedy brief carries them
 
 
 def workflow_summary(locations: Sequence[WorkflowLocation], listed: Sequence[ListedFinding]) -> str:

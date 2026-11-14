@@ -16,7 +16,7 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from reporails_cli.core.mapper.model_manifest import ModelFetchError
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
-from reporails_cli.core.platform.contract.json_value import JsonObject, as_list
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_str
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.observability.log_levels import configure_logging
 from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
@@ -74,6 +74,23 @@ def _serve_remedy_brief(
         return _config_unreadable(exc)
 
 
+def _unbriefable(no_location: bool, location: int, count: int) -> JsonObject:
+    """The error reply for a stored workflow a brief cannot be built from: no such location, or no
+    preservation contract (a brief without it holds the rewrite to no rules)."""
+    if no_location:
+        return {
+            "error": "location_not_found",
+            "message": f"The workflow has no location {location}; it has {count}.",
+        }
+    return {
+        "error": "contract_missing",
+        "message": (
+            "This path's last validate carried no preservation contract, so a brief would hold the rewrite "
+            "to no rules. Call validate again; if it stays missing, the server reply lacks it."
+        ),
+    }
+
+
 def _remedy_brief_reply(
     path: str, location: int, targets: list[str] | None, has_guide: bool, project_root: Path
 ) -> JsonObject:
@@ -118,13 +135,11 @@ def _remedy_brief_reply(
         }
     locations = as_list(workflow.get("locations"))
     loc = next((entry for entry in locations if isinstance(entry, dict) and entry.get("order") == location), None)
-    if loc is None:
-        return {
-            "error": "location_not_found",
-            "message": f"The workflow has no location {location}; it has {len(locations)}.",
-        }
+    contract = as_str(workflow.get("preservation_contract"))
+    if loc is None or not contract:
+        return _unbriefable(loc is None, location, len(locations))
     scan_root = state.scan_root or Path(path).resolve()
-    reply = build_remedy_brief(loc, scan_root, state.last_ruleset_map)
+    reply = build_remedy_brief(loc, scan_root, state.last_ruleset_map, preservation_contract=contract)
     if "error" not in reply:
         state.call_count = 0
     return reply

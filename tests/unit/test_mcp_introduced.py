@@ -32,7 +32,7 @@ def _brief(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *rules: str) -> Path
         "order": 1, "element": "CLAUDE.md", "kind": "main", "loading": "session_start", "files": ["CLAUDE.md"],
         "importance": "gate_mover", "findings": [], "relations": [],
     }  # fmt: skip
-    reply = remedy_brief.build_remedy_brief(location, tmp_path)
+    reply = remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract="stand-in")
     assert "error" not in reply
     return file
 

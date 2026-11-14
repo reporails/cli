@@ -351,6 +351,7 @@ class TestValidateTargets:
         "stats": {"score": 6.0},
         "files": {"CLAUDE.md": {"count": 1, "findings": []}},
         "workflow": {
+            "preservation_contract": "stand-in contract",
             "summary": "4 locations to rewrite, by kind: 1 main, 1 agents, 2 skills.",
             "escape": "e",
             "listed": [{"rule": "CORE:C:0005", "reason": "no_remedy", "count": 1, "why": ""}],
@@ -806,6 +807,7 @@ class TestCircuitBreaker:
             "stats": {},
             "files": {"CLAUDE.md": {"count": 1, "findings": []}},
             "workflow": {
+                "preservation_contract": "stand-in contract",
                 "summary": "s",
                 "escape": "e",
                 "locations": [
@@ -1370,6 +1372,7 @@ class TestFileFeedback:
                 }
             },
             "workflow": {"locations": [{"order": 1, "files": ["CLAUDE.md"], "findings": []}]},
+            "preservation_contract": "stand-in contract",
         }
         feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"), None)
         # No `impact_tier`, so weight ties and the line number decides.

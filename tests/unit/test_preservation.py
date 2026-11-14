@@ -1987,7 +1987,7 @@ def test_a_prohibition_s_mechanical_formatting_change_stays_ok(tmp_path) -> None
 def test_a_condition_silently_added_before_a_restriction_is_not_ok(tmp_path) -> None:
     """An unconditional "only modify `X`, `Y`, `Z`" restriction gains a
     `During `/refine-rule`,` prefix — outside that command the rewrite no longer restricts
-    modification at all, exactly the "condition added" `PRESERVATION_CONTRACT` forbids."""
+    modification at all, exactly the "condition added" the preservation contract forbids."""
     before = "# Rule writer\n\n*only modify `patterns`, `message`, and `vocab.yml`.*\n"
     after = (
         "# Rule writer\n\n*During `/refine-rule`, only modify the `patterns` and `message` "

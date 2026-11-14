@@ -156,6 +156,8 @@ def _format_workflow(wf: RemediationWorkflow, project_root: Path) -> JsonObject:
             }
             for e in wf.listed
         ]
+    if wf.preservation_contract:
+        out["preservation_contract"] = wf.preservation_contract
     return out
 
 

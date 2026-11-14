@@ -10,6 +10,7 @@
 - Heal in your agent now makes every change through your agent's own edits, so your edit approvals and hooks see each one.
 - `ails check`, the MCP `validate` tool and opening `ails xray` now ask the reporails service first, before reading your files or downloading the model. When this hour's allowance is used up, or your version is no longer supported, the run stops right away and names the next step: signing up, when the allowance resets, or `ails update`.
 - When the reporails service cannot be reached, `ails check` stops and tells you to run with `--offline` for local checks only.
+- The rules a heal rewrite is held to now come with the paid plan's remediation reply, so an unpaid or offline run no longer carries them.
 - The finding for a condition that names an outside system quotes the whole condition, its opening word included (`When external services fail`).
 
 ### Fixed

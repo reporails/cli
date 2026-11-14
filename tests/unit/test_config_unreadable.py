@@ -252,13 +252,13 @@ def test_mcp_remedy_brief_returns_the_structured_error(
     root = _project(tmp_path, "config.yml")
     problem = ConfigUnreadableError(f"{root / '.ails' / 'config.yml'}: line 1")
 
-    def unreadable(*_args: object) -> None:
+    def unreadable(*_args: object, **_kwargs: object) -> None:
         raise problem
 
     monkeypatch.setattr(server, "build_remedy_brief", unreadable)
     server.validate_states.clear()
     server.validate_states[server.state_key(str(root), root, ())] = server.CircuitState(
-        full_payload={"workflow": {"locations": [{"order": 1}]}}, scan_root=root
+        full_payload={"workflow": {"preservation_contract": "x", "locations": [{"order": 1}]}}, scan_root=root
     )
     reply = server._serve_remedy_brief(str(root), 1, None, True, project_root=root)
     server.validate_states.clear()

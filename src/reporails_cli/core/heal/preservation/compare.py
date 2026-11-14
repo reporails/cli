@@ -27,19 +27,6 @@ from reporails_cli.core.platform.dto.heal import Pair, Snapshot, SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.core.platform.dto.structure import DocumentStructure
 
-# The fixed preservation-contract text shown in the `remedy_brief` reply. Byte-identical —
-# the plugin quotes it verbatim.
-PRESERVATION_CONTRACT = (
-    "Keep every instruction: each keeps its polarity — a prohibition stays a prohibition — its scope, "
-    "with no condition or exception added or dropped, and every construct it names. Keep every table "
-    "row, list item, heading, fenced block, example and link, each list item in its own list; delete "
-    "one only when a relation names it as a true duplicate of its partner. Keep a bare negative heading "
-    "such as `## Don'ts` exactly as it is, with its items under it. Keep each constraint "
-    "directly after the directive it limits. Add no filler and invent nothing: an instruction grows "
-    "only by a construct the file already names or that exists in the project, or a reason the file "
-    "already gives — never by repeating one it already names."
-)
-
 # Findings that are reported but never fail the rewrite.
 _LISTED_ONLY = frozenset({"removed_structure", "made_direct", "made_specific"})
 # The `compare` block entries that carry a score or a count and name no check.

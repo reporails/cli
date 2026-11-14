@@ -30,7 +30,7 @@ _LISTED_REASONS = {
     ),
     "heading-instruction": (
         "A heading written as an instruction is often a section label. Reword it by hand if it is not one, "
-        "moving the instruction into the section body word for word first."
+        "first copying the instruction's exact words into the section body."
     ),
     "default-competition": ("The rewrites of the instructions it concerns fix it, so it is listed for context only."),
     "no-lever": (

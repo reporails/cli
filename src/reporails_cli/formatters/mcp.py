@@ -146,6 +146,8 @@ def _workflow_index(workflow: JsonValue) -> JsonValue:
     whole reply still fits `_TARGETED_REPLY_MAX_CHARS`."""
     if not isinstance(workflow, dict):
         return workflow
+    if "preservation_contract" in workflow:
+        workflow = {k: v for k, v in workflow.items() if k != "preservation_contract"}
     raw_locations = workflow.get("locations")
     if not isinstance(raw_locations, list):
         if "listed" not in workflow:

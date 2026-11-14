@@ -15,10 +15,11 @@ from typing import Any
 
 import pytest
 
-from reporails_cli.core.heal.preservation import PRESERVATION_CONTRACT
 from reporails_cli.interfaces.mcp import remedy_brief, server, snapshots
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_server]
+
+CONTRACT = "Keep every instruction as written; stand-in for the server's text."
 
 
 @pytest.fixture(autouse=True)
@@ -99,7 +100,7 @@ def test_a_file_with_no_map_makes_the_whole_brief_a_structured_error(monkeypatch
     )
     location = _main_location(["CLAUDE.md"])
 
-    reply = remedy_brief.build_remedy_brief(location, tmp_path)
+    reply = remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract=CONTRACT)
 
     assert reply == {
         "error": "brief_unavailable",
@@ -125,7 +126,7 @@ def test_no_map_names_the_mapper_s_own_swallowed_exception(monkeypatch, tmp_path
     )
     location = _main_location(["CLAUDE.md"])
 
-    reply = remedy_brief.build_remedy_brief(location, tmp_path)
+    reply = remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract=CONTRACT)
 
     assert reply == {
         "error": "brief_unavailable",
@@ -152,7 +153,7 @@ def test_a_second_file_with_no_map_also_makes_the_whole_brief_an_error(monkeypat
     monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", fake_run)
     location = _main_location(["CLAUDE.md", "SKILL.md"])
 
-    reply = remedy_brief.build_remedy_brief(location, tmp_path)
+    reply = remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract=CONTRACT)
 
     assert reply["error"] == "brief_unavailable"
     assert "SKILL.md" in reply["message"]
@@ -196,7 +197,7 @@ def test_a_directory_in_files_still_briefs_the_locations_real_skill_files(monkey
         "relations": [],
     }
 
-    reply = remedy_brief.build_remedy_brief(location, tmp_path)
+    reply = remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract=CONTRACT)
 
     assert "error" not in reply
     assert reply["location"]["files"] == location["files"]
@@ -222,7 +223,7 @@ def test_a_location_of_only_directories_names_the_cause_once(tmp_path: Path) -> 
         "relations": [],
     }
 
-    reply = remedy_brief.build_remedy_brief(location, tmp_path)
+    reply = remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract=CONTRACT)
 
     assert reply["error"] == "brief_unavailable"
     assert reply["message"] == (
@@ -304,7 +305,7 @@ def test_a_dilution_finding_does_not_make_its_line_deletable(monkeypatch, tmp_pa
         }
     ]
 
-    remedy_brief.build_remedy_brief(location, tmp_path)
+    remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract=CONTRACT)
 
     snap = snapshots.get_snapshot(abs_file)
     assert snap is not None
@@ -348,7 +349,7 @@ def test_brief_unavailable_leaves_an_earlier_file_s_snapshot_untouched(monkeypat
     monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", fake_run)
     location = _main_location(["CLAUDE.md", "SKILL.md"])
 
-    reply = remedy_brief.build_remedy_brief(location, tmp_path)
+    reply = remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract=CONTRACT)
 
     assert reply["error"] == "brief_unavailable"
     after = snapshots.get_snapshot(file_a)
@@ -358,15 +359,15 @@ def test_brief_unavailable_leaves_an_earlier_file_s_snapshot_untouched(monkeypat
 @pytest.mark.unit
 @pytest.mark.subsys_server
 @requires_rules
-def test_the_brief_carries_the_fixed_preservation_contract_and_a_next_step(monkeypatch, tmp_path: Path) -> None:
+def test_the_brief_carries_the_servers_preservation_contract_and_a_next_step(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"files": {}}, _fake_map(), None)
     )
     location = _main_location(["CLAUDE.md"])
 
-    reply = remedy_brief.build_remedy_brief(location, tmp_path)
+    reply = remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract=CONTRACT)
 
-    assert reply["preservation_contract"] == PRESERVATION_CONTRACT
+    assert reply["preservation_contract"] == CONTRACT
     assert reply["next"]
 
 
@@ -387,7 +388,7 @@ def test_the_brief_carries_the_root_and_each_file_s_absolute_path(monkeypatch, t
     )
     location = _main_location(["CLAUDE.md"])
 
-    reply = remedy_brief.build_remedy_brief(location, project_root)
+    reply = remedy_brief.build_remedy_brief(location, project_root, preservation_contract=CONTRACT)
 
     assert reply["location"]["root"] == str(project_root)
     assert abs_file.exists()
@@ -475,7 +476,12 @@ def test_a_caller_without_the_rewrite_guide_is_told_to_update_and_nothing_runs(
         raise AssertionError("the pipeline must not run for a refused caller")
 
     monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", _boom)
-    payload = {"workflow": {"locations": [{"order": 1, "kind": "main", "files": ["CLAUDE.md"]}]}}
+    payload = {
+        "workflow": {
+            "preservation_contract": CONTRACT,
+            "locations": [{"order": 1, "kind": "main", "files": ["CLAUDE.md"]}],
+        }
+    }
     state = server.CircuitState(full_payload=payload, scan_root=tmp_path, call_count=3, consecutive_unchanged=1)
     server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = state
 
@@ -495,7 +501,9 @@ def test_a_caller_with_the_rewrite_guide_gets_the_brief(monkeypatch, tmp_path: P
     monkeypatch.setattr(
         remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"files": {}}, _fake_map(), None)
     )
-    payload = {"workflow": {"locations": [{"order": 1, "kind": "other", "files": []}]}}
+    payload = {
+        "workflow": {"preservation_contract": CONTRACT, "locations": [{"order": 1, "kind": "other", "files": []}]}
+    }
     server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = server.CircuitState(
         full_payload=payload, scan_root=tmp_path
     )
@@ -510,7 +518,9 @@ def test_a_caller_with_the_rewrite_guide_gets_the_brief(monkeypatch, tmp_path: P
 @pytest.mark.subsys_server
 def test_location_not_found_names_the_count(tmp_path: Path) -> None:
     server.validate_states.clear()
-    payload = {"workflow": {"locations": [{"order": 1, "kind": "main", "files": []}]}}
+    payload = {
+        "workflow": {"preservation_contract": CONTRACT, "locations": [{"order": 1, "kind": "main", "files": []}]}
+    }
     server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = server.CircuitState(
         full_payload=payload, scan_root=tmp_path
     )
@@ -532,7 +542,9 @@ def test_serve_remedy_brief_resets_call_count_but_leaves_consecutive_unchanged(m
     monkeypatch.setattr(
         remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"files": {}}, _fake_map(), None)
     )
-    payload = {"workflow": {"locations": [{"order": 1, "kind": "other", "files": []}]}}
+    payload = {
+        "workflow": {"preservation_contract": CONTRACT, "locations": [{"order": 1, "kind": "other", "files": []}]}
+    }
     state = server.CircuitState(full_payload=payload, scan_root=tmp_path, call_count=3, consecutive_unchanged=1)
     server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = state
 
@@ -608,7 +620,7 @@ def _brief_with(monkeypatch, tmp_path: Path, text: str, atoms: list[Any], locati
     monkeypatch.setattr(
         remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"files": {}}, fake_map, None)
     )
-    return remedy_brief.build_remedy_brief(location, tmp_path, fake_map)
+    return remedy_brief.build_remedy_brief(location, tmp_path, fake_map, preservation_contract=CONTRACT)
 
 
 @pytest.mark.unit
@@ -661,7 +673,9 @@ def test_asking_for_the_same_brief_again_keeps_the_original_baseline(monkeypatch
     first = _brief_with(monkeypatch, tmp_path, text, atoms, location)
     plan = snapshots.get_plan(file)
     file.write_text("# T\n\nKeep `foo`.\n", encoding="utf-8")  # the agent applied the edit
-    again = remedy_brief.build_remedy_brief(location, tmp_path, SimpleNamespace(atoms=tuple(atoms), files=()))
+    again = remedy_brief.build_remedy_brief(
+        location, tmp_path, SimpleNamespace(atoms=tuple(atoms), files=()), preservation_contract=CONTRACT
+    )
     snap = snapshots.get_snapshot(file)
     assert snap is not None and snap.text == text
     assert snapshots.get_plan(file) is plan
@@ -726,7 +740,7 @@ def test_a_brief_after_a_project_validate_takes_a_fresh_baseline(monkeypatch, tm
     )
     server.validate_states.clear()
     asyncio.run(server._run_validate(str(tmp_path), True, None, tmp_path))
-    remedy_brief.build_remedy_brief(location, tmp_path, fake_map)
+    remedy_brief.build_remedy_brief(location, tmp_path, fake_map, preservation_contract=CONTRACT)
     snap = snapshots.get_snapshot(file)
     assert snap is not None and snap.text == edited
 
@@ -755,3 +769,38 @@ def test_a_line_the_guide_lets_the_agent_delete_does_not_fail_the_check(monkeypa
     assert "lost_instructions" not in failed_checks(
         check_rewrite(snap, file, fresh, new, score=None, scan_root=tmp_path)
     )
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_a_workflow_without_a_contract_is_refused(tmp_path: Path) -> None:
+    server.validate_states.clear()
+    payload = {"workflow": {"locations": [{"order": 1, "kind": "other", "files": []}]}}
+    server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = server.CircuitState(
+        full_payload=payload, scan_root=tmp_path
+    )
+
+    reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True, project_root=tmp_path)
+
+    assert reply["error"] == "contract_missing"
+    server.validate_states.clear()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_the_stored_contract_reaches_the_brief_verbatim(monkeypatch, tmp_path: Path) -> None:
+    server.validate_states.clear()
+    monkeypatch.setattr(
+        remedy_brief, "run_pipeline_for_path", lambda path, full=False, **_k: ({"files": {}}, _fake_map(), None)
+    )
+    payload = {
+        "workflow": {"preservation_contract": CONTRACT, "locations": [{"order": 1, "kind": "other", "files": []}]}
+    }
+    server.validate_states[server.state_key(str(tmp_path), tmp_path, ())] = server.CircuitState(
+        full_payload=payload, scan_root=tmp_path
+    )
+
+    reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True, project_root=tmp_path)
+
+    assert reply["preservation_contract"] == CONTRACT
+    server.validate_states.clear()
