@@ -207,7 +207,7 @@ def test_agent_config_dir_target_lists_every_surface_under_it(tmp_path: Path, mo
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
 @pytest.mark.requires_model
-def test_nested_ails_directory_run_from_its_folder_is_its_own_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_nested_ails_directory_run_from_it_is_its_own_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A subtree carrying `.ails/`, checked from its own folder, is the project root of that run.
 
     Its path keys are relative to IT, not to the enclosing project.
