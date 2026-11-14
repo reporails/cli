@@ -39,10 +39,13 @@ def _key(file_path: Path | str) -> str:
     return os.path.normcase(os.path.normpath(str(file_path)))
 
 
-def file_rule_counts(payload: JsonObject) -> dict[str, int]:
-    """How many findings each rule has in a single-file run's `payload` (its per-file findings)."""
+def file_rule_counts(payload: JsonObject, file: str | None = None) -> dict[str, int]:
+    """How many findings each rule has in `payload`'s per-file findings: a single-file run's, or just
+    those of the project-relative `file` in a project run."""
     counts: dict[str, int] = {}
-    for entry in as_object(payload.get("files")).values():
+    for name, entry in as_object(payload.get("files")).items():
+        if file is not None and name != file:
+            continue
         for finding in as_list(as_object(entry).get("findings")):
             rule = str(as_object(finding).get("rule") or "")
             counts[rule] = counts.get(rule, 0) + 1
@@ -84,6 +87,23 @@ def snapshot_file(
 def record_accepted(file_path: Path, text: str) -> None:
     """Remember `text` as what a `validate` reply last judged accepted for `file_path`."""
     _accepted_text[_key(file_path)] = text
+
+
+def kept_files(root: Path) -> list[str]:
+    """The project-relative paths of the briefed files under `root` still at the text a `validate` last accepted."""
+    base = Path(_key(root))
+    kept: list[str] = []
+    for key, text in _accepted_text.items():
+        path = Path(key)
+        if not path.is_relative_to(base):
+            continue
+        try:
+            current = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if current == text:
+            kept.append(path.relative_to(base).as_posix())
+    return kept
 
 
 def held_brief(file_path: Path, current_text: str) -> tuple[str, Plan] | None:

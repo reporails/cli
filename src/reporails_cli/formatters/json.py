@@ -63,6 +63,15 @@ def _regime_by_file(result: CombinedResult, project_root: Path) -> dict[str, Jso
     return out
 
 
+def _file_scores(result: CombinedResult, project_root: Path) -> JsonObject:
+    """The 0-10 score of each scored file by project-relative path; empty offline."""
+    return {
+        normalize_finding_path(fa.file, project_root): float(fa.display_score)
+        for fa in result.per_file_analysis
+        if fa.display_score is not None
+    }
+
+
 def _pro_summary(hints: tuple[Hint, ...]) -> JsonObject:
     """Aggregate pro-tier hint counts into the JSON `pro` block."""
     return {
@@ -353,6 +362,11 @@ def format_combined_result(
         # consumer (CI, a coding agent) would otherwise read a smaller finding count
         # from a degraded run as a cleaner project than a full run produced.
         "content_checks_skipped": map_failed or not multislot_available(),
+        "heal_regressions": [
+            {"file": r.file, "score_before": r.score_before, "score_after": r.score_after, "rules": dict(r.rules)}
+            for r in result.omissions.heal_regressions
+        ],
+        "file_scores": _file_scores(result, root),
         "files": {
             fp: _file_entry(findings, regime_by_file.get(fp))
             for fp, findings in sorted(by_file.items(), key=lambda x: -len(x[1]))

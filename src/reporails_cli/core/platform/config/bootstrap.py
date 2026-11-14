@@ -117,6 +117,11 @@ def get_project_config_path(project_root: Path) -> Path:
     return project_root / ".ails" / "config.yml"
 
 
+def get_heal_record_path(project_root: Path) -> Path:
+    """Get path to the project's heal record (<root>/.ails/reports/heal-latest.json)."""
+    return project_root / ".ails" / "reports" / "heal-latest.json"
+
+
 def get_local_config_path(project_root: Path) -> Path:
     """Get path to the project's personal override file (<root>/.ails/config.local.yml)."""
     return project_root / ".ails" / "config.local.yml"

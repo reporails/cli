@@ -48,6 +48,7 @@ from reporails_cli.formatters.text.file_groups import (
     build_regime_by_file,
 )
 from reporails_cli.formatters.text.funnel_cta import _short_url_label, format_bug_report_url, format_cta, upgrade_link
+from reporails_cli.formatters.text.heal_regressions import heal_regression_lines, print_heal_regressions
 from reporails_cli.formatters.text.health import SurfaceHealth
 from reporails_cli.formatters.text.item_scorecard import compute_item_scores
 from reporails_cli.formatters.text.not_evaluated import not_evaluated_lines, print_not_evaluated
@@ -341,6 +342,7 @@ def print_text_result(
         console.print(f"  {'ok' if ascii_mode else chr(0x2713)}  No findings.")
         render_excluded_line(result, scored=False)
         print_not_evaluated(console, result.omissions.not_evaluated)
+        print_heal_regressions(console, result.omissions.heal_regressions, ascii_mode)
         _print_notices(result.reply.notices, ascii_mode, blank_before=not _render_funnel_cta(funnel_error))
         return
 
@@ -355,8 +357,12 @@ def print_text_result(
         skill_of=skill_of,
     )
     print_not_evaluated(console, result.omissions.not_evaluated)
-    # The scorecard ends on a blank line; the not-evaluated lines, when printed, end the output without one.
-    ends_blank = not not_evaluated_lines(result.omissions.not_evaluated)
+    print_heal_regressions(console, result.omissions.heal_regressions, ascii_mode)
+    # The scorecard ends on a blank line; the lines above, when printed, end the output without one.
+    ends_blank = not (
+        not_evaluated_lines(result.omissions.not_evaluated)
+        or heal_regression_lines(result.omissions.heal_regressions, ascii_mode)
+    )
     _print_notices(result.reply.notices, ascii_mode, blank_before=not (_render_funnel_cta(funnel_error) or ends_blank))
 
 

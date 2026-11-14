@@ -16,6 +16,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     QualityResult,
     RemediationWorkflow,
 )
+from reporails_cli.core.platform.dto.heal import HealRegression
 from reporails_cli.core.platform.dto.models import Level
 from reporails_cli.core.platform.dto.results import HookEntry
 
@@ -57,7 +58,7 @@ class ServerReply:
 
 @dataclass(frozen=True)
 class Omissions:
-    """What the run left out or could not check."""
+    """What the run left out or could not check, and the healed files it found slipping."""
 
     # The folders and file globs the user left out of the run (built-in default excludes are not listed).
     excluded_dirs: tuple[str, ...] = ()
@@ -67,6 +68,8 @@ class Omissions:
     # The `(rule id, project-relative file)` pairs whose check did not finish in time, so says
     # nothing about that file; empty when every check finished.
     not_evaluated: tuple[tuple[str, str], ...] = ()
+    # The healed files this run shows slipping since the heal; empty when none, or when nothing was healed.
+    heal_regressions: tuple[HealRegression, ...] = ()
 
 
 @dataclass(frozen=True)

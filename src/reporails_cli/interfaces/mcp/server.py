@@ -26,6 +26,7 @@ from reporails_cli.formatters.mcp import bound_validate_payload, with_rule_label
 from reporails_cli.formatters.mcp_view import has_text_view, render_text_view, unseen_notices
 from reporails_cli.interfaces.mcp import snapshots
 from reporails_cli.interfaces.mcp.feedback import file_feedback
+from reporails_cli.interfaces.mcp.heal_record import record_kept_files
 from reporails_cli.interfaces.mcp.idle_release import lifespan, touch_activity
 from reporails_cli.interfaces.mcp.prepare import prepare_for_path
 from reporails_cli.interfaces.mcp.preservation import with_preservation
@@ -323,6 +324,8 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None, proj
     # `with_preservation` is CPU/IO work: run it off the event loop so it never blocks a concurrent tool call.
     payload = await asyncio.to_thread(with_preservation, payload, target, ruleset_map, score, scan_root)
     payload = await asyncio.to_thread(_with_feedback, payload, target, scan_root, project_root)
+    if target.is_dir():
+        await asyncio.to_thread(record_kept_files, payload, scan_root)
     return with_rule_labels(payload) if full else bound_validate_payload(payload)
 
 

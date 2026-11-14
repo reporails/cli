@@ -128,3 +128,24 @@ class Pair:
             "new_line": self.new.line,
             "new_text": self.new_sentence,
         }
+
+
+@dataclass(frozen=True)
+class HealedFile:
+    """What a heal-kept file looked like in the whole-project run that followed: its score (`None` when
+    unscored), how many findings each rule had, and when."""
+
+    score: float | None
+    rules: dict[str, int]
+    healed_at: str
+
+
+@dataclass(frozen=True)
+class HealRegression:
+    """A healed file that has slipped since: the score it had and has now (each `None` when the score did
+    not fall), and each rule whose findings came back, with the increase."""
+
+    file: str
+    score_before: float | None
+    score_after: float | None
+    rules: dict[str, int]

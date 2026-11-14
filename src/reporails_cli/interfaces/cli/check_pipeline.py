@@ -9,9 +9,11 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 from contextlib import nullcontext
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from reporails_cli.core.heal.record import heal_regressions
 from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.lint.regex.not_evaluated import not_evaluated_scope
 from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes_over_pairs
@@ -204,3 +206,8 @@ def _flow_assemble(state: CheckState) -> None:
     else:
         state.render.display_result = state.render.result
         state.render.display_map = state.pipeline.ruleset_map
+    shown = state.render.display_result
+    state.render.display_result = replace(
+        shown,
+        omissions=replace(shown.omissions, heal_regressions=heal_regressions(shown, state.targets.target)),
+    )
