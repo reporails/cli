@@ -448,6 +448,23 @@ def test_a_rest_or_remaining_cut_of_what_a_rule_covers_narrows_it(tmp_path, befo
 @pytest.mark.parametrize(
     ("before", "after"),
     [
+        ("Never modify the docs.", "Never modify the generated docs."),
+        ("*Do not modify the docs.*", "*Do not modify the generated docs.*"),
+        ("Never delete the logs.", "Never delete the old logs."),
+    ],
+)
+def test_a_plain_modifier_before_a_prohibitions_object_narrows_it(tmp_path, before, after) -> None:
+    result = _compare_edit(tmp_path, before + "\n", after + "\n")
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
         ("Run the tests before you push.", "Always run the tests before you push."),
         ("Run the tests.", "Run the tests with `pytest`."),
         ("Run the linter.", "Run the `ruff` linter."),

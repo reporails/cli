@@ -262,6 +262,7 @@ def _gained_unsafe(p: Pair, covered: Covered, known: set[str], heading: set[str]
     anchor = last_index(covered, old_object[-1]) if old_object else None
     widened = set(tail_after(covered, anchor)) if anchor is not None else set()
     own_named = words_of_named(p.old)
+    new_named = words_of_named(p.new) if p.old.charge_value < 0 else None
     skip = widened | replaced(covered, p, gained)
     pool = set(gained)
     return [
@@ -270,7 +271,7 @@ def _gained_unsafe(p: Pair, covered: Covered, known: set[str], heading: set[str]
         if i not in skip
         and covered[i][0] not in heading
         and not (i > 0 and covered[i - 1][0] in own_named)
-        and not (old_object and after_definite_modifier(covered, pool, i, old_object[-1]))
+        and not (old_object and after_definite_modifier(covered, pool, i, old_object[-1], new_named))
         and not names_a_place(covered, i)
     ]
 

@@ -148,10 +148,14 @@ def quantified_insert(p: Pair) -> bool:
     return False
 
 
-def after_definite_modifier(covered: Covered, gained: set[int], i: int, head: str) -> bool:
+def after_definite_modifier(
+    covered: Covered, gained: set[int], i: int, head: str, named: AbstractSet[str] | None
+) -> bool:
     """Whether the gained word at `i` is in a run of gained words right after a definite determiner
-    that runs into `head`, the noun the author's object ends in (`the API` -> `the REST API`): it
-    names the referent the determiner already points at."""
+    that runs into `head`, the noun the author's object ends in (`the API` -> `the REST API`): it names
+    the referent the determiner already points at. With `named` given (a prohibition), every word of
+    the run must be a word of a construct the rewrite names: a plain modifier (`the docs` -> `the
+    generated docs`) restricts what is forbidden."""
     start = i
     while start - 1 in gained:
         start -= 1
@@ -160,6 +164,7 @@ def after_definite_modifier(covered: Covered, gained: set[int], i: int, head: st
         end += 1
     return (
         start > 0
+        and (named is None or all(covered[k][0] in named for k in range(start, end + 1)))
         and covered[start - 1][0] in DEFINITE_DETERMINERS
         and end + 1 < len(covered)
         and covered[end + 1][0] in word_forms(head)

@@ -13,6 +13,7 @@
 - The finding for a condition that names an outside system quotes the whole condition, its opening word included (`When external services fail`).
 
 ### Fixed
+- Heal puts back a rewrite that puts a plain word in front of what a prohibition forbids (`Never modify the docs` → `Never modify the generated docs`); a named construct there still passes.
 
 - `ails check` no longer warns about broad conditional scope on an instruction that only limits what it acts on, such as `Use only the staging database, never production.`
 - Heal runs several in-place fixes on one line (dropping two hedges, `Try to lint; perhaps run tests.`) at the right place for each: a fix that no longer finds its place after an earlier one is left for the rewrite instead of cutting into the wrong words.
