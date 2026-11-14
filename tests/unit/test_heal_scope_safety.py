@@ -117,6 +117,7 @@ def test_heal_leaves_files_in_heal_exclude_unchanged(tmp_path: object) -> None:
         Atom(
             line=2,
             text="Run pyproject.toml here.",
+            plain_text="Run pyproject.toml here.",
             kind="paragraph",
             charge="NEUTRAL",
             charge_value=0,
@@ -186,6 +187,7 @@ def _two_file_map(main: Path, imported: Path) -> tuple[RulesetMap, RemediationWo
         Atom(
             line=3,
             text="Run pyproject.toml here.",
+            plain_text="Run pyproject.toml here.",
             kind="paragraph",
             charge="NEUTRAL",
             charge_value=0,

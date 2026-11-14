@@ -310,7 +310,8 @@ def test_a_dilution_finding_does_not_make_its_line_deletable(monkeypatch, tmp_pa
     assert snap is not None
 
     after_finding_trimmed = "# Project\n\nThe build uses a local cache that survives restarts.\n"
-    result = preservation.compare(snap, fake_map, after_finding_trimmed, score_after=None)
+    trimmed_map = SimpleNamespace(atoms=(SimpleNamespace(**{**vars(control), "line": 3}),), files=())
+    result = preservation.compare(snap, trimmed_map, after_finding_trimmed, score_after=None)
     assert result["lost_context"] == [
         {"line": 3, "text": "The api runs on port 8001 and reloads from the source tree on every edit."}
     ]
