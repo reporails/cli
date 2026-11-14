@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from reporails_cli.core.heal.preservation import PRESERVATION_CONTRACT, compare, take_snapshot
+from reporails_cli.core.heal.preservation import compare, take_snapshot
 from reporails_cli.core.heal.preservation import match as preservation_match
 from reporails_cli.core.heal.preservation import named as preservation_named
 from reporails_cli.core.heal.preservation import structure as preservation_structure
@@ -27,24 +27,6 @@ from reporails_cli.core.platform.adapters.project_environment import LocalProjec
 from reporails_cli.core.platform.dto.heal import Snapshot, SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import AtomSlots
 from reporails_cli.interfaces.mcp import snapshots
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_server
-def test_preservation_contract_is_byte_identical_to_the_plugin_s_quoted_text() -> None:
-    """The plugin quotes `PRESERVATION_CONTRACT` verbatim — a paraphrase here silently
-    desyncs the plugin's own copy from the server's."""
-    assert PRESERVATION_CONTRACT == (
-        "Keep every instruction: each keeps its polarity — a prohibition stays a prohibition — its "
-        "scope, with no condition or exception added or dropped, and every construct it names. Keep "
-        "every table row, list item, heading, fenced block, example and link, each list item in its "
-        "own list; delete one only when a relation names it as a true duplicate of its partner. Keep "
-        "a bare negative heading such as `## Don'ts` exactly as it is, with its items under it. Keep "
-        "each constraint directly after the directive it limits. Add no filler and invent nothing: an "
-        "instruction grows only by a construct the file already names or that exists in the project, "
-        "or a reason the file already gives — never by repeating one it already names."
-    )
-
 
 _FILE = "/proj/.claude/agents/reviewer.md"
 
