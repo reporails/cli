@@ -113,7 +113,9 @@ def test_not_a_git_repository_is_reported_once_per_project_on_every_kind_of_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str | None
 ) -> None:
     project = _copy(monkeypatch, tmp_path, "multi_agent")
-    monkeypatch.chdir(tmp_path if target == "dir" else project)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere if target == "dir" else project)
     args = ["check", str(project)] if target == "dir" else ["check", *([target] if target else [])]
     result = runner.invoke(app, [*args, "-f", "json"])
     assert result.exit_code == 0, result.output
