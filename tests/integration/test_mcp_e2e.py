@@ -1077,6 +1077,7 @@ class TestRemedyBrief:
             "stats": {},
             "files": {"CLAUDE.md": {"count": 1, "findings": []}},
             "workflow": {
+                "preservation_contract": "stand-in contract",
                 "summary": "s",
                 "escape": "e",
                 "locations": [
@@ -1186,7 +1187,7 @@ class TestRemedyBrief:
         assert "findings" not in reply and "files" not in reply
         assert reply["location"]["root"] == str(tmp_path)
         assert reply["edits"] == [] and reply["slots"] == []
-        assert "Keep every instruction" in reply["preservation_contract"]
+        assert reply["preservation_contract"] == "stand-in contract"
         assert reply["next"]
 
 
@@ -1371,8 +1372,10 @@ class TestFileFeedback:
                     ],
                 }
             },
-            "workflow": {"locations": [{"order": 1, "files": ["CLAUDE.md"], "findings": []}]},
-            "preservation_contract": "stand-in contract",
+            "workflow": {
+                "preservation_contract": "stand-in contract",
+                "locations": [{"order": 1, "files": ["CLAUDE.md"], "findings": []}],
+            },
         }
         feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"), None)
         # No `impact_tier`, so weight ties and the line number decides.

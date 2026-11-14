@@ -13,9 +13,7 @@ OP_GUIDE: dict[HealOp, str] = {
         "Add the object this instruction acts on, using only words from its own section; "
         "add no clause, condition or reason."
     ),
-    "category": (
-        "State what this prohibition forbids as a category, and keep it directly after the directive it limits."
-    ),
+    "category": ("Say which kind of thing this prohibition rules out, and leave it next to the order it narrows."),
     "keep-cut": "Delete this line if it says nothing its partner does not; otherwise leave it unchanged.",
     "name": "Name, in backticks, the tool, file or command this line already refers to; add nothing else.",
     "scope": "Replace the broad condition with the specific situation it means, or drop the condition.",

@@ -136,3 +136,20 @@ def test_a_file_never_accepted_is_not_recorded(project: tuple[Path, Path]) -> No
     _validate(root, root)
 
     assert _heal_record(root) == {}
+
+
+def test_a_hand_edit_between_two_runs_becomes_the_next_baseline(project: tuple[Path, Path]) -> None:
+    root, file = project
+    user_text = ORIGINAL + _TAIL.replace("ruff", "mypy")
+    _brief(root)
+    file.write_text(DROPPED, encoding="utf-8")
+    assert _validate(file, root).get("accepted") is not True
+    file.write_text(ORIGINAL, encoding="utf-8")
+    _validate(root, root)
+    file.write_text(user_text, encoding="utf-8")
+    _validate(root, root)
+    _brief(root)
+
+    snap = snapshots.get_snapshot(file)
+    assert snap is not None
+    assert snap.text == user_text

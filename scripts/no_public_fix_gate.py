@@ -94,12 +94,6 @@ def _first_sentence(text: str) -> str:
     return collapsed[: m.end()].strip() if m else collapsed
 
 
-def _sentences(text: str) -> list[str]:
-    """Every sentence of `text`, split where a sentence mark is followed by space or the end."""
-    collapsed = " ".join(text.split())
-    return [part for part in re.split(r"(?<=[.!?])\s+", collapsed) if part]
-
-
 def _strip_code_fences(text: str) -> str:
     return _FENCE_RE.sub(" ", text)
 
@@ -137,8 +131,7 @@ def _load_remedy_shingles(remedies_path: Path) -> set[str]:
             shingles |= _shingles(_words(sentence))
     contract = catalog.get("preservation_contract")
     if isinstance(contract, str):
-        for sentence in _sentences(contract):
-            shingles |= _shingles(_words(sentence))
+        shingles |= _shingles(_words(contract))
     return shingles
 
 

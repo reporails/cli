@@ -359,8 +359,8 @@ def test_whole_line_quotation_maps_as_one_neutral_atom(tmp_path) -> None:
     from reporails_cli.core.mapper.pipeline import map_ruleset
 
     quote = (
-        '"Keep every instruction: each keeps its polarity. Keep every table row, list item, heading; '
-        'delete one only when a relation names it. Add no filler and invent nothing."'
+        '"Answer every question: each answer states its source. Quote every figure, date, name; '
+        'round one only when the reader asks for it. Add no preamble and speculate on nothing."'
     )
     target = tmp_path / "CLAUDE.md"
     target.write_text(f"# T\n\n## Contract\n\n{quote}\n\nRun `pytest` before every commit in this repository.\n")
@@ -371,8 +371,8 @@ def test_whole_line_quotation_maps_as_one_neutral_atom(tmp_path) -> None:
 
 
 _QUOTE_LINE = (
-    '"Keep every instruction: each keeps its polarity. Keep every table row, list item, heading; '
-    'delete one only when a relation names it. Add no filler and invent nothing."'
+    '"Answer every question: each answer states its source. Quote every figure, date, name; '
+    'round one only when the reader asks for it. Add no preamble and speculate on nothing."'
 )
 
 

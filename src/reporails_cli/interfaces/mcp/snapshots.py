@@ -29,9 +29,9 @@ _snapshots: dict[str, Snapshot] = {}
 _rule_counts: dict[str, dict[str, int]] = {}
 # Per briefed file, the plan (edits and slots) its brief listed.
 _plans: dict[str, Plan] = {}
-# Briefed files whose held baseline a project `validate` released: the next brief re-snapshots them.
+# Briefed files whose baseline a project `validate` released while they were settled: the next brief re-snapshots them.
 _released: set[str] = set()
-# Per briefed file, the text a `validate` reply last judged accepted: a release frees the baseline only at that text.
+# Per briefed file, the text a `validate` reply last judged accepted: a release counts the file settled at it.
 _accepted_text: dict[str, str] = {}
 
 
@@ -109,22 +109,28 @@ def kept_files(root: Path) -> list[str]:
 def held_brief(file_path: Path, current_text: str) -> tuple[str, Plan] | None:
     """The original text and the plan an earlier brief of `file_path` stored, when the file has changed
     since — a repeated brief for it keeps that baseline instead of replacing it with the half-edited file.
-    `None` when the file was never briefed or has not changed, or when its baseline was released and the
-    file is at the text last judged accepted."""
+    `None` when the file was never briefed, has not changed, or its baseline was released."""
     key = _key(file_path)
     snap, plan = _snapshots.get(key), _plans.get(key)
-    if snap is None or plan is None or snap.text == current_text:
-        return None
-    if key in _released and _accepted_text.get(key) == current_text:
+    if snap is None or plan is None or snap.text == current_text or key in _released:
         return None
     return snap.text, plan
 
 
 def release_holds(root: Path) -> None:
-    """Mark every briefed file under `root` released: the next brief of one takes a new snapshot only
-    if the file is unchanged or at its last accepted text; any other file keeps its baseline and plan."""
+    """Release the baseline of every briefed file under `root` that is settled: its text on disk is its
+    snapshot text or the text last judged accepted. A later brief of a released file takes a new snapshot;
+    a file in any other state, or one that cannot be read, keeps its baseline and plan."""
     base = Path(_key(root))
-    _released.update(k for k in _snapshots if Path(k).is_relative_to(base))
+    for key, snap in _snapshots.items():
+        if not Path(key).is_relative_to(base):
+            continue
+        try:
+            text = Path(key).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if text in (snap.text, _accepted_text.get(key)):
+            _released.add(key)
 
 
 def get_snapshot(file_path: Path) -> Snapshot | None:
