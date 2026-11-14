@@ -63,7 +63,7 @@ def _validate(target: Path, root: Path) -> dict[str, Any]:
 
 
 def _brief(root: Path) -> None:
-    assert "error" not in remedy_brief.build_remedy_brief(LOCATION, root)
+    assert "error" not in remedy_brief.build_remedy_brief(LOCATION, root, preservation_contract="Keep everything.")
 
 
 def test_a_rewrite_failing_the_check_is_not_accepted_after_a_project_validate(project: tuple[Path, Path]) -> None:
