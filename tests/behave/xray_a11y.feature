@@ -21,6 +21,11 @@ Feature: The x-ray page works by keyboard, keeps its focus, and stays readable t
     Then a time label, a stretch bar and the Tool calls link inside a compaction stripe's band still receive the pointer
 
   @page @browser
+  Scenario: A details window taller than the screen keeps its top bar on screen at the end of the page
+    Given the bundled page is served over the "view_sample" fixture view
+    Then a details window taller than the screen opened at the end of the page keeps its top bar on screen
+
+  @page @browser
   Scenario: Details opened from a canvas node make the canvas inert and give focus back to that node
     Given the bundled page is served over the "view_sample" fixture view
     Then Enter on a canvas source node opens details with one click, the canvas is inert, and Escape returns focus to that node

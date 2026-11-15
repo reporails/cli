@@ -211,3 +211,14 @@ def step_newline_focus(context):
         return
     assert seen["focused"], "no canvas source node carries the line-break id"
     assert seen["after"] == seen["focused"] and seen["drawn"], seen
+
+
+@then("a details window taller than the screen opened at the end of the page keeps its top bar on screen")
+def step_tall_window(context):
+    seen = _a11y(context, "tall-window")
+    if seen is None:
+        return
+    fit = seen["fit"]
+    assert fit["scrollY"] > 0 and fit["scrolls"], fit  # the page was scrolled and the window's body scrolls inside
+    assert fit["top"] >= 0 and fit["closeTop"] >= 0, fit  # the top bar, with the close button, is on screen
+    assert fit["bottom"] <= min(fit["overlayBottom"], fit["viewport"]) + 0.5, fit

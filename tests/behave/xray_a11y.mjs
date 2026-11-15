@@ -157,6 +157,26 @@ if (mode === 'stripe-layers' && ready) {
   })()`);
 }
 
+// Scrolls the page to its end, opens a compaction's details window and fills it with more text than the screen holds,
+// then reports where the window sits against the screen and the overlay.
+if (mode === 'tall-window' && ready) {
+  await toGraph(page);
+  await page.until(`!!document.querySelector('#canvas button.compact')`);
+  const toEnd = () => page.ev(`(window.scrollTo(0, document.documentElement.scrollHeight), document.scrollingElement.scrollTop)`);
+  await toEnd();
+  await page.ev(`document.querySelector('#canvas button.compact').click(); 0`);
+  await page.until(`!!document.querySelector('.pk-dialog')`);
+  await page.ev(`(() => { const d = document.createElement('div'); d.style.height = '3000px'; d.textContent = 'tall'; document.querySelector('.pk-main').append(d); })()`);
+  await sleep(200);
+  await toEnd();
+  await sleep(300);
+  out.fit = await page.ev(`(() => {
+    const d = document.querySelector('.pk-dialog').getBoundingClientRect(), o = document.querySelector('#overlay').getBoundingClientRect();
+    const x = document.querySelector('.pk-x').getBoundingClientRect(), b = document.querySelector('.pk-body');
+    return { top: d.top, bottom: d.bottom, overlayBottom: o.bottom, viewport: innerHeight, closeTop: x.top, closeBottom: x.bottom, scrollY: scrollY, scrolls: b.scrollHeight > b.clientHeight };
+  })()`);
+}
+
 if (mode === 'space' && ready) {
   await toGraph(page);
   await page.until(`!!document.querySelector('#canvas .card[data-node]:not(.top)')`);

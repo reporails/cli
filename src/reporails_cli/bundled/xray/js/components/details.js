@@ -75,6 +75,16 @@ function content(env, side) {
   return { out, h, titleId };
 }
 
+// Caps the dialog to the part of the overlay on screen, so its top bar stays visible wherever the page is scrolled.
+function capDialog() {
+  const box = document.getElementById('overlay'), dlg = box && box.querySelector('.pk-dialog');
+  if (!dlg) return;
+  const r = box.getBoundingClientRect();
+  dlg.style.maxHeight = `${Math.max(160, Math.min(innerHeight, r.bottom) - Math.max(0, r.top) - 24)}px`;
+}
+addEventListener('scroll', capDialog, { passive: true });
+addEventListener('resize', capDialog);
+
 // The Graph tab's overlay: a backdrop over the canvas column and the dialog on it.
 export function renderOverlay(box, env) {
   const c = env.state.peek ? content(env, false) : null;
@@ -92,6 +102,7 @@ export function renderOverlay(box, env) {
   body.append(section('pk-main', c.out.main), section('pk-side', c.out.side));
   dlg.append(c.h, body);
   sync(box, back, dlg);
+  capDialog();
 }
 
 // Another tab's details pane, beside its table: the same output in the overlay's two-column layout; empty when nothing is open.
