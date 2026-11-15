@@ -1,4 +1,4 @@
-// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions|summaries|summarylink|recorded|excluded|agent> [source id]
+// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions|summaries|stripe|recorded|excluded|agent> [source id]
 // Drives the real `ails xray` page in headless Chrome and prints one JSON object describing what it drew.
 import { openPage, toGraph } from './xray_cdp.mjs';
 
@@ -87,20 +87,31 @@ if (mode === 'compactions' && ready) {
 
 if (mode === 'summaries' && ready) {
   await page.ev(`location.hash = '#/agent/main'; 0`);
-  await page.until(`!!document.querySelector('[data-open^="summary:"]')`);
-  for (let i = 0; i < 2; i++) {
-    await page.ev(`document.querySelectorAll('[data-open^="summary:"]')[${i}].click(); 0`);
-    await page.until(`document.querySelectorAll('pre.peek').length === ${i + 1}`);
+  await page.until(`!!document.querySelector('.ix-kid[data-peek^="compaction:"]')`);
+  out.rows = await page.ev(`[...document.querySelectorAll('.ix-kid[data-peek^="compaction:"]')].map(b => b.textContent)`);
+  out.texts = [];
+  for (let i = 0; i < out.rows.length; i++) {
+    await page.ev(`document.querySelectorAll('.ix-kid[data-peek^="compaction:"]')[${i}].click(); 0`);
+    await page.until(`!!document.querySelector('.pk-dialog pre.peek')`);
+    out.texts.push(await page.ev(`document.querySelector('.pk-dialog pre.peek').textContent`));
+    await page.ev(`document.querySelector('.pk-x').click(); 0`);
+    await page.until(`!document.querySelector('.pk-dialog')`);
   }
-  out.rows = await page.ev(`[...document.querySelectorAll('[data-open^="summary:"]')].map(b => b.textContent)`);
-  out.texts = await page.ev(`[...document.querySelectorAll('pre.peek')].map(e => e.textContent)`);
 }
 
-if (mode === 'summarylink' && ready) {
-  await page.until(`!!document.querySelector('.compact-summary')`);
-  await page.ev(`document.querySelector('.compact-summary').click(); 0`);
-  await page.until(`document.querySelectorAll('pre.peek').length === 1`);
-  out.texts = await page.ev(`[...document.querySelectorAll('pre.peek')].map(e => e.textContent)`);
+// Clicks the compaction stripe at index argv[4] and reports the one details dialog it opens.
+if (mode === 'stripe' && ready) {
+  await page.until(`!!document.querySelector('button.compact')`);
+  const i = Number(process.argv[4] || 0);
+  out.stripes = await page.ev(`[...document.querySelectorAll('button.compact')].map(b => ({ peek: b.dataset.peek, name: b.getAttribute('aria-label') }))`);
+  await page.ev(`document.querySelectorAll('button.compact')[${i}].click(); 0`);
+  await page.until(`!!document.querySelector('.pk-dialog')`);
+  await page.until(`!document.querySelector('.pk-dialog .nk') || !!document.querySelector('.pk-dialog pre.peek')`);
+  out.dialogs = await page.ev(`document.querySelectorAll('.pk-dialog, .pk-panel, [role="dialog"]').length`);
+  out.dialog = await page.ev(`document.querySelector('.pk-dialog').textContent`);
+  out.summary = await page.ev(`(document.querySelector('.pk-dialog pre.peek') || {}).textContent || null`);
+  out.files = await page.ev(`[...document.querySelectorAll('.pk-dialog .fs')].map(e => e.textContent)`);
+  out.over = await page.ev(`!!document.querySelector('.pk-dialog').closest('#overlay')`);
 }
 
 console.log(JSON.stringify(out));

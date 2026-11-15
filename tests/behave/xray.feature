@@ -58,11 +58,11 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And the page draws a compaction marker for each of the two compactions with the sizes the view holds
 
   @e2e @browser
-  Scenario: The compaction marker's summary control opens the summary in the inspector
+  Scenario: Clicking a compaction stripe opens the details window with the trigger, the sizes, the summary and each file's state
     Given a project with a recorded Claude Code session that compacted twice
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
-    And clicking the first compaction marker's summary control opens that summary in the main agent's inspector
+    And clicking each compaction stripe opens one details window over the canvas holding what the view holds for that compaction
 
   @e2e @browser
   Scenario: Each compaction shows its summary text verbatim with its size in tokens

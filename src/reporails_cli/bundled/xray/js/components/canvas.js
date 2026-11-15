@@ -428,44 +428,20 @@ function stationPill(env, cl) {
 
 function stations(env, cur, scale) {
   const out = mergeStations(stationItems(env, cur, scale)).map(cl => stationPill(env, cl));
-  for (const c of (env.ix.stations.get(cur.id) || { compactions: [] }).compactions) {
-    const m = abs('compact', 0, scale.y(c.t));
-    const sizes = c.before != null && c.after != null ? ` · ${k1(c.before)} → ${k1(c.after)}` : '';
-    m.append(el('span', null, `compacted${sizes} · at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`));
-    if (c.summary_id) {
-      const b = el('button', 'compact-summary', `summary · ${tk(c.summary_tokens, true)}`);
-      b.type = 'button';
-      b.dataset.summary = c.summary_id;
-      b.dataset.summaryNode = cur.id;
-      b.title = 'Open what is left after the compaction';
-      m.firstChild.append(' · ', b);
-    }
-    out.push(m);
-    if (c.files && c.files.length) out.push(compactionFiles(env, c, scale));
-  }
+  const held = (env.ix.stations.get(cur.id) || { compactions: [] }).compactions;
+  held.forEach((c, i) => out.push(compactStripe(cur, c, i, scale)));
   return out;
 }
 
-// What the page says of each state an instruction file can be in after a compaction, and why.
-const FILE_STATE_WORDS = {
-  reloaded: ['loaded again', 'Claude Code loaded it again after the compaction'],
-  restored: ['restored in full', 'Claude Code put the whole file back after the summary'],
-  named: ['named only: the agent must read it again', 'Claude Code told the agent the file name, not its content'],
-  summarized: ['only in the summary', 'nothing of the file came back; the agent knows only what the summary says'],
-  pending: ['settles at the next reply', 'the agent has not replied since the compaction yet'],
-};
-
-// The instruction files a compaction found loaded, each with the state the view holds for it after the compaction.
-function compactionFiles(env, c, scale) {
-  const box = abs('compact-files', 84, scale.y(c.t) + 8);
-  for (const f of c.files) {
-    const s = env.ix.sources.get(f.source);
-    const [words, why] = FILE_STATE_WORDS[f.state] || [f.state, ''];
-    const row = el('span', `fs fs-${f.state}`, `${s ? s.label : f.source} · ${words}`);
-    row.title = why;
-    box.append(row);
-  }
-  return box;
+// A compaction: a thin band across the canvas at its time that opens its details.
+function compactStripe(cur, c, i, scale) {
+  const both = c.before != null && c.after != null;
+  const m = abs('compact', 0, scale.y(c.t) - 8, 'button');
+  m.type = 'button';
+  m.dataset.peek = `compaction:${cur.id}:${i}`;
+  m.setAttribute('aria-label', `Compaction${c.trigger ? ', ' + c.trigger : ''}, at ${clock(c.t)}${both ? `, context ${k1(c.before)} to ${k1(c.after)}` : ''}: open details`);
+  m.append(el('span', null, `compacted${both ? ` · ${k1(c.before)} → ${k1(c.after)}` : ''} · at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`));
+  return m;
 }
 
 // Places each drawn station pill by `stationSide` among the cards, once the page has measured its width.

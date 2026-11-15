@@ -446,13 +446,40 @@ def step_summaries_on_page(context):
         assert _k1(len(text) // 4) in row, (row, len(text) // 4)
 
 
-@then("clicking the first compaction marker's summary control opens that summary in the main agent's inspector")
-def step_marker_opens_summary(context):
-    seen = _layout_script(context, "summarylink")
-    if seen is None:
-        return
-    assert seen["ready"], "the page did not draw"
-    assert seen["texts"] == [SUMMARIES[0]], seen["texts"]
+FILE_STATE_WORDS = {
+    "reloaded": "loaded again",
+    "restored": "restored in full",
+    "named": "named only: the agent must read it again",
+    "summarized": "only in the summary",
+    "pending": "settles at the next reply",
+}
+
+
+@then(
+    "clicking each compaction stripe opens one details window over the canvas "
+    "holding what the view holds for that compaction"
+)
+def step_stripe_opens_window(context):
+    token = re.search(r'name="xray-token" content="([^"]+)"', _get(context.url)[1]).group(1)
+    view = json.loads(_get(context.url + "view", token)[1])
+    held = next(s["compactions"] for s in view["stations"] if s["node"] == "main")
+    labels = {item["id"]: item["label"] for item in view["sources"]}
+    assert any(item["files"] for item in held), held  # the window's file rows are compared against real rows
+    for index, item in enumerate(held):
+        seen = _layout_script(context, "stripe", str(index))
+        if seen is None:
+            return
+        assert seen["ready"], "the page did not draw"
+        assert [s["peek"] for s in seen["stripes"]] == [f"compaction:main:{i}" for i in range(len(held))], seen[
+            "stripes"
+        ]
+        assert item["trigger"] in seen["stripes"][index]["name"], seen["stripes"][index]
+        assert seen["dialogs"] == 1 and seen["over"], seen  # one details frame, no second dialog
+        assert item["trigger"] in seen["dialog"], seen["dialog"]
+        assert f"{_k1(item['before'])} \u2192 {_k1(item['after'])}" in seen["dialog"], seen["dialog"]
+        assert seen["summary"] == SUMMARIES[index], seen["summary"]
+        assert _k1(item["summary_tokens"]) in seen["dialog"], seen["dialog"]
+        assert seen["files"] == [f"{labels[f['source']]} \u00b7 {FILE_STATE_WORDS[f['state']]}" for f in item["files"]]
 
 
 @then('the summary route returns the summary text, and the view, the event log and "ails events" hold none of it')

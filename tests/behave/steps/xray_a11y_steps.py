@@ -79,6 +79,22 @@ def step_opener(context):
     assert after["source"] == seen["opener"]["source"], (after, seen["opener"])
 
 
+@then("Enter on a compaction stripe opens its details window with one click and Escape returns focus to the stripe")
+def step_stripe_keyboard(context):
+    seen = _a11y(context, "stripe")
+    if seen is None:
+        return
+    assert seen["focused"] and seen["tag"] == "BUTTON", seen
+    assert seen["clicks"] == 1, seen["clicks"]
+    assert seen["title"], seen
+    assert seen["open"]["closePeek"], seen["open"]  # focus moved into the window, onto its close button
+    assert seen["inert"] is True, seen
+    assert seen["closed"], seen
+    after = seen["afterEsc"]
+    assert after["tag"] == "BUTTON" and after["cls"].split()[0] == "compact" and after["inCanvas"], after
+    assert after["peek"].startswith("compaction:"), after
+
+
 @then("Space on an agent card selects it and its accessible name carries its slot summary")
 def step_space(context):
     seen = _a11y(context, "space")

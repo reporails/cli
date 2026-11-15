@@ -11,6 +11,11 @@ Feature: The x-ray page works by keyboard, keeps its focus, and stays readable t
     Then Enter on an eye toggle and on a group header keeps focus on that control
 
   @page @browser
+  Scenario: A compaction stripe opens its details from the keyboard and Escape gives focus back to it
+    Given the bundled page is served over the "view_sample" fixture view
+    Then Enter on a compaction stripe opens its details window with one click and Escape returns focus to the stripe
+
+  @page @browser
   Scenario: Details opened from a canvas node make the canvas inert and give focus back to that node
     Given the bundled page is served over the "view_sample" fixture view
     Then Enter on a canvas source node opens details with one click, the canvas is inert, and Escape returns focus to that node

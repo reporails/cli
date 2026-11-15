@@ -103,6 +103,24 @@ if (mode === 'opener' && ready) {
   out.afterEsc = await active();
 }
 
+if (mode === 'stripe' && ready) {
+  await toGraph(page);
+  await page.until(`!!document.querySelector('#canvas button.compact')`);
+  out.focused = await focus('#canvas button.compact');
+  out.tag = await page.ev(`document.activeElement.tagName`);
+  await countClicks();
+  await keys.enter();
+  await page.until(`!!document.querySelector('.pk-dialog')`);
+  out.clicks = await page.ev(`window.__clicks`);
+  out.title = await page.ev(`document.querySelector('.pk-dialog').getAttribute('aria-labelledby')`);
+  out.open = await active();
+  out.inert = await page.ev(`document.querySelector('.canvaswrap').inert === true`);
+  await keys.esc();
+  await sleep(300);
+  out.closed = await page.ev(`!document.querySelector('.pk-dialog')`);
+  out.afterEsc = await page.ev(`(() => { const a = document.activeElement; return { cls: String(a.className), tag: a.tagName, peek: a.dataset.peek || null, inCanvas: !!a.closest('.canvaswrap') }; })()`);
+}
+
 if (mode === 'space' && ready) {
   await toGraph(page);
   await page.until(`!!document.querySelector('#canvas .card[data-node]:not(.top)')`);
