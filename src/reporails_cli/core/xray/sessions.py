@@ -63,13 +63,20 @@ def _replacing(session: Path, cleared: dict[Path, float]) -> list[Path]:
 
 def _ends(session: Path, cleared: dict[Path, float]) -> list[Path]:
     """The sessions no transcript of `cleared` replaces that `session` leads to, following each `/clear` that
-    replaced it; `session` itself when none did."""
-    replacing = _replacing(session, cleared)
-    if not replacing:
-        return [session]
+    replaced it; `session` itself when none did. Each transcript is expanded once, and a transcript never counts
+    as replaced by one that replaced the same session."""
     ends: list[Path] = []
-    for path in replacing:
-        ends.extend(end for end in _ends(path, {p: b for p, b in cleared.items() if p != path}) if end not in ends)
+    seen = {session}
+    work: list[tuple[Path, frozenset[Path]]] = [(session, frozenset())]
+    while work:
+        path, siblings = work.pop(0)
+        replacing = [item for item in _replacing(path, cleared) if item != path and item not in siblings]
+        if not replacing:
+            ends.append(path)
+            continue
+        found = frozenset(replacing)
+        work.extend((item, found) for item in replacing if item not in seen)
+        seen.update(replacing)
     return ends
 
 

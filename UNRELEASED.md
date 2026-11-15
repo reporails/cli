@@ -12,14 +12,14 @@
 - `ails check`, the MCP `validate` tool and opening `ails xray` now ask the reporails service first, before reading your files or downloading the model. When this hour's allowance is used up, or your version is no longer supported, the run stops right away and names the next step: signing up, when the allowance resets, or `ails update`.
 - When the reporails service cannot be reached, `ails check` stops and tells you to run with `--offline` for local checks only.
 - Heal's rewrite rules now come from the reporails service, so a rewrite is always held to the current rules without a cli update.
-- After a compaction, `ails xray` labels each instruction file loaded before it as loaded again, restored in full, named only (the agent must read it again) or only in the summary, and the chart keeps only the files whose content is back in context; this works on sessions from earlier Claude Code versions too.
+- After a compaction, `ails xray` labels each instruction file loaded before it as loaded again, restored in full (attached whole, or kept in the messages the compaction preserved), named only (the agent must read it again) or only in the summary, and the chart keeps only the files whose content is back in context; this works on sessions from earlier Claude Code versions too.
 - The finding for a condition that names an outside system quotes the whole condition, its opening word included (`When external services fail`).
 
 ### Fixed
 
 - The x-ray shows each compaction's summary by the transcript's own link between a compaction and its summary: a compaction that left no summary shows none, and the next compaction no longer shows its summary.
 - Opening a compaction summary in the x-ray reads only that summary from the transcript, not the whole file again.
-- `ails xray --current` follows a `/clear` chain on past a session that was one of several cleared at the same moment, and opens the newest session the chains end in.
+- `ails xray --current` follows a `/clear` chain on from each of several sessions cleared at the same moment, never past one into another, and opens the newest session the chains end in.
 - A heal rewrite that fails the meaning check is no longer accepted after the project is re-validated mid-run.
 - Heal puts back a rewrite that puts a plain word in front of what a prohibition forbids (`Never modify the docs` → `Never modify the generated docs`); a named construct there still passes.
 - `ails check` no longer warns about broad conditional scope on an instruction that only limits what it acts on, such as `Use only the staging database, never production.`

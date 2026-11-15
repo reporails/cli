@@ -21,10 +21,31 @@ def _instruction_source(path: str, sources: SourceTable) -> str | None:
     return entry.id if entry is not None and entry.kind in _INSTRUCTION_SOURCE_KINDS else None
 
 
-def _read_before(record: EventRecord, sources: SourceTable) -> set[str]:
-    """The instruction file a read call targets, as a set of one source id; empty when it targets none."""
-    sid = _instruction_source(record.tool.path, sources) if record.tool and record.tool.path else None
-    return {sid} if sid is not None else set()
+def _loaded_file(record: EventRecord, sources: SourceTable) -> tuple[str | None, str | None]:
+    """The instruction file an `instruction_load` record or a read call names, with the transcript row it came
+    from; `(None, None)` for any other record or a file that is not an instruction file."""
+    if record.event == "instruction_load" and record.load is not None:
+        return _instruction_source(record.load.path, sources), record.load.row_id
+    if record.event == "tool_call" and record.tool is not None and record.tool.category == "read" and record.tool.path:
+        return _instruction_source(record.tool.path, sources), record.tool.row_id
+    return None, None
+
+
+def _attached_file(record: EventRecord, sources: SourceTable) -> tuple[str | None, bool]:
+    """The instruction file a `file_attachment` record names and whether it attached the whole file; `(None, False)`
+    for a record with no attachment or a file that is not an instruction file."""
+    if record.attachment is None:
+        return None, False
+    return _instruction_source(record.attachment.path, sources), record.attachment.whole
+
+
+def _compaction(record: EventRecord, held: set[str]) -> tuple[float, tuple[str, ...], frozenset[str]] | None:
+    """A `post_compact` record as its time, the files held before it and the ids of the transcript rows it kept;
+    None for a record with no readable time."""
+    moment = epoch(record.time)
+    if moment is None:
+        return None
+    return moment, tuple(sorted(held)), frozenset(() if record.boundary is None else record.boundary.kept)
 
 
 def _state(source: str, reloaded: set[str], whole: set[str], named: set[str], *, waiting: bool) -> FileState:
@@ -50,18 +71,14 @@ def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tu
     reloaded: set[str] = set()
     whole: set[str] = set()
     named: set[str] = set()
-    read_in: dict[str, str] = {}
+    kept_in: dict[str | None, str] = {}
     done: list[tuple[float, tuple[XrayFileState, ...]]] = []
 
     def settle(*, waiting: bool = False) -> None:
         nonlocal held
         if pending is None:
             return
-        kept = {
-            sid
-            for row_id in pending[2]
-            if (path := read_in.get(row_id)) and (sid := _instruction_source(path, sources))
-        }
+        kept = {kept_in[row_id] for row_id in kept_in.keys() & pending[2]}
         states = tuple(
             XrayFileState(src, _state(src, reloaded, whole | kept, named, waiting=waiting)) for src in pending[1]
         )
@@ -69,26 +86,23 @@ def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tu
         held = {item.source for item in states if item.state in IN_CONTEXT_FILE_STATES} | reloaded
 
     for record in records:
+        sid, row_id = _loaded_file(record, sources)
         if record.event == "post_compact":
             settle()
-            moment = epoch(record.time)
-            preserved = record.boundary.kept if record.boundary is not None else ()
-            pending = None if moment is None else (moment, tuple(sorted(held)), frozenset(preserved))
+            pending = _compaction(record, held)
             reloaded, whole, named = set(), set(), set()
         elif record.event == "assistant_usage" and pending is not None:
             settle()
             pending = None
-        elif record.event == "instruction_load" and record.load is not None:
-            sid = _instruction_source(record.load.path, sources)
-            if sid is not None:
-                (reloaded if pending is not None else held).add(sid)
-        elif record.event == "file_attachment" and record.attachment is not None and pending is not None:
-            sid = _instruction_source(record.attachment.path, sources)
-            if sid is not None:
-                (whole if record.attachment.whole else named).add(sid)
-        elif record.event == "tool_call" and record.tool is not None and record.tool.category == "read":
-            if record.tool.row_id and record.tool.path:
-                read_in[record.tool.row_id] = record.tool.path
-            held |= _read_before(record, sources) if pending is None else set()
+        elif sid is not None:
+            kept_in[row_id] = sid
+            if record.event == "instruction_load" and pending is not None:
+                reloaded.add(sid)
+            elif pending is None:
+                held.add(sid)
+        elif record.event == "file_attachment" and pending is not None:
+            attached, attached_whole = _attached_file(record, sources)
+            if attached is not None:
+                (whole if attached_whole else named).add(attached)
     settle(waiting=True)
     return [states for _, states in sorted(done, key=lambda item: item[0])]

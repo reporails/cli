@@ -20,7 +20,7 @@ from reporails_cli.core.eventbus.transcript import first_prompt_text, session_tr
 from reporails_cli.core.platform.config import bootstrap
 from reporails_cli.core.platform.contract.errors import XrayPageError
 from reporails_cli.core.platform.dto.xray import PickedSession, XrayPage
-from reporails_cli.core.xray import pages
+from reporails_cli.core.xray import pages, sessions
 from reporails_cli.core.xray.pages import forget_page, register_page, running_page, start_page
 from reporails_cli.core.xray.sessions import pick_session, session_entries
 
@@ -190,6 +190,40 @@ def test_current_with_two_clears_beginning_at_its_last_write_shows_the_newest_an
     _timed_session(project, "unrelated", now - 5, now)
     monkeypatch.setenv(SESSION_ENV, "mine")
     assert pick_session(project, None, current=True) == PickedSession(project, newest, "current_ambiguous")
+
+
+def test_two_clears_beginning_at_the_same_moment_are_ambiguous_though_one_has_been_idle_since(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = time.time()
+    _timed_session(project, "mine", now - 600, now - 100)
+    _timed_session(project, "clear-a", now - 100, now - 100, cleared=True)
+    newest = _timed_session(project, "clear-b", now - 100, now - 10, cleared=True)
+    monkeypatch.setenv(SESSION_ENV, "mine")
+    assert pick_session(project, None, current=True) == PickedSession(project, newest, "current_ambiguous")
+
+
+def test_many_clears_beginning_at_the_same_moment_are_walked_once_each(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = time.time()
+    _timed_session(project, "mine", now - 600, now - 100)
+    for index in range(8):
+        _timed_session(project, f"clear-{index}", now - 100, now - 100, cleared=True)
+    monkeypatch.setenv(SESSION_ENV, "mine")
+    calls = 0
+    walk = sessions._replacing
+
+    def counted(session: Path, cleared: dict[Path, float]) -> list[Path]:
+        nonlocal calls
+        calls += 1
+        return walk(session, cleared)
+
+    monkeypatch.setattr(sessions, "_replacing", counted)
+    picked = pick_session(project, None, current=True)
+    assert picked is not None and picked.picked == "current_ambiguous"
+    print("replacing calls:", calls)
+    assert calls <= 9
 
 
 def test_a_subagent_written_after_the_clear_does_not_hide_the_hand_off(

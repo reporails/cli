@@ -188,6 +188,8 @@ class InstructionLoad:
 
     path: str
     memory_type: str | None = None
+    # The transcript row that loaded it; None for a record read back from a stored event.
+    row_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -453,9 +455,9 @@ class EventRecord:
     usage: TokenUsage | None = None
     # The agent type of a `subagent_run` record.
     subagent_type: str | None = None
-    # The file of an `instruction_load` or `file_attachment` record, the boundary row of a `post_compact` record, the piece
-    # of the harness's context a `harness` record names, the prompt a transcript's `prompt_submit` record sizes, the
-    # skill a `skill_run` record names, the launch a `subagent_run` record describes, the size of the text an
+    # The file of an `instruction_load` or `file_attachment` record, the boundary row of a `post_compact` record, the
+    # piece of the harness's context a `harness` record names, the prompt a transcript's `prompt_submit` record sizes,
+    # the skill a `skill_run` record names, the launch a `subagent_run` record describes, the size of the text an
     # `assistant_text` record carries, or the sizes of an `api_request` record's request.
     item: (
         InstructionLoad

@@ -14,6 +14,7 @@ from reporails_cli.core.platform.dto.events import (
     EventRecord,
     FileAttachment,
     HarnessEntry,
+    InstructionLoad,
     PromptEntry,
     ReplyText,
     TokenUsage,
@@ -343,6 +344,17 @@ def test_a_file_read_in_a_message_the_compaction_kept_is_restored(tmp_path: Path
     read = rec("tool_call", 0.5, tool=ToolUse("Read", "t1", rule.path, category="read", row_id="row-1"))
     kept = rec("post_compact", 2, item=CompactionBoundary("b1", ("row-1",)))
     records = [load(0.1, claude), load(0.2, rule, memory_type="nested"), read, reply(1, context=10000), kept]
+    assert _states(tmp_path, [*records, reply(3, context=4000)]) == {
+        "CLAUDE.md": "summarized",
+        "rules/r.md": "restored",
+    }
+
+
+def test_an_instruction_file_loaded_in_a_row_the_compaction_kept_is_restored(tmp_path: Path) -> None:
+    claude, rule, _ = _files(tmp_path)
+    kept_load = rec("instruction_load", 0.2, item=InstructionLoad(rule.path, "nested", "row-2"))
+    kept = rec("post_compact", 2, item=CompactionBoundary("b1", ("row-2",)))
+    records = [load(0.1, claude), kept_load, reply(1, context=10000), kept]
     assert _states(tmp_path, [*records, reply(3, context=4000)]) == {
         "CLAUDE.md": "summarized",
         "rules/r.md": "restored",

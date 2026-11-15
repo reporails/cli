@@ -15,9 +15,11 @@ from reporails_cli.core.eventbus.transcript import (
     CALL_INPUT_CHARS,
     CALL_RESULT_CHARS,
     call_detail,
+    compact_summary,
     opens_with_clear,
     prompt_text,
     read_transcript,
+    scan_compact_summaries,
     subagent_brief,
     subagent_system,
 )
@@ -393,6 +395,51 @@ def test_a_delta_row_counts_its_added_items_less_its_removed_ones(tmp_path: Path
 def test_a_compact_boundary_row_is_a_post_compact_record_with_its_trigger(tmp_path: Path) -> None:
     records, _ = read_transcript("claude", _copy(COMPACTION, tmp_path), TranscriptCursor())
     assert [r.source for r in _of(records, "post_compact")] == ["manual"]
+
+
+def _boundary_kept(tmp_path: Path, preserved: JsonValue | None) -> tuple[list[EventRecord], list[str]]:
+    """The compaction records of the compaction fixture whose boundary row carries `preserved` as its
+    `preservedMessages` (the key is left out for None), and the refusal reasons."""
+    session = _copy(COMPACTION, tmp_path)
+
+    def edit(row: JsonObject) -> None:
+        metadata = as_object(row["compactMetadata"])
+        if preserved is not None:
+            metadata["preservedMessages"] = preserved
+
+    _edit_row(session, lambda r: r.get("subtype") == "compact_boundary", edit)
+    records, _ = read_transcript("claude", session, TranscriptCursor())
+    return _of(records, "post_compact"), [r.refusal or "" for r in _of(records, "refusal")]
+
+
+def test_a_boundary_without_preserved_messages_keeps_nothing_and_is_not_refused(tmp_path: Path) -> None:
+    compactions, refusals = _boundary_kept(tmp_path, None)
+    assert [r.boundary.kept for r in compactions if r.boundary] == [()] and refusals == []
+
+
+def test_a_boundary_names_the_messages_it_kept(tmp_path: Path) -> None:
+    compactions, refusals = _boundary_kept(tmp_path, {"uuids": ["a", "b"]})
+    assert [r.boundary.kept for r in compactions if r.boundary] == [("a", "b")] and refusals == []
+
+
+@pytest.mark.parametrize("preserved", ["a", ["a"], {"uuids": "a"}, {"uuids": ["a", 3]}, {}])
+def test_a_boundary_whose_preserved_messages_are_malformed_is_refused(tmp_path: Path, preserved: JsonValue) -> None:
+    compactions, refusals = _boundary_kept(tmp_path, preserved)
+    assert compactions == [] and len(refusals) == 1 and "preservedMessages" in refusals[0]
+
+
+def _summary_line(link: str, text: str) -> str:
+    row = {"type": "user", "isCompactSummary": True, "parentUuid": link, "message": {"role": "user", "content": text}}
+    return json.dumps(row) + "\n"
+
+
+def test_a_summary_is_read_only_while_its_line_still_links_to_the_boundary_it_was_found_for(tmp_path: Path) -> None:
+    session = tmp_path / "session.jsonl"
+    session.write_text(_summary_line("b1", "summary one") + _summary_line("b2", "summary two"), encoding="utf-8")
+    spans, _ = scan_compact_summaries("claude", session, None, 0)
+    assert [compact_summary("claude", session, None, span) for span in spans] == ["summary one", "summary two"]
+    session.write_text(_summary_line("b2", "summary two") + _summary_line("b9", "summary tre"), encoding="utf-8")
+    assert compact_summary("claude", session, None, spans[0]) is None
 
 
 def _tool_result(result: object) -> JsonObject:

@@ -20,7 +20,7 @@ from reporails_cli.core.eventbus.store import UNSAFE_ID_CHARS
 from reporails_cli.core.eventbus.tail import read_appended_lines
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
 from reporails_cli.core.platform.dto.events import EventRecord, FileCursor, TranscriptCursor
-from reporails_cli.core.platform.dto.xray_build import CallDetail, SummarySpan
+from reporails_cli.core.platform.dto.transcript import CallDetail, SummarySpan
 
 _SUBAGENT_PREFIX = "agent-"
 # How many of a project's transcripts the session listing keeps.
@@ -270,7 +270,8 @@ def scan_compact_summaries(
 
 def compact_summary(agent: str, session_file: Path, subagent_id: str | None, span: SummarySpan) -> str | None:
     """The text of the compaction summary at `span` of the main transcript (`subagent_id` None) or that subagent's
-    file, reading only that line; None when the file no longer holds a summary there.
+    file, reading only that line; None when the file no longer holds a summary there, or one that follows another
+    boundary than `span.link`.
 
     Raises `PayloadRefused` when the agent is unknown. The text is returned, never stored."""
     adapter = get_transcript_adapter(agent)
@@ -278,7 +279,7 @@ def compact_summary(agent: str, session_file: Path, subagent_id: str | None, spa
         raise PayloadRefused(f"unknown agent: {agent}")
     lines, _ = read_appended_lines(_owner_path(session_file, subagent_id), span.start, span.end + 1)
     found = _summary_row(adapter, lines[0]) if lines else None
-    return None if found is None else found[1]
+    return None if found is None or found[0] != span.link else found[1]
 
 
 def _owner_path(session_file: Path, subagent_id: str | None) -> Path:

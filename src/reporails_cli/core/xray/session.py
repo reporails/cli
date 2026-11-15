@@ -30,6 +30,7 @@ from reporails_cli.core.platform.config.claude_settings import (
 )
 from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
 from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
+from reporails_cli.core.platform.dto.transcript import CallDetail, SummarySpan
 from reporails_cli.core.platform.dto.xray import (
     AdapterVocabulary,
     Graph,
@@ -41,7 +42,7 @@ from reporails_cli.core.platform.dto.xray import (
     XrayView,
     XrayWindow,
 )
-from reporails_cli.core.platform.dto.xray_build import CallDetail, Frame, SourceTable, SummarySpan
+from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayPeek
 from reporails_cli.core.xray.artifacts import (
     advertised_files,

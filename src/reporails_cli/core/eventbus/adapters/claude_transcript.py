@@ -179,6 +179,11 @@ _HARNESS: dict[str, HarnessAttachment] = {
 _CLEAR_COMMAND = "<command-name>/clear</command-name>"
 
 
+def _is_compact_summary(row: JsonObject) -> bool:
+    """Whether the row is a compaction summary row: `type: "user"` with `isCompactSummary: true`."""
+    return row.get("type") == "user" and row.get("isCompactSummary") is True
+
+
 class ClaudeTranscriptAdapter:
     """Resolves the rows of a Claude Code session transcript."""
 
@@ -271,7 +276,7 @@ class ClaudeTranscriptAdapter:
     def resolve_compact_summary(self, row: JsonObject) -> str | None:
         """The summary text of a compaction summary row (`type: "user"`, `isCompactSummary: true`, string
         `message.content`); None for any other row."""
-        if row.get("type") != "user" or row.get("isCompactSummary") is not True:
+        if not _is_compact_summary(row):
             return None
         content = as_object(row.get("message")).get("content")
         return content if isinstance(content, str) else None
@@ -279,7 +284,7 @@ class ClaudeTranscriptAdapter:
     def resolve_compact_link(self, row: JsonObject) -> str | None:
         """The `parentUuid` of a compaction summary row, the `uuid` of the boundary row it follows; None for any
         other row or a summary row with no parent."""
-        if self.resolve_compact_summary(row) is None:
+        if not _is_compact_summary(row):
             return None
         return opt_str(row.get("parentUuid")) or None
 
@@ -350,9 +355,22 @@ class ClaudeTranscriptAdapter:
     def _compaction(self, row: JsonObject, subagent_id: str | None) -> EventRecord:
         metadata = as_object(row.get("compactMetadata"))
         trigger = opt_str(metadata.get("trigger"))
-        kept = strict_str_list(as_object(metadata.get("preservedMessages")).get("uuids"))
-        boundary = CompactionBoundary(opt_str(row.get("uuid")) or None, tuple(kept))
+        boundary = CompactionBoundary(opt_str(row.get("uuid")) or None, self._kept_messages(metadata))
         return replace(self._record(row, "post_compact", subagent_id), source=trigger, item=boundary)
+
+    @staticmethod
+    def _kept_messages(metadata: JsonObject) -> tuple[str, ...]:
+        """The ids of the messages a compaction kept: none when `preservedMessages` is absent; refuses one that is
+        not an object holding a list of strings under `uuids`."""
+        preserved = metadata.get("preservedMessages")
+        if preserved is None:
+            return ()
+        if not isinstance(preserved, dict):
+            raise PayloadRefused("compact_boundary row preservedMessages is not an object")
+        kept = strict_str_list(preserved.get("uuids"))
+        if kept is None:
+            raise PayloadRefused("compact_boundary row preservedMessages.uuids is not a list of strings")
+        return tuple(kept)
 
     def _typed_text(self, row: JsonObject) -> str | None:
         """The text of a row a person typed, None for any other row."""
@@ -457,7 +475,10 @@ class ClaudeTranscriptAdapter:
         return None
 
     def _load(self, row: JsonObject, path: str, memory_type: str | None, subagent_id: str | None) -> EventRecord:
-        return replace(self._record(row, "instruction_load", subagent_id), item=InstructionLoad(path, memory_type))
+        return replace(
+            self._record(row, "instruction_load", subagent_id),
+            item=InstructionLoad(path, memory_type, opt_str(row.get("uuid")) or None),
+        )
 
     def _harness(self, row: JsonObject, entry: HarnessEntry, subagent_id: str | None) -> EventRecord:
         return replace(self._record(row, "harness", subagent_id), item=entry)
