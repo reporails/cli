@@ -18,7 +18,7 @@ from reporails_cli.core.platform.dto.xray_cost import XrayAgentCost
 
 NodeKind = Literal["agent"]
 SourceKind = Literal["instructions", "rule", "skill", "agent", "memory", "mcp", "hook"]
-LoadTrigger = Literal["session_start", "path_match", "agent", "inherited", "hook"]
+LoadTrigger = Literal["session_start", "path_match", "agent", "inherited", "hook", "attached"]
 AgentOutcome = Literal["returned", "failed", "stopped", "no_handback", "running"]
 # What one row of an agent's "in context" list stands for.
 ContextKey = Literal[

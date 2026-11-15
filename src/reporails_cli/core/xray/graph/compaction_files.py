@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from reporails_cli.core.platform.dto.events import RESTORE_ATTACHMENT_KINDS, EventRecord
+from reporails_cli.core.platform.dto.attachments import (
+    NAMED_ATTACHMENT_KINDS,
+    WHOLE_FILE_ATTACHMENT_KINDS,
+    AttachmentKind,
+)
+from reporails_cli.core.platform.dto.events import EventRecord
 from reporails_cli.core.platform.dto.xray_build import SourceTable
 from reporails_cli.core.platform.dto.xray_compaction import IN_CONTEXT_FILE_STATES, FileState, XrayFileState
 from reporails_cli.core.platform.dto.xray_sources import INSTRUCTION_ARTIFACT_KINDS, SOURCE_KIND_OF_ARTIFACT
@@ -31,13 +36,14 @@ def _loaded_file(record: EventRecord, sources: SourceTable) -> tuple[str | None,
     return None, None
 
 
-def _attached_file(record: EventRecord, sources: SourceTable) -> tuple[str | None, bool]:
-    """The instruction file a `file_attachment` record names and whether it attached the whole file; `(None, False)`
-    for a record with no attachment or a file that is not an instruction file."""
+def _attached_file(record: EventRecord, sources: SourceTable) -> tuple[str | None, AttachmentKind | None]:
+    """The instruction file a `file_attachment` record names and how it was attached; `(None, None)` for a record
+    with no attachment, a file that is not an instruction file, or an edit snippet, which puts in no more than part of
+    the file."""
     attachment = record.attachment
-    if attachment is None or attachment.kind not in RESTORE_ATTACHMENT_KINDS:
-        return None, False
-    return _instruction_source(attachment.path, sources), attachment.kind == "file"
+    if attachment is None or attachment.kind not in WHOLE_FILE_ATTACHMENT_KINDS | NAMED_ATTACHMENT_KINDS:
+        return None, None
+    return _instruction_source(attachment.path, sources), attachment.kind
 
 
 def _compaction(record: EventRecord, held: set[str]) -> tuple[float, tuple[str, ...], frozenset[str]] | None:
@@ -62,6 +68,27 @@ def _state(source: str, reloaded: set[str], whole: set[str], named: set[str], *,
     return "pending" if waiting else "summarized"
 
 
+def _attach(
+    attached: str | None,
+    how: AttachmentKind | None,
+    *,
+    compacting: bool,
+    held: set[str],
+    whole: set[str],
+    named: set[str],
+) -> None:
+    """Record a file attachment: a named file as `named`, a whole file as `whole` while a compaction waits for the
+    agent's next reply, else as `held`."""
+    if attached is None or how is None:
+        return
+    if how in NAMED_ATTACHMENT_KINDS:
+        named.add(attached)
+    elif compacting:
+        whole.add(attached)
+    else:
+        held.add(attached)
+
+
 def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tuple[XrayFileState, ...]]:
     """For each compaction among `records`, in time order, each instruction file loaded before it with its state
     after it. The loads and file attachments that follow the compaction before the agent's next reply settle its
@@ -84,7 +111,7 @@ def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tu
             XrayFileState(src, _state(src, reloaded, whole | kept, named, waiting=waiting)) for src in pending[1]
         )
         done.append((pending[0], states))
-        held = {item.source for item in states if item.state in IN_CONTEXT_FILE_STATES} | reloaded
+        held = {item.source for item in states if item.state in IN_CONTEXT_FILE_STATES} | reloaded | whole
 
     for record in records:
         sid, row_id = _loaded_file(record, sources)
@@ -101,9 +128,9 @@ def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tu
                 reloaded.add(sid)
             elif pending is None:
                 held.add(sid)
-        elif record.event == "file_attachment" and pending is not None:
-            attached, attached_whole = _attached_file(record, sources)
-            if attached is not None:
-                (whole if attached_whole else named).add(attached)
+        elif record.event == "file_attachment":
+            _attach(
+                *_attached_file(record, sources), compacting=pending is not None, held=held, whole=whole, named=named
+            )
     settle(waiting=True)
     return [states for _, states in sorted(done, key=lambda item: item[0])]

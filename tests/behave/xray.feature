@@ -87,6 +87,13 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And the first compaction offers no summary and the second offers the summary its own boundary links to
 
   @e2e
+  Scenario: The inspector lists every compaction, one with no summary included, and each opens its details window
+    Given a project with a recorded Claude Code session whose first compaction left no summary row
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the inspector lists both compactions and each row opens that compaction's details window
+
+  @e2e
   Scenario: Opening a compaction summary reads only that summary's line of the transcript
     Given a project with a recorded Claude Code session that compacted twice
     When "ails xray --no-open" is started in the project

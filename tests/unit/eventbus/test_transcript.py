@@ -1198,3 +1198,23 @@ def test_a_compaction_names_the_rows_it_kept(tmp_path: Path) -> None:
     records, _ = read_transcript("claude", _attachment_session(tmp_path, boundary=kept), TranscriptCursor())
     (compaction,) = _of(records, "post_compact")
     assert compaction.boundary is not None and compaction.boundary.kept == ("u1", "u2")
+
+
+def _recall_row(memories: JsonValue) -> JsonObject:
+    row = _deferred_row()
+    row["attachment"] = {"type": "relevant_memories", **({} if memories is None else {"memories": memories})}
+    return row
+
+
+def test_a_recall_names_each_note_it_brought_in() -> None:
+    records = ClaudeTranscriptAdapter().resolve_row(_recall_row([{"path": "/m/a.md"}, {"path": "/m/b.md"}]), None)
+    assert [record.attachment.path for record in records if record.attachment] == ["/m/a.md", "/m/b.md"]
+
+
+@pytest.mark.parametrize(
+    "memories",
+    [None, "a.md", {"path": "a.md"}, ["a.md"], [{"path": 3}], [{}], [{"path": "a.md"}, None]],
+)
+def test_a_recall_row_without_a_list_of_notes_each_with_a_path_is_refused(memories: JsonValue) -> None:
+    with pytest.raises(PayloadRefused, match="relevant_memories"):
+        ClaudeTranscriptAdapter().resolve_row(_recall_row(memories), None)

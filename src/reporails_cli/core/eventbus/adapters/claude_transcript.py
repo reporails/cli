@@ -143,11 +143,11 @@ from reporails_cli.core.platform.contract.json_value import (
     opt_str,
     strict_str_list,
 )
+from reporails_cli.core.platform.dto.attachments import FileAttachment, is_attachment_kind
 from reporails_cli.core.platform.dto.events import (
     CompactionBoundary,
     EventKind,
     EventRecord,
-    FileAttachment,
     HarnessAttachment,
     HarnessEntry,
     InstructionLoad,
@@ -450,10 +450,9 @@ class ClaudeTranscriptAdapter:
             ]
         if kind == "instructions":
             return self._instructions(row, attachment, subagent_id)
-        match kind:
-            case "file" | "compact_file_reference" | "edited_text_file" | "relevant_memories":
-                base = self._record(row, "file_attachment", subagent_id)
-                return [replace(base, item=FileAttachment(path, kind)) for path in attached_paths(attachment, kind)]
+        if is_attachment_kind(kind):
+            base = self._record(row, "file_attachment", subagent_id)
+            return [replace(base, item=FileAttachment(path, kind)) for path in attached_paths(attachment, kind)]
         if kind in HOOK_NOTE_ATTACHMENTS:
             return self._hook_note(row, attachment, subagent_id)
         if kind == "queued_command":

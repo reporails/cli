@@ -17,6 +17,7 @@ from reporails_cli.core.platform.contract.json_value import (
     opt_str,
     str_list,
 )
+from reporails_cli.core.platform.dto.attachments import FileAttachment
 
 if TYPE_CHECKING:
     from hashlib import _Hash
@@ -190,19 +191,6 @@ class InstructionLoad:
     memory_type: str | None = None
     # The transcript row that loaded it; None for a record read back from a stored event.
     row_id: str | None = None
-
-
-AttachmentKind = Literal["file", "compact_file_reference", "edited_text_file", "relevant_memories"]
-# The kinds Claude Code writes after a compaction for a file it had read before.
-RESTORE_ATTACHMENT_KINDS: frozenset[AttachmentKind] = frozenset({"file", "compact_file_reference"})
-
-
-@dataclass(frozen=True)
-class FileAttachment:
-    """One file Claude Code put into the context: its path and how (`kind`); never content."""
-
-    path: str
-    kind: AttachmentKind
 
 
 @dataclass(frozen=True)

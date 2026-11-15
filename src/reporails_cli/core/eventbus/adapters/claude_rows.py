@@ -10,12 +10,11 @@ from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
     JsonValue,
-    as_list,
     as_object,
     opt_str,
     strict_str_list,
 )
-from reporails_cli.core.platform.dto.events import AttachmentKind
+from reporails_cli.core.platform.dto.attachments import AttachmentKind
 
 
 def meta_field[Field: (str, int, bool)](meta: JsonObject, key: str, kind: type[Field]) -> Field | None:
@@ -65,9 +64,10 @@ def attached_paths(attachment: JsonObject, kind: AttachmentKind) -> list[str]:
     """The files an attachment row of type `kind` names: its `filename`, or each recalled note's `path`."""
     if kind != "relevant_memories":
         return [required_text(attachment, "filename", f"{kind} attachment")]
-    return [
-        required_text(as_object(note), "path", "relevant_memories note") for note in as_list(attachment.get("memories"))
-    ]
+    memories = attachment.get("memories")
+    if not isinstance(memories, list):
+        raise PayloadRefused("relevant_memories attachment has no memories list")
+    return [required_text(as_object(note), "path", "relevant_memories note") for note in memories]
 
 
 def brief_text(first_row: JsonObject) -> str | None:

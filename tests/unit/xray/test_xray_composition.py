@@ -9,10 +9,10 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.platform.contract.json_value import as_list
+from reporails_cli.core.platform.dto.attachments import AttachmentKind, FileAttachment
 from reporails_cli.core.platform.dto.events import (
     CompactionBoundary,
     EventRecord,
-    FileAttachment,
     HarnessEntry,
     InstructionLoad,
     PromptEntry,
@@ -59,6 +59,11 @@ def _attached(seconds: float, *files: ArtifactFile, whole: bool = True) -> list[
         rec("file_attachment", seconds, item=FileAttachment(item.path, "file" if whole else "compact_file_reference"))
         for item in files
     ]
+
+
+def _attached_as(seconds: float, kind: AttachmentKind, *files: ArtifactFile) -> list[EventRecord]:
+    """The records of Claude Code attaching `files` by `kind`."""
+    return [rec("file_attachment", seconds, item=FileAttachment(item.path, kind)) for item in files]
 
 
 def _note(seconds: float) -> EventRecord:
@@ -395,3 +400,64 @@ def test_a_file_is_pending_while_the_agent_has_not_replied_since_the_compaction(
         rec("post_compact", 2, source="manual"),
     ]
     assert _states(tmp_path, records) == {"CLAUDE.md": "pending", "rules/r.md": "pending"}
+
+
+def test_a_recalled_note_after_a_compaction_is_restored_and_back_in_the_chart(tmp_path: Path) -> None:
+    claude, _, memory = _files(tmp_path)
+    records = [
+        load(0.1, claude),
+        load(0.3, memory),
+        reply(1, context=10000),
+        rec("post_compact", 2, source="auto"),
+        *_attached_as(2.5, "relevant_memories", memory),
+        reply(3, context=4000),
+    ]
+    assert _states(tmp_path, records) == {"CLAUDE.md": "summarized", "MEMORY.md": "restored"}
+    _, after = _rows(tmp_path, records)
+    assert after["memory"] == 100 and after["instructions"] == 0
+
+
+def test_an_edit_snippet_after_a_compaction_restores_nothing_and_adds_no_tokens(tmp_path: Path) -> None:
+    claude, _, memory = _files(tmp_path)
+    records = [
+        load(0.1, claude),
+        load(0.3, memory),
+        reply(1, context=10000),
+        rec("post_compact", 2, source="auto"),
+        *_attached_as(2.5, "edited_text_file", claude, memory),
+        reply(3, context=4000),
+    ]
+    assert _states(tmp_path, records) == {"CLAUDE.md": "summarized", "MEMORY.md": "summarized"}
+    _, after = _rows(tmp_path, records)
+    assert after["memory"] == 0 and after["instructions"] == 0
+
+
+def test_a_note_attached_before_a_compaction_is_listed_by_it(tmp_path: Path) -> None:
+    _, _, memory = _files(tmp_path)
+    for kind in ("file", "relevant_memories"):
+        records = [
+            *_attached_as(0.3, kind, memory),
+            reply(1, context=10000),
+            rec("post_compact", 2, source="auto"),
+            reply(3, context=4000),
+        ]
+        assert _states(tmp_path, records) == {"MEMORY.md": "summarized"}, kind
+        _, after = _rows(tmp_path, records)
+        assert after["memory"] == 0, kind
+
+
+def test_a_recall_after_the_first_compaction_carries_the_note_to_the_second(tmp_path: Path) -> None:
+    _, _, memory = _files(tmp_path)
+    records = [
+        load(0.3, memory),
+        reply(1, context=10000),
+        rec("post_compact", 2, source="auto"),
+        *_attached_as(2.5, "relevant_memories", memory),
+        reply(3, context=4000),
+        rec("post_compact", 4, source="auto"),
+        reply(5, context=3000),
+    ]
+    graph = _graph(tmp_path, records, _files(tmp_path))
+    first, second = next(item for item in graph.stations if item.node == "main").compactions
+    assert [(item.source, item.state) for item in first.files] == [("MEMORY.md", "restored")]
+    assert [(item.source, item.state) for item in second.files] == [("MEMORY.md", "summarized")]

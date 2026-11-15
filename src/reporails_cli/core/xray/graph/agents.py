@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from reporails_cli.core.platform.adapters.payload import relative_wire_path
+from reporails_cli.core.platform.dto.attachments import WHOLE_FILE_ATTACHMENT_KINDS
 from reporails_cli.core.platform.dto.events import ASSISTANT_ROW_KINDS, EventRecord, SubagentMeta, is_note_kind
 from reporails_cli.core.platform.dto.xray_build import (
     AgentRecords,
@@ -116,6 +117,23 @@ def _source_load(sid: str | None, t: float | None, reading: LoadReading) -> list
     return [] if entry is None else [LoadEvent(entry.id, t, entry.tokens_est, "agent", None)]
 
 
+def _attachment_loads(record: EventRecord, t: float | None, reading: LoadReading) -> list[LoadEvent]:
+    """The source a file attachment puts into the context: the whole file for an attachment of its text, an
+    unsized load for an edit snippet; none for an attachment that only names a file."""
+    attached = record.attachment
+    if attached is None:
+        return []
+    sid = for_path(reading.sources, attached.path)
+    entry = reading.sources.get(sid) if sid else None
+    if entry is None:
+        return []
+    if attached.kind in WHOLE_FILE_ATTACHMENT_KINDS:
+        return [LoadEvent(entry.id, t, entry.tokens_est, "attached", None)]
+    if attached.kind == "edited_text_file":
+        return [LoadEvent(entry.id, t, None, "attached", None)]
+    return []
+
+
 def _harness_loads(record: EventRecord, reading: LoadReading) -> list[LoadEvent]:
     """The MCP servers and the hook a harness record puts into the agent's context."""
     entry = record.harness
@@ -141,10 +159,7 @@ def _record_loads(record: EventRecord, reading: LoadReading) -> list[LoadEvent]:
         return _source_load(reading.sources.by_run.get(record.skill.name), t, reading)
     if record.event == "tool_call" and record.tool is not None and record.tool.category == "read" and record.tool.path:
         return _source_load(for_path(reading.sources, record.tool.path), t, reading)
-    attached = record.attachment
-    if attached is not None and attached.kind != "compact_file_reference":
-        return _source_load(for_path(reading.sources, attached.path), t, reading)
-    return []
+    return _attachment_loads(record, t, reading)
 
 
 def _instruction_load(record: EventRecord, reading: LoadReading) -> list[LoadEvent]:

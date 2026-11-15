@@ -2051,6 +2051,17 @@ def step_summary_by_link(context):
     assert status == 200 and json.loads(body)["text"] == SUMMARIES[1], (status, body)
 
 
+@then("the inspector lists both compactions and each row opens that compaction's details window")
+def step_inspector_lists_every_compaction(context):
+    seen = _layout_script(context, "compaction-rows")
+    if seen is None:
+        return
+    assert seen["ready"], "the page did not draw"
+    assert len(seen["rows"]) == 2, seen["rows"]  # the first compaction has no summary and still has its row
+    assert "no summary" in seen["rows"][0] and "no summary" not in seen["rows"][1], seen["rows"]
+    assert "holds no summary" in seen["dialogs"][0] and SUMMARIES[1] not in seen["dialogs"][0], seen["dialogs"]
+
+
 @then("the second summary still opens after the first summary's line was blanked once the page had listed both")
 def step_summary_read_by_position(context):
     token = re.search(r'name="xray-token" content="([^"]+)"', _get(context.url)[1]).group(1)

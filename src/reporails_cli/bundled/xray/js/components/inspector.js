@@ -22,7 +22,7 @@ function chips(node, env) {
   const row = el('div', 'ix-chips');
   for (const k of env.ix.view.adapter.source_kinds) {
     const s = (node.slots && node.slots[k.key]) || { count: 0, findings: 0 };
-    const chip = el('span', 'chip' + (s.count > 0 ? (s.findings > 0 ? ' find' : ' on') : ''), k.letter);
+    const chip = el('span', 'chip' + (s.count > 0 ? (s.findings > 0 ? ' find' : ' lit') : ''), k.letter);
     const said = `${k.label}: ${s.count > 0 ? `${s.count} ${k.verb}` : 'none'}${s.findings > 0 ? ` · ${s.findings} findings` : ''}`;
     chip.setAttribute('role', 'img');
     chip.setAttribute('aria-label', said);
@@ -208,14 +208,13 @@ function activity(node, env) {
     }
   }
   const held = (env.ix.stations.get(node.id) || { compactions: [] }).compactions;
-  const summarised = held.filter(c => c.summary_id);
-  if (summarised.length) {
-    sec.append(el('div', 'ix-sub', 'Compaction summaries'));
-    for (const c of summarised) {
+  if (held.length) {
+    sec.append(el('div', 'ix-sub', 'Compactions'));
+    for (const c of held) {
       const b = el('button', 'ix-kid');
       b.type = 'button';
       b.dataset.peek = `compaction:${node.id}:${held.indexOf(c)}`;
-      b.append(el('span', 'lb', `compaction at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`), el('span', 'mono ix-s', tk(c.summary_tokens, true)));
+      b.append(el('span', 'lb', `compaction at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`), el('span', 'mono ix-s', c.summary_id ? tk(c.summary_tokens, true) : 'no summary'));
       sec.append(b);
     }
   }

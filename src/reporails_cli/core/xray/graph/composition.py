@@ -83,13 +83,13 @@ def _load_deltas(own: AgentRecords, sources: SourceTable) -> list[Added]:
     for load in sorted((item for item in own.loads if item.t is not None), key=lambda item: item.t or 0.0):
         entry = sources.get(load.source)
         category = None if entry is None else _LOAD_CATEGORY.get(entry.kind)
-        if category is None or load.t is None:
+        if category is None or load.t is None or load.tokens_est is None:
             continue
         if category != "hook_notes":
             if load.source in seen and not _left_between(own, load.source, seen[load.source], load.t):
                 continue
             seen[load.source] = load.t
-        found.append((load.t, category, load.tokens_est or 0, load.source))
+        found.append((load.t, category, load.tokens_est, load.source))
     return found
 
 

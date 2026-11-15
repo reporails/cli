@@ -414,7 +414,7 @@ def test_the_vocabulary_words_the_triggers_and_the_fact_notes_for_the_page(tmp_p
     triggers = adapter["triggers"]
     assert isinstance(triggers, list)
     assert [item["key"] for item in triggers if isinstance(item, dict)] == [
-        "session_start", "path_match", "agent", "inherited", "hook",
+        "session_start", "path_match", "agent", "inherited", "hook", "attached",
     ]  # fmt: skip
     assert adapter["fact_notes"] == {
         "memory_unlinked": "{count} not linked",

@@ -95,6 +95,17 @@ def step_stripe_keyboard(context):
     assert after["peek"].startswith("compaction:"), after
 
 
+@then("a time label, a stretch bar and the Tool calls link inside a compaction stripe's band still receive the pointer")
+def step_stripe_layers(context):
+    seen = _a11y(context, "stripe-layers")
+    if seen is None:
+        return
+    layers = seen["layers"]
+    assert layers["bandBox"][1] > 0, layers
+    assert layers["tick"] and layers["stretch"] and layers["link"], layers
+    assert layers["label"], layers  # the stripe's own label stays clickable
+
+
 @then("Space on an agent card selects it and its accessible name carries its slot summary")
 def step_space(context):
     seen = _a11y(context, "space")

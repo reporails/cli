@@ -99,6 +99,22 @@ if (mode === 'summaries' && ready) {
   }
 }
 
+// The inspector's compaction rows, and the details window each opens.
+if (mode === 'compaction-rows' && ready) {
+  await page.ev(`location.hash = '#/agent/main'; 0`);
+  await page.until(`!!document.querySelector('#inspector .ix-sub')`);
+  const rows = `[...document.querySelectorAll('#inspector .ix-kid[data-peek^="compaction:"]')]`;
+  out.rows = await page.ev(`${rows}.map(b => b.textContent)`);
+  out.dialogs = [];
+  for (let i = 0; i < out.rows.length; i++) {
+    await page.ev(`${rows}[${i}].click(); 0`);
+    await page.until(`!!document.querySelector('.pk-dialog')`);
+    out.dialogs.push(await page.ev(`document.querySelector('.pk-dialog').textContent`));
+    await page.ev(`document.querySelector('.pk-x').click(); 0`);
+    await page.until(`!document.querySelector('.pk-dialog')`);
+  }
+}
+
 // Clicks the compaction stripe at index argv[4] and reports the one details dialog it opens.
 if (mode === 'stripe' && ready) {
   await page.until(`!!document.querySelector('button.compact')`);

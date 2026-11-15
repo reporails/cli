@@ -21,7 +21,7 @@
 .arch.flow{stroke-dasharray:6 5;animation:flow 1.2s linear infinite}
 @keyframes flow{to{stroke-dashoffset:-22}}
 @media (prefers-reduced-motion:reduce){.arch.flow{animation:none}}
-.tick{position:absolute;font:calc(10.5px / var(--z,1)) 'JetBrains Mono',monospace;color:var(--t3)}
+.tick{z-index:2;position:absolute;font:calc(10.5px / var(--z,1)) 'JetBrains Mono',monospace;color:var(--t3)}
 .brk{position:absolute;left:0;width:100%;display:flex;align-items:center;justify-content:flex-start;pointer-events:none;border-top:1px dashed #3A3C42;border-bottom:1px dashed #3A3C42;background:repeating-linear-gradient(135deg,rgba(255,255,255,.03) 0 6px,transparent 6px 12px)}
 .brk span{margin-left:84px;font-size:calc(10.5px / var(--z,1));color:var(--t3)}
 .tlabel{position:absolute;transform:translate(-50%,-100%) rotate(-60deg);transform-origin:50% 100%;font-size:calc(10.5px / var(--z,1));color:var(--t3);white-space:nowrap}
@@ -67,14 +67,14 @@
 .station.dot.dim{background:none}
 .station.dot.dim::before{opacity:.3}
 .station.dim .kl{background:transparent;color:var(--t3)}
-.compact{position:absolute;left:0;width:100%;height:16px;box-sizing:border-box;padding:0;border:0;border-top:1px dashed var(--find2);border-bottom:1px dashed var(--find2);background:rgba(240,136,62,.08);color:var(--find2);z-index:1;cursor:pointer;text-align:left}
-.compact:hover,.compact:focus-visible{background:rgba(240,136,62,.18)}
-.compact span{position:absolute;left:84px;top:0;line-height:14px;font:calc(10.5px / var(--z,1)) 'JetBrains Mono',monospace;color:var(--find2);background:var(--canvas);padding:0 6px}
+.compact{position:absolute;left:0;width:100%;height:16px;box-sizing:border-box;padding:0;border:0;border-top:1px dashed var(--find2);border-bottom:1px dashed var(--find2);background:rgba(240,136,62,.08);color:var(--find2);z-index:1;pointer-events:none;text-align:left}
+.compact:has(span:hover),.compact:focus-visible{background:rgba(240,136,62,.18)}
+.compact span{pointer-events:auto;cursor:pointer;position:absolute;left:84px;top:0;line-height:14px;font:calc(10.5px / var(--z,1)) 'JetBrains Mono',monospace;color:var(--find2);background:var(--canvas);padding:0 6px}
 .pill-arch{position:absolute;z-index:4;white-space:nowrap;font-size:calc(11px / var(--z,1));padding:2px 9px;border-radius:999px}
 .pill-arch.right{transform:translate(10px,-50%)} .pill-arch.left{transform:translate(calc(-100% - 10px),-50%)}
 .pill-arch.down{color:#E6E0FF;background:#2B2650} .pill-arch.up{color:#DCE7FF;background:#1F2C4A}
 .nokids{position:absolute}
-.stretch{position:absolute;width:2px;border-radius:1px;background:#A594FF;opacity:.5}
+.stretch{z-index:2;position:absolute;width:2px;border-radius:1px;background:#A594FF;opacity:.5}
 .scalenote{position:absolute;white-space:nowrap;font-size:calc(10.5px / var(--z,1));color:#9C90E0}
 .card.group{align-items:flex-start;text-align:left;font:inherit;background:#1C1B24;border:1px dashed rgba(165,148,255,.55);box-shadow:4px 4px 0 -1px #1D1E24,4px 4px 0 0 rgba(165,148,255,.25),8px 8px 0 -1px #1D1E24,8px 8px 0 0 rgba(165,148,255,.14)}
 .card.group .gh{display:flex;align-items:center;gap:6px;width:100%}
@@ -105,7 +105,7 @@
 .snode.dim{background:transparent;border-color:rgba(255,255,255,.05);color:var(--t3)}
 .snode.dim .kl,.snode.find.dim .kl{background:transparent;color:var(--t3)}
 .trackg{position:absolute;left:0;top:0;pointer-events:none}
-.callslink{position:absolute;padding:0;border:0;background:none;font-size:calc(10.5px / var(--z,1));color:#A9C2FF;cursor:pointer}
+.callslink{z-index:2;position:absolute;padding:0;border:0;background:none;font-size:calc(10.5px / var(--z,1));color:#A9C2FF;cursor:pointer}
 .callslink:hover{text-decoration:underline}
 .jump-anchor{position:absolute;width:1px;height:1px;pointer-events:none}
 .card.group.dim{background:transparent;border-color:rgba(165,148,255,.2);box-shadow:none}
