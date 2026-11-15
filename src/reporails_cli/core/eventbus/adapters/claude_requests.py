@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import hashlib
 
-from reporails_cli.core.eventbus.adapters.claude_calls import tool_call, tool_result
+from reporails_cli.core.eventbus.adapters.claude_calls import tool_result
 from reporails_cli.core.eventbus.adapters.claude_images import high_resolution, price_image
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.platform.contract.json_value import (
@@ -156,23 +156,6 @@ def content_size(role: str, content: JsonValue, what: str) -> MessageSize:
     return total
 
 
-def _note_reads(chain: RequestChain, content: JsonValue) -> tuple[str, ...]:
-    """Remember the file each file-reading call in `content` targets; the call ids of its tool results."""
-    if not isinstance(content, list):
-        return ()
-    ids: list[str] = []
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        if block.get("type") == "tool_use" and all(isinstance(block.get(key), str) for key in ("id", "name")):
-            call = tool_call(block)
-            if call.category == "read" and call.use_id is not None and call.path is not None:
-                chain.read_paths[call.use_id] = call.path
-        elif block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str):
-            ids.append(str(block["tool_use_id"]))
-    return tuple(ids)
-
-
 def _register_user(chain: RequestChain, row: JsonObject) -> None:
     message = as_object(row.get("message"))
     role, content = message.get("role"), message.get("content")
@@ -180,7 +163,6 @@ def _register_user(chain: RequestChain, row: JsonObject) -> None:
         return
     size = content_size(role, content, "user row")
     chain.pool[message_hash(role, content)] = size
-    chain.results[message_hash(role, content)] = _note_reads(chain, content)
     if isinstance(content, str):
         chain.pool[message_hash(role, [{"type": "text", "text": content}])] = size
 
@@ -200,7 +182,6 @@ def _register_assistant(chain: RequestChain, row: JsonObject) -> None:
     if merge.message_id != message_id or with_caller is None or without_caller is None:
         with_caller, without_caller = hashlib.sha256(_MERGE_OPEN), hashlib.sha256(_MERGE_OPEN)
         merge = chain.merge = AssistantMerge(message_id, with_caller, without_caller)
-    _note_reads(chain, content)
     for block in content:
         separator = b"," if merge.blocks else b""
         with_caller.update(separator + _encode(_canonical(block)))
@@ -226,7 +207,6 @@ def _register_blob(chain: RequestChain, row: JsonObject) -> None:
     if not isinstance(role, str):
         raise PayloadRefused(f"{what} message role is not a string")
     chain.pool[digest] = content_size(role, message.get("content"), what)
-    chain.results[digest] = _note_reads(chain, message.get("content"))
 
 
 def _system_text(block: JsonValue, what: str) -> str:
@@ -339,13 +319,10 @@ def _request(chain: RequestChain, row: JsonObject) -> RequestSize:
     # An unknown message keeps its place as an empty size, so the next request's `keep` still counts it.
     kept = min(keep, len(chain.prefix) - 1)
     del chain.prefix[kept + 1 :]
-    del chain.messages[kept:]
     total = chain.prefix[kept]
     for digest in tail:
         total += chain.pool.get(digest, MessageSize())
         chain.prefix.append(total)
-        chain.messages.append(chain.results.get(digest, ()))
-    reads = sorted({chain.read_paths[use_id] for ids in chain.messages for use_id in ids if use_id in chain.read_paths})
     return RequestSize(
         request_id,
         *shape,
@@ -355,7 +332,6 @@ def _request(chain: RequestChain, row: JsonObject) -> RequestSize:
         _request_tier(row),
         _request_config(row),
         chain.system_digests.get(shape_hash, ""),
-        tuple(reads),
     )
 
 

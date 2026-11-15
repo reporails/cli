@@ -391,17 +391,25 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And with the details of "CLAUDE.md" open on each tab, a session that grows redraws no panel whose content is unchanged
 
   @e2e
-  Scenario: A compaction lists each instruction file loaded before it as kept, reloaded or unknown
-    Given a project with a session that compacted after loading three instruction files, recording requests
+  Scenario: A compaction lists each instruction file loaded before it as reloaded, restored, named or only in the summary
+    Given a project with a session that compacted after loading four instruction files, recording requests
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
-    And the compaction lists the root file reloaded, the file read again kept and the other nested file unknown
-    And the chart's instruction files keep the unsettled file's tokens after the compaction
+    And the compaction lists the root file reloaded, the attached file restored, the named file named and the other nested file summarized
+    And the chart's instruction files after the compaction hold only the reloaded and the restored files
 
   @e2e
-  Scenario: A compaction in a session that recorded no requests cannot settle its nested files
-    Given an older Claude Code session that compacted after loading three instruction files
+  Scenario: A compaction in a session that recorded no requests lists the same four states
+    Given an older Claude Code session that compacted after loading four instruction files
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
-    And the compaction lists each nested file as unknown and the root file as reloaded
-    And the chart's instruction files after the compaction still hold each nested file
+    And the compaction lists the root file reloaded, the attached file restored, the named file named and the other nested file summarized
+    And the chart's instruction files after the compaction hold only the reloaded and the restored files
+
+  @e2e
+  Scenario: A file attached after a compaction reaches no event record
+    Given a project with a session that compacted after loading four instruction files, recording requests
+    When "ails xray --no-open" is started in the project
+    And the session's PostCompact hook payload is piped into "ails hook"
+    Then the printed address is on 127.0.0.1
+    And the attached file's text is in no event-log file and no "ails events" output

@@ -448,11 +448,11 @@ function stations(env, cur, scale) {
 
 // What the page says of each state an instruction file can be in after a compaction, and why.
 const FILE_STATE_WORDS = {
-  kept: ['still in context', 'its read result is in the first request after the compaction'],
-  reloaded: ['loaded again', 'it was loaded again after the compaction'],
-  dropped: ['dropped', 'not in the first request after the compaction'],
-  pending: ['settles at the next request', 'no request has been sent since the compaction yet'],
-  unknown: ["can't tell", 'the transcript does not show whether it survived'],
+  reloaded: ['loaded again', 'Claude Code loaded it again after the compaction'],
+  restored: ['restored in full', 'Claude Code put the whole file back after the summary'],
+  named: ['named only: the agent must read it again', 'Claude Code told the agent the file name, not its content'],
+  summarized: ['only in the summary', 'nothing of the file came back; the agent knows only what the summary says'],
+  pending: ['settles at the next reply', 'the agent has not replied since the compaction yet'],
 };
 
 // The instruction files a compaction found loaded, each with the state the view holds for it after the compaction.

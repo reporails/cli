@@ -37,6 +37,7 @@ EventKind = Literal[
     "subagent_run",
     "skill_run",
     "instruction_load",
+    "file_attachment",
     "harness",
     "tool_call",
     "tool_result",
@@ -173,6 +174,8 @@ class ToolUse:
     chars: int | None = None
     # A hash of a shell command, so repeats of one command are found without keeping its text.
     fingerprint: str | None = None
+    # The transcript row holding a call; None for a result.
+    row_id: str | None = None
     # Whether a result reports an error; None on a call.
     error: bool | None = None
     # Whether a result is only the acknowledgement that a background agent was launched.
@@ -185,6 +188,21 @@ class InstructionLoad:
 
     path: str
     memory_type: str | None = None
+
+
+@dataclass(frozen=True)
+class FileAttachment:
+    """One file Claude Code attached: its path and whether the whole file (`whole`) or only its name; never content."""
+
+    path: str
+    whole: bool
+
+
+@dataclass(frozen=True)
+class CompactionPreserved:
+    """The transcript rows Claude Code kept across a compaction."""
+
+    row_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -356,8 +374,6 @@ class RequestSize:
     # A digest of the request's system blocks, never their text; two requests sent with the same system prompt share
     # it whatever their tools.
     system_digest: str = ""
-    # The files whose read result sits among the request's messages, sorted; never the results themselves.
-    reads: tuple[str, ...] = ()
 
 
 @dataclass
@@ -386,12 +402,6 @@ class RequestChain:
     pool: dict[str, MessageSize] = field(default_factory=dict)
     prefix: list[MessageSize] = field(default_factory=lambda: [MessageSize()])
     merge: AssistantMerge = field(default_factory=AssistantMerge)
-    # The call ids of the tool results each known message holds, by message hash.
-    results: dict[str, tuple[str, ...]] = field(default_factory=dict)
-    # The file each file-reading call targeted, by call id.
-    read_paths: dict[str, str] = field(default_factory=dict)
-    # The call ids of the tool results in each message of the previous request, in order.
-    messages: list[tuple[str, ...]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -441,12 +451,14 @@ class EventRecord:
     usage: TokenUsage | None = None
     # The agent type of a `subagent_run` record.
     subagent_type: str | None = None
-    # The file of an `instruction_load` record, the piece of the harness's context a `harness` record names, the
-    # prompt a transcript's `prompt_submit` record sizes, the skill a `skill_run` record names, or the launch a
-    # `subagent_run` record describes, the size of the text an `assistant_text` record carries, or the sizes of
-    # an `api_request` record's request.
+    # The file of an `instruction_load` or `file_attachment` record, the rows a `post_compact` record kept, the piece
+    # of the harness's context a `harness` record names, the prompt a transcript's `prompt_submit` record sizes, the
+    # skill a `skill_run` record names, the launch a `subagent_run` record describes, the size of the text an
+    # `assistant_text` record carries, or the sizes of an `api_request` record's request.
     item: (
         InstructionLoad
+        | FileAttachment
+        | CompactionPreserved
         | HarnessEntry
         | PromptEntry
         | SkillRun
@@ -461,6 +473,11 @@ class EventRecord:
     def load(self) -> InstructionLoad | None:
         """The file an `instruction_load` record names."""
         return self.item if isinstance(self.item, InstructionLoad) else None
+
+    @property
+    def attachment(self) -> FileAttachment | None:
+        """The file a `file_attachment` record names."""
+        return self.item if isinstance(self.item, FileAttachment) else None
 
     @property
     def harness(self) -> HarnessEntry | None:
@@ -519,9 +536,11 @@ class EventRecord:
         }
 
     def _path(self) -> str | None:
-        """The file path the record names: the tool's target or the loaded instruction file."""
+        """The file path the record names: the tool's target, the attached file or the loaded instruction file."""
         if self.tool is not None:
             return self.tool.path
+        if self.attachment is not None:
+            return self.attachment.path
         return None if self.load is None else self.load.path
 
     @classmethod

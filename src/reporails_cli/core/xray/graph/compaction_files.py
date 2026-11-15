@@ -1,12 +1,12 @@
-"""What each compaction did to the instruction files an agent had loaded before it."""
+"""What each compaction left of the instruction files an agent had loaded before it."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
-from reporails_cli.core.platform.dto.events import EventRecord, RequestSize
+from reporails_cli.core.platform.dto.events import CompactionPreserved, EventRecord
 from reporails_cli.core.platform.dto.xray_build import SourceTable
-from reporails_cli.core.platform.dto.xray_compaction import HELD_FILE_STATES, FileState, XrayFileState
+from reporails_cli.core.platform.dto.xray_compaction import IN_CONTEXT_FILE_STATES, FileState, XrayFileState
 from reporails_cli.core.platform.dto.xray_sources import INSTRUCTION_ARTIFACT_KINDS, SOURCE_KIND_OF_ARTIFACT
 from reporails_cli.core.xray.derive import epoch
 from reporails_cli.core.xray.graph.sources import for_path
@@ -21,67 +21,74 @@ def _instruction_source(path: str, sources: SourceTable) -> str | None:
     return entry.id if entry is not None and entry.kind in _INSTRUCTION_SOURCE_KINDS else None
 
 
-def _state(
-    source: str, reloaded: set[str], request: RequestSize | None, read: set[str], indirect: set[str], *, waiting: bool
-) -> FileState:
-    """The state of one file after a compaction: loaded again, its read result in the first request after it, or
-    gone. While the agent has not replied since the compaction (`waiting`) a file not loaded again is pending. A reply
-    with no request recorded before it cannot settle it, nor can a request that names a message the file never
-    recorded, nor can one settle a file that arrived beside the read of another file
-    (`indirect`): the request holds no read result of its own path for it, kept or not."""
+def _read_before(record: EventRecord, sources: SourceTable) -> set[str]:
+    """The instruction file a read call targets, as a set of one source id; empty when it targets none."""
+    sid = _instruction_source(record.tool.path, sources) if record.tool and record.tool.path else None
+    return {sid} if sid is not None else set()
+
+
+def _state(source: str, reloaded: set[str], whole: set[str], named: set[str], *, waiting: bool) -> FileState:
+    """The state of one file after a compaction: loaded again, attached whole or read in a message the compaction kept
+    (`whole`), or only named (`named`). A file none of them holds is pending while the agent has not replied since the
+    compaction (`waiting`), else summarized."""
     if source in reloaded:
         return "reloaded"
-    if request is None:
-        return "pending" if waiting else "unknown"
-    if request.unresolved:
-        return "unknown"
-    if source in indirect and source not in read:
-        return "unknown"
-    return "kept" if source in read else "dropped"
+    if source in whole:
+        return "restored"
+    if source in named:
+        return "named"
+    return "pending" if waiting else "summarized"
 
 
 def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tuple[XrayFileState, ...]]:
     """For each compaction among `records`, in time order, each instruction file loaded before it with its state
-    after it. The loads that follow the compaction before the agent's next reply are its reloads; the first request
-    after it holds the read results that survived. A file left in the context carries on to the next compaction."""
+    after it. The loads and file attachments that follow the compaction before the agent's next reply settle its
+    files, and so do the files read in the messages the compaction kept. A file whose content is in the context carries
+    on to the next compaction."""
     held: set[str] = set()
-    pending: tuple[float, tuple[str, ...]] | None = None
+    pending: tuple[float, tuple[str, ...], frozenset[str]] | None = None
     reloaded: set[str] = set()
-    indirect: set[str] = set()
-    request: RequestSize | None = None
+    whole: set[str] = set()
+    named: set[str] = set()
+    read_in: dict[str, str] = {}
     done: list[tuple[float, tuple[XrayFileState, ...]]] = []
 
     def settle(*, waiting: bool = False) -> None:
         nonlocal held
         if pending is None:
             return
-        read = {sid for path in (request.reads if request else ()) if (sid := _instruction_source(path, sources))}
+        kept = {
+            sid
+            for row_id in pending[2]
+            if (path := read_in.get(row_id)) and (sid := _instruction_source(path, sources))
+        }
         states = tuple(
-            XrayFileState(src, _state(src, reloaded, request, read, indirect, waiting=waiting)) for src in pending[1]
+            XrayFileState(src, _state(src, reloaded, whole | kept, named, waiting=waiting)) for src in pending[1]
         )
         done.append((pending[0], states))
-        held = {item.source for item in states if item.state in HELD_FILE_STATES} | reloaded
+        held = {item.source for item in states if item.state in IN_CONTEXT_FILE_STATES} | reloaded
 
     for record in records:
         if record.event == "post_compact":
             settle()
             moment = epoch(record.time)
-            pending = None if moment is None else (moment, tuple(sorted(held)))
-            reloaded, request = set(), None
+            preserved = record.item.row_ids if isinstance(record.item, CompactionPreserved) else ()
+            pending = None if moment is None else (moment, tuple(sorted(held)), frozenset(preserved))
+            reloaded, whole, named = set(), set(), set()
         elif record.event == "assistant_usage" and pending is not None:
             settle()
             pending = None
-        elif record.event == "api_request" and pending is not None and request is None:
-            request = record.request
         elif record.event == "instruction_load" and record.load is not None:
             sid = _instruction_source(record.load.path, sources)
             if sid is not None:
                 (reloaded if pending is not None else held).add(sid)
-                (indirect.add if record.load.memory_type == "nested" else indirect.discard)(sid)
-        elif record.event == "tool_call" and record.tool is not None and record.tool.category == "read":
-            sid = _instruction_source(record.tool.path, sources) if record.tool.path and pending is None else None
+        elif record.event == "file_attachment" and record.attachment is not None and pending is not None:
+            sid = _instruction_source(record.attachment.path, sources)
             if sid is not None:
-                held.add(sid)
-                indirect.discard(sid)
+                (whole if record.attachment.whole else named).add(sid)
+        elif record.event == "tool_call" and record.tool is not None and record.tool.category == "read":
+            if record.tool.row_id and record.tool.path:
+                read_in[record.tool.row_id] = record.tool.path
+            held |= _read_before(record, sources) if pending is None else set()
     settle(waiting=True)
     return [states for _, states in sorted(done, key=lambda item: item[0])]

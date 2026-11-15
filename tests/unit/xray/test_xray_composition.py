@@ -10,13 +10,14 @@ import pytest
 
 from reporails_cli.core.platform.contract.json_value import as_list
 from reporails_cli.core.platform.dto.events import (
+    CompactionPreserved,
     EventRecord,
+    FileAttachment,
     HarnessEntry,
-    MessageSize,
     PromptEntry,
     ReplyText,
-    RequestSize,
     TokenUsage,
+    ToolUse,
 )
 from reporails_cli.core.platform.dto.xray_composition import COMPOSITION_KEYS, REMAINDER_KEY
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile
@@ -51,10 +52,9 @@ def _num(row: Row, key: str) -> int:
     return value
 
 
-def _first_request(seconds: float, *read: ArtifactFile) -> EventRecord:
-    """The first request after a compaction, holding the read results of the files `read`."""
-    size = RequestSize("req", 0, 0, 0, MessageSize(), 0, (), None, reads=tuple(item.path for item in read))
-    return rec("api_request", seconds, item=size)
+def _attached(seconds: float, *files: ArtifactFile, whole: bool = True) -> list[EventRecord]:
+    """The records of Claude Code attaching `files` whole, or only their names, after a compaction."""
+    return [rec("file_attachment", seconds, item=FileAttachment(item.path, whole=whole)) for item in files]
 
 
 def _note(seconds: float) -> EventRecord:
@@ -160,7 +160,7 @@ def test_a_compaction_drops_the_hook_notes_and_the_hook_sources_attribution_and_
         _note(0.2),
         priced(1),
         rec("post_compact", 2, source="auto"),
-        _first_request(2.5, claude),
+        *_attached(2.5, claude),
         priced(3),
     ]
     before, after = _rows(tmp_path, records)
@@ -176,7 +176,7 @@ def test_a_hook_note_after_a_compaction_and_before_the_next_reply_stays_in_the_c
     records = [
         load(0.1, claude),
         rec("post_compact", 10, source="auto"),
-        _first_request(11, claude),
+        *_attached(11, claude),
         _note(12),
         rec("assistant_usage", 15, usage=TokenUsage("m15", 1, 0, 9999, "claude-opus-4-8")),
     ]
@@ -195,7 +195,7 @@ def test_a_compaction_zeroes_the_conversation_and_tool_results_after_it_and_keep
         _returned(0.7, 2000),
         reply(1, context=10000),
         rec("post_compact", 2, source="auto"),
-        _first_request(2.5, claude),
+        *_attached(2.5, claude),
         reply(3, context=4000),
         _typed(3.5, 400),
         reply(4, context=4500),
@@ -206,25 +206,19 @@ def test_a_compaction_zeroes_the_conversation_and_tool_results_after_it_and_keep
     assert (later["conversation"], later["tool_results"]) == (100, 0)
 
 
-def test_a_compaction_takes_a_file_out_of_the_chart_when_its_read_result_is_not_in_the_first_request(
-    tmp_path: Path,
-) -> None:
+def test_a_compaction_takes_a_file_out_of_the_chart_when_nothing_of_it_comes_back(tmp_path: Path) -> None:
     claude, rule, _ = _files(tmp_path)
     records = [
         load(0.1, claude),
         load(0.2, rule),
         reply(1, context=10000),
         rec("post_compact", 2, source="auto"),
-        _first_request(2.5, claude),
+        *_attached(2.5, claude),
         reply(3, context=4000),
     ]
     before, after = _rows(tmp_path, records)
     assert after["instructions"] == 100 and before["instructions"] + before["rules_skills"] > after["instructions"]
-    unsettled_before, unsettled_after = _rows(tmp_path, [r for r in records if r.event != "api_request"])
-    assert (unsettled_after["instructions"], unsettled_after["rules_skills"]) == (
-        unsettled_before["instructions"],
-        unsettled_before["rules_skills"],
-    )
+    assert after["rules_skills"] == 0
 
 
 def test_the_skills_listing_sums_its_delta_rows_and_an_agent_without_a_reply_has_no_rows(tmp_path: Path) -> None:
@@ -303,11 +297,11 @@ def test_a_file_first_loaded_after_a_compaction_is_listed_by_the_next_compaction
         load(0.1, claude),
         reply(1, context=10000),
         rec("post_compact", 2, source="auto"),
-        _first_request(2.5, claude),
+        *_attached(2.5, claude),
         load(2.7, rule),
         reply(3, context=4000),
         rec("post_compact", 4, source="auto"),
-        _first_request(4.5, claude, rule),
+        *_attached(4.5, claude, rule),
         reply(5, context=3000),
     ]
     graph = _graph(tmp_path, records, _files(tmp_path))
@@ -317,43 +311,67 @@ def test_a_file_first_loaded_after_a_compaction_is_listed_by_the_next_compaction
     assert {item.source for item in second.files} == {"CLAUDE.md", "rules/r.md"}
 
 
-def test_a_nested_file_with_no_read_result_of_its_own_is_unknown_after_a_compaction_not_dropped(tmp_path: Path) -> None:
-    claude, rule, _ = _files(tmp_path)
-    records = [
-        load(0.1, claude),
-        load(0.2, rule, memory_type="nested"),
-        reply(1, context=10000),
-        rec("post_compact", 2, source="auto"),
-        _first_request(2.5, claude),
-        reply(3, context=4000),
-    ]
+def _states(tmp_path: Path, records: Sequence[EventRecord]) -> dict[str, str]:
     graph = _graph(tmp_path, records, _files(tmp_path))
     (compaction,) = next(item for item in graph.stations if item.node == "main").compactions
-    assert {item.source: item.state for item in compaction.files} == {"CLAUDE.md": "kept", "rules/r.md": "unknown"}
+    return {item.source: item.state for item in compaction.files}
 
 
-def test_an_unknown_file_keeps_its_chart_share_and_is_listed_by_the_next_compaction(tmp_path: Path) -> None:
+def test_a_file_is_reloaded_restored_named_or_only_in_the_summary(tmp_path: Path) -> None:
+    claude, rule, memory = _files(tmp_path)
+    records = [
+        load(0.1, claude),
+        load(0.2, rule, memory_type="nested"),
+        load(0.3, memory),
+        reply(1, context=10000),
+        rec("post_compact", 2, source="auto"),
+        load(2.2, claude),
+        *_attached(2.5, rule),
+        *_attached(2.6, memory, whole=False),
+        reply(3, context=4000),
+    ]
+    assert _states(tmp_path, records) == {"CLAUDE.md": "reloaded", "rules/r.md": "restored", "MEMORY.md": "named"}
+    assert _states(tmp_path, [*records[:6], reply(3, context=4000)]) == {
+        "CLAUDE.md": "reloaded",
+        "rules/r.md": "summarized",
+        "MEMORY.md": "summarized",
+    }
+
+
+def test_a_file_read_in_a_message_the_compaction_kept_is_restored(tmp_path: Path) -> None:
+    claude, rule, _ = _files(tmp_path)
+    read = rec("tool_call", 0.5, tool=ToolUse("Read", "t1", rule.path, category="read", row_id="row-1"))
+    kept = rec("post_compact", 2, item=CompactionPreserved(("row-1",)))
+    records = [load(0.1, claude), load(0.2, rule, memory_type="nested"), read, reply(1, context=10000), kept]
+    assert _states(tmp_path, [*records, reply(3, context=4000)]) == {
+        "CLAUDE.md": "summarized",
+        "rules/r.md": "restored",
+    }
+
+
+def test_a_named_file_leaves_the_chart_and_the_next_compaction_does_not_list_it(tmp_path: Path) -> None:
     claude, rule, _ = _files(tmp_path)
     records = [
         load(0.1, claude),
         load(0.2, rule, memory_type="nested"),
         reply(1, context=10000),
         rec("post_compact", 2, source="auto"),
-        _first_request(2.5, claude),
+        *_attached(2.5, claude),
+        *_attached(2.6, rule, whole=False),
         reply(3, context=4000),
         rec("post_compact", 4, source="auto"),
-        _first_request(4.5, claude),
+        *_attached(4.5, claude),
         reply(5, context=3000),
     ]
     before, after, *_ = _rows(tmp_path, records)
-    assert after["rules_skills"] == before["rules_skills"] > 0
+    assert after["rules_skills"] == 0 < before["rules_skills"]
     graph = _graph(tmp_path, records, _files(tmp_path))
     first, second = next(item for item in graph.stations if item.node == "main").compactions
-    assert {item.source: item.state for item in first.files}["rules/r.md"] == "unknown"
-    assert {item.source: item.state for item in second.files}["rules/r.md"] == "unknown"
+    assert {item.source: item.state for item in first.files}["rules/r.md"] == "named"
+    assert {item.source for item in second.files} == {"CLAUDE.md"}
 
 
-def test_a_file_is_pending_while_no_request_follows_the_compaction(tmp_path: Path) -> None:
+def test_a_file_is_pending_while_the_agent_has_not_replied_since_the_compaction(tmp_path: Path) -> None:
     claude, rule, _ = _files(tmp_path)
     records = [
         load(0.1, claude),
@@ -361,20 +379,4 @@ def test_a_file_is_pending_while_no_request_follows_the_compaction(tmp_path: Pat
         reply(1, context=10000),
         rec("post_compact", 2, source="manual"),
     ]
-    graph = _graph(tmp_path, records, _files(tmp_path))
-    (compaction,) = next(item for item in graph.stations if item.node == "main").compactions
-    assert {item.source: item.state for item in compaction.files} == {"CLAUDE.md": "pending", "rules/r.md": "pending"}
-
-
-def test_a_reply_with_no_request_before_it_leaves_its_files_unknown(tmp_path: Path) -> None:
-    claude, rule, _ = _files(tmp_path)
-    records = [
-        load(0.1, claude),
-        load(0.2, rule, memory_type="nested"),
-        reply(1, context=10000),
-        rec("post_compact", 2, source="manual"),
-        reply(3, context=4000),
-    ]
-    graph = _graph(tmp_path, records, _files(tmp_path))
-    (compaction,) = next(item for item in graph.stations if item.node == "main").compactions
-    assert {item.source: item.state for item in compaction.files} == {"CLAUDE.md": "unknown", "rules/r.md": "unknown"}
+    assert _states(tmp_path, records) == {"CLAUDE.md": "pending", "rules/r.md": "pending"}

@@ -22,7 +22,7 @@ from reporails_cli.core.eventbus.transcript import (
     subagent_system,
 )
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object
-from reporails_cli.core.platform.dto.events import EventRecord, ReplyText, TranscriptCursor
+from reporails_cli.core.platform.dto.events import CompactionPreserved, EventRecord, ReplyText, TranscriptCursor
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_eventbus]
 
@@ -1116,3 +1116,36 @@ def test_opens_with_clear_asks_the_adapter_registered_for_the_agent(
     session.write_text(_user_row("hi"))
     assert opens_with_clear("other", session) is True
     assert asked == [{"type": "user", "message": {"content": "hi"}}]
+
+
+def _attachment_session(tmp_path: Path, *attachments: JsonObject, boundary: JsonObject | None = None) -> Path:
+    stamp = {"sessionId": "s1", "timestamp": "2026-11-03T10:00:00Z", "cwd": "/p"}
+    rows: list[JsonObject] = [{"type": "system", "subtype": "compact_boundary", **(boundary or {}), **stamp}]
+    rows += [{"type": "attachment", "attachment": item, **stamp} for item in attachments]
+    path = tmp_path / "session.jsonl"
+    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    return path
+
+
+def test_a_file_attachment_names_its_path_and_never_holds_the_file_text(tmp_path: Path) -> None:
+    whole = {"type": "file", "filename": "/p/a.md", "content": {"type": "text", "file": {"content": "SECRET-TEXT"}}}
+    named = {"type": "compact_file_reference", "filename": "/p/b.md", "displayPath": "b.md"}
+    records, _ = read_transcript("claude", _attachment_session(tmp_path, whole, named), TranscriptCursor())
+    attached = [(r.attachment.path, r.attachment.whole) for r in _of(records, "file_attachment") if r.attachment]
+    assert attached == [("/p/a.md", True), ("/p/b.md", False)]
+    assert "SECRET-TEXT" not in repr(records) + json.dumps([r.to_json() for r in records])
+
+
+def test_a_file_attachment_without_a_filename_is_a_refusal(tmp_path: Path) -> None:
+    records, _ = read_transcript(
+        "claude", _attachment_session(tmp_path, {"type": "file", "content": {}}), TranscriptCursor()
+    )
+    assert not _of(records, "file_attachment")
+    assert any("filename" in (r.refusal or "") for r in _of(records, "refusal"))
+
+
+def test_a_compaction_names_the_rows_it_kept(tmp_path: Path) -> None:
+    kept = {"compactMetadata": {"trigger": "manual", "preservedMessages": {"uuids": ["u1", "u2"]}}}
+    records, _ = read_transcript("claude", _attachment_session(tmp_path, boundary=kept), TranscriptCursor())
+    (compaction,) = _of(records, "post_compact")
+    assert isinstance(compaction.item, CompactionPreserved) and compaction.item.row_ids == ("u1", "u2")

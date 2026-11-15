@@ -60,7 +60,12 @@ the adapter refuses any other shape of a row type it reads:
   `status`, a string, which is `forked` when the skill ran in a subagent of its own (`context: fork`); no other
   key of the object is read. A `success: false` run, and a `toolUseResult` that is not an object or has no
   `commandName`, yield nothing.
-- a compaction: `type: "system"` with `subtype: "compact_boundary"` and `compactMetadata.trigger`.
+- a compaction: `type: "system"` with `subtype: "compact_boundary"`, `compactMetadata.trigger` and, when present,
+  `compactMetadata.preservedMessages.uuids`, a list of the ids of the rows Claude Code kept across it.
+- a file attachment: `type: "attachment"` with `attachment.type: "file"` and `attachment.filename`, a string, which
+  holds the whole file (its `content` is never read), or `attachment.type: "compact_file_reference"` and
+  `attachment.filename`, a string, which names a file read before a compaction whose content was too large to
+  include. Both follow a `compact_boundary` row before the next assistant reply.
 - a subagent brief: the first row of a subagent file, `type: "user"` with `message.content` a string or a
   list of blocks whose `type: "text"` blocks hold `text`.
 - every row the adapter reads (assistant, system, attachment) carries `sessionId` and `timestamp`; a row
@@ -135,8 +140,10 @@ from reporails_cli.core.platform.contract.json_value import (
     strict_str_list,
 )
 from reporails_cli.core.platform.dto.events import (
+    CompactionPreserved,
     EventKind,
     EventRecord,
+    FileAttachment,
     HarnessAttachment,
     HarnessEntry,
     InstructionLoad,
@@ -303,7 +310,10 @@ class ClaudeTranscriptAdapter:
 
     def _tool_calls(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         return [
-            replace(self._record(row, "tool_call", subagent_id), tool=tool_call(block))
+            replace(
+                self._record(row, "tool_call", subagent_id),
+                tool=replace(tool_call(block), row_id=opt_str(row.get("uuid"))),
+            )
             for block in content_blocks(row, "tool_use")
         ]
 
@@ -332,7 +342,10 @@ class ClaudeTranscriptAdapter:
 
     def _compaction(self, row: JsonObject, subagent_id: str | None) -> EventRecord:
         trigger = opt_str(as_object(row.get("compactMetadata")).get("trigger"))
-        return replace(self._record(row, "post_compact", subagent_id), source=trigger)
+        metadata = as_object(row.get("compactMetadata"))
+        kept = strict_str_list(as_object(metadata.get("preservedMessages")).get("uuids"))
+        item = CompactionPreserved(tuple(kept)) if kept else None
+        return replace(self._record(row, "post_compact", subagent_id), source=trigger, item=item)
 
     def _typed_text(self, row: JsonObject) -> str | None:
         """The text of a row a person typed, None for any other row."""
@@ -408,14 +421,16 @@ class ClaudeTranscriptAdapter:
             ]
         if kind == "instructions":
             return self._instructions(row, attachment, subagent_id)
+        if kind in ("file", "compact_file_reference"):
+            path = required_text(attachment, "filename", f"{kind} attachment")
+            item = FileAttachment(path, whole=kind == "file")
+            return [replace(self._record(row, "file_attachment", subagent_id), item=item)]
         if kind in HOOK_NOTE_ATTACHMENTS:
             return self._hook_note(row, attachment, subagent_id)
         if kind == "queued_command":
             return self._prompt(row, subagent_id)
         entry = self._harness_entry(attachment, kind)
-        if entry is None:
-            return []
-        return [self._harness(row, entry, subagent_id)]
+        return [] if entry is None else [self._harness(row, entry, subagent_id)]
 
     def _instructions(self, row: JsonObject, attachment: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         loads: list[EventRecord] = []

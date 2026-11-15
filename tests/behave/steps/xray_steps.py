@@ -1811,43 +1811,38 @@ def step_reduced_motion(context):
 # ---- the state each instruction file is in after a compaction ----
 
 
+ATTACHED_TEXT = "ATTACHED-FILE-TEXT: the text of a file Claude Code put back after the summary."
+
+
+def _file_attachment(project: Path, name: str) -> dict:
+    path = str(project / name)
+    content = {"type": "text", "file": {"filePath": path, "content": ATTACHED_TEXT, "numLines": 1}}
+    return {"type": "file", "filename": path, "content": content, "displayPath": name}
+
+
 def _write_compacted_session(context, *, recorded: bool) -> None:
-    """A session that loaded its root file and two nested ones, compacted, reloaded the root file, and whose first
-    request after the compaction replays the read result of one nested file (rows with request layouts only when
-    `recorded`)."""
+    """A session that loaded its root file and three nested ones, compacted, reloaded the root file, and after the
+    compaction had one nested file attached whole, one attached by name only and one not attached (rows with request
+    layouts only when `recorded`)."""
     context.project = build_project(context.tmpdir / "proj").resolve()
     project = context.project
     version = "2.1.309" if recorded else "2.1.301"
-    for name, size in (("CLAUDE.md", 400), ("sub/CLAUDE.md", 8000), ("kept/CLAUDE.md", 400)):
+    for name, size in (
+        ("CLAUDE.md", 400),
+        ("restored/CLAUDE.md", 400),
+        ("named/CLAUDE.md", 8000),
+        ("sub/CLAUDE.md", 8000),
+    ):
         target = project / name
         target.parent.mkdir(exist_ok=True)
         target.write_text("x" * size + "\n", encoding="utf-8")
-    kept = str(project / "kept" / "CLAUDE.md")
-    ask = "synthetic prompt"
-    blobs = {
-        "blob-summary": {"role": "user", "content": "synthetic summary"},
-        "blob-use": {
-            "role": "assistant",
-            "content": [{"type": "tool_use", "id": "toolu_kept", "name": "Read", "input": {"file_path": kept}}],
-        },
-        "blob-result": {
-            "role": "user",
-            "content": [{"type": "tool_result", "tool_use_id": "toolu_kept", "content": "synthetic file text"}],
-        },
-    }
     loads = {"type": "instructions", "files": [{"path": str(project / "CLAUDE.md"), "type": "Project"}]}
-    rows = [
-        _row("attachment", 1, version, project, attachment=loads),
-        _row(
-            "attachment",
-            2,
-            version,
-            project,
-            attachment={"type": "nested_memory", "path": str(project / "sub" / "CLAUDE.md")},
-        ),
-        _row("attachment", 3, version, project, attachment={"type": "nested_memory", "path": kept}),
-    ]
+    rows = [_row("attachment", 1, version, project, attachment=loads)]
+    for second, name in enumerate(("restored", "named", "sub"), start=2):
+        nested = {"type": "nested_memory", "path": str(project / name / "CLAUDE.md")}
+        rows.append(_row("attachment", second, version, project, attachment=nested))
     if recorded:
+        ask = "synthetic prompt"
         rows += [
             _shape_row("shape-main", "s" * 2000),
             _row("user", 4, version, project, message={"role": "user", "content": ask}),
@@ -1856,11 +1851,23 @@ def _write_compacted_session(context, *, recorded: bool) -> None:
     first = _reply(6, version, project, "msg_1", [{"type": "text", "text": "ok"}], _usage(9000, 100), "req-1")
     second = _reply(23, version, project, "msg_2", [{"type": "text", "text": "ok"}], _usage(900, 100), "req-2")
     boundary = _row("system", 20, version, project, subtype="compact_boundary", compactMetadata={"trigger": "manual"})
-    rows += [first, boundary, _row("attachment", 20, version, project, attachment=loads)]
+    reference = {
+        "type": "compact_file_reference",
+        "filename": str(project / "named" / "CLAUDE.md"),
+        "displayPath": "named",
+    }
+    rows += [
+        first,
+        boundary,
+        _row("attachment", 20, version, project, attachment=loads),
+        _row("attachment", 20, version, project, attachment=_file_attachment(project, "restored/CLAUDE.md")),
+        _row("attachment", 20, version, project, attachment=reference),
+    ]
     if recorded:
-        rows += [{"type": "api-request-blob", "hash": name, "message": message} for name, message in blobs.items()]
-        tail = ["blob-summary", "blob-use", "blob-result"]
-        rows.append(_request_row("req-2", "shape-main", 0, tail, 22, project))
+        rows.append(
+            {"type": "api-request-blob", "hash": "blob-summary", "message": {"role": "user", "content": "summary"}}
+        )
+        rows.append(_request_row("req-2", "shape-main", 0, ["blob-summary"], 22, project))
     rows.append(second)
     if not recorded:
         for row in rows:
@@ -1870,12 +1877,12 @@ def _write_compacted_session(context, *, recorded: bool) -> None:
     (folder / "session.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
 
 
-@given("a project with a session that compacted after loading three instruction files, recording requests")
+@given("a project with a session that compacted after loading four instruction files, recording requests")
 def step_compacted_recorded(context):
     _write_compacted_session(context, recorded=True)
 
 
-@given("an older Claude Code session that compacted after loading three instruction files")
+@given("an older Claude Code session that compacted after loading four instruction files")
 def step_compacted_unrecorded(context):
     _write_compacted_session(context, recorded=False)
 
@@ -1888,29 +1895,57 @@ def _file_states(context) -> dict[str, str]:
     return {by_id[item["source"]]: item["state"] for item in compaction["files"]}
 
 
-@then("the compaction lists the root file reloaded, the file read again kept and the other nested file unknown")
-def step_states_recorded(context):
+@then(
+    "the compaction lists the root file reloaded, the attached file restored, the named file named "
+    "and the other nested file summarized"
+)
+def step_states(context):
     states = _file_states(context)
-    assert states == {"CLAUDE.md": "reloaded", "kept/CLAUDE.md": "kept", "sub/CLAUDE.md": "unknown"}, states
+    assert states == {
+        "CLAUDE.md": "reloaded",
+        "restored/CLAUDE.md": "restored",
+        "named/CLAUDE.md": "named",
+        "sub/CLAUDE.md": "summarized",
+    }, states
 
 
-@then("the compaction lists each nested file as unknown and the root file as reloaded")
-def step_states_unrecorded(context):
-    states = _file_states(context)
-    assert states == {"CLAUDE.md": "reloaded", "kept/CLAUDE.md": "unknown", "sub/CLAUDE.md": "unknown"}, states
-
-
-@then("the chart's instruction files keep the unsettled file's tokens after the compaction")
-def step_chart_drops_file(context):
+@then("the chart's instruction files after the compaction hold only the reloaded and the restored files")
+def step_chart_holds_in_context_files(context):
     view = _session_view(context)
     composition = next(node for node in view["nodes"] if node["id"] == "main")["detail"]["composition"]
     before, after = (dict(zip(composition["keys"], reply[5:], strict=False)) for reply in composition["replies"])
-    assert before["instructions"] == after["instructions"], (before, after)
+    assert (before["instructions"], after["instructions"]) == (4200, 200), (before, after)
 
 
-@then("the chart's instruction files after the compaction still hold each nested file")
-def step_chart_drops_unknown(context):
-    view = _session_view(context)
-    composition = next(node for node in view["nodes"] if node["id"] == "main")["detail"]["composition"]
-    before, after = (dict(zip(composition["keys"], reply[5:], strict=False)) for reply in composition["replies"])
-    assert before["instructions"] == after["instructions"], (before, after)
+@when('the session\'s PostCompact hook payload is piped into "ails hook"')
+def step_hook_without_summary(context):
+    payload = {
+        "session_id": SESSION_ID,
+        "hook_event_name": "PostCompact",
+        "trigger": "manual",
+        "cwd": str(context.project),
+    }
+    env = {**suite_env(os.environ), "HOME": str(context.home), "USERPROFILE": str(context.home)}
+    done = subprocess.run(
+        [str(AILS_BIN), "hook", "--agent", "claude"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        env=env,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+
+
+@then('the attached file\'s text is in no event-log file and no "ails events" output')
+def step_attached_text_nowhere(context):
+    logged = [
+        p for p in (context.home / ".reporails").rglob("*") if p.is_file() and b"ATTACHED-FILE-TEXT" in p.read_bytes()
+    ]
+    assert not logged, logged
+    events = run_ails(context.tmpdir, "events", "--session", SESSION_ID, "-f", "json", home=context.home)
+    assert '"post_compact"' in events.stdout, events.stdout
+    assert "ATTACHED-FILE-TEXT" not in events.stdout + events.stderr, events.stdout
+    assert "ATTACHED-FILE-TEXT" not in json.dumps(_session_view(context))

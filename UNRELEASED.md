@@ -12,6 +12,7 @@
 - `ails check`, the MCP `validate` tool and opening `ails xray` now ask the reporails service first, before reading your files or downloading the model. When this hour's allowance is used up, or your version is no longer supported, the run stops right away and names the next step: signing up, when the allowance resets, or `ails update`.
 - When the reporails service cannot be reached, `ails check` stops and tells you to run with `--offline` for local checks only.
 - Heal's rewrite rules now come from the reporails service, so a rewrite is always held to the current rules without a cli update.
+- After a compaction, `ails xray` labels each instruction file loaded before it as loaded again, restored in full, named only (the agent must read it again) or only in the summary, and the chart keeps only the files whose content is back in context; this works on sessions from earlier Claude Code versions too.
 - The finding for a condition that names an outside system quotes the whole condition, its opening word included (`When external services fail`).
 
 ### Fixed
