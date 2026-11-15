@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from reporails_cli.core.platform.dto.events import CompactionPreserved, EventRecord
+from reporails_cli.core.platform.dto.events import EventRecord
 from reporails_cli.core.platform.dto.xray_build import SourceTable
 from reporails_cli.core.platform.dto.xray_compaction import IN_CONTEXT_FILE_STATES, FileState, XrayFileState
 from reporails_cli.core.platform.dto.xray_sources import INSTRUCTION_ARTIFACT_KINDS, SOURCE_KIND_OF_ARTIFACT
@@ -72,7 +72,7 @@ def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tu
         if record.event == "post_compact":
             settle()
             moment = epoch(record.time)
-            preserved = record.item.row_ids if isinstance(record.item, CompactionPreserved) else ()
+            preserved = record.boundary.kept if record.boundary is not None else ()
             pending = None if moment is None else (moment, tuple(sorted(held)), frozenset(preserved))
             reloaded, whole, named = set(), set(), set()
         elif record.event == "assistant_usage" and pending is not None:

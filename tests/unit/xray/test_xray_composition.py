@@ -10,7 +10,7 @@ import pytest
 
 from reporails_cli.core.platform.contract.json_value import as_list
 from reporails_cli.core.platform.dto.events import (
-    CompactionPreserved,
+    CompactionBoundary,
     EventRecord,
     FileAttachment,
     HarnessEntry,
@@ -341,7 +341,7 @@ def test_a_file_is_reloaded_restored_named_or_only_in_the_summary(tmp_path: Path
 def test_a_file_read_in_a_message_the_compaction_kept_is_restored(tmp_path: Path) -> None:
     claude, rule, _ = _files(tmp_path)
     read = rec("tool_call", 0.5, tool=ToolUse("Read", "t1", rule.path, category="read", row_id="row-1"))
-    kept = rec("post_compact", 2, item=CompactionPreserved(("row-1",)))
+    kept = rec("post_compact", 2, item=CompactionBoundary("b1", ("row-1",)))
     records = [load(0.1, claude), load(0.2, rule, memory_type="nested"), read, reply(1, context=10000), kept]
     assert _states(tmp_path, [*records, reply(3, context=4000)]) == {
         "CLAUDE.md": "summarized",

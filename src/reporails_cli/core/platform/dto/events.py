@@ -199,13 +199,6 @@ class FileAttachment:
 
 
 @dataclass(frozen=True)
-class CompactionPreserved:
-    """The transcript rows Claude Code kept across a compaction."""
-
-    row_ids: tuple[str, ...]
-
-
-@dataclass(frozen=True)
 class SkillRun:
     """One skill or command the agent ran: its name as the session shows it and whether it ran in a subagent of
     its own (`context: fork`); never its output."""
@@ -285,9 +278,10 @@ class HarnessEntry:
 @dataclass(frozen=True)
 class CompactionBoundary:
     """The transcript row that recorded a compaction: its id, which the compaction's summary row names as its
-    parent (None when the row has none)."""
+    parent (None when the row has none), and the ids of the rows Claude Code kept across it."""
 
     id: str | None
+    kept: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -459,14 +453,13 @@ class EventRecord:
     usage: TokenUsage | None = None
     # The agent type of a `subagent_run` record.
     subagent_type: str | None = None
-    # The file of an `instruction_load` or `file_attachment` record, the rows a `post_compact` record kept, the piece
+    # The file of an `instruction_load` or `file_attachment` record, the boundary row of a `post_compact` record, the piece
     # of the harness's context a `harness` record names, the prompt a transcript's `prompt_submit` record sizes, the
     # skill a `skill_run` record names, the launch a `subagent_run` record describes, the size of the text an
     # `assistant_text` record carries, or the sizes of an `api_request` record's request.
     item: (
         InstructionLoad
         | FileAttachment
-        | CompactionPreserved
         | HarnessEntry
         | PromptEntry
         | SkillRun
@@ -598,16 +591,3 @@ class HarnessAttachment:
     chars_key: str
     chars_is_text: bool
     removed_key: str | None = None
-
-
-@dataclass(frozen=True)
-class CallDetail:
-    """What one tool call said when asked for: its tool, the shell command (None for a call that is not a shell
-    one), its input as indented JSON, an excerpt of its result (None without one) and whether any of the three
-    was cut."""
-
-    tool: str
-    text: str | None
-    input: str
-    result: str | None
-    truncated: bool

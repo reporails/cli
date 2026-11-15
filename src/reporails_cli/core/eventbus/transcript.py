@@ -19,8 +19,8 @@ from reporails_cli.core.eventbus.port import (
 from reporails_cli.core.eventbus.store import UNSAFE_ID_CHARS
 from reporails_cli.core.eventbus.tail import read_appended_lines
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
-from reporails_cli.core.platform.dto.events import CallDetail, EventRecord, FileCursor, TranscriptCursor
-from reporails_cli.core.platform.dto.xray_build import SummarySpan
+from reporails_cli.core.platform.dto.events import EventRecord, FileCursor, TranscriptCursor
+from reporails_cli.core.platform.dto.xray_build import CallDetail, SummarySpan
 
 _SUBAGENT_PREFIX = "agent-"
 # How many of a project's transcripts the session listing keeps.

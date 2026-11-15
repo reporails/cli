@@ -22,7 +22,7 @@ from reporails_cli.core.eventbus.transcript import (
     subagent_system,
 )
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object
-from reporails_cli.core.platform.dto.events import CompactionPreserved, EventRecord, ReplyText, TranscriptCursor
+from reporails_cli.core.platform.dto.events import EventRecord, ReplyText, TranscriptCursor
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_eventbus]
 
@@ -1148,4 +1148,4 @@ def test_a_compaction_names_the_rows_it_kept(tmp_path: Path) -> None:
     kept = {"compactMetadata": {"trigger": "manual", "preservedMessages": {"uuids": ["u1", "u2"]}}}
     records, _ = read_transcript("claude", _attachment_session(tmp_path, boundary=kept), TranscriptCursor())
     (compaction,) = _of(records, "post_compact")
-    assert isinstance(compaction.item, CompactionPreserved) and compaction.item.row_ids == ("u1", "u2")
+    assert compaction.boundary is not None and compaction.boundary.kept == ("u1", "u2")
