@@ -1178,7 +1178,9 @@ def test_a_file_attachment_names_its_path_and_never_holds_the_file_text(tmp_path
     whole = {"type": "file", "filename": "/p/a.md", "content": {"type": "text", "file": {"content": "SECRET-TEXT"}}}
     named = {"type": "compact_file_reference", "filename": "/p/b.md", "displayPath": "b.md"}
     records, _ = read_transcript("claude", _attachment_session(tmp_path, whole, named), TranscriptCursor())
-    attached = [(r.attachment.path, r.attachment.whole) for r in _of(records, "file_attachment") if r.attachment]
+    attached = [
+        (r.attachment.path, r.attachment.kind == "file") for r in _of(records, "file_attachment") if r.attachment
+    ]
     assert attached == [("/p/a.md", True), ("/p/b.md", False)]
     assert "SECRET-TEXT" not in repr(records) + json.dumps([r.to_json() for r in records])
 

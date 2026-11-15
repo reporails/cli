@@ -18,6 +18,7 @@
 
 ### Fixed
 
+- The x-ray counts a memory note as loaded when it arrives by an `@` mention, an edit, a recall or a restore after a compaction, and a loaded source's chip is clearly lit.
 - The x-ray shows each compaction's summary by the transcript's own link between a compaction and its summary: a compaction that left no summary shows none, and the next compaction no longer shows its summary.
 - Opening a compaction summary in the x-ray reads only that summary from the transcript, not the whole file again.
 - `ails xray --current` follows a `/clear` chain on from each of several sessions cleared at the same moment, never past one into another, and opens the newest session the chains end in.

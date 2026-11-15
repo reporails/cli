@@ -1,13 +1,21 @@
-"""Field readers the Claude Code transcript adapter shares: a required text field, a list of strings, a meta field
-of one type, the items of a delta row sized by name, a subagent's brief and a usage object's cache-write split. Each
-refuses a field that is not the pinned shape."""
+"""Field readers the Claude Code transcript adapter shares: the files an attachment names, a required text field, a
+list of strings, a meta field of one type, the items of a delta row sized by name, a subagent's brief and a usage
+object's cache-write split. Each refuses a field that is not the pinned shape."""
 
 from __future__ import annotations
 
 from reporails_cli.core.eventbus.adapters.claude_calls import blocks_text
 from reporails_cli.core.eventbus.adapters.claude_requests import BLOCK_SEPARATOR
 from reporails_cli.core.eventbus.port import PayloadRefused
-from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, opt_str, strict_str_list
+from reporails_cli.core.platform.contract.json_value import (
+    JsonObject,
+    JsonValue,
+    as_list,
+    as_object,
+    opt_str,
+    strict_str_list,
+)
+from reporails_cli.core.platform.dto.events import AttachmentKind
 
 
 def meta_field[Field: (str, int, bool)](meta: JsonObject, key: str, kind: type[Field]) -> Field | None:
@@ -51,6 +59,15 @@ def required_text(row: JsonObject, key: str, what: str) -> str:
     if not value:
         raise PayloadRefused(f"{what} has no {key}")
     return value
+
+
+def attached_paths(attachment: JsonObject, kind: AttachmentKind) -> list[str]:
+    """The files an attachment row of type `kind` names: its `filename`, or each recalled note's `path`."""
+    if kind != "relevant_memories":
+        return [required_text(attachment, "filename", f"{kind} attachment")]
+    return [
+        required_text(as_object(note), "path", "relevant_memories note") for note in as_list(attachment.get("memories"))
+    ]
 
 
 def brief_text(first_row: JsonObject) -> str | None:

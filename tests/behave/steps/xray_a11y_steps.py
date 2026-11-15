@@ -151,6 +151,15 @@ def step_borders(context):
         assert item["ratio"] >= 3, item
 
 
+@then("a loaded slot chip's fill reaches 3 to 1 on its card and a chip with nothing loaded has no fill")
+def step_chip_fill(context):
+    seen = _a11y(context, "chip-fill")
+    if seen is None:
+        return
+    assert seen["chips"]["onFill"] >= 3, seen["chips"]
+    assert seen["chips"]["offFill"] == 0, seen["chips"]  # an unloaded chip: fully transparent
+
+
 @then("at a 580 pixel graph column every canvas text renders at least 10.5 pixels")
 def step_scale_text(context):
     seen = _a11y(context, "scale-text", 1220)

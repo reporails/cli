@@ -66,6 +66,9 @@ the adapter refuses any other shape of a row type it reads:
   holds the whole file (its `content` is never read), or `attachment.type: "compact_file_reference"` and
   `attachment.filename`, a string, which names a file read before a compaction whose content was too large to
   include. Both follow a `compact_boundary` row before the next assistant reply.
+- an edit snippet, `attachment.type: "edited_text_file"` with `attachment.filename`, a string (`snippet` is never
+  read), and recalled notes, `attachment.type: "relevant_memories"` with `attachment.memories`, objects each with a
+  `path` string, one file attachment per entry (`content` is never read).
 - a subagent brief: the first row of a subagent file, `type: "user"` with `message.content` a string or a
   list of blocks whose `type: "text"` blocks hold `text`.
 - every row the adapter reads (assistant, system, attachment) carries `sessionId` and `timestamp`; a row
@@ -123,6 +126,7 @@ from reporails_cli.core.eventbus.adapters.claude_requests import (
     shape_system_text,
 )
 from reporails_cli.core.eventbus.adapters.claude_rows import (
+    attached_paths,
     brief_text,
     meta_field,
     required_text,
@@ -446,10 +450,10 @@ class ClaudeTranscriptAdapter:
             ]
         if kind == "instructions":
             return self._instructions(row, attachment, subagent_id)
-        if kind in ("file", "compact_file_reference"):
-            path = required_text(attachment, "filename", f"{kind} attachment")
-            item = FileAttachment(path, whole=kind == "file")
-            return [replace(self._record(row, "file_attachment", subagent_id), item=item)]
+        match kind:
+            case "file" | "compact_file_reference" | "edited_text_file" | "relevant_memories":
+                base = self._record(row, "file_attachment", subagent_id)
+                return [replace(base, item=FileAttachment(path, kind)) for path in attached_paths(attachment, kind)]
         if kind in HOOK_NOTE_ATTACHMENTS:
             return self._hook_note(row, attachment, subagent_id)
         if kind == "queued_command":

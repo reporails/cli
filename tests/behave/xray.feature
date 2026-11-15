@@ -405,6 +405,13 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And with the details of "CLAUDE.md" open on each tab, a session that grows redraws no panel whose content is unchanged
 
   @e2e
+  Scenario: A memory note counts as loaded whether it arrived by an at-mention, an edit snippet or a recall
+    Given a project with a session whose only memory note loads are one mention, one edit snippet and one recall
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And each of the three notes shows as loaded on the main agent and in the funnel's memory counts
+
+  @e2e
   Scenario: A compaction lists each instruction file loaded before it as reloaded, restored, named or only in the summary
     Given a project with a session that compacted after loading four instruction files, recording requests
     When "ails xray --no-open" is started in the project
@@ -426,4 +433,4 @@ Feature: ails xray serves a session's context window on the loopback address thr
     When "ails xray --no-open" is started in the project
     And the session's PostCompact hook payload is piped into "ails hook"
     Then the printed address is on 127.0.0.1
-    And the attached file's text is in no event-log file and no "ails events" output
+    And the attached, edited and recalled files' text is in no event-log file and no "ails events" output

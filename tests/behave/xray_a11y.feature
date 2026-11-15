@@ -39,6 +39,7 @@ Feature: The x-ray page works by keyboard, keeps its focus, and stays readable t
   Scenario: Control borders and the selected indicator reach 3 to 1
     Given the bundled page is served over the "view_sample" fixture view
     Then segment and session switcher borders and the selected tab and segment indicators reach 3 to 1
+    And a loaded slot chip's fill reaches 3 to 1 on its card and a chip with nothing loaded has no fill
 
   @page @browser
   Scenario: At 580 pixels of graph column the canvas text still renders at 10.5 pixels

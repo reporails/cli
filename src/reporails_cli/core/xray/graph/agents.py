@@ -141,6 +141,9 @@ def _record_loads(record: EventRecord, reading: LoadReading) -> list[LoadEvent]:
         return _source_load(reading.sources.by_run.get(record.skill.name), t, reading)
     if record.event == "tool_call" and record.tool is not None and record.tool.category == "read" and record.tool.path:
         return _source_load(for_path(reading.sources, record.tool.path), t, reading)
+    attached = record.attachment
+    if attached is not None and attached.kind != "compact_file_reference":
+        return _source_load(for_path(reading.sources, attached.path), t, reading)
     return []
 
 

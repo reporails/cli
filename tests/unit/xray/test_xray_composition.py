@@ -55,7 +55,10 @@ def _num(row: Row, key: str) -> int:
 
 def _attached(seconds: float, *files: ArtifactFile, whole: bool = True) -> list[EventRecord]:
     """The records of Claude Code attaching `files` whole, or only their names, after a compaction."""
-    return [rec("file_attachment", seconds, item=FileAttachment(item.path, whole=whole)) for item in files]
+    return [
+        rec("file_attachment", seconds, item=FileAttachment(item.path, "file" if whole else "compact_file_reference"))
+        for item in files
+    ]
 
 
 def _note(seconds: float) -> EventRecord:

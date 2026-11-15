@@ -1889,6 +1889,8 @@ def _write_compacted_session(context, *, recorded: bool) -> None:
         _row("attachment", 20, version, project, attachment=loads),
         _row("attachment", 20, version, project, attachment=_file_attachment(project, "restored/CLAUDE.md")),
         _row("attachment", 20, version, project, attachment=reference),
+        _row("attachment", 21, version, project, attachment=_edited_text_attachment(project / "edited.txt")),
+        _row("attachment", 21, version, project, attachment=_relevant_memories_attachment(project / "recalled.txt")),
     ]
     if recorded:
         rows.append(
@@ -1902,6 +1904,58 @@ def _write_compacted_session(context, *, recorded: bool) -> None:
     folder = context.home / ".claude" / "projects" / claude_project_folder_name(project)
     folder.mkdir(parents=True)
     (folder / "session.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+
+EDIT_SNIPPET_TEXT = "EDIT-SNIPPET-TEXT: the lines Claude Code showed after an edit."
+RECALLED_TEXT = "RECALLED-NOTE-TEXT: a note Claude Code recalled for the turn."
+NOTE_NAMES = ("mentioned", "edited", "recalled")
+
+
+def _edited_text_attachment(path: Path) -> dict:
+    return {"type": "edited_text_file", "filename": str(path), "snippet": EDIT_SNIPPET_TEXT}
+
+
+def _relevant_memories_attachment(*paths: Path) -> dict:
+    notes = [{"path": str(path), "content": RECALLED_TEXT, "mtimeMs": 1.0e12} for path in paths]
+    return {"type": "relevant_memories", "memories": notes}
+
+
+@given("a project with a session whose only memory note loads are one mention, one edit snippet and one recall")
+def step_notes_reach_context(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    project = context.project
+    folder = context.home / ".claude" / "projects" / claude_project_folder_name(project)
+    memory = folder / "memory"
+    memory.mkdir(parents=True)
+    links = "".join(f"- [{name}]({name}.md) - a note\n" for name in NOTE_NAMES)
+    (memory / "MEMORY.md").write_text("# Memory\n" + links, encoding="utf-8")
+    for name in NOTE_NAMES:
+        (memory / f"{name}.md").write_text(f"---\ntype: feedback\n---\n{name} note\n", encoding="utf-8")
+    version = "2.1.311"
+    rows = [
+        _row("attachment", 1, version, project, attachment=_file_attachment(memory.parent, "memory/mentioned.md")),
+        _row("attachment", 2, version, project, attachment=_edited_text_attachment(memory / "edited.md")),
+        _row("attachment", 3, version, project, attachment=_relevant_memories_attachment(memory / "recalled.md")),
+        _reply(4, version, project, "msg_1", [{"type": "text", "text": "ok"}], _usage(900, 100), "req-1"),
+    ]
+    for row in rows:
+        row.pop("requestRef", None)
+    folder.joinpath("session.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+
+@then("each of the three notes shows as loaded on the main agent and in the funnel's memory counts")
+def step_notes_loaded(context):
+    view = _session_view(context)
+    by_name = {item["name"]: item for item in view["sources"] if item["kind"] == "memory"}
+    ids = {name: by_name[name]["id"] for name in NOTE_NAMES}
+    main = next(station for station in view["stations"] if station["node"] == "main")
+    loaded = {load["source"] for load in main["loads"]}
+    assert set(ids.values()) <= loaded, (ids, loaded)
+    assert all(by_name[name]["availability"] == "loaded" for name in NOTE_NAMES), by_name
+    (row,) = [item for item in view["funnel"] if item["kind"] == "memory"]
+    assert row["loaded"] == len(NOTE_NAMES) and row["used"] == len(NOTE_NAMES), row
+    card = next(node for node in view["nodes"] if node["id"] == "main")
+    assert card["slots"]["memory"]["count"] == len(NOTE_NAMES), card["slots"]
 
 
 @given("a project with a session that compacted after loading four instruction files, recording requests")
@@ -1966,16 +2020,16 @@ def step_hook_without_summary(context):
     assert done.returncode == 0, done.stderr
 
 
-@then('the attached file\'s text is in no event-log file and no "ails events" output')
+@then('the attached, edited and recalled files\' text is in no event-log file and no "ails events" output')
 def step_attached_text_nowhere(context):
-    logged = [
-        p for p in (context.home / ".reporails").rglob("*") if p.is_file() and b"ATTACHED-FILE-TEXT" in p.read_bytes()
-    ]
+    markers = (ATTACHED_TEXT, EDIT_SNIPPET_TEXT, RECALLED_TEXT)
+    stored = [p for p in (context.home / ".reporails").rglob("*") if p.is_file()]
+    logged = [(p, m) for p in stored for m in markers if m.encode() in p.read_bytes()]
     assert not logged, logged
     events = run_ails(context.tmpdir, "events", "--session", SESSION_ID, "-f", "json", home=context.home)
     assert '"post_compact"' in events.stdout, events.stdout
-    assert "ATTACHED-FILE-TEXT" not in events.stdout + events.stderr, events.stdout
-    assert "ATTACHED-FILE-TEXT" not in json.dumps(_session_view(context))
+    assert not [m for m in markers if m in events.stdout + events.stderr], events.stdout
+    assert not [m for m in markers if m in json.dumps(_session_view(context))]
 
 
 @given("a project with a recorded Claude Code session whose first compaction left no summary row")

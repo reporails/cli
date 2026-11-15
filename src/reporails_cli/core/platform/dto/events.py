@@ -192,12 +192,17 @@ class InstructionLoad:
     row_id: str | None = None
 
 
+AttachmentKind = Literal["file", "compact_file_reference", "edited_text_file", "relevant_memories"]
+# The kinds Claude Code writes after a compaction for a file it had read before.
+RESTORE_ATTACHMENT_KINDS: frozenset[AttachmentKind] = frozenset({"file", "compact_file_reference"})
+
+
 @dataclass(frozen=True)
 class FileAttachment:
-    """One file Claude Code attached: its path and whether the whole file (`whole`) or only its name; never content."""
+    """One file Claude Code put into the context: its path and how (`kind`); never content."""
 
     path: str
-    whole: bool
+    kind: AttachmentKind
 
 
 @dataclass(frozen=True)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from reporails_cli.core.platform.dto.events import EventRecord
+from reporails_cli.core.platform.dto.events import RESTORE_ATTACHMENT_KINDS, EventRecord
 from reporails_cli.core.platform.dto.xray_build import SourceTable
 from reporails_cli.core.platform.dto.xray_compaction import IN_CONTEXT_FILE_STATES, FileState, XrayFileState
 from reporails_cli.core.platform.dto.xray_sources import INSTRUCTION_ARTIFACT_KINDS, SOURCE_KIND_OF_ARTIFACT
@@ -34,9 +34,10 @@ def _loaded_file(record: EventRecord, sources: SourceTable) -> tuple[str | None,
 def _attached_file(record: EventRecord, sources: SourceTable) -> tuple[str | None, bool]:
     """The instruction file a `file_attachment` record names and whether it attached the whole file; `(None, False)`
     for a record with no attachment or a file that is not an instruction file."""
-    if record.attachment is None:
+    attachment = record.attachment
+    if attachment is None or attachment.kind not in RESTORE_ATTACHMENT_KINDS:
         return None, False
-    return _instruction_source(record.attachment.path, sources), record.attachment.whole
+    return _instruction_source(attachment.path, sources), attachment.kind == "file"
 
 
 def _compaction(record: EventRecord, held: set[str]) -> tuple[float, tuple[str, ...], frozenset[str]] | None:

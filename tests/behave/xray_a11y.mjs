@@ -222,6 +222,21 @@ if (mode === 'borders' && ready) {
   })()`);
 }
 
+if (mode === 'chip-fill' && ready) {
+  await toGraph(page);
+  await page.until(`!!document.querySelector('#canvas .card:not(.dim) .chip.on')`);
+  out.chips = await page.ev(`(() => {
+    const parse = c => { const m = c.match(/rgba?\\(([^)]+)\\)/); const p = m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
+    const over = (top, under) => ({ r: top.r * top.a + under.r * (1 - top.a), g: top.g * top.a + under.g * (1 - top.a), b: top.b * top.a + under.b * (1 - top.a), a: 1 });
+    const lum = c => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); };
+    const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+    const card = document.querySelector('#canvas .card:not(.dim):not(.sel) .chip.on').closest('.card');
+    const cardBg = over(parse(getComputedStyle(card).backgroundColor), { r: 13, g: 14, b: 16, a: 1 });
+    const on = card.querySelector('.chip.on'), off = document.querySelector('#canvas .card:not(.dim) .chip:not(.on):not(.find):not(.hot)');
+    return { onFill: ratio(over(parse(getComputedStyle(on).backgroundColor), cardBg), cardBg), offFill: off ? parse(getComputedStyle(off).backgroundColor).a : null };
+  })()`);
+}
+
 if (mode === 'scale-text' && ready) {
   await toGraph(page);
   await page.until(`!!document.querySelector('.card.top')`);
