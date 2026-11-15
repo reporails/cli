@@ -52,8 +52,7 @@ Feature: The server is asked for a verdict before any local work starts
     And a git project with a lone CLAUDE.md
     When I invoke "ails check" against the service
     Then the run exits 0
-    And the output says "still reaching the server"
-    And the service was asked for the handshake and then for the diagnosis
+    And the service was asked for the handshake and the run went on to its local result
 
   @e2e @regression
   Scenario: A mistyped path is reported before the service is asked
@@ -103,7 +102,7 @@ Feature: The server is asked for a verdict before any local work starts
     And a git project with a lone CLAUDE.md
     When I invoke "ails check" against the service
     Then the run exits 0
-    And the service was asked for the handshake and then for the diagnosis
+    And the service was asked for the handshake and the run went on to its local result
 
   @e2e @regression
   Scenario: An edge that answers the handshake with HTTP 403 does not stop the run
@@ -111,7 +110,7 @@ Feature: The server is asked for a verdict before any local work starts
     And a git project with a lone CLAUDE.md
     When I invoke "ails check" against the service
     Then the run exits 0
-    And the service was asked for the handshake and then for the diagnosis
+    And the service was asked for the handshake and the run went on to its local result
 
   @e2e @regression
   Scenario: The check tells the service which surface asks

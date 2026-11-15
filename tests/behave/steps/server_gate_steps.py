@@ -231,6 +231,13 @@ def step_both(context) -> None:
     )
 
 
+@then("the service was asked for the handshake and the run went on to its local result")
+def step_handshake_then_local(context) -> None:
+    asked = [(m, p) for m, p, _ in _requests(context)]
+    assert asked and asked[0] == ("GET", "/v1/handshake"), _requests(context)
+    assert "Findings" in _output(context), _output(context)
+
+
 @then('the service saw the surface "{surface}"')
 def step_surface(context, surface: str) -> None:
     assert [s for m, p, s in _requests(context) if p == "/v1/handshake"] == [surface], _requests(context)
