@@ -447,11 +447,8 @@ def step_summaries_on_page(context):
 
 
 FILE_STATE_WORDS = {
-    "reloaded": "loaded again",
-    "restored": "restored in full",
     "named": "named only: the agent must read it again",
     "summarized": "only in the summary",
-    "pending": "settles at the next reply",
 }
 
 
@@ -479,7 +476,9 @@ def step_stripe_opens_window(context):
         assert f"{_k1(item['before'])} \u2192 {_k1(item['after'])}" in seen["dialog"], seen["dialog"]
         assert seen["summary"] == SUMMARIES[index], seen["summary"]
         assert _k1(item["summary_tokens"]) in seen["dialog"], seen["dialog"]
-        assert seen["files"] == [f"{labels[f['source']]} \u00b7 {FILE_STATE_WORDS[f['state']]}" for f in item["files"]]
+        not_loaded = [f for f in item["files"] if f["state"] in ("named", "summarized")]
+        assert seen["files"] == [f"{labels[f['source']]} \u00b7 {FILE_STATE_WORDS[f['state']]}" for f in not_loaded]
+        assert ("Not loaded again" in seen["dialog"]) == bool(not_loaded), seen["dialog"]
 
 
 @then('the summary route returns the summary text, and the view, the event log and "ails events" hold none of it')
@@ -1956,6 +1955,68 @@ def step_notes_loaded(context):
     assert row["loaded"] == len(NOTE_NAMES) and row["used"] == len(NOTE_NAMES), row
     card = next(node for node in view["nodes"] if node["id"] == "main")
     assert card["slots"]["memory"]["count"] == len(NOTE_NAMES), card["slots"]
+
+
+@given("a project with a session whose root file, a note and an MCP server load again after a compaction")
+def step_reload_after_compaction(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    project = context.project
+    folder = context.home / ".claude" / "projects" / claude_project_folder_name(project)
+    memory = folder / "memory"
+    memory.mkdir(parents=True)
+    (memory / "MEMORY.md").write_text("# Memory\n- [kept](kept.md) - a note\n", encoding="utf-8")
+    (memory / "kept.md").write_text("---\ntype: feedback\n---\nkept note\n", encoding="utf-8")
+    (project / "CLAUDE.md").write_text("x" * 400 + "\n", encoding="utf-8")
+    version = "2.1.301"
+    loads = {"type": "instructions", "files": [{"path": str(project / "CLAUDE.md"), "type": "Project"}]}
+    note = _relevant_memories_attachment(memory / "kept.md")
+    boundary = _row("system", 20, version, project, subtype="compact_boundary", compactMetadata={"trigger": "manual"})
+    servers = {"type": "mcp_instructions_delta", "addedNames": ["docs"], "addedBlocks": ["use docs " * 20]}
+    hook = {
+        "type": "hook_success",
+        "hookName": "SessionStart:compact",
+        "hookEvent": "SessionStart",
+        "command": "echo restart",
+        "exitCode": 0,
+        "durationMs": 5,
+        "stdout": "",
+        "stderr": "",
+        "content": "restart note " * 10,
+    }
+    # Claude Code stamps the compaction's own session-start loads a moment before the boundary row.
+    early = {"timestamp": "2026-10-31T10:00:19.500Z"}
+    rows = [
+        _row("attachment", 1, version, project, attachment=loads),
+        _row("attachment", 1, version, project, attachment=servers),
+        _row("attachment", 2, version, project, attachment=note),
+        _reply(6, version, project, "msg_1", [{"type": "text", "text": "ok"}], _usage(9000, 100), "req-1"),
+        _row("attachment", 19, version, project, attachment=servers, **early),
+        _row("attachment", 19, version, project, attachment=hook, **early),
+        boundary,
+        _row("attachment", 20, version, project, attachment=loads),
+        _row("attachment", 21, version, project, attachment=note),
+        _reply(40, version, project, "msg_2", [{"type": "text", "text": "ok"}], _usage(900, 100), "req-2"),
+    ]
+    for row in rows:
+        row.pop("requestRef", None)
+    folder.joinpath("session.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+
+@then("the canvas draws a source card for each below the compaction stripe as well as at the start")
+def step_cards_restart(context):
+    seen = _layout_script(context, "restart")
+    if seen is None:
+        return
+    assert seen["ready"], "the page did not draw"
+    assert len(seen["stripes"]) == 1, seen["stripes"]
+    stripe = seen["stripes"][0]
+    assert len(seen["sources"]) >= 2, seen["cards"]
+    for source in seen["sources"]:
+        above = [c for c in seen["cards"] if c["source"] == source and c["bottom"] <= stripe["top"]]
+        below = [c for c in seen["cards"] if c["source"] == source and c["top"] >= stripe["bottom"]]
+        assert above and below, (source, seen["cards"], stripe)
+    assert seen["stations"] and all(s["top"] >= stripe["bottom"] for s in seen["stations"]), (seen["stations"], stripe)
+    assert not seen["overlaps"], (seen["overlaps"], stripe)
 
 
 @given("a project with a session that compacted after loading four instruction files, recording requests")

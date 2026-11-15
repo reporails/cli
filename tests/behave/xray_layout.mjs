@@ -1,4 +1,4 @@
-// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions|summaries|stripe|recorded|excluded|agent> [source id]
+// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions|summaries|stripe|restart|recorded|excluded|agent> [source id]
 // Drives the real `ails xray` page in headless Chrome and prints one JSON object describing what it drew.
 import { openPage, toGraph } from './xray_cdp.mjs';
 
@@ -128,6 +128,22 @@ if (mode === 'stripe' && ready) {
   out.summary = await page.ev(`(document.querySelector('.pk-dialog pre.peek') || {}).textContent || null`);
   out.files = await page.ev(`[...document.querySelectorAll('.pk-dialog .fs')].map(e => e.textContent)`);
   out.over = await page.ev(`!!document.querySelector('.pk-dialog').closest('#overlay')`);
+}
+
+// Reports every source card with its source and rect beside the compaction stripes' rects, and what overlaps a stripe.
+if (mode === 'restart' && ready) {
+  await page.until(`!!document.querySelector('button.compact')`);
+  const r = await page.ev(`(() => {
+    const box = e => { const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom }; };
+    const stripes = [...document.querySelectorAll('button.compact')].map(box);
+    const cards = [...document.querySelectorAll('.snode')].map(e => ({ source: e.dataset.source, ...box(e) }));
+    const overlaps = [];
+    for (const e of document.querySelectorAll('.card, .station')) for (const s of stripes) { const b = box(e); if (b.top < s.bottom && b.bottom > s.top) overlaps.push({ cls: e.className, text: e.textContent.slice(0, 40), top: b.top, bottom: b.bottom }); }
+    const stations = [...document.querySelectorAll('.station')].map(box);
+    return { stripes, cards, overlaps, stations };
+  })()`);
+  Object.assign(out, r);
+  out.sources = [...new Set(r.cards.map(c => c.source))];
 }
 
 console.log(JSON.stringify(out));

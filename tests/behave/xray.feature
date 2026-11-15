@@ -65,6 +65,13 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And clicking each compaction stripe opens one details window over the canvas holding what the view holds for that compaction
 
   @e2e @browser
+  Scenario: After a compaction the canvas shows what loaded again as it shows the start, and nothing sits on the stripe
+    Given a project with a session whose root file, a note and an MCP server load again after a compaction
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the canvas draws a source card for each below the compaction stripe as well as at the start
+
+  @e2e @browser
   Scenario: Each compaction shows its summary text verbatim with its size in tokens
     Given a project with a recorded Claude Code session that compacted twice
     When "ails xray --no-open" is started in the project

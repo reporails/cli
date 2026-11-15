@@ -1,18 +1,15 @@
-// The compaction's details: when it ran, what started it, the context before and after, the summary it left and what each
-// instruction file loaded before it became.
+// The compaction's details: when it ran, what started it, the context before and after, the summary it left and the
+// instruction files that did not come back (the files that did are drawn on the canvas below the stripe).
 import { el, nk } from '../dom.js';
 import { clock, k1, tk } from '../format.js';
 import { summaryUrl } from '../api.js';
 import { textBlock } from './textblock.js';
 import { registerPeek } from './details.js';
 
-// What the page says of each state an instruction file can be in after a compaction, and why.
+// What the page says of each state of an instruction file that did not come back after a compaction, and why.
 export const FILE_STATE_WORDS = {
-  reloaded: ['loaded again', 'Claude Code loaded it again after the compaction'],
-  restored: ['restored in full', 'Claude Code put the whole file back after the summary'],
   named: ['named only: the agent must read it again', 'Claude Code told the agent the file name, not its content'],
   summarized: ['only in the summary', 'nothing of the file came back; the agent knows only what the summary says'],
-  pending: ['settles at the next reply', 'the agent has not replied since the compaction yet'],
 };
 
 const section = (title, ...nodes) => {
@@ -37,7 +34,8 @@ registerPeek('compaction', (env, id) => {
     ? section(`What is left after the compaction · ${tk(c.summary_tokens, true)}`, textBlock(env.text, `summary:${c.summary_id}`, summaryUrl(c.summary_id)))
     : section('What is left after the compaction', nk('The transcript holds no summary for this compaction.'));
   const files = el('div', 'pk-list');
-  for (const f of c.files || []) {
+  const gone = (c.files || []).filter(f => f.state === 'named' || f.state === 'summarized');
+  for (const f of gone) {
     const s = env.ix.sources.get(f.source);
     const [words, why] = FILE_STATE_WORDS[f.state] || [f.state, ''];
     const row = el('span', `fs fs-${f.state}`, `${s ? s.label : f.source} · ${words}`);
@@ -47,7 +45,7 @@ registerPeek('compaction', (env, id) => {
   return {
     chip: '▤', kicker: `Compaction · ${node.name}`, title: `compacted at ${clock(c.t)}`, tags: [c.trigger, sizes].filter(Boolean),
     main: [section('Facts', facts), left],
-    side: [section('Instruction files', (c.files || []).length ? files : nk('No instruction file was loaded before it.'))],
+    side: gone.length ? [section('Not loaded again', files)] : [],
     actions: [],
   };
 });
