@@ -447,6 +447,8 @@ def step_summaries_on_page(context):
 
 
 FILE_STATE_WORDS = {
+    "restored": "kept in the messages the compaction preserved",
+    "pending": "settles at the next reply",
     "named": "named only: the agent must read it again",
     "summarized": "only in the summary",
 }
@@ -476,9 +478,16 @@ def step_stripe_opens_window(context):
         assert f"{_k1(item['before'])} \u2192 {_k1(item['after'])}" in seen["dialog"], seen["dialog"]
         assert seen["summary"] == SUMMARIES[index], seen["summary"]
         assert _k1(item["summary_tokens"]) in seen["dialog"], seen["dialog"]
-        not_loaded = [f for f in item["files"] if f["state"] in ("named", "summarized")]
+        not_loaded = [f for f in item["files"] if f["state"] != "reloaded"]  # a reloaded file has its card below
         assert seen["files"] == [f"{labels[f['source']]} \u00b7 {FILE_STATE_WORDS[f['state']]}" for f in not_loaded]
         assert ("Not loaded again" in seen["dialog"]) == bool(not_loaded), seen["dialog"]
+        if not not_loaded:
+            line = (
+                "Every instruction file loaded before it came back; each is drawn below the stripe."
+                if item["files"]
+                else "No instruction file was loaded before it."
+            )
+            assert line in seen["dialog"], seen["dialog"]
 
 
 @then('the summary route returns the summary text, and the view, the event log and "ails events" hold none of it')
@@ -2010,13 +2019,15 @@ def step_cards_restart(context):
     assert seen["ready"], "the page did not draw"
     assert len(seen["stripes"]) == 1, seen["stripes"]
     stripe = seen["stripes"][0]
-    assert len(seen["sources"]) >= 2, seen["cards"]
+    assert len(seen["sources"]) == 3, seen["sources"]  # the root file, the note and the MCP server
     for source in seen["sources"]:
         above = [c for c in seen["cards"] if c["source"] == source and c["bottom"] <= stripe["top"]]
         below = [c for c in seen["cards"] if c["source"] == source and c["top"] >= stripe["bottom"]]
         assert above and below, (source, seen["cards"], stripe)
     assert seen["stations"] and all(s["top"] >= stripe["bottom"] for s in seen["stations"]), (seen["stations"], stripe)
     assert not seen["overlaps"], (seen["overlaps"], stripe)
+    assert seen["stripeBefore"] == seen["stripeHidden"], (seen["stripeBefore"], seen["stripeHidden"])
+    assert seen["belowCard"] and seen["focusedCard"] == seen["belowCard"], (seen["belowCard"], seen["focusedCard"])
 
 
 @given("a project with a session that compacted after loading four instruction files, recording requests")

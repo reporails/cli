@@ -30,6 +30,39 @@ export const kindOfSource = (ix, id) => {
   return s ? ix.kinds.get(s.kind) || null : null;
 };
 
+// A load of a kind the vocabulary keeps on the spine is a station there.
+export const isSpine = (ix, sid) => { const k = kindOfSource(ix, sid); return !!(k && k.spine); };
+
+// A compaction restarts the agent's context. A load belongs to the segment after every compaction at or before its time; the
+// session-start loads Claude Code stamps up to RESTART_S before the compaction belong to the segment after it too.
+export const RESTART_S = 5;
+export const startsSession = l => !!l && (l.trigger === 'session_start' || l.event === 'SessionStart');
+export const segmentOf = (cuts, t, load) => cuts.filter(c => c <= t || (startsSession(load) && c - t <= RESTART_S)).length;
+
+// Source nodes of an agent, whatever layers are shown: one per source at its first load into its context and again at its
+// first load after each compaction (hooks stay on the spine), one per MCP server with its round trips. An instruction file
+// loaded with no time sits at the agent's start.
+export function sourceFirsts(ix, cur, cuts) {
+  const st = ix.stations.get(cur.id);
+  if (!st) return [];
+  const first = new Map();
+  for (const l of st.loads) {
+    if (isSpine(ix, l.source)) continue;
+    const t = l.t ?? cur.start;
+    const seg = segmentOf(cuts, t, l);
+    const key = `${seg}|${l.source}`;
+    const prev = first.get(key);
+    if (!prev || t < prev.t) first.set(key, { key, id: l.source, seg, t, load: l, clusters: [] });
+  }
+  for (const m of st.mcp) {
+    const seg = segmentOf(cuts, m.first);
+    const key = `${seg}|${m.server}`;
+    if (!first.has(key)) first.set(key, { key, id: m.server, seg, t: m.first, load: null, clusters: [] });
+    first.get(key).clusters.push(m);
+  }
+  return [...first.values()];
+}
+
 export const visibleKinds = (ix, state) => ix.view.adapter.source_kinds.filter(k => state.layers[k.key]);
 
 // The source whose focus is on: a pin holds until cleared, hover lights a source only while nothing is pinned. A kind's eye hides it on the graph only, so the list still highlights it.

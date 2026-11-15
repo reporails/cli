@@ -8,7 +8,7 @@ import {
   bandColour, layoutTime, lengthFor, mergeStations, placeSources, replyAt, stationSide, tickMarks,
 } from '../geometry.js';
 import { groupOpen } from '../state.js';
-import { callIndex, childrenOf, kindOfSource, replyParts, typeOf } from '../views.js';
+import { RESTART_S, callIndex, childrenOf, isSpine, kindOfSource, replyParts, segmentOf, sourceFirsts, startsSession, typeOf } from '../views.js';
 import { rendererFor } from './nodes/index.js';
 import * as rail from './rail.js';
 import { tile } from './nodes/agent.js';
@@ -281,28 +281,19 @@ function selectedPills(c, p, edge, ys, ye, outcome) {
   return out;
 }
 
-// A load of a kind the vocabulary keeps on the spine is a station there.
 // Room a station pill (a dot at its widest) needs beyond a stripe's edge.
 const STATION_CLEAR = 12;
-const isSpine = (ix, sid) => { const k = kindOfSource(ix, sid); return !!(k && k.spine); };
 const shownSource = (env, sid) => { const k = kindOfSource(env.ix, sid); return !k || env.state.layers[k.key]; };
 
-// A compaction restarts the agent's context. A load belongs to the segment after every compaction at or before its time; the
-// session-start loads Claude Code stamps up to RESTART_S before the compaction belong to the segment after it too.
-const RESTART_S = 5;
-const startsSession = l => !!l && (l.trigger === 'session_start' || l.event === 'SessionStart');
-const segmentOf = (cuts, t, load) => cuts.filter(c => c <= t || (startsSession(load) && c - t <= RESTART_S)).length;
-
 // Hooks stay on the spine: a one-off hook load is a station and a repeated stretch of firings is one pill at its middle.
-function stationItems(env, cur, scale) {
+function stationItems(env, cur, scale, cutTimes) {
   const { ix } = env;
   const st = ix.stations.get(cur.id);
   if (!st) return [];
   const stripes = [...scale.cuts.values()].map(c => c.y);
   // A pill keeps clear of a compaction stripe's band: it sits just above or just below it.
-  const cutTimes = st.compactions.map(c => c.t);
   const clear = (yy, load) => {
-    const seg = segmentOf(cutTimes, load && load.t != null ? load.t : cur.start, load);
+    const seg = segmentOf(cutTimes, load.t ?? cur.start, load);
     const sy0 = seg > 0 ? scale.cuts.get(`cut:${seg - 1}`).y : null;
     if (sy0 !== null && yy < sy0 + STRIPE_HALF + STATION_CLEAR && startsSession(load)) yy = sy0 + STRIPE_HALF + STATION_CLEAR;
     const s = stripes.find(sy => Math.abs(yy - sy) < STRIPE_HALF + STATION_CLEAR);
@@ -326,39 +317,12 @@ function stationItems(env, cur, scale) {
     const k = kindOfSource(ix, h.source);
     const s = ix.sources.get(h.source);
     items.push({
-      type: 'hook', source: h.source, y: clear(scale.y((h.first + h.last) / 2)), letter: k ? k.letter : '?', calls: h.count, tokens: h.tokens_est,
+      type: 'hook', source: h.source, y: clear(scale.y((h.first + h.last) / 2), { t: h.first, event: (st.loads.find(l => l.source === h.source && l.t === h.first) || {}).event }), letter: k ? k.letter : '?', calls: h.count, tokens: h.tokens_est,
       name: s ? s.label : h.source,
       title: `${s ? s.label : h.source} · ${h.count} firing${h.count === 1 ? '' : 's'} ${clock(h.first)}–${clock(h.last)} · ${tk(h.tokens_est, true)} loaded (estimated)`,
     });
   }
   return items;
-}
-
-// Source nodes: one per source at its first load into this agent's context and again at its first load after each compaction
-// (hooks stay on the spine), one per MCP server with its round trips. An instruction file loaded with no time sits at the
-// agent's start.
-function sourceFirsts(env, cur) {
-  const { ix } = env;
-  const st = ix.stations.get(cur.id);
-  if (!st) return [];
-  const cuts = st.compactions.map(c => c.t);
-  const first = new Map();
-  const at = (id, seg) => `${seg}|${id}`;
-  for (const l of st.loads) {
-    if (isSpine(ix, l.source) || !shownSource(env, l.source)) continue;
-    const t = l.t ?? cur.start;
-    const k = at(l.source, segmentOf(cuts, t, l));
-    const prev = first.get(k);
-    if (!prev || t < prev.t) first.set(k, { key: k, id: l.source, seg: segmentOf(cuts, t, l), t, load: l, clusters: [] });
-  }
-  for (const m of st.mcp) {
-    if (!shownSource(env, m.server)) continue;
-    const seg = segmentOf(cuts, m.first);
-    const k = at(m.server, seg);
-    if (!first.has(k)) first.set(k, { key: k, id: m.server, seg, t: m.first, load: null, clusters: [] });
-    first.get(k).clusters.push(m);
-  }
-  return [...first.values()];
 }
 
 // The cards that load again within RESTART_S of one another right after a compaction: the compaction's unit in the scale.
@@ -402,6 +366,7 @@ function sourceNode(env, it, p) {
   const dim = env.graphFocus && !hot;
   const b = abs('snode' + (it.find ? ' find' : '') + (hot ? ' hot' : '') + (dim ? ' dim' : ''), p.left, p.top, 'button');
   b.dataset.source = it.source;
+  b.dataset.card = it.key;
   b.title = it.title;
   b.setAttribute('aria-label', it.title);
   b.style.width = `${SW}px`;
@@ -470,9 +435,8 @@ function stationPill(env, cl) {
   return b;
 }
 
-function stations(env, cur, scale) {
-  const out = mergeStations(stationItems(env, cur, scale)).map(cl => stationPill(env, cl));
-  const held = (env.ix.stations.get(cur.id) || { compactions: [] }).compactions;
+function stations(env, cur, scale, held, cuts) {
+  const out = mergeStations(stationItems(env, cur, scale, cuts)).map(cl => stationPill(env, cl));
   held.forEach((c, i) => out.push(compactStripe(cur, c, i, scale.cuts.get(`cut:${i}`).y)));
   return out;
 }
@@ -620,8 +584,9 @@ export function render(box, env) {
     ...drawnKids.filter(c => !inGroup.has(c.id)).map(c => ({ key: c.id, t: c.start, members: 0, expanded: false })),
     ...groups.map(g => ({ key: g.key, t: g.burst.first_launch, members: g.members.length, expanded: g.expanded })),
   ];
-  const firsts = sourceFirsts(env, cur);
   const held = (ix.stations.get(cur.id) || { compactions: [] }).compactions;
+  const cuts = held.map(c => c.t);
+  const firsts = sourceFirsts(ix, cur, cuts);
   const restarts = restartCards(firsts, held);
   held.forEach((c, i) => units.push({ key: `cut:${i}`, t: c.t, cut: true, cards: restarts[i] }));
   const scale = layoutTime(cur, tr.breaks, lengthFor(isRoot), units);
@@ -633,12 +598,10 @@ export function render(box, env) {
   }
   const shownKids = drawnKids.filter(c => !groups.some(g => !g.expanded && g.members.includes(c)));
   const matchOf = c => (!focus || focus.had_by.includes(c.id));
-  const station = ix.stations.get(cur.id) || { compactions: [] };
-  const cuts = station.compactions.map(c => c.t);
   const sel = state.sel ? ix.nodes.get(state.sel) : null;
   const renderer = rendererFor(cur.kind);
   const hand = isRoot ? null : renderer.handback && renderer.handback(cur, env);
-  const items = sourceItems(env, firsts, scale);
+  const items = sourceItems(env, firsts.filter(f => shownSource(env, f.id)), scale);
   const walls = [...scale.cuts.values()].map(c => ({ top: c.y - STRIPE_HALF, bottom: c.y + STRIPE_HALF }));
   const placedSources = new Map(placeSources(items.map(it => ({ key: it.key, y: it.y })), walls).map(p => [p.key, p]));
   const sourcesBottom = Math.max(0, ...[...placedSources.values()].map(p => p.top + SH));
@@ -663,7 +626,7 @@ export function render(box, env) {
   }
   for (const c of shownKids) cv.append(childCard(env, c, placedMap.get(c.id), matchOf(c), state.sel === c.id));
   for (const it of items) cv.append(sourceNode(env, it, placedSources.get(it.key)));
-  cv.append(...stations(env, cur, scale), ...drawn.pills);
+  cv.append(...stations(env, cur, scale, held, cuts), ...drawn.pills);
   if (hand) {
     const b = abs('card bottom', SPX - BOT_W / 2, botY);
     b.style.width = `${BOT_W}px`;

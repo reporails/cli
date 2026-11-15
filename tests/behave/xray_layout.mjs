@@ -144,6 +144,29 @@ if (mode === 'restart' && ready) {
   })()`);
   Object.assign(out, r);
   out.sources = [...new Set(r.cards.map(c => c.source))];
+  // Hiding the memory layer leaves the stripe and the canvas height where they were.
+  const stripeTop = () => page.ev(`(() => {
+    const top = document.querySelector('button.compact').getBoundingClientRect().top + scrollY;
+    return top + ' ' + document.querySelector('.cv').offsetHeight;
+  })()`);
+  out.stripeBefore = await stripeTop();
+  await page.ev(`document.querySelector('[data-eye="memory"]').click(); 0`);
+  out.stripeHidden = await stripeTop();
+  await page.ev(`document.querySelector('[data-eye="memory"]').click(); 0`);
+  // Closing the details of the card below the stripe puts focus back on that card.
+  const below = await page.ev(`(() => {
+    const s = document.querySelector('button.compact').getBoundingClientRect();
+    const e = [...document.querySelectorAll('.snode')].find(x => x.getBoundingClientRect().top >= s.bottom);
+    if (!e) return null;
+    e.click();
+    return e.dataset.card || null;
+  })()`);
+  await page.until(`!!document.querySelector('.pk-dialog')`);
+  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await page.until(`!document.querySelector('.pk-dialog')`);
+  out.belowCard = below;
+  out.focusedCard = await page.ev(`document.activeElement.dataset.card || null`);
 }
 
 console.log(JSON.stringify(out));

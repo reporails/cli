@@ -80,7 +80,8 @@ function capDialog() {
   const box = document.getElementById('overlay'), dlg = box && box.querySelector('.pk-dialog');
   if (!dlg) return;
   const r = box.getBoundingClientRect();
-  dlg.style.maxHeight = `${Math.max(160, Math.min(innerHeight, r.bottom) - Math.max(0, r.top) - 24)}px`;
+  const visible = Math.min(innerHeight, r.bottom) - Math.max(0, r.top);
+  dlg.style.maxHeight = `${Math.max(Math.min(160, visible), visible - 24)}px`;
 }
 addEventListener('scroll', capDialog, { passive: true });
 addEventListener('resize', capDialog);
