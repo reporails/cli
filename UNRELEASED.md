@@ -14,7 +14,7 @@
 - Heal's rewrite rules now come from the reporails service, so a rewrite is always held to the current rules without a cli update.
 - After a compaction, `ails xray` labels each instruction file loaded before it as loaded again, restored in full (attached whole or recalled, or kept in the messages the compaction preserved), named only (the agent must read it again) or only in the summary, and the chart keeps only the files whose content is back in context; this works on sessions from earlier Claude Code versions too.
 - The finding for a condition that names an outside system quotes the whole condition, its opening word included (`When external services fail`).
-- In `ails xray` each compaction is a stripe across the canvas at its time; clicking it opens the details window with the trigger, the context before and after, the summary text and what each instruction file became. The floating file list and the inspector's summary button are gone, and the inspector lists every compaction, one with no summary included, and each row opens the same window. A stripe leaves the time labels, stretch bars and the Tool calls link beneath it usable.
+- In `ails xray` each compaction is a stripe across the canvas at its time; clicking anywhere along it opens the details window with the trigger, the context before and after, the summary text and what each instruction file became. The floating file list and the inspector's summary button are gone, and the inspector lists every compaction, one with no summary included, and each row opens the same window. A stripe leaves the time labels, stretch bars and the Tool calls link beneath it usable.
 
 ### Fixed
 

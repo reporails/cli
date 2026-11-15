@@ -146,6 +146,15 @@ if (mode === 'stripe-layers' && ready) {
       label: !!labelTop && band.contains(labelTop), bandBox: [box.width, box.height],
     };
   })()`);
+  // A pointer on the band to the right of its label, where no card sits over it, reaches the stripe itself.
+  out.awayFromLabel = await page.ev(`(() => {
+    const band = document.querySelector('#canvas button.compact'), r = band.getBoundingClientRect();
+    const from = band.querySelector('span').getBoundingClientRect().right + 20, y = r.top + r.height / 2;
+    let hit = null;
+    for (let x = from; x < r.right - 2 && !(hit === band); x += 6) hit = document.elementFromPoint(x, y);
+    if (hit === band) band.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return { reached: hit === band, opened: !!document.querySelector('.pk-dialog') };
+  })()`);
 }
 
 if (mode === 'space' && ready) {

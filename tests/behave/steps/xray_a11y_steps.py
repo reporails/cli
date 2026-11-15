@@ -104,6 +104,8 @@ def step_stripe_layers(context):
     assert layers["bandBox"][1] > 0, layers
     assert layers["tick"] and layers["stretch"] and layers["link"], layers
     assert layers["label"], layers  # the stripe's own label stays clickable
+    away = seen["awayFromLabel"]
+    assert away["reached"] and away["opened"], away  # the band away from its label opens the details window
 
 
 @then("Space on an agent card selects it and its accessible name carries its slot summary")
