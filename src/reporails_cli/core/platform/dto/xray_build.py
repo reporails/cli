@@ -26,6 +26,17 @@ from reporails_cli.core.platform.dto.xray_sources import FindingTally, SourceEnt
 
 
 @dataclass(frozen=True)
+class SummarySpan:
+    """Where one compaction summary row sits in its transcript file: the id of the boundary row it follows and
+    the byte range of its line, with the summary's size in characters. Never the text."""
+
+    link: str
+    chars: int
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
 class Frame:
     """What a derivation reads beside the records: the session's first time, the project, its findings and the
     files a run name can stand for, the agent definition files and whether the session is still going."""
@@ -44,9 +55,9 @@ class Frame:
     mcp_off: frozenset[str] = frozenset()
     # The settings files that exist, which can declare hooks.
     settings_files: tuple[Path, ...] = ()
-    # The size in characters of each compaction summary of a node's transcript in order, by subagent id ("" for the
-    # main session).
-    summary_chars: Mapping[str, tuple[int, ...]] = field(default_factory=dict)
+    # The compaction summaries of a node's transcript by the id of the boundary row each follows, by subagent id
+    # ("" for the main session).
+    summaries: Mapping[str, Mapping[str, SummarySpan]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

@@ -17,6 +17,9 @@
 
 ### Fixed
 
+- The x-ray shows each compaction's summary by the transcript's own link between a compaction and its summary: a compaction that left no summary shows none, and the next compaction no longer shows its summary.
+- Opening a compaction summary in the x-ray reads only that summary from the transcript, not the whole file again.
+- `ails xray --current` follows a `/clear` chain on past a session that was one of several cleared at the same moment, and opens the newest session the chains end in.
 - A heal rewrite that fails the meaning check is no longer accepted after the project is re-validated mid-run.
 - Heal puts back a rewrite that puts a plain word in front of what a prohibition forbids (`Never modify the docs` → `Never modify the generated docs`); a named construct there still passes.
 - `ails check` no longer warns about broad conditional scope on an instruction that only limits what it acts on, such as `Use only the staging database, never production.`

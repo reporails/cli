@@ -67,6 +67,10 @@ class TranscriptAdapter(Protocol):
     def resolve_compact_summary(self, row: JsonObject) -> str | None:
         """The summary text of a compaction summary row; None for any other row."""
 
+    def resolve_compact_link(self, row: JsonObject) -> str | None:
+        """The id of the compaction boundary row a compaction summary row follows; None for any other row or a
+        summary row that names none."""
+
     def opens_with_clear(self, row: JsonObject) -> bool | None:
         """For the row that opens a session's conversation, whether it is the agent's `/clear` command; None for a
         row that does not open it."""

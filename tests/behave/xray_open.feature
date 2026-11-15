@@ -88,3 +88,10 @@ Feature: Any session of a project opens in x-ray without typing an id, from a te
     And the MCP server's xray tool is called by the agent of the newest session
     Then the returned address is on the running page's port
     And the page at the returned address shows the newest session as the current one
+
+  @e2e
+  Scenario: A session cleared twice in two terminals at once is followed on to the newest session of the chain
+    Given a project whose agent session was cleared into two sessions, one of them cleared again into a third
+    When "ails xray --current --background --no-open" is run in the project as the agent of the first session
+    Then the printed address names the third session
+    And the page at that address shows the third session marked as one of several the clear could have led to

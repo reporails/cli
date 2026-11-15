@@ -1949,3 +1949,36 @@ def step_attached_text_nowhere(context):
     assert '"post_compact"' in events.stdout, events.stdout
     assert "ATTACHED-FILE-TEXT" not in events.stdout + events.stderr, events.stdout
     assert "ATTACHED-FILE-TEXT" not in json.dumps(_session_view(context))
+
+
+@given("a project with a recorded Claude Code session whose first compaction left no summary row")
+def step_first_compaction_without_summary(context):
+    step_project_with_compactions(context)
+    path = next((context.home / ".claude" / "projects").rglob("session.jsonl"))
+    kept = [row for row in path.read_text(encoding="utf-8").splitlines() if SUMMARIES[0] not in row]
+    path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+
+@then("the first compaction offers no summary and the second offers the summary its own boundary links to")
+def step_summary_by_link(context):
+    token = re.search(r'name="xray-token" content="([^"]+)"', _get(context.url)[1]).group(1)
+    view = _get(context.url + "view", token)[1]
+    first, second = next(s["compactions"] for s in json.loads(view)["stations"] if s["node"] == "main")
+    assert first["summary_id"] is None and first["summary_tokens"] is None, first
+    assert second["summary_id"] is not None, second
+    status, body = _get(context.url + "summary?id=" + second["summary_id"], token)
+    assert status == 200 and json.loads(body)["text"] == SUMMARIES[1], (status, body)
+
+
+@then("the second summary still opens after the first summary's line was blanked once the page had listed both")
+def step_summary_read_by_position(context):
+    token = re.search(r'name="xray-token" content="([^"]+)"', _get(context.url)[1]).group(1)
+    view = _get(context.url + "view", token)[1]
+    first, second = next(s["compactions"] for s in json.loads(view)["stations"] if s["node"] == "main")
+    assert first["summary_id"] and second["summary_id"], (first, second)
+    path = next((context.home / ".claude" / "projects").rglob("session.jsonl"))
+    lines = path.read_bytes().split(b"\n")
+    lines = [b" " * len(line) if SUMMARIES[0].encode() in line else line for line in lines]
+    path.write_bytes(b"\n".join(lines))
+    status, body = _get(context.url + "summary?id=" + second["summary_id"], token)
+    assert status == 200 and json.loads(body)["text"] == SUMMARIES[1], (status, body)

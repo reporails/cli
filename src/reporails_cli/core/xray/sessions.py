@@ -61,18 +61,26 @@ def _replacing(session: Path, cleared: dict[Path, float]) -> list[Path]:
     return [path for path, began in cleared.items() if -_REPLACED_BEFORE_S <= left_at - began <= _REPLACED_AFTER_S]
 
 
+def _ends(session: Path, cleared: dict[Path, float]) -> list[Path]:
+    """The sessions no transcript of `cleared` replaces that `session` leads to, following each `/clear` that
+    replaced it; `session` itself when none did."""
+    replacing = _replacing(session, cleared)
+    if not replacing:
+        return [session]
+    ends: list[Path] = []
+    for path in replacing:
+        ends.extend(end for end in _ends(path, {p: b for p, b in cleared.items() if p != path}) if end not in ends)
+    return ends
+
+
 def _in_use(folder: Path, mine: Path) -> PickedSession:
-    """The session in use of the one the calling agent started with, following each `/clear` that replaced it;
-    the newest of the transcripts replacing it, picked as `current_ambiguous`, when more than one does."""
-    cleared = _cleared_starts(folder, mine)
-    session = mine
-    while replacing := _replacing(session, cleared):
-        if len(replacing) > 1:
-            newest = max(replacing, key=lambda path: last_write(path) or 0.0)
-            return PickedSession(folder, newest, "current_ambiguous")
-        session = replacing[0]
-        del cleared[session]
-    return PickedSession(folder, session, "current")
+    """The session in use of the one the calling agent started with, following each `/clear` that replaced it,
+    along every transcript that replaced a session; the newest of the sessions the chains end in, picked as
+    `current_ambiguous`, when more than one does."""
+    ends = _ends(mine, _cleared_starts(folder, mine))
+    if len(ends) == 1:
+        return PickedSession(folder, ends[0], "current")
+    return PickedSession(folder, max(ends, key=lambda path: last_write(path) or 0.0), "current_ambiguous")
 
 
 def pick_session(root: Path, named: str | None, *, current: bool) -> PickedSession | None:
@@ -84,9 +92,9 @@ def pick_session(root: Path, named: str | None, *, current: bool) -> PickedSessi
     `/clear`: a transcript of that folder that opens with a `/clear` command replaces a session whose last write
     falls between `_REPLACED_BEFORE_S` before and `_REPLACED_AFTER_S` after its first row, so a session written on
     after another terminal's `/clear` is not replaced. Each replacement is followed to the session no transcript
-    replaces; when more than one replaces a session, the newest of those is taken, picked as
-    `current_ambiguous`. When no transcript has the id it takes the newest session of `root`, picked as
-    `current_unknown`. With neither, the newest. None when `root` has none."""
+    replaces, along every transcript that replaces a session; when the chains end in more than one session, the
+    newest of those is taken, picked as `current_ambiguous`. When no transcript has the id it takes the newest
+    session of `root`, picked as `current_unknown`. With neither, the newest. None when `root` has none."""
     if named is not None:
         transcript = known_session(root, named)
         return None if transcript is None else PickedSession(root, transcript, "named")

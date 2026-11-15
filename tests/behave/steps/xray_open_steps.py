@@ -452,3 +452,72 @@ def step_fresh_page(context):
     assert _base(context.url) != context.first_page, "the stale page was handed out again"
     status, body = _view_status(context.url)
     assert status == 200 and body["nodes"], (status, body)
+
+
+def _stamp(epoch_s: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(epoch_s)) + f".{int(epoch_s % 1 * 1000):03d}Z"
+
+
+def _write_session(folder: Path, project: Path, name: str, began: float, ended: float, *, cleared: bool) -> None:
+    """A transcript whose first row is at `began`, opening with `/clear` when `cleared`, last written at `ended`."""
+    row = {"sessionId": name, "cwd": str(project)}
+    prompt = {
+        **row,
+        "type": "user",
+        "uuid": f"{name}-prompt",
+        "timestamp": _stamp(began + 1),
+        "promptSource": "typed",
+        "origin": {"kind": "human"},
+        "message": {"role": "user", "content": "a prompt"},
+    }
+    caveat = {
+        **row,
+        "type": "user",
+        "isMeta": True,
+        "timestamp": _stamp(began),
+        "uuid": f"{name}-caveat",
+        "message": {"role": "user", "content": "<local-command-caveat>run directly</local-command-caveat>"},
+    }
+    command = {
+        **row,
+        "type": "user",
+        "timestamp": _stamp(began - 0.03),
+        "uuid": f"{name}-command",
+        "message": {
+            "role": "user",
+            "content": "<command-name>/clear</command-name>\n<command-message>clear</command-message>",
+        },
+    }
+    path = folder / f"{name}.jsonl"
+    rows = [caveat, command, prompt] if cleared else [prompt]
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    os.utime(path, (ended, ended))
+
+
+@given("a project whose agent session was cleared into two sessions, one of them cleared again into a third")
+def step_double_clear(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    folder = context.home / ".claude" / "projects" / claude_project_folder_name(context.project)
+    folder.mkdir(parents=True)
+    now = time.time()
+    _write_session(folder, context.project, "first", now - 600, now - 100, cleared=False)
+    _write_session(folder, context.project, "side", now - 100, now - 60, cleared=True)
+    _write_session(folder, context.project, "middle", now - 99, now - 40, cleared=True)
+    _write_session(folder, context.project, "third", now - 40, now - 1, cleared=True)
+    context.third = "third"
+
+
+@when('"ails xray --current --background --no-open" is run in the project as the agent of the first session')
+def step_current_first(context):
+    _run_current(context, "first")
+
+
+@then("the printed address names the third session")
+def step_names_third(context):
+    assert f"?session={context.third}" in context.url, context.url
+
+
+@then("the page at that address shows the third session marked as one of several the clear could have led to")
+def step_third_ambiguous(context):
+    view = _view_of(context.url)
+    assert (view["session"], view["picked"]) == (context.third, "current_ambiguous"), view

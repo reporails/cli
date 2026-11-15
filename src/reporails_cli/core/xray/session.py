@@ -10,13 +10,13 @@ from reporails_cli.core.discovery.plugin_roots import installed_plugin_roots
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.eventbus.transcript import (
     call_detail,
-    compact_summaries,
-    compact_summary_sizes,
+    compact_summary,
     first_prompt_text,
     hook_output_text,
     last_write,
     prompt_text,
     read_transcript,
+    scan_compact_summaries,
     subagent_brief,
     subagent_system,
 )
@@ -41,7 +41,7 @@ from reporails_cli.core.platform.dto.xray import (
     XrayView,
     XrayWindow,
 )
-from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
+from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable, SummarySpan
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayPeek
 from reporails_cli.core.xray.artifacts import (
     advertised_files,
@@ -77,25 +77,26 @@ HOOK_OUTPUT_CHARS = 20_000
 
 class _FileReads:
     """Where the reads of one session's transcript files stopped: the cursor of the record read and, per file (a
-    subagent id, None for the main one), the byte offset scanned for compaction summaries and the sizes in
-    characters found so far."""
+    subagent id, None for the main one), the byte offset scanned for compaction summaries and the summaries
+    found so far by the id of the boundary row each follows."""
 
     def __init__(self) -> None:
         self._cursor = TranscriptCursor()
-        self._found: dict[str | None, tuple[int, list[int]]] = {}
+        self._found: dict[str | None, tuple[int, dict[str, SummarySpan]]] = {}
 
     def records(self, file: Path) -> list[EventRecord]:
         """The records the transcript gained since the last read."""
         records, self._cursor = read_transcript(AGENT, file, self._cursor)
         return records
 
-    def sizes(self, file: Path, owner: str | None) -> tuple[int, ...]:
-        """The sizes of every summary of the file, reading it from where the last read stopped."""
-        offset, found = self._found.get(owner, (0, []))
-        more, offset = compact_summary_sizes(AGENT, file, owner, offset)
-        found = [*found, *more]
+    def summaries(self, file: Path, owner: str | None) -> Mapping[str, SummarySpan]:
+        """Every summary of the file by the id of the boundary row it follows, reading it from where the last read
+        stopped."""
+        offset, found = self._found.get(owner, (0, {}))
+        more, offset = scan_compact_summaries(AGENT, file, owner, offset)
+        found = {**found, **{span.link: span for span in more}}
         self._found[owner] = (offset, found)
-        return tuple(found)
+        return found
 
 
 class XraySession:
@@ -206,17 +207,18 @@ class XraySession:
         return prompt_text(AGENT, self._file, prompt_id)
 
     def summary(self, summary_id: str) -> str | None:
-        """The compaction summary a compaction record names by `<subagent id>:<index>` (the main session's subagent
-        id is empty); None for any other id. Raises `PayloadRefused` when the agent is unknown. The text is not
-        kept."""
-        node, _, position = summary_id.rpartition(":")
-        if not (position.isascii() and position.isdigit()):
-            return None
+        """The compaction summary a compaction record names by `<subagent id>:<boundary row id>` (the main
+        session's subagent id is empty); None for any other id. Reads only the summary's line. Raises
+        `PayloadRefused` when the agent is unknown. The text is not kept."""
+        node, _, link = summary_id.rpartition(":")
         owner = node or None
-        if not any(r.event == "post_compact" and r.subagent_id == owner for r in self._transcript):
+        if not any(
+            r.event == "post_compact" and r.subagent_id == owner and r.boundary and r.boundary.id == link
+            for r in self._transcript
+        ):
             return None
-        found = compact_summaries(AGENT, self._file, owner)
-        return found[int(position)] if int(position) < len(found) else None
+        span = self._reads.summaries(self._file, owner).get(link)
+        return None if span is None else compact_summary(AGENT, self._file, owner, span)
 
     def hook_output(self, row_id: str) -> tuple[str, bool] | None:
         """The text one hook firing the records name left in the transcript, cut at `HOOK_OUTPUT_CHARS`, and whether
@@ -306,18 +308,14 @@ class XraySession:
             mcp_declarations(self._root, self._plugins),
             mcp_turned_off(self._root),
             self._settings,
-            self._summary_chars(records),
+            self._summaries(records),
         )
 
-    def _summary_chars(self, records: list[EventRecord]) -> dict[str, tuple[int, ...]]:
-        """The size in characters of each compaction summary of every transcript file that records a compaction,
-        by subagent id (empty for the main session); each file is read from where the last read stopped. The
-        texts are not kept."""
+    def _summaries(self, records: list[EventRecord]) -> dict[str, Mapping[str, SummarySpan]]:
+        """The compaction summaries of every transcript file that records a compaction, by subagent id (empty for
+        the main session); each file is read from where the last read stopped. The texts are not kept."""
         owners = {record.subagent_id for record in records if record.event == "post_compact"}
-        sizes: dict[str, tuple[int, ...]] = {}
-        for owner in owners:
-            sizes[owner or ""] = self._reads.sizes(self._file, owner)
-        return sizes
+        return {owner or "": self._reads.summaries(self._file, owner) for owner in owners}
 
     def _verdict(
         self, table: SourceTable, graph: Graph, records: list[EventRecord], vocabulary: AdapterVocabulary

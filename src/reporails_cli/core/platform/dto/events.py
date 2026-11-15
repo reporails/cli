@@ -283,6 +283,14 @@ class HarnessEntry:
 
 
 @dataclass(frozen=True)
+class CompactionBoundary:
+    """The transcript row that recorded a compaction: its id, which the compaction's summary row names as its
+    parent (None when the row has none)."""
+
+    id: str | None
+
+
+@dataclass(frozen=True)
 class PromptEntry:
     """One prompt a person typed: the id of its transcript row, its size in characters and whether it was
     queued while the agent worked."""
@@ -466,6 +474,7 @@ class EventRecord:
         | ReplyText
         | RequestSize
         | HookFiring
+        | CompactionBoundary
         | None
     ) = None
 
@@ -513,6 +522,11 @@ class EventRecord:
     def hook(self) -> HookFiring | None:
         """The hook firing a `hook_firing` record describes."""
         return self.item if isinstance(self.item, HookFiring) else None
+
+    @property
+    def boundary(self) -> CompactionBoundary | None:
+        """The transcript row a `post_compact` record was read from."""
+        return self.item if isinstance(self.item, CompactionBoundary) else None
 
     def to_json(self) -> JsonObject:
         """The record as a JSON object."""

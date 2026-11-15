@@ -140,7 +140,7 @@ from reporails_cli.core.platform.contract.json_value import (
     strict_str_list,
 )
 from reporails_cli.core.platform.dto.events import (
-    CompactionPreserved,
+    CompactionBoundary,
     EventKind,
     EventRecord,
     FileAttachment,
@@ -276,6 +276,13 @@ class ClaudeTranscriptAdapter:
         content = as_object(row.get("message")).get("content")
         return content if isinstance(content, str) else None
 
+    def resolve_compact_link(self, row: JsonObject) -> str | None:
+        """The `parentUuid` of a compaction summary row, the `uuid` of the boundary row it follows; None for any
+        other row or a summary row with no parent."""
+        if self.resolve_compact_summary(row) is None:
+            return None
+        return opt_str(row.get("parentUuid")) or None
+
     def opens_with_clear(self, row: JsonObject) -> bool | None:
         """For a user row that is not a harness note, whether it is the `/clear` command row; None for any other
         row."""
@@ -341,11 +348,11 @@ class ClaudeTranscriptAdapter:
         return EventRecord(self.agent, event, session_id, time, subagent_id, opt_str(row.get("cwd")) or None)
 
     def _compaction(self, row: JsonObject, subagent_id: str | None) -> EventRecord:
-        trigger = opt_str(as_object(row.get("compactMetadata")).get("trigger"))
         metadata = as_object(row.get("compactMetadata"))
+        trigger = opt_str(metadata.get("trigger"))
         kept = strict_str_list(as_object(metadata.get("preservedMessages")).get("uuids"))
-        item = CompactionPreserved(tuple(kept)) if kept else None
-        return replace(self._record(row, "post_compact", subagent_id), source=trigger, item=item)
+        boundary = CompactionBoundary(opt_str(row.get("uuid")) or None, tuple(kept))
+        return replace(self._record(row, "post_compact", subagent_id), source=trigger, item=boundary)
 
     def _typed_text(self, row: JsonObject) -> str | None:
         """The text of a row a person typed, None for any other row."""
