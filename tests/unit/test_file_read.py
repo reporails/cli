@@ -10,6 +10,8 @@ from reporails_cli.core.platform.utils.file_read import read_file_bytes, read_fi
 
 BOM = b"\xef\xbb\xbf"
 
+pytestmark = [pytest.mark.unit, pytest.mark.subsys_lint]
+
 
 def test_utf8_keeps_the_byte_order_mark(tmp_path: Path) -> None:
     path = tmp_path / "bom.md"
