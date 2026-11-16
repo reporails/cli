@@ -26,7 +26,7 @@ from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.diagnostics import SEVERITY_RANK
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import ClassifiedFile, Execution, LocalFinding, Rule, RuleType
-from reporails_cli.core.platform.dto.results import ConfiguredRoot
+from reporails_cli.core.platform.dto.results import ConfiguredRoot, ProjectConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.policy.matching import match_files
 from reporails_cli.core.platform.rules.registry import load_rules
@@ -154,19 +154,19 @@ def _classify_agent_files(
     project_dir: Path,
     instruction_files: list[Path],
     agent: str,
-    generic_scanning: bool,
+    config: ProjectConfig,
     *,
     skills: Mapping[str, str] | None = None,
     exclusions: RunExclusions | None = None,
 ) -> list[ClassifiedFile]:
     """Classify `instruction_files` with `agent`'s file types, link-reached generic files included when
-    `generic_scanning` is on."""
-    file_types = load_file_types(agent or "generic", project_root=project_dir)
+    the project's `config` turns `generic_scanning` on."""
+    file_types = load_file_types(agent or "generic", config=config)
     return classify_files(
         project_dir,
         instruction_files,
         file_types,
-        generic_scanning=generic_scanning,
+        generic_scanning=config.generic_scanning,
         skills=skills,
         exclusions=exclusions,
     )
@@ -202,7 +202,7 @@ def run_m_probes(
     rules = load_rules(project=project, scan=scan, agent=agent)
     generic_scanning = project.config.generic_scanning
     classified = _classify_agent_files(
-        project_dir, instruction_files, agent, generic_scanning, skills=skills, exclusions=exclusions
+        project_dir, instruction_files, agent, project.config, skills=skills, exclusions=exclusions
     )
     effective_files = _extend_with_generic(instruction_files, classified, generic_scanning)
 
@@ -242,7 +242,7 @@ def _replaced_core_rules(
 
 def _files_by_first_agent(
     project_dir: Path,
-    generic_scanning: bool,
+    config: ProjectConfig,
     pairs: list[tuple[str, list[Path]]],
     skills: Mapping[str, str] | None,
     exclusions: RunExclusions,
@@ -251,7 +251,7 @@ def _files_by_first_agent(
     seen: dict[Path, tuple[str, ClassifiedFile]] = {}
     for agent_id, agent_files in pairs:
         for cf in _classify_agent_files(
-            project_dir, agent_files, agent_id, generic_scanning, skills=skills, exclusions=exclusions
+            project_dir, agent_files, agent_id, config, skills=skills, exclusions=exclusions
         ):
             seen.setdefault(cf.path, (agent_id, cf))
     return seen
@@ -273,7 +273,7 @@ def _project_wide_findings(
     """
     project, scan = _rule_roots(run, project_dir)
     rules = load_rules(project=project, scan=scan, agent="")
-    seen = _files_by_first_agent(project_dir, project.config.generic_scanning, pairs, skills, exclusions)
+    seen = _files_by_first_agent(project_dir, project.config, pairs, skills, exclusions)
     replaced_by = _replaced_core_rules(project, scan, [agent_id for agent_id, _ in pairs if agent_id], rules)
     groups: dict[frozenset[str], dict[str, Rule]] = {}
     for rule_id, rule in rules.items():
@@ -358,7 +358,7 @@ def run_content_quality_checks(
             project_dir,
             instruction_files,
             agent,
-            project.config.generic_scanning,
+            project.config,
             skills=skill_membership(ruleset_map),
             exclusions=exclusions,
         )

@@ -155,7 +155,7 @@ def test_mcp_validate_payload_carries_notices_and_the_funnel_error(
     monkeypatch.setattr(check_one, "_agent_file_pairs", lambda *_a, **_k: [])
     ruleset_map = _map()
     scope = Scope(tmp_path, None, [], "claude", [], {}, LeftOut(((), ()), no_exclusions(tmp_path)), ProjectConfig())
-    result, funnel_error = check_one.check_and_assemble(RunContext(), scope, ruleset_map, lint=ServerLint())
+    result, funnel_error = check_one.check_and_assemble(RunContext(), scope, ruleset_map, lint=ServerLint("free"))
     payload = tools._attach_funnel(json_formatter.format_combined_result(result, ruleset_map=ruleset_map), funnel_error)
     from reporails_cli.formatters import mcp as mcp_formatter
 
@@ -316,7 +316,7 @@ def _mcp_notices(monkeypatch: pytest.MonkeyPatch) -> tuple[Notice, ...]:
     monkeypatch.setattr(
         check_one, "_server_lint", lambda *_a, **_k: LintResponse(funnel_error=None, result=None, notices=(WARN, PROMO))
     )
-    return check_one._server_lint_result(object(), ServerLint())[2]
+    return check_one._server_lint_result(object(), ServerLint("free"))[2]
 
 
 @pytest.mark.unit

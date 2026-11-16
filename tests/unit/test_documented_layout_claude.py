@@ -57,7 +57,7 @@ def _project(root: Path) -> Path:
 @pytest.mark.subsys_classify
 def test_documented_project_locations_are_discovered(tmp_path: Path) -> None:
     project = _project(tmp_path / "proj")
-    discovered = discover_from_config(project, "claude", load_run_exclusions(RunContext(), project))
+    discovered = discover_from_config(RunContext(), project, "claude", load_run_exclusions(RunContext(), project))
     assert discovered is not None
     found = {p.relative_to(project).as_posix() for group in discovered for p in group}
     for rel, _ in PROJECT_ROWS:

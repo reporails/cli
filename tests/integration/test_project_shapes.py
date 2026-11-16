@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.platform.dto.results import MapperConfig
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
@@ -168,7 +169,7 @@ def _serve_fixes(monkeypatch: pytest.MonkeyPatch, project: Path) -> None:
 
     instructions = project / "CLAUDE.md"
     settings = project / ".claude" / "settings.json"
-    mapped = map_instruction_files(project, [instructions], spawn_daemon=False)
+    mapped = map_instruction_files(project, [instructions], spawn_daemon=False, mapper=MapperConfig())
     line = next(i for i, text in enumerate(instructions.read_text().splitlines(), 1) if "build.sh" in text)
     pi = next(a.position_index for a in mapped.atoms if a.line == line)
     items = (

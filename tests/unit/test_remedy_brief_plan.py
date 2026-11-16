@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from reporails_cli.core.platform.config.run_context import RunContext
+from reporails_cli.core.platform.dto.results import MapperConfig
 from reporails_cli.formatters.mcp_view import render_text_view
 from reporails_cli.interfaces.mcp import remedy_brief, snapshots, tools
 from reporails_cli.interfaces.mcp.preservation import with_preservation
@@ -260,14 +261,14 @@ def test_a_unicode_line_separator_does_not_shift_the_plan_or_its_check(tmp_path:
         "expect": {"keep": ["AGENTS.md", 3]},
     }
     location = {**_location(), "findings": [], "relations": [relation]}
-    project_map = map_instruction_files(tmp_path, [file, other], spawn_daemon=False)
+    project_map = map_instruction_files(tmp_path, [file, other], spawn_daemon=False, mapper=MapperConfig())
 
     reply = remedy_brief.build_remedy_brief(location, tmp_path, project_map, preservation_contract="stand-in")
 
     assert [(e["line_start"], e["before"]) for e in reply["edits"]] == [(5, "- Use `ruff` for linting.\n")]
     text = file.read_text(encoding="utf-8").replace("- Use `ruff` for linting.\n", "")
     file.write_text(text, encoding="utf-8")
-    fresh = map_instruction_files(tmp_path, [file], spawn_daemon=False)
+    fresh = map_instruction_files(tmp_path, [file], spawn_daemon=False, mapper=MapperConfig())
     assert snapshots.check_conformance(file, fresh, text, tmp_path) == {"ok": True, "deviations": []}
 
 

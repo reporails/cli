@@ -5,6 +5,7 @@ module words the refusal as a structured reply and formats the run as the payloa
 health and, on the paid plan, the remediation workflow). `preflight` and `explain` live in `rule_tools.py`.
 """
 
+from functools import partial
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import get_known_agents
@@ -71,7 +72,7 @@ def model_not_ready_error() -> JsonObject | None:
 
 def unserved_or_model_not_ready_error() -> JsonObject | None:
     """The error payload when the server will not serve this caller, else when the model set is not ready."""
-    refusal = server_gate("mcp", handshake)
+    refusal = server_gate("mcp", partial(handshake, tier=RunContext().tier()))
     return refusal_payload(refusal) if refusal is not None else model_not_ready_error()
 
 
@@ -162,7 +163,7 @@ def run_pipeline_for_path(
     `file_score` is that single file's own display score (`None` for a directory or an unscored file).
     `named` and `project_root` are read as in `core.pipeline.check_one.scope_for_path`; `run` is this tool call's own.
     """
-    checked = check_path(path, project_root, named, lint=ServerLint(), run=run, fetch=http_get)
+    checked = check_path(path, project_root, named, lint=ServerLint(run.tier()), run=run, fetch=http_get)
     if isinstance(checked, Refusal):
         return refusal_payload(checked), None, None
     return format_run(checked, full=full), checked.ruleset_map, checked.file_score

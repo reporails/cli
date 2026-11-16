@@ -49,7 +49,6 @@ from reporails_cli.core.mapper.full_map_cache import FullMapCache, compute_ident
 from reporails_cli.core.mapper.reach import record_reach
 from reporails_cli.core.mapper.skills import record_skills
 from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
-from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
 from reporails_cli.core.platform.dto.pipeline import ScopeDiscovery
@@ -135,17 +134,20 @@ def resolve_agent_filters(
         effective,
         assumed,
         mixed,
-        _place_named(filtered, all_detected, exclusions, effective, target, explicit=explicit),
+        _place_named(
+            run, filtered, all_detected, exclusions, effective_agent=effective, target=target, explicit=explicit
+        ),
     )
 
 
 def _place_named(
+    run: RunContext,
     filtered: list[DetectedAgent],
     detected: list[DetectedAgent],
     exclusions: RunExclusions,
+    *,
     effective_agent: str,
     target: Path,
-    *,
     explicit: bool,
 ) -> list[DetectedAgent]:
     """`filtered` plus the named files that a user pattern matches yet no directory walk listed.
@@ -170,8 +172,8 @@ def _place_named(
     for path in wanted:
         found = listed.get(path)
         if found is None:
-            kind = _kind_of(path, effective_agent, target)
-            if kind is None and explicit and _claimed_by_other(path, effective_agent, target):
+            kind = _kind_of(run, path, effective_agent, target)
+            if kind is None and explicit and _claimed_by_other(run, path, effective_agent, target):
                 continue
             found = (effective_agent, kind or "instruction_files", path)
         owner, kind, listed_path = found
@@ -211,28 +213,28 @@ def _by_resolved_path(agents: list[DetectedAgent]) -> dict[Path, tuple[str, str,
 _KINDS = ("instruction_files", "rule_files", "config_files")
 
 
-def _claimed_by_other(path: Path, agent: str, target: Path) -> bool:
+def _claimed_by_other(run: RunContext, path: Path, agent: str, target: Path) -> bool:
     """True when the file types of a known agent other than `agent` classify `path`."""
 
-    return any(_claims(path, other, target) for other in get_known_agents() if other != agent)
+    return any(_claims(run, path, other, target) for other in get_known_agents() if other != agent)
 
 
-def is_listed_file(path: Path, target: Path) -> bool:
+def is_listed_file(run: RunContext, path: Path, target: Path) -> bool:
     """True when some known agent's file types classify `path` as an instruction, rule or config file under `target`."""
 
-    return any(_claims(path, agent, target) for agent in get_known_agents())
+    return any(_claims(run, path, agent, target) for agent in get_known_agents())
 
 
-def _claims(path: Path, agent: str, target: Path) -> bool:
+def _claims(run: RunContext, path: Path, agent: str, target: Path) -> bool:
     """True when the file types of `agent` classify `path`; False when they cannot be read."""
 
     try:
-        return _classified_kind(path, agent, target) is not None
+        return _classified_kind(run, path, agent, target) is not None
     except (OSError, ValueError):
         return False
 
 
-def _kind_of(path: Path, agent: str, target: Path) -> str | None:
+def _kind_of(run: RunContext, path: Path, agent: str, target: Path) -> str | None:
     """The file list (``instruction_files``, ``rule_files`` or ``config_files``) `path`'s type maps to.
 
     ``None`` when the agent's file types do not classify `path`; ``instruction_files`` when they
@@ -240,15 +242,15 @@ def _kind_of(path: Path, agent: str, target: Path) -> str | None:
     """
 
     try:
-        return _classified_kind(path, agent, target)
+        return _classified_kind(run, path, agent, target)
     except (OSError, ValueError):
         return "instruction_files"
 
 
-def _classified_kind(path: Path, agent: str, target: Path) -> str | None:
+def _classified_kind(run: RunContext, path: Path, agent: str, target: Path) -> str | None:
     """Like `_kind_of`, but raises OSError or ValueError when the agent's file types cannot be read."""
 
-    declarations = load_file_types(agent, project_root=target)
+    declarations = load_file_types(agent, config=run.project_config(target))
     classified = classify_files(target, [path], declarations)
     if not classified:
         return None
@@ -264,9 +266,11 @@ def _classified_kind(path: Path, agent: str, target: Path) -> str | None:
 
 
 def apply_generic_scan(
+    run: RunContext,
     target: Path,
     instruction_files: list[Path],
     agent: str,
+    *,
     generic_scanning: bool,
     exclusions: RunExclusions | None = None,
 ) -> tuple[list[Path], dict[str, str]]:
@@ -289,7 +293,7 @@ def apply_generic_scan(
         return [], {}
 
     try:
-        file_types = load_file_types(agent, project_root=target)
+        file_types = load_file_types(agent, config=run.project_config(target))
         with shared_dir_listings():
             classified = classify_files(
                 target, list(instruction_files), file_types, generic_scanning=True, exclusions=exclusions
@@ -382,6 +386,7 @@ def map_instruction_files(
     progress: Callable[[str], None] | None = None,
     spawn_daemon: bool = True,
     filtered_agents: list[DetectedAgent] | None = None,
+    mapper: MapperConfig,
 ) -> RulesetMap | None:
     """Map instruction files via the whole-map cache, else the daemon, else in-process.
 
@@ -411,9 +416,7 @@ def map_instruction_files(
         emit = progress if progress is not None else (lambda _msg: None)
 
         full_cache = FullMapCache(get_global_cache_dir())
-        identity = compute_identity(
-            list(instruction_files), root=target, segmentation=get_project_config(target).mapper.segmentation
-        )
+        identity = compute_identity(list(instruction_files), root=target, segmentation=mapper.segmentation)
         cached = full_cache.get(identity)
         if cached is not None:
             _apply_run_context(cached, filtered_agents, target)
@@ -421,9 +424,7 @@ def map_instruction_files(
 
         daemon_status = _resolve_daemon(emit, spawn_daemon=spawn_daemon)
 
-        ruleset_map = _map_via_daemon_or_process(
-            daemon_status, list(instruction_files), target, get_project_config(target).mapper, emit
-        )
+        ruleset_map = _map_via_daemon_or_process(daemon_status, list(instruction_files), target, mapper, emit)
         if ruleset_map is not None:
             full_cache.put(identity, ruleset_map)  # the map as mapped; a later run with other agents decides again
             _apply_run_context(ruleset_map, filtered_agents, target)
@@ -478,7 +479,7 @@ def _map_via_daemon_or_process(
         # second, redundant model load) while the freshly-spawned daemon warms a copy it never
         # serves for this run. In-process stays the fallback below only when the daemon is
         # UNAVAILABLE or the round-trip returns None.
-        ruleset_map: RulesetMap | None = map_ruleset_via_daemon(files, target, progress=emit)
+        ruleset_map: RulesetMap | None = map_ruleset_via_daemon(files, target, mapper_cfg.segmentation, progress=emit)
         if ruleset_map is not None:
             return ruleset_map
         emit("Restarting Reporails...")

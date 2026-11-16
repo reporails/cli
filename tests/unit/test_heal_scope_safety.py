@@ -15,6 +15,7 @@ from typer.testing import CliRunner
 
 from reporails_cli.core.heal.apply import heal_scope_files, heal_workflow_within
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.interfaces.cli.main import app
@@ -134,7 +135,14 @@ def test_heal_leaves_files_in_heal_exclude_unchanged(tmp_path: object) -> None:
     rows = tuple(LocationFinding("format", str(p), 2, 0, "code") for p in (kept, archived))
     wf = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (), "", rows),))
     fixes = _apply_keyed_fixes(
-        rmap, base, wf, dry_run=False, show_progress=False, console=None, allowed_files=[kept, archived], suppressed={}
+        rmap,
+        RunContext().configured_root(base),
+        wf,
+        dry_run=False,
+        show_progress=False,
+        console=None,
+        allowed_files=[kept, archived],
+        suppressed={},
     ).fixes
 
     assert archived.read_bytes() == archived_before
@@ -158,7 +166,7 @@ def test_a_bare_heal_exclude_name_drops_only_the_root_file(tmp_path: object) -> 
     for f in files:
         f.write_text("# Doc\n", encoding="utf-8")
 
-    assert allowed_set(base, files) == {base / "sub" / "CLAUDE.md"}
+    assert allowed_set(base, files, RunContext().project_config(base).heal_exclude) == {base / "sub" / "CLAUDE.md"}
 
 
 @pytest.mark.unit
@@ -218,7 +226,7 @@ def test_single_file_heal_writes_only_the_named_file_not_what_it_imports(tmp_pat
     imported_before = imported.read_bytes()
     rmap, wf = _two_file_map(main, imported)
 
-    fixes = heal_workflow_within(rmap, wf, main, base, LocalProjectEnvironment).fixes
+    fixes = heal_workflow_within(rmap, wf, main, RunContext().configured_root(base), LocalProjectEnvironment).fixes
 
     assert imported.read_bytes() == imported_before
     assert "`pyproject.toml`" in main.read_text(encoding="utf-8")

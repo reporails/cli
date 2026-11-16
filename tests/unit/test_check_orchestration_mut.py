@@ -224,7 +224,9 @@ def test_resolved_capability_returns_paths(monkeypatch, tmp_path):
     """A non-None resolution must return its path, not raise (L51 `is None`)."""
     p = tmp_path / "skill.md"
     _patch_resolve(monkeypatch, resolved=p, expand_ret=({p}, ["u"]))
-    paths, unresolved = orch._resolve_capability_paths_one("skills", "foo", "claude", tmp_path, no_exclusions(tmp_path))
+    paths, unresolved = orch._resolve_capability_paths_one(
+        RunContext(), "skills", "foo", "claude", project_root=tmp_path, exclusions=no_exclusions(tmp_path)
+    )
     assert paths == {p}
     assert unresolved == []
 
@@ -236,7 +238,7 @@ def test_agents_capability_triggers_focus_expansion(monkeypatch, tmp_path):
     p = tmp_path / "agent.md"
     _patch_resolve(monkeypatch, resolved=p, expand_ret=({p}, ["unresolved-skill"]))
     _paths, unresolved = orch._resolve_capability_paths_one(
-        "agents", "foo", "claude", tmp_path, no_exclusions(tmp_path)
+        RunContext(), "agents", "foo", "claude", project_root=tmp_path, exclusions=no_exclusions(tmp_path)
     )
     assert unresolved == ["unresolved-skill"]
 
@@ -254,7 +256,7 @@ def test_no_sniff_agent_token_is_path(monkeypatch, tmp_path):
     """
     monkeypatch.setattr(cap_paths, "is_capability_keyword", lambda *a, **k: True)
     monkeypatch.setattr(cap_paths, "canonicalize_capability", lambda *a, **k: "skills")
-    kind, _payload = cap_paths.classify_target_token("skills", "", tmp_path)
+    kind, _payload = cap_paths.classify_target_token(RunContext(), "skills", "", tmp_path)
     assert kind == "path"
 
 
@@ -276,7 +278,9 @@ def test_undeclared_capability_message_shows_none(monkeypatch, tmp_path):
     monkeypatch.setattr(focus_mod, "available_capabilities", lambda *a, **k: [])
     monkeypatch.setattr(orch.console, "print", lambda *a, **k: printed.append(str(a)))
     with pytest.raises(typer.Exit):
-        orch._resolve_capability_paths_one("skills", "foo", "claude", tmp_path, no_exclusions(tmp_path))
+        orch._resolve_capability_paths_one(
+            RunContext(), "skills", "foo", "claude", project_root=tmp_path, exclusions=no_exclusions(tmp_path)
+        )
     assert any("(none)" in msg for msg in printed)
 
 

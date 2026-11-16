@@ -26,7 +26,6 @@ from reporails_cli.core.mapper.models import Models, get_models
 from reporails_cli.core.mapper.pipeline import map_ruleset
 from reporails_cli.core.mapper.serialize import save_ruleset_map
 from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir, parse_idle_timeout_env
-from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, as_str, str_list
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.observability.log_levels import configure_logging
@@ -222,13 +221,6 @@ def _dispatch(
     return {"ok": False, "error": f"unknown command: {cmd}"}
 
 
-def _resolve_segmentation(root: Path | None) -> str:
-    """Read the project's segmentation mode from `.ails/config.yml` at `root`."""
-    if root is None:
-        return "legacy"
-    return get_project_config(root).mapper.segmentation
-
-
 def _ruleset_map_to_dict(ruleset_map: RulesetMap) -> JsonObject:
     """Serialize a RulesetMap to a JSON-compatible dict via a temp round-trip."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
@@ -250,6 +242,7 @@ def _handle_map_ruleset(
     """
     paths = [Path(p) for p in str_list(request.get("paths"))]
     root = Path(as_str(request["root"])) if "root" in request else None
+    segmentation = as_str(request["segmentation"])
 
     try:
         ruleset_map = map_ruleset(
@@ -257,7 +250,7 @@ def _handle_map_ruleset(
             models=models,
             root=root,
             cache_dir=get_global_cache_dir(),
-            segmentation=_resolve_segmentation(root),
+            segmentation=segmentation,
             progress=progress,
         )
         return {"ok": True, "ruleset_map": _ruleset_map_to_dict(ruleset_map), "code": code_identity()}

@@ -109,6 +109,7 @@ def get_known_agents() -> Mapping[str, AgentType]:
 
 
 def _detect_agent(
+    run: RunContext,
     target: Path,
     agent_type: AgentType,
     *,
@@ -123,7 +124,9 @@ def _detect_agent(
         return None
 
     # Config-driven discovery from bundled config.yml
-    config_result = discover_from_config(target, agent_id, exclusions, project_config=project_config, repo_scoped=True)
+    config_result = discover_from_config(
+        run, target, agent_id, exclusions, project_config=project_config, repo_scoped=True
+    )
     if config_result is None:
         return None
     instruction_files, rule_files, config_files = config_result
@@ -169,6 +172,7 @@ def detect_agents(run: RunContext, target: Path) -> list[DetectedAgent]:
         for agent_type in known.values()
         if (
             agent := _detect_agent(
+                run,
                 target,
                 agent_type,
                 known=known,
@@ -197,6 +201,7 @@ def detect_single_agent(
         return None
 
     config_result = discover_from_config(
+        run,
         target,
         agent_id,
         load_run_exclusions(run, target),

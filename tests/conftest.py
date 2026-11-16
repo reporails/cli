@@ -396,14 +396,12 @@ def server_reachable(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def ails_client(base_url: str, *, tier: str | None = None, api_key: str | None = None) -> Any:
-    """An `AilsClient` built with the server URL (and tier) set in the environment, as a user sets them."""
+    """An `AilsClient` built with the server URL set in the environment, as a user sets it."""
     from reporails_cli.core.platform.adapters.api_client import AilsClient
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv("AILS_SERVER_URL", base_url)
-        if tier is not None:
-            mp.setenv("AILS_TIER", tier)
-        return AilsClient(api_key=api_key)
+        return AilsClient(tier or "free", api_key=api_key)
 
 
 def run_rule_files(yml_paths: list[Path], target: Path, instruction_files: list[Path] | None = None) -> dict[str, Any]:

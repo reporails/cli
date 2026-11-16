@@ -32,6 +32,7 @@ from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import read_frontmatter
 
 if TYPE_CHECKING:
+    from reporails_cli.core.platform.config.run_context import RunContext
     from reporails_cli.core.platform.dto.discovery import RunExclusions
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ _SKILL_PRELOAD_FRONTMATTER_KEY = "skills"
 
 
 def expand_focus(
+    run: RunContext,
     focus_paths: set[Path],
     agent: str,
     project_root: Path,
@@ -49,7 +51,7 @@ def expand_focus(
 
     Reads each focus path's YAML frontmatter and looks for a `skills:`
     field listing skill names. Each declared skill is resolved through
-    `resolve_capability(agent, "skills", name, project_root)` and added
+    `resolve_capability(run, agent, "skills", name, project_root)` and added
     to the expanded set, unless the run's `exclusions`
     leave that skill out: it is neither checked nor reported unresolved. Paths that aren't subagents (no `skills:`
     field, no frontmatter, or not a known agents file) pass through
@@ -63,7 +65,7 @@ def expand_focus(
     unresolved: list[UnresolvedSkill] = []
     for path in focus_paths:
         for skill_name in _read_preloaded_skills(path):
-            resolved = resolve_capability(agent, "skills", skill_name, project_root)
+            resolved = resolve_capability(run, agent, "skills", skill_name, project_root)
             if resolved is not None:
                 if not leaves_out(exclusions, resolved):
                     expanded.add(resolved)
@@ -73,9 +75,11 @@ def expand_focus(
 
 
 def resolve_capability_spec(
+    run: RunContext,
     capability: str,
     name: str,
     agent: str,
+    *,
     project_root: Path,
     exclusions: RunExclusions,
 ) -> tuple[set[Path], list[UnresolvedSkill]]:
@@ -83,27 +87,28 @@ def resolve_capability_spec(
     did not resolve. An empty `name` targets every instance the run's `exclusions` keep; a named
     instance resolves whatever is excluded, and a named subagent brings the skills it preloads
     that the exclusions keep. Raises `TargetError` when the spec names no file."""
-    if not capability_declared(capability, agent, project_root):
+    config = run.project_config(project_root)
+    if not capability_declared(capability, agent, config):
         raise TargetError(
             "undeclared",
             capability,
             agent,
             project_root,
             name=name,
-            available=tuple(available_capabilities(agent, project_root)),
+            available=tuple(available_capabilities(agent, config)),
         )
     if not name:
-        return set(list_capability_targets(agent, capability, project_root, exclusions)), []
-    resolved = resolve_capability(agent, capability, name, project_root)
+        return set(list_capability_targets(run, agent, capability, project_root, exclusions)), []
+    resolved = resolve_capability(run, agent, capability, name, project_root)
     if resolved is None:
-        available = list_capability_targets(agent, capability, project_root, exclusions)
+        available = list_capability_targets(run, agent, capability, project_root, exclusions)
         raise TargetError(
             "unnamed", capability, agent, project_root, name=name, available=tuple(str(p) for p in available)
         )
     paths = {resolved}
     unresolved: list[UnresolvedSkill] = []
     if capability == "agents":
-        paths, unresolved = expand_focus(paths, agent, project_root, exclusions)
+        paths, unresolved = expand_focus(run, paths, agent, project_root, exclusions)
     return paths, unresolved
 
 

@@ -785,7 +785,8 @@ def test_the_signed_in_account_is_read_again_only_when_the_file_changes(monkeypa
         return real(target)
 
     monkeypatch.setattr(claude_settings, "_read_json", counting)
-    assert [claude_settings.claude_synced_account_folder() for _ in range(3)] == ["o_a"] * 3
+    run = RunContext()
+    assert [claude_settings.claude_synced_account_folder(run) for _ in range(3)] == ["o_a"] * 3
     assert len([r for r in reads if r == path]) == 1
     _write(path, json.dumps({"oauthAccount": {"organizationUuid": "o", "accountUuid": "second"}}))
-    assert claude_settings.claude_synced_account_folder() == "o_second"
+    assert claude_settings.claude_synced_account_folder(RunContext()) == "o_second"

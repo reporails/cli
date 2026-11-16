@@ -20,6 +20,7 @@ import pytest
 
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.mapper.inspect import _detect_file_activation, load_registry
+from reporails_cli.core.platform.config.run_context import RunContext
 
 
 def _write(path: Path, text: str = "# Instructions\n") -> Path:
@@ -163,7 +164,9 @@ class TestDoubleStarSpansNestedFolders:
         self, home: Path, tmp_path: Path, rel: str, expected: str
     ) -> None:
         path = _write(tmp_path / rel, "# Notes\n\nUse the shared client.\n")
-        classified = classify_files(tmp_path, [path], load_file_types("claude", project_root=tmp_path))
+        classified = classify_files(
+            tmp_path, [path], load_file_types("claude", config=RunContext().project_config(tmp_path))
+        )
         assert [c.file_type for c in classified] == [expected]
         assert _detect_file_activation(path, tmp_path, load_registry())[:5][4] == expected
 
@@ -171,4 +174,7 @@ class TestDoubleStarSpansNestedFolders:
     @pytest.mark.subsys_classify
     def test_a_folder_that_is_not_the_declared_one_stays_unclaimed(self, home: Path, tmp_path: Path) -> None:
         path = _write(tmp_path / "pkg/.claude/notes/workflows/deep.md", "# Notes\n")
-        assert classify_files(tmp_path, [path], load_file_types("claude", project_root=tmp_path)) == []
+        assert (
+            classify_files(tmp_path, [path], load_file_types("claude", config=RunContext().project_config(tmp_path)))
+            == []
+        )

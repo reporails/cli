@@ -479,7 +479,7 @@ class TestUserScopeSubagentMemoryExclusion:
         local_mem.mkdir(parents=True)
         (local_mem / "note.md").write_text("# repo-local memory")
 
-        result = discover_from_config(tmp_path, "claude", load_run_exclusions(RunContext(), tmp_path))
+        result = discover_from_config(RunContext(), tmp_path, "claude", load_run_exclusions(RunContext(), tmp_path))
         assert result is not None
         instructions, _rules, _configs = result
         names = {p.as_posix() for p in instructions}
@@ -494,7 +494,7 @@ class TestUserScopeSubagentMemoryExclusion:
         (tmp_path / ".git").mkdir()
         (tmp_path / "CLAUDE.md").write_text("# root")
 
-        result = discover_from_config(tmp_path, "claude", load_run_exclusions(RunContext(), tmp_path))
+        result = discover_from_config(RunContext(), tmp_path, "claude", load_run_exclusions(RunContext(), tmp_path))
         assert result is not None
         instructions, _rules, _configs = result
         leaked = [
@@ -525,7 +525,7 @@ class TestProjectConfigSurfaceAdjustments:
             'schema_version: "0.1.0"\nagents:\n  codex:\n    fallback_filenames: ["TEAM_GUIDE.md"]\n'
         )
 
-        file_types = load_file_types("codex", project_root=tmp_path)
+        file_types = load_file_types("codex", config=RunContext().project_config(tmp_path))
         files = get_all_instruction_files(RunContext(), tmp_path)
         types = {cf.path.name: cf.file_type for cf in classify_files(tmp_path, files, file_types)}
         assert types.get("TEAM_GUIDE.md") == "main", "fallback filename must classify as main"
@@ -644,7 +644,7 @@ class TestProjectConfigSurfaceAdjustments:
 
         project_config = get_project_config(tmp_path)
         result = discover_from_config(
-            tmp_path, "cursor", load_run_exclusions(RunContext(), tmp_path), project_config=project_config
+            RunContext(), tmp_path, "cursor", load_run_exclusions(RunContext(), tmp_path), project_config=project_config
         )
         assert result is not None
         instructions, rules, _configs = result
@@ -710,7 +710,9 @@ class TestRepoScopedDiscoveryIgnoresHomeConfig:
         mem_dir.mkdir(parents=True)
         (mem_dir / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
 
-        result = discover_from_config(repo, "claude", load_run_exclusions(RunContext(), repo), repo_scoped=True)
+        result = discover_from_config(
+            RunContext(), repo, "claude", load_run_exclusions(RunContext(), repo), repo_scoped=True
+        )
         assert result is not None
         instructions, _rules, _configs = result
         names = {p.as_posix() for p in instructions}
@@ -736,7 +738,9 @@ class TestRepoScopedDiscoveryIgnoresHomeConfig:
         foreign_mem.mkdir(parents=True)
         (foreign_mem / "MEMORY.md").write_text("# Other\n", encoding="utf-8")
 
-        result = discover_from_config(repo, "claude", load_run_exclusions(RunContext(), repo), repo_scoped=True)
+        result = discover_from_config(
+            RunContext(), repo, "claude", load_run_exclusions(RunContext(), repo), repo_scoped=True
+        )
         assert result is not None
         instructions, _rules, _configs = result
         names = {p.as_posix() for p in instructions}

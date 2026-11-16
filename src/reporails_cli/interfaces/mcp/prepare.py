@@ -35,7 +35,9 @@ def prepare_for_path(path: str, targets: list[str] | None, project_root: Path) -
         scope = scope_for_path(path, project_root, named, run=run, fetch=http_get)
         if isinstance(scope, Refusal):
             return {"files": 0} if scope.kind == "empty_project" else refusal_payload(scope)
-        ruleset_map, mapper_error = build_map(scope.scan_root, scope.instruction_files, scope.filter_agents)
+        ruleset_map, mapper_error = build_map(
+            scope.scan_root, scope.instruction_files, scope.config.mapper, scope.filter_agents
+        )
         if ruleset_map is None:
             return {"error": "mapper_unavailable", "mapper_error": mapper_error}
         return {"files": len(ruleset_map.files)}

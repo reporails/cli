@@ -10,12 +10,12 @@ check flow uses — not the raw detected list.
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.platform.config.run_context import RunContext
+from reporails_cli.core.platform.dto.results import MapperConfig
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_map]
 
@@ -33,7 +33,7 @@ def test_build_map_routes_through_shared_warm_path(monkeypatch):
 
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.map_instruction_files", fake_map)
 
-    ruleset_map, mapper_error = check_one.build_map(Path("/proj"), [Path("/proj/CLAUDE.md")])
+    ruleset_map, mapper_error = check_one.build_map(Path("/proj"), [Path("/proj/CLAUDE.md")], MapperConfig())
 
     assert ruleset_map == "SENTINEL_MAP", "MCP must map via the shared warm path, not a cold map_ruleset"
     assert mapper_error is None
@@ -54,7 +54,7 @@ def test_build_map_keeps_the_swallowed_exception_text_for_its_caller(monkeypatch
 
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.map_instruction_files", raising_map)
 
-    ruleset_map, mapper_error = check_one.build_map(Path("/proj"), [Path("/proj/CLAUDE.md")])
+    ruleset_map, mapper_error = check_one.build_map(Path("/proj"), [Path("/proj/CLAUDE.md")], MapperConfig())
 
     assert ruleset_map is None
     assert mapper_error == "RuntimeError: dictionary changed size during iteration"
@@ -67,10 +67,6 @@ def test_discover_files_discovers_against_filtered_agents(monkeypatch, tmp_path)
     sentinel_filtered = ["FILTERED_AGENT"]
     captured = {}
 
-    monkeypatch.setattr(
-        "reporails_cli.core.platform.config.run_context.get_project_config",
-        lambda _t: SimpleNamespace(default_agent="", exclude_dirs=[], exclude_files=[], generic_scanning=False),
-    )
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.mapping.detect_agents",
         lambda _r, _t: ["RAW_DETECTED_AGENT"],

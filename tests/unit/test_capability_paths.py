@@ -36,7 +36,7 @@ def _make_rule(root: Path, name: str) -> Path:
 @pytest.mark.unit
 @pytest.mark.subsys_classify
 def test_available_capabilities_for_claude_contains_expected_keys() -> None:
-    caps = available_capabilities("claude")
+    caps = available_capabilities("claude", None)
     assert "main" in caps
     assert "skills" in caps
     assert "rules" in caps
@@ -46,37 +46,37 @@ def test_available_capabilities_for_claude_contains_expected_keys() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_classify
 def test_canonicalize_singular_to_plural() -> None:
-    assert canonicalize_capability("skill", "claude") == "skills"
-    assert canonicalize_capability("rule", "claude") == "rules"
-    assert canonicalize_capability("agent", "claude") == "agents"
-    assert canonicalize_capability("skills", "claude") == "skills"  # already canonical
+    assert canonicalize_capability("skill", "claude", None) == "skills"
+    assert canonicalize_capability("rule", "claude", None) == "rules"
+    assert canonicalize_capability("agent", "claude", None) == "agents"
+    assert canonicalize_capability("skills", "claude", None) == "skills"  # already canonical
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_classify
 def test_canonicalize_unknown_capability_returns_none() -> None:
-    assert canonicalize_capability("nonsense", "claude") is None
+    assert canonicalize_capability("nonsense", "claude", None) is None
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_classify
 def test_canonicalize_unknown_agent_returns_none() -> None:
-    assert canonicalize_capability("skill", "nonexistent-agent") is None
+    assert canonicalize_capability("skill", "nonexistent-agent", None) is None
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_classify
 def test_is_capability_keyword_rejects_paths() -> None:
-    assert not is_capability_keyword(".", "claude")
-    assert not is_capability_keyword("./src/", "claude")
-    assert not is_capability_keyword("src/foo.md", "claude")
+    assert not is_capability_keyword(".", "claude", None)
+    assert not is_capability_keyword("./src/", "claude", None)
+    assert not is_capability_keyword("src/foo.md", "claude", None)
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_classify
 def test_is_capability_keyword_accepts_known_capability() -> None:
-    assert is_capability_keyword("skill", "claude")
-    assert is_capability_keyword("skills", "claude")
+    assert is_capability_keyword("skill", "claude", None)
+    assert is_capability_keyword("skills", "claude", None)
 
 
 @pytest.mark.unit
@@ -84,7 +84,9 @@ def test_is_capability_keyword_accepts_known_capability() -> None:
 def test_list_capability_targets_globs_skills(tmp_path: Path) -> None:
     _make_skill(tmp_path, "alpha")
     _make_skill(tmp_path, "beta")
-    targets = list_capability_targets("claude", "skills", tmp_path, load_run_exclusions(RunContext(), tmp_path))
+    targets = list_capability_targets(
+        RunContext(), "claude", "skills", tmp_path, load_run_exclusions(RunContext(), tmp_path)
+    )
     names = sorted(p.parent.name for p in targets)
     assert names == ["alpha", "beta"]
 
@@ -94,7 +96,9 @@ def test_list_capability_targets_globs_skills(tmp_path: Path) -> None:
 def test_list_capability_targets_globs_rules(tmp_path: Path) -> None:
     _make_rule(tmp_path, "git")
     _make_rule(tmp_path, "testing")
-    targets = list_capability_targets("claude", "rules", tmp_path, load_run_exclusions(RunContext(), tmp_path))
+    targets = list_capability_targets(
+        RunContext(), "claude", "rules", tmp_path, load_run_exclusions(RunContext(), tmp_path)
+    )
     stems = sorted(p.stem for p in targets)
     assert stems == ["git", "testing"]
 
@@ -103,7 +107,7 @@ def test_list_capability_targets_globs_rules(tmp_path: Path) -> None:
 @pytest.mark.subsys_classify
 def test_resolve_capability_skill_by_parent_dir_name(tmp_path: Path) -> None:
     expected = _make_skill(tmp_path, "alpha")
-    resolved = resolve_capability("claude", "skills", "alpha", tmp_path)
+    resolved = resolve_capability(RunContext(), "claude", "skills", "alpha", tmp_path)
     assert resolved is not None
     assert resolved.parent.name == expected.parent.name
 
@@ -112,7 +116,7 @@ def test_resolve_capability_skill_by_parent_dir_name(tmp_path: Path) -> None:
 @pytest.mark.subsys_classify
 def test_resolve_capability_rule_by_stem(tmp_path: Path) -> None:
     expected = _make_rule(tmp_path, "git")
-    resolved = resolve_capability("claude", "rules", "git", tmp_path)
+    resolved = resolve_capability(RunContext(), "claude", "rules", "git", tmp_path)
     assert resolved is not None
     assert resolved.stem == expected.stem
 
@@ -121,19 +125,24 @@ def test_resolve_capability_rule_by_stem(tmp_path: Path) -> None:
 @pytest.mark.subsys_classify
 def test_resolve_capability_missing_returns_none(tmp_path: Path) -> None:
     _make_skill(tmp_path, "alpha")
-    assert resolve_capability("claude", "skills", "nonexistent", tmp_path) is None
+    assert resolve_capability(RunContext(), "claude", "skills", "nonexistent", tmp_path) is None
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_classify
 def test_list_capability_targets_unknown_capability_returns_empty(tmp_path: Path) -> None:
-    assert list_capability_targets("claude", "no-such-cap", tmp_path, load_run_exclusions(RunContext(), tmp_path)) == []
+    assert (
+        list_capability_targets(
+            RunContext(), "claude", "no-such-cap", tmp_path, load_run_exclusions(RunContext(), tmp_path)
+        )
+        == []
+    )
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_classify
 def test_canonicalize_handles_empty_string() -> None:
-    assert canonicalize_capability("", "claude") is None
+    assert canonicalize_capability("", "claude", None) is None
 
 
 # ── Virtual capability: `referenced` ──────────────────────────────────
@@ -145,7 +154,7 @@ def test_canonicalize_referenced_singular_and_plural() -> None:
     """`referenced` and `references` both canonicalize to `referenced`, agent-agnostic."""
     for keyword in ("referenced", "references"):
         for agent in ("claude", "antigravity", "codex"):
-            assert canonicalize_capability(keyword, agent) == "referenced"
+            assert canonicalize_capability(keyword, agent, None) == "referenced"
 
 
 @pytest.mark.unit
@@ -154,7 +163,7 @@ def test_is_capability_keyword_recognizes_referenced() -> None:
     """`referenced` and `references` are accepted as capability keywords by every agent."""
     for keyword in ("referenced", "references"):
         for agent in ("claude", "antigravity"):
-            assert is_capability_keyword(keyword, agent) is True
+            assert is_capability_keyword(keyword, agent, None) is True
 
 
 @pytest.mark.unit
@@ -168,7 +177,9 @@ def test_list_referenced_enumerates_link_reached_files(tmp_path: Path) -> None:
     (tmp_path / ".ails").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".ails" / "config.yml").write_text("generic_scanning: true\n", encoding="utf-8")
 
-    targets = list_capability_targets("claude", "referenced", tmp_path, load_run_exclusions(RunContext(), tmp_path))
+    targets = list_capability_targets(
+        RunContext(), "claude", "referenced", tmp_path, load_run_exclusions(RunContext(), tmp_path)
+    )
     names = {p.name for p in targets}
     # arch.md was reached via markdown link → classified `referenced` → listed
     assert "arch.md" in names
@@ -184,7 +195,12 @@ def test_list_referenced_empty_when_no_links(tmp_path: Path) -> None:
     (tmp_path / ".ails").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".ails" / "config.yml").write_text("generic_scanning: true\n", encoding="utf-8")
 
-    assert list_capability_targets("claude", "referenced", tmp_path, load_run_exclusions(RunContext(), tmp_path)) == []
+    assert (
+        list_capability_targets(
+            RunContext(), "claude", "referenced", tmp_path, load_run_exclusions(RunContext(), tmp_path)
+        )
+        == []
+    )
 
 
 # ── Strict-main fold: `main` does NOT enumerate nested CLAUDE.md ──────
@@ -199,7 +215,9 @@ def test_main_fold_excludes_nested_child_instruction(tmp_path: Path) -> None:
     nested.mkdir()
     (nested / "CLAUDE.md").write_text("# Nested\n", encoding="utf-8")
 
-    targets = list_capability_targets("claude", "main", tmp_path, load_run_exclusions(RunContext(), tmp_path))
+    targets = list_capability_targets(
+        RunContext(), "claude", "main", tmp_path, load_run_exclusions(RunContext(), tmp_path)
+    )
     rels = sorted(p.relative_to(tmp_path).as_posix() for p in targets)
     assert "CLAUDE.md" in rels
     assert "subdir/CLAUDE.md" not in rels
@@ -215,7 +233,7 @@ def test_child_instruction_capability_still_enumerates_nested(tmp_path: Path) ->
     (nested / "CLAUDE.md").write_text("# Nested\n", encoding="utf-8")
 
     targets = list_capability_targets(
-        "claude", "child_instruction", tmp_path, load_run_exclusions(RunContext(), tmp_path)
+        RunContext(), "claude", "child_instruction", tmp_path, load_run_exclusions(RunContext(), tmp_path)
     )
     rels = sorted(p.relative_to(tmp_path).as_posix() for p in targets)
     assert "subdir/CLAUDE.md" in rels
@@ -228,7 +246,9 @@ def test_main_fold_includes_override_when_present(tmp_path: Path) -> None:
     (tmp_path / "CLAUDE.md").write_text("# Root\n", encoding="utf-8")
     (tmp_path / "CLAUDE.local.md").write_text("# Local override\n", encoding="utf-8")
 
-    targets = list_capability_targets("claude", "main", tmp_path, load_run_exclusions(RunContext(), tmp_path))
+    targets = list_capability_targets(
+        RunContext(), "claude", "main", tmp_path, load_run_exclusions(RunContext(), tmp_path)
+    )
     rels = sorted(p.relative_to(tmp_path).as_posix() for p in targets)
     assert "CLAUDE.md" in rels
     assert "CLAUDE.local.md" in rels
@@ -244,10 +264,12 @@ def test_capability_targets_skip_vendored_folders(tmp_path: Path) -> None:
     vendored.mkdir(parents=True)
     (vendored / "CLAUDE.md").write_text("Never touch this vendored file.\n", encoding="utf-8")
     nested = list_capability_targets(
-        "claude", "child_instruction", tmp_path, load_run_exclusions(RunContext(), tmp_path)
+        RunContext(), "claude", "child_instruction", tmp_path, load_run_exclusions(RunContext(), tmp_path)
     )
     assert [p.relative_to(tmp_path).as_posix() for p in nested] == ["sub/CLAUDE.md"]
-    everything = list_capability_targets("claude", "main", tmp_path, load_run_exclusions(RunContext(), tmp_path))
+    everything = list_capability_targets(
+        RunContext(), "claude", "main", tmp_path, load_run_exclusions(RunContext(), tmp_path)
+    )
     assert all("node_modules" not in p.parts for p in everything)
 
 
@@ -261,7 +283,9 @@ def test_symlinked_declared_folder_is_listed(tmp_path: Path) -> None:
         (tmp_path / ".claude" / "skills").symlink_to(Path("..") / ".agents" / "skills", target_is_directory=True)
     except OSError:
         pytest.skip("symlinks cannot be created here")
-    targets = list_capability_targets("claude", "skills", tmp_path, load_run_exclusions(RunContext(), tmp_path))
+    targets = list_capability_targets(
+        RunContext(), "claude", "skills", tmp_path, load_run_exclusions(RunContext(), tmp_path)
+    )
     assert [t.relative_to(tmp_path).as_posix() for t in targets] == [".claude/skills/foo/SKILL.md"]
 
 

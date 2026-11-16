@@ -11,7 +11,6 @@ from reporails_cli.core.lint.suppression import suppressed_lines
 from reporails_cli.core.pipeline.check_one import check_path
 from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.config.api_key import has_api_key
-from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.environment import EnvironmentFor
 from reporails_cli.core.platform.contract.http_get import HttpGet
@@ -19,6 +18,7 @@ from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, Re
 from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.ports import LintService
+from reporails_cli.core.platform.dto.results import ConfiguredRoot, ProjectConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.utils.utils import matches_any_glob
 
@@ -71,12 +71,13 @@ def heal_withheld(*, signed_in: bool, server_replied: bool) -> tuple[str, str]:
     return HEAL_REQUIRES_PRO, f"{HEAL_PRO_REQUIRED} Nothing was changed."
 
 
-def allowed_set(target: Path, allowed_files: Iterable[Path] | None) -> set[Path] | None:
-    """The resolved files heal may write: the scoped heal files less those the project's `heal_exclude` matches."""
+def allowed_set(target: Path, allowed_files: Iterable[Path] | None, heal_exclude: list[str]) -> set[Path] | None:
+    """The resolved files heal may write: the scoped heal files less those `heal_exclude` matches."""
     allowed = {safe_resolve(p) for p in allowed_files} if allowed_files is not None else None
-    patterns = get_project_config(target).heal_exclude
-    if allowed is not None and patterns:
-        allowed = {p for p in allowed if not matches_any_glob(p, patterns, safe_resolve(target), root_anchored=True)}
+    if allowed is not None and heal_exclude:
+        allowed = {
+            p for p in allowed if not matches_any_glob(p, heal_exclude, safe_resolve(target), root_anchored=True)
+        }
     return allowed
 
 
@@ -130,6 +131,7 @@ def apply_keyed_heal(
     allowed_files: Iterable[Path] | None,
     suppressed: Mapping[Path, set[int]] | None,
     environment_for: EnvironmentFor,
+    config: ProjectConfig,
 ) -> KeyedResult:
     """Fix each finding the workflow lists at the place it names; list the places that need a decision.
 
@@ -141,14 +143,14 @@ def apply_keyed_heal(
         return KeyedResult()
 
     def remap(files: list[Path]) -> RulesetMap | None:
-        return map_instruction_files(target, files, spawn_daemon=False)
+        return map_instruction_files(target, files, spawn_daemon=False, mapper=config.mapper)
 
     return keyed_heal(
         ruleset_map,
         target,
         workflow,
         dry_run=dry_run,
-        allowed_files=allowed_set(target, allowed_files),
+        allowed_files=allowed_set(target, allowed_files, config.heal_exclude),
         suppressed=suppressed,
         remap=remap,
         environment_for=environment_for,
@@ -159,7 +161,7 @@ def heal_workflow_within(
     ruleset_map: RulesetMap,
     workflow: RemediationWorkflow | None,
     target: Path,
-    scan_root: Path,
+    root: ConfiguredRoot,
     environment_for: EnvironmentFor,
 ) -> KeyedResult:
     """Write the workflow's keyed fixes to the mapped files inside `target`'s scope (`heal_scope_files`).
@@ -168,15 +170,16 @@ def heal_workflow_within(
     alone; a written file is re-mapped and checked against its plan, and one that departs is put back.
     """
     files = sorted({Path(a.file_path) for a in ruleset_map.atoms})
-    files = heal_scope_files(files, target, scan_root)
+    files = heal_scope_files(files, target, root.root)
     return apply_keyed_heal(
         ruleset_map,
-        scan_root,
+        root.root,
         workflow,
         dry_run=False,
         allowed_files=files,
-        suppressed=suppressed_by_path(files, scan_root),
+        suppressed=suppressed_by_path(files, root.root),
         environment_for=environment_for,
+        config=root.config,
     )
 
 
@@ -212,6 +215,10 @@ def heal_one(
         )
         return HealOutcome(None, message, checked.scope.scan_root)
     written = heal_workflow_within(
-        checked.ruleset_map, workflow, safe_resolve(target), checked.scope.scan_root, environment_for
+        checked.ruleset_map,
+        workflow,
+        safe_resolve(target),
+        run.configured_root(checked.scope.scan_root),
+        environment_for,
     )
     return HealOutcome(written, "", checked.scope.scan_root)

@@ -27,6 +27,7 @@ from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.ports import LintService
+from reporails_cli.core.platform.dto.results import MapperConfig
 from reporails_cli.core.platform.rules.rules_query import rule_category, rule_title
 from reporails_cli.formatters.mcp_view import render_heal_receipt
 from reporails_cli.formatters.text.rule_meta import rule_docs_url
@@ -481,7 +482,7 @@ def _real_heal(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Leave `heal_one` and the keyed write real; only the server-backed check returns a fixture run."""
     path = project / "CLAUDE.md"
     path.write_text(DOC)
-    m = map_instruction_files(project, [path], spawn_daemon=False)
+    m = map_instruction_files(project, [path], spawn_daemon=False, mapper=MapperConfig())
     wire = _wire(m, ((3, "unbold", "bold"), (7, "code", "format")))
     reply = SimpleNamespace(workflow=deserialize_workflow({"workflow": wire}), tier="pro")
     result = SimpleNamespace(reply=reply, offline=False)

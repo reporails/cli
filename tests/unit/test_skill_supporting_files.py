@@ -53,7 +53,7 @@ def test_supporting_markdown_files_are_discovered_and_scripts_are_not(project: P
 @pytest.mark.subsys_lint
 def test_supporting_files_are_classified_as_the_skills_type(project: Path) -> None:
     files = get_all_scannable_files(RunContext(), project)
-    classified = classify_files(project, files, load_file_types("claude", project_root=project))
+    classified = classify_files(project, files, load_file_types("claude", config=RunContext().project_config(project)))
 
     assert len(classified) == len(files)
     assert {c.path.name: c.file_type for c in classified if "skills" in c.path.parts} == {

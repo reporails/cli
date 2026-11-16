@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from rich.console import Console
 
     from reporails_cli.core.platform.dto.diagnostics import Notice, RemediationWorkflow
+    from reporails_cli.core.platform.dto.results import ConfiguredRoot
     from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 def _apply_keyed_fixes(
     ruleset_map: RulesetMap | None,
-    target: Path,
+    root: ConfiguredRoot,
     workflow: RemediationWorkflow | None,
     *,
     dry_run: bool,
@@ -55,12 +56,13 @@ def _apply_keyed_fixes(
         console.print("[bold]Applying fixes...[/bold]")
     return apply_keyed_heal(
         ruleset_map,
-        target,
+        root.root,
         workflow,
         dry_run=dry_run,
         allowed_files=allowed_files,
         suppressed=suppressed,
         environment_for=LocalProjectEnvironment,
+        config=root.config,
     )
 
 

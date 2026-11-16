@@ -83,28 +83,9 @@ def fast_yaml_load(content: str) -> JsonValue:
     return loaded
 
 
-# File-level YAML cache — avoids re-parsing the same file from multiple call sites
-# (e.g., registry loads checks.yml for Rule construction, compiler re-reads for regex).
-_yaml_file_cache: dict[str, tuple[tuple[int, int], JsonValue]] = {}
-
-
 def load_yaml_file(path: Path) -> JsonValue:
-    """Load and cache a YAML file using the fastest available loader; a cached read is reused only
-    while the file's modification time and size are unchanged, so an edited file is read again."""
-    key = str(path)
-    stat = path.stat()
-    stamp = (stat.st_mtime_ns, stat.st_size)
-    cached = _yaml_file_cache.get(key)
-    if cached is not None and cached[0] == stamp and cached[1] is not None:
-        return cached[1]
-    data = fast_yaml_load(read_file_text(path))
-    _yaml_file_cache[key] = (stamp, data)
-    return data
-
-
-def forget_yaml_file(path: Path) -> None:
-    """Drop the cached read of a YAML file this process just rewrote, so the next read parses the new content."""
-    _yaml_file_cache.pop(str(path), None)
+    """Load a YAML file using the fastest available loader; every call reads the file as it is now."""
+    return fast_yaml_load(read_file_text(path))
 
 
 def yaml_error_line(exc: Exception) -> str:

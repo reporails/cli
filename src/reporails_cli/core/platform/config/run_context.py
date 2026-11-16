@@ -10,6 +10,7 @@ from reporails_cli.core.platform.config.bootstrap import (
     get_project_config_path,
 )
 from reporails_cli.core.platform.config.config import get_global_config, get_project_config, read_config_file
+from reporails_cli.core.platform.config.credentials import env_tier
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.discovery import DetectedAgent
 from reporails_cli.core.platform.dto.results import ConfiguredRoot, GlobalConfig, ProjectConfig
@@ -27,6 +28,7 @@ class RunContext:
         self._projects: dict[Path, ProjectConfig] = {}
         self.agents: dict[Path, list[DetectedAgent]] = {}
         self.aliases: dict[Path, dict[Path, list[Path]]] = {}
+        self.claude_accounts: dict[Path, tuple[tuple[int, int], str | None]] = {}
         self.memory_links: dict[tuple[str, int], frozenset[str]] = {}
         self._documents: dict[Path, tuple[tuple[Path, JsonObject], ...]] = {}
 
@@ -35,6 +37,10 @@ class RunContext:
         if self._global is None:
             self._global = get_global_config()
         return self._global
+
+    def tier(self) -> str:
+        """The tier the run's requests name: the `AILS_TIER` override, else the global config's, else `free`."""
+        return env_tier() or self.global_config().tier or "free"
 
     def project_config(self, root: Path) -> ProjectConfig:
         """The merged project config of `root`, read on first use per root as spelled."""

@@ -42,7 +42,7 @@ def _header(notices: list[dict[str, str]]) -> dict[str, str]:
 def test_request_is_an_empty_json_body_with_the_bearer(monkeypatch: pytest.MonkeyPatch) -> None:
     seen = _patch(monkeypatch, _reply(200, {"tier": "free"}))
     monkeypatch.setenv("AILS_SERVER_URL", "http://srv/")
-    check_api_key("tok_1")
+    check_api_key("tok_1", "free")
     assert seen["url"] == "http://srv/v1/diagnose"
     headers = seen["headers"]
     assert isinstance(headers, dict)
@@ -56,7 +56,7 @@ def test_request_is_an_empty_json_body_with_the_bearer(monkeypatch: pytest.Monke
 def test_accepted_reply_carries_the_tier_and_the_notices(monkeypatch: pytest.MonkeyPatch) -> None:
     notice = {"id": "n1", "level": "warn", "text": "Renew soon", "url": "https://reporails.com/account"}
     _patch(monkeypatch, _reply(400, {"error": "bad_request", "tier": "pro"}, headers=_header([notice])))
-    result = check_api_key("tok_1")
+    result = check_api_key("tok_1", "free")
     assert (result.status, result.tier) == ("accepted", "pro")
     assert [(n.id, n.level, n.text) for n in result.notices] == [("n1", "warn", "Renew soon")]
 
@@ -65,7 +65,7 @@ def test_accepted_reply_carries_the_tier_and_the_notices(monkeypatch: pytest.Mon
 @pytest.mark.subsys_cli_ux
 def test_accepted_reply_without_the_header_has_no_notices(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch(monkeypatch, _reply(200, {"tier": "free"}))
-    result = check_api_key("tok_1")
+    result = check_api_key("tok_1", "free")
     assert (result.tier, result.notices) == ("free", ())
 
 
@@ -73,7 +73,7 @@ def test_accepted_reply_without_the_header_has_no_notices(monkeypatch: pytest.Mo
 @pytest.mark.subsys_cli_ux
 def test_401_is_rejected_with_error_and_message(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch(monkeypatch, _reply(401, {"error": "invalid_api_key", "message": "nope"}))
-    result = check_api_key("tok_1")
+    result = check_api_key("tok_1", "free")
     assert (result.status, result.error, result.reason) == ("rejected", "invalid_api_key", "nope")
 
 
@@ -81,14 +81,14 @@ def test_401_is_rejected_with_error_and_message(monkeypatch: pytest.MonkeyPatch)
 @pytest.mark.subsys_cli_ux
 def test_401_with_a_non_json_body_is_still_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch(monkeypatch, _reply(401, text="unauthorized"))
-    assert check_api_key("tok_1").status == "rejected"
+    assert check_api_key("tok_1", "free").status == "rejected"
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_key_error_body_is_rejected_whatever_the_status(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch(monkeypatch, _reply(403, {"error": "missing_or_invalid_api_key", "message": "revoked"}))
-    assert check_api_key("tok_1").status == "rejected"
+    assert check_api_key("tok_1", "free").status == "rejected"
 
 
 @pytest.mark.unit
@@ -96,7 +96,7 @@ def test_key_error_body_is_rejected_whatever_the_status(monkeypatch: pytest.Monk
 def test_403_page_without_a_key_error_is_unavailable_not_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch(monkeypatch, _reply(403, text="<html>Just a moment...</html>"))
     monkeypatch.setenv("AILS_SERVER_URL", "http://srv")
-    result = check_api_key("tok_1")
+    result = check_api_key("tok_1", "free")
     assert result.status == "unavailable"
     assert "403" in result.reason
 
@@ -106,7 +106,7 @@ def test_403_page_without_a_key_error_is_unavailable_not_rejected(monkeypatch: p
 def test_network_error_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch(monkeypatch, httpx.ConnectError("down"))
     monkeypatch.setenv("AILS_SERVER_URL", "http://srv")
-    result = check_api_key("tok_1")
+    result = check_api_key("tok_1", "free")
     assert (result.status, result.reason) == ("unavailable", "could not reach http://srv/v1/diagnose")
 
 
@@ -118,7 +118,7 @@ def test_network_error_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
 )
 def test_other_replies_are_unavailable(monkeypatch: pytest.MonkeyPatch, reply: httpx.Response) -> None:
     _patch(monkeypatch, reply)
-    result = check_api_key("tok_1")
+    result = check_api_key("tok_1", "free")
     assert result.status == "unavailable"
     assert f"HTTP {reply.status_code}" in result.reason
 
@@ -128,10 +128,10 @@ def test_other_replies_are_unavailable(monkeypatch: pytest.MonkeyPatch, reply: h
 def test_probe_goes_where_the_client_goes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AILS_SERVER_URL", "http://localhost:8001/")
     seen = _patch(monkeypatch, _reply(200, {"tier": "free"}))
-    check_api_key("tok_1")
+    check_api_key("tok_1", "free")
     assert seen["url"] == "http://localhost:8001/v1/diagnose"
     monkeypatch.setenv("AILS_DEV_MODE", "1")
-    check_api_key("tok_1")
+    check_api_key("tok_1", "free")
     assert seen["url"] == "http://localhost:8001/diagnose"
     assert seen["content"] == b"{}"
     assert seen["headers"]["Content-Type"] == "application/json"
@@ -180,7 +180,7 @@ def test_handshake_classifies_every_reply(
 
     monkeypatch.setattr(httpx, "get", fake_get)
     monkeypatch.setenv("AILS_SERVER_URL", "http://srv/")
-    answer = handshake("mcp")
+    answer = handshake("mcp", tier="free")
     assert (answer.status, answer.reason, answer.tier) == expected
     assert seen["url"] == "http://srv/v1/handshake"
     headers = seen["headers"]
@@ -195,9 +195,9 @@ def test_a_refused_handshake_carries_the_servers_message_and_a_rejected_one_its_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(httpx, "get", lambda url, **kw: _handshake_reply(200, _REFUSED))
-    assert handshake("cli").message == "Sign up with `ails login`"
+    assert handshake("cli", tier="free").message == "Sign up with `ails login`"
     monkeypatch.setattr(
         httpx, "get", lambda url, **kw: _handshake_reply(401, {"error": "invalid_api_key", "message": "nope"})
     )
-    rejected = handshake("cli")
+    rejected = handshake("cli", tier="free")
     assert (rejected.error, rejected.message) == ("invalid_api_key", "nope")

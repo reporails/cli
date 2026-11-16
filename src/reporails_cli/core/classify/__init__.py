@@ -18,11 +18,11 @@ from reporails_cli.core.discovery.agent_discovery import is_memory_recall_entry
 from reporails_cli.core.discovery.plugin_roots import config_pattern_hits
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.discovery.surface_config import surface_include_patterns
-from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.classify import LinkEdge
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileTypeDeclaration
+from reporails_cli.core.platform.dto.results import ProjectConfig
 from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
 
@@ -30,19 +30,18 @@ from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
 def load_file_types(
     agent: str,
     rules_paths: list[Path] | None = None,
-    project_root: Path | None = None,
+    config: ProjectConfig | None = None,
 ) -> list[FileTypeDeclaration]:
     """Load file_types from agent config.yml, with optional project overrides.
 
     Searches rules_paths first, then falls back to default config path. When
-    `project_root` is provided, reads `.ails/config.yml` (+ `.ails/config.local.yml`)
-    and merges per-surface `include` / `exclude` patterns plus
+    `config` (the project's config) is provided, merges per-surface `include` / `exclude` patterns plus
     `agents.<id>.fallback_filenames` into the matching FileTypeDeclarations.
 
     Args:
         agent: Agent identifier (e.g., "claude")
         rules_paths: Optional rules directories to search first
-        project_root: Optional project root for reading `.ails/config.yml`
+        config: Optional project config whose surface overrides are merged in
 
     Returns:
         List of FileTypeDeclaration, empty if no config found
@@ -51,15 +50,15 @@ def load_file_types(
     if file_types_data is None:
         return []
     decls = _parse_file_types(file_types_data)
-    if project_root is not None:
-        decls = _apply_project_overrides(decls, agent, project_root)
+    if config is not None:
+        decls = _apply_project_overrides(decls, agent, config)
     return decls
 
 
 def _apply_project_overrides(
     declarations: list[FileTypeDeclaration],
     agent: str,
-    project_root: Path,
+    config: ProjectConfig,
 ) -> list[FileTypeDeclaration]:
     """Merge project config overrides into FileTypeDeclarations.
 
@@ -67,11 +66,9 @@ def _apply_project_overrides(
     `agents.<agent>.fallback_filenames` (for `main`) so classification can
     match user-configured fallback instruction files.
     """
-    project_config = get_project_config(project_root)
-
     out: list[FileTypeDeclaration] = []
     for decl in declarations:
-        extra = surface_include_patterns(agent, decl.name, project_config)
+        extra = surface_include_patterns(agent, decl.name, config)
         if extra:
             out.append(
                 FileTypeDeclaration(

@@ -20,9 +20,7 @@ from reporails_cli.core.platform.adapters.rate_cooldown import active_cooldown, 
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 from reporails_cli.core.platform.config.api_key import diagnostics_server_api_key
 from reporails_cli.core.platform.config.bootstrap import env_flag, offline_requested
-from reporails_cli.core.platform.config.config import get_global_config
 from reporails_cli.core.platform.config.credentials import (
-    env_tier,
     refresh_stored_tier,
     signed_in_recently,
 )
@@ -97,15 +95,6 @@ def _user_agent() -> str:
 # ──────────────────────────────────────────────────────────────────
 
 
-def _tier_from_config() -> str:
-    """Read tier from global config (~/.reporails/config.yml).
-
-    Returns "" only for genuine absence (no config / no tier). An unreadable
-    config raises ConfigUnreadableError.
-    """
-    return get_global_config().tier
-
-
 class AilsClient:
     """Diagnostics client — HTTP to the diagnostics server, local fallback.
 
@@ -113,10 +102,10 @@ class AilsClient:
     the default server. Returns None when the server is unreachable.
     """
 
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(self, tier: str, api_key: str | None = None) -> None:
         self.base_url = server_url()
         self.api_key = api_key or diagnostics_server_api_key()
-        self.tier = env_tier() or _tier_from_config() or "free"
+        self.tier = tier
 
     def lint(
         self,

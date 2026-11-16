@@ -14,6 +14,7 @@ import threading
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import get_args
 
@@ -364,10 +365,11 @@ class XrayServer:
 
     def _check(self, target: Path) -> JSONResponse:
         with self._work_lock:
-            run = check_path(str(target), self._root, lint=ServerLint(), run=RunContext(), fetch=http_get)
-            if isinstance(run, Refusal):
-                return _refused(400, run.text)
-            found = file_findings(run, target)
+            run = RunContext()
+            checked = check_path(str(target), self._root, lint=ServerLint(run.tier()), run=run, fetch=http_get)
+            if isinstance(checked, Refusal):
+                return _refused(400, checked.text)
+            found = file_findings(checked, target)
             key = self._key(target)
             with self._view_lock:
                 self._findings[key] = tally_of(found)
@@ -401,13 +403,14 @@ class XrayServer:
         if home is not None and home.is_relative_to(self._root):
             return XrayCheck("refused", HOME_SKIPPED), {}
         try:
-            refusal = server_gate("xray", handshake)
+            run = RunContext()
+            refusal = server_gate("xray", partial(handshake, tier=run.tier()))
             if refusal is not None:
                 return XrayCheck("refused", refusal.text), {}
-            run = check_path(str(self._root), self._root, lint=ServerLint(), run=RunContext(), fetch=http_get)
-            if isinstance(run, Refusal):
-                return XrayCheck("refused", run.text), {}
-            return XrayCheck("done", None), tallies_by_file(run)
+            checked = check_path(str(self._root), self._root, lint=ServerLint(run.tier()), run=run, fetch=http_get)
+            if isinstance(checked, Refusal):
+                return XrayCheck("refused", checked.text), {}
+            return XrayCheck("done", None), tallies_by_file(checked)
         except Exception as err:  # pylint: disable=broad-exception-caught  # thread boundary: any failure lands as refused
             logger.warning("the launch check failed: %s", err)
             return XrayCheck("refused", str(err)), {}
@@ -421,12 +424,13 @@ class XrayServer:
 
     def _heal(self, target: Path) -> JSONResponse:
         with self._work_lock:
+            run = RunContext()
             outcome = heal_one(
                 str(target),
                 self._root,
-                lint=ServerLint(),
+                lint=ServerLint(run.tier()),
                 environment_for=LocalProjectEnvironment,
-                run=RunContext(),
+                run=run,
                 fetch=http_get,
             )
             with self._view_lock:

@@ -288,7 +288,7 @@ def test_assemble_mcp_result_surfaces_the_funnel_error(monkeypatch, tmp_path):
             not_evaluated=(),
         ),
         no_exclusions(tmp_path),
-        ServerLint(),
+        ServerLint("free"),
     )
 
     assert funnel_error is err

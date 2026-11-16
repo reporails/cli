@@ -51,11 +51,12 @@ def complete_capability(incomplete: str) -> list[str]:
     )
 
     project_root = Path.cwd()
-    detected = detect_agents(RunContext(), project_root)
+    run = RunContext()
+    detected = detect_agents(run, project_root)
     if not detected:
         return []
     agent_id = detected[0].agent_type.id
-    caps = available_capabilities(agent_id, project_root)
+    caps = available_capabilities(agent_id, run.project_config(project_root))
     return sorted(c for c in caps if c.startswith(incomplete))
 
 
@@ -97,7 +98,7 @@ def _complete_capability_target_name(capability: str, name_prefix: str) -> list[
         return []
     agent_id = detected[0].agent_type.id
     out: set[str] = set()
-    for p in list_capability_targets(agent_id, capability, project_root, load_run_exclusions(run, project_root)):
+    for p in list_capability_targets(run, agent_id, capability, project_root, load_run_exclusions(run, project_root)):
         # Take the directory or filename stem as the "name" the user types.
         stem = p.name if p.is_dir() else p.stem
         if stem.startswith(name_prefix):

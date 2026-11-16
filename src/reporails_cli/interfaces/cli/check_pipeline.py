@@ -84,6 +84,7 @@ def _flow_pipeline(state: CheckState) -> None:
                 state.scope.instruction_files,
                 progress=map_progress,
                 filtered_agents=state.scope.filtered,
+                mapper=state.run.project_config(state.targets.target).mapper,
             )
         except (ImportError, RuntimeError) as exc:
             logger.warning("Mapper unavailable: %s. Content checks skipped.", exc)
@@ -151,7 +152,9 @@ def _flow_server_lint(state: CheckState, spinner: Status | None) -> None:
         response = offline_reply()
     else:
         local, structural_required = lint_request_local(_assemble_inputs(state))
-        response = AilsClient().lint(state.pipeline.ruleset_map, local, structural_required, root=state.targets.target)
+        response = AilsClient(state.run.tier()).lint(
+            state.pipeline.ruleset_map, local, structural_required, root=state.targets.target
+        )
     state.pipeline.lint_result = response.result if response else None
     state.pipeline.funnel_error = response.funnel_error if response else None
     state.pipeline.notices = visible_notices(response.notices if response else (), no_promo=state.render.no_promo)

@@ -32,13 +32,13 @@ def _names(found: tuple[list[Path], list[Path], list[Path]] | None) -> set[str]:
 
 def test_check_leaves_out_the_remote_settings_cache(user_folder: Path) -> None:
     found = discover_from_config(
-        user_folder, "claude", load_run_exclusions(RunContext(), user_folder), repo_scoped=True
+        RunContext(), user_folder, "claude", load_run_exclusions(RunContext(), user_folder), repo_scoped=True
     )
     assert _names(found) == {"settings.json"}
 
 
 def test_session_loads_still_list_the_remote_settings_cache(user_folder: Path) -> None:
     found = discover_from_config(
-        user_folder, "claude", load_run_exclusions(RunContext(), user_folder), repo_scoped=False
+        RunContext(), user_folder, "claude", load_run_exclusions(RunContext(), user_folder), repo_scoped=False
     )
     assert {"settings.json", "remote-settings.json"} <= _names(found)

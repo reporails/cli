@@ -180,9 +180,10 @@ def _stream_map_response(
 def map_ruleset_via_daemon(
     paths: list[Path],
     root: Path,
+    segmentation: str,
     progress: Callable[[str], None] | None = None,
 ) -> RulesetMap | None:
-    """Map ruleset via global daemon. Returns RulesetMap or None on failure.
+    """Map ruleset via global daemon, with the requested `segmentation`. Returns RulesetMap or None on failure.
 
     Caller should fall back to in-process mapping when this returns None.
 
@@ -200,6 +201,7 @@ def map_ruleset_via_daemon(
         "cmd": "map_ruleset",
         "paths": [str(p) for p in paths],
         "root": str(root),
+        "segmentation": segmentation,
     }
     # Matches the daemon-side connection timeout; covers a cold model load and the
     # first encode, plus mapping work, with headroom.

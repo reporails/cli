@@ -48,12 +48,12 @@ def _require_known_capabilities(capabilities: list[str] | None, agent: str | Non
     )
 
     agents = [agent] if agent else list_known_agents()
-    unknown = [c for c in capabilities if not any(canonicalize_capability(c, a) for a in agents)]
+    unknown = [c for c in capabilities if not any(canonicalize_capability(c, a, None) for a in agents)]
     if not unknown:
         return
     known = set(load_capability_vocabulary().virtual)
     for a in agents:
-        known.update(available_capabilities(a))
+        known.update(available_capabilities(a, None))
     scope = f"agent '{agent}'" if agent else "any agent"
     names = ", ".join(repr(c) for c in unknown)
     console.print(
@@ -130,12 +130,12 @@ def _capability_resolution(agent: str) -> tuple[list[str], dict[str, str], dict[
         load_run_exclusions,
     )
 
-    caps = sorted(available_capabilities(agent, Path.cwd()))
+    run = RunContext()
+    caps = sorted(available_capabilities(agent, run.project_config(Path.cwd())))
     decls = {d.name: d for d in load_file_types(agent)}
     patterns = {c: (decls[c].patterns[0] if decls.get(c) and decls[c].patterns else "") for c in caps}
-    run = RunContext()
     exclusions = load_run_exclusions(run, Path.cwd())
-    found = {c: len(list_capability_targets(agent, c, Path.cwd(), exclusions)) for c in caps}
+    found = {c: len(list_capability_targets(run, agent, c, Path.cwd(), exclusions)) for c in caps}
     return caps, patterns, found
 
 

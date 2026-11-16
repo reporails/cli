@@ -56,6 +56,7 @@ def expected_loads(run: RunContext, target: Path, plugins: Sequence[tuple[str, P
     with shared_dir_listings():
         files, read_instructions, switched_off = _loaded_files(run, exclusions, root, registry, mode)
         candidates = discover_ungated(
+            run,
             root,
             AGENT,
             gated_file_types(AGENT),
@@ -63,7 +64,12 @@ def expected_loads(run: RunContext, target: Path, plugins: Sequence[tuple[str, P
             project_config=project_config,
         )
         invocable = _invocable_files(
-            exclusions, project_config, root, registry, installed_plugin_roots(root) if plugins is None else plugins
+            run,
+            exclusions,
+            project_config,
+            root,
+            registry=registry,
+            plugins=installed_plugin_roots(root) if plugins is None else plugins,
         )
     skipped = [SkippedFile(path, "setting_off", None) for path in switched_off]
     reads = claude_agents_md_reads([p for p in candidates if not leaves_out(exclusions, p)], root, read_instructions)
@@ -118,7 +124,9 @@ def _loaded_files(
     """The non-empty instruction and rule files Claude Code loads (the user's own included), the instruction
     files among them, and the launch files the `instructionFiles` setting turns off (each with its
     file type)."""
-    found = discover_from_config(root, AGENT, exclusions, project_config=run.project_config(root), repo_scoped=False)
+    found = discover_from_config(
+        run, root, AGENT, exclusions, project_config=run.project_config(root), repo_scoped=False
+    )
     instruction, rules = (set(bucket) for bucket in found[:2]) if found is not None else (set(), set())
     files: list[JsonValue] = []
     read_instructions: dict[Path, str] = {}
@@ -159,18 +167,20 @@ def _loaded_entry(run: RunContext, path: Path, root: Path, read: FileRead) -> Js
     return entry
 
 
-def _skill_entry_patterns(root: Path) -> list[str]:
+def _skill_entry_patterns(run: RunContext, root: Path) -> list[str]:
     """The skill entry patterns of Claude's config, those of the synced skills narrowed to the signed-in account's
     folder (none when no account is signed in)."""
     declared = extract_patterns(as_object(as_object(load_config_file_types(AGENT)).get("skills")), "entry_patterns")
-    resolved = (resolve_external_pattern(pattern, claude_project_folder_name(root)) for pattern in declared)
+    resolved = (resolve_external_pattern(run, pattern, claude_project_folder_name(root)) for pattern in declared)
     return [pattern for pattern in resolved if pattern is not None]
 
 
 def _invocable_files(
+    run: RunContext,
     exclusions: RunExclusions,
     project_config: ProjectConfig,
     root: Path,
+    *,
     registry: dict[str, JsonObject],
     plugins: Sequence[tuple[str, Path]],
 ) -> list[JsonValue]:
@@ -178,10 +188,11 @@ def _invocable_files(
     the user, the managed settings folder and every installed, enabled plugin, each with its precedence, plugin
     id and label."""
     roots = [plugin_root for _, plugin_root in plugins]
-    entries = _skill_entry_patterns(root)
+    entries = _skill_entry_patterns(run, root)
     found: dict[Path, JsonValue] = {}
     for file_type in SESSION_INVOCABLE_TYPES:
         paths = discover_ungated(
+            run,
             root,
             AGENT,
             (file_type,),

@@ -33,16 +33,18 @@ def named_files(selection: tuple[set[Path], set[Path]] | None) -> frozenset[Path
 
 
 def _resolve_one_target(
-    token: str, token_agent: str, scan_root: Path, effective_agent: str, exclusions: RunExclusions
+    run: RunContext, token: str, token_agent: str, scan_root: Path, *, effective_agent: str, exclusions: RunExclusions
 ) -> tuple[set[Path], set[Path]] | JsonObject:
     """One target `token` resolved to the `(files, dirs)` it contributes, or a
     `target_not_found` error payload."""
 
-    kind, target = classify_target_token(token, token_agent, scan_root, base=scan_root)
+    kind, target = classify_target_token(run, token, token_agent, scan_root, base=scan_root)
     if kind == "capability" and isinstance(target, tuple):
         capability, name = target
         try:
-            paths, _unresolved = resolve_capability_spec(capability, name, effective_agent, scan_root, exclusions)
+            paths, _unresolved = resolve_capability_spec(
+                run, capability, name, effective_agent, project_root=scan_root, exclusions=exclusions
+            )
         except TargetError as err:
             return {"error": "target_not_found", "message": err.message()}
         resolved_paths = {safe_resolve(p) for p in paths}
@@ -76,7 +78,9 @@ def resolve_validate_targets(
     files: set[Path] = set()
     dirs: set[Path] = set()
     for token in tokens:
-        result = _resolve_one_target(token, token_agent, scan_root, effective_agent, exclusions)
+        result = _resolve_one_target(
+            run, token, token_agent, scan_root, effective_agent=effective_agent, exclusions=exclusions
+        )
         if isinstance(result, dict):
             return result
         files |= result[0]

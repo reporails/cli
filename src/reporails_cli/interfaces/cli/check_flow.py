@@ -15,6 +15,7 @@ capability-path resolution) stay in ``check_orchestration.py`` /
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -187,7 +188,7 @@ def _flow_targets(state: CheckState) -> None:
         sniffed: dict[Path, str] = {}
         for token in state.inputs.targets:
             sniff_agent = _token_agent(state.run, token, state.inputs.agent, state.inputs.project_root, sniffed)
-            kind, payload = classify_target_token(token, sniff_agent, state.inputs.project_root)
+            kind, payload = classify_target_token(state.run, token, sniff_agent, state.inputs.project_root)
             if kind == "capability" and isinstance(payload, tuple):
                 state.targets.capability_specs.append(payload)
             elif isinstance(payload, Path):
@@ -195,7 +196,10 @@ def _flow_targets(state: CheckState) -> None:
                     suggestion = ""
                     if (
                         sniff_agent
-                        and canonicalize_capability(token, sniff_agent, state.inputs.project_root) is not None
+                        and canonicalize_capability(
+                            token, sniff_agent, state.run.project_config(state.inputs.project_root)
+                        )
+                        is not None
                     ):
                         suggestion = (
                             f"\n[dim]'{token}' is a known capability — did you mean `ails check {token}`?[/dim]"
@@ -269,7 +273,7 @@ def _flow_scope(state: CheckState) -> bool:
     """Detect agents, discover instruction files, narrow to scope. False = nothing in scope."""
     _resolve_scope_at_target(state)
     single = state.targets.single_file
-    if single is not None and not is_listed_file(single, state.targets.target):
+    if single is not None and not is_listed_file(state.run, single, state.targets.target):
         _emit_unlisted_file(single, state.targets.target, state.inputs.project_root, state.targets.output_format)
     # A scope-to-subtree run keeps the project scan root, so its narrowing runs here
     # with the capability/multi-path narrowing rather than through the re-root branch.
@@ -297,6 +301,7 @@ def _narrow_upfront(state: CheckState) -> bool:
         raise typer.Exit(2)
     if state.targets.capability_specs:
         cap_paths, unresolved_skills = _resolve_capability_paths(
+            state.run,
             state.targets.capability_specs,
             state.scope.effective_agent,
             state.inputs.project_root,
@@ -327,11 +332,12 @@ def _narrow_upfront(state: CheckState) -> bool:
 def _apply_generic_scan(state: CheckState) -> bool:
     """Fold @-import-reached files into the scored set and compute is_targeted. Always True."""
     import_extra, state.scope.file_type_by_path = apply_generic_scan(
+        state.run,
         state.targets.target,
         state.scope.instruction_files,
         state.scope.effective_agent,
-        state.scope.generic_scanning,
-        state.scope.exclusions,
+        generic_scanning=state.scope.generic_scanning,
+        exclusions=state.scope.exclusions,
     )
     if import_extra:
         state.scope.instruction_files = list(state.scope.instruction_files) + import_extra
@@ -425,7 +431,7 @@ def run_check_flow(state: CheckState) -> None:
     a refusal ends the run with exit 1.
     """
     _flow_targets(state)
-    refusal = server_gate("ci" if running_in_ci() else "cli", handshake)
+    refusal = server_gate("ci" if running_in_ci() else "cli", partial(handshake, tier=state.run.tier()))
     if refusal is not None:
         _emit_server_refusal(state.targets.output_format, refusal)
         raise typer.Exit(1)

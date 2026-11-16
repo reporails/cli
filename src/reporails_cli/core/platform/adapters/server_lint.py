@@ -15,6 +15,9 @@ from reporails_cli.core.platform.dto.ruleset import RulesetMap
 class ServerLint:
     """Lints through the server and hides the notices the user opted out of."""
 
+    def __init__(self, tier: str) -> None:
+        self._tier = tier
+
     def lint(
         self,
         ruleset_map: RulesetMap,
@@ -24,7 +27,7 @@ class ServerLint:
         root: Path,
     ) -> LintResponse:
         """The server's reply to `ruleset_map` and the reported `local` findings, paths relative to `root`."""
-        return AilsClient().lint(ruleset_map, local, structural_required, root=root)
+        return AilsClient(self._tier).lint(ruleset_map, local, structural_required, root=root)
 
     def visible_notices(self, notices: tuple[Notice, ...]) -> tuple[Notice, ...]:
         """`notices` without the ones a user opted out of seeing."""

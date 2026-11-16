@@ -36,7 +36,7 @@ from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs, CheckRun, Discovered, LeftOut, Refusal, Scope
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ports import LintService
-from reporails_cli.core.platform.dto.results import ProjectConfig
+from reporails_cli.core.platform.dto.results import MapperConfig, ProjectConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
@@ -122,7 +122,12 @@ def discover_files(
         return Refusal("empty_project", f"No instruction files found in {target}", target, found.excluded)
 
     import_extra, file_type_by_path = apply_generic_scan(
-        target, instruction_files, found.effective_agent, config.generic_scanning, found.exclusions
+        run,
+        target,
+        instruction_files,
+        found.effective_agent,
+        generic_scanning=config.generic_scanning,
+        exclusions=found.exclusions,
     )
     if import_extra:
         instruction_files = list(instruction_files) + import_extra
@@ -137,7 +142,10 @@ def discover_files(
 
 
 def build_map(
-    target: Path, instruction_files: list[Path], filter_agents: list[DetectedAgent] | None = None
+    target: Path,
+    instruction_files: list[Path],
+    mapper: MapperConfig,
+    filter_agents: list[DetectedAgent] | None = None,
 ) -> tuple[RulesetMap | None, str | None]:
     """Build the ruleset map via the shared warm path, so a long-lived process reuses a warm model
     instead of loading one on every call.
@@ -156,7 +164,9 @@ def build_map(
     """
     try:
         return (
-            map_instruction_files(target, list(instruction_files), spawn_daemon=False, filtered_agents=filter_agents),
+            map_instruction_files(
+                target, list(instruction_files), spawn_daemon=False, filtered_agents=filter_agents, mapper=mapper
+            ),
             None,
         )
     except (ImportError, RuntimeError) as exc:
@@ -410,7 +420,9 @@ def check_scope(run: RunContext, scope: Scope, lint: LintService) -> CheckRun:
     cause in `mapper_error`.
     """
 
-    ruleset_map, mapper_error = build_map(scope.scan_root, scope.instruction_files, scope.filter_agents)
+    ruleset_map, mapper_error = build_map(
+        scope.scan_root, scope.instruction_files, scope.config.mapper, scope.filter_agents
+    )
     result, funnel_error = check_and_assemble(run, scope, ruleset_map, lint=lint)
     file_score = display_score(result, scope.single_file, scope.scan_root) if scope.single_file is not None else None
     return CheckRun(result, funnel_error, ruleset_map, mapper_error, file_score, scope)

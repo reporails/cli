@@ -107,7 +107,9 @@ def _resolution(project: Path) -> tuple[str, bool, dict[str, str], set[str]]:
     owners = {
         Path(p).relative_to(project).as_posix(): o for p, o in partition_by_native_owner(filtered, project).items()
     }
-    discovered = discover_from_config(project, "claude", load_run_exclusions(RunContext(), project), repo_scoped=True)
+    discovered = discover_from_config(
+        RunContext(), project, "claude", load_run_exclusions(RunContext(), project), repo_scoped=True
+    )
     claude_files = {p.relative_to(project).as_posix() for p in (discovered[0] if discovered else [])}
     return effective, mixed, owners, claude_files
 

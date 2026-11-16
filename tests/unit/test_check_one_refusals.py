@@ -32,7 +32,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _refused(path: Path) -> Refusal:
     refusal = check_path(
-        str(path), path if path.is_dir() else path.parent, lint=ServerLint(), run=RunContext(), fetch=_no_fetch
+        str(path), path if path.is_dir() else path.parent, lint=ServerLint("free"), run=RunContext(), fetch=_no_fetch
     )
     assert isinstance(refusal, Refusal)
     return refusal

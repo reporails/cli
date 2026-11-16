@@ -203,3 +203,23 @@ def test_stream_survives_a_raising_progress_callback() -> None:
     out = dc._stream_map_response(sock, {"cmd": "map_ruleset"}, boom, timeout=5.0)
     assert out == {"ok": True, "ruleset_map": {"x": 1}}
     assert sock.closed
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_runtime
+def test_map_handler_maps_with_the_requested_segmentation(monkeypatch, tmp_path) -> None:
+    """The daemon maps with the segmentation the request carries, never one it reads from a config itself."""
+    (tmp_path / ".ails").mkdir()
+    (tmp_path / ".ails" / "config.yml").write_text("mapper:\n  segmentation: legacy\n", encoding="utf-8")
+    seen: dict[str, object] = {}
+
+    def fake_map(_paths, **kwargs):
+        seen.update(kwargs)
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(d, "map_ruleset", fake_map)
+    res = d._handle_map_ruleset(
+        {"cmd": "map_ruleset", "paths": [], "root": str(tmp_path), "segmentation": "structure-aware"}, object()
+    )
+    assert seen["segmentation"] == "structure-aware"
+    assert res["ok"] is False

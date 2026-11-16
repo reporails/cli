@@ -54,9 +54,11 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_capability_paths_one(
+    run: RunContext,
     capability: str,
     capability_name: str,
     effective_agent: str,
+    *,
     project_root: Path,
     exclusions: RunExclusions,
 ) -> tuple[set[Path], list[UnresolvedSkill]]:
@@ -64,7 +66,9 @@ def _resolve_capability_paths_one(
     names no file prints why and exits 2."""
 
     try:
-        return resolve_capability_spec(capability, capability_name, effective_agent, project_root, exclusions)
+        return resolve_capability_spec(
+            run, capability, capability_name, effective_agent, project_root=project_root, exclusions=exclusions
+        )
     except TargetError as err:
         if err.reason == "undeclared":
             console.print(
@@ -85,6 +89,7 @@ def _resolve_capability_paths_one(
 
 
 def _resolve_capability_paths(
+    run: RunContext,
     specs: list[tuple[str, str]],
     effective_agent: str,
     project_root: Path,
@@ -95,7 +100,7 @@ def _resolve_capability_paths(
     unresolved: list[UnresolvedSkill] = []
     for capability, capability_name in specs:
         one_paths, one_unresolved = _resolve_capability_paths_one(
-            capability, capability_name, effective_agent, project_root, exclusions
+            run, capability, capability_name, effective_agent, project_root=project_root, exclusions=exclusions
         )
         paths |= one_paths
         unresolved.extend(one_unresolved)
@@ -304,7 +309,7 @@ def _run_heal_pass(
         # cannot rewrite a mapped file outside scope. Section suggestions never write.
         keyed = _apply_keyed_fixes(
             ruleset_map,
-            target,
+            run.configured_root(target),
             workflow,
             dry_run=dry_run,
             show_progress=show,

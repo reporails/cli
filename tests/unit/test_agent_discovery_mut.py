@@ -129,7 +129,11 @@ def test_eager_global_recursive_leaf_uses_ancestor_walk(tmp_path: Path) -> None:
     (tmp_path / "sub" / "CLAUDE.md").write_text("s")
 
     res = ad.glob_file_type_patterns(
-        tmp_path, ["**/CLAUDE.md"], {"scope": "global", "loading": "session_start"}, no_exclusions(tmp_path)
+        RunContext(),
+        tmp_path,
+        ["**/CLAUDE.md"],
+        {"scope": "global", "loading": "session_start"},
+        no_exclusions(tmp_path),
     )
     assert res == [tmp_path / "CLAUDE.md"]
 
@@ -202,7 +206,7 @@ def test_pinned_recursive_patterns_match_the_whole_pattern(tmp_path: Path) -> No
     nested = {"scope": "nested"}
 
     def found(pattern: str) -> set[str]:
-        res = ad.glob_file_type_patterns(tmp_path, [pattern], nested, no_exclusions(tmp_path))
+        res = ad.glob_file_type_patterns(RunContext(), tmp_path, [pattern], nested, no_exclusions(tmp_path))
         return {p.relative_to(tmp_path).as_posix() for p in res}
 
     assert found("**/.agents/skills/*/agents/openai.yaml") == {".agents/skills/foo/agents/openai.yaml"}
@@ -217,7 +221,9 @@ def test_recursive_pattern_filter_keeps_only_the_documented_filename_case(tmp_pa
     for rel in ("AGENTS.md", "svc/AGENTS.md", "pkg/agents.md"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text("x")
-    res = ad.glob_file_type_patterns(tmp_path, ["**/AGENTS.md"], {"scope": "nested"}, no_exclusions(tmp_path))
+    res = ad.glob_file_type_patterns(
+        RunContext(), tmp_path, ["**/AGENTS.md"], {"scope": "nested"}, no_exclusions(tmp_path)
+    )
     assert "pkg/agents.md" not in {p.relative_to(tmp_path).as_posix() for p in res}
 
 

@@ -36,7 +36,7 @@ def _ids(findings: list, rel: str) -> set[str]:
 @pytest.mark.subsys_lint
 def test_group_skill_md_is_not_a_skill(tmp_path: Path) -> None:
     f = _write(tmp_path, ".claude/skills/group/x/SKILL.md", LONG)
-    file_types = load_file_types("claude", project_root=tmp_path)
+    file_types = load_file_types("claude", config=RunContext().project_config(tmp_path))
     classified = classify_files(tmp_path, [f], file_types, skills={})
     assert all(cf.file_type != "skills" for cf in classified)
     ids = _ids(_run(tmp_path, [f], {}), "group/x/SKILL.md")

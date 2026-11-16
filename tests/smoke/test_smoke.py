@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.platform.dto.results import MapperConfig
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
@@ -1538,7 +1539,7 @@ def _serve_fixes(monkeypatch: pytest.MonkeyPatch, project: Path) -> None:
     from reporails_cli.interfaces.cli import check_flow
 
     path = project / "CLAUDE.md"
-    mapped = map_instruction_files(project, [path], spawn_daemon=False)
+    mapped = map_instruction_files(project, [path], spawn_daemon=False, mapper=MapperConfig())
     line = next(i for i, t in enumerate(path.read_text().splitlines(), 1) if "**IMPORTANT**" in t)
     pi = next(a.position_index for a in mapped.atoms if a.line == line)
     items = (LocationFinding("bold", str(path), line, pi, "unbold"),)

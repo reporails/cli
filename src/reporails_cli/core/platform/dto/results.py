@@ -116,7 +116,7 @@ class MapperConfig:
 class GlobalConfig:
     """Global user configuration (~/.reporails/config.yml).
 
-    Shape parity with `ProjectConfig` lets `get_project_config` merge global
+    Shape parity with `ProjectConfig` lets the project config merge global
     defaults under per-project values. Project values win on per-field
     conflict; list fields extend with global entries the project didn't
     already declare; dict fields deep-merge under the project layer.

@@ -46,7 +46,7 @@ def test_symlinked_rules_folder_is_discovered(tmp_path: Path) -> None:
     (tmp_path / ".claude" / "rules").mkdir(parents=True)
     os.symlink(shared, tmp_path / ".claude" / "rules" / "linked", target_is_directory=True)
     found = glob_file_type_patterns(
-        tmp_path, [".claude/rules/**/*.md"], {"scope": "path_scoped"}, no_exclusions(tmp_path)
+        RunContext(), tmp_path, [".claude/rules/**/*.md"], {"scope": "path_scoped"}, no_exclusions(tmp_path)
     )
     assert _rel(tmp_path, found) == {".claude/rules/linked/style.md", ".claude/rules/linked/deep/more.md"}
 
@@ -58,7 +58,7 @@ def test_symlinked_skill_folder_is_discovered(tmp_path: Path) -> None:
     _write(real / "SKILL.md")
     (tmp_path / ".claude" / "skills").mkdir(parents=True)
     os.symlink(real, tmp_path / ".claude" / "skills" / "deploy", target_is_directory=True)
-    found = glob_file_type_patterns(tmp_path, [".claude/skills/*/SKILL.md"], {}, no_exclusions(tmp_path))
+    found = glob_file_type_patterns(RunContext(), tmp_path, [".claude/skills/*/SKILL.md"], {}, no_exclusions(tmp_path))
     assert _rel(tmp_path, found) == {".claude/skills/deploy/SKILL.md"}
 
 

@@ -18,6 +18,7 @@ from reporails_cli.core.classify.capability_paths import (
 from reporails_cli.core.classify.capability_paths import (
     looks_like_windows_path as _looks_like_windows_path,
 )
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli.check_support import _check_timeout_ceiling
 
 
@@ -33,14 +34,14 @@ from reporails_cli.interfaces.cli.check_support import _check_timeout_ceiling
     ids=["bare-plural-skills", "bare-plural-agents", "skill-by-name"],
 )
 def test_capability_tokens(token: str, expected: tuple, tmp_path: Path):
-    assert _classify_target_token(token, "claude", tmp_path) == expected
+    assert _classify_target_token(RunContext(), token, "claude", tmp_path) == expected
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_bare_noun_needs_sniff_agent(tmp_path: Path):
     """Without a sniffed agent the vocabulary is unknown, so a bare noun is a path."""
-    kind, _payload = _classify_target_token("skills", "", tmp_path)
+    kind, _payload = _classify_target_token(RunContext(), "skills", "", tmp_path)
     assert kind == "path"
 
 
@@ -50,7 +51,7 @@ def test_bare_noun_needs_sniff_agent(tmp_path: Path):
     "token", ["./CLAUDE.md", "README.md", "docs/guide.md"], ids=["dot-path", "bare-file", "subdir-path"]
 )
 def test_paths_stay_paths(token: str, tmp_path: Path):
-    kind, _payload = _classify_target_token(token, "claude", tmp_path)
+    kind, _payload = _classify_target_token(RunContext(), token, "claude", tmp_path)
     assert kind == "path"
 
 
@@ -75,7 +76,7 @@ def test_windows_drive_letter_guard(token: str, is_win: bool):
 @pytest.mark.subsys_cli_ux
 def test_windows_drive_letter_routes_to_path(tmp_path: Path):
     """A drive-letter token is not mis-split into `capability:name`."""
-    kind, _payload = _classify_target_token("C:\\Users\\x\\CLAUDE.md", "claude", tmp_path)
+    kind, _payload = _classify_target_token(RunContext(), "C:\\Users\\x\\CLAUDE.md", "claude", tmp_path)
     assert kind == "path"
 
 
@@ -93,7 +94,7 @@ def test_windows_drive_letter_routes_to_path(tmp_path: Path):
 def test_file_scheme_forces_path(token: str, expected_path: str, tmp_path: Path):
     """`file:<path>` resolves the remainder as a path instead of erroring as an
     unknown capability (was: `capability file is not declared`)."""
-    kind, payload = _classify_target_token(token, "claude", tmp_path)
+    kind, payload = _classify_target_token(RunContext(), token, "claude", tmp_path)
     assert kind == "path"
     assert payload == Path(expected_path).resolve()
 
@@ -102,7 +103,7 @@ def test_file_scheme_forces_path(token: str, expected_path: str, tmp_path: Path)
 @pytest.mark.subsys_cli_ux
 def test_file_scheme_overrides_capability_name(tmp_path: Path):
     """`file:` forces path even when the remainder collides with a capability noun."""
-    kind, payload = _classify_target_token("file:skills", "claude", tmp_path)
+    kind, payload = _classify_target_token(RunContext(), "file:skills", "claude", tmp_path)
     assert kind == "path"
     assert payload == Path("skills").resolve()
 

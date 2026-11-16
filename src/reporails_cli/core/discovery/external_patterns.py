@@ -7,9 +7,13 @@ segment is the folder of the signed-in claude.ai account under `~/.claude/skills
 from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
 
 from reporails_cli.core.platform.config.claude_settings import claude_synced_account_folder
 from reporails_cli.core.platform.contract.glob_pattern import escape_glob, literal_segment
+
+if TYPE_CHECKING:
+    from reporails_cli.core.platform.config.run_context import RunContext
 
 # The scope of the skills synced from the signed-in claude.ai account.
 SYNCED_SCOPE = "synced"
@@ -17,14 +21,14 @@ _PROJECT_SEGMENT = "/projects/*/"
 _SYNCED_ACCOUNT_SEGMENT = "/synced/*/"
 
 
-def resolve_external_pattern(pattern: str, project_folder: str) -> str | None:
+def resolve_external_pattern(run: RunContext, pattern: str, project_folder: str) -> str | None:
     """An external pattern with its `/projects/*/` segment narrowed to `project_folder` and its `/synced/*/`
     segment to the signed-in account's folder; None when the pattern names the account's folder and no account is
     signed in."""
     pattern = pattern.replace(_PROJECT_SEGMENT, f"/projects/{escape_glob(project_folder)}/")
     if _SYNCED_ACCOUNT_SEGMENT not in pattern:
         return pattern
-    account = claude_synced_account_folder()
+    account = claude_synced_account_folder(run)
     if account is None:
         return None
     return pattern.replace(_SYNCED_ACCOUNT_SEGMENT, f"/synced/{escape_glob(account)}/")

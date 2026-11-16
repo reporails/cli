@@ -23,6 +23,8 @@ from typing import Any
 
 import pytest
 
+from reporails_cli.core.platform.dto.results import MapperConfig
+
 _onnx_path = (
     Path(__file__).resolve().parents[2]
     / "src"
@@ -121,7 +123,7 @@ def test_in_process_and_daemon_arms_attribute_files_identically(
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.is_daemon_running", lambda: True)
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ping", lambda: {"ok": True})
     monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.connect", _LoopbackDaemonSock)
-    daemon_map = mapping.map_instruction_files(project, list(files), spawn_daemon=False)
+    daemon_map = mapping.map_instruction_files(project, list(files), spawn_daemon=False, mapper=MapperConfig())
     assert daemon_map is not None
 
     monkeypatch.setattr(
@@ -131,7 +133,7 @@ def test_in_process_and_daemon_arms_attribute_files_identically(
         "reporails_cli.core.mapper.daemon_server.get_global_cache_dir", lambda: tmp_path / "cache-in-process"
     )
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.is_daemon_running", lambda: False)
-    in_process_map = mapping.map_instruction_files(project, list(files), spawn_daemon=False)
+    in_process_map = mapping.map_instruction_files(project, list(files), spawn_daemon=False, mapper=MapperConfig())
     assert in_process_map is not None
 
     assert _attribution(in_process_map, project) == _attribution(daemon_map, project)

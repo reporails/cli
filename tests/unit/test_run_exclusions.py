@@ -136,7 +136,7 @@ def test_leaves_out_exempts_named_paths_and_walks_keep_their_folders(tmp_path: P
 )
 def test_walker_never_enters_a_left_out_target(tmp_path: Path, excl) -> None:
     project = _gs_project(tmp_path)
-    file_types = load_file_types("claude", project_root=project)
+    file_types = load_file_types("claude", config=RunContext().project_config(project))
     classified = classify_files(
         project, [project / "CLAUDE.md"], file_types, generic_scanning=True, exclusions=excl(project)
     )
