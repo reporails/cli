@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from reporails_cli.core.platform.config.config import get_agent_config
+from reporails_cli.core.platform.config.config import bundled_agent_config
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.results import AgentConfig, HookEntry
 from reporails_cli.core.platform.policy.host_hooks import intercepted_tools
@@ -22,7 +22,7 @@ def _entries(hooks: Iterable[HookEntry]) -> list[JsonValue]:
     configs: dict[str, AgentConfig] = {}
     for hook in hooks:
         if hook.agent not in configs:
-            configs[hook.agent] = get_agent_config(hook.agent)
+            configs[hook.agent] = bundled_agent_config(hook.agent)
         tools = intercepted_tools(hook, configs[hook.agent])
         if not tools:
             continue

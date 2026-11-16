@@ -15,7 +15,7 @@ from reporails_cli.core.platform.config.capabilities import (
 )
 from reporails_cli.core.platform.dto.models import Category, FileMatch, Rule, RuleType
 from reporails_cli.core.platform.policy.applicability import filter_by_capability
-from reporails_cli.core.platform.rules.registry import _read_rules, load_rules
+from reporails_cli.core.platform.rules.registry import load_rules
 
 
 def _rule(rule_id: str, requires_capability: str | None = None) -> Rule:
@@ -108,9 +108,6 @@ class TestLoadRulesGating:
     """End-to-end: the memory-directory rule is gated on the `memory` capability."""
 
     MEMORY_RULE = "CORE:S:0023"  # agent-memory-directory, requires_capability: memory
-
-    def setup_method(self) -> None:
-        _read_rules.cache_clear()
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint

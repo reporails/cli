@@ -117,7 +117,7 @@ def test_a_formatting_client_check_is_reported_when_its_rule_is_on(tmp_path):
 def test_an_agent_exclude_drops_a_client_check_finding(tmp_path, monkeypatch):
     root = _project(tmp_path, disabled=())
     monkeypatch.setattr(
-        "reporails_cli.core.platform.rules.registry.get_agent_config",
+        "reporails_cli.core.platform.rules.registry.bundled_agent_config",
         lambda _agent: AgentConfig(excludes=[FORMATTING_RULE]),
     )
     inp = _inputs(root, client_findings=[_finding(FORMATTING_RULE, check_id="format"), _finding(_OTHER)])
@@ -216,7 +216,7 @@ def test_rule_aliases_are_the_id_the_slug_and_the_short_token():
 
 def _exclude_per_agent(monkeypatch, excludes: dict[str, list[str]]) -> None:
     monkeypatch.setattr(
-        "reporails_cli.core.platform.rules.registry.get_agent_config",
+        "reporails_cli.core.platform.rules.registry.bundled_agent_config",
         lambda agent: AgentConfig(excludes=excludes.get(agent, [])),
     )
 

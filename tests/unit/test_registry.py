@@ -259,12 +259,8 @@ class TestValidateDependsOn:
         from reporails_cli.core.platform.rules import registry
 
         rules_dir = Path(__file__).resolve().parents[2] / "framework" / "rules"
-        registry._read_rules.cache_clear()
-        try:
-            with caplog.at_level("WARNING"):
-                rules = registry.load_rules(rules_paths=[rules_dir], agent="copilot")
-        finally:
-            registry._read_rules.cache_clear()
+        with caplog.at_level("WARNING"):
+            rules = registry.load_rules(rules_paths=[rules_dir], agent="copilot")
         assert "which is not loaded" not in caplog.text
         assert "CORE:S:0026" in rules
         assert "CORE:S:0024" not in rules
@@ -342,13 +338,9 @@ class TestRuleDependencies:
         self._write(tmp_path, "core/dependent", "CORE:S:0902", "depends_on: [CORE:S:0901]\n")
         self._write(tmp_path, "claude/base", "CLAUDE:S:0901", "supersedes: CORE:S:0901\n")
         monkeypatch.setattr(registry, "get_rules_dir", lambda: tmp_path)
-        registry._read_rules.cache_clear()
-        try:
-            claude = rule_dependencies(registry.load_rules(agent="claude"))
-            assert claude == {"CORE:S:0902": frozenset({"CLAUDE:S:0901"})}
-            assert rule_dependencies(registry.load_rules(agent="")) == {"CORE:S:0902": frozenset({"CORE:S:0901"})}
-        finally:
-            registry._read_rules.cache_clear()
+        claude = rule_dependencies(registry.load_rules(agent="claude"))
+        assert claude == {"CORE:S:0902": frozenset({"CLAUDE:S:0901"})}
+        assert rule_dependencies(registry.load_rules(agent="")) == {"CORE:S:0902": frozenset({"CORE:S:0901"})}
 
 
 class TestProjectScopeModes:

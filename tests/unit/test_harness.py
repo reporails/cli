@@ -263,7 +263,7 @@ class TestMechanicalChecks:
             checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, _fts_claude())
+        result = run_rule(info, _fts_claude(), {})
         assert result.status == HarnessStatus.PASSED
 
     @pytest.mark.unit
@@ -287,7 +287,7 @@ class TestMechanicalChecks:
             checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, [])
+        result = run_rule(info, [], {})
         assert result.status == HarnessStatus.NOT_IMPLEMENTED
 
     @pytest.mark.unit
@@ -313,7 +313,7 @@ class TestMechanicalChecks:
             checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, [])
+        result = run_rule(info, [], {})
         assert result.status == HarnessStatus.NO_FIXTURES
 
 
@@ -370,7 +370,7 @@ class TestDeterministicChecks:
             checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, _fts_claude())
+        result = run_rule(info, _fts_claude(), {})
         assert result.status == HarnessStatus.PASSED
 
     @pytest.mark.unit
@@ -422,7 +422,7 @@ class TestDeterministicChecks:
             checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, _fts_claude())
+        result = run_rule(info, _fts_claude(), {})
         assert result.status == HarnessStatus.PASSED
 
 
@@ -541,7 +541,7 @@ class TestFixtureDiscovery:
         )
 
         file_types = [*_fts_claude(), _ft("config", (".claude/settings.json",))]
-        result = run_rule(info, file_types)
+        result = run_rule(info, file_types, {})
         assert result.status == HarnessStatus.PASSED
 
 
@@ -937,7 +937,7 @@ class TestFailScaffoldIntegration:
             checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, _fts_claude())
+        result = run_rule(info, _fts_claude(), {})
         assert result.status == HarnessStatus.PASSED
 
     @pytest.mark.unit
@@ -980,7 +980,7 @@ class TestFailScaffoldIntegration:
             checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, [])
+        result = run_rule(info, [], {})
         assert result.status == HarnessStatus.PASSED
 
 

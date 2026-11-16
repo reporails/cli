@@ -671,8 +671,6 @@ def test_ensure_rehashes_nothing_for_an_unchanged_cache(tmp_path, monkeypatch, _
     _use_fake(monkeypatch, _FakeClient())
     _bundled.ensure_models_available()  # downloads
     _bundled.ensure_models_available()  # verifies the set once and records it
-    graph_hash._graph_hash_cache.clear()
-    graph_hash._load_sidecar.cache_clear()
     calls: list[Path] = []
     monkeypatch.setattr(graph_hash, "_hash_file_bytes", lambda p: calls.append(p) or "unused")
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import functools
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -97,7 +97,7 @@ def _build_agent_registry() -> dict[str, AgentType]:
 
 
 @functools.cache
-def get_known_agents() -> dict[str, AgentType]:
+def get_known_agents() -> Mapping[str, AgentType]:
     """Get the agent registry, building from config.yml on first access."""
     return _build_agent_registry()
 
@@ -124,7 +124,7 @@ def _detect_agent(
     target: Path,
     agent_type: AgentType,
     *,
-    known: dict[str, AgentType],
+    known: Mapping[str, AgentType],
     exclusions: RunExclusions,
     project_config: ProjectConfig | None,
 ) -> DetectedAgent | None:

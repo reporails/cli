@@ -11,7 +11,12 @@ import pytest
 
 from reporails_cli.core.discovery.agent_config import load_config_file_types
 from reporails_cli.core.platform.config.claude_settings import _settings_patterns
-from reporails_cli.core.platform.config.config import get_agent_config, iter_agent_configs, read_agent_config
+from reporails_cli.core.platform.config.config import (
+    agent_config_at,
+    get_agent_config_path,
+    iter_agent_configs,
+    read_agent_config,
+)
 from reporails_cli.core.platform.dto.results import AgentConfig
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_lint]
@@ -57,7 +62,7 @@ def _readers(rules_root: Path, path: Path) -> list[tuple[Callable[[], object], o
         return _run
 
     return [
-        (_guarded(lambda: get_agent_config("claude", rules_root)), AgentConfig()),
+        (_guarded(lambda: agent_config_at(get_agent_config_path("claude", rules_root))), AgentConfig()),
         (_guarded(lambda: list(iter_agent_configs(rules_root))), []),
         (_guarded(lambda: load_config_file_types("claude", [rules_root])), None),
         (_guarded(_settings_patterns), {}),

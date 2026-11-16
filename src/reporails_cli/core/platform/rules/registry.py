@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from fnmatch import fnmatch
-from functools import cache, lru_cache
+from functools import lru_cache
 from pathlib import Path
+from types import MappingProxyType
 
 import yaml
 
 from reporails_cli.core.platform.config.bootstrap import get_package_paths
 from reporails_cli.core.platform.config.capabilities import agent_capabilities
 from reporails_cli.core.platform.config.config import (
-    get_agent_config,
+    bundled_agent_config,
     get_project_config,
     get_rules_path,
     iter_agent_configs,
@@ -72,16 +74,21 @@ def get_rules_dir() -> Path:
 
 
 def load_rules_from_path(path: Path) -> dict[str, Rule]:
-    """Load the bundled framework rules of a single directory, returning {id: Rule}. Cached per path."""
+    """Load the rules of a single directory, returning {id: Rule}.
+
+    A folder of the bundled rules is read once per process; any other directory is scanned on each call.
+    """
     if not path.exists():
         return {}
-    return dict(_read_rules(path))
-
-
-@cache
-def _read_rules(path: Path) -> dict[str, Rule]:
-    """Read every rule under a framework `path`. Cached per path: framework rules do not change within a run."""
+    if path.parent == get_rules_path():
+        return dict(_bundled_rules(path.name))
     return _scan_rules(path)
+
+
+@lru_cache(maxsize=32)
+def _bundled_rules(folder: str) -> Mapping[str, Rule]:
+    """Every rule of one bundled rules folder. The bundle does not change within a process."""
+    return MappingProxyType(_scan_rules(get_rules_path() / folder))
 
 
 class RuleReadError(ValueError):
@@ -339,7 +346,7 @@ def _filter_by_agent(rules: dict[str, Rule], agent: str) -> dict[str, Rule]:
     agent lacks per framework/capabilities_matrix.yml (no-op for an unknown or
     empty agent — see filter_by_capability).
     """
-    agent_config = get_agent_config(agent) if agent else AgentConfig()
+    agent_config = bundled_agent_config(agent) if agent else AgentConfig()
     rules = apply_agent_excludes(rules, agent_config)
     if agent_config.overrides:
         rules = _apply_agent_overrides(rules, agent_config.overrides)

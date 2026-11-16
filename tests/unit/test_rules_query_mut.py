@@ -38,7 +38,7 @@ def test_load_all_rules_applies_agent_excludes(tmp_path: Path, monkeypatch: pyte
         return {} if path.name == "core" else dict(agent_rules)
 
     monkeypatch.setattr(rules_query, "load_rules_from_path", fake_load)
-    monkeypatch.setattr(rules_query, "get_agent_config", lambda _agent: AgentConfig(excludes=["AGT:S:0002"]))
+    monkeypatch.setattr(rules_query, "bundled_agent_config", lambda _agent: AgentConfig(excludes=["AGT:S:0002"]))
 
     monkeypatch.setattr(rules_query, "get_rules_dir", lambda: tmp_path)
     out = {r.id for r in load_all_rules(agents=["agt"])}

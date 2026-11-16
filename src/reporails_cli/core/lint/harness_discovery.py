@@ -14,7 +14,7 @@ from pathlib import Path
 
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.lint.harness_models import _FIXTURE_EXCLUDES
-from reporails_cli.core.platform.config.config import get_agent_config, get_agent_config_path, iter_agent_configs
+from reporails_cli.core.platform.config.config import agent_config_at, get_agent_config_path, iter_agent_configs
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
 from reporails_cli.core.platform.dto.lint import RuleInfo
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, FieldProblem, FileTypeDeclaration, Rule
@@ -40,7 +40,7 @@ def load_agent_config(
     if not config_path.exists():
         logger.warning("Agent config not found: %s", config_path)
         return [], []
-    return load_file_types(agent, [rules_root]), get_agent_config(agent, rules_root).excludes
+    return load_file_types(agent, [rules_root]), agent_config_at(config_path).excludes
 
 
 def _classify_fixture(

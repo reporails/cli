@@ -15,7 +15,6 @@ Uses the same check engines as production validation (ails check):
 
 from __future__ import annotations
 
-import functools
 import logging
 import shutil
 from pathlib import Path
@@ -157,15 +156,18 @@ def _build_platform_rule(rule: RuleInfo) -> Rule | None:
     return rules.get(rule.rule_id)
 
 
-@functools.cache
-def _map_fixture(fixture_root: Path) -> RulesetMap:
+def _map_fixture(fixture_root: Path, fixture_maps: dict[Path, RulesetMap]) -> RulesetMap:
     """Map a fixture directory with the real mapper.
 
-    Cached per fixture directory so a rule with more than one
+    `fixture_maps` is the harness run's memo, so a rule with more than one
     content_query check maps its fixture once, not once per check.
     """
+    mapped = fixture_maps.get(fixture_root)
+    if mapped is not None:
+        return mapped
     files = [f for f in fixture_root.rglob("*") if f.is_file() and f.name not in _FIXTURE_EXCLUDES]
-    return map_ruleset(files, root=fixture_root, cache_dir=None)
+    fixture_maps[fixture_root] = map_ruleset(files, root=fixture_root, cache_dir=None)
+    return fixture_maps[fixture_root]
 
 
 def _run_content_query_check(
@@ -173,6 +175,7 @@ def _run_content_query_check(
     fixture_root: Path,
     rule: RuleInfo,
     file_types: list[FileTypeDeclaration],
+    fixture_maps: dict[Path, RulesetMap],
 ) -> tuple[bool, str]:
     """Evaluate one content_query check against a fixture.
 
@@ -185,7 +188,7 @@ def _run_content_query_check(
     if platform_rule is None:
         return False, f"content_query — could not load rule {rule.rule_id} for evaluation"
 
-    ruleset_map = _map_fixture(fixture_root)
+    ruleset_map = _map_fixture(fixture_root, fixture_maps)
     if not ruleset_map.files:
         return False, "content_query — no fixture files"
 
@@ -250,6 +253,7 @@ def _fixtures_of(rule: RuleInfo) -> list[tuple[str, str, Path]]:
 def run_rule(
     rule: RuleInfo,
     file_types: list[FileTypeDeclaration],
+    fixture_maps: dict[Path, RulesetMap],
 ) -> HarnessResult:
     """Run all checks for a rule against its fixtures.
 
@@ -289,7 +293,7 @@ def run_rule(
         cleanup, effective_dir = _prepare_fixture(fixture_dir, kind, rule, file_types)
         try:
             violation_found = _run_fixture_checks(
-                rule, file_types, kind=kind, label=label, effective_dir=effective_dir, result=result
+                rule, file_types, fixture_maps, kind=kind, label=label, effective_dir=effective_dir, result=result
             )
         finally:
             for scaffolded_dir in cleanup:
@@ -307,6 +311,7 @@ def run_rule(
 def _run_fixture_checks(
     rule: RuleInfo,
     file_types: list[FileTypeDeclaration],
+    fixture_maps: dict[Path, RulesetMap],
     *,
     kind: str,
     label: str,
@@ -325,11 +330,15 @@ def _run_fixture_checks(
     extra: JsonObject = {}
     for check in rule.checks:
         if kind == "pass":
-            passed, run, raw = _check_fixture(check, effective_dir, rule, file_types, label, extra_args=extra)
+            passed, run, raw = _check_fixture(
+                check, effective_dir, rule, file_types, fixture_maps, label, extra_args=extra
+            )
             if not passed:
                 result.status = HarnessStatus.FAILED
         else:
-            violation, run, raw = _check_fixture_for_violation(check, effective_dir, rule, file_types, extra_args=extra)
+            violation, run, raw = _check_fixture_for_violation(
+                check, effective_dir, rule, file_types, fixture_maps, extra_args=extra
+            )
             run.fixture = label
             violation_found = violation_found or violation
         result.check_runs.append(run)
@@ -343,6 +352,7 @@ def _check_fixture(
     fixture_root: Path,
     rule: RuleInfo,
     file_types: list[FileTypeDeclaration],
+    fixture_maps: dict[Path, RulesetMap],
     fixture_name: str,
     *,
     extra_args: JsonObject | None = None,
@@ -366,7 +376,7 @@ def _check_fixture(
         passed = (ok and count > 0) if expect == "present" else (ok and count == 0)
         return passed, CheckRun(check_id, check_type, fixture_name, passed, msg), None
 
-    ok, msg = _run_content_query_check(check, fixture_root, rule, file_types)
+    ok, msg = _run_content_query_check(check, fixture_root, rule, file_types, fixture_maps)
     passed = not ok
     return passed, CheckRun(check_id, check_type, fixture_name, passed, msg), None
 
@@ -376,6 +386,7 @@ def _check_fixture_for_violation(
     fixture_root: Path,
     rule: RuleInfo,
     file_types: list[FileTypeDeclaration],
+    fixture_maps: dict[Path, RulesetMap],
     *,
     extra_args: JsonObject | None = None,
 ) -> tuple[bool, CheckRun, CheckResult | None]:
@@ -398,7 +409,7 @@ def _check_fixture_for_violation(
         violation = (ok and count == 0) if expect == "present" else (ok and count > 0)
         return violation, CheckRun(check_id, check_type, "fail", True, msg), None
 
-    violation, msg = _run_content_query_check(check, fixture_root, rule, file_types)
+    violation, msg = _run_content_query_check(check, fixture_root, rule, file_types, fixture_maps)
     return violation, CheckRun(check_id, check_type, "fail", True, msg), None
 
 
@@ -470,6 +481,7 @@ def run_harness(
     apply_check_inheritance(rules)
 
     results: list[HarnessResult] = []
+    fixture_maps: dict[Path, RulesetMap] = {}
     for rule in rules:
         rule_agent = _get_rule_agent(rule.rule_id, prefix_map)
         if rule_agent and rule_agent in agent_cache:
@@ -480,6 +492,6 @@ def run_harness(
         else:
             # CORE/RRAILS rules use default agent file_types
             rule_file_types = default_file_types
-        results.append(run_rule(rule, rule_file_types))
+        results.append(run_rule(rule, rule_file_types, fixture_maps))
 
     return results

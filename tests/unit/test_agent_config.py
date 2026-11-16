@@ -15,18 +15,18 @@ from reporails_cli.core.discovery.agents import (
     auto_detect_agent,
     get_known_agents,
 )
-from reporails_cli.core.platform.config.config import get_agent_config
+from reporails_cli.core.platform.config.config import agent_config_at
 from reporails_cli.core.platform.dto.discovery import DetectedAgent
 from reporails_cli.core.platform.dto.models import Category, Check, Rule, RuleType, Severity
 from reporails_cli.core.platform.dto.results import AgentConfig
 from reporails_cli.core.platform.rules.registry import _apply_agent_overrides, _is_other_agent_rule, load_rules
 
 # =============================================================================
-# get_agent_config tests
+# agent_config_at tests
 # =============================================================================
 
 
-class TestGetAgentConfig:
+class TestAgentConfigAt:
     """Test loading agent config from framework."""
 
     @pytest.mark.unit
@@ -42,8 +42,7 @@ class TestGetAgentConfig:
         }
         config_path = make_config_file(yaml.dump(config_data), subdir="agents/claude")
 
-        with patch("reporails_cli.core.platform.config.config.get_agent_config_path", return_value=config_path):
-            result = get_agent_config("claude")
+        result = agent_config_at(config_path)
 
         assert result.excludes == ["S4", "S5"]
         assert result.overrides["E2-no-ritual-section"] == {"severity": "medium"}
@@ -52,11 +51,7 @@ class TestGetAgentConfig:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_missing_config_returns_defaults(self) -> None:
-        with patch(
-            "reporails_cli.core.platform.config.config.get_agent_config_path",
-            return_value=Path("/nonexistent/config.yml"),
-        ):
-            result = get_agent_config("claude")
+        result = agent_config_at(Path("/nonexistent/config.yml"))
 
         assert result == AgentConfig()
         assert result.excludes == []
@@ -67,8 +62,7 @@ class TestGetAgentConfig:
     def test_malformed_yaml_returns_defaults(self, tmp_path: Path, make_config_file) -> None:
         config_path = make_config_file(": : : invalid yaml [[[", subdir=".", name="config.yml")
 
-        with patch("reporails_cli.core.platform.config.config.get_agent_config_path", return_value=config_path):
-            result = get_agent_config("claude")
+        result = agent_config_at(config_path)
 
         assert result == AgentConfig()
 
@@ -77,8 +71,7 @@ class TestGetAgentConfig:
     def test_empty_file_returns_defaults(self, tmp_path: Path, make_config_file) -> None:
         config_path = make_config_file("", subdir=".", name="config.yml")
 
-        with patch("reporails_cli.core.platform.config.config.get_agent_config_path", return_value=config_path):
-            result = get_agent_config("claude")
+        result = agent_config_at(config_path)
 
         assert result == AgentConfig()
 
@@ -88,8 +81,7 @@ class TestGetAgentConfig:
         config_data = {"agent": "claude", "vars": {"instruction_files": "CLAUDE.md"}}
         config_path = make_config_file(yaml.dump(config_data), subdir=".", name="config.yml")
 
-        with patch("reporails_cli.core.platform.config.config.get_agent_config_path", return_value=config_path):
-            result = get_agent_config("claude")
+        result = agent_config_at(config_path)
 
         assert result.excludes == []
         assert result.overrides == {}
@@ -106,8 +98,7 @@ class TestGetAgentConfig:
         }
         config_path = make_config_file(yaml.dump(config_data), subdir="agents/claude")
 
-        with patch("reporails_cli.core.platform.config.config.get_agent_config_path", return_value=config_path):
-            result = get_agent_config("claude")
+        result = agent_config_at(config_path)
 
         assert result.prefix == "CLAUDE"
         assert result.name == "Claude Code"
@@ -120,8 +111,7 @@ class TestGetAgentConfig:
         config_data = {"agent": "claude"}
         config_path = make_config_file(yaml.dump(config_data), subdir="agents/claude")
 
-        with patch("reporails_cli.core.platform.config.config.get_agent_config_path", return_value=config_path):
-            result = get_agent_config("claude")
+        result = agent_config_at(config_path)
 
         assert result.prefix == ""
         assert result.name == ""
@@ -249,7 +239,7 @@ class TestLoadRulesExcludes:
 
         agent_config = AgentConfig(excludes=["CORE:S:0001"])
         with (
-            patch("reporails_cli.core.platform.rules.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.rules.registry.bundled_agent_config", return_value=agent_config),
             patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
         ):
             rules = load_rules([tmp_path], agent="test")
@@ -271,7 +261,7 @@ class TestLoadRulesExcludes:
 
         agent_config = AgentConfig(excludes=["NONEXISTENT"])
         with (
-            patch("reporails_cli.core.platform.rules.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.rules.registry.bundled_agent_config", return_value=agent_config),
             patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
         ):
             rules = load_rules([tmp_path], agent="test")
@@ -318,7 +308,7 @@ class TestLoadRulesExcludes:
             excludes=["CLAUDE:*", "CODEX:*"],
         )
         with (
-            patch("reporails_cli.core.platform.rules.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.rules.registry.bundled_agent_config", return_value=agent_config),
             patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
         ):
             rules = load_rules([tmp_path], agent="copilot")
@@ -350,7 +340,7 @@ class TestLoadRulesExcludes:
             excludes=["CORE:S:0001", "CLAUDE:*"],
         )
         with (
-            patch("reporails_cli.core.platform.rules.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.rules.registry.bundled_agent_config", return_value=agent_config),
             patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
         ):
             rules = load_rules([tmp_path], agent="test")
@@ -405,7 +395,7 @@ class TestPrefixNamespaceFiltering:
         # Agent name is "myagent" but prefix is "MYPREFIX" — prefix should win
         agent_config = AgentConfig(prefix="MYPREFIX")
         with (
-            patch("reporails_cli.core.platform.rules.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.rules.registry.bundled_agent_config", return_value=agent_config),
             patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
         ):
             rules = load_rules([tmp_path], agent="myagent")
@@ -435,7 +425,7 @@ class TestPrefixNamespaceFiltering:
         # No prefix — agent.upper() = "CLAUDE" used for filtering
         agent_config = AgentConfig()
         with (
-            patch("reporails_cli.core.platform.rules.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.rules.registry.bundled_agent_config", return_value=agent_config),
             patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
         ):
             rules = load_rules([tmp_path], agent="claude")

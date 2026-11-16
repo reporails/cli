@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
+from functools import cache, lru_cache
 from pathlib import Path
 from typing import get_type_hints
 
@@ -48,18 +49,19 @@ from reporails_cli.core.platform.utils.utils import (
 logger = logging.getLogger(__name__)
 
 
-def get_agent_config(agent: str, rules_root: Path | None = None) -> AgentConfig:
-    """Load agent config (excludes + overrides) from framework.
+@lru_cache(maxsize=32)
+def bundled_agent_config(agent: str) -> AgentConfig:
+    """The bundled `config.yml` of `agent` (excludes, overrides, hooks); defaults when missing or malformed.
 
-    Args:
-        agent: Agent identifier (e.g., "claude")
-        rules_root: Rules root to read from; the resolved default rules path when None
-
-    Returns:
-        AgentConfig with excludes and overrides, or defaults if missing/malformed
+    The bundle is fixed for the process, so the result is cached per agent.
     """
+    return agent_config_at(get_agent_config_path(agent, get_rules_path()))
 
-    data = read_agent_config(get_agent_config_path(agent, rules_root))
+
+def agent_config_at(config_path: Path) -> AgentConfig:
+    """The agent config in the `config.yml` at `config_path`, uncached; defaults when missing or malformed."""
+
+    data = read_agent_config(config_path)
     if data is None:
         return AgentConfig()
     return AgentConfig(
@@ -455,10 +457,11 @@ def _merge_thresholds(
     return merged
 
 
+@cache
 def get_rules_path() -> Path:
     """Get path to rules directory.
 
-    Resolution: config override → bundled (package default).
+    Resolution: config override → bundled (package default). Fixed when the process starts.
     """
     config = get_global_config()
     if config.framework_path and config.framework_path.is_dir():
