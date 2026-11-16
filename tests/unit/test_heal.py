@@ -12,6 +12,8 @@ from typing import Any
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import no_exclusions
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.interfaces.cli.heal import _collect_section_suggestions, _output_heal_results
 
@@ -47,7 +49,14 @@ def test_collect_section_suggestions_does_not_write(tmp_path: Path, monkeypatch:
     monkeypatch.setattr("reporails_cli.interfaces.cli.heal.run_content_quality_checks", _fake_content)
 
     suggestions = _collect_section_suggestions(
-        tmp_path, [fpath], None, "claude", show_progress=False, console=_Console()
+        RunContext(),
+        tmp_path,
+        [fpath],
+        None,
+        "claude",
+        show_progress=False,
+        console=_Console(),
+        exclusions=no_exclusions(tmp_path),
     )
 
     assert fpath.read_text(encoding="utf-8") == original
@@ -80,7 +89,14 @@ def test_collect_section_suggestions_honors_inline_suppression(tmp_path: Path, m
     monkeypatch.setattr("reporails_cli.interfaces.cli.heal.run_content_quality_checks", _fake_content)
 
     suggestions = _collect_section_suggestions(
-        tmp_path, [fpath], None, "claude", show_progress=False, console=_Console()
+        RunContext(),
+        tmp_path,
+        [fpath],
+        None,
+        "claude",
+        show_progress=False,
+        console=_Console(),
+        exclusions=no_exclusions(tmp_path),
     )
 
     assert suggestions == []
@@ -108,7 +124,14 @@ def test_collect_section_suggestions_still_fires_on_an_unsuppressed_line(
     monkeypatch.setattr("reporails_cli.interfaces.cli.heal.run_content_quality_checks", _fake_content)
 
     suggestions = _collect_section_suggestions(
-        tmp_path, [fpath], None, "claude", show_progress=False, console=_Console()
+        RunContext(),
+        tmp_path,
+        [fpath],
+        None,
+        "claude",
+        show_progress=False,
+        console=_Console(),
+        exclusions=no_exclusions(tmp_path),
     )
 
     assert {s["rule_id"] for s in suggestions} == {"CORE:C:0019"}

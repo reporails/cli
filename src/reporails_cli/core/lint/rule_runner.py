@@ -16,12 +16,14 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from reporails_cli.core.classify import classify_files, load_file_types
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.content_checker import run_content_checks
 from reporails_cli.core.lint.mechanical.runner import run_mechanical_checks
 from reporails_cli.core.lint.regex import run_checks
 from reporails_cli.core.lint.regex.compiler import display_severity
 from reporails_cli.core.mapper.skills import skill_entry_paths, skill_membership
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.diagnostics import SEVERITY_RANK
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import ClassifiedFile, Execution, LocalFinding, Rule, RuleType
@@ -39,7 +41,7 @@ def _collect_mechanical_findings(
     *,
     scoped: bool = False,
     project_checks: str = "all",
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> list[LocalFinding]:
     """Run mechanical checks and convert Violations to LocalFinding."""
     # A rule of any type may hold a mechanical check; the runner runs only those checks.
@@ -96,6 +98,7 @@ def _collect_deterministic_findings(
     project_dir: Path,
     instruction_files: list[Path],
     classified: list[ClassifiedFile],
+    exclusions: RunExclusions,
 ) -> list[LocalFinding]:
     """Run deterministic checks against matched target files.
 
@@ -119,6 +122,7 @@ def _collect_deterministic_findings(
             run_checks(
                 [rule.yml_path],
                 project_dir,
+                exclusions,
                 instruction_files=target_files,
                 min_lines_overrides=min_lines_overrides,
                 fix_by_rule={rule.id: rule.fix} if rule.fix else None,
@@ -167,6 +171,7 @@ def _classify_agent_files(
 
 
 def run_m_probes(
+    run: RunContext,
     project_dir: Path,
     instruction_files: list[Path],
     *,
@@ -174,7 +179,7 @@ def run_m_probes(
     scoped: bool = False,
     project_checks: str = "all",
     skills: Mapping[str, str] | None = None,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> list[LocalFinding]:
     """Run M-probe checks (mechanical + deterministic) against instruction files.
 
@@ -197,7 +202,11 @@ def run_m_probes(
         )
     )
     if project_checks != "only":
-        findings.extend(_collect_deterministic_findings(rules, project_dir, effective_files, classified))
+        findings.extend(
+            _collect_deterministic_findings(
+                rules, project_dir, effective_files, classified, load_run_exclusions(run, project_dir)
+            )
+        )
 
     findings.sort(key=lambda f: (SEVERITY_RANK.get(f.severity, 9), f.line))
     return findings
@@ -219,7 +228,7 @@ def _files_by_first_agent(
     project_dir: Path,
     pairs: list[tuple[str, list[Path]]],
     skills: Mapping[str, str] | None,
-    exclusions: RunExclusions | None,
+    exclusions: RunExclusions,
 ) -> dict[Path, tuple[str, ClassifiedFile]]:
     """Each file the pairs name, classified by the first agent that lists it: path -> (agent, classified file)."""
     seen: dict[Path, tuple[str, ClassifiedFile]] = {}
@@ -235,7 +244,7 @@ def _project_wide_findings(
     *,
     scoped: bool = False,
     skills: Mapping[str, str] | None = None,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> list[LocalFinding]:
     """The core rules' project-wide checks over every pair's files, each classified by its own agent.
 
@@ -264,12 +273,13 @@ def _project_wide_findings(
 
 
 def run_m_probes_over_pairs(
+    run: RunContext,
     project_dir: Path,
     pairs: list[tuple[str, list[Path]]],
     *,
     scoped: bool = False,
     skills: Mapping[str, str] | None = None,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> list[LocalFinding]:
     """Run the M-probes once per ``(agent, its files)`` pair, with project-wide checks once.
 
@@ -284,6 +294,7 @@ def run_m_probes_over_pairs(
     for agent_id, agent_files in pairs:
         findings.extend(
             run_m_probes(
+                run,
                 project_dir,
                 agent_files,
                 agent=agent_id,

@@ -11,6 +11,7 @@ import pytest
 
 from reporails_cli.core.mapper import skills as skills_module
 from reporails_cli.core.mapper.skills import record_skills
+from tests.unit.run_args import with_run_exclusions
 
 
 def _registry(*entry_patterns: str) -> dict[str, dict[str, Any]]:
@@ -132,7 +133,7 @@ def _entry_check(root: Path, agent: str) -> Any:
     record_skills(SimpleNamespace(files=recs), [agent], root)
     skills = {r.path: r.skill for r in recs if r.skill}
     classified = classify_files(root, files, load_file_types(agent, project_root=root), skills=skills)
-    return skill_entrypoint_present(root, {"entry": "SKILL.md"}, classified)
+    return skill_entrypoint_present(root, with_run_exclusions(root, {"entry": "SKILL.md"}), classified)
 
 
 @pytest.mark.unit

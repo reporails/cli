@@ -7,8 +7,10 @@ from pathlib import Path
 import pytest
 import yaml
 
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.rule_runner import run_m_probes
 from reporails_cli.core.mapper.skills import skill_entry_paths
+from reporails_cli.core.platform.config.run_context import RunContext
 
 RULES = Path(__file__).resolve().parents[2] / "framework" / "rules" / "core"
 GOOD = "---\nname: wrong\ndescription: does a thing\n---\nbody\n"
@@ -32,7 +34,17 @@ def test_nested_skill_md_alone_has_no_missing_description(tmp_path: Path) -> Non
     entry = _write(tmp_path, ".claude/skills/foo/SKILL.md", GOOD.replace("wrong", "foo"))
     inner = _write(tmp_path, ".claude/skills/foo/sub/SKILL.md", GOOD)
     skills = {entry.as_posix(): entry.parent.as_posix(), inner.as_posix(): entry.parent.as_posix()}
-    ids = _ids(run_m_probes(tmp_path, [inner], agent="claude", skills=skills), "sub/SKILL.md")
+    ids = _ids(
+        run_m_probes(
+            RunContext(),
+            tmp_path,
+            [inner],
+            agent="claude",
+            skills=skills,
+            exclusions=load_run_exclusions(RunContext(), tmp_path),
+        ),
+        "sub/SKILL.md",
+    )
     assert "CORE:S:0040" not in ids
 
 
@@ -42,7 +54,14 @@ def test_nested_skill_md_is_not_judged_by_entry_rules(tmp_path: Path) -> None:
     entry = _write(tmp_path, ".claude/skills/foo/SKILL.md", GATES.replace("disable-model-invocation: true\n", ""))
     inner = _write(tmp_path, ".claude/skills/foo/sub/SKILL.md", GATES.replace("foo", "other"))
     skills = {entry.as_posix(): entry.parent.as_posix(), inner.as_posix(): entry.parent.as_posix()}
-    findings = run_m_probes(tmp_path, [entry, inner], agent="claude", skills=skills)
+    findings = run_m_probes(
+        RunContext(),
+        tmp_path,
+        [entry, inner],
+        agent="claude",
+        skills=skills,
+        exclusions=load_run_exclusions(RunContext(), tmp_path),
+    )
     ids = _ids(findings, "sub/SKILL.md")
     assert "CORE:S:0036" not in ids
     assert "CORE:C:0057" not in ids
@@ -53,7 +72,17 @@ def test_nested_skill_md_is_not_judged_by_entry_rules(tmp_path: Path) -> None:
 def test_bad_entry_still_judged(tmp_path: Path) -> None:
     entry = _write(tmp_path, ".claude/skills/foo/SKILL.md", GOOD)
     skills = {entry.as_posix(): entry.parent.as_posix()}
-    ids = _ids(run_m_probes(tmp_path, [entry], agent="claude", skills=skills), "foo/SKILL.md")
+    ids = _ids(
+        run_m_probes(
+            RunContext(),
+            tmp_path,
+            [entry],
+            agent="claude",
+            skills=skills,
+            exclusions=load_run_exclusions(RunContext(), tmp_path),
+        ),
+        "foo/SKILL.md",
+    )
     assert "CORE:S:0036" in ids
 
 
@@ -114,7 +143,9 @@ def test_entry_only_check_with_no_entry_in_scope_yields_no_violation(tmp_path: P
         expect=expect,
     )
     rule = Rule(id="T:1", title="t", category=Category.STRUCTURE, type=RuleType.MECHANICAL, checks=[check])
-    violation, result = dispatch_single_check(check, rule, tmp_path, [cf], "loc")
+    violation, result = dispatch_single_check(
+        check, rule, tmp_path, [cf], "loc", exclusions=load_run_exclusions(RunContext(), tmp_path)
+    )
     assert violation is None
     assert result is None
 
@@ -136,6 +167,8 @@ def test_a_keyerror_inside_a_check_is_logged_as_a_crash_not_as_unknown(
     check = Check(id="CORE:X:0001:boom", type="mechanical", check="boom_check", expect="present")
     rule = Rule(id="CORE:X:0001", title="t", category=Category.STRUCTURE, type=RuleType.MECHANICAL, checks=[check])
     with patch.object(runner.logger, "exception") as crashed, patch.object(runner.logger, "warning") as unknown:
-        assert runner.dispatch_single_check(check, rule, tmp_path, [], "loc") == (None, None)
+        assert runner.dispatch_single_check(
+            check, rule, tmp_path, [], "loc", exclusions=load_run_exclusions(RunContext(), tmp_path)
+        ) == (None, None)
     crashed.assert_called_once()
     unknown.assert_not_called()

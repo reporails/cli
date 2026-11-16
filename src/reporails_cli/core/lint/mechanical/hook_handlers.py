@@ -147,7 +147,7 @@ def _target_files(root: Path, args: CheckArgs, classified_files: list[Classified
     """The files to read: the rule's own files, or every JSON / TOML file under ``root`` when none is classified."""
     if classified_files or arg_value(args, "path"):
         return get_target_files(args, classified_files, root)
-    exclusions = run_exclusions(args, root)
+    exclusions = run_exclusions(args)
     found = {
         path for pattern in ("**/*.json", "**/*.toml") for path in _resolve_glob_targets(pattern, root, exclusions)
     }

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.pipeline import assemble as assemble_module
 from reporails_cli.core.pipeline.assemble import lint_request_local
 from reporails_cli.core.platform.adapters.payload import project_local
@@ -32,7 +33,9 @@ def _inputs(root: Path) -> AssembleInputs:
 
     files = get_all_instruction_files(RunContext(), root)
     return AssembleInputs(
-        m_findings=run_m_probes(root, files, agent="claude"),
+        m_findings=run_m_probes(
+            RunContext(), root, files, agent="claude", exclusions=load_run_exclusions(RunContext(), root)
+        ),
         content_findings=[],
         client_findings=[],
         ruleset_map=None,

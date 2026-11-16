@@ -15,8 +15,10 @@ import pytest
 
 from reporails_cli.core.classify import capability_paths as cap_paths
 from reporails_cli.core.classify import focus_expansion as focus_mod
+from reporails_cli.core.discovery.exclusions import no_exclusions
 from reporails_cli.core.discovery.walk import file_under_target
 from reporails_cli.core.platform.config import vocabulary as vocab_mod
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.lexicon import CapabilityVocabulary
 from reporails_cli.interfaces.cli import check_orchestration as orch
 
@@ -222,7 +224,7 @@ def test_resolved_capability_returns_paths(monkeypatch, tmp_path):
     """A non-None resolution must return its path, not raise (L51 `is None`)."""
     p = tmp_path / "skill.md"
     _patch_resolve(monkeypatch, resolved=p, expand_ret=({p}, ["u"]))
-    paths, unresolved = orch._resolve_capability_paths_one("skills", "foo", "claude", tmp_path)
+    paths, unresolved = orch._resolve_capability_paths_one("skills", "foo", "claude", tmp_path, no_exclusions(tmp_path))
     assert paths == {p}
     assert unresolved == []
 
@@ -233,7 +235,9 @@ def test_agents_capability_triggers_focus_expansion(monkeypatch, tmp_path):
     """Only 'agents' expands focus (L64 `==`)."""
     p = tmp_path / "agent.md"
     _patch_resolve(monkeypatch, resolved=p, expand_ret=({p}, ["unresolved-skill"]))
-    _paths, unresolved = orch._resolve_capability_paths_one("agents", "foo", "claude", tmp_path)
+    _paths, unresolved = orch._resolve_capability_paths_one(
+        "agents", "foo", "claude", tmp_path, no_exclusions(tmp_path)
+    )
     assert unresolved == ["unresolved-skill"]
 
 
@@ -272,7 +276,7 @@ def test_undeclared_capability_message_shows_none(monkeypatch, tmp_path):
     monkeypatch.setattr(focus_mod, "available_capabilities", lambda *a, **k: [])
     monkeypatch.setattr(orch.console, "print", lambda *a, **k: printed.append(str(a)))
     with pytest.raises(typer.Exit):
-        orch._resolve_capability_paths_one("skills", "foo", "claude", tmp_path)
+        orch._resolve_capability_paths_one("skills", "foo", "claude", tmp_path, no_exclusions(tmp_path))
     assert any("(none)" in msg for msg in printed)
 
 
@@ -292,7 +296,14 @@ def _run_heal_capture(monkeypatch, *, isatty, output_format):
     monkeypatch.setattr(orch, "_collect_section_suggestions", lambda *a, **k: [])
     monkeypatch.setattr(orch, "_output_heal_results", lambda *a, **k: None)
     monkeypatch.setattr(orch.sys.stdout, "isatty", lambda: isatty, raising=False)
-    orch._run_heal_pass(Path("."), orch.HealScope([], "claude"), object(), True, output_format)
+    orch._run_heal_pass(
+        Path("."),
+        orch.HealScope([], "claude", no_exclusions(Path("."))),
+        object(),
+        True,
+        output_format,
+        run=RunContext(),
+    )
     return captured["show"]
 
 

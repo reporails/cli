@@ -408,7 +408,10 @@ def ails_client(base_url: str, *, tier: str | None = None, api_key: str | None =
 
 def run_rule_files(yml_paths: list[Path], target: Path, instruction_files: list[Path] | None = None) -> dict[str, Any]:
     """Compile rule files and scan `target` with them, returning the SARIF-shaped result."""
+    from reporails_cli.core.discovery.exclusions import load_run_exclusions
     from reporails_cli.core.lint.regex import scan_ruleset
     from reporails_cli.core.lint.regex.compiler import compile_rules
+    from reporails_cli.core.platform.config.run_context import RunContext
 
-    return scan_ruleset(compile_rules(yml_paths), target, instruction_files)
+    exclusions = load_run_exclusions(RunContext(), target)
+    return scan_ruleset(compile_rules(yml_paths), target, exclusions, instruction_files)

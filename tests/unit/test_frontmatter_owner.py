@@ -21,6 +21,7 @@ from reporails_cli.core.platform.utils.utils import (
     read_frontmatter,
     strip_frontmatter,
 )
+from tests.unit.run_args import with_run_exclusions
 
 
 def _cf(root: Path, rel: str) -> list[ClassifiedFile]:
@@ -136,28 +137,34 @@ def test_a_missing_block_has_no_data_and_no_problem() -> None:
 @pytest.mark.subsys_lint
 def test_one_broken_block_is_reported_by_valid_yaml_alone(tmp_path: Path) -> None:
     files = _write(tmp_path, ".claude/rules/ts.md", "---\npaths: [unclosed\n---\nbody\n")
-    assert not frontmatter_valid_yaml(tmp_path, {}, files).passed
-    assert frontmatter_key(tmp_path, {"key": "paths"}, files).passed
-    assert frontmatter_extra_keys(tmp_path, {"allowed": ["paths"]}, files).passed
-    assert frontmatter_matches_dirname(tmp_path, {"field": "name"}, files).passed
-    assert frontmatter_valid_glob(tmp_path, {"path": ".claude/rules"}, files).passed
-    assert frontmatter_present(tmp_path, {}, files).passed
+    assert not frontmatter_valid_yaml(tmp_path, with_run_exclusions(tmp_path, {}), files).passed
+    assert frontmatter_key(tmp_path, with_run_exclusions(tmp_path, {"key": "paths"}), files).passed
+    assert frontmatter_extra_keys(tmp_path, with_run_exclusions(tmp_path, {"allowed": ["paths"]}), files).passed
+    assert frontmatter_matches_dirname(tmp_path, with_run_exclusions(tmp_path, {"field": "name"}), files).passed
+    assert frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, {"path": ".claude/rules"}), files).passed
+    assert frontmatter_present(tmp_path, with_run_exclusions(tmp_path, {}), files).passed
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_an_unquoted_glob_is_read_the_way_the_agent_reads_it(tmp_path: Path) -> None:
     files = _write(tmp_path, ".claude/rules/ts.md", "---\npaths: **/*.ts\n---\nbody\n")
-    assert not frontmatter_valid_yaml(tmp_path, {}, files).passed
-    assert frontmatter_valid_yaml(tmp_path, {"lenient": True}, files).passed
-    strict = frontmatter_extra_keys(tmp_path, {"allowed": ["paths"], "lenient": True}, files)
+    assert not frontmatter_valid_yaml(tmp_path, with_run_exclusions(tmp_path, {}), files).passed
+    assert frontmatter_valid_yaml(tmp_path, with_run_exclusions(tmp_path, {"lenient": True}), files).passed
+    strict = frontmatter_extra_keys(
+        tmp_path, with_run_exclusions(tmp_path, {"allowed": ["paths"], "lenient": True}), files
+    )
     assert strict.passed
     other = _write(tmp_path, ".claude/rules/other.md", "---\npaths: **/*.ts\ntitle: x\n---\nbody\n")
-    flagged = frontmatter_extra_keys(tmp_path, {"allowed": ["paths"], "lenient": True}, other)
+    flagged = frontmatter_extra_keys(
+        tmp_path, with_run_exclusions(tmp_path, {"allowed": ["paths"], "lenient": True}), other
+    )
     assert not flagged.passed and "title" in flagged.message
-    assert frontmatter_key(tmp_path, {"key": "paths", "lenient": True}, files).passed
+    assert frontmatter_key(tmp_path, with_run_exclusions(tmp_path, {"key": "paths", "lenient": True}), files).passed
     missing = _write(tmp_path, ".claude/rules/none.md", "---\ntitle: **x\n---\nbody\n")
-    assert not frontmatter_key(tmp_path, {"key": "paths", "lenient": True}, missing).passed
+    assert not frontmatter_key(
+        tmp_path, with_run_exclusions(tmp_path, {"key": "paths", "lenient": True}), missing
+    ).passed
 
 
 @pytest.mark.unit
@@ -165,25 +172,25 @@ def test_an_unquoted_glob_is_read_the_way_the_agent_reads_it(tmp_path: Path) -> 
 def test_valid_glob_reads_an_unquoted_glob_with_lenient_and_points_at_its_line(tmp_path: Path) -> None:
     _write(tmp_path, ".claude/rules/ts.md", "---\nname: r\npaths: **/*.nothing\n---\nbody\n")
     args = {"path": ".claude/rules", "require_matches": True, "lenient": True}
-    result = frontmatter_valid_glob(tmp_path, args, [])
+    result = frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, args), [])
     assert not result.passed
     assert result.occurrences == [(".claude/rules/ts.md:3", "Path glob `**/*.nothing` matches no file in the project")]
-    assert frontmatter_valid_glob(tmp_path, {**args, "lenient": False}, []).passed
+    assert frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, {**args, "lenient": False}), []).passed
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_a_block_closed_by_a_longer_dash_run_is_not_closed(tmp_path: Path) -> None:
     files = _write(tmp_path, "a.md", "---\nname: a\n----\nbody\n")
-    assert not frontmatter_present(tmp_path, {}, files).passed
+    assert not frontmatter_present(tmp_path, with_run_exclusions(tmp_path, {}), files).passed
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_a_yaml_comment_first_line_still_counts_as_frontmatter(tmp_path: Path) -> None:
     files = _write(tmp_path, "a.md", "---\n# note\nname: a\n---\nbody\n")
-    assert frontmatter_present(tmp_path, {}, files).passed
-    assert frontmatter_key(tmp_path, {"key": "name"}, files).passed
+    assert frontmatter_present(tmp_path, with_run_exclusions(tmp_path, {}), files).passed
+    assert frontmatter_key(tmp_path, with_run_exclusions(tmp_path, {"key": "name"}), files).passed
 
 
 @pytest.mark.unit
@@ -209,7 +216,7 @@ def test_valid_glob_keeps_a_brace_group_whole(tmp_path: Path) -> None:
     (tmp_path / "src" / "a.ts").write_text("x", encoding="utf-8")
     _write(tmp_path, ".claude/rules/ts.md", "---\npaths: src/**/*.{ts,tsx}\n---\nbody\n")
     args = {"path": ".claude/rules", "require_matches": True, "lenient": True}
-    assert frontmatter_valid_glob(tmp_path, args, []).passed
+    assert frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, args), []).passed
 
 
 @pytest.mark.unit
@@ -217,7 +224,7 @@ def test_valid_glob_keeps_a_brace_group_whole(tmp_path: Path) -> None:
 def test_valid_glob_reads_only_the_key_the_file_type_declares(tmp_path: Path) -> None:
     _write(tmp_path, ".claude/rules/ts.md", "---\npaths: nomatch/**/*.ts\nglobs: src/**/*.py\n---\nbody\n")
     args = {"path": ".claude/rules", "require_matches": True, "lenient": True}
-    result = frontmatter_valid_glob(tmp_path, args, [])
+    result = frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, args), [])
     assert not result.passed
     assert result.occurrences == [
         (".claude/rules/ts.md:2", "Path glob `nomatch/**/*.ts` matches no file in the project")
@@ -250,7 +257,7 @@ def test_a_block_that_never_closes_is_a_problem_on_line_one() -> None:
 @pytest.mark.subsys_lint
 def test_valid_yaml_reports_an_unclosed_block_once(tmp_path: Path) -> None:
     files = _write(tmp_path, ".claude/skills/s/SKILL.md", "---\nname: s\ndescription: d\n")
-    result = frontmatter_valid_yaml(tmp_path, {}, files)
+    result = frontmatter_valid_yaml(tmp_path, with_run_exclusions(tmp_path, {}), files)
     assert not result.passed
     assert result.occurrences == [
         (".claude/skills/s/SKILL.md:1", "Frontmatter is not valid YAML: the frontmatter block is not closed")
@@ -266,19 +273,21 @@ def test_a_file_that_is_not_utf8_raises_nothing(tmp_path: Path) -> None:
     (tmp_path / ".claude/rules").mkdir(parents=True)
     (tmp_path / ".claude/rules/l.md").write_bytes(b"---\npaths: src/**\n---\ncaf\xe9 @docs/x.md\n")
     files = _cf(tmp_path, ".claude/rules/l.md")
-    frontmatter_valid_glob(tmp_path, {"path": ".claude/rules", "require_matches": True}, [])
-    assert line_count(tmp_path, {"max": 100}, files).passed
-    assert extract_imports(tmp_path, {}, files).passed
+    frontmatter_valid_glob(
+        tmp_path, with_run_exclusions(tmp_path, {"path": ".claude/rules", "require_matches": True}), []
+    )
+    assert line_count(tmp_path, with_run_exclusions(tmp_path, {"max": 100}), files).passed
+    assert extract_imports(tmp_path, with_run_exclusions(tmp_path, {}), files).passed
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_a_block_that_is_not_a_mapping_is_not_also_a_missing_key(tmp_path: Path) -> None:
     files = _write(tmp_path, ".claude/skills/s/SKILL.md", "---\n- a\n- b\n---\nbody\n")
-    assert not frontmatter_valid_yaml(tmp_path, {}, files).passed
-    assert frontmatter_key(tmp_path, {"key": "description"}, files).passed
+    assert not frontmatter_valid_yaml(tmp_path, with_run_exclusions(tmp_path, {}), files).passed
+    assert frontmatter_key(tmp_path, with_run_exclusions(tmp_path, {"key": "description"}), files).passed
     blank = _write(tmp_path, ".claude/skills/t/SKILL.md", "---\nname: t\ndescription:\n---\nbody\n")
-    assert not frontmatter_key(tmp_path, {"key": "description"}, blank).passed
+    assert not frontmatter_key(tmp_path, with_run_exclusions(tmp_path, {"key": "description"}), blank).passed
 
 
 @pytest.mark.unit
@@ -311,11 +320,11 @@ def test_mechanical_checks_read_a_file_that_is_not_utf8(tmp_path: Path, rule_che
     (tmp_path / "CLAUDE.md").write_bytes(b"# Title\n\nNever use rm -rf on caf\xe9 files.\n")
     cfs = [ClassifiedFile(path=tmp_path / "CLAUDE.md", file_type="main")]
     if rule_check == "valid_markdown":
-        assert valid_markdown(tmp_path, {}, cfs).passed
+        assert valid_markdown(tmp_path, with_run_exclusions(tmp_path, {}), cfs).passed
     elif rule_check == "import_depth":
-        assert import_depth(tmp_path, {"max": 5}, cfs).passed
+        assert import_depth(tmp_path, with_run_exclusions(tmp_path, {"max": 5}), cfs).passed
     elif rule_check == "content_absent":
-        assert content_absent(tmp_path, {"pattern": "zzz"}, cfs).passed
+        assert content_absent(tmp_path, with_run_exclusions(tmp_path, {"pattern": "zzz"}), cfs).passed
     else:
         from reporails_cli.core.lint.mechanical.checks_advanced import _metadata_bytes
 
@@ -327,7 +336,7 @@ def test_mechanical_checks_read_a_file_that_is_not_utf8(tmp_path: Path, rule_che
 def test_a_path_filter_with_a_leading_slash_is_read_from_the_project_root(tmp_path: Path) -> None:
     _write(tmp_path, "src/a/b.py", "x = 1\n")
     _write(tmp_path, ".claude/rules/py.md", '---\npaths:\n  - "/src/**/*.py"\n  - "/lib/**/*.py"\n---\nbody\n')
-    result = frontmatter_valid_glob(tmp_path, _DEAD_GLOB_ARGS, [])
+    result = frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, _DEAD_GLOB_ARGS), [])
     assert [msg for _, msg in result.occurrences] == ["Path glob `/lib/**/*.py` matches no file in the project"]
 
 
@@ -336,6 +345,6 @@ def test_a_path_filter_with_a_leading_slash_is_read_from_the_project_root(tmp_pa
 def test_a_path_filter_matched_only_inside_an_excluded_folder_matches_nothing(tmp_path: Path) -> None:
     _write(tmp_path, "node_modules/x/c.tsx", "x\n")
     _write(tmp_path, ".claude/rules/ts.md", '---\npaths: ["**/*.tsx"]\n---\nbody\n')
-    result = frontmatter_valid_glob(tmp_path, _DEAD_GLOB_ARGS, [])
+    result = frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, _DEAD_GLOB_ARGS), [])
     assert not result.passed
     assert [msg for _, msg in result.occurrences] == ["Path glob `**/*.tsx` matches no file in the project"]

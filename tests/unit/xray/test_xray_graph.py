@@ -12,6 +12,7 @@ from typing import cast
 
 import pytest
 
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonValue, as_list, as_object
 from reporails_cli.core.platform.dto.events import (
     EventKind,
@@ -163,9 +164,11 @@ def _graph(
     live: bool = False,
 ) -> Graph:
     frame = Frame(epoch(at(0)) or 0.0, root, findings or {}, runnable or {}, agent_files or {}, live)
-    artifacts = build_artifacts(files, findings or {}, root, advertised=advertised or {})
+    artifacts = build_artifacts(RunContext(), files, findings or {}, root, advertised=advertised or {})
     vocab = vocabulary or vocabulary_for("claude", [])
-    return build_graph(list(records), frame, build_sources(artifacts, records, frame), vocab, load_price_list())
+    return build_graph(
+        list(records), frame, build_sources(RunContext(), artifacts, records, frame), vocab, load_price_list()
+    )
 
 
 def _node(graph: Graph, node_id: str) -> XrayNode:
@@ -755,7 +758,9 @@ def test_a_skill_that_ran_is_used_a_forked_one_is_used_but_not_loaded_and_a_comm
     runnable = {"plain": plain.path, "forked": forked.path, "go": command.path, "idle": idle.path}
     frame = Frame(epoch(at(0)) or 0.0, tmp_path, {}, runnable, {}, False)
     files = [plain, forked, command, idle]
-    table = build_sources(build_artifacts(files, {}, tmp_path, advertised={}), records, frame)
+    table = build_sources(
+        RunContext(), build_artifacts(RunContext(), files, {}, tmp_path, advertised={}), records, frame
+    )
     graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
     (row,) = build_funnel(table, graph.sources, ["skill"], ran_sources(records, table))
     assert (row.kind, row.on_disk, row.loaded, row.used) == ("skill", 4, 2, 3)
@@ -1377,7 +1382,9 @@ def test_the_funnel_does_not_count_an_unrecorded_kind_as_zero_loaded(tmp_path: P
     claude = _file(tmp_path, "CLAUDE.md", 400)
     records = [_priced(1)]
     frame = Frame(epoch(at(0)) or 0.0, tmp_path, {}, {}, {}, False)
-    table = build_sources(build_artifacts([claude], {}, tmp_path, advertised={}), records, frame)
+    table = build_sources(
+        RunContext(), build_artifacts(RunContext(), [claude], {}, tmp_path, advertised={}), records, frame
+    )
     graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
     (row,) = build_funnel(table, graph.sources, ["instructions"], set())
     assert (row.on_disk, row.loaded, row.used) == (1, None, None)
@@ -1387,7 +1394,9 @@ def test_the_funnel_takes_the_unrecorded_kinds_from_the_source_table(tmp_path: P
     claude = _file(tmp_path, "CLAUDE.md", 400)
     records = [load(0.1, claude), _priced(1)]
     frame = Frame(epoch(at(0)) or 0.0, tmp_path, {}, {}, {}, False)
-    table = build_sources(build_artifacts([claude], {}, tmp_path, advertised={}), records, frame)
+    table = build_sources(
+        RunContext(), build_artifacts(RunContext(), [claude], {}, tmp_path, advertised={}), records, frame
+    )
     graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
     (row,) = build_funnel(table, graph.sources, ["instructions"], set())
     assert row.loaded == 1
@@ -1401,7 +1410,9 @@ def test_the_agents_funnel_row_counts_the_built_in_agent_types_a_session_launche
     definition = _file(tmp_path, ".claude/agents/reviewer.md", 80, "agent")
     records = [reply(1), call(5, "tuA", "agent"), launch(6, "A", None, "tuA"), reply(7, "A"), reply(1000)]
     frame = Frame(epoch(at(0)) or 0.0, tmp_path, {}, {}, {}, False)
-    table = build_sources(build_artifacts([definition], {}, tmp_path, advertised={}), records, frame)
+    table = build_sources(
+        RunContext(), build_artifacts(RunContext(), [definition], {}, tmp_path, advertised={}), records, frame
+    )
     graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
     (row,) = build_funnel(table, graph.sources, ["agent"], set())
     assert (row.on_disk, row.loaded) == (2, 1)

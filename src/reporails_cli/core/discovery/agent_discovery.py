@@ -20,7 +20,7 @@ from reporails_cli.core.discovery.agent_config import (
     extract_properties,
     load_config_file_types,
 )
-from reporails_cli.core.discovery.exclusions import covers, load_run_exclusions
+from reporails_cli.core.discovery.exclusions import covers
 from reporails_cli.core.discovery.external_patterns import external_anchor, resolve_external_pattern
 from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.project_root import resolve_project_root, user_level_agent_dir
@@ -416,7 +416,7 @@ def _agent_scope(
     target: Path,
     agent_id: str,
     file_types: JsonObject,
-    exclusions: RunExclusions | None,
+    exclusions: RunExclusions,
     *,
     project_config: ProjectConfig | None,
     repo_scoped: bool,
@@ -433,7 +433,7 @@ def _agent_scope(
         target=target,
         agent_id=agent_id,
         project_config=project_config,
-        exclusions=exclusions if exclusions is not None else load_run_exclusions(target),
+        exclusions=exclusions,
         repo_scoped=repo_scoped,
         user_dir=target if repo_scoped and user_level_agent_dir(target) == target else None,
         exclude_globs=[
@@ -479,7 +479,7 @@ def discover_ungated(
 def discover_from_config(
     target: Path,
     agent_id: str,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
     *,
     project_config: ProjectConfig | None = None,
     repo_scoped: bool = False,

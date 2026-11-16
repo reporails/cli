@@ -142,8 +142,9 @@ class XrayServer:
     def _lists(self, path: str) -> bool:
         """Whether a session this page has read lists `path`."""
         self._session_for(self._opened.transcript.stem)
+        run = RunContext()
         with self._view_lock:
-            return any(session.acts_on(path) for session in self._sessions.values())
+            return any(session.acts_on(run, path) for session in self._sessions.values())
 
     async def page(self, _request: Request) -> Response:
         """The bundled page with the launch token in it."""
@@ -169,7 +170,7 @@ class XrayServer:
     def _build_view(self, session: XraySession, picked: SessionPick) -> tuple[JsonObject, int]:
         with self._view_lock:
             session.refresh()
-            view = session.view(self._findings, self._launch, picked)
+            view = session.view(RunContext(), self._findings, self._launch, picked)
             return view.to_json(), view.version
 
     async def _session_of(self, request: Request) -> tuple[str, XraySession, SessionPick] | JSONResponse:
@@ -250,7 +251,7 @@ class XrayServer:
 
     def _peek(self, session: XraySession, path: str) -> XrayPeek | None:
         with self._view_lock:
-            return session.peek(path)
+            return session.peek(RunContext(), path)
 
     async def _text_route(self, request: Request, route: _TextRoute) -> Response:
         """Guard the request, read `?<query>=` and reply `{"id", ...}` with the fields the route's lookup finds in the

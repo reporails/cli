@@ -9,7 +9,8 @@ import pytest
 from reporails_cli.core.classify import _parse_file_types, classify_files
 from reporails_cli.core.discovery.agent_config import categorize_file_type, load_config_file_types
 from reporails_cli.core.discovery.agent_discovery import claude_project_folder_name, discover_from_config
-from reporails_cli.core.discovery.exclusions import no_exclusions
+from reporails_cli.core.discovery.exclusions import load_run_exclusions, no_exclusions
+from reporails_cli.core.platform.config.run_context import RunContext
 
 
 @pytest.fixture
@@ -53,7 +54,7 @@ class TestMemoryClassification:
         """.claude/agent-memory/<agent>/*.md + .claude/agent-memory-local/<agent>/*.md
         receive file_type=subagent_memory, NOT generic.
         """
-        result = discover_from_config(memory_fixture, "claude")
+        result = discover_from_config(memory_fixture, "claude", load_run_exclusions(RunContext(), memory_fixture))
         assert result is not None
         instruction, _rule, _config = result
 
@@ -80,7 +81,7 @@ class TestMemoryClassification:
     @pytest.mark.subsys_lint
     def test_main_still_classifies_to_main(self, memory_fixture: Path) -> None:
         """CLAUDE.md at project root still gets file_type=main — fix did not regress main routing."""
-        result = discover_from_config(memory_fixture, "claude")
+        result = discover_from_config(memory_fixture, "claude", load_run_exclusions(RunContext(), memory_fixture))
         assert result is not None
         instruction, _rule, _config = result
 
@@ -111,7 +112,7 @@ class TestMemoryClassification:
         (mem / "topic.md").write_text("# a recalled topic\n")
         (tmp_path / "CLAUDE.md").write_text("# Project\n")
 
-        result = discover_from_config(tmp_path, "claude")
+        result = discover_from_config(tmp_path, "claude", load_run_exclusions(RunContext(), tmp_path))
         assert result is not None
         instruction, _rule, _config = result
         fts = load_config_file_types("claude")

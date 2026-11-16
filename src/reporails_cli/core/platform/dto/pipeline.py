@@ -78,8 +78,8 @@ class Refusal(NamedTuple):
 class LeftOut(NamedTuple):
     """What a run left out: the `(folders, file globs)` to report and the exclusion set behind them."""
 
-    record: Excluded = ((), ())
-    exclusions: RunExclusions | None = None
+    record: Excluded
+    exclusions: RunExclusions
 
 
 class Discovered(NamedTuple):

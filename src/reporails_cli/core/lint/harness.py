@@ -19,6 +19,7 @@ import logging
 import shutil
 from pathlib import Path
 
+from reporails_cli.core.discovery.exclusions import no_exclusions
 from reporails_cli.core.lint.content_checker import _evaluate_check
 from reporails_cli.core.lint.harness_discovery import (
     _build_prefix_to_agent_map,
@@ -73,7 +74,9 @@ def _run_mechanical_check(
     always win over upstream annotations.
     """
     try:
-        result = run_mechanical_check(check, fixture_root, classified_files, extra_args=extra_args)
+        result = run_mechanical_check(
+            check, fixture_root, classified_files, extra_args=extra_args, exclusions=no_exclusions(fixture_root)
+        )
     except UnknownCheckError:
         logger.warning("Unknown mechanical check: %s", check.check)
         return CheckResult(passed=False, message=f"Unknown mechanical check: {check.check}")
@@ -133,6 +136,7 @@ def _run_deterministic_check(
         sarif = scan_ruleset(
             CompiledRuleSet(checks=[compiled]),
             fixture_root,
+            no_exclusions(fixture_root),
             instruction_files=fixture_files if fixture_files else None,
         )
         findings = 0

@@ -7,7 +7,6 @@ from pathlib import Path
 
 import regex as re
 
-from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.discovery.walk import safe_resolve, walk_files, walk_markdown
 from reporails_cli.core.lint.regex import matching
 from reporails_cli.core.lint.regex.compiler import compile_rules
@@ -19,6 +18,7 @@ from reporails_cli.core.lint.regex.expect import (
 from reporails_cli.core.lint.regex.not_evaluated import PatternTimeoutError
 from reporails_cli.core.mapper.imports import expand_imports_with_origins
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_list, as_object, as_str
+from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.lint import CompiledCheck, CompiledRuleSet
 from reporails_cli.core.platform.dto.models import LocalFinding
 
@@ -36,6 +36,7 @@ def _get_snippet(match: re.Match[str]) -> str:
 def _resolve_scan_targets(
     target: Path,
     instruction_files: list[Path] | None,
+    exclusions: RunExclusions,
 ) -> list[Path]:
     """Build scan targets from instruction files or directory scan."""
     if instruction_files:
@@ -49,10 +50,9 @@ def _resolve_scan_targets(
         return targets
 
     scan_dir = target if target.is_dir() else target.parent
-    excluded = load_run_exclusions(scan_dir)
-    targets = list(walk_markdown(scan_dir, excluded))
+    targets = list(walk_markdown(scan_dir, exclusions))
     if not targets:
-        targets = list(walk_files(scan_dir, excluded, _is_text_file))
+        targets = list(walk_files(scan_dir, exclusions, _is_text_file))
     return targets
 
 
@@ -282,12 +282,13 @@ def _compile_ruleset(yml_paths: list[Path]) -> CompiledRuleSet:
 def scan_ruleset(
     ruleset: CompiledRuleSet,
     target: Path,
+    exclusions: RunExclusions,
     instruction_files: list[Path] | None = None,
 ) -> JsonObject:
     """Run a compiled ruleset over the scan targets, returns SARIF-shaped dict."""
     if not ruleset.checks:
         return {"runs": []}
-    scan_targets = _resolve_scan_targets(target, instruction_files)
+    scan_targets = _resolve_scan_targets(target, instruction_files, exclusions)
     if not scan_targets:
         return {"runs": []}
     scan_root = target if target.is_dir() else target.parent
@@ -342,11 +343,12 @@ def _collect_not_evaluated(sarif: JsonObject) -> set[tuple[str, str]]:
 def _resolve_scanned_files(
     target: Path,
     instruction_files: list[Path] | None,
+    exclusions: RunExclusions,
 ) -> list[str]:
     """Build list of relative file paths that were scanned."""
     scan_root = target if target.is_dir() else target.parent
     scanned: list[str] = []
-    for fp in _resolve_scan_targets(target, instruction_files):
+    for fp in _resolve_scan_targets(target, instruction_files, exclusions):
         if not fp.is_file():
             continue
         try:
@@ -359,6 +361,7 @@ def _resolve_scanned_files(
 def run_checks(
     yml_paths: list[Path],
     target: Path,
+    exclusions: RunExclusions,
     *,
     instruction_files: list[Path] | None = None,
     min_lines_overrides: dict[str, int] | None = None,
@@ -382,9 +385,9 @@ def run_checks(
     """
     ruleset = _compile_ruleset(yml_paths)
     checks = apply_min_lines_overrides(ruleset.checks, min_lines_overrides) if min_lines_overrides else ruleset.checks
-    sarif = scan_ruleset(ruleset, target, instruction_files=instruction_files)
+    sarif = scan_ruleset(ruleset, target, exclusions, instruction_files=instruction_files)
     matched_pairs, match_details = _collect_sarif_matches(sarif)
-    scanned_files = _resolve_scanned_files(target, instruction_files)
+    scanned_files = _resolve_scanned_files(target, instruction_files, exclusions)
     return emit_expect_findings(
         checks,
         matched_pairs,

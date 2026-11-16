@@ -14,6 +14,7 @@ import pytest
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.discovery.agent_discovery import discover_from_config
 from reporails_cli.core.discovery.agents import detect_agents
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.platform.config.run_context import RunContext
 
 MANIFEST = ".claude-plugin/plugin.json"
@@ -56,7 +57,7 @@ def _project(root: Path) -> Path:
 @pytest.mark.subsys_classify
 def test_documented_project_locations_are_discovered(tmp_path: Path) -> None:
     project = _project(tmp_path / "proj")
-    discovered = discover_from_config(project, "claude")
+    discovered = discover_from_config(project, "claude", load_run_exclusions(RunContext(), project))
     assert discovered is not None
     found = {p.relative_to(project).as_posix() for group in discovered for p in group}
     for rel, _ in PROJECT_ROWS:

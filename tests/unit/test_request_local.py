@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.mechanical.runner import run_mechanical_checks
 from reporails_cli.core.lint.regex.compiler import display_severity
 from reporails_cli.core.platform.adapters.payload import (
@@ -18,6 +19,7 @@ from reporails_cli.core.platform.adapters.payload import (
     encode_msgpack,
     project_local,
 )
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.models import (
     Category,
@@ -193,7 +195,9 @@ class TestCodexOverLimit:
             ],
         )
 
-        violations = run_mechanical_checks({"CODEX:E:0001": rule}, tmp_path, classified)
+        violations = run_mechanical_checks(
+            {"CODEX:E:0001": rule}, tmp_path, classified, exclusions=load_run_exclusions(RunContext(), tmp_path)
+        )
         assert len(violations) == 1
 
         findings = [
@@ -231,4 +235,9 @@ class TestCodexOverLimit:
                 )
             ],
         )
-        assert run_mechanical_checks({"CODEX:E:0001": rule}, tmp_path, classified) == []
+        assert (
+            run_mechanical_checks(
+                {"CODEX:E:0001": rule}, tmp_path, classified, exclusions=load_run_exclusions(RunContext(), tmp_path)
+            )
+            == []
+        )

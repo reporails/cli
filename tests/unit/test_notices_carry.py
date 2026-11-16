@@ -16,6 +16,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
+from reporails_cli.core.discovery.exclusions import no_exclusions
 from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.pipeline.assemble import assemble_result
 from reporails_cli.core.platform.adapters.api_client import AilsClient
@@ -152,7 +153,7 @@ def test_mcp_validate_payload_carries_notices_and_the_funnel_error(
     monkeypatch.setattr(check_one, "_checks_over_pairs", lambda *_a, **_k: ([], [], []))
     monkeypatch.setattr(check_one, "_agent_file_pairs", lambda *_a, **_k: [])
     ruleset_map = _map()
-    scope = Scope(tmp_path, None, [], "claude", [], {}, LeftOut(), ProjectConfig())
+    scope = Scope(tmp_path, None, [], "claude", [], {}, LeftOut(((), ()), no_exclusions(tmp_path)), ProjectConfig())
     result, funnel_error = check_one.check_and_assemble(RunContext(), scope, ruleset_map, lint=ServerLint())
     payload = tools._attach_funnel(json_formatter.format_combined_result(result, ruleset_map=ruleset_map), funnel_error)
     from reporails_cli.formatters import mcp as mcp_formatter

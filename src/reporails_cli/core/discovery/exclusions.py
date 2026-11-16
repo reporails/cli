@@ -8,12 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from reporails_cli.core.discovery.walk import child_real, safe_resolve
-from reporails_cli.core.platform.config.bootstrap import (
-    get_global_config_path,
-    get_local_config_path,
-    get_project_config_path,
-)
-from reporails_cli.core.platform.config.config import get_project_config, read_config_file
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import str_list
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.exclusion import EXCLUSION_SETTINGS, ExclusionHit, ExclusionSetting, FolderValue
@@ -116,10 +111,10 @@ def _hit(
 
 
 def load_run_exclusions(
-    target: Path, flag_dirs: list[str] | None = None, flag_files: list[str] | None = None
+    run: RunContext, target: Path, flag_dirs: list[str] | None = None, flag_files: list[str] | None = None
 ) -> RunExclusions:
-    """The run's exclusions at `target`: command-line patterns joined with the project's config."""
-    config = get_project_config(target)
+    """The run's exclusions at `target`: command-line patterns joined with the config `run` read."""
+    config = run.project_config(target)
     return parse_run_exclusions(
         target, (*(flag_dirs or ()), *config.exclude_dirs), (*(flag_files or ()), *config.exclude_files)
     )
@@ -135,17 +130,16 @@ def _setting_test(root: Path, setting: ExclusionSetting, value: str) -> Callable
     return lambda path: leaves_out(only, path)
 
 
-def exclusion_hits(root: Path, paths: Iterable[Path]) -> dict[Path, tuple[ExclusionHit, ...]]:
+def exclusion_hits(run: RunContext, root: Path, paths: Iterable[Path]) -> dict[Path, tuple[ExclusionHit, ...]]:
     """For each of `paths`, the config values that keep it out of a project-wide check or fix: the setting
     (`exclude_dirs`, `exclude_files` or `heal_exclude`), the value and the config file holding it. A path nothing
     keeps out maps to no hit. A value counts only when the project's merged config holds it, so a setting a file
     holds that the run never reads (a global `heal_exclude`) is no hit. The config file is named as the page shows
     paths: project-relative, else under `~/`. Raises `ConfigUnreadableError` for a config file that cannot be read.
     """
-    effective = get_project_config(root)
+    effective = run.project_config(root)
     tests: list[tuple[ExclusionHit, Callable[[Path], bool]]] = []
-    for config_path in (get_project_config_path(root), get_local_config_path(root), get_global_config_path()):
-        data = read_config_file(config_path)
+    for config_path, data in run.config_documents(root):
         label = relative_wire_path(str(config_path), root)
         tests.extend(
             (ExclusionHit(setting, value, label), _setting_test(root, setting, value))

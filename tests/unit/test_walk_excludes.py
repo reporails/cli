@@ -68,7 +68,7 @@ def test_project_config_exclude_dirs_extend_the_default_set(tmp_path: Path) -> N
     _tree(tmp_path)
     (tmp_path / ".ails").mkdir()
     (tmp_path / ".ails" / "config.yml").write_text("exclude_dirs:\n  - scratch\n", encoding="utf-8")
-    resolved = load_run_exclusions(tmp_path)
+    resolved = load_run_exclusions(RunContext(), tmp_path)
     assert resolved.prunes(str(tmp_path / "scratch"), "scratch", os.path.realpath(str(tmp_path / "scratch")))
     assert resolved.prunes(
         str(tmp_path / "node_modules"), "node_modules", os.path.realpath(str(tmp_path / "node_modules"))
@@ -110,7 +110,7 @@ def test_agent_detection_skips_a_marker_under_a_config_folder_path(tmp_path: Pat
         (tmp_path / ".ails").mkdir()
         (tmp_path / ".ails" / "config.yml").write_text(config, encoding="utf-8")
     known = get_known_agents()
-    assert agent_has_marker(tmp_path, known["claude"], known, load_run_exclusions(tmp_path)) is found
+    assert agent_has_marker(tmp_path, known["claude"], known, load_run_exclusions(RunContext(), tmp_path)) is found
     assert ("claude" in {a.agent_type.id for a in detect_agents(RunContext(), tmp_path)}) is found
 
 
@@ -122,7 +122,7 @@ def test_local_config_exclude_dirs_reach_the_walkers_and_agent_detection(tmp_pat
     _tree(tmp_path)
     (tmp_path / ".ails").mkdir()
     (tmp_path / ".ails" / "config.local.yml").write_text("exclude_dirs:\n  - scratch\n", encoding="utf-8")
-    resolved = load_run_exclusions(tmp_path)
+    resolved = load_run_exclusions(RunContext(), tmp_path)
     assert resolved.prunes(str(tmp_path / "scratch"), "scratch", os.path.realpath(str(tmp_path / "scratch")))
     assert _rel(tmp_path, walk_glob(tmp_path, "CLAUDE.md", resolved)) == {"CLAUDE.md", "docs/CLAUDE.md"}
     detected = {
@@ -138,7 +138,7 @@ def test_global_config_exclude_dirs_extend_the_resolved_set(tmp_path: Path) -> N
     home = Path.home() / ".reporails"
     home.mkdir(parents=True, exist_ok=True)
     (home / "config.yml").write_text("exclude_dirs:\n  - elsewhere\n", encoding="utf-8")
-    assert load_run_exclusions(tmp_path).prunes(
+    assert load_run_exclusions(RunContext(), tmp_path).prunes(
         str(tmp_path / "elsewhere"), "elsewhere", os.path.realpath(str(tmp_path / "elsewhere"))
     )
 

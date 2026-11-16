@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 import yaml
 
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.regex import run_checks
+from reporails_cli.core.platform.config.run_context import RunContext
 
 _CHECKS = Path(__file__).resolve().parents[2] / "framework" / "rules" / "core" / "no-credentials" / "checks.yml"
 
@@ -105,7 +107,9 @@ def test_placeholder_word_or_typed_declaration_is_not_flagged(line: str) -> None
 
 
 def _scan(project: Path, *files: str) -> list[tuple[str, int]]:
-    findings = run_checks([_CHECKS], project, instruction_files=[project / f for f in files])
+    findings = run_checks(
+        [_CHECKS], project, load_run_exclusions(RunContext(), project), instruction_files=[project / f for f in files]
+    )
     return sorted((f.file, f.line) for f in findings if f.rule == "CORE:G:0002")
 
 

@@ -31,9 +31,7 @@ from reporails_cli.core.platform.utils.utils import home_relative, is_rooted_pat
 logger = logging.getLogger(__name__)
 
 
-def _detect_path_scoped_rules(
-    target: Path, resolved_agents: list[DetectedAgent], scan: SurfaceScan | None = None
-) -> bool:
+def _detect_path_scoped_rules(target: Path, resolved_agents: list[DetectedAgent], scan: SurfaceScan) -> bool:
     """L3 capability — path-scoped rules.
 
     For an agent whose own config.yml declares a `scope: path_scoped` type
@@ -82,7 +80,7 @@ def detect_features_filesystem(
     # gates on its own declared surfaces.
     resolved_agents = agents if agents is not None else detect_agents(run, target)
     agent_ids = {a.agent_type.id for a in resolved_agents}
-    scan = scan_for_target(target, exclusions)
+    scan = scan_for_target(run, target, exclusions)
 
     # An instruction file at the root, or any inside the project, gives L1.
     # Scope the count to files under `target` — user-level memories like
@@ -137,23 +135,15 @@ def kept(scan: SurfaceScan, paths: list[Path]) -> list[Path]:
     return [p for p in paths if not leaves_out(scan.exclusions, p)]
 
 
-def scan_for_target(target: Path, exclusions: RunExclusions | None = None) -> SurfaceScan:
-    """The scan for `target` under `exclusions` (the project's own when none is given)."""
-    return SurfaceScan(exclusions=exclusions or load_run_exclusions(target))
+def scan_for_target(run: RunContext, target: Path, exclusions: RunExclusions | None = None) -> SurfaceScan:
+    """The scan for `target` under `exclusions` (the config `run` read when none is given)."""
+    return SurfaceScan(exclusions=exclusions or load_run_exclusions(run, target))
 
 
-def _scan_for(target: Path, scan: SurfaceScan | None) -> SurfaceScan:
-    """`scan` when given, else the project's own."""
-    return scan if scan is not None else scan_for_target(target)
-
-
-def _surface_patterns(
-    target: Path, spec: JsonObject, scan: SurfaceScan | None = None, *, repo_only: bool = True
-) -> list[str]:
+def _surface_patterns(target: Path, spec: JsonObject, scan: SurfaceScan, *, repo_only: bool = True) -> list[str]:
     """A file type's project-level patterns, with plugin-root patterns expanded against the
     plugin roots found under `target` exactly as discovery expands them (excluded folders
     are not searched). `repo_only=False` keeps the user-scope (`~/...`) and absolute patterns too."""
-    scan = _scan_for(target, scan)
     patterns = extract_patterns(spec)
     return expand_plugin_patterns(
         [p for p in patterns if not is_rooted_pattern(p)] if repo_only else patterns,
@@ -163,14 +153,13 @@ def _surface_patterns(
     )
 
 
-def _agent_surface_files(target: Path, agent_id: str, surface_name: str, scan: SurfaceScan | None = None) -> list[Path]:
+def _agent_surface_files(target: Path, agent_id: str, surface_name: str, scan: SurfaceScan) -> list[Path]:
     """Files matching `agent_id`'s declared `surface_name` file type under `target`.
 
     Reads the file type straight from the agent's own `config.yml` — a `skills`,
     `agents`, `hooks` or `mcp` surface is wherever that agent's own docs say it is,
     not a fixed Claude path.
     """
-    scan = _scan_for(target, scan)
     file_types = load_config_file_types(agent_id)
     if not file_types:
         return []
@@ -183,7 +172,7 @@ def _agent_surface_files(target: Path, agent_id: str, surface_name: str, scan: S
     return kept(scan, glob_file_type_patterns(target, patterns, extract_properties(spec), scan.exclusions))
 
 
-def _agent_has_surface(target: Path, agent_id: str, surface_name: str, scan: SurfaceScan | None = None) -> bool:
+def _agent_has_surface(target: Path, agent_id: str, surface_name: str, scan: SurfaceScan) -> bool:
     """True when `agent_id` declares `surface_name` and a file matches it under `target`."""
     return bool(_agent_surface_files(target, agent_id, surface_name, scan))
 
@@ -223,7 +212,7 @@ def _hook_scope_matches(target: Path, agent_id: str, scan: SurfaceScan, *, repo_
     return found
 
 
-def _agent_hook_files(target: Path, agent_id: str, scan: SurfaceScan | None = None) -> list[Path]:
+def _agent_hook_files(target: Path, agent_id: str, scan: SurfaceScan) -> list[Path]:
     """The repo-scoped files of `agent_id`'s hooks surface that carry a real hook entry.
 
     A hooks surface that shares its file with the agent's general config file
@@ -234,7 +223,6 @@ def _agent_hook_files(target: Path, agent_id: str, scan: SurfaceScan | None = No
     `.github/hooks/*.json`, Codex's `.codex/hooks.json`, Antigravity's
     `.agents/hooks.json`) counts on existence, matching every other surface check.
     """
-    scan = _scan_for(target, scan)
     spec = _hooks_spec(agent_id)
     if spec is None:
         return []
@@ -258,9 +246,8 @@ def _hook_file_label(path: Path, target: Path) -> str:
     return normalize_finding_path(resolved.as_posix(), root)
 
 
-def _agent_hook_entries(target: Path, agent_id: str, scan: SurfaceScan | None = None) -> list[HookEntry]:
+def _agent_hook_entries(target: Path, agent_id: str, scan: SurfaceScan) -> list[HookEntry]:
     """Every hook handler in every file of `agent_id`'s hooks surface, in every scope it models."""
-    scan = _scan_for(target, scan)
     entries: list[HookEntry] = []
     for scope, path in _hook_scope_matches(target, agent_id, scan, repo_only=False):
         label = _hook_file_label(path, target)
@@ -280,7 +267,7 @@ def _agent_declares_path_scoped(agent_id: str) -> bool:
     return any(isinstance(ft, dict) and ft.get("scope") == "path_scoped" for ft in file_types.values())
 
 
-def _agent_nested_instruction_files(target: Path, agent_id: str, scan: SurfaceScan | None = None) -> list[Path]:
+def _agent_nested_instruction_files(target: Path, agent_id: str, scan: SurfaceScan) -> list[Path]:
     """Real nested on-demand instruction files below `target` for `agent_id`.
 
     Codex and Antigravity scope instructions per directory through a nested
@@ -292,7 +279,6 @@ def _agent_nested_instruction_files(target: Path, agent_id: str, scan: SurfaceSc
     root (the type's own `scope: nested` glob already excludes the root file
     itself, which belongs to `main`).
     """
-    scan = _scan_for(target, scan)
     file_types = load_config_file_types(agent_id)
     if not file_types:
         return []

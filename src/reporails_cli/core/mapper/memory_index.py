@@ -4,11 +4,11 @@ Claude Code loads, and the type a topic file declares."""
 from __future__ import annotations
 
 import os
-from functools import lru_cache
 from pathlib import Path
 
 from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME
 from reporails_cli.core.mapper.structure import link_targets, strip_anchor
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import as_object
 from reporails_cli.core.platform.utils.file_read import read_file_head
 from reporails_cli.core.platform.utils.utils import read_frontmatter_file
@@ -28,10 +28,8 @@ def memory_type(topic: Path) -> str | None:
     return declared.strip() or None if isinstance(declared, str) else None
 
 
-@lru_cache(maxsize=32)
-def _window_links(index: str, _modified_ns: int) -> frozenset[str]:
-    """The normalised paths the first `MEMORY_LOAD_LINES` lines and `MEMORY_LOAD_BYTES` bytes of `index` link to.
-    `_modified_ns` keys the cache to the file's last change."""
+def _window_links(index: str) -> frozenset[str]:
+    """The normalised paths the first `MEMORY_LOAD_LINES` lines and `MEMORY_LOAD_BYTES` bytes of `index` link to."""
     raw = read_file_head(Path(index), MEMORY_LOAD_BYTES)
     window = "\n".join(raw.decode("utf-8", errors="replace").splitlines()[:MEMORY_LOAD_LINES])
     folder = os.path.dirname(index)
@@ -39,13 +37,15 @@ def _window_links(index: str, _modified_ns: int) -> frozenset[str]:
     return frozenset(os.path.normpath(os.path.join(folder, t)) for t in targets if t and "://" not in t)
 
 
-def is_linked(topic: Path) -> bool:
+def is_linked(run: RunContext, topic: Path) -> bool:
     """Whether the `MEMORY.md` beside a memory topic file links it within the part Claude Code loads;
-    false when the folder has no index."""
+    false when the folder has no index. A run reads an index's links once per change of the file."""
     index = topic.parent / MEMORY_INDEX_FILENAME
     try:
-        modified_ns = index.stat().st_mtime_ns
-        links = _window_links(str(index), modified_ns)
+        key = (str(index), index.stat().st_mtime_ns)
+        links = run.memory_links.get(key)
+        if links is None:
+            links = run.memory_links[key] = _window_links(key[0])
     except OSError:
         return False
     return os.path.normpath(topic) in links

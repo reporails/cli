@@ -27,6 +27,7 @@ from reporails_cli.core.platform.config.claude_settings import (
     mcp_declarations,
     mcp_turned_off,
 )
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
 from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
 from reporails_cli.core.platform.dto.transcript import CallDetail, SummarySpan
@@ -42,7 +43,7 @@ from reporails_cli.core.platform.dto.xray import (
     XrayWindow,
 )
 from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
-from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayPeek
+from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayArtifact, XrayPeek
 from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.artifacts import (
     advertised_files,
@@ -108,7 +109,7 @@ class XraySession:
         self._file = session_file
         self._transcript: list[EventRecord] = []
         self._reads = _FileReads()
-        self._files: tuple[ArtifactFile, ...] | None = None
+        self._listed: tuple[tuple[ArtifactFile, ...], tuple[XrayArtifact, ...]] | None = None
         self._shown: dict[str, ArtifactFile] | None = None
         self._problems: tuple[str, ...] = ()
         self._settings: tuple[Path, ...] = ()
@@ -123,36 +124,34 @@ class XraySession:
         if not records:
             return False
         self._transcript.extend(records)
-        self._files = None
         self._shown = None
         self.version += 1
         return True
 
-    def _listing(self) -> tuple[ArtifactFile, ...]:
+    def _listing(self, run: RunContext) -> tuple[ArtifactFile, ...]:
         """The files the page lists; with the installed plugins' record unreadable, none of their files, and with
         the server-managed settings cache unreadable, the files as if it were absent. Every problem is kept for
         the refusals."""
-        if self._files is None:
-            problems: list[str] = []
-            with leaving_out_unreadable_cache() as cache_problems:
-                try:
-                    plugins = installed_plugin_roots(resolve_project_root(self._root))
-                except InstalledPluginsUnreadableError as exc:
-                    plugins = []
-                    problems.append(str(exc))
-                self._plugins = plugins
-                self._files = artifact_files(self._root, plugins)
-                self._settings = claude_settings_files(self._root)
-            problems.extend(f"{problem}; {_CACHE_MAY_DIFFER}" for problem in dict.fromkeys(cache_problems))
-            self._problems = tuple(problems)
-        return self._files
+        problems: list[str] = []
+        with leaving_out_unreadable_cache() as cache_problems:
+            try:
+                plugins = installed_plugin_roots(resolve_project_root(self._root))
+            except InstalledPluginsUnreadableError as exc:
+                plugins = []
+                problems.append(str(exc))
+            self._plugins = plugins
+            files = artifact_files(run, self._root, plugins)
+            self._settings = claude_settings_files(self._root)
+        problems.extend(f"{problem}; {_CACHE_MAY_DIFFER}" for problem in dict.fromkeys(cache_problems))
+        self._problems = tuple(problems)
+        return files
 
-    def _shown_as(self, path: str) -> ArtifactFile | None:
+    def _shown_as(self, run: RunContext, path: str) -> ArtifactFile | None:
         """The listed file the page shows as `path`, else the instruction or memory file the transcript recorded as
         loaded that the listing leaves out and the page shows as `path`; None when the page shows none. The shown
         names are worked out once per listing and kept until the transcript grows."""
         if self._shown is None:
-            listing = self._listing()
+            listing = self._listing(run)
             known = {real_path(item.path, self._root) for item in listing}
             loads = unlisted_loads(self._transcript, known, self._root)
             self._shown = {}
@@ -160,17 +159,17 @@ class XraySession:
                 self._shown.setdefault(relative_wire_path(item.path, self._root), item)
         return self._shown.get(path)
 
-    def acts_on(self, path: str) -> bool:
+    def acts_on(self, run: RunContext, path: str) -> bool:
         """True when the page lists `path` (project-relative), or the session recorded it as loaded, as a file it may
         check or fix."""
-        item = self._shown_as(path)
+        item = self._shown_as(run, path)
         return item is not None and is_actionable(item, self._root)
 
-    def peek(self, path: str) -> XrayPeek | None:
+    def peek(self, run: RunContext, path: str) -> XrayPeek | None:
         """The text of the file shown as `path`, whether it was cut and its frontmatter split from its body; None
         unless the page lists it as an instruction, memory, skill or agent file that exists, or the session
         recorded it as loaded. The text is not kept."""
-        item = self._shown_as(path)
+        item = self._shown_as(run, path)
         return None if item is None or item.kind == "hook" else peek_text(item, self._root)
 
     def brief(self, subagent_id: str) -> str | None:
@@ -260,19 +259,25 @@ class XraySession:
             shell=named.tool.category == "run",
         )
 
-    def view(self, findings: Mapping[str, FindingTally], check: XrayCheck, picked: SessionPick) -> XrayView:
-        """The view of the records read so far; `findings` maps a file path to its finding tally and `check` is
-        the state of the launch check; `picked` is how the session was chosen."""
-        if dict(findings) != self._findings or check != self._check:
-            self._findings = dict(findings)
-            self._check = check
-            self.version += 1
-        files = self._listing()
+    def view(
+        self, run: RunContext, findings: Mapping[str, FindingTally], check: XrayCheck, picked: SessionPick
+    ) -> XrayView:
+        """The view of the records read so far, listing the files under the config `run` read; `findings` maps a
+        file path to its finding tally and `check` is the state of the launch check; `picked` is how the session
+        was chosen. The version rises when the records, the findings, the check or the listed files change."""
+        changed = dict(findings) != self._findings or check != self._check
+        self._findings = dict(findings)
+        self._check = check
+        self._shown = None
+        files = self._listing(run)
         records = [record for record in self._transcript if record.event != "refusal"]
         frame = self._frame(files, records)
         vocabulary = vocabulary_for(AGENT, [item.label for item in files if item.kind == "agent"])
-        artifacts = build_artifacts(files, self._findings, self._root, advertised=advertised_files(files, records))
-        table = build_sources(artifacts, records, frame)
+        artifacts = build_artifacts(run, files, self._findings, self._root, advertised=advertised_files(files, records))
+        if changed or self._listed not in (None, (files, artifacts)):
+            self.version += 1
+        self._listed = (files, artifacts)
+        table = build_sources(run, artifacts, records, frame)
         prices = load_price_list()
         graph = build_graph(records, frame, table, vocabulary, prices)
         window = window_of(replies_of(main_records(records)))

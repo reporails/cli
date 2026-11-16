@@ -21,6 +21,7 @@ from reporails_cli.core.lint.suppression import build_index, is_suppressed
 from reporails_cli.core.mapper.skills import skill_membership
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.heal import KeyedResult
@@ -65,6 +66,7 @@ def _apply_keyed_fixes(
 
 
 def _collect_section_suggestions(
+    run: RunContext,
     target: Path,
     instruction_files: list[Path],
     ruleset_map: RulesetMap | None,
@@ -72,7 +74,7 @@ def _collect_section_suggestions(
     *,
     show_progress: bool,
     console: Console,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> list[dict[str, str]]:
     """Run M probes + content-quality checks and collect missing-section suggestions.
 
@@ -88,6 +90,7 @@ def _collect_section_suggestions(
     if show_progress:
         console.print("[bold]Checking for missing sections...[/bold]")
     findings = run_m_probes(
+        run,
         target,
         instruction_files,
         agent=effective_agent,
@@ -134,7 +137,7 @@ def _findings_to_violations(findings: list[LocalFinding]) -> list[Violation]:
 
 
 def _classify_for_suggestions(
-    target: Path, instruction_files: list[Path], agent: str, exclusions: RunExclusions | None = None
+    target: Path, instruction_files: list[Path], agent: str, exclusions: RunExclusions
 ) -> tuple[list[ClassifiedFile], dict[str, Rule]]:
     """Classify files and load rules so a section suggestion can name the file the
     rule's own `match.type` is about, instead of wherever the underlying finding

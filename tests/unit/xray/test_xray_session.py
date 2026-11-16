@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list
 from reporails_cli.core.platform.dto.events import InstructionLoad
 from reporails_cli.core.platform.dto.xray import XrayCheck, XrayView
@@ -94,7 +95,7 @@ def _tally(count: int) -> FindingTally:
 
 def _view(session: XraySession, findings: dict[str, FindingTally] | None = None) -> XrayView:
     session.refresh()
-    return session.view(findings or {}, RUNNING, "newest")
+    return session.view(RunContext(), findings or {}, RUNNING, "newest")
 
 
 def _handoffs(tmp_path: Path) -> XrayView:
@@ -162,11 +163,11 @@ def test_refresh_reports_growth_and_bumps_the_version(tmp_path: Path) -> None:
     version = session.version
     assert session.refresh() is False
     assert session.version == version
-    before = session.view({}, RUNNING, "newest").nodes[0].detail
+    before = session.view(RunContext(), {}, RUNNING, "newest").nodes[0].detail
     _append_turn(tmp_path, "2.1.301")
     assert session.refresh() is True
     assert session.version == version + 1
-    after = session.view({}, RUNNING, "newest").nodes[0].detail
+    after = session.view(RunContext(), {}, RUNNING, "newest").nodes[0].detail
     assert len(after.series) == len(before.series) + 1 and after.series[-1][1] == 30103
     assert session.refresh() is False
 
@@ -175,13 +176,13 @@ def test_the_version_follows_the_findings_it_is_given(tmp_path: Path) -> None:
     session = _session(tmp_path, "2.1.301", _project(tmp_path))
     session.refresh()
     version = session.version
-    session.view({}, RUNNING, "newest")
+    session.view(RunContext(), {}, RUNNING, "newest")
     assert session.version == version
-    session.view({"a.md": _tally(2)}, RUNNING, "newest")
+    session.view(RunContext(), {"a.md": _tally(2)}, RUNNING, "newest")
     assert session.version == version + 1
-    session.view({"a.md": _tally(2)}, RUNNING, "newest")
+    session.view(RunContext(), {"a.md": _tally(2)}, RUNNING, "newest")
     assert session.version == version + 1
-    session.view({"a.md": _tally(2)}, XrayCheck("done", None), "newest")
+    session.view(RunContext(), {"a.md": _tally(2)}, XrayCheck("done", None), "newest")
     assert session.version == version + 2
 
 
@@ -207,10 +208,23 @@ def test_a_source_lists_what_could_load_with_its_size_findings_and_the_nodes_tha
     assert (helper.kind, helper.launches, helper.had_by) == ("agent", 0, ())
 
 
+def test_an_exclude_dirs_edit_between_two_views_shows_on_the_second(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    session = _session(tmp_path, "2.1.301", root)
+    first = _view(session)
+    assert any(source.path == "sub/CLAUDE.md" and not source.excluded.hits for source in first.sources)
+    (root / ".ails").mkdir()
+    (root / ".ails" / "config.yml").write_text("exclude_dirs:\n  - sub\n", encoding="utf-8")
+    second = _view(session)
+    assert second.version != first.version
+    held = [source for source in second.sources if source.path == "sub/CLAUDE.md"]
+    assert not held or all(source.excluded.hits for source in held)
+
+
 def test_a_skills_supporting_file_is_no_artifact_of_its_own(tmp_path: Path) -> None:
     root = _project(tmp_path)
     (root / ".claude" / "skills" / "demo" / "reference.md").write_text("# Reference\n\nDetails the demo skill cites.\n")
-    kinds = {(Path(a.path).name, a.kind) for a in artifact_files(root, [])}
+    kinds = {(Path(a.path).name, a.kind) for a in artifact_files(RunContext(), root, [])}
     assert ("SKILL.md", "skill") in kinds
     assert not any(name == "reference.md" for name, _ in kinds)
     assert [kind for name, kind in kinds if name == "SKILL.md"] == ["skill"]
@@ -219,7 +233,7 @@ def test_a_skills_supporting_file_is_no_artifact_of_its_own(tmp_path: Path) -> N
 def test_a_session_with_no_records_is_an_empty_view(tmp_path: Path) -> None:
     session = XraySession(_project(tmp_path), tmp_path / "missing.jsonl")
     assert session.refresh() is False
-    view = session.view({}, RUNNING, "newest")
+    view = session.view(RunContext(), {}, RUNNING, "newest")
     assert view.info.length_s is None and view.edges == ()
     (main,) = view.nodes
     assert (main.id, main.end, main.tree.children, main.detail.series) == ("main", 0.0, (), ())
@@ -245,7 +259,7 @@ def test_only_a_project_file_that_exists_is_actionable(tmp_path: Path) -> None:
         ),
         ArtifactFile(str(memory), "memory", "auto", None, "MEMORY.md", None, None),
     )
-    got = [a.actionable for a in build_artifacts(files, {}, root, advertised={})]
+    got = [a.actionable for a in build_artifacts(RunContext(), files, {}, root, advertised={})]
     assert got == [True, False, False, False]
 
 
@@ -253,10 +267,10 @@ def test_a_session_acts_on_only_the_files_its_view_lists(tmp_path: Path) -> None
     root = _project(tmp_path)
     (root / "notes.txt").write_text("notes\n")
     session = _session(tmp_path, "2.1.301", root)
-    assert session.acts_on("CLAUDE.md") is True
-    assert session.acts_on("notes.txt") is False
-    assert session.acts_on(".claude/settings.json") is False
-    assert session.acts_on("../proj/CLAUDE.md") is False
+    assert session.acts_on(RunContext(), "CLAUDE.md") is True
+    assert session.acts_on(RunContext(), "notes.txt") is False
+    assert session.acts_on(RunContext(), ".claude/settings.json") is False
+    assert session.acts_on(RunContext(), "../proj/CLAUDE.md") is False
 
 
 def test_a_skill_lists_its_entry_file_only(tmp_path: Path) -> None:
@@ -265,7 +279,9 @@ def test_a_skill_lists_its_entry_file_only(tmp_path: Path) -> None:
     (folder / "ref.md").write_text("# ref\n")
     (folder / "deeper").mkdir()
     (folder / "deeper" / "SKILL.md").write_text("# nested\n")
-    skills = [Path(f.path).relative_to(root).as_posix() for f in artifact_files(root, []) if f.kind == "skill"]
+    skills = [
+        Path(f.path).relative_to(root).as_posix() for f in artifact_files(RunContext(), root, []) if f.kind == "skill"
+    ]
     assert skills == [".claude/skills/demo/SKILL.md"]
 
 
@@ -303,19 +319,19 @@ def test_a_session_peeks_only_a_listed_file_that_is_not_a_hook_config(tmp_path: 
     (root / "notes.txt").write_text("notes\n")
     session = _session(tmp_path, "2.1.301", root)
     session.refresh()
-    peeked = session.peek("CLAUDE.md")
+    peeked = session.peek(RunContext(), "CLAUDE.md")
     assert peeked is not None and (peeked.text, peeked.truncated) == ((root / "CLAUDE.md").read_text(), False)
-    assert session.peek(".claude/skills/demo/SKILL.md") is not None
-    assert session.peek("notes.txt") is None
-    assert session.peek(".claude/settings.json") is None
-    assert session.peek("../proj/CLAUDE.md") is None
+    assert session.peek(RunContext(), ".claude/skills/demo/SKILL.md") is not None
+    assert session.peek(RunContext(), "notes.txt") is None
+    assert session.peek(RunContext(), ".claude/settings.json") is None
+    assert session.peek(RunContext(), "../proj/CLAUDE.md") is None
 
 
 def test_a_peek_is_cut_at_the_character_limit(tmp_path: Path) -> None:
     root = _project(tmp_path)
     (root / "CLAUDE.md").write_text("a" * (PEEK_LIMIT + 5))
     session = _session(tmp_path, "2.1.301", root)
-    peeked = session.peek("CLAUDE.md")
+    peeked = session.peek(RunContext(), "CLAUDE.md")
     assert peeked is not None and len(peeked.text) == PEEK_LIMIT and peeked.truncated is True
 
 
@@ -331,9 +347,9 @@ def test_a_file_whose_config_scope_is_no_artifact_scope_is_refused(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     listing = {"invocable": [{"path": "a/SKILL.md", "file_type": "skills", "precedence": "enterprise", "label": "a"}]}
-    monkeypatch.setattr("reporails_cli.core.xray.artifacts.expected_loads", lambda root, plugins: listing)
+    monkeypatch.setattr("reporails_cli.core.xray.artifacts.expected_loads", lambda _run, root, plugins: listing)
     with pytest.raises(ValueError, match="enterprise"):
-        artifact_files(tmp_path, [])
+        artifact_files(RunContext(), tmp_path, [])
 
 
 def test_the_model_is_the_latest_main_reply_that_names_one_and_the_window_shows_past_200k(tmp_path: Path) -> None:
@@ -373,7 +389,7 @@ def test_a_file_that_entered_two_contexts_is_a_repeated_instruction(tmp_path: Pa
 def test_a_prompt_text_is_given_only_for_a_prompt_the_records_name(tmp_path: Path) -> None:
     session = _session(tmp_path, "2.1.309-turns", _project(tmp_path))
     session.refresh()
-    main = next(node for node in session.view({}, RUNNING, "newest").nodes if node.id == "main")
+    main = next(node for node in session.view(RunContext(), {}, RUNNING, "newest").nodes if node.id == "main")
     typed = main.detail.prompts
     assert typed and session.prompt(typed[0].id) is not None
     assert session.prompt("nosuchprompt") is None
@@ -432,7 +448,7 @@ def test_a_kind_absent_fact_targets_a_source_kind_of_the_adapter_never_an_artifa
 
 def test_the_size_of_each_listed_agent_definition_is_found_by_its_type(tmp_path: Path) -> None:
     root = _project(tmp_path)
-    sizes = agent_file_tokens(artifact_files(root, []), root)
+    sizes = agent_file_tokens(artifact_files(RunContext(), root, []), root)
     assert sizes["helper"] == (root / ".claude" / "agents" / "helper.md").stat().st_size // BYTES_PER_TOKEN > 0
 
 
@@ -441,7 +457,7 @@ def test_a_peek_splits_the_frontmatter_block_from_the_body(tmp_path: Path) -> No
     (root / "CLAUDE.md").write_text("---\nname: demo\npaths: [a]\n---\n# Body\n\ntext\n")
     session = _session(tmp_path, "2.1.301", root)
     session.refresh()
-    peeked = session.peek("CLAUDE.md")
+    peeked = session.peek(RunContext(), "CLAUDE.md")
     assert peeked is not None
     assert (peeked.frontmatter, peeked.body) == ("name: demo\npaths: [a]", "# Body\n\ntext\n")
     assert peeked.text.startswith("---\n")
@@ -458,20 +474,20 @@ def _excluding_sub(tmp_path: Path) -> XraySession:
 
 def test_a_peek_serves_a_file_the_session_recorded_as_loaded_though_the_page_lists_none(tmp_path: Path) -> None:
     session = _excluding_sub(tmp_path)
-    peeked = session.peek("sub/CLAUDE.md")
+    peeked = session.peek(RunContext(), "sub/CLAUDE.md")
     assert peeked is not None and peeked.text == "# Sub\n\nKeep `sub/` small.\n"
 
 
 def test_a_peek_refuses_an_unlisted_file_the_session_never_loaded(tmp_path: Path) -> None:
     session = _excluding_sub(tmp_path)
     (session._root / "sub" / "OTHER.md").write_text("other\n")
-    assert session.peek("sub/OTHER.md") is None
+    assert session.peek(RunContext(), "sub/OTHER.md") is None
 
 
 def test_a_file_recorded_as_loaded_but_unlisted_is_a_file_to_check_or_fix(tmp_path: Path) -> None:
     session = _excluding_sub(tmp_path)
-    assert session.acts_on("sub/CLAUDE.md") is True
-    assert session.acts_on("sub/OTHER.md") is False
+    assert session.acts_on(RunContext(), "sub/CLAUDE.md") is True
+    assert session.acts_on(RunContext(), "sub/OTHER.md") is False
 
 
 def test_a_recorded_auto_memory_file_the_listing_leaves_out_is_a_memory_file(tmp_path: Path) -> None:
@@ -484,7 +500,7 @@ def test_a_recorded_auto_memory_file_the_listing_leaves_out_is_a_memory_file(tmp
             item=InstructionLoad(str(session._root / "sub" / "AUTO.md"), "AutoMem"),
         )
     )
-    item = session._shown_as("sub/AUTO.md")
+    item = session._shown_as(RunContext(), "sub/AUTO.md")
     assert item is not None and item.kind == "memory"
 
 

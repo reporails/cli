@@ -31,6 +31,7 @@ from reporails_cli.core.lint.mechanical.checks_links import (
     extract_markdown_links,
 )
 from reporails_cli.core.platform.dto.models import ClassifiedFile
+from tests.unit.run_args import with_run_exclusions
 
 
 def _cf(root: Path, *rels: str, ft: str = "main") -> list[ClassifiedFile]:
@@ -45,14 +46,14 @@ class TestFrontmatterPresent:
     @pytest.mark.subsys_lint
     def test_frontmatter_found_passes(self, tmp_path: Path) -> None:
         (tmp_path / "a.md").write_text("---\nname: x\n---\nbody\n")
-        result = frontmatter_present(tmp_path, {}, _cf(tmp_path, "a.md"))
+        result = frontmatter_present(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "a.md"))
         assert result.passed  # kills L40 passed=True -> False
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_no_frontmatter_fails(self, tmp_path: Path) -> None:
         (tmp_path / "a.md").write_text("# no frontmatter here\n")
-        result = frontmatter_present(tmp_path, {}, _cf(tmp_path, "a.md"))
+        result = frontmatter_present(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "a.md"))
         assert not result.passed  # kills L43 passed=False -> True
 
 
@@ -64,7 +65,7 @@ class TestFrontmatterValidYaml:
     @pytest.mark.subsys_lint
     def test_sequence_frontmatter_is_not_mapping(self, tmp_path: Path) -> None:
         (tmp_path / "a.md").write_text("---\n- a\n- b\n---\nbody\n")
-        result = frontmatter_valid_yaml(tmp_path, {}, _cf(tmp_path, "a.md"))
+        result = frontmatter_valid_yaml(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "a.md"))
         assert not result.passed
         assert result.occurrences == [("a.md:2", "Frontmatter is not valid YAML: the block is not a YAML mapping")]
 
@@ -72,7 +73,7 @@ class TestFrontmatterValidYaml:
     @pytest.mark.subsys_lint
     def test_invalid_yaml_frontmatter_fails_at_the_line_of_the_problem(self, tmp_path: Path) -> None:
         (tmp_path / "a.md").write_text("---\nname: x\nfoo: [bar\n---\nbody\n")
-        result = frontmatter_valid_yaml(tmp_path, {}, _cf(tmp_path, "a.md"))
+        result = frontmatter_valid_yaml(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "a.md"))
         assert not result.passed
         ((location, message),) = result.occurrences or []
         assert location == "a.md:3"
@@ -85,7 +86,7 @@ class TestFrontmatterValidYaml:
         (tmp_path / "b.md").write_text("---\nfoo: ok\n---\n")
         (tmp_path / "c.md").write_text("---\nbar: [baz\n---\n")
         files = _cf(tmp_path, "a.md") + _cf(tmp_path, "b.md") + _cf(tmp_path, "c.md")
-        result = frontmatter_valid_yaml(tmp_path, {}, files)
+        result = frontmatter_valid_yaml(tmp_path, with_run_exclusions(tmp_path, {}), files)
         assert [loc.split(":")[0] for loc, _ in result.occurrences or []] == ["a.md", "c.md"]
 
     @pytest.mark.unit
@@ -93,14 +94,14 @@ class TestFrontmatterValidYaml:
     def test_lenient_reads_unquoted_values_a_strict_read_refuses(self, tmp_path: Path) -> None:
         (tmp_path / "r.md").write_text("---\ndescription: use: colons\npaths: **/*.ts\n---\nbody\n")
         files = _cf(tmp_path, "r.md")
-        assert not frontmatter_valid_yaml(tmp_path, {}, files).passed
-        assert frontmatter_valid_yaml(tmp_path, {"lenient": True}, files).passed
+        assert not frontmatter_valid_yaml(tmp_path, with_run_exclusions(tmp_path, {}), files).passed
+        assert frontmatter_valid_yaml(tmp_path, with_run_exclusions(tmp_path, {"lenient": True}), files).passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_no_frontmatter_to_validate_passes(self, tmp_path: Path) -> None:
         (tmp_path / "a.md").write_text("# just prose, no frontmatter\n")
-        result = frontmatter_valid_yaml(tmp_path, {}, _cf(tmp_path, "a.md"))
+        result = frontmatter_valid_yaml(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "a.md"))
         assert result.passed
 
 
@@ -112,7 +113,7 @@ class TestSimpleVerdicts:
     @pytest.mark.subsys_lint
     def test_broken_heading_fails(self, tmp_path: Path) -> None:
         (tmp_path / "a.md").write_text("#Heading missing the space\n")
-        result = valid_markdown(tmp_path, {}, _cf(tmp_path, "a.md"))
+        result = valid_markdown(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "a.md"))
         assert not result.passed  # kills L105 passed=False -> True
         assert "Broken heading" in result.message
 
@@ -120,7 +121,7 @@ class TestSimpleVerdicts:
     @pytest.mark.subsys_lint
     def test_broken_heading_line_number_counts_frontmatter(self, tmp_path: Path) -> None:
         (tmp_path / "a.md").write_text("---\nname: x\n---\n# Title\n\nText.\n#Oops\n")
-        result = valid_markdown(tmp_path, {}, _cf(tmp_path, "a.md"))
+        result = valid_markdown(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "a.md"))
         assert result.location == "a.md:7"
 
     @pytest.mark.unit
@@ -128,20 +129,20 @@ class TestSimpleVerdicts:
     def test_hash_lines_in_code_are_not_broken_headings(self, tmp_path: Path) -> None:
         """A shebang or `#include` line in a fenced or indented code block is code, not a heading."""
         (tmp_path / "a.md").write_text("# Title\n\n```bash\n#!/bin/bash\n#build\n```\n\n    #include <x.h>\n")
-        assert valid_markdown(tmp_path, {}, _cf(tmp_path, "a.md")).passed
+        assert valid_markdown(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "a.md")).passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_existing_target_passes(self, tmp_path: Path) -> None:
         (tmp_path / "a.md").write_text("x")
-        result = path_resolves(tmp_path, {}, _cf(tmp_path, "a.md"))
+        result = path_resolves(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "a.md"))
         assert result.passed  # kills L122 passed=True -> False
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_import_found_passes(self, tmp_path: Path) -> None:
         (tmp_path / "a.md").write_text("See @docs/guide.md for setup.\n")
-        result = extract_imports(tmp_path, {}, _cf(tmp_path, "a.md"))
+        result = extract_imports(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "a.md"))
         assert result.passed  # kills L149 passed=True -> False
         assert result.annotations["discovered_imports"] == ["a.md::docs/guide.md::1"]
 
@@ -153,7 +154,7 @@ class TestSimpleVerdicts:
         import — `check_import_targets_exist` then flagged it "unresolved" on any
         file documenting a scoped npm package, including our own SKILL.md."""
         (tmp_path / "a.md").write_text("Run `npx @reporails/cli check .` to lint your repo. See @docs/guide.md too.\n")
-        result = extract_imports(tmp_path, {}, _cf(tmp_path, "a.md"))
+        result = extract_imports(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "a.md"))
         assert result.passed
         assert result.annotations["discovered_imports"] == ["a.md::docs/guide.md::1"]
 
@@ -184,14 +185,14 @@ class TestImportDepth:
         # CAUGHT via hang/RecursionError). Unmutated: deepest is small, within max.
         (tmp_path / "a.md").write_text("@b.md\n")
         (tmp_path / "b.md").write_text("@a.md\n")
-        result = import_depth(tmp_path, {"max": 5}, _cf(tmp_path, "a.md"))
+        result = import_depth(tmp_path, with_run_exclusions(tmp_path, {"max": 5}), _cf(tmp_path, "a.md"))
         assert result.passed  # kills L228 or -> and
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_no_imports_within_limit_passes(self, tmp_path: Path) -> None:
         (tmp_path / "a.md").write_text("# no imports at all\n")
-        result = import_depth(tmp_path, {"max": 5}, _cf(tmp_path, "a.md"))
+        result = import_depth(tmp_path, with_run_exclusions(tmp_path, {"max": 5}), _cf(tmp_path, "a.md"))
         assert result.passed  # kills L253 passed=True -> False
 
 
@@ -205,7 +206,7 @@ class TestDirectoryFileTypes:
         d = tmp_path / "d"
         d.mkdir()
         (d / "a.md").write_text("x")
-        result = directory_file_types(tmp_path, {"path": "d", "extensions": [".md"]}, [])
+        result = directory_file_types(tmp_path, with_run_exclusions(tmp_path, {"path": "d", "extensions": [".md"]}), [])
         # A file with an allowed suffix must NOT be flagged: original `is_file() and
         # suffix not in ext` yields False (not bad); the `or` mutation flags every file.
         assert result.passed  # kills L267 and -> or, and L270 passed=True -> False
@@ -216,7 +217,7 @@ class TestDirectoryFileTypes:
         d = tmp_path / "d"
         d.mkdir()
         (d / "a.txt").write_text("x")
-        result = directory_file_types(tmp_path, {"path": "d", "extensions": [".md"]}, [])
+        result = directory_file_types(tmp_path, with_run_exclusions(tmp_path, {"path": "d", "extensions": [".md"]}), [])
         assert not result.passed
 
 
@@ -231,7 +232,7 @@ class TestFrontmatterValidGlob:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_dir_not_found_passes(self, tmp_path: Path) -> None:
-        result = frontmatter_valid_glob(tmp_path, {"path": "nonexistent"}, [])
+        result = frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, {"path": "nonexistent"}), [])
         assert result.passed  # kills L318 passed=True -> False
 
     @pytest.mark.unit
@@ -240,7 +241,7 @@ class TestFrontmatterValidGlob:
         d = tmp_path / "d"
         d.mkdir()
         self._write_glob_md(d, "r.md", "globs", ["foo["])
-        result = frontmatter_valid_glob(tmp_path, {"path": "d"}, [])
+        result = frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, {"path": "d"}), [])
         assert not result.passed  # kills L354 != -> == (1 == 0 would skip the flag)
         assert "unbalanced" in result.message
 
@@ -252,7 +253,7 @@ class TestFrontmatterValidGlob:
         # A .txt file with an invalid glob must be skipped (only .md is processed);
         # the `==` mutation on the suffix guard would process the .txt and fail.
         self._write_glob_md(d, "r.txt", "globs", ["foo["])
-        result = frontmatter_valid_glob(tmp_path, {"path": "d"}, [])
+        result = frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, {"path": "d"}), [])
         assert result.passed  # kills L321 != -> ==
 
     @pytest.mark.unit
@@ -261,7 +262,9 @@ class TestFrontmatterValidGlob:
         d = tmp_path / "d"
         d.mkdir()
         self._write_glob_md(d, "r.md", "globs", ["nomatch/*.md"])
-        result = frontmatter_valid_glob(tmp_path, {"path": "d", "require_matches": True}, [])
+        result = frontmatter_valid_glob(
+            tmp_path, with_run_exclusions(tmp_path, {"path": "d", "require_matches": True}), []
+        )
         assert not result.passed  # kills L327 passed=False -> True
         assert "match no files" in result.message
 
@@ -273,7 +276,9 @@ class TestFrontmatterValidGlob:
         d.mkdir()
         self._write_glob_md(d, "a.md", "paths", ["target.md"])
         self._write_glob_md(d, "b.md", "paths", ["target.md", "tools/**"])
-        result = frontmatter_valid_glob(tmp_path, {"path": "d", "require_matches": True}, [])
+        result = frontmatter_valid_glob(
+            tmp_path, with_run_exclusions(tmp_path, {"path": "d", "require_matches": True}), []
+        )
         assert result.occurrences == [("d/b.md:4", "Path glob `tools/**` matches no file in the project")]
 
     @pytest.mark.unit
@@ -284,7 +289,9 @@ class TestFrontmatterValidGlob:
         d = tmp_path / "d"
         d.mkdir()
         (d / "b.md").write_text("---\ndescription: covers lib/**\npaths:\n  - 'lib/**/*.py'\n  - 'lib/**'\n---\nbody\n")
-        result = frontmatter_valid_glob(tmp_path, {"path": "d", "require_matches": True}, [])
+        result = frontmatter_valid_glob(
+            tmp_path, with_run_exclusions(tmp_path, {"path": "d", "require_matches": True}), []
+        )
         assert [loc for loc, _ in result.occurrences] == ["d/b.md:4", "d/b.md:5"]
 
     @pytest.mark.unit
@@ -294,7 +301,9 @@ class TestFrontmatterValidGlob:
         d = tmp_path / "d"
         d.mkdir()
         self._write_glob_md(d, "r.md", "globs", ["target.md"])
-        result = frontmatter_valid_glob(tmp_path, {"path": "d", "require_matches": True}, [])
+        result = frontmatter_valid_glob(
+            tmp_path, with_run_exclusions(tmp_path, {"path": "d", "require_matches": True}), []
+        )
         # A matching glob must resolve: original `any(True ...)` is truthy; the
         # `True -> False` mutation makes every glob read as unresolved.
         assert result.passed  # kills L358 True -> False
@@ -307,7 +316,7 @@ class TestFrontmatterValidGlob:
         # Only the `paths` key holds the glob (no `globs` key). The chained-`or`
         # fallback must still validate it; an `and` mutation collapses the chain to [].
         self._write_glob_md(d, "r.md", "paths", ["foo["])
-        result = frontmatter_valid_glob(tmp_path, {"path": "d"}, [])
+        result = frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, {"path": "d"}), [])
         assert not result.passed  # kills L348 or -> and (globs or paths)
 
     @pytest.mark.unit
@@ -316,7 +325,7 @@ class TestFrontmatterValidGlob:
         d = tmp_path / "d"
         d.mkdir()
         self._write_glob_md(d, "r.md", "applyTo", ["foo["])
-        result = frontmatter_valid_glob(tmp_path, {"path": "d"}, [])
+        result = frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, {"path": "d"}), [])
         assert not result.passed  # kills L348 or -> and (paths or applyTo)
 
 
@@ -335,7 +344,7 @@ class TestMarkdownLinks:
     @pytest.mark.subsys_lint
     def test_external_link_is_not_discovered(self, tmp_path: Path) -> None:
         (tmp_path / "a.md").write_text("[x](http://example.com)\n")
-        result = extract_markdown_links(tmp_path, {}, _cf(tmp_path, "a.md"))
+        result = extract_markdown_links(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "a.md"))
         # An external link must be filtered out of the discovered set; the `and`
         # mutation on the skip guard would append it.
         assert (result.annotations or {}).get("discovered_markdown_links", []) == []
@@ -345,7 +354,7 @@ class TestMarkdownLinks:
     @pytest.mark.subsys_lint
     def test_no_links_passes(self, tmp_path: Path) -> None:
         (tmp_path / "a.md").write_text("# just prose, no links at all\n")
-        result = extract_markdown_links(tmp_path, {}, _cf(tmp_path, "a.md"))
+        result = extract_markdown_links(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "a.md"))
         assert result.passed  # kills L513 passed=True -> False
         assert "No markdown links" in result.message
 
@@ -354,7 +363,7 @@ class TestMarkdownLinks:
     def test_broken_link_target_fails(self, tmp_path: Path) -> None:
         (tmp_path / "src.md").write_text("body")
         args = {"discovered_markdown_links": ["src.md::missing.md::1"]}
-        result = check_markdown_link_targets_exist(tmp_path, args, [])
+        result = check_markdown_link_targets_exist(tmp_path, with_run_exclusions(tmp_path, args), [])
         assert not result.passed  # kills L547 passed=False -> True
         assert [loc for loc, _ in result.occurrences or []] == ["src.md:1"]
 
@@ -367,7 +376,9 @@ class TestFrontmatterExtraKeys:
     @pytest.mark.subsys_lint
     def test_extra_key_fails(self, tmp_path: Path) -> None:
         (tmp_path / "a.md").write_text("---\npaths: x\nfoo: 1\n---\nbody\n")
-        result = frontmatter_extra_keys(tmp_path, {"allowed": ["paths"]}, _cf(tmp_path, "a.md"))
+        result = frontmatter_extra_keys(
+            tmp_path, with_run_exclusions(tmp_path, {"allowed": ["paths"]}), _cf(tmp_path, "a.md")
+        )
         assert not result.passed  # kills L709 passed=False -> True
         assert "foo" in result.message
 
@@ -381,7 +392,7 @@ class TestFrontmatterValidGlobWalk:
         rules = tmp_path / "rules"
         (rules / "node_modules").mkdir(parents=True)
         (rules / "node_modules" / "bad.md").write_text("---\nglobs:\n  - 'foo['\n---\nbody\n")
-        assert frontmatter_valid_glob(tmp_path, {"path": "rules"}, []).passed
+        assert frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, {"path": "rules"}), []).passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -391,7 +402,7 @@ class TestFrontmatterValidGlobWalk:
         (rules / "drafts" / "bad.md").write_text("---\nglobs:\n  - 'foo['\n---\nbody\n")
         (tmp_path / ".ails").mkdir()
         (tmp_path / ".ails" / "config.local.yml").write_text("exclude_dirs:\n  - drafts\n")
-        assert frontmatter_valid_glob(tmp_path, {"path": "rules"}, []).passed
+        assert frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, {"path": "rules"}), []).passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -400,16 +411,16 @@ class TestFrontmatterValidGlobWalk:
         rules.mkdir()
         (rules / "loop").symlink_to(rules, target_is_directory=True)
         (rules / "ok.md").write_text("---\nglobs:\n  - '*.py'\n---\nbody\n")
-        assert frontmatter_valid_glob(tmp_path, {"path": "rules"}, []).passed
+        assert frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, {"path": "rules"}), []).passed
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_valid_markdown_ignores_hash_text_inside_list_items_and_quotes(tmp_path: Path) -> None:
     (tmp_path / "a.md").write_text("# T\n\n- #123 tracks the rewrite\n\n> #note keep it\n", encoding="utf-8")
-    assert valid_markdown(tmp_path, {}, _cf(tmp_path, "a.md")).passed
+    assert valid_markdown(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "a.md")).passed
     (tmp_path / "b.md").write_text("# T\n\n#broken heading\n", encoding="utf-8")
-    assert not valid_markdown(tmp_path, {}, _cf(tmp_path, "b.md")).passed
+    assert not valid_markdown(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "b.md")).passed
 
 
 class TestFrontmatterValidGlobAnchoring:
@@ -422,7 +433,9 @@ class TestFrontmatterValidGlobAnchoring:
         (tmp_path / "rules" / "r.md").write_text("---\npaths: src/**/*.ts\n---\nbody\n")
         (tmp_path / "packages" / "web" / "src").mkdir(parents=True)
         (tmp_path / "packages" / "web" / "src" / "a.ts").write_text("x\n")
-        result = frontmatter_valid_glob(tmp_path, {"path": "rules", "require_matches": True}, [])
+        result = frontmatter_valid_glob(
+            tmp_path, with_run_exclusions(tmp_path, {"path": "rules", "require_matches": True}), []
+        )
         assert not result.passed
 
     @pytest.mark.unit
@@ -432,7 +445,9 @@ class TestFrontmatterValidGlobAnchoring:
         (tmp_path / "rules" / "r.md").write_text("---\npaths: '**/src/**/*.ts'\n---\nbody\n")
         (tmp_path / "packages" / "web" / "src").mkdir(parents=True)
         (tmp_path / "packages" / "web" / "src" / "a.ts").write_text("x\n")
-        assert frontmatter_valid_glob(tmp_path, {"path": "rules", "require_matches": True}, []).passed
+        assert frontmatter_valid_glob(
+            tmp_path, with_run_exclusions(tmp_path, {"path": "rules", "require_matches": True}), []
+        ).passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -446,7 +461,7 @@ class TestFrontmatterValidGlobAnchoring:
             pytest.skip("symlinks cannot be created here")
         (tmp_path / ".claude" / "rules" / "r.md").write_text("---\npaths: .claude/skills/**\n---\nbody\n")
         args = {"path": ".claude/rules", "require_matches": True}
-        assert frontmatter_valid_glob(tmp_path, args, []).passed
+        assert frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, args), []).passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -455,4 +470,6 @@ class TestFrontmatterValidGlobAnchoring:
         (tmp_path / "rules" / "r.md").write_text("---\npaths: '**/*.ts'\n---\nbody\n")
         (tmp_path / "node_modules" / "p").mkdir(parents=True)
         (tmp_path / "node_modules" / "p" / "a.ts").write_text("x\n")
-        assert not frontmatter_valid_glob(tmp_path, {"path": "rules", "require_matches": True}, []).passed
+        assert not frontmatter_valid_glob(
+            tmp_path, with_run_exclusions(tmp_path, {"path": "rules", "require_matches": True}), []
+        ).passed

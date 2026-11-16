@@ -33,7 +33,7 @@ def named_files(selection: tuple[set[Path], set[Path]] | None) -> frozenset[Path
 
 
 def _resolve_one_target(
-    token: str, token_agent: str, scan_root: Path, effective_agent: str, exclusions: RunExclusions | None
+    token: str, token_agent: str, scan_root: Path, effective_agent: str, exclusions: RunExclusions
 ) -> tuple[set[Path], set[Path]] | JsonObject:
     """One target `token` resolved to the `(files, dirs)` it contributes, or a
     `target_not_found` error payload."""
@@ -64,7 +64,7 @@ def resolve_validate_targets(
     as `skill` reads as its config key). A relative path is read against `scan_root`. Returns
     `(files, dirs)` — every path resolved — or a `target_not_found` error payload."""
 
-    exclusions = load_run_exclusions(scan_root)
+    exclusions = load_run_exclusions(run, scan_root)
     effective_agent, _, _, _ = resolve_agent_filters(
         run,
         run.project_config(scan_root).default_agent,

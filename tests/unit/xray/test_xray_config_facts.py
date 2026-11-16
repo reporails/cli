@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.platform.config.claude_settings import mcp_declarations
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.xray_build import Frame
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile
 from reporails_cli.core.xray.artifacts import build_artifacts, left_out_files
@@ -34,7 +35,7 @@ def test_hook_config_named_under_home_is_read_where_it_lives(tmp_path: Path) -> 
     hooks.parent.mkdir(parents=True)
     hooks.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "echo hi"}]}]}}))
     listed = ArtifactFile(str(hooks), "hook", "plugin", "p", "hooks", None, None)
-    shown = build_artifacts([listed], {}, tmp_path, advertised={})
+    shown = build_artifacts(RunContext(), [listed], {}, tmp_path, advertised={})
     frame = Frame(0.0, tmp_path, {}, {}, {}, False)
     assert _declared_commands(shown, frame) == [("echo hi", "~/.claude/plugins/p/hooks/hooks.json")]
 
@@ -48,7 +49,7 @@ def test_a_link_out_of_the_project_leads_to_a_path_shown_under_home(tmp_path: Pa
     link = root / "CLAUDE.md"
     link.symlink_to(target)
     item = ArtifactFile(str(link), "instructions", "project", None, "CLAUDE.md", None, None)
-    assert left_out_files([item], root)[str(link)].outside == "~/shared/CLAUDE.md"
+    assert left_out_files(RunContext(), [item], root)[str(link)].outside == "~/shared/CLAUDE.md"
 
 
 def test_launch_settings_show_when_no_launch_recorded_a_request() -> None:

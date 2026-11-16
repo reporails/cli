@@ -20,6 +20,9 @@ def expected_loads_command(
         AGENT,
         expected_loads,
     )
+    from reporails_cli.core.platform.config.run_context import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        RunContext,
+    )
     from reporails_cli.core.platform.utils.utils import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         compact_json,
     )
@@ -32,7 +35,7 @@ def expected_loads_command(
         typer.echo(f"Error: Path not found or not a folder: {folder}", err=True)
         raise typer.Exit(2)
     try:
-        listing = expected_loads(folder)
+        listing = expected_loads(RunContext(), folder)
     except PlatformError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(2) from exc

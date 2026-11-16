@@ -13,6 +13,7 @@ import pytest
 from reporails_cli.core.heal.keyed import put_back_line
 from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.pipeline.mapping import map_instruction_files
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
 from reporails_cli.core.platform.dto.heal import KeyedResult
 from reporails_cli.interfaces.cli.heal import _apply_keyed_fixes, _output_heal_results
@@ -424,6 +425,7 @@ def test_heal_takes_its_fixes_from_the_workflow_the_report_showed(
             capability_paths=set(),
             result=SimpleNamespace(reply=SimpleNamespace(notices=(), workflow=shown)),
         ),
+        run=RunContext(),
         scope=SimpleNamespace(instruction_files=[path], effective_agent="claude", exclusions=None),
         targets=SimpleNamespace(single_path=None, target=tmp_path, output_format="text"),
     )

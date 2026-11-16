@@ -12,9 +12,11 @@ from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.mechanical.checks_advanced import frontmatter_valid_glob
 from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.adapters.payload import project_payload
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.policy import preflight
+from tests.unit.run_args import with_run_exclusions
 
 
 class _Console:
@@ -49,14 +51,14 @@ def test_a_glob_excluded_rule_file_gets_no_glob_finding(tmp_path: Path) -> None:
     for f in (kept, left_out):
         f.write_text('---\npaths:\n  - "nothing/**/*.zzz"\n---\n\nBody.\n', encoding="utf-8")
     args = {"path": ".claude/rules", "require_matches": True}
-    both = frontmatter_valid_glob(tmp_path, args, [])
+    both = frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, args), [])
     assert not both.passed
     assert {loc.split(":")[0] for loc, _ in both.occurrences} == {
         ".claude/rules/kept.md",
         ".claude/rules/left.md",
     }
     checked = [ClassifiedFile(path=kept, file_type="rules", properties={})]
-    only = frontmatter_valid_glob(tmp_path, args, checked)
+    only = frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, args), checked)
     assert {loc.split(":")[0] for loc, _ in only.occurrences} == {".claude/rules/kept.md"}
 
 
@@ -67,12 +69,13 @@ def test_section_suggestions_classify_only_the_checked_set(tmp_path: Path, monke
     from reporails_cli.interfaces.cli.heal import _collect_section_suggestions
 
     project = _gs_project(tmp_path)
-    exclusions = load_run_exclusions(project)
+    exclusions = load_run_exclusions(RunContext(), project)
     seen: list[list[ClassifiedFile]] = []
     monkeypatch.setattr(
         heal_cli, "suggest_missing_sections", lambda _v, _t, classified, _r: seen.append(classified) or []
     )
     _collect_section_suggestions(
+        RunContext(),
         project,
         [project / "CLAUDE.md"],
         RulesetMap(schema_version="1", embedding_model="m", generated_at="t", files=(), atoms=()),
@@ -90,7 +93,7 @@ def test_section_suggestions_classify_only_the_checked_set(tmp_path: Path, monke
 def test_the_heal_pass_receives_the_run_exclusions(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from reporails_cli.interfaces.cli import check_flow
 
-    exclusions = load_run_exclusions(tmp_path)
+    exclusions = load_run_exclusions(RunContext(), tmp_path)
     seen: list[Any] = []
     monkeypatch.setattr(check_flow, "_run_heal_pass", lambda *a, **k: seen.append(a[1].exclusions))
     path = tmp_path / "CLAUDE.md"
@@ -103,6 +106,7 @@ def test_the_heal_pass_receives_the_run_exclusions(monkeypatch: pytest.MonkeyPat
             capability_paths=set(),
             result=SimpleNamespace(reply=SimpleNamespace(notices=(), workflow=None)),
         ),
+        run=RunContext(),
         scope=SimpleNamespace(instruction_files=[path], effective_agent="claude", exclusions=exclusions),
         targets=SimpleNamespace(single_path=None, target=tmp_path, output_format="text"),
     )

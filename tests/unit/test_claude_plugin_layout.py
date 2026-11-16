@@ -21,7 +21,8 @@ from reporails_cli.core.discovery.agents import (
     detect_agents,
     get_all_instruction_files,
 )
-from reporails_cli.core.discovery.exclusions import no_exclusions
+from reporails_cli.core.discovery.exclusions import load_run_exclusions, no_exclusions
+from reporails_cli.core.discovery.features import scan_for_target
 from reporails_cli.core.discovery.plugin_roots import (
     expand_plugin_patterns,
     find_plugin_roots,
@@ -99,7 +100,7 @@ def test_a_plugin_at_the_project_root_is_a_claude_project(tmp_path: Path) -> Non
     project = tmp_path / "proj"
     _plugin(project)
     assert _scope(project) == {"skills/fmt/SKILL.md", "agents/reviewer.md", "commands/status.md"}
-    discovered = discover_from_config(project, "claude")
+    discovered = discover_from_config(project, "claude", load_run_exclusions(RunContext(), project))
     assert discovered is not None
     assert _rel(project, discovered[2]) == {MANIFEST}
 
@@ -115,7 +116,7 @@ def test_a_marketplace_plugin_below_the_root_is_found(tmp_path: Path) -> None:
         "plugins/demo/agents/reviewer.md",
         "plugins/demo/commands/status.md",
     }
-    discovered = discover_from_config(project, "claude")
+    discovered = discover_from_config(project, "claude", load_run_exclusions(RunContext(), project))
     assert discovered is not None
     assert _rel(project, discovered[2]) == {f"plugins/demo/{MANIFEST}"}
 
@@ -191,8 +192,12 @@ def test_plugin_root_skills_and_agents_count_toward_the_capability_surfaces(tmp_
     from reporails_cli.core.discovery.features import _agent_surface_files
 
     _plugin(tmp_path)
-    assert _rel(tmp_path, _agent_surface_files(tmp_path, "claude", "skills")) == {"skills/fmt/SKILL.md"}
-    assert _rel(tmp_path, _agent_surface_files(tmp_path, "claude", "agents")) == {"agents/reviewer.md"}
+    assert _rel(
+        tmp_path, _agent_surface_files(tmp_path, "claude", "skills", scan_for_target(RunContext(), tmp_path))
+    ) == {"skills/fmt/SKILL.md"}
+    assert _rel(
+        tmp_path, _agent_surface_files(tmp_path, "claude", "agents", scan_for_target(RunContext(), tmp_path))
+    ) == {"agents/reviewer.md"}
 
 
 @pytest.mark.unit
@@ -201,7 +206,7 @@ def test_a_top_level_skills_folder_without_a_plugin_manifest_is_not_a_surface(tm
     from reporails_cli.core.discovery.features import _agent_surface_files
 
     _write(tmp_path / "skills" / "fmt" / "SKILL.md", SKILL)
-    assert _agent_surface_files(tmp_path, "claude", "skills") == []
+    assert _agent_surface_files(tmp_path, "claude", "skills", scan_for_target(RunContext(), tmp_path)) == []
 
 
 def _excluded_plugin_project(tmp_path: Path) -> Path:
@@ -219,8 +224,8 @@ def test_a_plugin_under_an_excluded_folder_adds_no_capability_surface(tmp_path: 
     from reporails_cli.core.discovery.features import _agent_surface_files, detect_features_filesystem
 
     project = _excluded_plugin_project(tmp_path)
-    assert _agent_surface_files(project, "claude", "skills") == []
-    assert _agent_surface_files(project, "claude", "agents") == []
+    assert _agent_surface_files(project, "claude", "skills", scan_for_target(RunContext(), project)) == []
+    assert _agent_surface_files(project, "claude", "agents", scan_for_target(RunContext(), project)) == []
     features = detect_features_filesystem(RunContext(), project)
     assert features.has_skills_dir is False
     assert features.has_subagents is False

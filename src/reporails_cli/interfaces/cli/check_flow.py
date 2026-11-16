@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 import typer
 
 from reporails_cli.core.classify.capability_paths import canonicalize_capability, classify_target_token
+from reporails_cli.core.discovery.exclusions import no_exclusions
 from reporails_cli.core.discovery.file_aliases import get_file_aliases
 from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
 from reporails_cli.core.heal.apply import heal_scope_files, heal_scope_outside
@@ -125,7 +126,7 @@ class CheckScope:
     assumed: bool = False
     mixed: bool = False
     filtered: list[DetectedAgent] = field(default_factory=list)
-    exclusions: RunExclusions | None = None
+    exclusions: RunExclusions = field(default_factory=lambda: no_exclusions(Path()))
     instruction_files: list[Path] = field(default_factory=list)
     upfront_paths: set[Path] = field(default_factory=set)
     is_targeted: bool = False
@@ -411,6 +412,7 @@ def _flow_heal(state: CheckState) -> None:
         state.pipeline.ruleset_map,
         state.inputs.dry_run,
         state.targets.output_format,
+        run=state.run,
         notices=state.render.result.reply.notices,
         workflow=_heal_workflow(state),
     )

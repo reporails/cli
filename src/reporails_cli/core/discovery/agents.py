@@ -157,7 +157,7 @@ def detect_agents(run: RunContext, target: Path) -> list[DetectedAgent]:
     if cached is not None:
         return cached
 
-    exclusions = load_run_exclusions(target)
+    exclusions = load_run_exclusions(run, target)
 
     # Load project config for per-surface include/exclude + fallback filenames
     project_config = run.project_config(target)
@@ -195,7 +195,13 @@ def detect_single_agent(
     if not agent_type:
         return None
 
-    config_result = discover_from_config(target, agent_id, project_config=run.project_config(target), repo_scoped=True)
+    config_result = discover_from_config(
+        target,
+        agent_id,
+        load_run_exclusions(run, target),
+        project_config=run.project_config(target),
+        repo_scoped=True,
+    )
     if config_result is None:
         return None
     instruction_files, rule_files, config_files = config_result

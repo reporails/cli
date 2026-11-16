@@ -273,7 +273,9 @@ def _checks_over_pairs(
     pairs: list[tuple[str, list[Path]]],
     ruleset_map: RulesetMap | None,
     scoped: bool,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
+    *,
+    run: RunContext,
 ) -> LocalFindings:
     """Run M-probes + content/client checks over the `(agent, its files)` pairs, returning
     `(m_findings, content_findings, client_findings)`.
@@ -288,7 +290,7 @@ def _checks_over_pairs(
     """
 
     skills = skill_membership(ruleset_map)
-    m_findings = run_m_probes_over_pairs(scan_root, pairs, scoped=scoped, skills=skills, exclusions=exclusions)
+    m_findings = run_m_probes_over_pairs(run, scan_root, pairs, scoped=scoped, skills=skills, exclusions=exclusions)
     content_findings: list[LocalFinding] = []
     for agent_id, agent_files in pairs:
         if ruleset_map:
@@ -351,7 +353,7 @@ def _assemble_inputs(
 
 
 def _assemble(
-    run: RunContext, inputs: AssembleInputs, exclusions: RunExclusions | None, lint: LintService
+    run: RunContext, inputs: AssembleInputs, exclusions: RunExclusions, lint: LintService
 ) -> tuple[CombinedResult, FunnelError | None]:
     """Server-lint the local findings, then run the shared assemble spine. Returns `(result, funnel_error)`."""
     lint_result, funnel_error, notices = _server_lint_result(inputs, lint)
@@ -374,7 +376,7 @@ def check_and_assemble(
         scan_root, scope.instruction_files, filter_agents, effective_agent, bool(scope.config.default_agent)
     )
     with not_evaluated_scope() as unfinished:
-        local = _checks_over_pairs(scan_root, pairs, ruleset_map, scoped, left_out.exclusions)
+        local = _checks_over_pairs(scan_root, pairs, ruleset_map, scoped, left_out.exclusions, run=run)
 
     inputs = _assemble_inputs(
         scan_root,

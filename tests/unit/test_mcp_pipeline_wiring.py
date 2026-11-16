@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import no_exclusions
 from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.platform.adapters.server_lint import ServerLint
 from reporails_cli.core.platform.config.run_context import RunContext
@@ -40,7 +41,14 @@ def test_run_local_checks_threads_scoped_into_m_probes(monkeypatch, scoped):
         lambda *_a, **kw: captured.update(kw) or [],
     )
 
-    check_one._checks_over_pairs(Path("/proj"), [("claude", [Path("/proj/CLAUDE.md")])], None, scoped)
+    check_one._checks_over_pairs(
+        Path("/proj"),
+        [("claude", [Path("/proj/CLAUDE.md")])],
+        None,
+        scoped,
+        no_exclusions(Path("/proj")),
+        run=RunContext(),
+    )
 
     assert captured.get("scoped") is scoped
 
@@ -57,7 +65,7 @@ def test_run_pipeline_for_path_scopes_a_single_file_target(monkeypatch, tmp_path
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.check_one.discover_files",
         lambda _run, _target, single_file=None, named=frozenset(): Discovered(
-            [], "claude", [single_file], {}, LeftOut(), ProjectConfig()
+            [], "claude", [single_file], {}, LeftOut(((), ()), no_exclusions(Path("/proj"))), ProjectConfig()
         ),
     )
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.is_initialized", lambda: True)
@@ -88,7 +96,7 @@ def test_run_pipeline_for_path_does_not_scope_a_directory_target(monkeypatch, tm
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.check_one.discover_files",
         lambda _run, _target, single_file=None, named=frozenset(): Discovered(
-            [], "claude", [claude_md], {}, LeftOut(), ProjectConfig()
+            [], "claude", [claude_md], {}, LeftOut(((), ()), no_exclusions(Path("/proj"))), ProjectConfig()
         ),
     )
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.is_initialized", lambda: True)
@@ -270,7 +278,7 @@ def test_assemble_mcp_result_surfaces_the_funnel_error(monkeypatch, tmp_path):
     _result, funnel_error = check_one._assemble(
         RunContext(),
         check_one._assemble_inputs(tmp_path, "claude", [], None, ([], [], []), rule_agents=(), not_evaluated=()),
-        None,
+        no_exclusions(tmp_path),
         ServerLint(),
     )
 

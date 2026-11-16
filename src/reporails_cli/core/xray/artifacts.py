@@ -8,6 +8,7 @@ from pathlib import Path
 from reporails_cli.core.discovery.exclusions import exclusion_hits
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.pipeline.expected_loads import expected_loads
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object, as_str, pattern_list
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessKind
 from reporails_cli.core.platform.dto.exclusion import FileLeftOut
@@ -97,11 +98,11 @@ def _invocable_file(item: JsonObject) -> ArtifactFile:
     )
 
 
-def artifact_files(root: Path, plugins: Sequence[tuple[str, Path]]) -> tuple[ArtifactFile, ...]:
+def artifact_files(run: RunContext, root: Path, plugins: Sequence[tuple[str, Path]]) -> tuple[ArtifactFile, ...]:
     """Every file the session could load, as `expected_loads` lists them: the instruction, rule and memory files
     Claude Code loads for the folder, and the skills, agents, commands and hook configs a session can invoke
     from every scope and each of `plugins`; a skill's supporting file is no artifact of its own."""
-    loads = expected_loads(root, plugins)
+    loads = expected_loads(run, root, plugins)
     files = [_invocable_file(as_object(item)) for item in as_list(loads.get("invocable"))]
     for entry in as_list(loads.get("files")):
         loaded = as_object(entry)
@@ -184,12 +185,12 @@ def is_actionable(item: ArtifactFile, root: Path) -> bool:
     return Path(item.path).is_relative_to(root) and real.is_file() and real.is_relative_to(safe_resolve(root))
 
 
-def left_out_files(files: Sequence[ArtifactFile], root: Path) -> dict[str, FileLeftOut]:
+def left_out_files(run: RunContext, files: Sequence[ArtifactFile], root: Path) -> dict[str, FileLeftOut]:
     """For each file of the project that is no hook config (by its path), what keeps it out of a project-wide check
     or fix and, for a file whose real location is outside the project, where that location is, named as the page
     shows paths."""
     inside = [item for item in files if item.kind != "hook" and Path(item.path).is_relative_to(root)]
-    hits = exclusion_hits(root, [Path(item.path) for item in inside])
+    hits = exclusion_hits(run, root, [Path(item.path) for item in inside])
     base = safe_resolve(root)
     found: dict[str, FileLeftOut] = {}
     for item in inside:
@@ -214,6 +215,7 @@ def rule_scopes(item: ArtifactFile, root: Path) -> tuple[str, ...]:
 
 
 def build_artifacts(
+    run: RunContext,
     files: Sequence[ArtifactFile],
     findings: Mapping[str, FindingTally],
     root: Path,
@@ -221,7 +223,7 @@ def build_artifacts(
     advertised: Mapping[str, bool | None],
 ) -> tuple[XrayArtifact, ...]:
     """The artifact list: each listed file with its size and findings; `advertised` is keyed by the file's path."""
-    left_out = left_out_files(files, root)
+    left_out = left_out_files(run, files, root)
     return tuple(
         XrayArtifact(
             path=relative_wire_path(item.path, root),

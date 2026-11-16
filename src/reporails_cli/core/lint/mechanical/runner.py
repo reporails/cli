@@ -34,7 +34,7 @@ def run_mechanical_check(
     *,
     extra_args: Mapping[str, JsonValue] | None = None,
     match_type: str | list[str] | None = None,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> CheckResult | None:
     """Run one mechanical check.
 
@@ -56,8 +56,7 @@ def run_mechanical_check(
     args.update(check.args or {})
     if match_type and "_targets" not in args:
         args["_match_type"] = [*match_type] if isinstance(match_type, list) else match_type
-    if exclusions is not None:
-        args["_exclusions"] = exclusions
+    args["_exclusions"] = exclusions
     if args.get("entry_only") and not get_target_files(args, classified_files, root):
         return None
     result: CheckResult = fn(root, args, classified_files)
@@ -72,7 +71,7 @@ def dispatch_single_check(
     location: str,
     *,
     extra_args: Mapping[str, JsonValue] | None = None,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> tuple[Violation | None, CheckResult | None]:
     """Dispatch a single mechanical check and return (violation, raw_result).
 
@@ -134,7 +133,7 @@ def run_mechanical_checks(
     *,
     scoped: bool = False,
     project_checks: str = "all",
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> list[Violation]:
     """Run mechanical checks from rules and return violations.
 
@@ -170,7 +169,7 @@ def _run_mechanical_checks(
     *,
     scoped: bool,
     project_checks: str,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> list[Violation]:
     """The check loop of `run_mechanical_checks`, run inside its shared directory listings."""
     violations: list[Violation] = []

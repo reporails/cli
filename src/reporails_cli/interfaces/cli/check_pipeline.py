@@ -99,6 +99,7 @@ def _flow_pipeline(state: CheckState) -> None:
         skills = skill_membership(state.pipeline.ruleset_map)
         with not_evaluated_scope() as unfinished:
             state.pipeline.m_findings = run_m_probes_over_pairs(
+                state.run,
                 state.targets.target,
                 pairs,
                 scoped=state.scope.is_targeted,

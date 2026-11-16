@@ -7,7 +7,9 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.classify import classify_files, load_file_types
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.rule_runner import run_m_probes
+from reporails_cli.core.platform.config.run_context import RunContext
 
 LONG = "\n".join(f"line {i}" for i in range(601)) + "\n"
 SHORT = "---\nname: a\ndescription: does a thing\n---\n" + "\n".join(f"l{i}" for i in range(16)) + "\n"
@@ -21,7 +23,9 @@ def _write(root: Path, rel: str, text: str) -> Path:
 
 
 def _run(root: Path, files: list[Path], skills: dict[str, str] | None) -> list:
-    return run_m_probes(root, files, agent="claude", skills=skills)
+    return run_m_probes(
+        RunContext(), root, files, agent="claude", skills=skills, exclusions=load_run_exclusions(RunContext(), root)
+    )
 
 
 def _ids(findings: list, rel: str) -> set[str]:

@@ -58,7 +58,7 @@ def _resolve_capability_paths_one(
     capability_name: str,
     effective_agent: str,
     project_root: Path,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> tuple[set[Path], list[UnresolvedSkill]]:
     """Resolve one (capability, name) spec to its file set + unresolved-skill list; a spec that
     names no file prints why and exits 2."""
@@ -88,7 +88,7 @@ def _resolve_capability_paths(
     specs: list[tuple[str, str]],
     effective_agent: str,
     project_root: Path,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> tuple[set[Path], list[UnresolvedSkill]]:
     """Union of every (capability, name) spec resolved against the agent's vocabulary."""
     paths: set[Path] = set()
@@ -275,7 +275,7 @@ class HealScope(NamedTuple):
 
     instruction_files: list[Path]
     effective_agent: str
-    exclusions: RunExclusions | None = None
+    exclusions: RunExclusions
 
 
 def _run_heal_pass(
@@ -285,6 +285,7 @@ def _run_heal_pass(
     dry_run: bool,
     output_format: str,
     *,
+    run: RunContext,
     notices: tuple[Notice, ...] = (),
     workflow: RemediationWorkflow | None = None,
 ) -> None:
@@ -312,6 +313,7 @@ def _run_heal_pass(
             suppressed=suppressed,
         )
         suggested = _collect_section_suggestions(
+            run,
             target,
             scope.instruction_files,
             ruleset_map,

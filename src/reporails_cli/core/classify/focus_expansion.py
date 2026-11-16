@@ -26,7 +26,7 @@ from reporails_cli.core.classify.capability_paths import (
     list_capability_targets,
     resolve_capability,
 )
-from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions
+from reporails_cli.core.discovery.exclusions import leaves_out
 from reporails_cli.core.platform.dto.classify import UnresolvedSkill
 from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import read_frontmatter
@@ -43,14 +43,14 @@ def expand_focus(
     focus_paths: set[Path],
     agent: str,
     project_root: Path,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> tuple[set[Path], list[UnresolvedSkill]]:
     """Expand `focus_paths` to include preloaded skills for any subagent in the set.
 
     Reads each focus path's YAML frontmatter and looks for a `skills:`
     field listing skill names. Each declared skill is resolved through
     `resolve_capability(agent, "skills", name, project_root)` and added
-    to the expanded set, unless the run's `exclusions` (`None` reads the project's config)
+    to the expanded set, unless the run's `exclusions`
     leave that skill out: it is neither checked nor reported unresolved. Paths that aren't subagents (no `skills:`
     field, no frontmatter, or not a known agents file) pass through
     unchanged.
@@ -59,7 +59,6 @@ def expand_focus(
     records for declared names that did not resolve — caller surfaces
     them so silent drops do not mask missing-symlink misconfigurations.
     """
-    exclusions = exclusions if exclusions is not None else load_run_exclusions(project_root)
     expanded: set[Path] = set(focus_paths)
     unresolved: list[UnresolvedSkill] = []
     for path in focus_paths:
@@ -78,7 +77,7 @@ def resolve_capability_spec(
     name: str,
     agent: str,
     project_root: Path,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> tuple[set[Path], list[UnresolvedSkill]]:
     """Resolve one (capability, name) spec to its file set + the skills an agent preloads that
     did not resolve. An empty `name` targets every instance the run's `exclusions` keep; a named

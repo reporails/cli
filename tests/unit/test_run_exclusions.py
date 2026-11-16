@@ -54,7 +54,7 @@ def _gs_project(tmp_path: Path, config: str = "") -> Path:
 @pytest.mark.subsys_map
 def test_flags_join_config_for_folders_and_globs(tmp_path: Path) -> None:
     _write_config(tmp_path, "exclude_dirs: [ext]\nexclude_files: ['a/*.md']\n")
-    excl = load_run_exclusions(tmp_path, ["docs"], ["b/*.md"])
+    excl = load_run_exclusions(RunContext(), tmp_path, ["docs"], ["b/*.md"])
     assert {d.text for d in excl.dirs} == {"ext", "docs"}
     assert set(excl.files) == {"a/*.md", "b/*.md"}
     for name in (*DEFAULT_EXCLUDE_DIRS, "ext", "docs"):
@@ -65,7 +65,7 @@ def test_flags_join_config_for_folders_and_globs(tmp_path: Path) -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_leaves_out_tests_user_patterns_only(tmp_path: Path) -> None:
-    excl = load_run_exclusions(tmp_path, ["ext"], ["notes/*.md"])
+    excl = load_run_exclusions(RunContext(), tmp_path, ["ext"], ["notes/*.md"])
     assert leaves_out(excl, tmp_path / "ext" / "x.md")
     assert leaves_out(excl, tmp_path / "deep" / "ext" / "x.md")
     assert leaves_out(excl, tmp_path / "notes" / "x.md")

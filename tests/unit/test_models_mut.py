@@ -26,7 +26,9 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.mechanical.runner import run_mechanical_checks
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import (
     Category,
     Check,
@@ -59,6 +61,8 @@ def test_check_default_project_scope_runs_under_scoped_run(tmp_path: Path) -> No
     # Missing CLAUDE.md -> file_exists fails -> one violation, but only if the
     # check is not skipped as project-scoped under the scoped run.
     classified = [ClassifiedFile(path=tmp_path / "CLAUDE.md", file_type="main")]
-    violations = run_mechanical_checks({"CORE:S:0001": rule}, tmp_path, classified, scoped=True)
+    violations = run_mechanical_checks(
+        {"CORE:S:0001": rule}, tmp_path, classified, scoped=True, exclusions=load_run_exclusions(RunContext(), tmp_path)
+    )
     assert len(violations) == 1
     assert violations[0].rule_id == "CORE:S:0001"

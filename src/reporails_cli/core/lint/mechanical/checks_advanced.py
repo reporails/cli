@@ -344,7 +344,7 @@ def skill_entrypoint_present(
     entry = str(arg_value(args, "entry", "SKILL.md"))
     roots = one_level_skills_roots(classified_files, root)
     missing: list[str] = []
-    exclusions = run_exclusions(args, root)
+    exclusions = run_exclusions(args)
     for skills_root in sorted(roots):
         for sub in slot_subfolders(skills_root):
             if not (sub / entry).is_file() and not leaves_out(exclusions, sub):
@@ -380,7 +380,7 @@ def frontmatter_valid_glob(
     if not target.is_dir():
         return CheckResult(passed=True, message=f"Directory not found: {path} (OK)")
     unresolved: list[tuple[str, str]] = []
-    exclusions = run_exclusions(args, root)
+    exclusions = run_exclusions(args)
     subjects = [
         f
         for f in walk_files(target, exclusions, lambda f: f.suffix in MARKDOWN_RULE_SUFFIXES)

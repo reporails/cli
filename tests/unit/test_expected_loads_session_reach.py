@@ -16,6 +16,7 @@ from reporails_cli.core.pipeline.expected_loads import expected_loads
 from reporails_cli.core.platform.config import claude_settings
 from reporails_cli.core.platform.config.bootstrap import claude_plugins_dir
 from reporails_cli.core.platform.config.claude_settings import enabled_plugins
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
 from reporails_cli.core.platform.contract.json_value import as_list, as_object, as_str
 from reporails_cli.interfaces.cli.main import app
@@ -72,12 +73,15 @@ def _plugin(tmp_path: Path, plugin_id: str, name: str, *, scope: str = "user", p
 
 
 def _invocable(root: Path) -> dict[tuple[str, str], dict[str, object]]:
-    items = [as_object(i) for i in as_list(expected_loads(root)["invocable"])]
+    items = [as_object(i) for i in as_list(expected_loads(RunContext(), root)["invocable"])]
     return {(as_str(i["file_type"]), as_str(i["label"])): dict(i) for i in items}
 
 
 def _files(root: Path) -> dict[str, dict[str, object]]:
-    return {Path(as_str(as_object(f)["path"])).name: dict(as_object(f)) for f in as_list(expected_loads(root)["files"])}
+    return {
+        Path(as_str(as_object(f)["path"])).name: dict(as_object(f))
+        for f in as_list(expected_loads(RunContext(), root)["files"])
+    }
 
 
 def _memory(root: Path) -> Path:
@@ -150,7 +154,7 @@ def test_a_user_skills_folder_is_walked_without_entering_a_pruned_folder(tmp_pat
     _write(Path.home() / ".claude" / "skills" / "x" / "SKILL.md", SKILL.format(name="x"))
     _write(Path.home() / ".claude" / "skills" / "x" / "ref.md", "# ref\n")
     _write(Path.home() / ".claude" / "skills" / "x" / "node_modules" / "dep" / "vendored.md", "# vendored\n")
-    names = {Path(as_str(as_object(f)["path"])).name for f in as_list(expected_loads(root)["files"])}
+    names = {Path(as_str(as_object(f)["path"])).name for f in as_list(expected_loads(RunContext(), root)["files"])}
     assert "ref.md" in names
     assert "vendored.md" not in names
 

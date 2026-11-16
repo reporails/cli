@@ -8,6 +8,7 @@ import pytest
 
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.discovery.agents import get_all_scannable_files
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.regex import run_checks
 from reporails_cli.core.platform.config.run_context import RunContext
 
@@ -79,7 +80,7 @@ def test_frontmatter_checks_of_a_skill_skip_its_supporting_files(project: Path) 
     skill = project / ".claude" / "skills" / "api"
     files = [skill / "SKILL.md", skill / "reference.md", skill / "examples" / "a.md"]
 
-    findings = run_checks(ymls, project, instruction_files=files)
+    findings = run_checks(ymls, project, load_run_exclusions(RunContext(), project), instruction_files=files)
 
     # SKILL.md carries both fields; reference.md and a.md carry no frontmatter and must not be asked for it.
     assert findings == []
@@ -95,6 +96,11 @@ def test_a_check_without_path_filters_reports_every_scanned_file(tmp_path: Path)
     _write(tmp_path, "a.md", "# A\n")
     _write(tmp_path, "b.md", "# B\n")
 
-    findings = run_checks([yml], tmp_path, instruction_files=[tmp_path / "a.md", tmp_path / "b.md"])
+    findings = run_checks(
+        [yml],
+        tmp_path,
+        load_run_exclusions(RunContext(), tmp_path),
+        instruction_files=[tmp_path / "a.md", tmp_path / "b.md"],
+    )
 
     assert sorted(f.file for f in findings) == ["a.md", "b.md"]

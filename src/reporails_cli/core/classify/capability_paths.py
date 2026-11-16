@@ -19,7 +19,7 @@ from pathlib import Path
 from reporails_cli.core.classify import classify_files, load_file_types, location_matches_mode
 from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES, discover_from_config
 from reporails_cli.core.discovery.agents import detect_agents
-from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions, no_exclusions
+from reporails_cli.core.discovery.exclusions import leaves_out, no_exclusions
 from reporails_cli.core.discovery.memory_locator import memory_entries_for_agent
 from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.read_gates import apply_read_gate
@@ -192,13 +192,12 @@ def list_capability_targets(
     agent: str,
     capability: str,
     project_root: Path,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> list[Path]:
     """Enumerate files matching `capability` for `agent` under `project_root`.
 
     Globs the project-scope patterns from the agent's ``file_types:``
-    declaration, leaving out what `exclusions` leaves out (`None` reads the
-    project's config). Returns absolute paths. Returns an empty list when
+    declaration, leaving out what `exclusions` leaves out. Returns absolute paths. Returns an empty list when
     the agent has no `capability` declared.
 
     Fold-source aliases (``main``, ``memories``, ``memory``) union the
@@ -207,8 +206,6 @@ def list_capability_targets(
     `memory_locator.memory_entries_for_agent` so user-scope entries
     surface in the listing.
     """
-    if exclusions is None:
-        exclusions = load_run_exclusions(project_root)
     if capability == "referenced":
         return _list_referenced_targets(agent, project_root, exclusions)
 

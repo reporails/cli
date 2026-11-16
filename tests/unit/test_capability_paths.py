@@ -13,7 +13,8 @@ from reporails_cli.core.classify.capability_paths import (
     list_capability_targets,
     resolve_capability,
 )
-from reporails_cli.core.discovery.exclusions import parse_run_exclusions
+from reporails_cli.core.discovery.exclusions import load_run_exclusions, parse_run_exclusions
+from reporails_cli.core.platform.config.run_context import RunContext
 
 
 def _make_skill(root: Path, name: str) -> Path:
@@ -83,7 +84,7 @@ def test_is_capability_keyword_accepts_known_capability() -> None:
 def test_list_capability_targets_globs_skills(tmp_path: Path) -> None:
     _make_skill(tmp_path, "alpha")
     _make_skill(tmp_path, "beta")
-    targets = list_capability_targets("claude", "skills", tmp_path)
+    targets = list_capability_targets("claude", "skills", tmp_path, load_run_exclusions(RunContext(), tmp_path))
     names = sorted(p.parent.name for p in targets)
     assert names == ["alpha", "beta"]
 
@@ -93,7 +94,7 @@ def test_list_capability_targets_globs_skills(tmp_path: Path) -> None:
 def test_list_capability_targets_globs_rules(tmp_path: Path) -> None:
     _make_rule(tmp_path, "git")
     _make_rule(tmp_path, "testing")
-    targets = list_capability_targets("claude", "rules", tmp_path)
+    targets = list_capability_targets("claude", "rules", tmp_path, load_run_exclusions(RunContext(), tmp_path))
     stems = sorted(p.stem for p in targets)
     assert stems == ["git", "testing"]
 
@@ -126,7 +127,7 @@ def test_resolve_capability_missing_returns_none(tmp_path: Path) -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_classify
 def test_list_capability_targets_unknown_capability_returns_empty(tmp_path: Path) -> None:
-    assert list_capability_targets("claude", "no-such-cap", tmp_path) == []
+    assert list_capability_targets("claude", "no-such-cap", tmp_path, load_run_exclusions(RunContext(), tmp_path)) == []
 
 
 @pytest.mark.unit
@@ -167,7 +168,7 @@ def test_list_referenced_enumerates_link_reached_files(tmp_path: Path) -> None:
     (tmp_path / ".ails").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".ails" / "config.yml").write_text("generic_scanning: true\n", encoding="utf-8")
 
-    targets = list_capability_targets("claude", "referenced", tmp_path)
+    targets = list_capability_targets("claude", "referenced", tmp_path, load_run_exclusions(RunContext(), tmp_path))
     names = {p.name for p in targets}
     # arch.md was reached via markdown link → classified `referenced` → listed
     assert "arch.md" in names
@@ -183,7 +184,7 @@ def test_list_referenced_empty_when_no_links(tmp_path: Path) -> None:
     (tmp_path / ".ails").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".ails" / "config.yml").write_text("generic_scanning: true\n", encoding="utf-8")
 
-    assert list_capability_targets("claude", "referenced", tmp_path) == []
+    assert list_capability_targets("claude", "referenced", tmp_path, load_run_exclusions(RunContext(), tmp_path)) == []
 
 
 # ── Strict-main fold: `main` does NOT enumerate nested CLAUDE.md ──────
@@ -198,7 +199,7 @@ def test_main_fold_excludes_nested_child_instruction(tmp_path: Path) -> None:
     nested.mkdir()
     (nested / "CLAUDE.md").write_text("# Nested\n", encoding="utf-8")
 
-    targets = list_capability_targets("claude", "main", tmp_path)
+    targets = list_capability_targets("claude", "main", tmp_path, load_run_exclusions(RunContext(), tmp_path))
     rels = sorted(p.relative_to(tmp_path).as_posix() for p in targets)
     assert "CLAUDE.md" in rels
     assert "subdir/CLAUDE.md" not in rels
@@ -213,7 +214,9 @@ def test_child_instruction_capability_still_enumerates_nested(tmp_path: Path) ->
     nested.mkdir()
     (nested / "CLAUDE.md").write_text("# Nested\n", encoding="utf-8")
 
-    targets = list_capability_targets("claude", "child_instruction", tmp_path)
+    targets = list_capability_targets(
+        "claude", "child_instruction", tmp_path, load_run_exclusions(RunContext(), tmp_path)
+    )
     rels = sorted(p.relative_to(tmp_path).as_posix() for p in targets)
     assert "subdir/CLAUDE.md" in rels
 
@@ -225,7 +228,7 @@ def test_main_fold_includes_override_when_present(tmp_path: Path) -> None:
     (tmp_path / "CLAUDE.md").write_text("# Root\n", encoding="utf-8")
     (tmp_path / "CLAUDE.local.md").write_text("# Local override\n", encoding="utf-8")
 
-    targets = list_capability_targets("claude", "main", tmp_path)
+    targets = list_capability_targets("claude", "main", tmp_path, load_run_exclusions(RunContext(), tmp_path))
     rels = sorted(p.relative_to(tmp_path).as_posix() for p in targets)
     assert "CLAUDE.md" in rels
     assert "CLAUDE.local.md" in rels
@@ -240,9 +243,11 @@ def test_capability_targets_skip_vendored_folders(tmp_path: Path) -> None:
     vendored = tmp_path / "node_modules" / "pkg"
     vendored.mkdir(parents=True)
     (vendored / "CLAUDE.md").write_text("Never touch this vendored file.\n", encoding="utf-8")
-    nested = list_capability_targets("claude", "child_instruction", tmp_path)
+    nested = list_capability_targets(
+        "claude", "child_instruction", tmp_path, load_run_exclusions(RunContext(), tmp_path)
+    )
     assert [p.relative_to(tmp_path).as_posix() for p in nested] == ["sub/CLAUDE.md"]
-    everything = list_capability_targets("claude", "main", tmp_path)
+    everything = list_capability_targets("claude", "main", tmp_path, load_run_exclusions(RunContext(), tmp_path))
     assert all("node_modules" not in p.parts for p in everything)
 
 
@@ -256,7 +261,7 @@ def test_symlinked_declared_folder_is_listed(tmp_path: Path) -> None:
         (tmp_path / ".claude" / "skills").symlink_to(Path("..") / ".agents" / "skills", target_is_directory=True)
     except OSError:
         pytest.skip("symlinks cannot be created here")
-    targets = list_capability_targets("claude", "skills", tmp_path)
+    targets = list_capability_targets("claude", "skills", tmp_path, load_run_exclusions(RunContext(), tmp_path))
     assert [t.relative_to(tmp_path).as_posix() for t in targets] == [".claude/skills/foo/SKILL.md"]
 
 

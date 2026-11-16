@@ -25,7 +25,7 @@ from reporails_cli.core.discovery.agents import (
     get_all_scannable_files,
     get_known_agents,
 )
-from reporails_cli.core.discovery.exclusions import parse_run_exclusions
+from reporails_cli.core.discovery.exclusions import load_run_exclusions, parse_run_exclusions
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.discovery import DetectedAgent, OwnAccountOnly
 
@@ -479,7 +479,7 @@ class TestUserScopeSubagentMemoryExclusion:
         local_mem.mkdir(parents=True)
         (local_mem / "note.md").write_text("# repo-local memory")
 
-        result = discover_from_config(tmp_path, "claude")
+        result = discover_from_config(tmp_path, "claude", load_run_exclusions(RunContext(), tmp_path))
         assert result is not None
         instructions, _rules, _configs = result
         names = {p.as_posix() for p in instructions}
@@ -494,7 +494,7 @@ class TestUserScopeSubagentMemoryExclusion:
         (tmp_path / ".git").mkdir()
         (tmp_path / "CLAUDE.md").write_text("# root")
 
-        result = discover_from_config(tmp_path, "claude")
+        result = discover_from_config(tmp_path, "claude", load_run_exclusions(RunContext(), tmp_path))
         assert result is not None
         instructions, _rules, _configs = result
         leaked = [
@@ -643,7 +643,9 @@ class TestProjectConfigSurfaceAdjustments:
         )
 
         project_config = get_project_config(tmp_path)
-        result = discover_from_config(tmp_path, "cursor", project_config=project_config)
+        result = discover_from_config(
+            tmp_path, "cursor", load_run_exclusions(RunContext(), tmp_path), project_config=project_config
+        )
         assert result is not None
         instructions, rules, _configs = result
         all_paths = {p.as_posix() for p in instructions + rules}
@@ -708,7 +710,7 @@ class TestRepoScopedDiscoveryIgnoresHomeConfig:
         mem_dir.mkdir(parents=True)
         (mem_dir / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
 
-        result = discover_from_config(repo, "claude", repo_scoped=True)
+        result = discover_from_config(repo, "claude", load_run_exclusions(RunContext(), repo), repo_scoped=True)
         assert result is not None
         instructions, _rules, _configs = result
         names = {p.as_posix() for p in instructions}
@@ -734,7 +736,7 @@ class TestRepoScopedDiscoveryIgnoresHomeConfig:
         foreign_mem.mkdir(parents=True)
         (foreign_mem / "MEMORY.md").write_text("# Other\n", encoding="utf-8")
 
-        result = discover_from_config(repo, "claude", repo_scoped=True)
+        result = discover_from_config(repo, "claude", load_run_exclusions(RunContext(), repo), repo_scoped=True)
         assert result is not None
         instructions, _rules, _configs = result
         names = {p.as_posix() for p in instructions}

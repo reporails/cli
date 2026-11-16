@@ -126,11 +126,16 @@ def _capability_resolution(agent: str) -> tuple[list[str], dict[str, str], dict[
         available_capabilities,
         list_capability_targets,
     )
+    from reporails_cli.core.discovery.exclusions import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        load_run_exclusions,
+    )
 
     caps = sorted(available_capabilities(agent, Path.cwd()))
     decls = {d.name: d for d in load_file_types(agent)}
     patterns = {c: (decls[c].patterns[0] if decls.get(c) and decls[c].patterns else "") for c in caps}
-    found = {c: len(list_capability_targets(agent, c, Path.cwd(), None)) for c in caps}
+    run = RunContext()
+    exclusions = load_run_exclusions(run, Path.cwd())
+    found = {c: len(list_capability_targets(agent, c, Path.cwd(), exclusions)) for c in caps}
     return caps, patterns, found
 
 

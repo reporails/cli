@@ -30,7 +30,7 @@ def _project(tmp_path: Path, config: str = "") -> tuple[Path, Path]:
 def test_named_skill_in_left_out_folder_is_not_reported_missing(tmp_path: Path) -> None:
     project, skill = _project(tmp_path, "exclude_dirs: [skills]\n")
     scope = discover_scope(RunContext(), project, "claude", None, None, scan_files=False, named=frozenset({skill}))
-    findings = run_m_probes(project, [skill], agent="claude", scoped=True, exclusions=scope.exclusions)
+    findings = run_m_probes(RunContext(), project, [skill], agent="claude", scoped=True, exclusions=scope.exclusions)
     assert not [f for f in findings if "No matching files found" in f.message]
 
 
@@ -40,7 +40,7 @@ def test_flag_folder_and_config_folder_give_the_same_findings(tmp_path: Path) ->
     results = []
     for project, flags in ((by_config, None), (by_flag, ["skills"])):
         scope = discover_scope(RunContext(), project, "claude", flags, None)
-        findings = run_m_probes(project, list(scope.files), agent="claude", exclusions=scope.exclusions)
+        findings = run_m_probes(RunContext(), project, list(scope.files), agent="claude", exclusions=scope.exclusions)
         results.append({(f.rule, f.file, f.line, f.message) for f in findings})
     assert results[0] == results[1]
 
@@ -53,7 +53,7 @@ def test_rule_paths_glob_matches_files_inside_a_left_out_folder(tmp_path: Path) 
     rule.parent.mkdir(parents=True)
     rule.write_text("---\npaths:\n  - packages/api/**\n---\n\nKeep the api small.\n", encoding="utf-8")
     scope = discover_scope(RunContext(), project, "claude", None, None)
-    findings = run_m_probes(project, list(scope.files), agent="claude", exclusions=scope.exclusions)
+    findings = run_m_probes(RunContext(), project, list(scope.files), agent="claude", exclusions=scope.exclusions)
     assert not [f for f in findings if "matches no file" in f.message]
 
 

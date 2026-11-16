@@ -179,7 +179,7 @@ def test_detect_single_agent_scans_repo_scoped(monkeypatch: pytest.MonkeyPatch, 
     hijack it (kills L376 `repo_scoped=True` -> False)."""
     captured: dict = {}
 
-    def _spy(target, agent_id, **kwargs):
+    def _spy(target, agent_id, exclusions, **kwargs):
         captured.update(kwargs)
         return None
 

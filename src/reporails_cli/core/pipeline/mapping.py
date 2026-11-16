@@ -82,7 +82,7 @@ def discover_scope(
     keeps every pattern the user set. A pass that lists no files records nothing.
     """
 
-    exclusions = with_named(load_run_exclusions(target, exclude_dirs, exclude_files), named)
+    exclusions = with_named(load_run_exclusions(run, target, exclude_dirs, exclude_files), named)
     detected, resolved, files = _scan(run, target, agent, exclusions, scan_files)
     excluded = record_patterns(exclusions, narrowed=narrowed) if scan_files else ((), ())
     return ScopeDiscovery(detected, *resolved, files, excluded, exclusions)

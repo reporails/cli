@@ -88,7 +88,7 @@ def test_scope_equals_the_full_union_never_narrowed_by_distinctiveness(
     config = get_project_config(project)
     detected = detect_agents(RunContext(), project)
     effective_agent, _assumed, mixed, filtered = resolve_agent_filters(
-        RunContext(), config.default_agent, detected, project, load_run_exclusions(project)
+        RunContext(), config.default_agent, detected, project, load_run_exclusions(RunContext(), project)
     )
     scope = get_all_instruction_files(RunContext(), project, agents=filtered)
 

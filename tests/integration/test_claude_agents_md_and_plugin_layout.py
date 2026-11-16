@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.platform.config import claude_settings
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli.main import app
@@ -106,7 +107,7 @@ def _resolution(project: Path) -> tuple[str, bool, dict[str, str], set[str]]:
     owners = {
         Path(p).relative_to(project).as_posix(): o for p, o in partition_by_native_owner(filtered, project).items()
     }
-    discovered = discover_from_config(project, "claude", repo_scoped=True)
+    discovered = discover_from_config(project, "claude", load_run_exclusions(RunContext(), project), repo_scoped=True)
     claude_files = {p.relative_to(project).as_posix() for p in (discovered[0] if discovered else [])}
     return effective, mixed, owners, claude_files
 
