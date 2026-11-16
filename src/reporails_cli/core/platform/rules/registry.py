@@ -80,15 +80,16 @@ def load_rules_from_path(path: Path) -> dict[str, Rule]:
     """
     if not path.exists():
         return {}
-    if path.parent == get_rules_path():
-        return dict(_bundled_rules(path.name))
+    rules_root = get_rules_path()
+    if path.parent == rules_root:
+        return dict(_bundled_rules(str(rules_root), path.name))
     return _scan_rules(path)
 
 
 @lru_cache(maxsize=32)
-def _bundled_rules(folder: str) -> Mapping[str, Rule]:
-    """Every rule of one bundled rules folder. The bundle does not change within a process."""
-    return MappingProxyType(_scan_rules(get_rules_path() / folder))
+def _bundled_rules(rules_root: str, folder: str) -> Mapping[str, Rule]:
+    """Every rule of one folder of a rules root, cached per rules root and folder (the bundle's identity)."""
+    return MappingProxyType(_scan_rules(Path(rules_root) / folder))
 
 
 class RuleReadError(ValueError):

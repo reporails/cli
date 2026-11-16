@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
-from functools import cache, lru_cache
+from functools import lru_cache
 from pathlib import Path
 from typing import get_type_hints
 
@@ -49,13 +49,15 @@ from reporails_cli.core.platform.utils.utils import (
 logger = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=32)
 def bundled_agent_config(agent: str) -> AgentConfig:
-    """The bundled `config.yml` of `agent` (excludes, overrides, hooks); defaults when missing or malformed.
+    """The `config.yml` of `agent` (excludes, overrides, hooks) under the current rules root; defaults when missing."""
+    return _agent_config_under(str(get_rules_path()), agent)
 
-    The bundle is fixed for the process, so the result is cached per agent.
-    """
-    return agent_config_at(get_agent_config_path(agent, get_rules_path()))
+
+@lru_cache(maxsize=32)
+def _agent_config_under(rules_root: str, agent: str) -> AgentConfig:
+    """The agent config read from one rules root, cached per rules root and agent (the bundle's identity)."""
+    return agent_config_at(get_agent_config_path(agent, Path(rules_root)))
 
 
 def agent_config_at(config_path: Path) -> AgentConfig:
@@ -457,11 +459,10 @@ def _merge_thresholds(
     return merged
 
 
-@cache
 def get_rules_path() -> Path:
     """Get path to rules directory.
 
-    Resolution: config override → bundled (package default). Fixed when the process starts.
+    Resolution: config override → bundled (package default).
     """
     config = get_global_config()
     if config.framework_path and config.framework_path.is_dir():
