@@ -76,6 +76,7 @@
 - One module reads each file's text or bytes for the checks, and each read keeps the decoding it used before.
 - Three check scenarios guard linked folders: a `.claude/rules` folder linked to a dotfiles folder stays part of `ails check .claude`, a linked file under a `~/.claude` linked to a dotfiles folder keeps its user-level root, and a `~/.claude` folder keeps its findings when the home folder is reached through a link.
 - No core module reads the config files on its own: the tier, segmentation, heal exclusions and project overrides come from the run, and the in-process YAML cache is gone.
+- Each agent's bundled settings file is parsed once per process while it is unchanged, so a check is as fast as before the config reads moved into the run; an edited settings file is read again.
 - The map records a place, time or target phrase (`In CI,` before the clause, `in staging` or `for src/` after its object) as the instruction's scope, and heal's rewrite check reads it.
 - Discovery reads and lists the project only through the file and folder readers, heal reads and restores files through its own file module, and the rule word lists are written by one module.
 - The folder-target check tests run each target from the folder its project roots at, and name a nested root by running from it.

@@ -7,10 +7,11 @@ from path resolution (filesystem layout knowledge).
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
+from types import MappingProxyType
 from typing import get_type_hints
 
 import yaml
@@ -77,27 +78,42 @@ def agent_config_at(config_path: Path) -> AgentConfig:
     )
 
 
-def read_agent_config(config_path: Path) -> JsonObject | None:
-    """Read an agent `config.yml` as its top-level mapping.
+@lru_cache(maxsize=32)
+def _parse_agent_config(path_text: str, mtime_ns: int, size: int) -> tuple[Mapping[str, JsonValue] | None, str]:
+    """Parse the `config.yml` at `path_text` once per file identity; a changed file is parsed again.
+
+    Returns the top-level mapping and an empty problem, or None and what is wrong with the file.
+    """
+    del mtime_ns, size  # part of the cache key only
+    try:
+        data = load_yaml_file(Path(path_text))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        return None, unreadable_file_problem(exc)
+    if not data:
+        return None, "is empty"
+    if not isinstance(data, dict):
+        return None, "is not a mapping"
+    return MappingProxyType(data), ""
+
+
+def read_agent_config(config_path: Path) -> Mapping[str, JsonValue] | None:
+    """Read an agent `config.yml` as its top-level mapping, which cannot be modified.
 
     An absent file reads as None. A file that cannot be read, is not UTF-8, is not valid YAML, is
     empty or is not a mapping is logged as a warning on each read and also reads as None.
+    An unchanged file is not parsed again; an edited one is read again.
     """
     if not config_path.exists():
         return None
     try:
-        data = load_yaml_file(config_path)
-    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-        problem = unreadable_file_problem(exc)
+        stat = config_path.stat()
+    except OSError as exc:
+        data, problem = None, unreadable_file_problem(exc)
     else:
-        if not data:
-            problem = "is empty"
-        elif not isinstance(data, dict):
-            problem = "is not a mapping"
-        else:
-            return data
-    logger.warning("Skipping agent config %s: %s", config_path, problem)
-    return None
+        data, problem = _parse_agent_config(str(config_path), stat.st_mtime_ns, stat.st_size)
+    if data is None:
+        logger.warning("Skipping agent config %s: %s", config_path, problem)
+    return data
 
 
 def _hook_fact(raw: object) -> HookFact:
@@ -509,7 +525,7 @@ def get_agent_config_path(agent: str, rules_root: Path | None = None) -> Path:
     return (rules_root if rules_root is not None else get_rules_path()) / dir_name / "config.yml"
 
 
-def iter_agent_configs(rules_dir: Path) -> Iterator[tuple[Path, JsonObject]]:
+def iter_agent_configs(rules_dir: Path) -> Iterator[tuple[Path, Mapping[str, JsonValue]]]:
     """Each readable `*/config.yml` under `rules_dir`, in path order, as `(folder, parsed mapping)`.
 
     A config that `read_agent_config` cannot read is skipped.

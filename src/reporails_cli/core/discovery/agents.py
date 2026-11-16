@@ -27,7 +27,7 @@ from reporails_cli.core.discovery.surface_config import config_names_agent
 from reporails_cli.core.discovery.walk import has_entries
 from reporails_cli.core.platform.config.config import get_rules_path, iter_agent_configs
 from reporails_cli.core.platform.config.run_context import RunContext
-from reporails_cli.core.platform.contract.json_value import JsonObject, as_str, str_list
+from reporails_cli.core.platform.contract.json_value import JsonValue, as_str, str_list
 from reporails_cli.core.platform.dto.discovery import AgentType, DetectedAgent, RunExclusions
 from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import is_rooted_pattern
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from reporails_cli.core.platform.dto.results import ProjectConfig
 
 
-def _parse_agent_config(data: JsonObject) -> AgentType | None:
+def _parse_agent_config(data: Mapping[str, JsonValue]) -> AgentType | None:
     """Parse a single agent config.yml into an AgentType."""
     agent_id = as_str(data.get("agent"))
     agent_name = as_str(data.get("name", agent_id)) or agent_id

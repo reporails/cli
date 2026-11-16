@@ -99,7 +99,9 @@ def load_registry() -> dict[str, JsonObject]:
     registry_dir = get_rules_path()
     if not registry_dir.is_dir():
         return {}
-    return {agent: data for _, data in iter_agent_configs(registry_dir) if isinstance(agent := data.get("agent"), str)}
+    return {
+        agent: dict(data) for _, data in iter_agent_configs(registry_dir) if isinstance(agent := data.get("agent"), str)
+    }
 
 
 _ACTIVATION_KEYS = (
