@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.platform.config.run_context import RunContext
+
 
 class TestDetectFeaturesFilesystem:
     """Test detect_features_filesystem with real temp directories."""
@@ -16,7 +18,7 @@ class TestDetectFeaturesFilesystem:
         """Empty directory should detect no features."""
         from reporails_cli.core.discovery.features import detect_features_filesystem
 
-        features = detect_features_filesystem(tmp_path)
+        features = detect_features_filesystem(RunContext(), tmp_path)
 
         assert features.has_instruction_file is False
         assert features.has_path_scoped_rules is False
@@ -30,7 +32,7 @@ class TestDetectFeaturesFilesystem:
 
         (tmp_path / "CLAUDE.md").write_text("# My Project\n", encoding="utf-8")
 
-        features = detect_features_filesystem(tmp_path)
+        features = detect_features_filesystem(RunContext(), tmp_path)
 
         assert features.has_instruction_file is True
 
@@ -46,6 +48,6 @@ class TestDetectFeaturesFilesystem:
         # Also create CLAUDE.md so the project has an instruction file
         (tmp_path / "CLAUDE.md").write_text("# Project\n", encoding="utf-8")
 
-        features = detect_features_filesystem(tmp_path)
+        features = detect_features_filesystem(RunContext(), tmp_path)
 
         assert features.has_path_scoped_rules is True

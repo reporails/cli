@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
@@ -51,8 +52,8 @@ def _resolved_agent(project: Path) -> str:
     from reporails_cli.core.discovery.agents import detect_agents
     from reporails_cli.core.pipeline.mapping import resolve_agent_filters
 
-    detected = detect_agents(project)
-    agent, _assumed, _mixed, _filtered = resolve_agent_filters("", detected, project, None)
+    detected = detect_agents(RunContext(), project)
+    agent, _assumed, _mixed, _filtered = resolve_agent_filters(RunContext(), "", detected, project, None)
     return agent
 
 

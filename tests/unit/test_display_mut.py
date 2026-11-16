@@ -598,7 +598,7 @@ class TestItemHealthGating:
                 verbose=False,
                 summary=display._SummaryInputs(scope=ScopeInfo(), tier="free", elapsed_ms=0),
                 project_root=tmp_path,
-                file_type_by_path={},
+                extras=display.TextExtras(file_type_by_path={}),
             )
         out = cap.get()
         # Both per-item rows render only when item_health is computed (the guard holds).

@@ -24,7 +24,7 @@ from reporails_cli.core.discovery.memory_locator import memory_entries_for_agent
 from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.read_gates import apply_read_gate
 from reporails_cli.core.discovery.walk import Pruner, safe_resolve, walk_glob_matches
-from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import FileTypeDeclaration
@@ -145,16 +145,16 @@ def classify_target_token(
     return "path", _path(token)
 
 
-def sniff_agent(agent: str, project_root: Path) -> str:
+def sniff_agent(run: RunContext, agent: str, project_root: Path) -> str:
     """The agent whose vocabulary reads target tokens: `agent` when given, else the project's
     configured default agent, else the first agent detected under `project_root` (`""` when
     none is)."""
     if agent:
         return agent
-    default_agent = get_project_config(project_root).default_agent
+    default_agent = run.project_config(project_root).default_agent
     if default_agent:
         return default_agent
-    for det in detect_agents(project_root):
+    for det in detect_agents(run, project_root):
         return det.agent_type.id
     return ""
 

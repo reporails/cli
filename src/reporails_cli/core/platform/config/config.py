@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
+from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
 from typing import get_type_hints
@@ -188,9 +189,8 @@ def get_global_config() -> GlobalConfig:
         agents=_data_str_dict(data, "agents"),
         surfaces=_data_str_dict(data, "surfaces"),
         segmentation=_coerce_segmentation(data.get("segmentation")),
+        **{key: _data_str_list(data, key) for key in _GLOBAL_LIST_KEYS},
     )
-    for key in _GLOBAL_LIST_KEYS:
-        setattr(config, key, _data_str_list(data, key))
     return config
 
 
@@ -370,9 +370,8 @@ def get_project_config(project_root: Path) -> ProjectConfig:
         rule_thresholds=_coerce_rule_thresholds(data.get("rule_thresholds")),
         generic_scanning=bool(gs_raw) if has_gs_in_project else False,
         mapper=MapperConfig(segmentation=seg or "legacy"),
+        **{key: _data_str_list(data, key) for key in TEXT_LIST_KEYS},
     )
-    for key in TEXT_LIST_KEYS:
-        setattr(config, key, _data_str_list(data, key))
     return _apply_globals(
         config,
         global_cfg,
@@ -394,20 +393,26 @@ def _apply_globals(
     project layer. `generic_scanning` inherits from globals only when the
     project YAML didn't explicitly set it.
     """
-    if not config.default_agent:
-        config.default_agent = global_cfg.default_agent
-    config.disabled_rules = _extend_unique(config.disabled_rules, global_cfg.disabled_rules)
-    config.exclude_dirs = _extend_unique(config.exclude_dirs, global_cfg.exclude_dirs)
-    config.exclude_files = _extend_unique(config.exclude_files, global_cfg.exclude_files)
-    config.packages = _extend_unique(config.packages, global_cfg.packages)
-    config.rule_thresholds = _merge_thresholds(config.rule_thresholds, global_cfg.rule_thresholds)
-    config.agents = _merge_under(config.agents, global_cfg.agents)
-    config.surfaces = _merge_under(config.surfaces, global_cfg.surfaces)
-    if not has_project_generic_scanning and global_cfg.generic_scanning is not None:
-        config.generic_scanning = global_cfg.generic_scanning
+    mapper = config.mapper
     if not has_project_segmentation and global_cfg.segmentation is not None:
-        config.mapper.segmentation = global_cfg.segmentation
-    return config
+        mapper = replace(mapper, segmentation=global_cfg.segmentation)
+    return replace(
+        config,
+        default_agent=config.default_agent or global_cfg.default_agent,
+        disabled_rules=_extend_unique(config.disabled_rules, global_cfg.disabled_rules),
+        exclude_dirs=_extend_unique(config.exclude_dirs, global_cfg.exclude_dirs),
+        exclude_files=_extend_unique(config.exclude_files, global_cfg.exclude_files),
+        packages=_extend_unique(config.packages, global_cfg.packages),
+        rule_thresholds=_merge_thresholds(config.rule_thresholds, global_cfg.rule_thresholds),
+        agents=_merge_under(config.agents, global_cfg.agents),
+        surfaces=_merge_under(config.surfaces, global_cfg.surfaces),
+        generic_scanning=(
+            global_cfg.generic_scanning
+            if not has_project_generic_scanning and global_cfg.generic_scanning is not None
+            else config.generic_scanning
+        ),
+        mapper=mapper,
+    )
 
 
 def _extend_unique(project: list[str], globals_: list[str]) -> list[str]:

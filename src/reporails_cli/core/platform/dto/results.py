@@ -88,7 +88,7 @@ class SubagentHooks:
     extension_opt_out: HookFact = field(default_factory=HookFact)
 
 
-@dataclass
+@dataclass(frozen=True)
 class AgentConfig:
     """Agent configuration from framework (agents/{agent}/config.yml)."""
 
@@ -101,7 +101,7 @@ class AgentConfig:
     intercept_events: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
-@dataclass
+@dataclass(frozen=True)
 class MapperConfig:
     """Mapper atomizer tuning knob (default = shipped behavior).
 
@@ -112,7 +112,7 @@ class MapperConfig:
     segmentation: str = "legacy"  # "legacy" | "structure-aware"
 
 
-@dataclass
+@dataclass(frozen=True)
 class GlobalConfig:
     """Global user configuration (~/.reporails/config.yml).
 
@@ -138,7 +138,7 @@ class GlobalConfig:
     segmentation: str | None = None  # "legacy" | "structure-aware"; None = no global preference
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProjectConfig:
     """Project-level configuration (.ails/config.yml + .ails/config.local.yml)."""
 

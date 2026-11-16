@@ -21,7 +21,6 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
@@ -67,7 +66,6 @@ requires_model = pytest.mark.skipif(
 @pytest.fixture(autouse=True)
 def _clear_caches() -> None:
     """Clear module-level caches between tests."""
-    clear_agent_cache()
 
 
 @pytest.fixture

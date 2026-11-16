@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.agents import clear_agent_cache, detect_agents, detect_single_agent
+from reporails_cli.core.discovery.agents import detect_agents, detect_single_agent
 from reporails_cli.core.lint.rule_runner import _classify_agent_files
+from reporails_cli.core.platform.config.run_context import RunContext
 
 
 def _project(root: Path, *, agents_md: bool) -> Path:
@@ -27,10 +28,9 @@ def _project(root: Path, *, agents_md: bool) -> Path:
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_fallback_file_alone_makes_the_project_a_codex_project(tmp_path: Path) -> None:
-    clear_agent_cache()
     _project(tmp_path, agents_md=False)
 
-    detected = detect_agents(tmp_path)
+    detected = detect_agents(RunContext(), tmp_path)
 
     assert [a.agent_type.id for a in detected] == ["codex"]
     assert [p.name for p in detected[0].instruction_files] == ["TEAM_GUIDE.md"]
@@ -39,7 +39,6 @@ def test_fallback_file_alone_makes_the_project_a_codex_project(tmp_path: Path) -
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_fallback_file_is_kept_when_files_are_classified_for_rules(tmp_path: Path) -> None:
-    clear_agent_cache()
     _project(tmp_path, agents_md=True)
     files = [tmp_path / "AGENTS.md", tmp_path / "TEAM_GUIDE.md"]
 
@@ -53,11 +52,12 @@ def _rel(root: Path, files: list[Path]) -> list[str]:
 
 
 def _codex_files(root: Path, *, single: bool) -> list[str]:
-    clear_agent_cache()
     if single:
-        found = detect_single_agent(root, "codex")
+        found = detect_single_agent(RunContext(), root, "codex")
         return _rel(root, found.instruction_files) if found else []
-    return next((_rel(root, a.instruction_files) for a in detect_agents(root) if a.agent_type.id == "codex"), [])
+    return next(
+        (_rel(root, a.instruction_files) for a in detect_agents(RunContext(), root) if a.agent_type.id == "codex"), []
+    )
 
 
 def _nested_project(root: Path, *, codex_marker: bool, nested_agents_md: bool = False) -> Path:
@@ -88,13 +88,12 @@ def test_fallback_file_beside_agents_md_without_codex_folder_is_not_listed(tmp_p
     for entry in (tmp_path / ".codex").iterdir():
         entry.unlink()
     (tmp_path / ".codex").rmdir()
-    clear_agent_cache()
 
-    listed = {p.name for a in detect_agents(tmp_path) for p in a.instruction_files}
+    listed = {p.name for a in detect_agents(RunContext(), tmp_path) for p in a.instruction_files}
 
     assert "TEAM_GUIDE.md" not in listed
     # The project's own config names Codex, so the project is a Codex project even without `.codex/`.
-    assert [a.agent_type.id for a in detect_agents(tmp_path)] == ["codex"]
+    assert [a.agent_type.id for a in detect_agents(RunContext(), tmp_path)] == ["codex"]
     assert _codex_files(tmp_path, single=True) == ["AGENTS.md"]
 
 

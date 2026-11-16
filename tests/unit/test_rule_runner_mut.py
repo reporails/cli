@@ -23,6 +23,7 @@ from reporails_cli.core.lint.rule_runner import (
     run_content_quality_checks,
     run_m_probes,
 )
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.dto.models import (
     Category,
@@ -271,7 +272,7 @@ class TestRunMProbesScopedDefault:
         """
         from reporails_cli.core.discovery.agents import get_all_instruction_files
 
-        files = get_all_instruction_files(level1_project)
+        files = get_all_instruction_files(RunContext(), level1_project)
         if not files:
             pytest.skip("No instruction files in fixture")
         rules_hit = {f.rule for f in run_m_probes(level1_project, files)}

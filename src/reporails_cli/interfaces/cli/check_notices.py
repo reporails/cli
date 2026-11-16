@@ -18,7 +18,6 @@ from rich.markup import escape as escape_markup
 from reporails_cli.core.discovery.walk import own_name_spellings
 from reporails_cli.core.heal.apply import heal_withheld_for_run
 from reporails_cli.core.pipeline.assemble import with_exclusions
-from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.formatters.text.verdict import render_excluded_line
@@ -119,7 +118,7 @@ def _agent_is_pinned(state: CheckState) -> bool:
     if state.inputs.agent:
         return True
 
-    return bool(get_project_config(state.targets.target).default_agent)
+    return bool(state.run.project_config(state.targets.target).default_agent)
 
 
 def _emit_empty_run(state: CheckState) -> None:

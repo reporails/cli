@@ -50,6 +50,7 @@ from reporails_cli.core.mapper.reach import record_reach
 from reporails_cli.core.mapper.skills import record_skills
 from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
 from reporails_cli.core.platform.dto.pipeline import ScopeDiscovery
 from reporails_cli.core.platform.dto.results import MapperConfig
@@ -61,6 +62,7 @@ logger = logging.getLogger(__name__)
 
 
 def discover_scope(
+    run: RunContext,
     target: Path,
     agent: str,
     exclude_dirs: list[str] | None,
@@ -81,24 +83,25 @@ def discover_scope(
     """
 
     exclusions = with_named(load_run_exclusions(target, exclude_dirs, exclude_files), named)
-    detected, resolved, files = _scan(target, agent, exclusions, scan_files)
+    detected, resolved, files = _scan(run, target, agent, exclusions, scan_files)
     excluded = record_patterns(exclusions, narrowed=narrowed) if scan_files else ((), ())
     return ScopeDiscovery(detected, *resolved, files, excluded, exclusions)
 
 
 def _scan(
-    target: Path, agent: str, exclusions: RunExclusions, scan_files: bool
+    run: RunContext, target: Path, agent: str, exclusions: RunExclusions, scan_files: bool
 ) -> tuple[list[DetectedAgent], tuple[str, bool, bool, list[DetectedAgent]], list[Path]]:
     """Detect agents, resolve the effective agent and its filtered agents, and list the files under one dir cache."""
 
     with shared_dir_listings():
-        detected = detect_agents(target)
-        resolved = resolve_agent_filters(agent, detected, target, exclusions)
-        files = get_all_scannable_files(target, agents=resolved[3]) if scan_files else []
+        detected = detect_agents(run, target)
+        resolved = resolve_agent_filters(run, agent, detected, target, exclusions)
+        files = get_all_scannable_files(run, target, agents=resolved[3]) if scan_files else []
     return detected, resolved, files
 
 
 def resolve_agent_filters(
+    run: RunContext,
     agent: str,
     all_detected: list[DetectedAgent],
     target: Path,
@@ -123,7 +126,7 @@ def resolve_agent_filters(
     if explicit:
         filtered = filter_agents_by_id(all_detected, effective)
         if not filtered:
-            filtered = [d for d in (detect_single_agent(target, effective),) if d is not None]
+            filtered = [d for d in (detect_single_agent(run, target, effective),) if d is not None]
     else:
         filtered = list(all_detected)
     exclusions = exclusions or no_exclusions(target)

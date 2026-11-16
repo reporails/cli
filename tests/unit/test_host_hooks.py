@@ -11,6 +11,7 @@ import pytest
 from reporails_cli.core.discovery.agents import detect_agents
 from reporails_cli.core.discovery.features import detect_features_filesystem
 from reporails_cli.core.platform.config.config import bundled_agent_config
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.results import HookEntry
 from reporails_cli.core.platform.policy.host_hooks import intercepted_tools
@@ -37,7 +38,7 @@ def _write(root: Path, rel: str, body: Any) -> None:
 
 
 def _hooks(root: Path) -> tuple[HookEntry, ...]:
-    return detect_features_filesystem(root, agents=detect_agents(root)).hooks
+    return detect_features_filesystem(RunContext(), root, agents=detect_agents(RunContext(), root)).hooks
 
 
 def _entry(agent: str, event: str, matcher: str) -> HookEntry:
@@ -115,7 +116,7 @@ def test_a_claude_user_level_hook_is_listed_but_does_not_raise_the_level(
     monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
     project = tmp_path / "proj"
     _write(project, "CLAUDE.md", "# Project\n")
-    features = detect_features_filesystem(project, agents=detect_agents(project))
+    features = detect_features_filesystem(RunContext(), project, agents=detect_agents(RunContext(), project))
     data = host_hooks_field(features.hooks)
     assert [(h["agent"], h["scope"], h["file"], h["tools"]) for h in data["host_hooks"]] == [
         ("claude", "user", "~/.claude/settings.json", ["Edit"])
@@ -129,7 +130,7 @@ def test_a_claude_user_level_hook_is_listed_but_does_not_raise_the_level(
 def test_settings_without_hooks_gives_no_entries_and_no_hook_file(tmp_path: Path) -> None:
     _write(tmp_path, "CLAUDE.md", "# Project\n")
     _write(tmp_path, ".claude/settings.json", {"permissions": {}})
-    features = detect_features_filesystem(tmp_path, agents=detect_agents(tmp_path))
+    features = detect_features_filesystem(RunContext(), tmp_path, agents=detect_agents(RunContext(), tmp_path))
     assert (features.hooks, features.hook_files) == ((), ())
 
 
@@ -138,7 +139,7 @@ def test_settings_without_hooks_gives_no_entries_and_no_hook_file(tmp_path: Path
 def test_a_dedicated_hooks_file_with_no_entries_still_counts_for_the_level(tmp_path: Path) -> None:
     _write(tmp_path, "AGENTS.md", "# Project\n")
     _write(tmp_path, ".codex/hooks.json", {"hooks": {}})
-    features = detect_features_filesystem(tmp_path, agents=detect_agents(tmp_path))
+    features = detect_features_filesystem(RunContext(), tmp_path, agents=detect_agents(RunContext(), tmp_path))
     assert features.hooks == ()
     assert features.hook_files == (tmp_path / ".codex/hooks.json",)
 

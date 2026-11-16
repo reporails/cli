@@ -9,7 +9,6 @@ import pytest
 
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.classify.link_walker import walk_markdown_links
-from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.discovery.exclusions import (
     covers,
     leaves_out,
@@ -20,6 +19,7 @@ from reporails_cli.core.discovery.exclusions import (
     with_named,
 )
 from reporails_cli.core.pipeline import check_one
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.discovery import DEFAULT_EXCLUDE_DIRS
 from reporails_cli.core.platform.dto.pipeline import Discovered
 from reporails_cli.interfaces.cli import check_flow
@@ -183,7 +183,6 @@ def _fold_names(files) -> set[str]:
 @pytest.mark.parametrize(("case", "config", "flag_dirs", "flag_files"), _CASES, ids=[c[0] for c in _CASES])
 def test_cli_scope_fold_never_checks_a_left_out_file(tmp_path, case, config, flag_dirs, flag_files) -> None:
     project = _gs_project(tmp_path, config)
-    clear_agent_cache()
     inputs = CheckInputs(
         targets=[],
         format_opt="json",
@@ -198,7 +197,7 @@ def test_cli_scope_fold_never_checks_a_left_out_file(tmp_path, case, config, fla
         cwd=False,
         project_root=project,
     )
-    state = CheckState(inputs=inputs)
+    state = CheckState(run=RunContext(), inputs=inputs)
     state.targets.target = project
     check_flow._resolve_scope_at_target(state)
     check_flow._apply_generic_scan(state)
@@ -214,8 +213,7 @@ def test_cli_scope_fold_never_checks_a_left_out_file(tmp_path, case, config, fla
 @pytest.mark.parametrize(("case", "config"), [(c[0], c[1]) for c in _CASES if c[1]], ids=[c[0] for c in _CASES if c[1]])
 def test_mcp_discover_files_fold_never_checks_a_left_out_file(tmp_path, case, config) -> None:
     project = _gs_project(tmp_path, config)
-    clear_agent_cache()
-    discovered = check_one.discover_files(project)
+    discovered = check_one.discover_files(RunContext(), project)
     assert isinstance(discovered, Discovered)
     names = _fold_names(discovered.instruction_files)
     assert "CLAUDE.md" in names
@@ -231,7 +229,6 @@ def test_mcp_discover_files_fold_never_checks_a_left_out_file(tmp_path, case, co
 
 
 def _scope_state(project: Path, path_targets: set[Path], specs: list[tuple[str, str]]) -> CheckState:
-    clear_agent_cache()
     inputs = CheckInputs(
         targets=[],
         format_opt="json",
@@ -246,7 +243,7 @@ def _scope_state(project: Path, path_targets: set[Path], specs: list[tuple[str, 
         cwd=False,
         project_root=project,
     )
-    state = CheckState(inputs=inputs)
+    state = CheckState(run=RunContext(), inputs=inputs)
     state.targets.target = project
     state.targets.path_targets = path_targets
     state.targets.capability_specs = specs

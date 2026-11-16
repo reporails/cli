@@ -10,7 +10,6 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.interfaces.cli.main import app
 from reporails_cli.interfaces.mcp import tools
 
@@ -45,7 +44,6 @@ def _offline_server(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "reporails_cli.core.platform.adapters.api_client.AilsClient.lint", lambda self, *args, **kwargs: None
     )
-    clear_agent_cache()
 
 
 def _project(tmp_path: Path, config: str) -> Path:

@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
@@ -29,7 +28,6 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "proj"
     root.mkdir()
     (root / "CLAUDE.md").write_text("# Project\n\nAlways run the tests.\n", encoding="utf-8")
-    clear_agent_cache()
     monkeypatch.setattr(check_one, "is_initialized", lambda: True)
     monkeypatch.setattr(check_one, "model_refusal", lambda: None)
     return root
@@ -84,7 +82,6 @@ def test_prepare_answers_config_unreadable_as_validate_does(project):
 def test_prepare_on_a_project_with_nothing_to_map_answers_zero(tmp_path, monkeypatch):
     empty = tmp_path / "empty"
     empty.mkdir()
-    clear_agent_cache()
     monkeypatch.setattr(check_one, "is_initialized", lambda: True)
     monkeypatch.setattr(check_one, "model_refusal", lambda: None)
     assert prepare_for_path(str(empty), None, empty) == {"files": 0}

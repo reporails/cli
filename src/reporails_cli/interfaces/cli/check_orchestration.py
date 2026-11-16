@@ -24,6 +24,7 @@ from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
 from reporails_cli.core.heal.apply import suppressed_by_path
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.platform.adapters.notices_seen import due_notices
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.classify import UnresolvedSkill
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, FunnelError
 from reporails_cli.core.platform.dto.discovery import RunExclusions
@@ -147,13 +148,13 @@ def _existing_target_root(token: str, project_root: Path) -> Path | None:
         return None
 
 
-def _token_agent(token: str, agent: str, project_root: Path, sniffed: dict[Path, str]) -> str:
+def _token_agent(run: RunContext, token: str, agent: str, project_root: Path, sniffed: dict[Path, str]) -> str:
     """The agent whose vocabulary reads `token`: sniffed under the project of an existing path
     target, under the current folder's project for anything else (`sniffed` caches per root)."""
 
     root = _existing_target_root(token, project_root) or project_root
     if root not in sniffed:
-        sniffed[root] = sniff_agent(agent, root)
+        sniffed[root] = sniff_agent(run, agent, root)
     return sniffed[root]
 
 
@@ -183,6 +184,7 @@ class RenderContext(NamedTuple):
     ascii_mode: bool = False
     verbose: bool = False
     heal_regressions: tuple[HealRegression, ...] = ()
+    aliases: dict[Path, list[Path]] | None = None
 
 
 def _emit_json(
@@ -251,7 +253,7 @@ def _dispatch_output(
         ruleset_map=ruleset_map,
         funnel_error=funnel_error,
         project_root=context.project_root,
-        extras=TextExtras(context.file_type_by_path, context.heal_regressions),
+        extras=TextExtras(context.file_type_by_path, context.heal_regressions, context.aliases),
     )
 
 

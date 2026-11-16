@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.platform.config.run_context import RunContext
+
 
 class TestRunMProbes:
     """Verify run_m_probes dispatches mechanical and deterministic checks."""
@@ -17,7 +19,7 @@ class TestRunMProbes:
         from reporails_cli.core.discovery.agents import get_all_instruction_files
         from reporails_cli.core.lint.rule_runner import run_m_probes
 
-        files = get_all_instruction_files(level2_project)
+        files = get_all_instruction_files(RunContext(), level2_project)
         if not files:
             pytest.skip("No instruction files in fixture")
         findings = run_m_probes(level2_project, files)
@@ -31,7 +33,7 @@ class TestRunMProbes:
         from reporails_cli.core.lint.rule_runner import run_m_probes
         from reporails_cli.core.platform.dto.models import LocalFinding
 
-        files = get_all_instruction_files(level2_project)
+        files = get_all_instruction_files(RunContext(), level2_project)
         if not files:
             pytest.skip("No instruction files in fixture")
         findings = run_m_probes(level2_project, files)
@@ -46,7 +48,7 @@ class TestRunMProbes:
         from reporails_cli.core.discovery.agents import get_all_instruction_files
         from reporails_cli.core.lint.rule_runner import run_m_probes
 
-        files = get_all_instruction_files(level2_project)
+        files = get_all_instruction_files(RunContext(), level2_project)
         if not files:
             pytest.skip("No instruction files in fixture")
         findings = run_m_probes(level2_project, files)
@@ -61,7 +63,7 @@ class TestRunMProbes:
         from reporails_cli.core.discovery.agents import get_all_instruction_files
         from reporails_cli.core.lint.rule_runner import run_m_probes
 
-        files = get_all_instruction_files(level2_project)
+        files = get_all_instruction_files(RunContext(), level2_project)
         if not files:
             pytest.skip("No instruction files in fixture")
         findings = run_m_probes(level2_project, files, agent="claude")
@@ -86,7 +88,7 @@ class TestRunMProbes:
         from reporails_cli.core.discovery.agents import get_all_instruction_files
         from reporails_cli.core.lint.rule_runner import run_m_probes
 
-        files = get_all_instruction_files(level1_project)
+        files = get_all_instruction_files(RunContext(), level1_project)
         if not files:
             pytest.skip("No instruction files in fixture")
         unscoped = {f.rule for f in run_m_probes(level1_project, files, scoped=False)}

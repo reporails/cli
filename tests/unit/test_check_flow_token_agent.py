@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
 
@@ -38,7 +39,7 @@ def scanned(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
     """Record every directory agent detection is asked to scan."""
     seen: list[Path] = []
 
-    def fake_detect(target: Path, *args: Any, **kwargs: Any) -> list[Any]:
+    def fake_detect(_run: Any, target: Path, *args: Any, **kwargs: Any) -> list[Any]:
         seen.append(Path(target))
         return [SimpleNamespace(agent_type=SimpleNamespace(id="claude"))]
 
@@ -64,7 +65,7 @@ def _two_projects(tmp_path: Path) -> tuple[Path, Path, Path]:
 @pytest.mark.subsys_cli_ux
 def test_a_file_in_another_project_never_scans_the_current_folder(tmp_path: Path, scanned: list[Path]) -> None:
     cwd_project, other, target = _two_projects(tmp_path)
-    state = CheckState(inputs=_inputs(cwd_project, [str(target)]))
+    state = CheckState(run=RunContext(), inputs=_inputs(cwd_project, [str(target)]))
     check_flow._flow_targets(state)
     assert all(not d.is_relative_to(cwd_project) for d in scanned)
     assert scanned and all(d == other for d in scanned)
@@ -75,7 +76,7 @@ def test_a_file_in_another_project_never_scans_the_current_folder(tmp_path: Path
 @pytest.mark.subsys_cli_ux
 def test_a_folder_in_another_project_never_scans_the_current_folder(tmp_path: Path, scanned: list[Path]) -> None:
     cwd_project, other, _ = _two_projects(tmp_path)
-    state = CheckState(inputs=_inputs(cwd_project, [str(other)]))
+    state = CheckState(run=RunContext(), inputs=_inputs(cwd_project, [str(other)]))
     check_flow._flow_targets(state)
     assert all(not d.is_relative_to(cwd_project) for d in scanned)
 
@@ -84,7 +85,7 @@ def test_a_folder_in_another_project_never_scans_the_current_folder(tmp_path: Pa
 @pytest.mark.subsys_cli_ux
 def test_a_capability_word_still_reads_the_current_projects_agent(tmp_path: Path, scanned: list[Path]) -> None:
     cwd_project, _, _ = _two_projects(tmp_path)
-    state = CheckState(inputs=_inputs(cwd_project, ["hooks"]))
+    state = CheckState(run=RunContext(), inputs=_inputs(cwd_project, ["hooks"]))
     check_flow._flow_targets(state)
     assert scanned == [cwd_project]
     assert state.targets.capability_specs == [("hooks", "")]
@@ -94,7 +95,7 @@ def test_a_capability_word_still_reads_the_current_projects_agent(tmp_path: Path
 @pytest.mark.subsys_cli_ux
 def test_a_file_inside_the_current_project_reads_that_project(tmp_path: Path, scanned: list[Path]) -> None:
     cwd_project, _, _ = _two_projects(tmp_path)
-    state = CheckState(inputs=_inputs(cwd_project, [str(cwd_project / "CLAUDE.md")]))
+    state = CheckState(run=RunContext(), inputs=_inputs(cwd_project, [str(cwd_project / "CLAUDE.md")]))
     check_flow._flow_targets(state)
     assert set(scanned) == {cwd_project}
 
@@ -103,6 +104,6 @@ def test_a_file_inside_the_current_project_reads_that_project(tmp_path: Path, sc
 @pytest.mark.subsys_cli_ux
 def test_an_explicit_agent_scans_nothing(tmp_path: Path, scanned: list[Path]) -> None:
     cwd_project, _, target = _two_projects(tmp_path)
-    state = CheckState(inputs=_inputs(cwd_project, [str(target)], agent="claude"))
+    state = CheckState(run=RunContext(), inputs=_inputs(cwd_project, [str(target)], agent="claude"))
     check_flow._flow_targets(state)
     assert scanned == []

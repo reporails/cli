@@ -23,6 +23,7 @@ from reporails_cli.core.discovery.agents import (
     detect_single_agent,
     resolve_agent,
 )
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.discovery import AgentType, DetectedAgent
 
 
@@ -183,7 +184,7 @@ def test_detect_single_agent_scans_repo_scoped(monkeypatch: pytest.MonkeyPatch, 
         return None
 
     monkeypatch.setattr(agents_mod, "discover_from_config", _spy)
-    detect_single_agent(tmp_path, "claude")
+    detect_single_agent(RunContext(), tmp_path, "claude")
     assert captured.get("repo_scoped") is True
 
 

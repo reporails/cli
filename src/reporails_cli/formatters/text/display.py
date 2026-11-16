@@ -315,6 +315,7 @@ class TextExtras(NamedTuple):
 
     file_type_by_path: dict[str, str] | None = None
     heal_regressions: tuple[HealRegression, ...] = ()
+    aliases: dict[Path, list[Path]] | None = None
 
 
 def print_text_result(
@@ -363,7 +364,7 @@ def print_text_result(
         verbose=verbose,
         summary=_SummaryInputs(scope=scope, tier=tier, elapsed_ms=elapsed_ms),
         project_root=root,
-        file_type_by_path=extras.file_type_by_path or {},
+        extras=extras,
         skill_of=skill_of,
     )
     print_not_evaluated(console, result.omissions.not_evaluated)
@@ -407,6 +408,7 @@ def _build_card_context(
     verbose: bool,
     file_type_by_path: dict[str, str],
     skill_of: dict[str, str] | None,
+    aliases: dict[Path, list[Path]],
 ) -> tuple[CardContext, list[SurfaceHealth]]:
     """The per-run card context and the per-surface scores its group headers quote."""
     element_of, partners_of = _element_lookups(result, ruleset_map, project_root)
@@ -415,7 +417,7 @@ def _build_card_context(
         if ruleset_map is not None and ruleset_map.atoms
         else {}
     )
-    aliases_by_file = build_aliases_by_file(project_root, result)
+    aliases_by_file = build_aliases_by_file(project_root, result, aliases)
     surfaces = compute_surface_scores(
         result,
         ruleset_map=ruleset_map,
@@ -448,7 +450,7 @@ def _render_findings_and_scorecard(
     verbose: bool,
     summary: _SummaryInputs,
     project_root: Path,
-    file_type_by_path: dict[str, str],
+    extras: TextExtras,
     skill_of: dict[str, str] | None = None,
 ) -> None:
     """Render file groups, cross-file coordinates, and the bottom scorecard.
@@ -460,14 +462,16 @@ def _render_findings_and_scorecard(
     """
 
     skill_of = skill_lookup(ruleset_map, project_root) if skill_of is None else skill_of
+    file_type_by_path = extras.file_type_by_path or {}
     ctx, surfaces = _build_card_context(
         result,
         ruleset_map,
         project_root,
         ascii_mode=ascii_mode,
         verbose=verbose,
-        file_type_by_path=file_type_by_path,
+        file_type_by_path=extras.file_type_by_path or {},
         skill_of=skill_of,
+        aliases=extras.aliases or {},
     )
     groups = build_file_groups(result, file_type_by_path, project_root, skill_of, ctx.aliases_by_file)
     _render_file_groups(groups, ctx)

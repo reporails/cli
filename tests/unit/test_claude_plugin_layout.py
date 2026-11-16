@@ -18,7 +18,6 @@ import pytest
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.discovery.agent_discovery import discover_from_config
 from reporails_cli.core.discovery.agents import (
-    clear_agent_cache,
     detect_agents,
     get_all_instruction_files,
 )
@@ -30,6 +29,7 @@ from reporails_cli.core.discovery.plugin_roots import (
     split_plugin_pattern,
 )
 from reporails_cli.core.mapper.inspect import _detect_file_activation, load_registry
+from reporails_cli.core.platform.config.run_context import RunContext
 
 MANIFEST = ".claude-plugin/plugin.json"
 SKILL = "---\nname: fmt\ndescription: Formats Python files\n---\n\nRun `ruff format` on each changed file.\n"
@@ -55,10 +55,9 @@ def _rel(project: Path, files: list[Path]) -> set[str]:
 
 
 def _scope(project: Path) -> set[str]:
-    clear_agent_cache()
-    detected = detect_agents(project)
+    detected = detect_agents(RunContext(), project)
     agents = [a for a in detected if a.agent_type.id != "generic"] or detected
-    return _rel(project, get_all_instruction_files(project, agents=agents))
+    return _rel(project, get_all_instruction_files(RunContext(), project, agents=agents))
 
 
 @pytest.mark.unit
@@ -179,8 +178,7 @@ def test_an_unreadable_folder_is_skipped_and_the_plugin_beside_it_is_found(tmp_p
     locked.chmod(0)
     try:
         assert find_plugin_roots(project, MANIFEST, no_exclusions(project)) == [project / "plugins" / "demo"]
-        clear_agent_cache()
-        assert "claude" in {a.agent_type.id for a in detect_agents(project)}
+        assert "claude" in {a.agent_type.id for a in detect_agents(RunContext(), project)}
     finally:
         locked.chmod(0o755)
 
@@ -221,10 +219,9 @@ def test_a_plugin_under_an_excluded_folder_adds_no_capability_surface(tmp_path: 
     from reporails_cli.core.discovery.features import _agent_surface_files, detect_features_filesystem
 
     project = _excluded_plugin_project(tmp_path)
-    clear_agent_cache()
     assert _agent_surface_files(project, "claude", "skills") == []
     assert _agent_surface_files(project, "claude", "agents") == []
-    features = detect_features_filesystem(project)
+    features = detect_features_filesystem(RunContext(), project)
     assert features.has_skills_dir is False
     assert features.has_subagents is False
 
@@ -237,8 +234,7 @@ def test_a_plugin_outside_any_excluded_folder_still_adds_its_surfaces(tmp_path: 
     _write(tmp_path / "CLAUDE.md", "# Project\n\nRun `make test` before committing.\n")
     _write(tmp_path / ".ails" / "config.yml", "exclude_dirs:\n  - third_party\n")
     _plugin(tmp_path / "plugins" / "own")
-    clear_agent_cache()
-    features = detect_features_filesystem(tmp_path)
+    features = detect_features_filesystem(RunContext(), tmp_path)
     assert features.has_skills_dir is True
     assert features.has_subagents is True
 
@@ -254,8 +250,7 @@ def test_one_feature_detection_searches_each_plugin_marker_once(
 
     _write(tmp_path / "CLAUDE.md", "# Project\n\nRun `make test` before committing.\n")
     _plugin(tmp_path / "plugins" / "own")
-    clear_agent_cache()
-    agents = detect_agents(tmp_path)
+    agents = detect_agents(RunContext(), tmp_path)
     searched: list[str] = []
     real = plugin_roots.find_plugin_roots
 
@@ -264,6 +259,6 @@ def test_one_feature_detection_searches_each_plugin_marker_once(
         return real(target, marker, skip)
 
     monkeypatch.setattr(plugin_roots, "find_plugin_roots", spy)
-    detect_features_filesystem(tmp_path, agents=agents)
+    detect_features_filesystem(RunContext(), tmp_path, agents=agents)
     assert searched, "the plugin marker was never searched"
     assert len(searched) == len(set(searched)), f"a marker was searched more than once: {searched}"

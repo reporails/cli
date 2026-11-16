@@ -7,9 +7,10 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.discovery import walk
-from reporails_cli.core.discovery.agents import clear_agent_cache, detect_agents
+from reporails_cli.core.discovery.agents import detect_agents
 from reporails_cli.core.discovery.features import detect_features_filesystem
 from reporails_cli.core.lint.rule_runner import _classify_agent_files
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import Level
 from reporails_cli.core.platform.policy.levels import determine_level_from_gates
 from tests.conftest import skip_if_case_insensitive_fs
@@ -29,15 +30,15 @@ def _marker(root: Path, agent: str) -> None:
 
 
 def _level(root: Path) -> Level:
-    clear_agent_cache()
-    return determine_level_from_gates(detect_features_filesystem(root, agents=detect_agents(root)))
+    return determine_level_from_gates(
+        detect_features_filesystem(RunContext(), root, agents=detect_agents(RunContext(), root))
+    )
 
 
 def _files(root: Path, agent: str) -> list[str]:
-    clear_agent_cache()
     return sorted(
         p.relative_to(root).as_posix()
-        for a in detect_agents(root)
+        for a in detect_agents(RunContext(), root)
         if a.agent_type.id == agent
         for p in a.instruction_files
     )

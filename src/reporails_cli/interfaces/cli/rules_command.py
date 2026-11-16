@@ -15,6 +15,7 @@ from pathlib import Path
 import typer
 
 from reporails_cli.core.discovery.agents import detect_agents
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 from reporails_cli.core.platform.rules.rules_query import list_known_agents
 from reporails_cli.interfaces.cli.helpers import console
@@ -112,7 +113,7 @@ def _capability_agent(agent: str | None) -> str | None:
     """The agent whose capabilities to list: the one named, else the first detected in the cwd."""
     if agent:
         return agent
-    detected = detect_agents(Path.cwd())
+    detected = detect_agents(RunContext(), Path.cwd())
     return detected[0].agent_type.id if detected else None
 
 

@@ -35,6 +35,7 @@ from reporails_cli.core.lint.suppression import (
 from reporails_cli.core.mapper.inspect import file_type_of, load_registry
 from reporails_cli.core.mapper.parse import holds_position
 from reporails_cli.core.mapper.skills import skill_membership, skill_slot_folders, skill_type
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.policy.dependencies import drop_dependent_findings
@@ -66,7 +67,7 @@ if TYPE_CHECKING:
     from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 
 
-def assemble_result(inp: AssembleInputs, exclusions: RunExclusions | None = None) -> CombinedResult:
+def assemble_result(run: RunContext, inp: AssembleInputs, exclusions: RunExclusions | None = None) -> CombinedResult:
     """Fold memory findings + level, merge local + server findings, suppress and mutate.
 
     Returns the merged ``CombinedResult`` after inline suppressions and surface-scoped
@@ -84,7 +85,7 @@ def assemble_result(inp: AssembleInputs, exclusions: RunExclusions | None = None
     if inp.ruleset_map is not None:
         memory_findings = validate_memory_files(inp.ruleset_map.files)
 
-    features = detect_features_filesystem(inp.scan_root, agents=inp.filter_agents, exclusions=exclusions)
+    features = detect_features_filesystem(run, inp.scan_root, agents=inp.filter_agents, exclusions=exclusions)
     level = determine_level_from_gates(features)
 
     all_client_findings = inp.content_findings + inp.client_findings + memory_findings

@@ -14,6 +14,7 @@ from pathlib import Path
 
 from reporails_cli.core.cache.hashing import file_bytes_digest
 from reporails_cli.core.discovery.walk import has_symlink_loop, safe_resolve
+from reporails_cli.core.platform.config.run_context import RunContext
 
 logger = logging.getLogger(__name__)
 
@@ -24,15 +25,6 @@ def has_same_text(first: Path, second: Path) -> bool:
         return first.stat().st_size == second.stat().st_size and first.read_bytes() == second.read_bytes()
     except OSError:
         return False
-
-
-# Cache keyed on project root; cleared alongside the agent cache on --refresh.
-_alias_cache: dict[str, dict[Path, list[Path]]] = {}
-
-
-def clear_alias_cache() -> None:
-    """Clear the per-project alias-map cache."""
-    _alias_cache.clear()
 
 
 def _dedupe_symlinks(paths: list[Path]) -> tuple[list[Path], dict[Path, list[Path]]]:
@@ -112,18 +104,12 @@ def compute_same_dir_content_aliases(paths: Iterable[Path]) -> dict[Path, list[P
     return aliases
 
 
-def _alias_cache_key(target: Path) -> str:
-    """Project-root cache key — matches `_agent_cache` keying so both invalidate
-    together on `--refresh`."""
-    return str(safe_resolve(target))
+def store_alias_cache(run: RunContext, target: Path, aliases: dict[Path, list[Path]]) -> None:
+    """Remember aliases on `run`, keyed by project root, so the display layer can look them up."""
+    run.aliases[safe_resolve(target)] = aliases
 
 
-def store_alias_cache(target: Path, aliases: dict[Path, list[Path]]) -> None:
-    """Cache aliases keyed by project root so the display layer can look them up."""
-    _alias_cache[_alias_cache_key(target)] = aliases
-
-
-def get_file_aliases(target: Path) -> dict[Path, list[Path]]:
+def get_file_aliases(run: RunContext, target: Path) -> dict[Path, list[Path]]:
     """Return the file-alias map produced by the most recent discovery for `target`.
 
     Maps a canonical instruction-file path (absolute) to the list of duplicate
@@ -131,4 +117,4 @@ def get_file_aliases(target: Path) -> dict[Path, list[Path]]:
     same directory (manual copy). Display layer queries this to render
     `name (+alias, +alias)` labels for deduplicated entries.
     """
-    return _alias_cache.get(_alias_cache_key(target), {})
+    return run.aliases.get(safe_resolve(target), {})

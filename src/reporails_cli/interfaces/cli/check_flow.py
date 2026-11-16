@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 import typer
 
 from reporails_cli.core.classify.capability_paths import canonicalize_capability, classify_target_token
+from reporails_cli.core.discovery.file_aliases import get_file_aliases
 from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
 from reporails_cli.core.heal.apply import heal_scope_files, heal_scope_outside
 from reporails_cli.core.pipeline.mapping import (
@@ -31,7 +32,7 @@ from reporails_cli.core.pipeline.mapping import (
 from reporails_cli.core.pipeline.server_gate import server_gate
 from reporails_cli.core.platform.adapters.key_check import handshake
 from reporails_cli.core.platform.config.bootstrap import running_in_ci
-from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.heal import HealRegression
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
@@ -172,6 +173,7 @@ class CheckState:
     """Per-phase sub-objects threaded through the ``ails check`` flow."""
 
     inputs: CheckInputs
+    run: RunContext
     targets: CheckTargets = field(default_factory=CheckTargets)
     scope: CheckScope = field(default_factory=CheckScope)
     pipeline: CheckPipeline = field(default_factory=CheckPipeline)
@@ -183,7 +185,7 @@ def _flow_targets(state: CheckState) -> None:
     if state.inputs.targets:
         sniffed: dict[Path, str] = {}
         for token in state.inputs.targets:
-            sniff_agent = _token_agent(token, state.inputs.agent, state.inputs.project_root, sniffed)
+            sniff_agent = _token_agent(state.run, token, state.inputs.agent, state.inputs.project_root, sniffed)
             kind, payload = classify_target_token(token, sniff_agent, state.inputs.project_root)
             if kind == "capability" and isinstance(payload, tuple):
                 state.targets.capability_specs.append(payload)
@@ -232,7 +234,7 @@ def _resolve_scope_at_target(state: CheckState, capability_paths: frozenset[Path
     run against it at all.
     """
 
-    config = get_project_config(state.targets.target)
+    config = state.run.project_config(state.targets.target)
     state.scope.generic_scanning = bool(config.generic_scanning)
     agent_arg = state.inputs.agent or config.default_agent
     if agent_arg:
@@ -243,7 +245,9 @@ def _resolve_scope_at_target(state: CheckState, capability_paths: frozenset[Path
         _named_paths(state, capability_paths),
     )
     scan = not state.targets.single_file
-    found = discover_scope(state.targets.target, agent_arg, *flags, scan_files=scan, named=named, narrowed=narrowed)
+    found = discover_scope(
+        state.run, state.targets.target, agent_arg, *flags, scan_files=scan, named=named, narrowed=narrowed
+    )
     state.render.excluded, state.scope.exclusions = found.excluded, found.exclusions
     state.scope.detected, state.scope.filtered = found.detected, found.filtered
     state.scope.effective_agent, state.scope.assumed, state.scope.mixed = (
@@ -357,6 +361,7 @@ def _flow_render(state: CheckState) -> None:
                 ascii_mode=state.inputs.ascii_mode,
                 verbose=state.inputs.verbose,
                 heal_regressions=state.render.heal_regressions,
+                aliases=get_file_aliases(state.run, state.targets.target),
             ),
         )
     state.pipeline.stage_timer.mark("render")

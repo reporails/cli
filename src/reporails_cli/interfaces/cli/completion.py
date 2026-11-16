@@ -12,6 +12,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import detect_agents
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.rules.rules_query import list_known_agents, load_all_rules
 
@@ -50,7 +51,7 @@ def complete_capability(incomplete: str) -> list[str]:
     )
 
     project_root = Path.cwd()
-    detected = detect_agents(project_root)
+    detected = detect_agents(RunContext(), project_root)
     if not detected:
         return []
     agent_id = detected[0].agent_type.id
@@ -87,7 +88,7 @@ def _complete_capability_target_name(capability: str, name_prefix: str) -> list[
     )
 
     project_root = Path.cwd()
-    detected = detect_agents(project_root)
+    detected = detect_agents(RunContext(), project_root)
     if not detected:
         return []
     agent_id = detected[0].agent_type.id

@@ -15,6 +15,7 @@ import pytest
 from reporails_cli.core.lint.client_checks import FORMATTING_RULE
 from reporails_cli.core.lint.suppression import rule_aliases
 from reporails_cli.core.pipeline.assemble import assemble_result, lint_request_local, reported_local_findings
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.diagnostics import (
     CrossFileCoordinate,
     CrossFileFinding,
@@ -74,7 +75,7 @@ def test_a_disabled_rule_drops_an_m_probe_finding(tmp_path):
     root = _project(tmp_path)
     inp = _inputs(root, m_findings=[_finding(_DISABLED, "m_probe"), _finding(_OTHER, "m_probe")])
 
-    result = assemble_result(inp)
+    result = assemble_result(RunContext(), inp)
 
     assert _rules(result) == [_OTHER]
     assert result.stats.m_probe_count == 1
@@ -86,7 +87,7 @@ def test_a_disabled_rule_drops_a_content_check_finding(tmp_path):
     root = _project(tmp_path)
     inp = _inputs(root, content_findings=[_finding(_DISABLED), _finding(_OTHER)])
 
-    assert _rules(assemble_result(inp)) == [_OTHER]
+    assert _rules(assemble_result(RunContext(), inp)) == [_OTHER]
 
 
 @pytest.mark.unit
@@ -96,7 +97,7 @@ def test_a_disabled_rule_drops_the_formatting_client_checks(tmp_path, check):
     root = _project(tmp_path)
     inp = _inputs(root, client_findings=[_finding(FORMATTING_RULE, check_id=check)])
 
-    assert assemble_result(inp).findings == ()
+    assert assemble_result(RunContext(), inp).findings == ()
     assert lint_request_local(inp)[0] == []
     assert reported_local_findings(inp) == ()
 
@@ -107,7 +108,7 @@ def test_a_formatting_client_check_is_reported_when_its_rule_is_on(tmp_path):
     root = _project(tmp_path, disabled=())
     inp = _inputs(root, client_findings=[_finding(FORMATTING_RULE, check_id="bold")])
 
-    result = assemble_result(inp)
+    result = assemble_result(RunContext(), inp)
 
     assert [(f.rule, f.check_id) for f in result.findings] == [(FORMATTING_RULE, "bold")]
 
@@ -122,7 +123,7 @@ def test_an_agent_exclude_drops_a_client_check_finding(tmp_path, monkeypatch):
     )
     inp = _inputs(root, client_findings=[_finding(FORMATTING_RULE, check_id="format"), _finding(_OTHER)])
 
-    assert _rules(assemble_result(inp)) == [_OTHER]
+    assert _rules(assemble_result(RunContext(), inp)) == [_OTHER]
 
 
 @pytest.mark.unit
@@ -131,7 +132,7 @@ def test_a_token_that_names_no_rule_is_kept(tmp_path):
     root = _project(tmp_path)
     inp = _inputs(root, client_findings=[_finding("ambiguous_charge"), _finding("memory_frontmatter")])
 
-    assert _rules(assemble_result(inp)) == ["ambiguous_charge", "memory_frontmatter"]
+    assert _rules(assemble_result(RunContext(), inp)) == ["ambiguous_charge", "memory_frontmatter"]
 
 
 def _served(root):
@@ -171,7 +172,7 @@ def test_a_disabled_rule_drops_a_server_diagnostic_and_its_workflow_rows(tmp_pat
     root = _project(tmp_path)
     (root / "CLAUDE.md").write_text("# Project\n\nOne.\n\nTwo.\n\nThree.\n", encoding="utf-8")
 
-    result = assemble_result(_inputs(root, lint_result=_served(root)))
+    result = assemble_result(RunContext(), _inputs(root, lint_result=_served(root)))
 
     assert _rules(result) == [_OTHER]
     rows = [f.rule for loc in result.reply.workflow.locations for f in loc.findings]
@@ -190,7 +191,7 @@ def test_the_reported_local_findings_agree_with_the_assembled_result(tmp_path):
     )
 
     assert [(f.rule, f.line) for f in reported_local_findings(inp)] == [
-        (f.rule, f.line) for f in assemble_result(inp).findings
+        (f.rule, f.line) for f in assemble_result(RunContext(), inp).findings
     ]
 
 
@@ -204,7 +205,7 @@ def test_a_directive_names_the_rule_id_or_its_slug(tmp_path, name, silences):
         root, client_findings=[LocalFinding("CLAUDE.md", 3, "warning", FORMATTING_RULE, "m", check_id="bold")]
     )
 
-    assert (assemble_result(inp).findings == ()) is silences
+    assert (assemble_result(RunContext(), inp).findings == ()) is silences
 
 
 @pytest.mark.unit
@@ -232,7 +233,7 @@ def test_a_rule_one_agent_excludes_stays_when_another_agent_of_the_run_keeps_it(
         client_findings=[_finding(FORMATTING_RULE, check_id="format"), _finding(_OTHER)],
     )
 
-    assert sorted(_rules(assemble_result(inp))) == sorted([FORMATTING_RULE, _OTHER])
+    assert sorted(_rules(assemble_result(RunContext(), inp))) == sorted([FORMATTING_RULE, _OTHER])
 
 
 @pytest.mark.unit
@@ -246,7 +247,7 @@ def test_a_rule_every_agent_of_the_run_excludes_is_dropped(tmp_path, monkeypatch
         client_findings=[_finding(FORMATTING_RULE, check_id="format"), _finding(_OTHER)],
     )
 
-    assert _rules(assemble_result(inp)) == [_OTHER]
+    assert _rules(assemble_result(RunContext(), inp)) == [_OTHER]
 
 
 _REPEAT = "CORE:C:0040"
@@ -290,7 +291,7 @@ def test_a_disabled_rule_drops_its_workflow_relations(tmp_path):
     root = _project(tmp_path, disabled=(_OVERLAP,))
     served = _cross_file_served(())
 
-    result = assemble_result(_inputs(root, lint_result=served))
+    result = assemble_result(RunContext(), _inputs(root, lint_result=served))
 
     assert [r.rule for loc in result.reply.workflow.locations for r in loc.relations] == [_REPEAT]
 
@@ -304,7 +305,7 @@ def test_a_disabled_rule_drops_its_hints_cross_file_rows_and_coordinates(tmp_pat
         CrossFileFinding("CLAUDE.md", "a.md", 5, 2, "repetition"),
     )
 
-    result = assemble_result(_inputs(root, lint_result=_cross_file_served(rows)))
+    result = assemble_result(RunContext(), _inputs(root, lint_result=_cross_file_served(rows)))
 
     assert [h.diagnostic_type for h in result.hints] == [_REPEAT]
     assert [r.finding_type for r in result.cross_file] == ["repetition"]
@@ -319,7 +320,7 @@ def test_the_cross_file_data_stays_when_its_rules_are_on(tmp_path):
     root = _project(tmp_path, disabled=())
     rows = (CrossFileFinding("CLAUDE.md", "a.md", 3, 1, "overlap"),)
 
-    result = assemble_result(_inputs(root, lint_result=_cross_file_served(rows)))
+    result = assemble_result(RunContext(), _inputs(root, lint_result=_cross_file_served(rows)))
 
     assert len(result.hints) == 2
     assert len(result.cross_file) == 1

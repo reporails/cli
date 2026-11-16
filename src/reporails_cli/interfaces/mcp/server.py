@@ -15,6 +15,7 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from reporails_cli.core.mapper.model_manifest import ModelFetchError
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_str
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
@@ -168,15 +169,16 @@ async def _fresh_validate_payload(
     """Run the pipeline fresh (never served from `state.full_payload`): resolve `tokens` first,
     narrow `workflow.locations` to them (`keep_target_locations`) and memoize the map/score on
     `state`. Returns `(payload, ruleset_map, score)`, or the target-resolution error payload."""
+    run = RunContext()
     selection: tuple[set[Path], set[Path]] | None = None
     if tokens:
-        resolved = await asyncio.to_thread(resolve_validate_targets, tokens, scan_root)
+        resolved = await asyncio.to_thread(resolve_validate_targets, run, tokens, scan_root)
         if isinstance(resolved, dict):
             return resolved
         selection = resolved
     # Blocking pipeline work runs off the event loop.
     payload, ruleset_map, score = await asyncio.to_thread(
-        run_pipeline_for_path, path, True, named_files(selection), project_root=scan_root
+        run_pipeline_for_path, path, True, named_files(selection), project_root=scan_root, run=run
     )
     if selection is not None and "files" in payload:
         payload = keep_target_locations(payload, *selection, scan_root, tokens)

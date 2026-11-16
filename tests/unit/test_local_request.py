@@ -15,6 +15,7 @@ import pytest
 from reporails_cli.core.pipeline import assemble as assemble_module
 from reporails_cli.core.pipeline.assemble import lint_request_local
 from reporails_cli.core.platform.adapters.payload import project_local
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import LocalEntry, LocalFinding
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap
@@ -29,7 +30,7 @@ def _inputs(root: Path) -> AssembleInputs:
     from reporails_cli.core.discovery.agents import get_all_instruction_files
     from reporails_cli.core.lint.rule_runner import run_m_probes
 
-    files = get_all_instruction_files(root)
+    files = get_all_instruction_files(RunContext(), root)
     return AssembleInputs(
         m_findings=run_m_probes(root, files, agent="claude"),
         content_findings=[],

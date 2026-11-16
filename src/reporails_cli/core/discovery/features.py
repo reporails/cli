@@ -19,6 +19,7 @@ from reporails_cli.core.discovery.agents import detect_agents, get_all_instructi
 from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions
 from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.walk import is_under, safe_resolve
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions, SurfaceScan
 from reporails_cli.core.platform.dto.hooks import HookConfig
@@ -55,6 +56,7 @@ def _detect_path_scoped_rules(
 
 
 def detect_features_filesystem(
+    run: RunContext,
     target: Path,
     agents: list[DetectedAgent] | None = None,
     exclusions: RunExclusions | None = None,
@@ -78,7 +80,7 @@ def detect_features_filesystem(
     # computed per detected agent, from that agent's own config.yml, rather than
     # a fixed Claude-path list, so a Copilot, Codex, Cursor or Antigravity project
     # gates on its own declared surfaces.
-    resolved_agents = agents if agents is not None else detect_agents(target)
+    resolved_agents = agents if agents is not None else detect_agents(run, target)
     agent_ids = {a.agent_type.id for a in resolved_agents}
     scan = scan_for_target(target, exclusions)
 
@@ -87,7 +89,7 @@ def detect_features_filesystem(
     # `~/.claude/CLAUDE.md` get pulled in by claude's user-scope patterns,
     # but they are not part of the project's instruction-file inventory and
     # would inflate the L2 gate (`has_multiple_instruction_files`).
-    all_instruction_files = get_all_instruction_files(target, agents=resolved_agents)
+    all_instruction_files = get_all_instruction_files(run, target, agents=resolved_agents)
     project_instruction_files = [f for f in all_instruction_files if is_under(f, target)]
     features.discovery.has_multiple_instruction_files = len(project_instruction_files) > 1
     features.has_instruction_file = (target / "CLAUDE.md").exists() or bool(project_instruction_files)

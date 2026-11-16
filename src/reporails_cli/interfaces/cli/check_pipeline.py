@@ -184,7 +184,7 @@ def _flow_assemble(state: CheckState) -> None:
     """
 
     state.render.result = with_exclusions(
-        assemble_result(_assemble_inputs(state, state.pipeline.lint_result), state.scope.exclusions),
+        assemble_result(state.run, _assemble_inputs(state, state.pipeline.lint_result), state.scope.exclusions),
         state.render.excluded,
     )
     # `assemble_result` unpacks the lint result (report/hints/cross_file_coordinates/tier)

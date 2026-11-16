@@ -27,7 +27,8 @@ from reporails_cli.core.pipeline.mapping import (
     discover_scope,
     map_instruction_files,
 )
-from reporails_cli.core.platform.config.config import get_project_config, get_rules_path, is_initialized
+from reporails_cli.core.platform.config.config import get_rules_path, is_initialized
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.diagnostics import FindingItem, FunnelError, LintResponse, LintResult, Notice
 from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
 from reporails_cli.core.platform.dto.models import LocalFinding
@@ -51,9 +52,6 @@ def rules_missing_message() -> str:
         "package: reinstall reporails-cli, or, if the config sets `framework_path`, point it "
         "at a folder that holds them or remove the setting."
     )
-
-
-NOTHING_LEFT_OUT = LeftOut()
 
 
 def resolve_scan_target(target: Path, project_root: Path) -> tuple[Path, Path | None]:
@@ -82,7 +80,7 @@ def resolve_scan_target(target: Path, project_root: Path) -> tuple[Path, Path | 
 
 
 def discover_files(
-    target: Path, single_file: Path | None = None, named: frozenset[Path] = frozenset()
+    run: RunContext, target: Path, single_file: Path | None = None, named: frozenset[Path] = frozenset()
 ) -> Discovered | Refusal:
     """Detect agents and discover instruction files.
 
@@ -99,7 +97,7 @@ def discover_files(
     files the caller named, which stay in the set whatever is excluded.
     """
 
-    config = get_project_config(target)
+    config = run.project_config(target)
     normalized_agent = (config.default_agent or "").lower().strip()
     if normalized_agent and normalized_agent not in get_known_agents():
         return Refusal("unknown_agent", f"Unknown agent: {normalized_agent}", agent=normalized_agent)
@@ -109,6 +107,7 @@ def discover_files(
     # scan includes each agent's config surfaces (hooks, permissions, MCP declarations, plugin
     # manifests) alongside its instruction and rule files, matching `ails check`'s own scope.
     found = discover_scope(
+        run,
         target,
         config.default_agent,
         None,
@@ -131,6 +130,7 @@ def discover_files(
         instruction_files,
         file_type_by_path,
         LeftOut(found.excluded, found.exclusions),
+        config,
     )
 
 
@@ -190,7 +190,9 @@ def model_refusal() -> Refusal | None:
     return None
 
 
-def scope_for_path(path: str, project_root: Path, named: frozenset[Path] = frozenset()) -> Scope | Refusal:
+def scope_for_path(
+    path: str, project_root: Path, named: frozenset[Path] = frozenset(), *, run: RunContext
+) -> Scope | Refusal:
     """The files a check at `path` covers, or why there is nothing to check.
 
     A `path` inside `project_root` is checked in that folder's
@@ -206,7 +208,7 @@ def scope_for_path(path: str, project_root: Path, named: frozenset[Path] = froze
     if not target.exists():
         return Refusal("path_not_found", f"Path not found: {target}")
     scan_root, single_file = resolve_scan_target(target, project_root)
-    discovery = discover_files(scan_root, single_file=single_file, named=named)
+    discovery = discover_files(run, scan_root, single_file=single_file, named=named)
     if isinstance(discovery, Refusal):
         return discovery
     model_error = model_refusal()
@@ -219,7 +221,12 @@ def scope_for_path(path: str, project_root: Path, named: frozenset[Path] = froze
                 "empty_project", f"No instruction files found in {target}", target, discovery.left_out.record
             )
         discovery = Discovered(
-            discovery.filter_agents, discovery.effective_agent, inside, discovery.file_type_by_path, discovery.left_out
+            discovery.filter_agents,
+            discovery.effective_agent,
+            inside,
+            discovery.file_type_by_path,
+            discovery.left_out,
+            discovery.config,
         )
     return Scope(scan_root, single_file, *discovery)
 
@@ -246,13 +253,16 @@ def display_score(result: CombinedResult, target: Path | None = None, scan_root:
 
 
 def _agent_file_pairs(
-    scan_root: Path, instruction_files: list[Path], filter_agents: list[DetectedAgent], effective_agent: str
+    scan_root: Path,
+    instruction_files: list[Path],
+    filter_agents: list[DetectedAgent],
+    effective_agent: str,
+    explicit: bool,
 ) -> list[tuple[str, list[Path]]]:
     """The shared `core.pipeline.mapping.agent_file_pairs` split: whether the agent is explicit can only
     come from the project's `default_agent` (a call has no per-run `--agent`-style override the way the CLI
     has one)."""
 
-    explicit = bool(get_project_config(scan_root).default_agent)
     return agent_file_pairs(
         instruction_files, filter_agents, scan_root, explicit=explicit, effective_agent=effective_agent
     )
@@ -341,27 +351,28 @@ def _assemble_inputs(
 
 
 def _assemble(
-    inputs: AssembleInputs, exclusions: RunExclusions | None, lint: LintService
+    run: RunContext, inputs: AssembleInputs, exclusions: RunExclusions | None, lint: LintService
 ) -> tuple[CombinedResult, FunnelError | None]:
     """Server-lint the local findings, then run the shared assemble spine. Returns `(result, funnel_error)`."""
     lint_result, funnel_error, notices = _server_lint_result(inputs, lint)
-    return assemble_result(replace(inputs, lint_result=lint_result, notices=notices), exclusions), funnel_error
+    return assemble_result(run, replace(inputs, lint_result=lint_result, notices=notices), exclusions), funnel_error
 
 
 def check_and_assemble(
-    scan_root: Path,
-    instruction_files: list[Path],
-    effective_agent: str,
-    filter_agents: list[DetectedAgent],
-    ruleset_map: RulesetMap | None,
-    *,
-    left_out: LeftOut = NOTHING_LEFT_OUT,
-    scoped: bool = False,
-    lint: LintService,
+    run: RunContext, scope: Scope, ruleset_map: RulesetMap | None, *, lint: LintService
 ) -> tuple[CombinedResult, FunnelError | None]:
-    """Run the local checks, then the server lint and assemble spine; the request is resolved under the
-    agents whose rules ran."""
-    pairs = _agent_file_pairs(scan_root, instruction_files, filter_agents, effective_agent)
+    """Run the local checks over `scope`, then the server lint and assemble spine; the request is resolved
+    under the agents whose rules ran. A single-file scope runs the M-probes scoped to it."""
+    scan_root, effective_agent, filter_agents, left_out = (
+        scope.scan_root,
+        scope.effective_agent,
+        scope.filter_agents,
+        scope.left_out,
+    )
+    scoped = scope.single_file is not None
+    pairs = _agent_file_pairs(
+        scan_root, scope.instruction_files, filter_agents, effective_agent, bool(scope.config.default_agent)
+    )
     with not_evaluated_scope() as unfinished:
         local = _checks_over_pairs(scan_root, pairs, ruleset_map, scoped, left_out.exclusions)
 
@@ -374,11 +385,11 @@ def check_and_assemble(
         rule_agents=tuple(dict.fromkeys(agent_id for agent_id, _ in pairs)),
         not_evaluated=tuple(unfinished),
     )
-    result, funnel_error = _assemble(inputs, left_out.exclusions, lint)
+    result, funnel_error = _assemble(run, inputs, left_out.exclusions, lint)
     return with_exclusions(result, left_out.record), funnel_error
 
 
-def check_scope(scope: Scope, lint: LintService) -> CheckRun:
+def check_scope(run: RunContext, scope: Scope, lint: LintService) -> CheckRun:
     """Run M-probes + content/client checks over a scope's files and assemble the result.
 
     Regime and surface health key against `scope.scan_root` (the checked path), not the server cwd.
@@ -391,16 +402,7 @@ def check_scope(scope: Scope, lint: LintService) -> CheckRun:
     """
 
     ruleset_map, mapper_error = build_map(scope.scan_root, scope.instruction_files, scope.filter_agents)
-    result, funnel_error = check_and_assemble(
-        scope.scan_root,
-        scope.instruction_files,
-        scope.effective_agent,
-        scope.filter_agents,
-        ruleset_map,
-        left_out=scope.left_out,
-        scoped=scope.single_file is not None,
-        lint=lint,
-    )
+    result, funnel_error = check_and_assemble(run, scope, ruleset_map, lint=lint)
     file_score = display_score(result, scope.single_file, scope.scan_root) if scope.single_file is not None else None
     return CheckRun(result, funnel_error, ruleset_map, mapper_error, file_score, scope)
 
@@ -412,7 +414,7 @@ def file_findings(run: CheckRun, file: Path) -> tuple[FindingItem, ...]:
 
 
 def check_path(
-    path: str, project_root: Path, named: frozenset[Path] = frozenset(), *, lint: LintService
+    path: str, project_root: Path, named: frozenset[Path] = frozenset(), *, lint: LintService, run: RunContext
 ) -> CheckRun | Refusal:
     """Check `path` (directory or file): the `CheckRun`, or the `Refusal` saying why nothing was checked.
 
@@ -420,9 +422,9 @@ def check_path(
     missing file, a bad value or a runtime failure while checking is a `failed` refusal carrying its text.
     """
     try:
-        scope = scope_for_path(path, project_root, named)
+        scope = scope_for_path(path, project_root, named, run=run)
         if isinstance(scope, Refusal):
             return scope
-        return check_scope(scope, lint)
+        return check_scope(run, scope, lint)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return Refusal("failed", str(e) or f"The check failed ({type(e).__name__}).")

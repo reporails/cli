@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.pipeline.mapping import discover_scope
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.pipeline import Discovered, Refusal
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
@@ -51,8 +51,7 @@ def _project(root: Path) -> Path:
 @pytest.mark.subsys_lint
 def test_discover_scope_reads_each_directory_once(tmp_path: Path, walker_scans: list[str]) -> None:
     project = _project(tmp_path)
-    clear_agent_cache()
-    found = discover_scope(project, "", [], [])
+    found = discover_scope(RunContext(), project, "", [], [])
     assert {p.name for p in found.files} >= {
         "CLAUDE.md",
         "SKILL.md",
@@ -66,7 +65,6 @@ def test_discover_scope_reads_each_directory_once(tmp_path: Path, walker_scans: 
 @pytest.mark.subsys_lint
 def test_check_scope_discovery_reads_each_directory_once(tmp_path: Path, walker_scans: list[str]) -> None:
     project = _project(tmp_path)
-    clear_agent_cache()
     inputs = CheckInputs(
         targets=[],
         format_opt="json",
@@ -81,7 +79,7 @@ def test_check_scope_discovery_reads_each_directory_once(tmp_path: Path, walker_
         cwd=False,
         project_root=project,
     )
-    state = CheckState(inputs=inputs)
+    state = CheckState(run=RunContext(), inputs=inputs)
     state.targets.target = project
     check_flow._resolve_scope_at_target(state)
     assert {p.name for p in state.scope.instruction_files} >= {"CLAUDE.md", "SKILL.md"}
@@ -93,8 +91,7 @@ def test_check_scope_discovery_reads_each_directory_once(tmp_path: Path, walker_
 @pytest.mark.subsys_lint
 def test_mcp_discovery_reads_each_directory_once(tmp_path: Path, walker_scans: list[str]) -> None:
     project = _project(tmp_path)
-    clear_agent_cache()
-    discovered = check_one.discover_files(project)
+    discovered = check_one.discover_files(RunContext(), project)
     assert isinstance(discovered, Discovered)
     assert {p.name for p in discovered.instruction_files} >= {"CLAUDE.md", "SKILL.md"}
     assert walker_scans
@@ -107,8 +104,7 @@ def test_discover_scope_records_flag_and_config_exclusions_once(tmp_path: Path) 
     project = _project(tmp_path)
     (project / ".ails").mkdir()
     (project / ".ails" / "config.yml").write_text("exclude_dirs: [vendor, docs]\n", encoding="utf-8")
-    clear_agent_cache()
-    found = discover_scope(project, "", ["docs", "agents"], ["b.md", "a.md", "b.md"])
+    found = discover_scope(RunContext(), project, "", ["docs", "agents"], ["b.md", "a.md", "b.md"])
     assert found.excluded == (("agents", "docs", "vendor"), ("a.md", "b.md"))
 
 
@@ -118,9 +114,8 @@ def test_a_single_file_pass_records_no_exclusions(tmp_path: Path) -> None:
     project = _project(tmp_path)
     (project / ".ails").mkdir()
     (project / ".ails" / "config.yml").write_text("exclude_dirs: [vendor]\n", encoding="utf-8")
-    clear_agent_cache()
-    assert discover_scope(project, "", ["docs"], ["a.md"], scan_files=False).excluded == ((), ())
-    found = check_one.discover_files(project, single_file=project / "CLAUDE.md")
+    assert discover_scope(RunContext(), project, "", ["docs"], ["a.md"], scan_files=False).excluded == ((), ())
+    found = check_one.discover_files(RunContext(), project, single_file=project / "CLAUDE.md")
     assert isinstance(found, Discovered)
     assert found.left_out.record == ((), ())
 
@@ -133,8 +128,7 @@ def test_mcp_discovery_that_excludes_everything_still_names_the_exclusions(tmp_p
     (project / ".ails" / "config.yml").write_text(
         "exclude_dirs: [pkg, .claude]\nexclude_files: [CLAUDE.md, AGENTS.md]\n", encoding="utf-8"
     )
-    clear_agent_cache()
-    refusal = check_one.discover_files(project)
+    refusal = check_one.discover_files(RunContext(), project)
     assert isinstance(refusal, Refusal)
     assert refusal.kind == "empty_project"
     payload = tools.refusal_payload(refusal)

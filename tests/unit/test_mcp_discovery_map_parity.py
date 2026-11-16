@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from reporails_cli.core.pipeline import check_one
+from reporails_cli.core.platform.config.run_context import RunContext
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_map]
 
@@ -67,25 +68,25 @@ def test_discover_files_discovers_against_filtered_agents(monkeypatch, tmp_path)
     captured = {}
 
     monkeypatch.setattr(
-        "reporails_cli.core.platform.config.config.get_project_config",
+        "reporails_cli.core.platform.config.run_context.get_project_config",
         lambda _t: SimpleNamespace(default_agent="", exclude_dirs=[], exclude_files=[], generic_scanning=False),
     )
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.mapping.detect_agents",
-        lambda _t: ["RAW_DETECTED_AGENT"],
+        lambda _r, _t: ["RAW_DETECTED_AGENT"],
     )
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.mapping.resolve_agent_filters",
         lambda *_a, **_k: ("claude", False, False, sentinel_filtered),
     )
 
-    def fake_get_all(target, agents=None):
+    def fake_get_all(_run, target, agents=None):
         captured["agents"] = agents
         return [tmp_path / "CLAUDE.md"]
 
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.get_all_scannable_files", fake_get_all)
 
-    filter_agents, agent, *_ = check_one.discover_files(tmp_path)
+    filter_agents, agent, *_ = check_one.discover_files(RunContext(), tmp_path)
 
     assert captured["agents"] == sentinel_filtered, "discovery must key off the filtered agent set"
     assert filter_agents == sentinel_filtered
@@ -98,7 +99,6 @@ def test_prepare_and_validate_map_the_same_files_for_a_named_left_out_file(monke
     """A file named in `targets` that the config leaves out is mapped by `prepare` exactly as by `validate`."""
     import asyncio
 
-    from reporails_cli.core.discovery.agents import clear_agent_cache
     from reporails_cli.core.platform.dto.platform import CombinedResult
     from reporails_cli.interfaces.mcp import server
     from reporails_cli.interfaces.mcp.prepare import prepare_for_path
@@ -109,7 +109,6 @@ def test_prepare_and_validate_map_the_same_files_for_a_named_left_out_file(monke
     (project / ".ails" / "config.yml").write_text("exclude_dirs: [packages]\n", encoding="utf-8")
     (project / "CLAUDE.md").write_text("# Root\n\nAlways run the tests.\n", encoding="utf-8")
     (project / "packages" / "x" / "CLAUDE.md").write_text("# X\n\nAlways run the tests.\n", encoding="utf-8")
-    clear_agent_cache()
     seen: list[tuple[Path, list[Path]]] = []
 
     def capture(target, files, **_kw):

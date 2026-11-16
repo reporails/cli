@@ -21,6 +21,7 @@ from reporails_cli.core.discovery.features import (
     _agent_hook_files,
     detect_features_filesystem,
 )
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import Level
 from reporails_cli.core.platform.policy.levels import determine_level_from_gates
 
@@ -48,8 +49,8 @@ def _write(root: Path, rel: str, content: str) -> None:
 
 
 def _level(project: Path) -> Level:
-    agents = detect_agents(project)
-    features = detect_features_filesystem(project, agents=agents)
+    agents = detect_agents(RunContext(), project)
+    features = detect_features_filesystem(RunContext(), project, agents=agents)
     return determine_level_from_gates(features)
 
 
@@ -84,8 +85,8 @@ class TestClaudeLevelPinned:
         governance — only its existence changed, not the file's content."""
         _write(tmp_path, "CLAUDE.md", "# Project\n")
         _write(tmp_path, ".claude/settings.json", '{"permissions": {"deny": ["Read(./.env)"]}}')
-        agents = detect_agents(tmp_path)
-        features = detect_features_filesystem(tmp_path, agents=agents)
+        agents = detect_agents(RunContext(), tmp_path)
+        features = detect_features_filesystem(RunContext(), tmp_path, agents=agents)
         assert features.hook_files == ()
 
 
@@ -190,7 +191,7 @@ class TestCodexAndAntigravityNestedScoping:
         hooks enter the picture."""
         _write(tmp_path, "AGENTS.md", "# Project\n")
         _write(tmp_path, "pkg/AGENTS.md", "# Pkg\n\nUse pnpm in this package.\n")
-        features = detect_features_filesystem(tmp_path, agents=detect_agents(tmp_path))
+        features = detect_features_filesystem(RunContext(), tmp_path, agents=detect_agents(RunContext(), tmp_path))
         assert features.has_path_scoped_rules is True
 
     @pytest.mark.unit
@@ -234,8 +235,8 @@ class TestCodexAndAntigravityNestedScoping:
         (correct) nested-fallback credit instead of testing Cursor's own gate."""
         _write(tmp_path, "AGENTS.md", "# Project\n")
         _write(tmp_path, "pkg/AGENTS.md", "# Pkg\n")
-        cursor_only = [detect_single_agent(tmp_path, "cursor")]
-        features = detect_features_filesystem(tmp_path, agents=cursor_only)
+        cursor_only = [detect_single_agent(RunContext(), tmp_path, "cursor")]
+        features = detect_features_filesystem(RunContext(), tmp_path, agents=cursor_only)
         assert features.has_path_scoped_rules is False
 
     @pytest.mark.unit
@@ -246,8 +247,8 @@ class TestCodexAndAntigravityNestedScoping:
         instructions/*.instructions.md` must not grant L3 either."""
         _write(tmp_path, ".github/copilot-instructions.md", "# Project\n")
         _write(tmp_path, "pkg/AGENTS.md", "# Pkg\n")
-        copilot_only = [detect_single_agent(tmp_path, "copilot")]
-        features = detect_features_filesystem(tmp_path, agents=copilot_only)
+        copilot_only = [detect_single_agent(RunContext(), tmp_path, "copilot")]
+        features = detect_features_filesystem(RunContext(), tmp_path, agents=copilot_only)
         assert features.has_path_scoped_rules is False
 
 
@@ -303,8 +304,8 @@ class TestLevelFollowsTheCheckedAgent:
     def test_claude_hooks_folder_does_not_govern_a_codex_project(self, tmp_path: Path) -> None:
         _write(tmp_path, "AGENTS.md", "# Project\n")
         _write(tmp_path, ".claude/hooks/x.sh", "#!/bin/sh\nexit 0\n")
-        codex_only = [detect_single_agent(tmp_path, "codex")]
-        features = detect_features_filesystem(tmp_path, agents=codex_only)
+        codex_only = [detect_single_agent(RunContext(), tmp_path, "codex")]
+        features = detect_features_filesystem(RunContext(), tmp_path, agents=codex_only)
         assert features.hook_files == ()
         assert determine_level_from_gates(features) != Level.L6
 
@@ -322,8 +323,12 @@ class TestLevelFollowsTheCheckedAgent:
         monkeypatch.setattr(Path, "home", lambda: home)
         _write(project, "CLAUDE.md", "# Project\n")
         _write(project, "AGENTS.md", "# Project\n")
-        claude = detect_features_filesystem(project, agents=[detect_single_agent(project, "claude")])
-        codex = detect_features_filesystem(project, agents=[detect_single_agent(project, "codex")])
+        claude = detect_features_filesystem(
+            RunContext(), project, agents=[detect_single_agent(RunContext(), project, "claude")]
+        )
+        codex = detect_features_filesystem(
+            RunContext(), project, agents=[detect_single_agent(RunContext(), project, "codex")]
+        )
         assert determine_level_from_gates(claude) == Level.L7
         assert determine_level_from_gates(codex) != Level.L7
 

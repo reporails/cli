@@ -26,6 +26,7 @@ import pytest
 
 from reporails_cli.core.discovery.exclusions import parse_run_exclusions, with_named
 from reporails_cli.core.pipeline import mapping
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_map]
@@ -665,13 +666,13 @@ def test_resolve_agent_filters_keeps_generic_scope_when_nothing_distinctive_dete
     entry) must still discover its own instruction files. The auto-detect branch's
     `[a for a in all_detected if a.agent_type.id != "generic"]` line drops `generic`
     unconditionally, so when `generic` is the ONLY detected entry, `filtered` came back
-    empty and `get_all_instruction_files(target, agents=filtered)` found nothing --
+    empty and `get_all_instruction_files(RunContext(), target, agents=filtered)` found nothing --
     the whole-project scan silently scored zero files instead of running core rules on
     the one file it has: this must fall back to the detected set, not to an empty
     scope."""
     generic = _detected("generic", ["/proj/AGENTS.md"])
 
-    effective, _assumed, mixed, filtered = mapping.resolve_agent_filters("", [generic], Path("/proj"))
+    effective, _assumed, mixed, filtered = mapping.resolve_agent_filters(RunContext(), "", [generic], Path("/proj"))
 
     assert [d.agent_type.id for d in filtered] == ["generic"]
     assert effective == "generic"
@@ -687,7 +688,7 @@ def test_resolve_agent_filters_keeps_generics_own_files_beside_a_named_agent():
     claude = _detected("claude", ["/proj/CLAUDE.md"])
     generic = _detected("generic", ["/proj/AGENTS.md"])
 
-    _, _, _, filtered = mapping.resolve_agent_filters("", [claude, generic], Path("/proj"))
+    _, _, _, filtered = mapping.resolve_agent_filters(RunContext(), "", [claude, generic], Path("/proj"))
 
     assert [d.agent_type.id for d in filtered] == ["claude", "generic"]
 
@@ -842,7 +843,7 @@ def test_explicit_agent_places_no_file_another_agent_owns(tmp_path, agent, other
     ]
     exclusions = with_named(parse_run_exclusions(tmp_path, ["ext"], ()), [cursor_file])
 
-    _, _, _, filtered = mapping.resolve_agent_filters(agent, detected, tmp_path, exclusions)
+    _, _, _, filtered = mapping.resolve_agent_filters(RunContext(), agent, detected, tmp_path, exclusions)
 
     ids = [d.agent_type.id for d in filtered]
     assert ("cursor" in ids) is other_added
@@ -869,7 +870,7 @@ def _unlisted_named_case(tmp_path, folder, rel):
 def test_explicit_agent_skips_an_unlisted_file_its_types_do_not_classify(tmp_path):
     """A cursor file the config left out of detection is not placed under an explicit claude run."""
     named, detected, exclusions = _unlisted_named_case(tmp_path, "rules", ".cursor/rules/a.mdc")
-    _, _, _, filtered = mapping.resolve_agent_filters("claude", detected, tmp_path, exclusions)
+    _, _, _, filtered = mapping.resolve_agent_filters(RunContext(), "claude", detected, tmp_path, exclusions)
     placed = [f for d in filtered for f in (*d.instruction_files, *d.rule_files, *d.config_files)]
     assert named not in placed
 
@@ -878,7 +879,7 @@ def test_explicit_agent_skips_an_unlisted_file_its_types_do_not_classify(tmp_pat
 @pytest.mark.subsys_map
 def test_explicit_agent_places_an_unlisted_file_its_types_classify(tmp_path):
     named, detected, exclusions = _unlisted_named_case(tmp_path, "rules", ".claude/rules/x.md")
-    _, _, _, filtered = mapping.resolve_agent_filters("claude", detected, tmp_path, exclusions)
+    _, _, _, filtered = mapping.resolve_agent_filters(RunContext(), "claude", detected, tmp_path, exclusions)
     claude = next(d for d in filtered if d.agent_type.id == "claude")
     assert named in claude.rule_files
 
@@ -887,7 +888,7 @@ def test_explicit_agent_places_an_unlisted_file_its_types_classify(tmp_path):
 @pytest.mark.subsys_map
 def test_without_an_explicit_agent_an_unclassified_unlisted_file_is_an_instruction_file(tmp_path):
     named, detected, exclusions = _unlisted_named_case(tmp_path, "rules", ".cursor/rules/a.mdc")
-    _, _, _, filtered = mapping.resolve_agent_filters("", detected, tmp_path, exclusions)
+    _, _, _, filtered = mapping.resolve_agent_filters(RunContext(), "", detected, tmp_path, exclusions)
     placed = [f for d in filtered for f in (*d.instruction_files, *d.rule_files, *d.config_files)]
     assert named in placed
 

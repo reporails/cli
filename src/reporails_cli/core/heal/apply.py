@@ -12,6 +12,7 @@ from reporails_cli.core.pipeline.check_one import check_path
 from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.config.api_key import has_api_key
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.environment import EnvironmentFor
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, RemediationWorkflow, tiers_unpaid
 from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult
@@ -178,30 +179,32 @@ def heal_workflow_within(
     )
 
 
-def heal_one(path: str, project_root: Path, *, lint: LintService, environment_for: EnvironmentFor) -> HealOutcome:
+def heal_one(
+    path: str, project_root: Path, *, lint: LintService, environment_for: EnvironmentFor, run: RunContext
+) -> HealOutcome:
     """Check one file and write the fixes the reply carries for it.
 
     A refused check, a run with no map or no workflow writes nothing and says why in the words
     `ails check --heal` uses.
     """
-    run = check_path(path, project_root, lint=lint)
+    checked = check_path(path, project_root, lint=lint, run=run)
     target = Path(path)
-    if isinstance(run, Refusal):
-        return HealOutcome(None, run.text, target.parent)
-    workflow = run.result.reply.workflow
-    if run.ruleset_map is None or workflow is None:
-        error = run.funnel_error
+    if isinstance(checked, Refusal):
+        return HealOutcome(None, checked.text, target.parent)
+    workflow = checked.result.reply.workflow
+    if checked.ruleset_map is None or workflow is None:
+        error = checked.funnel_error
         replied = heal_server_replied(
-            mapped=run.ruleset_map is not None, offline=run.result.offline, rejected=error is not None
+            mapped=checked.ruleset_map is not None, offline=checked.result.offline, rejected=error is not None
         )
         _, message = heal_withheld_for_run(
             error=error.error if error else None,
-            tier=run.result.reply.tier,
+            tier=checked.result.reply.tier,
             funnel_tier=error.tier if error else None,
             server_replied=replied,
         )
-        return HealOutcome(None, message, run.scope.scan_root)
+        return HealOutcome(None, message, checked.scope.scan_root)
     written = heal_workflow_within(
-        run.ruleset_map, workflow, safe_resolve(target), run.scope.scan_root, environment_for
+        checked.ruleset_map, workflow, safe_resolve(target), checked.scope.scan_root, environment_for
     )
-    return HealOutcome(written, "", run.scope.scan_root)
+    return HealOutcome(written, "", checked.scope.scan_root)

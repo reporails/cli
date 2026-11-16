@@ -13,6 +13,7 @@ from reporails_cli.core.pipeline.server_gate import server_gate
 from reporails_cli.core.platform.adapters.key_check import handshake
 from reporails_cli.core.platform.adapters.server_lint import ServerLint
 from reporails_cli.core.platform.config.api_key import has_api_key
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import FunnelError, tiers_unpaid
 from reporails_cli.core.platform.dto.pipeline import CheckRun, Refusal
@@ -152,15 +153,15 @@ def format_run(run: CheckRun, *, full: bool) -> JsonObject:
 
 
 def run_pipeline_for_path(
-    path: str, full: bool = False, named: frozenset[Path] = frozenset(), *, project_root: Path
+    path: str, full: bool = False, named: frozenset[Path] = frozenset(), *, project_root: Path, run: RunContext
 ) -> tuple[JsonObject, RulesetMap | None, float | None]:
     """Check `path` (directory or file); returns `(payload, ruleset_map, file_score)`. `ruleset_map` and
     `file_score` are `None` on a structured error/needs-install payload — the caller checks `"error"` /
     `"needs_install"` in the payload. A file `path` narrows the validated set to that single file;
     `file_score` is that single file's own display score (`None` for a directory or an unscored file).
-    `named` and `project_root` are read as in `core.pipeline.check_one.scope_for_path`.
+    `named` and `project_root` are read as in `core.pipeline.check_one.scope_for_path`; `run` is this tool call's own.
     """
-    run = check_path(path, project_root, named, lint=ServerLint())
-    if isinstance(run, Refusal):
-        return refusal_payload(run), None, None
-    return format_run(run, full=full), run.ruleset_map, run.file_score
+    checked = check_path(path, project_root, named, lint=ServerLint(), run=run)
+    if isinstance(checked, Refusal):
+        return refusal_payload(checked), None, None
+    return format_run(checked, full=full), checked.ruleset_map, checked.file_score

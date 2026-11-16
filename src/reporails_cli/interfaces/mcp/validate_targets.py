@@ -16,7 +16,7 @@ from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.lint.suppression import renumbered_json
 from reporails_cli.core.pipeline.mapping import resolve_agent_filters
-from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str, str_list
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.interfaces.mcp.remedy_brief import resolve_from_root
@@ -56,7 +56,9 @@ def _resolve_one_target(
     return set(), set()
 
 
-def resolve_validate_targets(tokens: tuple[str, ...], scan_root: Path) -> tuple[set[Path], set[Path]] | JsonObject:
+def resolve_validate_targets(
+    run: RunContext, tokens: tuple[str, ...], scan_root: Path
+) -> tuple[set[Path], set[Path]] | JsonObject:
     """The files and directories `tokens` name under `scan_root`, read the way `ails check` reads
     its targets (`skills`, `skills:<name>`, `agents:<name>`, `@main`, a path; a typed word such
     as `skill` reads as its config key). A relative path is read against `scan_root`. Returns
@@ -64,12 +66,13 @@ def resolve_validate_targets(tokens: tuple[str, ...], scan_root: Path) -> tuple[
 
     exclusions = load_run_exclusions(scan_root)
     effective_agent, _, _, _ = resolve_agent_filters(
-        get_project_config(scan_root).default_agent,
-        detect_agents(scan_root),
+        run,
+        run.project_config(scan_root).default_agent,
+        detect_agents(run, scan_root),
         scan_root,
         exclusions,
     )
-    token_agent = sniff_agent("", scan_root)
+    token_agent = sniff_agent(run, "", scan_root)
     files: set[Path] = set()
     dirs: set[Path] = set()
     for token in tokens:

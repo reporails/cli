@@ -41,6 +41,7 @@ from reporails_cli.core.platform.adapters.programs import open_in_browser
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 from reporails_cli.core.platform.adapters.server_lint import ServerLint
 from reporails_cli.core.platform.config.bootstrap import parse_idle_timeout_env
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
@@ -361,7 +362,7 @@ class XrayServer:
 
     def _check(self, target: Path) -> JSONResponse:
         with self._work_lock:
-            run = check_path(str(target), self._root, lint=ServerLint())
+            run = check_path(str(target), self._root, lint=ServerLint(), run=RunContext())
             if isinstance(run, Refusal):
                 return _refused(400, run.text)
             found = file_findings(run, target)
@@ -401,7 +402,7 @@ class XrayServer:
             refusal = server_gate("xray", handshake)
             if refusal is not None:
                 return XrayCheck("refused", refusal.text), {}
-            run = check_path(str(self._root), self._root, lint=ServerLint())
+            run = check_path(str(self._root), self._root, lint=ServerLint(), run=RunContext())
             if isinstance(run, Refusal):
                 return XrayCheck("refused", run.text), {}
             return XrayCheck("done", None), tallies_by_file(run)
@@ -418,7 +419,9 @@ class XrayServer:
 
     def _heal(self, target: Path) -> JSONResponse:
         with self._work_lock:
-            outcome = heal_one(str(target), self._root, lint=ServerLint(), environment_for=LocalProjectEnvironment)
+            outcome = heal_one(
+                str(target), self._root, lint=ServerLint(), environment_for=LocalProjectEnvironment, run=RunContext()
+            )
             with self._view_lock:
                 self._findings.pop(self._key(target), None)
             if outcome.written is None:

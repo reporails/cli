@@ -7,8 +7,9 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.classify import classify_files, load_file_types
-from reporails_cli.core.discovery.agents import clear_agent_cache, get_all_scannable_files
+from reporails_cli.core.discovery.agents import get_all_scannable_files
 from reporails_cli.core.lint.regex import run_checks
+from reporails_cli.core.platform.config.run_context import RunContext
 
 _SKILL = "---\nname: api\ndescription: Use when calling the API\n---\n\n# API\n\nRead `reference.md` first.\n"
 
@@ -33,8 +34,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _scanned(root: Path) -> list[str]:
-    clear_agent_cache()
-    return sorted(p.relative_to(root).as_posix() for p in get_all_scannable_files(root))
+    return sorted(p.relative_to(root).as_posix() for p in get_all_scannable_files(RunContext(), root))
 
 
 @pytest.mark.unit
@@ -51,8 +51,7 @@ def test_supporting_markdown_files_are_discovered_and_scripts_are_not(project: P
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_supporting_files_are_classified_as_the_skills_type(project: Path) -> None:
-    clear_agent_cache()
-    files = get_all_scannable_files(project)
+    files = get_all_scannable_files(RunContext(), project)
     classified = classify_files(project, files, load_file_types("claude", project_root=project))
 
     assert len(classified) == len(files)

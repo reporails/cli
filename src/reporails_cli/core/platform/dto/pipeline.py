@@ -10,6 +10,7 @@ from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResult,
 from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.dto.results import ProjectConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
 # The `(folders, file globs)` a run left out because the user set them.
@@ -89,6 +90,7 @@ class Discovered(NamedTuple):
     instruction_files: list[Path]
     file_type_by_path: dict[str, str]
     left_out: LeftOut
+    config: ProjectConfig
 
 
 class Scope(NamedTuple):
@@ -101,6 +103,7 @@ class Scope(NamedTuple):
     instruction_files: list[Path]
     file_type_by_path: dict[str, str]
     left_out: LeftOut
+    config: ProjectConfig
 
 
 @dataclass(frozen=True)

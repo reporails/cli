@@ -18,6 +18,7 @@ from reporails_cli.core.discovery import walk
 from reporails_cli.core.discovery.agent_config import load_config_file_types
 from reporails_cli.core.discovery.exclusions import covers, no_exclusions, parse_run_exclusions
 from reporails_cli.core.discovery.surface_config import surface_include_patterns
+from reporails_cli.core.platform.config.run_context import RunContext
 from tests.conftest import skip_if_case_insensitive_fs
 
 # --- RunExclusions.covers (path outside the root) ---
@@ -311,9 +312,13 @@ def test_excluding_the_main_instruction_file_keeps_the_rule_files_through_the_pi
     rule.write_text("# Python\n\nUse type hints on every function.\n", encoding="utf-8")
 
     _, _, _, filtered = resolve_agent_filters(
-        "claude", detect_agents(tmp_path), tmp_path, parse_run_exclusions(tmp_path, (), ("CLAUDE.md",))
+        RunContext(),
+        "claude",
+        detect_agents(RunContext(), tmp_path),
+        tmp_path,
+        parse_run_exclusions(tmp_path, (), ("CLAUDE.md",)),
     )
-    files = get_all_instruction_files(tmp_path, filtered)
+    files = get_all_instruction_files(RunContext(), tmp_path, filtered)
     assert rule in files
     assert main not in files
 
@@ -330,8 +335,10 @@ def test_rule_only_claude_project_keeps_its_rule_file_under_a_no_op_exclusion(tm
 
     def checked(exclude_dirs: list[str] | None) -> list[Path]:
         exclusions = parse_run_exclusions(tmp_path, exclude_dirs or (), ())
-        _, _, _, filtered = resolve_agent_filters("claude", detect_agents(tmp_path), tmp_path, exclusions)
-        return get_all_instruction_files(tmp_path, filtered)
+        _, _, _, filtered = resolve_agent_filters(
+            RunContext(), "claude", detect_agents(RunContext(), tmp_path), tmp_path, exclusions
+        )
+        return get_all_instruction_files(RunContext(), tmp_path, filtered)
 
     assert checked(None) == [rule]
     assert checked(["vendor"]) == [rule]

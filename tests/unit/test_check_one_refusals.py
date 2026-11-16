@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.mapper import model_fetch
 from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.pipeline.check_one import check_path
 from reporails_cli.core.platform.adapters.server_lint import ServerLint
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.interfaces.mcp import tools
 
@@ -21,14 +21,13 @@ pytestmark = [pytest.mark.unit, pytest.mark.subsys_server]
 def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "proj"
     (root / ".ails").mkdir(parents=True)
-    clear_agent_cache()
     monkeypatch.setattr(check_one, "is_initialized", lambda: True)
     monkeypatch.setattr(check_one, "model_refusal", lambda: None)
     return root
 
 
 def _refused(path: Path) -> Refusal:
-    refusal = check_path(str(path), path if path.is_dir() else path.parent, lint=ServerLint())
+    refusal = check_path(str(path), path if path.is_dir() else path.parent, lint=ServerLint(), run=RunContext())
     assert isinstance(refusal, Refusal)
     return refusal
 
@@ -69,7 +68,7 @@ def test_model_not_ready_refusals_carry_a_sentence_and_mcp_keeps_its_own_wording
 
 
 def test_failed_refusal_is_never_empty(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    def boom(_scope: object, _lint: object) -> None:
+    def boom(_run: object, _scope: object, _lint: object) -> None:
         raise ValueError
 
     monkeypatch.setattr(check_one, "check_scope", boom)
@@ -86,4 +85,4 @@ def test_mcp_does_not_swallow_a_formatter_error(project: Path, monkeypatch: pyte
 
     monkeypatch.setattr(tools, "format_run", bad)
     with pytest.raises(ValueError, match="formatter bug"):
-        tools.run_pipeline_for_path(str(project), project_root=project)
+        tools.run_pipeline_for_path(str(project), project_root=project, run=RunContext())

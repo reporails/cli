@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
@@ -76,7 +77,7 @@ def test_scope_equals_the_full_union_never_narrowed_by_distinctiveness(
     `.agents/skills/*/SKILL.md` mirrors PLUS the nested `plugin/dashboard/AGENTS.md` = 14.
     None of them silently drops out because Copilot (the cross-reading, non-distinctive
     agent) lost its `Agent:` label."""
-    from reporails_cli.core.discovery.agents import clear_agent_cache, detect_agents, get_all_instruction_files
+    from reporails_cli.core.discovery.agents import detect_agents, get_all_instruction_files
     from reporails_cli.core.discovery.exclusions import load_run_exclusions
     from reporails_cli.core.pipeline.mapping import resolve_agent_filters
     from reporails_cli.core.platform.config.config import get_project_config
@@ -84,13 +85,12 @@ def test_scope_equals_the_full_union_never_narrowed_by_distinctiveness(
     project = _claude_smart_shaped_project(tmp_path)
     monkeypatch.chdir(project)
 
-    clear_agent_cache()
     config = get_project_config(project)
-    detected = detect_agents(project)
+    detected = detect_agents(RunContext(), project)
     effective_agent, _assumed, mixed, filtered = resolve_agent_filters(
-        config.default_agent, detected, project, load_run_exclusions(project)
+        RunContext(), config.default_agent, detected, project, load_run_exclusions(project)
     )
-    scope = get_all_instruction_files(project, agents=filtered)
+    scope = get_all_instruction_files(RunContext(), project, agents=filtered)
 
     assert effective_agent == "claude"
     assert mixed is False

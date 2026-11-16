@@ -31,6 +31,7 @@ from reporails_cli.core.heal.plan import PartnerKey, apply_edits, build_plan, le
 from reporails_cli.core.heal.transforms import atoms_at
 from reporails_cli.core.lint.content_queries import atoms_for_file
 from reporails_cli.core.lint.rule_pages import EXAMPLE_KINDS, load_rule_examples
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_list, opt_int, str_list
 from reporails_cli.core.platform.dto.diagnostics import subtree_tier_rank, walk_findings
 from reporails_cli.core.platform.dto.heal_plan import Edit, HealOp, Plan, PlanOp
@@ -105,7 +106,7 @@ def _build_file(rel: str, scan_root: Path) -> _BuiltFile | str:
     cause, never a bare sentinel."""
 
     abs_file = resolve_from_root(rel, scan_root)
-    payload, ruleset_map, score = run_pipeline_for_path(str(abs_file), True, project_root=scan_root)
+    payload, ruleset_map, score = run_pipeline_for_path(str(abs_file), True, project_root=scan_root, run=RunContext())
     if ruleset_map is None:
         return _pipeline_failure_reason(payload)
     try:

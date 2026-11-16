@@ -8,6 +8,7 @@ import pytest
 
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.discovery.agents import detect_agents
+from reporails_cli.core.platform.config.run_context import RunContext
 
 
 @pytest.fixture
@@ -61,7 +62,7 @@ def test_policy_hooks_dir_is_a_managed_hooks_location() -> None:
 
 
 def _ids(root: Path) -> list[str]:
-    return sorted(a.agent_type.id for a in detect_agents(root))
+    return sorted(a.agent_type.id for a in detect_agents(RunContext(), root))
 
 
 @pytest.mark.unit
