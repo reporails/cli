@@ -66,3 +66,4 @@
 - The map records a place, time or target phrase (`In CI,` before the clause, `in staging` or `for src/` after its object) as the instruction's scope, and heal's rewrite check reads it.
 - The folder-target check tests run each target from the folder its project roots at, and name a nested root by running from it.
 
+- A check scenario guards the x-ray page checking a rule file written while the page is open.
