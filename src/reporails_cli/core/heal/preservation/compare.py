@@ -20,8 +20,7 @@ from reporails_cli.core.heal.preservation.words import named_key
 from reporails_cli.core.lint.content_queries import own_atoms_for_file
 from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import read_structure
-from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
-from reporails_cli.core.platform.contract.environment import ProjectEnvironment
+from reporails_cli.core.platform.contract.environment import EnvironmentFor, ProjectEnvironment
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_list, as_object, as_str
 from reporails_cli.core.platform.dto.heal import Pair, Snapshot, SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
@@ -208,11 +207,13 @@ def check_rewrite(
     *,
     score: float | None,
     scan_root: Path | None,
+    environment_for: EnvironmentFor,
     siblings: tuple[str, ...] = (),
 ) -> JsonObject:
     """The `preservation` block for `file_path`: its rewritten `new_text` and `ruleset_map` judged
-    against `snapshot`, with the project on disk answering which names and paths exist."""
-    environment = LocalProjectEnvironment(scan_root, file_path.parent)
+    against `snapshot`, with the environment `environment_for(scan_root, file's folder)` answering which names and
+    paths exist."""
+    environment = environment_for(scan_root, file_path.parent)
     return compare(snapshot, ruleset_map, new_text, score, environment=environment, sibling_texts=siblings)
 
 

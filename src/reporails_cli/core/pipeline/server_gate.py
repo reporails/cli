@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from reporails_cli.core.platform.adapters.key_check import handshake
 from reporails_cli.core.platform.config.bootstrap import env_flag, offline_requested
 from reporails_cli.core.platform.dto.diagnostics import FunnelError
 from reporails_cli.core.platform.dto.pipeline import Refusal
+from reporails_cli.core.platform.dto.ports import Handshaker
 from reporails_cli.core.platform.dto.sign_in import Surface
 
 _UNREACHABLE_MESSAGE = (
@@ -20,11 +20,12 @@ _REJECTED_MESSAGE = (
 )
 
 
-def server_gate(surface: Surface) -> Refusal | None:
+def server_gate(surface: Surface, handshake: Handshaker) -> Refusal | None:
     """The `Refusal` when the server will not serve this caller, else `None`.
 
-    Nothing is asked when local checks only were requested or the run talks to a local server
-    (`AILS_DEV_MODE`). A reply that holds no verdict, or a key rejected moments after sign-in, lets the run go on.
+    `handshake` asks the server. Nothing is asked when local checks only were requested or the run talks to a
+    local server (`AILS_DEV_MODE`). A reply that holds no verdict, or a key rejected moments after sign-in, lets
+    the run go on.
     """
     if offline_requested() or env_flag("AILS_DEV_MODE"):
         return None

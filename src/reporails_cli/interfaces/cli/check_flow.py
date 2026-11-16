@@ -29,6 +29,7 @@ from reporails_cli.core.pipeline.mapping import (
     is_listed_file,
 )
 from reporails_cli.core.pipeline.server_gate import server_gate
+from reporails_cli.core.platform.adapters.key_check import handshake
 from reporails_cli.core.platform.config.bootstrap import running_in_ci
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.dto.heal import HealRegression
@@ -417,7 +418,7 @@ def run_check_flow(state: CheckState) -> None:
     a refusal ends the run with exit 1.
     """
     _flow_targets(state)
-    refusal = server_gate("ci" if running_in_ci() else "cli")
+    refusal = server_gate("ci" if running_in_ci() else "cli", handshake)
     if refusal is not None:
         _emit_server_refusal(state.targets.output_format, refusal)
         raise typer.Exit(1)

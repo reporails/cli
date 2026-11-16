@@ -15,10 +15,10 @@ import httpx
 
 from reporails_cli.core.cache.hashing import content_hash
 from reporails_cli.core.discovery.walk import safe_resolve
-from reporails_cli.core.platform.adapters.programs import launch_detached
 from reporails_cli.core.platform.config.bootstrap import get_xray_pages_dir
 from reporails_cli.core.platform.contract.errors import XrayPageError
 from reporails_cli.core.platform.contract.json_value import JsonValue, as_object, as_str, opt_int
+from reporails_cli.core.platform.contract.launcher import Launcher
 from reporails_cli.core.platform.dto.xray import SessionPick, XrayPage
 from reporails_cli.core.platform.utils.utils import write_json_atomic
 from reporails_cli.core.platform.utils.version import installed_code_stamp
@@ -128,7 +128,7 @@ def _unwritable(exc: OSError) -> XrayPageError:
     return XrayPageError(f"the x-ray page could not start; its folder is {get_xray_pages_dir()}: {exc}")
 
 
-def start_page(root: Path, session_id: str) -> tuple[XrayPage, bool]:
+def start_page(root: Path, session_id: str, launcher: Launcher) -> tuple[XrayPage, bool]:
     """The project's page and whether it was already running; with none running, start one on `session_id`,
     detached, and wait for it to answer.
 
@@ -153,7 +153,7 @@ def start_page(root: Path, session_id: str) -> tuple[XrayPage, bool]:
         command = [sys.executable, "-E", "-P", "-m", "reporails_cli", "xray", "--no-open", "--session", session_id]
         command += ["--launch", launch]
         try:
-            launch_detached(command, cwd=root)
+            launcher(command, cwd=root)
         except OSError as exc:
             raise _unwritable(exc) from exc
         return _wait_for_page(root, launch), False

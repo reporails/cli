@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.pipeline.server_gate import server_gate
+from reporails_cli.core.platform.adapters.key_check import handshake
 from reporails_cli.interfaces.cli import xray_server
 
 pytestmark = [pytest.mark.integration, pytest.mark.subsys_xray, pytest.mark.usefixtures("server_reachable")]
@@ -66,17 +67,17 @@ def test_nothing_is_asked_when_offline_is_requested_or_the_run_talks_to_a_local_
     service: ThreadingHTTPServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("AILS_OFFLINE", "1")
-    assert server_gate("cli") is None
+    assert server_gate("cli", handshake) is None
     monkeypatch.delenv("AILS_OFFLINE")
     monkeypatch.setenv("AILS_DEV_MODE", "1")
-    assert server_gate("cli") is None
+    assert server_gate("cli", handshake) is None
     assert service.seen == []  # type: ignore[attr-defined]
 
 
 def test_a_served_caller_is_not_refused_and_a_refused_one_gets_the_servers_message(
     service: ThreadingHTTPServer,
 ) -> None:
-    refusal = server_gate("cli")
+    refusal = server_gate("cli", handshake)
     assert refusal is not None and (refusal.kind, refusal.message) == ("server_refused", _REFUSED["message"])
     service.body = {"verdict": "ok", "reason": None, "message": None, "tier": "free"}  # type: ignore[attr-defined]
-    assert server_gate("cli") is None
+    assert server_gate("cli", handshake) is None

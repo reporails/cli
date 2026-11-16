@@ -10,6 +10,8 @@ from pathlib import Path
 from reporails_cli.core.discovery.agents import get_known_agents
 from reporails_cli.core.pipeline.check_one import check_path, model_refusal, rules_missing_message
 from reporails_cli.core.pipeline.server_gate import server_gate
+from reporails_cli.core.platform.adapters.key_check import handshake
+from reporails_cli.core.platform.adapters.server_lint import ServerLint
 from reporails_cli.core.platform.config.api_key import has_api_key
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import FunnelError, tiers_unpaid
@@ -67,7 +69,7 @@ def model_not_ready_error() -> JsonObject | None:
 
 def unserved_or_model_not_ready_error() -> JsonObject | None:
     """The error payload when the server will not serve this caller, else when the model set is not ready."""
-    refusal = server_gate("mcp")
+    refusal = server_gate("mcp", handshake)
     return refusal_payload(refusal) if refusal is not None else model_not_ready_error()
 
 
@@ -158,7 +160,7 @@ def run_pipeline_for_path(
     `file_score` is that single file's own display score (`None` for a directory or an unscored file).
     `named` and `project_root` are read as in `core.pipeline.check_one.scope_for_path`.
     """
-    run = check_path(path, project_root, named)
+    run = check_path(path, project_root, named, lint=ServerLint())
     if isinstance(run, Refusal):
         return refusal_payload(run), None, None
     return format_run(run, full=full), run.ruleset_map, run.file_score

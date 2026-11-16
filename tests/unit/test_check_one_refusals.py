@@ -10,6 +10,7 @@ from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.mapper import model_fetch
 from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.pipeline.check_one import check_path
+from reporails_cli.core.platform.adapters.server_lint import ServerLint
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.interfaces.mcp import tools
 
@@ -27,7 +28,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _refused(path: Path) -> Refusal:
-    refusal = check_path(str(path), path if path.is_dir() else path.parent)
+    refusal = check_path(str(path), path if path.is_dir() else path.parent, lint=ServerLint())
     assert isinstance(refusal, Refusal)
     return refusal
 
@@ -68,7 +69,7 @@ def test_model_not_ready_refusals_carry_a_sentence_and_mcp_keeps_its_own_wording
 
 
 def test_failed_refusal_is_never_empty(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    def boom(_scope: object) -> None:
+    def boom(_scope: object, _lint: object) -> None:
         raise ValueError
 
     monkeypatch.setattr(check_one, "check_scope", boom)

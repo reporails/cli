@@ -36,7 +36,10 @@ from reporails_cli.core.eventbus.transcript import known_session
 from reporails_cli.core.heal.apply import heal_one, resolved_within
 from reporails_cli.core.pipeline.check_one import check_path, file_findings
 from reporails_cli.core.pipeline.server_gate import server_gate
+from reporails_cli.core.platform.adapters.key_check import handshake
 from reporails_cli.core.platform.adapters.programs import open_in_browser
+from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
+from reporails_cli.core.platform.adapters.server_lint import ServerLint
 from reporails_cli.core.platform.config.bootstrap import parse_idle_timeout_env
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject
@@ -358,7 +361,7 @@ class XrayServer:
 
     def _check(self, target: Path) -> JSONResponse:
         with self._work_lock:
-            run = check_path(str(target), self._root)
+            run = check_path(str(target), self._root, lint=ServerLint())
             if isinstance(run, Refusal):
                 return _refused(400, run.text)
             found = file_findings(run, target)
@@ -395,10 +398,10 @@ class XrayServer:
         if home is not None and home.is_relative_to(self._root):
             return XrayCheck("refused", HOME_SKIPPED), {}
         try:
-            refusal = server_gate("xray")
+            refusal = server_gate("xray", handshake)
             if refusal is not None:
                 return XrayCheck("refused", refusal.text), {}
-            run = check_path(str(self._root), self._root)
+            run = check_path(str(self._root), self._root, lint=ServerLint())
             if isinstance(run, Refusal):
                 return XrayCheck("refused", run.text), {}
             return XrayCheck("done", None), tallies_by_file(run)
@@ -415,7 +418,7 @@ class XrayServer:
 
     def _heal(self, target: Path) -> JSONResponse:
         with self._work_lock:
-            outcome = heal_one(str(target), self._root)
+            outcome = heal_one(str(target), self._root, lint=ServerLint(), environment_for=LocalProjectEnvironment)
             with self._view_lock:
                 self._findings.pop(self._key(target), None)
             if outcome.written is None:

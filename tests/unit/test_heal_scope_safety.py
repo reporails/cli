@@ -14,6 +14,7 @@ import pytest
 from typer.testing import CliRunner
 
 from reporails_cli.core.heal.apply import heal_scope_files, heal_workflow_within
+from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.interfaces.cli.main import app
@@ -217,7 +218,7 @@ def test_single_file_heal_writes_only_the_named_file_not_what_it_imports(tmp_pat
     imported_before = imported.read_bytes()
     rmap, wf = _two_file_map(main, imported)
 
-    fixes = heal_workflow_within(rmap, wf, main, base).fixes
+    fixes = heal_workflow_within(rmap, wf, main, base, LocalProjectEnvironment).fixes
 
     assert imported.read_bytes() == imported_before
     assert "`pyproject.toml`" in main.read_text(encoding="utf-8")

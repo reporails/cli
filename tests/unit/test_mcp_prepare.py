@@ -44,7 +44,7 @@ def test_prepare_builds_no_api_client_and_leaves_the_validate_state_alone(projec
     def refuse(*_a, **_k):
         raise AssertionError("prepare must not contact the server")
 
-    monkeypatch.setattr(check_one, "AilsClient", refuse)
+    monkeypatch.setattr("reporails_cli.core.platform.adapters.server_lint.AilsClient", refuse)
     monkeypatch.setattr(tools, "has_api_key", refuse)
     monkeypatch.setattr(check_one, "map_instruction_files", lambda *_a, **_k: _map(1))
     server.validate_states.clear()

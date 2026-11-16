@@ -750,6 +750,7 @@ def test_a_brief_after_a_project_validate_takes_a_fresh_baseline(monkeypatch, tm
 @pytest.mark.parametrize("op", ["keep-cut", "dedupe", "hoist"])
 def test_a_line_the_guide_lets_the_agent_delete_does_not_fail_the_check(monkeypatch, tmp_path: Path, op: str) -> None:
     from reporails_cli.core.heal.preservation import check_rewrite, failed_checks
+    from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 
     text = "# T\n\nDup `foo` line.\n\nKeep `foo`.\n\nOther `foo` thing.\n"
     file = tmp_path / "CLAUDE.md"
@@ -767,7 +768,7 @@ def test_a_line_the_guide_lets_the_agent_delete_does_not_fail_the_check(monkeypa
     file.write_text(new, encoding="utf-8")
     fresh = SimpleNamespace(atoms=(_atom(file, 3, "Keep `foo`."), _atom(file, 5, "Other `foo` thing.")), files=())
     assert "lost_instructions" not in failed_checks(
-        check_rewrite(snap, file, fresh, new, score=None, scan_root=tmp_path)
+        check_rewrite(snap, file, fresh, new, score=None, scan_root=tmp_path, environment_for=LocalProjectEnvironment)
     )
 
 

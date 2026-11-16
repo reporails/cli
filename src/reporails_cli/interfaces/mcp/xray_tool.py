@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from reporails_cli.core.platform.adapters.programs import launch_detached
 from reporails_cli.core.platform.contract.errors import XrayPageError
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.xray.pages import page_url, start_page
@@ -29,7 +30,7 @@ def xray_page(path: str, session: str) -> JsonObject:
         }
     session_id = chosen.transcript.stem
     try:
-        page, reused = start_page(chosen.root, session_id)
+        page, reused = start_page(chosen.root, session_id, launch_detached)
     except XrayPageError as err:
         return {"error": "page_not_started", "message": str(err)}
     return {

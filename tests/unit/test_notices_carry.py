@@ -20,6 +20,7 @@ from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.pipeline.assemble import assemble_result
 from reporails_cli.core.platform.adapters.api_client import AilsClient
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER
+from reporails_cli.core.platform.adapters.server_lint import ServerLint
 from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResponse, Notice
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs
 from reporails_cli.core.platform.dto.platform import CombinedResult, ServerReply
@@ -149,7 +150,7 @@ def test_mcp_validate_payload_carries_notices_and_the_funnel_error(
     monkeypatch.setattr(check_one, "_checks_over_pairs", lambda *_a, **_k: ([], [], []))
     monkeypatch.setattr(check_one, "_agent_file_pairs", lambda *_a, **_k: [])
     ruleset_map = _map()
-    result, funnel_error = check_one.check_and_assemble(tmp_path, [], "claude", [], ruleset_map)
+    result, funnel_error = check_one.check_and_assemble(tmp_path, [], "claude", [], ruleset_map, lint=ServerLint())
     payload = tools._attach_funnel(json_formatter.format_combined_result(result, ruleset_map=ruleset_map), funnel_error)
     from reporails_cli.formatters import mcp as mcp_formatter
 
@@ -310,7 +311,7 @@ def _mcp_notices(monkeypatch: pytest.MonkeyPatch) -> tuple[Notice, ...]:
     monkeypatch.setattr(
         check_one, "_server_lint", lambda *_a, **_k: LintResponse(funnel_error=None, result=None, notices=(WARN, PROMO))
     )
-    return check_one._server_lint_result(object())[2]
+    return check_one._server_lint_result(object(), ServerLint())[2]
 
 
 @pytest.mark.unit

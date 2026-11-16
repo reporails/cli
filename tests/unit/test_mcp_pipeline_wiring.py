@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 from reporails_cli.core.pipeline import check_one
+from reporails_cli.core.platform.adapters.server_lint import ServerLint
 from reporails_cli.core.platform.dto.pipeline import Discovered, LeftOut
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.interfaces.mcp import tools, validate_targets
@@ -261,7 +262,9 @@ def test_assemble_mcp_result_surfaces_the_funnel_error(monkeypatch, tmp_path):
     )
 
     _result, funnel_error = check_one._assemble(
-        tmp_path, "claude", [], None, ([], [], []), rule_agents=(), not_evaluated=(), exclusions=None
+        check_one._assemble_inputs(tmp_path, "claude", [], None, ([], [], []), rule_agents=(), not_evaluated=()),
+        None,
+        ServerLint(),
     )
 
     assert funnel_error is err

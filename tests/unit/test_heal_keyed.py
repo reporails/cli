@@ -506,6 +506,7 @@ def test_two_fixes_on_one_line_are_both_applied(tmp_path: Path) -> None:
 def test_a_rewrite_that_drops_an_import_line_fails_the_rewrite_check(tmp_path: Path) -> None:
     """The imported instructions are not in the file's text, but the `@import` that brings them is kept."""
     from reporails_cli.core.heal.preservation import check_rewrite, failed_checks, take_snapshot
+    from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 
     main = tmp_path / "CLAUDE.md"
     (tmp_path / "rules.md").write_text("Use `ruff` for linting.\nKeep notes short.\n")
@@ -515,10 +516,14 @@ def test_a_rewrite_that_drops_an_import_line_fails_the_rewrite_check(tmp_path: P
     after = "# Doc\n\nRun `pytest` before you commit.\n"
     main.write_text(after)
     fresh = map_instruction_files(tmp_path, [main], spawn_daemon=False)
-    block = check_rewrite(snap, main, fresh, after, score=None, scan_root=tmp_path)
+    block = check_rewrite(
+        snap, main, fresh, after, score=None, scan_root=tmp_path, environment_for=LocalProjectEnvironment
+    )
     assert failed_checks(block) == ["removed_structure"]
     assert block["removed_structure"]["imports"] == 1
-    kept = check_rewrite(snap, main, fresh, before, score=None, scan_root=tmp_path)
+    kept = check_rewrite(
+        snap, main, fresh, before, score=None, scan_root=tmp_path, environment_for=LocalProjectEnvironment
+    )
     assert kept["kept"]["imports"] == 1
 
 

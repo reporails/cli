@@ -17,6 +17,7 @@ import pytest
 
 from reporails_cli.core.discovery.agent_discovery import claude_project_dir
 from reporails_cli.core.eventbus.transcript import first_prompt_text, session_transcript
+from reporails_cli.core.platform.adapters.programs import launch_detached
 from reporails_cli.core.platform.config import bootstrap
 from reporails_cli.core.platform.contract.errors import XrayPageError
 from reporails_cli.core.platform.dto.xray import PickedSession, XrayPage
@@ -355,7 +356,7 @@ def test_a_second_start_waits_for_the_page_the_first_registers(project: Path, mo
     answers = iter([None, None, page])
     monkeypatch.setattr(pages, "running_page", lambda _root: next(answers))
     monkeypatch.setattr(pages, "_POLL_S", 0.01)
-    assert start_page(project, "any") == (page, True)
+    assert start_page(project, "any", launch_detached) == (page, True)
 
 
 def test_the_wait_accepts_the_page_registered_under_its_launch_whatever_its_pid(
@@ -383,9 +384,8 @@ def test_the_start_passes_its_launch_id_to_the_page_and_waits_for_it(
 ) -> None:
     started: list[list[str]] = []
     waited: list[str | None] = []
-    monkeypatch.setattr(pages, "launch_detached", lambda command, *, cwd: started.append(command) or 1)
     monkeypatch.setattr(pages, "_wait_for_page", lambda _root, launch: waited.append(launch) or XrayPage(2, "x"))
-    start_page(project, "any")
+    start_page(project, "any", lambda command, *, cwd: started.append(command) or 1)
     (command,) = started
     assert command[command.index("--launch") + 1] == waited[0]
 
@@ -397,7 +397,7 @@ def test_a_second_start_gives_up_when_no_page_answers_by_the_deadline(
     monkeypatch.setattr(pages, "PAGE_START_S", 0.2)
     monkeypatch.setattr(pages, "_POLL_S", 0.01)
     with pytest.raises(XrayPageError, match="did not answer"):
-        start_page(project, "any")
+        start_page(project, "any", launch_detached)
 
 
 def test_a_stale_start_lock_is_replaced(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -422,7 +422,7 @@ def test_a_start_in_an_unwritable_settings_folder_is_a_page_error_naming_the_fol
     project: Path, read_only_pages: Path
 ) -> None:
     with pytest.raises(XrayPageError, match=re.escape(str(read_only_pages / "xray-pages"))):
-        start_page(project, "any")
+        start_page(project, "any", launch_detached)
 
 
 def test_the_page_address_always_carries_how_the_session_was_chosen() -> None:
@@ -444,9 +444,8 @@ def test_the_detached_page_start_keeps_user_site_packages_and_not_the_working_fo
     (project / "folder_probe.py").write_text("VALUE = 1\n", encoding="utf-8")
     started: list[list[str]] = []
     monkeypatch.setattr(sys, "executable", base_python)
-    monkeypatch.setattr(pages, "launch_detached", lambda command, *, cwd: started.append(command) or 1)
     monkeypatch.setattr(pages, "_wait_for_page", lambda _root, _launch: XrayPage(2, "launch-a"))
-    start_page(project, "any")
+    start_page(project, "any", lambda command, *, cwd: started.append(command) or 1)
     (command,) = started
     flags = command[: command.index("-m")]
     env = {**os.environ, "PYTHONUSERBASE": str(user_base), "PYTHONPATH": str(project)}

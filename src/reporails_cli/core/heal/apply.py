@@ -12,9 +12,11 @@ from reporails_cli.core.pipeline.check_one import check_path
 from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.config.api_key import has_api_key
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.contract.environment import EnvironmentFor
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, RemediationWorkflow, tiers_unpaid
 from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult
 from reporails_cli.core.platform.dto.pipeline import Refusal
+from reporails_cli.core.platform.dto.ports import LintService
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.utils.utils import matches_any_glob
 
@@ -125,6 +127,7 @@ def apply_keyed_heal(
     dry_run: bool,
     allowed_files: Iterable[Path] | None,
     suppressed: Mapping[Path, set[int]] | None,
+    environment_for: EnvironmentFor,
 ) -> KeyedResult:
     """Fix each finding the workflow lists at the place it names; list the places that need a decision.
 
@@ -146,6 +149,7 @@ def apply_keyed_heal(
         allowed_files=allowed_set(target, allowed_files),
         suppressed=suppressed,
         remap=remap,
+        environment_for=environment_for,
     )
 
 
@@ -154,6 +158,7 @@ def heal_workflow_within(
     workflow: RemediationWorkflow | None,
     target: Path,
     scan_root: Path,
+    environment_for: EnvironmentFor,
 ) -> KeyedResult:
     """Write the workflow's keyed fixes to the mapped files inside `target`'s scope (`heal_scope_files`).
 
@@ -169,16 +174,17 @@ def heal_workflow_within(
         dry_run=False,
         allowed_files=files,
         suppressed=suppressed_by_path(files, scan_root),
+        environment_for=environment_for,
     )
 
 
-def heal_one(path: str, project_root: Path) -> HealOutcome:
+def heal_one(path: str, project_root: Path, *, lint: LintService, environment_for: EnvironmentFor) -> HealOutcome:
     """Check one file and write the fixes the reply carries for it.
 
     A refused check, a run with no map or no workflow writes nothing and says why in the words
     `ails check --heal` uses.
     """
-    run = check_path(path, project_root)
+    run = check_path(path, project_root, lint=lint)
     target = Path(path)
     if isinstance(run, Refusal):
         return HealOutcome(None, run.text, target.parent)
@@ -195,5 +201,7 @@ def heal_one(path: str, project_root: Path) -> HealOutcome:
             server_replied=replied,
         )
         return HealOutcome(None, message, run.scope.scan_root)
-    written = heal_workflow_within(run.ruleset_map, workflow, safe_resolve(target), run.scope.scan_root)
+    written = heal_workflow_within(
+        run.ruleset_map, workflow, safe_resolve(target), run.scope.scan_root, environment_for
+    )
     return HealOutcome(written, "", run.scope.scan_root)

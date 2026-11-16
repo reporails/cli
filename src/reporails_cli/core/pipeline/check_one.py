@@ -27,14 +27,13 @@ from reporails_cli.core.pipeline.mapping import (
     discover_scope,
     map_instruction_files,
 )
-from reporails_cli.core.platform.adapters.api_client import AilsClient
-from reporails_cli.core.platform.adapters.notices_seen import visible_notices
 from reporails_cli.core.platform.config.config import get_project_config, get_rules_path, is_initialized
 from reporails_cli.core.platform.dto.diagnostics import FindingItem, FunnelError, LintResponse, LintResult, Notice
 from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs, CheckRun, Discovered, LeftOut, Refusal, Scope
 from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.dto.ports import LintService
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
@@ -290,7 +289,7 @@ def _checks_over_pairs(
     return m_findings, content_findings, client_findings
 
 
-def _server_lint(inputs: AssembleInputs) -> LintResponse | None:
+def _server_lint(inputs: AssembleInputs, lint: LintService) -> LintResponse | None:
     """Send the reported local findings to the server and return the `LintResponse`.
 
     `.result` is None when offline. Returning the whole response (not just `.result`) lets the caller also
@@ -301,19 +300,21 @@ def _server_lint(inputs: AssembleInputs) -> LintResponse | None:
     if not inputs.ruleset_map:
         return None
     local, structural_required = lint_request_local(inputs)
-    return AilsClient().lint(inputs.ruleset_map, local, structural_required, root=inputs.scan_root)
+    return lint.lint(inputs.ruleset_map, local, structural_required, root=inputs.scan_root)
 
 
-def _server_lint_result(inputs: AssembleInputs) -> tuple[LintResult | None, FunnelError | None, tuple[Notice, ...]]:
+def _server_lint_result(
+    inputs: AssembleInputs, lint: LintService
+) -> tuple[LintResult | None, FunnelError | None, tuple[Notice, ...]]:
     """Run `_server_lint` and split its response into `(lint_result, funnel_error, notices)`: `(None,
     None, ())` when nothing was mapped (offline / no ruleset)."""
-    response = _server_lint(inputs)
+    response = _server_lint(inputs, lint)
     if response is None:
         return None, None, ()
-    return response.result, response.funnel_error, visible_notices(response.notices)
+    return response.result, response.funnel_error, lint.visible_notices(response.notices)
 
 
-def _assemble(
+def _assemble_inputs(
     scan_root: Path,
     effective_agent: str,
     filter_agents: list[DetectedAgent],
@@ -322,12 +323,10 @@ def _assemble(
     *,
     rule_agents: tuple[str, ...],
     not_evaluated: tuple[tuple[str, str], ...],
-    exclusions: RunExclusions | None,
-) -> tuple[CombinedResult, FunnelError | None]:
-    """Server-lint the local findings, then run the shared assemble spine. Returns `(result, funnel_error)`."""
-
+) -> AssembleInputs:
+    """The inputs of the assemble spine for the local findings, before any server lint."""
     m_findings, content_findings, client_findings = local
-    inputs = AssembleInputs(
+    return AssembleInputs(
         m_findings=m_findings,
         content_findings=content_findings,
         client_findings=client_findings,
@@ -339,7 +338,13 @@ def _assemble(
         rule_agents=rule_agents,
         not_evaluated=not_evaluated,
     )
-    lint_result, funnel_error, notices = _server_lint_result(inputs)
+
+
+def _assemble(
+    inputs: AssembleInputs, exclusions: RunExclusions | None, lint: LintService
+) -> tuple[CombinedResult, FunnelError | None]:
+    """Server-lint the local findings, then run the shared assemble spine. Returns `(result, funnel_error)`."""
+    lint_result, funnel_error, notices = _server_lint_result(inputs, lint)
     return assemble_result(replace(inputs, lint_result=lint_result, notices=notices), exclusions), funnel_error
 
 
@@ -352,6 +357,7 @@ def check_and_assemble(
     *,
     left_out: LeftOut = NOTHING_LEFT_OUT,
     scoped: bool = False,
+    lint: LintService,
 ) -> tuple[CombinedResult, FunnelError | None]:
     """Run the local checks, then the server lint and assemble spine; the request is resolved under the
     agents whose rules ran."""
@@ -359,7 +365,7 @@ def check_and_assemble(
     with not_evaluated_scope() as unfinished:
         local = _checks_over_pairs(scan_root, pairs, ruleset_map, scoped, left_out.exclusions)
 
-    result, funnel_error = _assemble(
+    inputs = _assemble_inputs(
         scan_root,
         effective_agent,
         filter_agents,
@@ -367,12 +373,12 @@ def check_and_assemble(
         local,
         rule_agents=tuple(dict.fromkeys(agent_id for agent_id, _ in pairs)),
         not_evaluated=tuple(unfinished),
-        exclusions=left_out.exclusions,
     )
+    result, funnel_error = _assemble(inputs, left_out.exclusions, lint)
     return with_exclusions(result, left_out.record), funnel_error
 
 
-def check_scope(scope: Scope) -> CheckRun:
+def check_scope(scope: Scope, lint: LintService) -> CheckRun:
     """Run M-probes + content/client checks over a scope's files and assemble the result.
 
     Regime and surface health key against `scope.scan_root` (the checked path), not the server cwd.
@@ -393,6 +399,7 @@ def check_scope(scope: Scope) -> CheckRun:
         ruleset_map,
         left_out=scope.left_out,
         scoped=scope.single_file is not None,
+        lint=lint,
     )
     file_score = display_score(result, scope.single_file, scope.scan_root) if scope.single_file is not None else None
     return CheckRun(result, funnel_error, ruleset_map, mapper_error, file_score, scope)
@@ -404,7 +411,9 @@ def file_findings(run: CheckRun, file: Path) -> tuple[FindingItem, ...]:
     return tuple(f for f in run.result.findings if normalize_finding_path(f.file, run.scope.scan_root) == key)
 
 
-def check_path(path: str, project_root: Path, named: frozenset[Path] = frozenset()) -> CheckRun | Refusal:
+def check_path(
+    path: str, project_root: Path, named: frozenset[Path] = frozenset(), *, lint: LintService
+) -> CheckRun | Refusal:
     """Check `path` (directory or file): the `CheckRun`, or the `Refusal` saying why nothing was checked.
 
     A file `path` narrows the checked set to that single file. `named` is read as in `scope_for_path`. A
@@ -414,6 +423,6 @@ def check_path(path: str, project_root: Path, named: frozenset[Path] = frozenset
         scope = scope_for_path(path, project_root, named)
         if isinstance(scope, Refusal):
             return scope
-        return check_scope(scope)
+        return check_scope(scope, lint)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return Refusal("failed", str(e) or f"The check failed ({type(e).__name__}).")
