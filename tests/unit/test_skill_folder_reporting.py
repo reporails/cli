@@ -424,7 +424,7 @@ class TestSkillFolderCounting:
                     verbose=False,
                     summary=display._SummaryInputs(scope=scorecard.ScopeInfo(), tier="free", elapsed_ms=0),
                     project_root=tmp_path,
-                    file_type_by_path={},
+                    extras=display.TextExtras(file_type_by_path={}),
                 )
             assert ("foo:" in cap.get()) is shown
 

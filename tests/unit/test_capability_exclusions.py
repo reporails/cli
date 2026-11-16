@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from reporails_cli.core.classify.capability_paths import list_capability_targets
 from reporails_cli.core.classify.focus_expansion import expand_focus, resolve_capability_spec
 from reporails_cli.core.discovery.exclusions import load_run_exclusions
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
 
@@ -47,6 +48,7 @@ def _scope(
 ) -> CheckState | None:
     """Run the flow's target and scope phases; the state, or None when the run ended empty."""
     state = CheckState(
+        run=RunContext(),
         inputs=CheckInputs(
             targets=targets,
             format_opt="json",
@@ -60,7 +62,7 @@ def _scope(
             dry_run=False,
             cwd=False,
             project_root=project,
-        )
+        ),
     )
     check_flow._flow_targets(state)
     return state if check_flow._flow_scope(state) else None
@@ -209,10 +211,10 @@ def test_mcp_validate_targets_follow_the_same_rules(project: Path) -> None:
 
     _config(project, f"exclude_dirs:\n  - backlog\nexclude_files:\n  - {BACKLOG_GLOB}\n")
     root = project.resolve()
-    named = validate_targets.resolve_validate_targets(("skills:backlog",), root)
+    named = validate_targets.resolve_validate_targets(RunContext(), ("skills:backlog",), root)
     assert not isinstance(named, dict)
     assert {p.parent.name for p in named[0]} == {"backlog"}
-    listed = validate_targets.resolve_validate_targets(("skills",), root)
+    listed = validate_targets.resolve_validate_targets(RunContext(), ("skills",), root)
     assert not isinstance(listed, dict)
     assert {p.parent.name for p in listed[0]} == {"other"}
 
@@ -224,6 +226,7 @@ def test_auto_detect_gives_a_named_config_excluded_skill_to_its_native_owner(pro
 
     _config(project, "exclude_dirs:\n  - backlog\n")
     state = CheckState(
+        run=RunContext(),
         inputs=CheckInputs(
             targets=["skills:backlog"],
             format_opt="json",
@@ -237,7 +240,7 @@ def test_auto_detect_gives_a_named_config_excluded_skill_to_its_native_owner(pro
             dry_run=False,
             cwd=False,
             project_root=project,
-        )
+        ),
     )
     check_flow._flow_targets(state)
     assert check_flow._flow_scope(state)
@@ -257,7 +260,7 @@ def test_mcp_and_cli_name_the_same_files_under_the_same_tokens(project: Path) ->
     for token, expected in (("skills:backlog", {"backlog"}), ("skills", {"other"})):
         state = _scope(project, [token])
         assert state is not None
-        mcp = validate_targets.resolve_validate_targets((token,), root)
+        mcp = validate_targets.resolve_validate_targets(RunContext(), (token,), root)
         assert not isinstance(mcp, dict)
         assert {p.parent.name for p in mcp[0]} == expected == _names(state)
 

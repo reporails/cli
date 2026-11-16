@@ -19,7 +19,7 @@
 
 ### Fixed
 
-- With the `ails xray` page open, an instruction or rule file added to the project is checked by the page's next check, without restarting the page.
+- With the `ails xray` page open, an instruction or rule file added to the project is checked by the page's next check, with no restart of the page.
 - The x-ray counts a memory note as loaded when it arrives by an `@` mention, an edit, a recall or a restore after a compaction, and notes loaded that way are listed by the next compaction; an edit adds no more than a snippet to the chart. The loads show as attached by Claude Code, and a recall row that names no notes is refused. A loaded slot chip on an agent card is clearly lit.
 - The x-ray shows each compaction's summary by the transcript's own link between a compaction and its summary: a compaction that left no summary shows none, and the next compaction no longer shows its summary.
 - Opening a compaction summary in the x-ray reads only that summary from the transcript, not the whole file again.

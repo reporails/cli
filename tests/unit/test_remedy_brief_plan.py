@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.formatters.mcp_view import render_text_view
 from reporails_cli.interfaces.mcp import remedy_brief, snapshots, tools
 from reporails_cli.interfaces.mcp.preservation import with_preservation
@@ -66,7 +67,7 @@ def _apply(file: Path, reply: dict[str, Any]) -> None:
 
 
 def _conformance(file: Path, root: Path) -> dict[str, Any]:
-    payload, ruleset_map, score = tools.run_pipeline_for_path(str(file), True, project_root=root)
+    payload, ruleset_map, score = tools.run_pipeline_for_path(str(file), True, project_root=root, run=RunContext())
     return with_preservation(payload, file, ruleset_map, score, root)["conformance"]
 
 
