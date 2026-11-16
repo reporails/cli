@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from reporails_cli.interfaces.mcp import remedy_brief, server
+from tests.fake_models import no_models
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_server]
 
@@ -35,11 +36,13 @@ def briefed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "order": 1, "element": "CLAUDE.md", "kind": "main", "loading": "session_start", "files": ["CLAUDE.md"],
         "importance": "gate_mover", "findings": [], "relations": [],
     }  # fmt: skip
-    assert "error" not in remedy_brief.build_remedy_brief(location, root, preservation_contract="stand-in")
+    assert "error" not in remedy_brief.build_remedy_brief(
+        location, root, preservation_contract="stand-in", models=no_models()
+    )
 
     score = {"value": 5.0}
 
-    async def fake_fresh(path: str, tokens: Any, scan_root: Path, state: Any) -> tuple[dict, Any, float]:
+    async def fake_fresh(path: str, tokens: Any, scan_root: Path, state: Any, models: Any) -> tuple[dict, Any, float]:
         state.full_payload = payload
         state.scan_root = scan_root
         state.last_ruleset_map = _MAP
@@ -51,7 +54,7 @@ def briefed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _validate(file: Path) -> dict[str, Any]:
-    return asyncio.run(server._run_validate(str(file), False, None, file.parent))
+    return asyncio.run(server._run_validate(str(file), False, None, file.parent, no_models()))
 
 
 def test_a_tripped_breaker_still_answers_accepted_for_a_briefed_file(briefed: Path) -> None:

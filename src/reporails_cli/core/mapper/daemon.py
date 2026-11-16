@@ -23,6 +23,7 @@ from pathlib import Path
 from reporails_cli.core.mapper.map_cache import CACHE_VERSION
 from reporails_cli.core.platform.config.bootstrap import get_daemon_dir
 from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
+from reporails_cli.core.platform.contract.http_get import HttpGet
 from reporails_cli.core.platform.dto.ports import DaemonTransport
 from reporails_cli.core.platform.utils.version import installed_version
 
@@ -41,6 +42,22 @@ def socket_path() -> Path:
 def pid_path() -> Path:
     """The file naming the daemon's process id."""
     return _daemon_dir() / "mapper.pid"
+
+
+def write_pid(pid: int) -> None:
+    """Record `pid` as the daemon's process id."""
+    pid_path().write_text(str(pid))
+
+
+def remove_socket() -> None:
+    """Remove the daemon's socket file, if any."""
+    socket_path().unlink(missing_ok=True)
+
+
+def remove_runtime_files() -> None:
+    """Remove the daemon's socket file, then its process-id file."""
+    remove_socket()
+    pid_path().unlink(missing_ok=True)
 
 
 def _lock_path() -> Path:
@@ -132,7 +149,7 @@ def retire_daemon(transport: DaemonTransport, pid: object) -> bool:
     return False
 
 
-def _become_daemon(transport: DaemonTransport) -> None:
+def _become_daemon(transport: DaemonTransport, fetch: HttpGet) -> None:
     """Detach from parent, close inherited FDs, redirect stdio, run daemon loop.
 
     Called in the forked child process. Never returns — calls os._exit(0).
@@ -168,14 +185,14 @@ def _become_daemon(transport: DaemonTransport) -> None:
             run_daemon,
         )
 
-        run_daemon(transport)
+        run_daemon(transport, fetch)
     except Exception:  # pylint: disable=broad-exception-caught  # the daemon child must not crash on transient errors
         logger.warning("daemon process failed", exc_info=True)
     finally:
         os._exit(0)  # daemon child must not return
 
 
-def start_daemon(transport: DaemonTransport) -> int:
+def start_daemon(transport: DaemonTransport, fetch: HttpGet) -> int:
     """Start global daemon in a forked subprocess. Returns child PID.
 
     Uses flock on mapper.lock to serialize concurrent starts.
@@ -202,7 +219,7 @@ def start_daemon(transport: DaemonTransport) -> int:
             pass  # another process holds the lock: it is starting the daemon
         else:
             try:
-                return _fork_daemon(transport)
+                return _fork_daemon(transport, fetch)
             finally:
                 fcntl.flock(lock_fd, fcntl.LOCK_UN)
     # Another process is starting the daemon — wait for it
@@ -213,7 +230,7 @@ def start_daemon(transport: DaemonTransport) -> int:
     return 0
 
 
-def _fork_daemon(transport: DaemonTransport) -> int:
+def _fork_daemon(transport: DaemonTransport, fetch: HttpGet) -> int:
     """Fork the daemon child while holding the start lock. Returns the child PID.
 
     Unreachable on Windows: callers gate on sys.platform before forking.
@@ -239,7 +256,7 @@ def _fork_daemon(transport: DaemonTransport) -> int:
                 break
         return pid
 
-    _become_daemon(transport)
+    _become_daemon(transport, fetch)
 
     return 0  # unreachable
 

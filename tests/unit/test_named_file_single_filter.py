@@ -15,6 +15,7 @@ from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.pipeline import Discovered
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
+from tests.fake_models import no_models
 
 RULE = "---\npaths:\n  - 'src/**'\n---\n\n# A\n\nUse type hints on every function.\n"
 SKILL = "---\nname: foo\ndescription: Does foo.\n---\n\nRun foo.\n"
@@ -60,6 +61,7 @@ def _state(
             cwd=False,
             project_root=project,
         ),
+        models=no_models(),
     )
     check_flow._flow_targets(state)
     assert check_flow._flow_scope(state)

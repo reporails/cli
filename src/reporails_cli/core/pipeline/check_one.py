@@ -19,6 +19,7 @@ from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.lint.regex.not_evaluated import not_evaluated_scope
 from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes_over_pairs
 from reporails_cli.core.mapper.model_manifest import ModelFetchError, get_models_path, models_present
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.mapper.skills import skill_membership
 from reporails_cli.core.pipeline.assemble import assemble_result, lint_request_local, with_exclusions
 from reporails_cli.core.pipeline.mapping import (
@@ -148,6 +149,7 @@ def build_map(
     filter_agents: list[DetectedAgent] | None = None,
     *,
     daemon: DaemonTransport,
+    models: Models,
 ) -> tuple[RulesetMap | None, str | None]:
     """Build the ruleset map via the shared warm path, so a long-lived process reuses a warm model
     instead of loading one on every call.
@@ -173,6 +175,7 @@ def build_map(
                 filtered_agents=filter_agents,
                 mapper=mapper,
                 daemon=daemon,
+                models=models,
             ),
             None,
         )
@@ -415,7 +418,7 @@ def check_and_assemble(
     return with_exclusions(result, left_out.record), funnel_error
 
 
-def check_scope(run: RunContext, scope: Scope, lint: LintService, daemon: DaemonTransport) -> CheckRun:
+def check_scope(run: RunContext, scope: Scope, lint: LintService, daemon: DaemonTransport, models: Models) -> CheckRun:
     """Run M-probes + content/client checks over a scope's files and assemble the result.
 
     Regime and surface health key against `scope.scan_root` (the checked path), not the server cwd.
@@ -428,7 +431,7 @@ def check_scope(run: RunContext, scope: Scope, lint: LintService, daemon: Daemon
     """
 
     ruleset_map, mapper_error = build_map(
-        scope.scan_root, scope.instruction_files, scope.config.mapper, scope.filter_agents, daemon=daemon
+        scope.scan_root, scope.instruction_files, scope.config.mapper, scope.filter_agents, daemon=daemon, models=models
     )
     result, funnel_error = check_and_assemble(run, scope, ruleset_map, lint=lint)
     file_score = display_score(result, scope.single_file, scope.scan_root) if scope.single_file is not None else None
@@ -450,6 +453,7 @@ def check_path(
     run: RunContext,
     fetch: HttpGet,
     daemon: DaemonTransport,
+    models: Models,
 ) -> CheckRun | Refusal:
     """Check `path` (directory or file): the `CheckRun`, or the `Refusal` saying why nothing was checked.
 
@@ -460,6 +464,6 @@ def check_path(
         scope = scope_for_path(path, project_root, named, run=run, fetch=fetch)
         if isinstance(scope, Refusal):
             return scope
-        return check_scope(run, scope, lint, daemon)
+        return check_scope(run, scope, lint, daemon, models)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return Refusal("failed", str(e) or f"The check failed ({type(e).__name__}).")

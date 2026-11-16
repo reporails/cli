@@ -33,7 +33,7 @@ from reporails_cli.core.mapper.map_cache import (
     dicts_to_atoms,
     file_cache_key,
 )
-from reporails_cli.core.mapper.models import Models, get_models
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.mapper.prose_split import SEGMENTATION_STRUCTURE_AWARE
 from reporails_cli.core.mapper.serialize import validate_atoms
@@ -345,13 +345,16 @@ def _fill_missing_embeddings(all_atoms: list[Atom], models: Models) -> None:
         _embed_atoms_deduped(unembedded, models.st)
 
 
-def _charge_applier() -> Callable[[list[Atom]], list[Atom]] | None:
+def _charge_applier() -> Callable[[list[Atom], Models], list[Atom]] | None:
     """Return the per-file charge function, or None when the bundled classification models are absent."""
     return apply_multislot if multislot_available() else None
 
 
 def _apply_charge_stage(
-    all_atoms: list[Atom], atoms_needing_embed: list[Atom], progress: Callable[[str], None] | None = None
+    all_atoms: list[Atom],
+    atoms_needing_embed: list[Atom],
+    models: Models,
+    progress: Callable[[str], None] | None = None,
 ) -> tuple[list[Atom], list[Atom]]:
     """Charge classification — classifies each atom's charge, replacing the tokenize-time
     lexical charge and prose splits when the bundled classification models are
@@ -376,7 +379,7 @@ def _apply_charge_stage(
         if progress is not None:
             progress(f"Analyzing instructions: {done}/{count}")
 
-    rebuilt_fresh = apply_multislot_groups(fresh_lists, _report) if any(fresh_lists) else []
+    rebuilt_fresh = apply_multislot_groups(fresh_lists, models, _report) if any(fresh_lists) else []
     remap = dict(zip(fresh_positions, rebuilt_fresh, strict=True))
 
     return _splice_rebuilt(groups, remap)
@@ -486,7 +489,7 @@ def _classify_charge_embed_dispatch(
 
     had_fresh = bool(atoms_needing_embed)
     if atoms_needing_embed:
-        all_atoms, atoms_needing_embed = _apply_charge_stage(all_atoms, atoms_needing_embed, progress)
+        all_atoms, atoms_needing_embed = _apply_charge_stage(all_atoms, atoms_needing_embed, models, progress)
     _embed_and_audit_fresh(
         atoms_needing_embed,
         all_atoms,
@@ -513,7 +516,7 @@ def _classify_charge_embed_dispatch(
 def map_ruleset(
     paths: list[Path],
     *,
-    models: Models | None = None,
+    models: Models,
     root: Path | None = None,
     cache_dir: Path | None = None,
     segmentation: str = "legacy",
@@ -541,8 +544,6 @@ def map_ruleset(
     timer = _get_stage_timer()
     structure_aware = segmentation == SEGMENTATION_STRUCTURE_AWARE
 
-    if models is None:
-        models = get_models()
     if root is None:
         root = paths[0].parent if paths else Path(".")
 

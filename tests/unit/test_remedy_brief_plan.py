@@ -13,6 +13,7 @@ from reporails_cli.formatters.mcp_view import render_text_view
 from reporails_cli.interfaces.mcp import remedy_brief, snapshots, tools
 from reporails_cli.interfaces.mcp.preservation import with_preservation
 from tests.fake_daemon import FakeDaemonTransport
+from tests.fake_models import no_models
 
 SPLIT = "*Do not preload a fixed trinity or walk the whole corpus — resolve only the named entries.*"
 NEGATION = "*Never bypass `reviewer` on cross-release work.*"
@@ -55,7 +56,7 @@ def _location() -> dict[str, Any]:
 def _brief(tmp_path: Path) -> tuple[Path, dict[str, Any]]:
     file = tmp_path / "CLAUDE.md"
     file.write_text(TEXT, encoding="utf-8")
-    reply = remedy_brief.build_remedy_brief(_location(), tmp_path, preservation_contract="stand-in")
+    reply = remedy_brief.build_remedy_brief(_location(), tmp_path, preservation_contract="stand-in", models=no_models())
     assert "error" not in reply, reply
     return file, reply
 
@@ -69,7 +70,9 @@ def _apply(file: Path, reply: dict[str, Any]) -> None:
 
 
 def _conformance(file: Path, root: Path) -> dict[str, Any]:
-    payload, ruleset_map, score = tools.run_pipeline_for_path(str(file), True, project_root=root, run=RunContext())
+    payload, ruleset_map, score = tools.run_pipeline_for_path(
+        str(file), True, project_root=root, run=RunContext(), models=no_models()
+    )
     return with_preservation(payload, file, ruleset_map, score, root)["conformance"]
 
 
@@ -181,7 +184,7 @@ def test_a_hoist_is_a_slot_with_its_target_and_partner(tmp_path: Path) -> None:
         _finding(C58, 7, "hoist", expect={"to": ["ROOT.md", 0], "also": ["other/CLAUDE.md", 4]}),
     ]
 
-    reply = remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract="stand-in")
+    reply = remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract="stand-in", models=no_models())
 
     (slot,) = reply["slots"]
     assert slot["op"] == "hoist" and reply["edits"] == []
@@ -227,7 +230,7 @@ def test_a_refused_split_slot_carries_its_one_change_and_its_guide_line(tmp_path
         _finding(C42, 5, "elaborate", members=[_finding(C42, 5, "together")]),
     ]
 
-    reply = remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract="stand-in")
+    reply = remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract="stand-in", models=no_models())
 
     split, plain = reply["slots"]
     assert (split["op"], split["change"]) == ("split", "split-keep-sequence")
@@ -263,16 +266,23 @@ def test_a_unicode_line_separator_does_not_shift_the_plan_or_its_check(tmp_path:
     }
     location = {**_location(), "findings": [], "relations": [relation]}
     project_map = map_instruction_files(
-        tmp_path, [file, other], spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport()
+        tmp_path,
+        [file, other],
+        spawn_daemon=False,
+        mapper=MapperConfig(),
+        daemon=FakeDaemonTransport(),
+        models=no_models(),
     )
 
-    reply = remedy_brief.build_remedy_brief(location, tmp_path, project_map, preservation_contract="stand-in")
+    reply = remedy_brief.build_remedy_brief(
+        location, tmp_path, project_map, preservation_contract="stand-in", models=no_models()
+    )
 
     assert [(e["line_start"], e["before"]) for e in reply["edits"]] == [(5, "- Use `ruff` for linting.\n")]
     text = file.read_text(encoding="utf-8").replace("- Use `ruff` for linting.\n", "")
     file.write_text(text, encoding="utf-8")
     fresh = map_instruction_files(
-        tmp_path, [file], spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport()
+        tmp_path, [file], spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport(), models=no_models()
     )
     assert snapshots.check_conformance(file, fresh, text, tmp_path) == {"ok": True, "deviations": []}
 
@@ -292,7 +302,7 @@ def test_the_brief_leaves_a_line_the_author_annotated_unchanged(tmp_path: Path) 
     file = tmp_path / "CLAUDE.md"
     reviewed = f"{NEGATION} <!-- ails-disable-line CORE:C:0053 -->"
     file.write_text(TEXT.replace(NEGATION, reviewed), encoding="utf-8")
-    reply = remedy_brief.build_remedy_brief(_location(), tmp_path, preservation_contract="stand-in")
+    reply = remedy_brief.build_remedy_brief(_location(), tmp_path, preservation_contract="stand-in", models=no_models())
     assert "error" not in reply, reply
     assert all(reviewed in e["after"] for e in reply["edits"] if reviewed in e["before"])
     assert not [s for s in reply["slots"] if s["line"] == 5]

@@ -14,7 +14,9 @@ from pathlib import Path
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from reporails_cli.core.mapper.model_manifest import ModelFetchError
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
+from reporails_cli.core.platform.adapters.http_get import http_get
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_str
@@ -28,7 +30,7 @@ from reporails_cli.formatters.mcp_view import has_text_view, render_text_view, u
 from reporails_cli.interfaces.mcp import snapshots
 from reporails_cli.interfaces.mcp.feedback import file_feedback
 from reporails_cli.interfaces.mcp.heal_record import record_kept_files
-from reporails_cli.interfaces.mcp.idle_release import lifespan, touch_activity
+from reporails_cli.interfaces.mcp.idle_release import lifespan_releasing, touch_activity
 from reporails_cli.interfaces.mcp.prepare import prepare_for_path
 from reporails_cli.interfaces.mcp.preservation import with_preservation
 from reporails_cli.interfaces.mcp.project_folder import ProjectFolder, ToolContext, resolve_project_folder
@@ -67,11 +69,17 @@ from reporails_cli.interfaces.mcp.xray_tool import xray_page
 
 
 def _serve_remedy_brief(
-    path: str, location: int, targets: list[str] | None = None, has_guide: bool = False, *, project_root: Path
+    path: str,
+    location: int,
+    targets: list[str] | None = None,
+    has_guide: bool = False,
+    *,
+    project_root: Path,
+    models: Models,
 ) -> JsonObject:
     """`remedy_brief`'s reply; an unreadable config file answers `config_unreadable` naming the file and line."""
     try:
-        return _remedy_brief_reply(path, location, targets, has_guide, project_root)
+        return _remedy_brief_reply(path, location, targets, has_guide, project_root, models=models)
     except ConfigUnreadableError as exc:
         return _config_unreadable(exc)
 
@@ -94,7 +102,7 @@ def _unbriefable(no_location: bool, location: int, count: int) -> JsonObject:
 
 
 def _remedy_brief_reply(
-    path: str, location: int, targets: list[str] | None, has_guide: bool, project_root: Path
+    path: str, location: int, targets: list[str] | None, has_guide: bool, project_root: Path, *, models: Models
 ) -> JsonObject:
     """`remedy_brief(path, location, targets, has_guide)`'s body: a caller without the rewrite
     guide (`has_guide` false) is refused with `plugin_update_required` before anything else. Reads
@@ -141,7 +149,7 @@ def _remedy_brief_reply(
     if loc is None or not contract:
         return _unbriefable(loc is None, location, len(locations))
     scan_root = state.scan_root or Path(path).resolve()
-    reply = build_remedy_brief(loc, scan_root, state.last_ruleset_map, preservation_contract=contract)
+    reply = build_remedy_brief(loc, scan_root, state.last_ruleset_map, preservation_contract=contract, models=models)
     if "error" not in reply:
         state.call_count = 0
     return reply
@@ -165,6 +173,7 @@ async def _fresh_validate_payload(
     tokens: tuple[str, ...],
     scan_root: Path,
     state: CircuitState,
+    models: Models,
 ) -> JsonObject | tuple[JsonObject, RulesetMap | None, float | None]:
     """Run the pipeline fresh (never served from `state.full_payload`): resolve `tokens` first,
     narrow `workflow.locations` to them (`keep_target_locations`) and memoize the map/score on
@@ -178,7 +187,7 @@ async def _fresh_validate_payload(
         selection = resolved
     # Blocking pipeline work runs off the event loop.
     payload, ruleset_map, score = await asyncio.to_thread(
-        run_pipeline_for_path, path, True, named_files(selection), project_root=scan_root, run=run
+        run_pipeline_for_path, path, True, named_files(selection), project_root=scan_root, run=run, models=models
     )
     if selection is not None and "files" in payload:
         payload = keep_target_locations(payload, *selection, scan_root, tokens)
@@ -247,15 +256,23 @@ async def _breaker_reply(state: CircuitState, target: Path, scan_root: Path) -> 
     return {**reply, "accepted": kept["accepted"]} if "accepted" in kept else reply
 
 
-async def _run_validate(path: str, full: bool, targets: list[str] | None, project_root: Path) -> JsonObject:
+async def _run_validate(
+    path: str, full: bool, targets: list[str] | None, project_root: Path, models: Models
+) -> JsonObject:
     """The `validate` payload; an unreadable config file answers `config_unreadable` naming the file and line."""
     try:
-        return await _validate_reply(path, full, targets, project_root)
+        # A refusal or a model not ready yet is not a validate attempt: answer before the counters move.
+        model_error = await asyncio.to_thread(unserved_or_model_not_ready_error)
+        if model_error is not None:
+            return model_error
+        return await _validate_reply(path, full, targets, project_root, models)
     except ConfigUnreadableError as exc:
         return _config_unreadable(exc)
 
 
-async def _validate_reply(path: str, full: bool, targets: list[str] | None, project_root: Path) -> JsonObject:
+async def _validate_reply(
+    path: str, full: bool, targets: list[str] | None, project_root: Path, models: Models
+) -> JsonObject:
     """Compute the `validate` payload with the content-aware circuit breaker.
 
     With `targets`, the whole project is diagnosed as without them and the reply's
@@ -277,11 +294,6 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None, proj
     circuit_breaker); an unexpected exception propagates for the SDK to surface.
     """
     target = Path(path).resolve()
-
-    # A refusal or a model not ready yet is not a validate attempt: answer before the counters move.
-    model_error = await asyncio.to_thread(unserved_or_model_not_ready_error)
-    if model_error is not None:
-        return model_error
 
     # The mtime hash walks the scan root the pipeline discovers from: a FILE target's root is its
     # enclosing project, never the bare file path (which reads as an empty directory and would
@@ -307,7 +319,7 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None, proj
         # Reuse the map/score the last fresh run stored rather than re-running the pipeline.
         ruleset_map, score = state.last_ruleset_map, state.last_score
     else:
-        result = await _fresh_validate_payload(path, tokens, scan_root, state)
+        result = await _fresh_validate_payload(path, tokens, scan_root, state, models)
         if isinstance(result, dict):
             return result
         payload, ruleset_map, score = result
@@ -338,7 +350,9 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None, proj
 # `MCPServer`'s own `version` defaults to `""` when not passed, so `initialize`'s
 # `serverInfo.version` was always empty — a caller has no way to tell which server build it
 # is talking to. `StrictArgsMCPServer` also closes a related gap: an unknown tool argument.
-server = StrictArgsMCPServer("ails", version=installed_version(), lifespan=lifespan)
+# The models this server process loads; the idle release unloads them.
+process_models = Models(http_get)
+server = StrictArgsMCPServer("ails", version=installed_version(), lifespan=lifespan_releasing(process_models))
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True)
 
@@ -409,7 +423,7 @@ async def validate(
         if not isinstance(folder, ProjectFolder):
             return _result(folder)
         key = str(folder.target)
-        payload = await _run_validate(key, bool(full), targets, folder.root)
+        payload = await _run_validate(key, bool(full), targets, folder.root, process_models)
         if not has_text_view(payload, full=bool(full)):
             return _result(payload)
         state = validate_states.setdefault(state_key(key, folder.root, target_tokens(targets)), CircuitState())
@@ -434,7 +448,9 @@ async def prepare(ctx: ToolContext, path: str = ".", targets: list[str] | None =
         if not isinstance(folder, ProjectFolder):
             return _result(folder)
         try:
-            return _result(await asyncio.to_thread(prepare_for_path, str(folder.target), targets, folder.root))
+            return _result(
+                await asyncio.to_thread(prepare_for_path, str(folder.target), targets, folder.root, process_models)
+            )
         except ConfigUnreadableError as exc:
             return _result(_config_unreadable(exc))
 
@@ -473,6 +489,7 @@ async def remedy_brief(
             targets,
             bool(has_guide),
             project_root=folder.root,
+            models=process_models,
         )
         return _result(brief)
 
@@ -553,9 +570,6 @@ def _prewarm_models() -> None:
     """Fetch the model set in the background so the first `validate` rarely waits on it."""
     from reporails_cli.core.mapper.model_store import (  # pylint: disable=import-outside-toplevel  # startup: the model fetch loads off the MCP handshake path
         ensure_models_available,
-    )
-    from reporails_cli.core.platform.adapters.http_get import (  # pylint: disable=import-outside-toplevel  # startup: loads off the MCP handshake path
-        http_get,
     )
 
     # On failure `validate` retries and reports the error to the caller.

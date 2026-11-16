@@ -30,8 +30,8 @@ requires_model = pytest.mark.skipif(not _has_onnx_model, reason="Bundled ONNX mo
 @pytest.mark.subsys_map
 @requires_model
 def test_position_index_is_per_file_across_map_ruleset(tmp_path: Path) -> None:
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     a = tmp_path / "a.md"
     a.write_text(
@@ -44,7 +44,7 @@ def test_position_index_is_per_file_across_map_ruleset(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    models = get_models()
+    models = no_models()
     ruleset = map_ruleset([a, b], models=models, root=tmp_path, cache_dir=None)
 
     by_file: dict[str, list[int]] = {}

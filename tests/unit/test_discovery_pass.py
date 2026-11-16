@@ -15,6 +15,7 @@ from reporails_cli.core.platform.dto.pipeline import Discovered, Refusal
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
 from reporails_cli.interfaces.mcp import tools
+from tests.fake_models import no_models
 
 
 @pytest.fixture
@@ -79,7 +80,7 @@ def test_check_scope_discovery_reads_each_directory_once(tmp_path: Path, walker_
         cwd=False,
         project_root=project,
     )
-    state = CheckState(run=RunContext(), inputs=inputs)
+    state = CheckState(run=RunContext(), inputs=inputs, models=no_models())
     state.targets.target = project
     check_flow._resolve_scope_at_target(state)
     assert {p.name for p in state.scope.instruction_files} >= {"CLAUDE.md", "SKILL.md"}

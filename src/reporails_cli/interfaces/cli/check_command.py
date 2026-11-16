@@ -89,6 +89,12 @@ def check(options: CheckOptions) -> None:
 
     Run `ails rules capabilities` to see the capability names you can target.
     """
+    from reporails_cli.core.mapper.models import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        Models,
+    )
+    from reporails_cli.core.platform.adapters.http_get import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        http_get,
+    )
     from reporails_cli.core.platform.config.run_context import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         RunContext,
     )
@@ -112,6 +118,7 @@ def check(options: CheckOptions) -> None:
     _arm_check_timeout()  # wall-clock backstop against a runaway/hung check (POSIX)
     state = CheckState(
         run=RunContext(),
+        models=Models(http_get),
         inputs=CheckInputs(
             targets=options.targets,
             format_opt=options.output_format,

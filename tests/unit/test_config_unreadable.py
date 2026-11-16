@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from reporails_cli.core.platform.config import config as config_mod
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.interfaces.cli.main import app
+from tests.fake_models import no_models
 
 runner = CliRunner()
 _BAD = "disabled_rules: [CORE:E:0003\n"
@@ -110,7 +111,7 @@ def test_mcp_validate_returns_the_structured_error(tmp_path: Path, global_path: 
     from reporails_cli.interfaces.mcp.server import _run_validate
 
     root = _project(tmp_path, "config.yml")
-    payload = asyncio.run(_run_validate(str(root), False, None, root))
+    payload = asyncio.run(_run_validate(str(root), False, None, root, no_models()))
     assert payload["error"] == "config_unreadable"
     assert str(root / ".ails" / "config.yml") in payload["message"]
 
@@ -260,7 +261,7 @@ def test_mcp_remedy_brief_returns_the_structured_error(
     server.validate_states[server.state_key(str(root), root, ())] = server.CircuitState(
         full_payload={"workflow": {"preservation_contract": "x", "locations": [{"order": 1}]}}, scan_root=root
     )
-    reply = server._serve_remedy_brief(str(root), 1, None, True, project_root=root)
+    reply = server._serve_remedy_brief(str(root), 1, None, True, project_root=root, models=no_models())
     server.validate_states.clear()
     assert reply == {"error": "config_unreadable", "message": str(problem)}
 

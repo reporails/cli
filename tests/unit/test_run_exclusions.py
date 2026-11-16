@@ -24,6 +24,7 @@ from reporails_cli.core.platform.dto.discovery import DEFAULT_EXCLUDE_DIRS
 from reporails_cli.core.platform.dto.pipeline import Discovered
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
+from tests.fake_models import no_models
 
 
 def _write_config(project: Path, body: str) -> None:
@@ -197,7 +198,7 @@ def test_cli_scope_fold_never_checks_a_left_out_file(tmp_path, case, config, fla
         cwd=False,
         project_root=project,
     )
-    state = CheckState(run=RunContext(), inputs=inputs)
+    state = CheckState(run=RunContext(), inputs=inputs, models=no_models())
     state.targets.target = project
     check_flow._resolve_scope_at_target(state)
     check_flow._apply_generic_scan(state)
@@ -243,7 +244,7 @@ def _scope_state(project: Path, path_targets: set[Path], specs: list[tuple[str, 
         cwd=False,
         project_root=project,
     )
-    state = CheckState(run=RunContext(), inputs=inputs)
+    state = CheckState(run=RunContext(), inputs=inputs, models=no_models())
     state.targets.target = project
     state.targets.path_targets = path_targets
     state.targets.capability_specs = specs

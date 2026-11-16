@@ -31,6 +31,7 @@ from reporails_cli.core.platform.dto.ruleset import (
     RulesetMap,
     RulesetSummary,
 )
+from tests.fake_models import no_models
 
 _CHARGE = {-1: "CONSTRAINT", 0: "NEUTRAL", 1: "DIRECTIVE"}
 
@@ -61,7 +62,7 @@ def _heading_tuple(text: str, polarity: int, predicate: Span) -> AtomTuple:
 
 def _charged(text: str) -> list[Atom]:
     """The decoded atoms for `text`, via the production tokenize → decode path."""
-    return bio_pipeline.apply_multislot(tokenize(text))
+    return bio_pipeline.apply_multislot(tokenize(text), no_models())
 
 
 # ── headings ────────────────────────────────────────────────────────────────

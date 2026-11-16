@@ -15,6 +15,7 @@ import pytest
 
 from reporails_cli.interfaces.mcp import remedy_brief
 from reporails_cli.interfaces.mcp.preservation import with_preservation
+from tests.fake_models import no_models
 
 
 def _payload(*rules: str) -> dict[str, Any]:
@@ -32,7 +33,7 @@ def _brief(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *rules: str) -> Path
         "order": 1, "element": "CLAUDE.md", "kind": "main", "loading": "session_start", "files": ["CLAUDE.md"],
         "importance": "gate_mover", "findings": [], "relations": [],
     }  # fmt: skip
-    reply = remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract="stand-in")
+    reply = remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract="stand-in", models=no_models())
     assert "error" not in reply
     return file
 

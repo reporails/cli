@@ -18,6 +18,7 @@ import pytest
 from reporails_cli.core.pipeline.server_gate import server_gate
 from reporails_cli.core.platform.adapters.key_check import handshake
 from reporails_cli.interfaces.cli import xray_server
+from tests.fake_models import no_models
 
 pytestmark = [pytest.mark.integration, pytest.mark.subsys_xray, pytest.mark.usefixtures("server_reachable")]
 
@@ -50,7 +51,9 @@ def service(monkeypatch: pytest.MonkeyPatch) -> Iterator[ThreadingHTTPServer]:
 
 
 def _launch(root: Path) -> tuple[object, dict[str, object]]:
-    page = xray_server.XrayServer(root.resolve(), root / "s.jsonl", picked="newest", token="t", launch="l", port=8765)
+    page = xray_server.XrayServer(
+        root.resolve(), root / "s.jsonl", picked="newest", token="t", launch="l", port=8765, models=no_models()
+    )
     return page._launch_outcome()
 
 

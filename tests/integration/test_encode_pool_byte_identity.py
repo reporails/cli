@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.fake_models import no_models
+
 _onnx_path = (
     Path(__file__).resolve().parents[2]
     / "src"
@@ -46,14 +48,14 @@ def test_pooled_encode_byte_identical_to_serial(monkeypatch: pytest.MonkeyPatch,
     """
     from reporails_cli.core.mapper import encode_pool as pool_mod
     from reporails_cli.core.mapper import multislot_frames, onnx_embedder
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
     from reporails_cli.core.mapper.serialize import _atom_to_dict
+    from tests.fake_models import no_models
 
     paths = sorted(_CORPUS.glob("*.md"))
     assert len(paths) >= 4, "fixture corpus must span several files"
 
-    models = get_models()
+    models = no_models()
 
     pooled_worker_counts: list[int] = []
     real_run_buckets = pool_mod.run_buckets
@@ -107,8 +109,8 @@ def test_batched_charge_groups_byte_identical_to_per_file(deterministic_ort: Non
     files = sorted(_CORPUS.glob("*.md"))
     assert len(files) >= 4, "fixture corpus must span several files"
 
-    per_file = [apply_multislot(list(tokenize(f.read_text()))) for f in files]
-    batched = apply_multislot_groups([list(tokenize(f.read_text())) for f in files])
+    per_file = [apply_multislot(list(tokenize(f.read_text())), no_models()) for f in files]
+    batched = apply_multislot_groups([list(tokenize(f.read_text())) for f in files], no_models())
 
     assert sum(len(g) for g in batched) > 20
     assert [len(g) for g in batched] == [len(g) for g in per_file]

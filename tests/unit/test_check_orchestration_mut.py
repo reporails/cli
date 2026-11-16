@@ -21,6 +21,7 @@ from reporails_cli.core.platform.config import vocabulary as vocab_mod
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.lexicon import CapabilityVocabulary
 from reporails_cli.interfaces.cli import check_orchestration as orch
+from tests.fake_models import no_models
 
 # --- L89: _looks_like_windows_path (chained `and`) ---
 
@@ -291,24 +292,25 @@ def _run_heal_capture(monkeypatch, *, isatty, output_format):
     captured = {}
     import reporails_cli.core.lint.suppression as supp
 
-    def _fake_mech(ruleset_map, target, workflow, *, dry_run, show_progress, console, allowed_files, suppressed):
-        captured["show"] = show_progress
+    def _fake_mech(ruleset_map, target, workflow, *, dry_run, allowed_files, suppressed, models):
         return SimpleNamespace(fixes=[], decisions=[], put_back=[])
 
     monkeypatch.setattr(supp, "suppressed_lines", lambda *a, **k: {})
     monkeypatch.setattr(orch, "_apply_keyed_fixes", _fake_mech)
+    monkeypatch.setattr(orch, "console", SimpleNamespace(print=lambda *a, **k: captured.setdefault("show", True)))
     monkeypatch.setattr(orch, "_collect_section_suggestions", lambda *a, **k: [])
     monkeypatch.setattr(orch, "_output_heal_results", lambda *a, **k: None)
     monkeypatch.setattr(orch.sys.stdout, "isatty", lambda: isatty, raising=False)
     orch._run_heal_pass(
         Path("."),
-        orch.HealScope([], "claude", no_exclusions(Path("."))),
+        orch.HealScope([], "claude", no_exclusions(Path(".")), no_models()),
         object(),
         True,
         output_format,
         run=RunContext(),
+        workflow=object(),
     )
-    return captured["show"]
+    return captured.get("show", False)
 
 
 @pytest.mark.unit

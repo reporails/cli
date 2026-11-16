@@ -21,6 +21,7 @@ from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.platform.config import claude_settings
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli.main import app
+from tests.fake_models import no_models
 
 runner = CliRunner()
 
@@ -163,7 +164,9 @@ def test_claude_as_the_projects_agent_reads_an_agents_md_only_project(
     _write(project, ".ails/config.yml", "default_agent: claude\n")
     cli = _json(monkeypatch, project)
     assert _tuples(cli) == _tuples(
-        tools.run_pipeline_for_path(str(project), full=True, project_root=project, run=RunContext())[0]
+        tools.run_pipeline_for_path(
+            str(project), full=True, project_root=project, run=RunContext(), models=no_models()
+        )[0]
     )
 
 

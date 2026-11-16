@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import get_args
+from typing import NamedTuple, get_args
 
 import typer
 import uvicorn
@@ -35,6 +35,7 @@ from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.eventbus.transcript import known_session
 from reporails_cli.core.heal.apply import heal_one, resolved_within
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.pipeline.check_one import check_path, file_findings
 from reporails_cli.core.pipeline.server_gate import server_gate
 from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
@@ -48,7 +49,7 @@ from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
-from reporails_cli.core.platform.dto.pipeline import Refusal
+from reporails_cli.core.platform.dto.pipeline import CheckRun, Refusal
 from reporails_cli.core.platform.dto.xray import PickedSession, SessionPick, XrayCheck
 from reporails_cli.core.platform.dto.xray_sources import FindingTally, XrayPeek
 from reporails_cli.core.platform.rules.registry import file_level_check_ids
@@ -60,6 +61,7 @@ from reporails_cli.core.xray.sessions import session_entries
 from reporails_cli.core.xray.tally import tallies_by_file, tally_of
 from reporails_cli.formatters.mcp_view import render_heal_receipt
 from reporails_cli.formatters.text.rule_meta import rule_docs_url
+from reporails_cli.interfaces.cli.xray_fields import call_fields, hook_output_fields, text_fields
 from reporails_cli.interfaces.cli.xray_launch import RequestClock, bound_socket, mark_requests, run_until_idle, span
 from reporails_cli.interfaces.cli.xray_line import xray_line
 
@@ -85,6 +87,14 @@ logger = logging.getLogger(__name__)
 mimetypes.add_type("text/javascript", ".js")
 
 
+class _Launch(NamedTuple):
+    """What identifies one launch: its request token, its id and the origin its pages are served from."""
+
+    token: str
+    launch: str
+    origin: str
+
+
 def _refused(status: int, message: str) -> JSONResponse:
     return JSONResponse({"error": message}, status_code=status)
 
@@ -94,14 +104,13 @@ class XrayServer:
     and the one-at-a-time lock on slow core calls."""
 
     def __init__(
-        self, root: Path, session_file: Path, *, picked: SessionPick, token: str, launch: str, port: int
+        self, root: Path, session_file: Path, *, picked: SessionPick, token: str, launch: str, port: int, models: Models
     ) -> None:
         self._root = root
+        self._models = models
         self._opened = PickedSession(root, session_file, picked)
         self._sessions: dict[str, XraySession] = {}
-        self._token = token
-        self._launch_id = launch
-        self._origin = f"http://{HOST}:{port}"
+        self._identity = _Launch(token, launch, f"http://{HOST}:{port}")
         self._findings: dict[str, FindingTally] = {}
         self._launch = XrayCheck("running", None)
         self._view_lock = threading.Lock()
@@ -111,12 +120,12 @@ class XrayServer:
 
     def _wrong_token(self, request: Request) -> bool:
         sent = request.headers.get(TOKEN_HEADER, "")
-        return not secrets.compare_digest(sent.encode(), self._token.encode())
+        return not secrets.compare_digest(sent.encode(), self._identity.token.encode())
 
     async def _guard(self, request: Request) -> JSONResponse | None:
         """The refusal for a request that carries no valid token (or, for a POST, a foreign `Origin`) or that reaches
         a page whose installed code changed since it started, else None."""
-        if request.method == "POST" and request.headers.get("origin") != self._origin:
+        if request.method == "POST" and request.headers.get("origin") != self._identity.origin:
             return _refused(403, "foreign origin")
         if self._wrong_token(request):
             return _refused(403, "missing or wrong token")
@@ -151,7 +160,11 @@ class XrayServer:
 
     async def page(self, _request: Request) -> Response:
         """The bundled page with the launch token in it."""
-        html = (get_xray_path() / "index.html").read_text(encoding="utf-8").replace(TOKEN_PLACEHOLDER, self._token)
+        html = (
+            (get_xray_path() / "index.html")
+            .read_text(encoding="utf-8")
+            .replace(TOKEN_PLACEHOLDER, self._identity.token)
+        )
         return Response(html, media_type="text/html", headers=PAGE_HEADERS)
 
     async def view(self, request: Request) -> Response:
@@ -225,7 +238,7 @@ class XrayServer:
         """The id of this launch, so a caller can tell a live page from a record left behind, and whether the
         installed code changed since it started."""
         changed = await run_in_threadpool(self._code_changed)
-        return JSONResponse({"launch": self._launch_id, "changed": changed}, headers=NO_STORE)
+        return JSONResponse({"launch": self._identity.launch, "changed": changed}, headers=NO_STORE)
 
     async def peek(self, request: Request) -> Response:
         """The text of one listed file."""
@@ -289,7 +302,7 @@ class XrayServer:
             _TextRoute(
                 "subagent",
                 "the query is ?subagent=<id>",
-                _text_fields(XraySession.brief),
+                text_fields(XraySession.brief),
                 "not a subagent this page lists",
             ),
         )
@@ -301,7 +314,7 @@ class XrayServer:
             _TextRoute(
                 "type",
                 "the query is ?type=<agent type>, empty for the main agent",
-                _text_fields(XraySession.system_prompt),
+                text_fields(XraySession.system_prompt),
                 "not an agent type this session launched with a recorded request, and no recorded main request",
             ),
         )
@@ -311,7 +324,7 @@ class XrayServer:
         return await self._text_route(
             request,
             _TextRoute(
-                "id", "the query is ?id=<prompt id>", _text_fields(XraySession.prompt), "not a prompt this page lists"
+                "id", "the query is ?id=<prompt id>", text_fields(XraySession.prompt), "not a prompt this page lists"
             ),
         )
 
@@ -322,7 +335,7 @@ class XrayServer:
             _TextRoute(
                 "id",
                 "the query is ?id=<summary id>",
-                _text_fields(XraySession.summary),
+                text_fields(XraySession.summary),
                 "not a compaction summary this page lists",
             ),
         )
@@ -330,7 +343,7 @@ class XrayServer:
     async def call(self, request: Request) -> Response:
         """One call of the session: its tool, command, input and result excerpt."""
         return await self._text_route(
-            request, _TextRoute("id", "the query is ?id=<call id>", _call_fields, "not a call this page lists")
+            request, _TextRoute("id", "the query is ?id=<call id>", call_fields, "not a call this page lists")
         )
 
     async def hook_output(self, request: Request) -> Response:
@@ -340,7 +353,7 @@ class XrayServer:
             _TextRoute(
                 "id",
                 "the query is ?id=<firing id>",
-                _hook_output_fields,
+                hook_output_fields,
                 "not a firing this page lists",
             ),
         )
@@ -352,7 +365,7 @@ class XrayServer:
             _TextRoute(
                 "session",
                 "the query is ?session=<id>",
-                _text_fields(lambda session, _key: session.first_prompt()),
+                text_fields(lambda session, _key: session.first_prompt()),
                 "the session has no typed prompt",
             ),
         )
@@ -364,12 +377,21 @@ class XrayServer:
             return target
         return await run_in_threadpool(self._check, target)
 
+    def _check_path(self, path: str, run: RunContext) -> CheckRun | Refusal:
+        return check_path(
+            path,
+            self._root,
+            lint=ServerLint(run.tier()),
+            run=run,
+            fetch=http_get,
+            daemon=UnixDaemonSocket(),
+            models=self._models,
+        )
+
     def _check(self, target: Path) -> JSONResponse:
         with self._work_lock:
             run = RunContext()
-            checked = check_path(
-                str(target), self._root, lint=ServerLint(run.tier()), run=run, fetch=http_get, daemon=UnixDaemonSocket()
-            )
+            checked = self._check_path(str(target), run)
             if isinstance(checked, Refusal):
                 return _refused(400, checked.text)
             found = file_findings(checked, target)
@@ -410,14 +432,7 @@ class XrayServer:
             refusal = server_gate("xray", partial(handshake, tier=run.tier()))
             if refusal is not None:
                 return XrayCheck("refused", refusal.text), {}
-            checked = check_path(
-                str(self._root),
-                self._root,
-                lint=ServerLint(run.tier()),
-                run=run,
-                fetch=http_get,
-                daemon=UnixDaemonSocket(),
-            )
+            checked = self._check_path(str(self._root), run)
             if isinstance(checked, Refusal):
                 return XrayCheck("refused", checked.text), {}
             return XrayCheck("done", None), tallies_by_file(checked)
@@ -443,6 +458,7 @@ class XrayServer:
                 run=run,
                 fetch=http_get,
                 daemon=UnixDaemonSocket(),
+                models=self._models,
             )
             with self._view_lock:
                 self._findings.pop(self._key(target), None)
@@ -467,36 +483,6 @@ class _TextRoute:
     hint: str
     lookup: Callable[[XraySession, str], JsonObject | None]
     unknown: str
-
-
-def _text_fields(lookup: Callable[[XraySession, str], str | None]) -> Callable[[XraySession, str], JsonObject | None]:
-    """A lookup that finds a text, as one that finds the reply's `text` field."""
-
-    def fields(session: XraySession, key: str) -> JsonObject | None:
-        text = lookup(session, key)
-        return None if text is None else {"text": text}
-
-    return fields
-
-
-def _hook_output_fields(session: XraySession, key: str) -> JsonObject | None:
-    """The reply fields of a hook firing the session names: its output and whether the output was cut."""
-    found = session.hook_output(key)
-    return None if found is None else {"text": found[0], "truncated": found[1]}
-
-
-def _call_fields(session: XraySession, key: str) -> JsonObject | None:
-    """The reply fields of a call the session names: its tool, command, input and result excerpt."""
-    detail = session.call(key)
-    if detail is None:
-        return None
-    return {
-        "tool": detail.tool,
-        "text": detail.text,
-        "input": detail.input,
-        "result": detail.result,
-        "truncated": detail.truncated,
-    }
 
 
 def _line(finding: FindingItem) -> JsonObject:
@@ -525,7 +511,9 @@ def build_app(
 ) -> Starlette:
     """The page server, opening on `session_file` chosen as `picked`: the fixed routes behind the host, origin,
     token and path guards, each request marked on `requests`."""
-    server = XrayServer(safe_resolve(root), session_file, picked=picked, token=token, launch=launch, port=port)
+    server = XrayServer(
+        safe_resolve(root), session_file, picked=picked, token=token, launch=launch, port=port, models=Models(http_get)
+    )
     page = get_xray_path()
 
     @asynccontextmanager

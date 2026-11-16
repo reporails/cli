@@ -21,6 +21,7 @@ from unittest.mock import patch
 import pytest
 
 from reporails_cli.core.platform.config.run_context import RunContext
+from tests.fake_models import no_models
 
 # ---------------------------------------------------------------------------
 # Skip markers
@@ -82,7 +83,7 @@ def _bounded_reply(path: Path) -> dict[str, Any]:
     the text view, so the wiring tests read the payload the view is rendered from."""
     from reporails_cli.interfaces.mcp.server import _run_validate
 
-    return _run_async(_run_validate(str(path), False, None, path if path.is_dir() else path.parent))
+    return _run_async(_run_validate(str(path), False, None, path if path.is_dir() else path.parent, no_models()))
 
 
 # ---------------------------------------------------------------------------
@@ -384,7 +385,7 @@ class TestValidateTargets:
     def test_a_capability_target_keeps_only_its_locations(self, project: Path) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        data = _run_async(server._run_validate(str(project), True, ["skills"], project))
+        data = _run_async(server._run_validate(str(project), True, ["skills"], project, no_models()))
         wf = data["workflow"]
         assert [(loc["order"], loc["element"]) for loc in wf["locations"]] == [
             (1, "the `backlog` skill"),
@@ -400,9 +401,9 @@ class TestValidateTargets:
     def test_one_element_and_a_typed_word_read_like_ails_check(self, project: Path) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        one = _run_async(server._run_validate(str(project), True, ["skill:release"], project))
+        one = _run_async(server._run_validate(str(project), True, ["skill:release"], project, no_models()))
         assert [loc["element"] for loc in one["workflow"]["locations"]] == ["the `release` skill"]
-        path = _run_async(server._run_validate(str(project), True, [".claude/agents"], project))
+        path = _run_async(server._run_validate(str(project), True, [".claude/agents"], project, no_models()))
         assert [loc["element"] for loc in path["workflow"]["locations"]] == ["the `reviewer` agent"]
 
     @pytest.mark.e2e
@@ -412,21 +413,28 @@ class TestValidateTargets:
     def test_remedy_brief_reads_the_targeted_view_and_the_whole_view_keeps_its_numbering(self, project: Path) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        _run_async(server._run_validate(str(project), True, ["skills"], project))
-        brief = server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True, project_root=project)
+        _run_async(server._run_validate(str(project), True, ["skills"], project, no_models()))
+        brief = server._serve_remedy_brief(
+            str(project), 1, ["skills"], has_guide=True, project_root=project, models=no_models()
+        )
         assert brief["location"]["element"] == "the `backlog` skill"
         assert (
-            server._serve_remedy_brief(str(project), 1, has_guide=True, project_root=project)["error"] == "no_workflow"
+            server._serve_remedy_brief(str(project), 1, has_guide=True, project_root=project, models=no_models())[
+                "error"
+            ]
+            == "no_workflow"
         )
-        _run_async(server._run_validate(str(project), True, None, project))
+        _run_async(server._run_validate(str(project), True, None, project, no_models()))
         assert (
-            server._serve_remedy_brief(str(project), 1, has_guide=True, project_root=project)["location"]["element"]
+            server._serve_remedy_brief(str(project), 1, has_guide=True, project_root=project, models=no_models())[
+                "location"
+            ]["element"]
             == "CLAUDE.md"
         )
         assert (
-            server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True, project_root=project)["location"][
-                "element"
-            ]
+            server._serve_remedy_brief(
+                str(project), 1, ["skills"], has_guide=True, project_root=project, models=no_models()
+            )["location"]["element"]
             == "the `backlog` skill"
         )
 
@@ -436,7 +444,7 @@ class TestValidateTargets:
     def test_a_target_that_names_nothing_is_a_structured_error(self, project: Path) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        missing = _run_async(server._run_validate(str(project), True, ["skills:nope"], project))
+        missing = _run_async(server._run_validate(str(project), True, ["skills:nope"], project, no_models()))
         assert missing["error"] == "target_not_found"
         assert "nope" in missing["message"]
 
@@ -833,7 +841,7 @@ class TestCircuitBreaker:
         claude_md.write_text("# Project\n")
 
         def validate() -> dict:
-            return _run_async(server._run_validate(str(tmp_path), False, None, tmp_path))
+            return _run_async(server._run_validate(str(tmp_path), False, None, tmp_path, no_models()))
 
         # Round 1: 6 validate calls, each with a file edit so no unchanged-repeat trips first.
         for i in range(6):
@@ -842,7 +850,7 @@ class TestCircuitBreaker:
             assert data.get("error") != "circuit_breaker", data
 
         # A served remedy_brief resets call_count for this path before the next tier's round.
-        brief = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True, project_root=tmp_path)
+        brief = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True, project_root=tmp_path, models=no_models())
         assert "error" not in brief, brief
 
         # Round 2: 5 more validate calls (11 total across the run) must not trip.
@@ -1227,7 +1235,7 @@ class TestPreservationWiring:
         assert "preservation" not in bounded_before, "not yet briefed"
 
         _payload, ruleset_map, score = tools.run_pipeline_for_path(
-            str(target), True, project_root=tmp_path, run=RunContext()
+            str(target), True, project_root=tmp_path, run=RunContext(), models=no_models()
         )
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
@@ -1250,7 +1258,7 @@ class TestPreservationWiring:
         target = tmp_path / "CLAUDE.md"
         target.write_text("## Don'ts\n\n- Use mock objects in tests.\n- Use test doubles in the test suite.\n")
         _payload, ruleset_map, score = tools.run_pipeline_for_path(
-            str(target), True, project_root=tmp_path, run=RunContext()
+            str(target), True, project_root=tmp_path, run=RunContext(), models=no_models()
         )
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
@@ -1276,7 +1284,7 @@ class TestPreservationWiring:
         target.write_text("# Project\n\nNever commit secrets.\n")
 
         _payload, ruleset_map, score = tools.run_pipeline_for_path(
-            str(target), True, project_root=tmp_path, run=RunContext()
+            str(target), True, project_root=tmp_path, run=RunContext(), models=no_models()
         )
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
@@ -1581,7 +1589,7 @@ class TestFeedbackWiring:
         assert "feedback" not in bounded_before, "not yet briefed"
 
         _payload, ruleset_map, score = tools.run_pipeline_for_path(
-            str(target), True, project_root=tmp_path, run=RunContext()
+            str(target), True, project_root=tmp_path, run=RunContext(), models=no_models()
         )
         snapshots.snapshot_file(target, ruleset_map, score, [])
 

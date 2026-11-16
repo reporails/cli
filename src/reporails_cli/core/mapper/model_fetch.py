@@ -32,7 +32,6 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 
-import httpx
 from filelock import FileLock, Timeout
 
 from reporails_cli.core.mapper.model_manifest import (
@@ -232,7 +231,7 @@ def ensure_models_present(fetch: HttpGet, version: str = MODEL_VERSION) -> Path:
     return root
 
 
-def repair_cache(version: str = MODEL_VERSION) -> Path:
+def repair_cache(fetch: HttpGet, version: str = MODEL_VERSION) -> Path:
     """Re-verify every cached file for *version* against its pin and re-download any mismatch.
 
     Unlike :func:`ensure_models_present`, this never trusts presence alone — a same-size
@@ -251,7 +250,7 @@ def repair_cache(version: str = MODEL_VERSION) -> Path:
     try:
         with _fetch_lock(root.parent, version):
             if _verified_files(root) != frozenset(FETCH_SHA256):
-                _download_all(root, version, _repair_get, force=True)
+                _download_all(root, version, fetch, force=True)
     except OSError as exc:
         raise ModelFetchError(f"could not repair the model cache at {root.parent}: {exc}") from exc
     return root
@@ -515,32 +514,6 @@ def _swap_into_place(staging: Path, root: Path, *, force: bool = False) -> None:
         if not force and models_present(root):
             return
         raise
-
-
-class _RepairReply:
-    """A streamed `httpx` response read as an `HttpReply`."""
-
-    def __init__(self, response: httpx.Response) -> None:
-        self._response = response
-        self.status = response.status_code
-
-    def header(self, name: str) -> str:
-        """The value of response header `name`, or an empty string."""
-        return str(self._response.headers.get(name, ""))
-
-    def chunks(self) -> Iterator[bytes]:
-        """The body in pieces."""
-        return self._response.iter_bytes(_CHUNK)
-
-
-@contextmanager
-def _repair_get(url: str, *, headers: Mapping[str, str], timeout: float) -> Iterator[HttpReply]:
-    """The repair download's own GET: the in-load repair has no port yet, so it reads through `httpx` here."""
-    with (
-        httpx.Client(timeout=timeout, follow_redirects=True, headers=dict(headers)) as client,
-        client.stream("GET", url) as response,
-    ):
-        yield _RepairReply(response)
 
 
 def _print(msg: str) -> None:

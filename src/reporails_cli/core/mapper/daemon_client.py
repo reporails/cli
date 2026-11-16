@@ -24,6 +24,7 @@ from reporails_cli.core.mapper.daemon import (
 )
 from reporails_cli.core.mapper.serialize import ruleset_map_from_json
 from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
+from reporails_cli.core.platform.contract.http_get import HttpGet
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
 from reporails_cli.core.platform.dto.ports import DaemonTransport
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
@@ -171,7 +172,9 @@ def _reconcile_running_daemon(transport: DaemonTransport) -> DaemonStatus | None
     return None
 
 
-def ensure_daemon(transport: DaemonTransport, emit: Callable[[str], None] | None = None) -> DaemonStatus:
+def ensure_daemon(
+    transport: DaemonTransport, fetch: HttpGet, emit: Callable[[str], None] | None = None
+) -> DaemonStatus:
     """Ensure global daemon is running. Start it if not.
 
     Returns a status enum the caller uses to drive user-visible messaging and
@@ -192,7 +195,7 @@ def ensure_daemon(transport: DaemonTransport, emit: Callable[[str], None] | None
 
     say("Starting Reporails...")
     try:
-        start_daemon(transport)
+        start_daemon(transport, fetch)
     except OSError:
         return DaemonStatus.UNAVAILABLE
 

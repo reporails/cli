@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
 from reporails_cli.core.platform.dto.results import MapperConfig
 from reporails_cli.interfaces.cli.main import app
+from tests.fake_models import no_models
 
 runner = CliRunner()
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "projects"
@@ -171,7 +172,12 @@ def _serve_fixes(monkeypatch: pytest.MonkeyPatch, project: Path) -> None:
     instructions = project / "CLAUDE.md"
     settings = project / ".claude" / "settings.json"
     mapped = map_instruction_files(
-        project, [instructions], spawn_daemon=False, mapper=MapperConfig(), daemon=UnixDaemonSocket()
+        project,
+        [instructions],
+        spawn_daemon=False,
+        mapper=MapperConfig(),
+        daemon=UnixDaemonSocket(),
+        models=no_models(),
     )
     line = next(i for i, text in enumerate(instructions.read_text().splitlines(), 1) if "build.sh" in text)
     pi = next(a.position_index for a in mapped.atoms if a.line == line)

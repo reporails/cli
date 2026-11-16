@@ -24,6 +24,7 @@ from reporails_cli.core.mapper.instructions import joint_is_mark
 from reporails_cli.core.mapper.parse import inline_plain_text
 from reporails_cli.core.platform.dto.heal_plan import Edit, Plan, PlanOp, Slot
 from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots
+from tests.fake_models import no_models
 
 
 def _split_edit(op: PlanOp, atoms: Any, lines: Any) -> Edit | None:
@@ -354,12 +355,12 @@ def test_a_refused_real_split_names_only_the_change_that_fits(tmp_path: Path, li
 
 
 def _mapped(tmp_path: Path, text: str) -> tuple[Path, list[Atom], list[str], Any]:
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     path = tmp_path / "SKILL.md"
     path.write_text(text, encoding="utf-8")
-    ruleset = map_ruleset([path], models=get_models(), root=tmp_path, cache_dir=None)
+    ruleset = map_ruleset([path], models=no_models(), root=tmp_path, cache_dir=None)
     return path, list(ruleset.atoms), _lines(*text.split("\n")[:-1]), ruleset
 
 
@@ -635,7 +636,7 @@ def test_mapped_text_is_split_negated_and_conforms(tmp_path: Path) -> None:
     path = tmp_path / "CLAUDE.md"
     text = f"# Rules\n\n{SPLIT_1}\n\n{SPLIT_2}\n\n*Never bypass `reviewer` on cross-release work.*\n"
     path.write_text(text, encoding="utf-8")
-    atoms = list(map_ruleset([path]).atoms)
+    atoms = list(map_ruleset([path], models=no_models()).atoms)
     name = atoms[0].file_path
     lines = _lines(*text.split("\n")[:-1])
     ops = [_op("split", 3), _op("split", 5), _op("negation-form", 7)]
@@ -643,7 +644,7 @@ def test_mapped_text_is_split_negated_and_conforms(tmp_path: Path) -> None:
     assert [(e.line, e.op) for e in plan.edits] == [(3, "split"), (5, "split"), (7, "negation-form")]
     new_text = "".join(apply_edits(lines, plan.edits)[0][i] + "\n" for i in range(len(lines)))
     path.write_text(new_text, encoding="utf-8")
-    new_atoms = list(map_ruleset([path]).atoms)
+    new_atoms = list(map_ruleset([path], models=no_models()).atoms)
     assert check_plan(plan, {name: lines}, {name: new_text.split("\n")[:-1]}, {name: new_atoms}) == []
 
 

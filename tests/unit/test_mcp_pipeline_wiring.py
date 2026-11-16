@@ -21,6 +21,7 @@ from reporails_cli.core.platform.dto.pipeline import Discovered, LeftOut
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.results import ProjectConfig
 from reporails_cli.interfaces.mcp import tools, validate_targets
+from tests.fake_models import no_models
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_server]
 
@@ -81,7 +82,9 @@ def test_run_pipeline_for_path_scopes_a_single_file_target(monkeypatch, tmp_path
     )
     monkeypatch.setattr("reporails_cli.formatters.json.format_combined_result", lambda *_a, **_k: {"files": {}})
 
-    tools.run_pipeline_for_path(str(single_file), full=True, project_root=tmp_path, run=RunContext())
+    tools.run_pipeline_for_path(
+        str(single_file), full=True, project_root=tmp_path, run=RunContext(), models=no_models()
+    )
 
     assert captured.get("scoped") is True
 
@@ -112,7 +115,7 @@ def test_run_pipeline_for_path_does_not_scope_a_directory_target(monkeypatch, tm
     )
     monkeypatch.setattr("reporails_cli.formatters.json.format_combined_result", lambda *_a, **_k: {"files": {}})
 
-    tools.run_pipeline_for_path(str(tmp_path), full=True, project_root=tmp_path, run=RunContext())
+    tools.run_pipeline_for_path(str(tmp_path), full=True, project_root=tmp_path, run=RunContext(), models=no_models())
 
     assert captured.get("scoped") is False
 
@@ -526,11 +529,15 @@ def test_validate_result_names_a_rule_file_written_between_two_calls(monkeypatch
     monkeypatch.setattr(check_one, "build_map", lambda *_a, **_k: (None, None))
     (tmp_path / "CLAUDE.md").write_text("# Project\n\nmaybe you could possibly consider perhaps running tests\n")
 
-    first, *_ = tools.run_pipeline_for_path(str(tmp_path), full=True, project_root=tmp_path, run=RunContext())
+    first, *_ = tools.run_pipeline_for_path(
+        str(tmp_path), full=True, project_root=tmp_path, run=RunContext(), models=no_models()
+    )
     rules = tmp_path / ".claude" / "rules"
     rules.mkdir(parents=True)
     (rules / "style.md").write_text("# Style\n\nmaybe you could possibly consider perhaps running tests sometimes\n")
-    second, *_ = tools.run_pipeline_for_path(str(tmp_path), full=True, project_root=tmp_path, run=RunContext())
+    second, *_ = tools.run_pipeline_for_path(
+        str(tmp_path), full=True, project_root=tmp_path, run=RunContext(), models=no_models()
+    )
 
     assert ".claude/rules/style.md" not in str(first)
     assert ".claude/rules/style.md" in str(second)

@@ -6,6 +6,7 @@ sooner. Nothing here contacts the server, reads an account or counts as a `valid
 
 from pathlib import Path
 
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.pipeline.check_one import build_map, resolve_scan_target, scope_for_path
 from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
 from reporails_cli.core.platform.adapters.http_get import http_get
@@ -16,7 +17,7 @@ from reporails_cli.interfaces.mcp.tools import refusal_payload
 from reporails_cli.interfaces.mcp.validate_targets import named_files, resolve_validate_targets, target_tokens
 
 
-def prepare_for_path(path: str, targets: list[str] | None, project_root: Path) -> JsonObject:
+def prepare_for_path(path: str, targets: list[str] | None, project_root: Path, models: Models) -> JsonObject:
     """Map the files `validate(path, targets)` checks; `{"files": n}` is how many are ready.
 
     Answers `validate`'s own payload for every condition that stops it (model not ready,
@@ -42,6 +43,7 @@ def prepare_for_path(path: str, targets: list[str] | None, project_root: Path) -
             scope.config.mapper,
             scope.filter_agents,
             daemon=UnixDaemonSocket(),
+            models=models,
         )
         if ruleset_map is None:
             return {"error": "mapper_unavailable", "mapper_error": mapper_error}

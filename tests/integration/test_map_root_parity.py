@@ -23,6 +23,7 @@ from typing import Any
 import pytest
 
 from reporails_cli.core.platform.dto.results import MapperConfig
+from tests.fake_models import no_models
 
 _onnx_path = (
     Path(__file__).resolve().parents[2]
@@ -112,7 +113,7 @@ def test_in_process_and_daemon_arms_attribute_files_identically(
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.is_daemon_running", lambda: True)
     loopback = _LoopbackDaemon()
     daemon_map = mapping.map_instruction_files(
-        project, list(files), spawn_daemon=False, mapper=MapperConfig(), daemon=loopback
+        project, list(files), spawn_daemon=False, mapper=MapperConfig(), daemon=loopback, models=no_models()
     )
     assert daemon_map is not None
 
@@ -124,7 +125,7 @@ def test_in_process_and_daemon_arms_attribute_files_identically(
     )
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.is_daemon_running", lambda: False)
     in_process_map = mapping.map_instruction_files(
-        project, list(files), spawn_daemon=False, mapper=MapperConfig(), daemon=loopback
+        project, list(files), spawn_daemon=False, mapper=MapperConfig(), daemon=loopback, models=no_models()
     )
     assert in_process_map is not None
 

@@ -22,6 +22,7 @@ from reporails_cli.core.mapper.encode_pool import run_buckets
 from reporails_cli.core.mapper.model_manifest import get_models_path
 from reporails_cli.core.mapper.model_store import reload_after_repair
 from reporails_cli.core.mapper.onnx_session import _OnnxEncoderSession
+from reporails_cli.core.platform.contract.http_get import HttpGet
 
 # Fixed settings of the bundled embedder
 _HIDDEN_DIM = 384
@@ -37,7 +38,7 @@ class OnnxEmbedder(_OnnxEncoderSession):
     embeddings, one row per text, in the same order as ``texts``.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, fetch: HttpGet) -> None:
         model_dir = get_models_path() / _DEFAULT_MODEL_SUBDIR
 
         onnx_path = model_dir / "onnx" / "model.onnx"
@@ -53,7 +54,7 @@ class OnnxEmbedder(_OnnxEncoderSession):
                 "online once to fetch it, or unset AILS_MODEL_OFFLINE."
             )
 
-        reload_after_repair(lambda: self._init_session(onnx_path, tokenizer_path, _MAX_LENGTH))
+        reload_after_repair(lambda: self._init_session(onnx_path, tokenizer_path, _MAX_LENGTH), fetch)
 
     def encode(self, texts: list[str]) -> npt.NDArray[np.float32]:
         """Encode ``texts`` to L2-normalised float32 embeddings.

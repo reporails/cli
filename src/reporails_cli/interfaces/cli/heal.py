@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from reporails_cli.core.classify import classify_files, load_file_types
-from reporails_cli.core.heal.apply import apply_keyed_heal
+from reporails_cli.core.heal.apply import apply_keyed_heal, heal_remap
 from reporails_cli.core.heal.fixers import suggest_missing_sections
 from reporails_cli.core.heal.keyed import put_back_line
 from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes
@@ -33,6 +33,7 @@ from reporails_cli.formatters.json import format_notices
 if TYPE_CHECKING:
     from rich.console import Console
 
+    from reporails_cli.core.mapper.models import Models
     from reporails_cli.core.platform.dto.diagnostics import Notice, RemediationWorkflow
     from reporails_cli.core.platform.dto.results import ConfiguredRoot
     from reporails_cli.core.platform.dto.ruleset import RulesetMap
@@ -46,15 +47,11 @@ def _apply_keyed_fixes(
     workflow: RemediationWorkflow | None,
     *,
     dry_run: bool,
-    show_progress: bool,
-    console: Console,
     allowed_files: list[Path] | None = None,
     suppressed: dict[Path, set[int]] | None = None,
+    models: Models,
 ) -> KeyedResult:
     """Fix each finding at the place it names; list the places that need a decision (`apply_keyed_heal`)."""
-
-    if show_progress and ruleset_map is not None and workflow is not None:
-        console.print("[bold]Applying fixes...[/bold]")
     return apply_keyed_heal(
         ruleset_map,
         root,
@@ -63,7 +60,7 @@ def _apply_keyed_fixes(
         allowed_files=allowed_files,
         suppressed=suppressed,
         environment_for=LocalProjectEnvironment,
-        daemon=UnixDaemonSocket(),
+        remap=heal_remap(root, UnixDaemonSocket(), models),
     )
 
 

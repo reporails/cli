@@ -16,6 +16,7 @@ from typer.testing import CliRunner
 from reporails_cli.core.mapper import bio_pipeline
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.interfaces.cli.main import app
+from tests.fake_models import no_models
 
 runner = CliRunner()
 
@@ -47,7 +48,7 @@ def test_paired_label_headings_raise_no_heading_finding(tmp_path: Path, monkeypa
 @pytest.mark.subsys_map
 @pytest.mark.requires_model
 def test_paired_label_heading_atoms_carry_no_charge() -> None:
-    atoms = bio_pipeline.apply_multislot(tokenize(MEMORY_INDEX))
+    atoms = bio_pipeline.apply_multislot(tokenize(MEMORY_INDEX), no_models())
     labels = [a for a in atoms if a.kind == "heading" and a.depth == 2]
     assert [a.charge_value for a in labels] == [0, 0]
     assert [a.modality for a in labels] == ["none", "none"]
@@ -65,7 +66,7 @@ def test_an_instruction_heading_still_raises_the_finding(tmp_path: Path, monkeyp
 @pytest.mark.subsys_map
 @pytest.mark.requires_model
 def test_an_unpaired_label_heading_keeps_its_verdict() -> None:
-    atoms = bio_pipeline.apply_multislot(tokenize(f"# Memory\n\n{KEEP}\n\n{ITEMS}"))
+    atoms = bio_pipeline.apply_multislot(tokenize(f"# Memory\n\n{KEEP}\n\n{ITEMS}"), no_models())
     heading = next(a for a in atoms if a.kind == "heading" and a.depth == 2)
     assert heading.charge_value != 0  # today's verdict: "Keep" reads as an imperative
 
@@ -80,7 +81,7 @@ DIRECTIVE_PAIR = (
 @pytest.mark.subsys_map
 @pytest.mark.requires_model
 def test_paired_directive_headings_keep_their_charge() -> None:
-    atoms = bio_pipeline.apply_multislot(tokenize(DIRECTIVE_PAIR))
+    atoms = bio_pipeline.apply_multislot(tokenize(DIRECTIVE_PAIR), no_models())
     labels = [a for a in atoms if a.kind == "heading" and a.depth == 2]
     assert len(labels) == 2
     assert all(a.charge_value != 0 for a in labels)
@@ -103,7 +104,7 @@ INSTRUCTION_TAIL_PAIR = (
 @pytest.mark.subsys_map
 @pytest.mark.requires_model
 def test_paired_headings_with_an_instruction_after_the_dash_keep_their_charge() -> None:
-    atoms = bio_pipeline.apply_multislot(tokenize(INSTRUCTION_TAIL_PAIR))
+    atoms = bio_pipeline.apply_multislot(tokenize(INSTRUCTION_TAIL_PAIR), no_models())
     labels = [a for a in atoms if a.kind == "heading" and a.depth == 2]
     assert len(labels) == 2
     assert all(a.charge_value != 0 for a in labels)
@@ -127,6 +128,6 @@ PROHIBITION_PAIR = (
 @pytest.mark.subsys_map
 @pytest.mark.requires_model
 def test_a_prohibition_heading_beside_a_label_keeps_its_charge() -> None:
-    atoms = bio_pipeline.apply_multislot(tokenize(PROHIBITION_PAIR))
+    atoms = bio_pipeline.apply_multislot(tokenize(PROHIBITION_PAIR), no_models())
     labels = [a for a in atoms if a.kind == "heading" and a.depth == 2]
     assert [a.charge_value for a in labels] == [-1, 0]

@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 
-from reporails_cli.core.mapper.models import get_models
 from reporails_cli.core.mapper.pipeline import map_ruleset
 from reporails_cli.interfaces.mcp import remedy_brief, server, snapshots
+from tests.fake_models import no_models
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_server, pytest.mark.requires_model]
 
@@ -48,10 +48,10 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path
     snapshots._recorded.clear()
 
     def pipeline(path: Any, *_a: Any, **_k: Any) -> tuple[dict, Any, float]:
-        ruleset_map = map_ruleset([Path(path)], models=get_models(), root=root, cache_dir=None)
+        ruleset_map = map_ruleset([Path(path)], models=no_models(), root=root, cache_dir=None)
         return dict(PAYLOAD), ruleset_map, 5.0
 
-    async def fresh(path: str, tokens: Any, scan_root: Path, state: Any) -> tuple[dict, Any, float]:
+    async def fresh(path: str, tokens: Any, scan_root: Path, state: Any, models: Any) -> tuple[dict, Any, float]:
         payload, ruleset_map, score = pipeline(file)
         state.full_payload, state.scan_root = payload, scan_root
         state.last_ruleset_map, state.last_score = ruleset_map, score
@@ -64,11 +64,13 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path
 
 
 def _validate(target: Path, root: Path) -> dict[str, Any]:
-    return asyncio.run(server._run_validate(str(target), False, None, root))
+    return asyncio.run(server._run_validate(str(target), False, None, root, no_models()))
 
 
 def _brief(root: Path) -> None:
-    assert "error" not in remedy_brief.build_remedy_brief(LOCATION, root, preservation_contract="Keep everything.")
+    assert "error" not in remedy_brief.build_remedy_brief(
+        LOCATION, root, preservation_contract="Keep everything.", models=no_models()
+    )
 
 
 def test_a_rewrite_failing_the_check_is_not_accepted_after_a_project_validate(project: tuple[Path, Path]) -> None:

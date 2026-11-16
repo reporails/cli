@@ -83,7 +83,6 @@ def _served_get(url: str, *, headers, timeout: float):
 def _use_fake(monkeypatch, client: _FakeClient) -> None:
     """Serve downloads from *client*, with digests pinned to what it serves."""
     monkeypatch.setitem(_SERVING, "client", client)
-    monkeypatch.setattr(model_fetch, "_repair_get", _served_get)
     pins = {rel: hashlib.sha256(client.body(rel)).hexdigest() for rel in model_fetch.REQUIRED_RELPATHS}
     monkeypatch.setattr(model_fetch, "FETCH_SHA256", pins)
     monkeypatch.setattr(model_manifest, "FETCH_SHA256", pins)
@@ -379,7 +378,7 @@ def test_repair_cache_redownloads_only_the_mismatched_file(tmp_path, monkeypatch
     assert model_fetch.models_present(root)  # presence check is blind to it
     fake.calls.clear()
 
-    result = model_fetch.repair_cache()
+    result = model_fetch.repair_cache(_served_get)
 
     assert result == root
     assert (root / "charge_encoder_encA.onnx").read_bytes() == fake.body("charge_encoder_encA.onnx")
@@ -402,7 +401,7 @@ def test_repair_cache_refuses_to_download_when_offline(tmp_path, monkeypatch):
     under offline mode must raise before touching the network, not attempt a
     repair download and only incidentally fail. Distinguishes an early offline
     short-circuit from the generic "download failed" path, which also happens
-    to mention AILS_MODEL_OFFLINE in its hint text but reaches `_repair_get` first."""
+    to mention AILS_MODEL_OFFLINE in its hint text but reaches the download port first."""
     monkeypatch.setenv("AILS_MODEL_OFFLINE", "1")
     root = _cache_at(monkeypatch, tmp_path / "models" / model_fetch.MODEL_VERSION)
     root.mkdir(parents=True)
@@ -417,10 +416,8 @@ def test_repair_cache_refuses_to_download_when_offline(tmp_path, monkeypatch):
         calls.append((a, k))
         raise AssertionError("must not reach the network while AILS_MODEL_OFFLINE is set")
 
-    monkeypatch.setattr(model_fetch, "_repair_get", _track)
-
     with pytest.raises(ModelFetchError) as exc_info:
-        model_fetch.repair_cache()
+        model_fetch.repair_cache(_track)
 
     assert calls == []  # the network layer was never reached
     message = str(exc_info.value)
@@ -495,7 +492,7 @@ def test_repair_cache_skips_the_swap_when_already_valid_after_the_lock(tmp_path,
 
     monkeypatch.setattr(model_fetch, "_download_all", _spy_download_all)
 
-    result = model_fetch.repair_cache()
+    result = model_fetch.repair_cache(_served_get)
 
     assert result == root
     assert called["n"] == 0  # no download, no swap — the cache was already valid
@@ -545,7 +542,7 @@ def test_two_threads_repairing_the_same_corruption_never_get_filenotfound(tmp_pa
 
     def run():
         try:
-            results.append(model_fetch.repair_cache())
+            results.append(model_fetch.repair_cache(_served_get))
         except BaseException as exc:
             errors.append(exc)
 

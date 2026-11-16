@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.mapper import bio_graphs, bio_tagger, multislot_frames
+from tests.fake_models import no_models
 
 
 @pytest.mark.unit
@@ -35,12 +36,12 @@ def test_charge_pass_reads_the_first_graph_and_span_pass_reads_the_second(monkey
     seen: list[tuple[Path, tuple[str, ...]]] = []
     real = multislot_frames._extract_pass_from_states
 
-    def spy(hidden, offsets, text, head_path, outputs):
+    def spy(hidden, offsets, text, head_path, outputs, *, models):
         seen.append((head_path, tuple(outputs)))
-        return real(hidden, offsets, text, head_path, outputs)
+        return real(hidden, offsets, text, head_path, outputs, models=models)
 
     monkeypatch.setattr(multislot_frames, "_extract_pass_from_states", spy)
-    multislot_frames._decode_logits_batch(["Do not commit secrets to the repository."])
+    multislot_frames._decode_logits_batch(["Do not commit secrets to the repository."], no_models())
     # First extraction pass reads the first head for charge+modality; second reads the second for the spans.
     assert seen == [
         (bio_graphs._head_a_path(), bio_tagger.CHARGE_OUTPUTS),

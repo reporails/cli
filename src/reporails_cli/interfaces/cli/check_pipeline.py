@@ -87,6 +87,7 @@ def _flow_pipeline(state: CheckState) -> None:
                 filtered_agents=state.scope.filtered,
                 mapper=state.run.project_config(state.targets.target).mapper,
                 daemon=UnixDaemonSocket(),
+                models=state.models,
             )
         except (ImportError, RuntimeError) as exc:
             logger.warning("Mapper unavailable: %s. Content checks skipped.", exc)

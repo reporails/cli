@@ -15,6 +15,7 @@ from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
+from tests.fake_models import no_models
 
 BACKLOG_GLOB = ".claude/skills/backlog/SKILL.md"
 
@@ -63,6 +64,7 @@ def _scope(
             cwd=False,
             project_root=project,
         ),
+        models=no_models(),
     )
     check_flow._flow_targets(state)
     return state if check_flow._flow_scope(state) else None
@@ -264,6 +266,7 @@ def test_auto_detect_gives_a_named_config_excluded_skill_to_its_native_owner(pro
             cwd=False,
             project_root=project,
         ),
+        models=no_models(),
     )
     check_flow._flow_targets(state)
     assert check_flow._flow_scope(state)

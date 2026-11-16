@@ -35,15 +35,15 @@ def test_duplicate_content_files_charge_identically_in_one_cold_run(tmp_path: Pa
     out of the charge stage with identical (charge, charge_value, modality,
     stage, has_slots) — the second file must not be short-circuited to the
     first file's PRE-charge tokenization."""
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     f_a = tmp_path / "a_one.md"
     f_b = tmp_path / "b_two.md"
     f_a.write_text(_SHARED_CONTENT)
     f_b.write_text(_SHARED_CONTENT)
 
-    models = get_models()
+    models = no_models()
     cache_dir = tmp_path / "cache"
 
     cold_map = map_ruleset([f_a, f_b], models=models, root=tmp_path, cache_dir=cache_dir)
@@ -63,16 +63,16 @@ def test_duplicate_content_files_charge_identically_in_one_cold_run(tmp_path: Pa
 def test_cold_and_warm_payload_bytes_match_for_duplicate_content(tmp_path: Path) -> None:
     """A cold run's projected+encoded payload must byte-match a subsequent warm
     run's, for a project made entirely of content-identical files."""
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
     from reporails_cli.core.platform.adapters.payload import encode_msgpack, project_payload
+    from tests.fake_models import no_models
 
     f_a = tmp_path / "a_one.md"
     f_b = tmp_path / "b_two.md"
     f_a.write_text(_SHARED_CONTENT)
     f_b.write_text(_SHARED_CONTENT)
 
-    models = get_models()
+    models = no_models()
     cache_dir = tmp_path / "cache"
 
     cold_map = map_ruleset([f_a, f_b], models=models, root=tmp_path, cache_dir=cache_dir)

@@ -20,6 +20,7 @@ from reporails_cli.core.platform.dto.diagnostics import LocationFinding, Remedia
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.interfaces.cli.main import app
 from tests.fake_daemon import FakeDaemonTransport
+from tests.fake_models import no_models
 
 runner = CliRunner()
 
@@ -140,10 +141,9 @@ def test_heal_leaves_files_in_heal_exclude_unchanged(tmp_path: object) -> None:
         RunContext().configured_root(base),
         wf,
         dry_run=False,
-        show_progress=False,
-        console=None,
         allowed_files=[kept, archived],
         suppressed={},
+        models=no_models(),
     ).fixes
 
     assert archived.read_bytes() == archived_before
@@ -234,6 +234,7 @@ def test_single_file_heal_writes_only_the_named_file_not_what_it_imports(tmp_pat
         RunContext().configured_root(base),
         environment_for=LocalProjectEnvironment,
         daemon=FakeDaemonTransport(),
+        models=no_models(),
     ).fixes
 
     assert imported.read_bytes() == imported_before

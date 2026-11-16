@@ -74,6 +74,7 @@ from reporails_cli.interfaces.cli.helpers import (
 )
 
 if TYPE_CHECKING:
+    from reporails_cli.core.mapper.models import Models
     from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResult, Notice, RemediationWorkflow
     from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
     from reporails_cli.core.platform.dto.models import LocalFinding
@@ -176,6 +177,7 @@ class CheckState:
 
     inputs: CheckInputs
     run: RunContext
+    models: Models
     targets: CheckTargets = field(default_factory=CheckTargets)
     scope: CheckScope = field(default_factory=CheckScope)
     pipeline: CheckPipeline = field(default_factory=CheckPipeline)
@@ -414,7 +416,7 @@ def _flow_heal(state: CheckState) -> None:
     )
     _run_heal_pass(
         state.targets.target,
-        HealScope(heal_files, state.scope.effective_agent, state.scope.exclusions),
+        HealScope(heal_files, state.scope.effective_agent, state.scope.exclusions, state.models),
         state.pipeline.ruleset_map,
         state.inputs.dry_run,
         state.targets.output_format,

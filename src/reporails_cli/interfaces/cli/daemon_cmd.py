@@ -31,6 +31,9 @@ def start() -> None:
     from reporails_cli.core.platform.adapters.daemon_socket import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         UnixDaemonSocket,
     )
+    from reporails_cli.core.platform.adapters.http_get import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        http_get,
+    )
 
     transport = UnixDaemonSocket()
     if is_daemon_running():
@@ -49,7 +52,7 @@ def start() -> None:
 
     console.print("Starting analysis daemon...")
     try:
-        pid = start_daemon(transport)
+        pid = start_daemon(transport, http_get)
     except OSError as exc:
         console.print(f"[red]{exc}[/red]")
         console.print("[dim]Use 'ails check' directly — it falls back to in-process mapping.[/dim]")

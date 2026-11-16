@@ -46,10 +46,12 @@ from reporails_cli.core.mapper.daemon_client import (
     serves_this_code,
 )
 from reporails_cli.core.mapper.full_map_cache import FullMapCache, compute_identity
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.mapper.reach import record_reach
 from reporails_cli.core.mapper.skills import record_skills
 from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
 from reporails_cli.core.platform.config.run_context import RunContext
+from reporails_cli.core.platform.contract.http_get import HttpGet
 from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
 from reporails_cli.core.platform.dto.pipeline import ScopeDiscovery
 from reporails_cli.core.platform.dto.ports import DaemonTransport
@@ -389,6 +391,7 @@ def map_instruction_files(
     filtered_agents: list[DetectedAgent] | None = None,
     mapper: MapperConfig,
     daemon: DaemonTransport,
+    models: Models,
 ) -> RulesetMap | None:
     """Map instruction files via the whole-map cache, else the daemon, else in-process.
 
@@ -424,10 +427,10 @@ def map_instruction_files(
             _apply_run_context(cached, filtered_agents, target)
             return cached
 
-        daemon_status = _resolve_daemon(daemon, emit, spawn_daemon=spawn_daemon)
+        daemon_status = _resolve_daemon(daemon, emit, models.fetch, spawn_daemon=spawn_daemon)
 
         ruleset_map = _map_via_daemon_or_process(
-            daemon, daemon_status, list(instruction_files), target, mapper_cfg=mapper, emit=emit
+            daemon, daemon_status, list(instruction_files), target, models, mapper_cfg=mapper, emit=emit
         )
         if ruleset_map is not None:
             full_cache.put(identity, ruleset_map)  # the map as mapped; a later run with other agents decides again
@@ -436,7 +439,7 @@ def map_instruction_files(
 
 
 def _resolve_daemon(
-    transport: DaemonTransport, emit: Callable[[str], None], *, spawn_daemon: bool = True
+    transport: DaemonTransport, emit: Callable[[str], None], fetch: HttpGet, *, spawn_daemon: bool = True
 ) -> DaemonStatus:
     """Attach to (or, when allowed, start) the global mapper daemon; return its status.
 
@@ -460,7 +463,7 @@ def _resolve_daemon(
         return DaemonStatus.ATTACHED
 
     try:
-        status = ensure_daemon(transport, emit=emit)
+        status = ensure_daemon(transport, fetch, emit=emit)
     except (ImportError, OSError):
         return DaemonStatus.UNAVAILABLE
 
@@ -478,6 +481,7 @@ def _map_via_daemon_or_process(
     daemon_status: DaemonStatus,
     files: list[Path],
     target: Path,
+    models: Models,
     *,
     mapper_cfg: MapperConfig,
     emit: Callable[[str], None],
@@ -499,13 +503,14 @@ def _map_via_daemon_or_process(
         emit("Restarting Reporails...")
 
     emit("Loading tools...")
-    return _map_in_process(files, target, mapper_cfg.segmentation, progress=emit)
+    return _map_in_process(files, target, mapper_cfg.segmentation, models, progress=emit)
 
 
 def _map_in_process(
     instruction_files: list[Path],
     root: Path,
     segmentation: str,
+    models: Models,
     progress: Callable[[str], None] | None = None,
 ) -> RulesetMap | None:
     """Run the mapper in-process, quieting known-noisy loader logs. Returns RulesetMap or None.
@@ -537,6 +542,7 @@ def _map_in_process(
                 root=root,
                 cache_dir=get_global_cache_dir(),
                 segmentation=segmentation,
+                models=models,
                 progress=progress,
             )
     except (ImportError, RuntimeError) as exc:

@@ -14,6 +14,7 @@ from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.interfaces.mcp import tools
 from tests.fake_daemon import FakeDaemonTransport
+from tests.fake_models import no_models
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_server]
 
@@ -39,6 +40,7 @@ def _refused(path: Path) -> Refusal:
         run=RunContext(),
         fetch=_no_fetch,
         daemon=FakeDaemonTransport(),
+        models=no_models(),
     )
     assert isinstance(refusal, Refusal)
     return refusal
@@ -80,7 +82,7 @@ def test_model_not_ready_refusals_carry_a_sentence_and_mcp_keeps_its_own_wording
 
 
 def test_failed_refusal_is_never_empty(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    def boom(_run: object, _scope: object, _lint: object, _daemon: object) -> None:
+    def boom(_run: object, _scope: object, _lint: object, _daemon: object, _models: object) -> None:
         raise ValueError
 
     monkeypatch.setattr(check_one, "check_scope", boom)
@@ -97,4 +99,4 @@ def test_mcp_does_not_swallow_a_formatter_error(project: Path, monkeypatch: pyte
 
     monkeypatch.setattr(tools, "format_run", bad)
     with pytest.raises(ValueError, match="formatter bug"):
-        tools.run_pipeline_for_path(str(project), project_root=project, run=RunContext())
+        tools.run_pipeline_for_path(str(project), project_root=project, run=RunContext(), models=no_models())

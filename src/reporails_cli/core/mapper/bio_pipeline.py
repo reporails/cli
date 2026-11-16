@@ -42,6 +42,7 @@ from reporails_cli.core.mapper.instructions import (
 )
 from reporails_cli.core.mapper.markdown_extract import plain_code_ranges
 from reporails_cli.core.mapper.markers import reformat_located, reformat_spans
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.mapper.multislot_frames import (
     _decode_logits_batch,
     _Decoded,
@@ -408,7 +409,7 @@ def _reconstruct_atoms(texts: list[str], plan: list[PlanEntry], decoded: list[_D
     return result
 
 
-def apply_multislot(atoms: list[Atom]) -> list[Atom]:
+def apply_multislot(atoms: list[Atom], models: Models) -> list[Atom]:
     """Rebuild the atom list into one atom per instruction via the charge-run decode.
 
     Each running-text atom's text splits into whole sentences; each sentence's charge
@@ -421,12 +422,12 @@ def apply_multislot(atoms: list[Atom]) -> list[Atom]:
     if not multislot_available():
         return atoms
     texts, plan = _decode_plan(atoms)
-    decoded = _decode_logits_batch(texts)
+    decoded = _decode_logits_batch(texts, models)
     return _reconstruct_atoms(texts, plan, decoded)
 
 
 def apply_multislot_groups(
-    groups: list[list[Atom]], progress: Callable[[int, int], None] | None = None
+    groups: list[list[Atom]], models: Models, progress: Callable[[int, int], None] | None = None
 ) -> list[list[Atom]]:
     """Charge-decode several atom groups in ONE batch, each group rebuilt on its own.
 
@@ -448,5 +449,5 @@ def apply_multislot_groups(
         texts, plan = _decode_plan(group)
         plans.append((texts, plan, len(all_texts)))
         all_texts.extend(texts)
-    decoded = _decode_logits_batch(all_texts, progress)
+    decoded = _decode_logits_batch(all_texts, models, progress)
     return [_reconstruct_atoms(texts, plan, decoded[offset : offset + len(texts)]) for texts, plan, offset in plans]

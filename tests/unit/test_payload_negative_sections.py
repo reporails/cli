@@ -14,14 +14,14 @@ _ITEMS = "- Use mock objects in tests.\n- Use test doubles in the suite.\n"
 
 def _projected(tmp_path, text: str, extra: dict[str, str] | None = None) -> list[tuple[str, bool]]:
     """(atom text, `ns` set) for every atom of the mapped file, in the payload's own order."""
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     target = tmp_path / "CLAUDE.md"
     target.write_text(text, encoding="utf-8")
     for name, body in (extra or {}).items():
         (tmp_path / name).write_text(body, encoding="utf-8")
-    ruleset = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    ruleset = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     payload = project_payload(ruleset, tmp_path)
     atoms = [a for a in ruleset.atoms if a.role != "list_object"]
     wire: list[dict[str, Any]] = payload["atoms"]

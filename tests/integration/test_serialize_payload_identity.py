@@ -46,7 +46,6 @@ def test_daemon_style_round_trip_preserves_the_v4_payload(tmp_path: Path) -> Non
     """Cold in-process map, projected+encoded, must byte-match the same map
     after a save_ruleset_map/load_ruleset_map JSON round-trip (the shape both
     the daemon dict path and the whole-map cache disk path exercise)."""
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
     from reporails_cli.core.mapper.serialize import (
         load_ruleset_map,
@@ -55,13 +54,14 @@ def test_daemon_style_round_trip_preserves_the_v4_payload(tmp_path: Path) -> Non
         save_ruleset_map,
     )
     from reporails_cli.core.platform.adapters.payload import encode_msgpack, project_payload
+    from tests.fake_models import no_models
 
     f_a = tmp_path / "a.md"
     f_a.write_text(_FILE_A)
     f_b = tmp_path / "b.md"
     f_b.write_text(_FILE_B)
 
-    models = get_models()
+    models = no_models()
     # cache_dir=None: a full cold classify+embed, no per-file cache shortcut —
     # the comparison must be between two REAL passes through the same atoms,
     # not a cache hit masquerading as one.

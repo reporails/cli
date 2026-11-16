@@ -6,8 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.lint.harness import fixture_mapper
 from reporails_cli.core.platform.dto.lint import LintError
 from reporails_cli.core.platform.dto.models import Check, FileTypeDeclaration
+from tests.fake_models import no_models
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -263,7 +265,7 @@ class TestMechanicalChecks:
             checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, _fts_claude(), {})
+        result = run_rule(info, _fts_claude(), fixture_mapper(no_models()))
         assert result.status == HarnessStatus.PASSED
 
     @pytest.mark.unit
@@ -287,7 +289,7 @@ class TestMechanicalChecks:
             checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, [], {})
+        result = run_rule(info, [], fixture_mapper(no_models()))
         assert result.status == HarnessStatus.NOT_IMPLEMENTED
 
     @pytest.mark.unit
@@ -313,7 +315,7 @@ class TestMechanicalChecks:
             checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, [], {})
+        result = run_rule(info, [], fixture_mapper(no_models()))
         assert result.status == HarnessStatus.NO_FIXTURES
 
 
@@ -370,7 +372,7 @@ class TestDeterministicChecks:
             checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, _fts_claude(), {})
+        result = run_rule(info, _fts_claude(), fixture_mapper(no_models()))
         assert result.status == HarnessStatus.PASSED
 
     @pytest.mark.unit
@@ -422,7 +424,7 @@ class TestDeterministicChecks:
             checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, _fts_claude(), {})
+        result = run_rule(info, _fts_claude(), fixture_mapper(no_models()))
         assert result.status == HarnessStatus.PASSED
 
 
@@ -447,7 +449,7 @@ class TestRunHarness:
         )
         _make_fixtures(rule_dir, "# Test\n", None)
 
-        results = run_harness(tmp_path)
+        results = run_harness(tmp_path, models=no_models())
         assert len(results) >= 1
         assert results[0].rule_id == "CORE:S:0001"
 
@@ -541,7 +543,7 @@ class TestFixtureDiscovery:
         )
 
         file_types = [*_fts_claude(), _ft("config", (".claude/settings.json",))]
-        result = run_rule(info, file_types, {})
+        result = run_rule(info, file_types, fixture_mapper(no_models()))
         assert result.status == HarnessStatus.PASSED
 
 
@@ -687,7 +689,7 @@ class TestMultiAgentHarness:
         pass_dir.mkdir(parents=True)
         (pass_dir / "AGENTS.md").write_text("# Test\n")
 
-        results = run_harness(tmp_path)
+        results = run_harness(tmp_path, models=no_models())
         rule_ids = {r.rule_id for r in results}
         assert "CLAUDE:S:0004" in rule_ids
         assert "CODEX:S:0001" in rule_ids
@@ -937,7 +939,7 @@ class TestFailScaffoldIntegration:
             checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, _fts_claude(), {})
+        result = run_rule(info, _fts_claude(), fixture_mapper(no_models()))
         assert result.status == HarnessStatus.PASSED
 
     @pytest.mark.unit
@@ -980,7 +982,7 @@ class TestFailScaffoldIntegration:
             checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, [], {})
+        result = run_rule(info, [], fixture_mapper(no_models()))
         assert result.status == HarnessStatus.PASSED
 
 

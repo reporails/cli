@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.mapper import model_fetch, model_manifest
+from tests.fake_models import no_fetch
 
 
 def _real_models_root() -> Path:
@@ -95,7 +96,7 @@ def test_first_use_fetches_then_loads_from_cache(tmp_path, monkeypatch):
     # The embedder loads from the cache and produces a real embedding.
     from reporails_cli.core.mapper.onnx_embedder import OnnxEmbedder
 
-    emb = OnnxEmbedder().encode(["a short instruction line"])
+    emb = OnnxEmbedder(no_fetch).encode(["a short instruction line"])
     assert emb.shape == (1, 384)
 
     # Second run is silent + offline: make the host unreachable — a cache hit
@@ -106,4 +107,4 @@ def test_first_use_fetches_then_loads_from_cache(tmp_path, monkeypatch):
 
     assert bundled.ensure_models_available(_no_host) == cache_root
     assert model_manifest.get_models_path() == cache_root
-    assert OnnxEmbedder().encode(["another line"]).shape == (1, 384)
+    assert OnnxEmbedder(no_fetch).encode(["another line"]).shape == (1, 384)

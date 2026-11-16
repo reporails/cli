@@ -1361,13 +1361,13 @@ def test_an_unsnapshotted_file_has_no_snapshot(tmp_path) -> None:
 @pytest.mark.subsys_server
 @pytest.mark.requires_model
 def test_compare_against_the_real_mapper(tmp_path) -> None:
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     before_text = "# Agent\n\nNever commit secrets to the repo.\n"
     target = tmp_path / "CLAUDE.md"
     target.write_text(before_text, encoding="utf-8")
-    before_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    before_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     snap = make_snapshot(
         file_path=str(target),
         text=before_text,
@@ -1393,14 +1393,14 @@ def test_compare_against_the_real_mapper(tmp_path) -> None:
     )
 
     # A genuine no-op (unchanged content) must be ok.
-    same_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    same_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     result = compare(snap, same_map, before_text, None)
     assert result["ok"] is True
 
     # Replacing the prohibition with an unrelated directive must not be ok.
     after_text = "# Agent\n\nDocument every endpoint in the API reference.\n"
     target.write_text(after_text, encoding="utf-8")
-    after_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    after_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     result2 = compare(snap, after_map, after_text, None)
     assert result2["ok"] is False
     assert result2["lost_instructions"] or result2["polarity_flips"]
@@ -1441,16 +1441,16 @@ def _real_snapshot(target: Any, before_map: Any, before_text: str, score: float 
 
 
 def _compare_edit(tmp_path, before_text: str, after_text: str) -> dict[str, Any]:
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     target = tmp_path / "CLAUDE.md"
     target.write_text(before_text, encoding="utf-8")
-    before_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    before_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     snap = _real_snapshot(target, before_map, before_text, score=5.0)
 
     target.write_text(after_text, encoding="utf-8")
-    after_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    after_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     return compare(snap, after_map, after_text, 5.0, environment=LocalProjectEnvironment(tmp_path, target.parent))
 
 

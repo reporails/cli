@@ -9,6 +9,7 @@ from functools import partial
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import get_known_agents
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.pipeline.check_one import check_path, model_refusal, rules_missing_message
 from reporails_cli.core.pipeline.server_gate import server_gate
 from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
@@ -156,7 +157,13 @@ def format_run(run: CheckRun, *, full: bool) -> JsonObject:
 
 
 def run_pipeline_for_path(
-    path: str, full: bool = False, named: frozenset[Path] = frozenset(), *, project_root: Path, run: RunContext
+    path: str,
+    full: bool = False,
+    named: frozenset[Path] = frozenset(),
+    *,
+    project_root: Path,
+    run: RunContext,
+    models: Models,
 ) -> tuple[JsonObject, RulesetMap | None, float | None]:
     """Check `path` (directory or file); returns `(payload, ruleset_map, file_score)`. `ruleset_map` and
     `file_score` are `None` on a structured error/needs-install payload — the caller checks `"error"` /
@@ -165,7 +172,14 @@ def run_pipeline_for_path(
     `named` and `project_root` are read as in `core.pipeline.check_one.scope_for_path`; `run` is this tool call's own.
     """
     checked = check_path(
-        path, project_root, named, lint=ServerLint(run.tier()), run=run, fetch=http_get, daemon=UnixDaemonSocket()
+        path,
+        project_root,
+        named,
+        lint=ServerLint(run.tier()),
+        run=run,
+        fetch=http_get,
+        daemon=UnixDaemonSocket(),
+        models=models,
     )
     if isinstance(checked, Refusal):
         return refusal_payload(checked), None, None

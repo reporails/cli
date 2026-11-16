@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.mapper import daemon_server as daemon
-from reporails_cli.core.mapper.models import Models
 from reporails_cli.interfaces.mcp import idle_release
+from tests.fake_models import fresh_models
 
 
 @pytest.mark.unit
@@ -14,7 +14,7 @@ from reporails_cli.interfaces.mcp import idle_release
 def test_unload_resets_loaded_model() -> None:
     # unload() must drop the resident ONNX embedder so its memory is reclaimed;
     # the next `.st` access reloads. Idempotent — safe to call when nothing is loaded.
-    models = Models()
+    models = fresh_models()
     models._st = object()  # stand in for a loaded embedder
     models.unload()
     assert models._st is None
@@ -82,7 +82,7 @@ def test_idle_watchdog_disabled_returns_immediately(monkeypatch) -> None:
     import asyncio
 
     monkeypatch.setenv("AILS_MCP_IDLE_S", "0")
-    asyncio.run(asyncio.wait_for(idle_release._idle_watchdog(), timeout=1))
+    asyncio.run(asyncio.wait_for(idle_release._idle_watchdog(fresh_models()), timeout=1))
 
 
 @pytest.mark.unit
@@ -100,8 +100,6 @@ def test_idle_watchdog_unloads_once_while_idle(monkeypatch) -> None:
         def unload(self) -> None:
             calls["unload"] += 1
 
-    monkeypatch.setattr(idle_release, "get_models", lambda: _FakeModels())
-
     polls = {"n": 0}
 
     async def _fake_sleep(_seconds: float) -> None:
@@ -112,6 +110,6 @@ def test_idle_watchdog_unloads_once_while_idle(monkeypatch) -> None:
     monkeypatch.setattr(idle_release.asyncio, "sleep", _fake_sleep)
 
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(idle_release._idle_watchdog())
+        asyncio.run(idle_release._idle_watchdog(_FakeModels()))
 
     assert calls["unload"] == 1  # unloaded once, not once per poll

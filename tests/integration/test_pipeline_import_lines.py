@@ -33,8 +33,8 @@ requires_model = pytest.mark.skipif(not _has_onnx_model, reason="Bundled ONNX mo
 @pytest.mark.subsys_map
 @requires_model
 def test_map_ruleset_import_lines_stable_across_cache_hit(tmp_path: Path) -> None:
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     (tmp_path / "b.md").write_text(
         "Imported line one.\nImported line two.\nImported line three.",
@@ -53,7 +53,7 @@ def test_map_ruleset_import_lines_stable_across_cache_hit(tmp_path: Path) -> Non
     )
 
     cache_dir = tmp_path / "cache"
-    models = get_models()
+    models = no_models()
 
     def _lines_by_text(paths: list[Path]) -> dict[str, int]:
         ruleset = map_ruleset(paths, models=models, root=tmp_path, cache_dir=cache_dir)

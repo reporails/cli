@@ -17,6 +17,7 @@ import pytest
 from reporails_cli.core.mapper import pipeline as pl
 from reporails_cli.core.mapper.inspect import load_registry
 from reporails_cli.core.mapper.skills import record_skills
+from tests.fake_models import no_models
 
 # --- L121/L123/L125: _validate_and_log severity routing ---
 
@@ -305,7 +306,7 @@ def test_map_ruleset_arg_plumbing(monkeypatch):
     """map_ruleset must forward the caller's models/root and compute structure_aware
     from segmentation.
 
-    Kills L310 (`models is None`), L312 (`root is None`) and L308 (segmentation `==`)
+    Kills L312 (`root is None`) and L308 (segmentation `==`)
     by capturing what the stubbed stages receive.
     """
     classify_args = {}
@@ -322,11 +323,9 @@ def test_map_ruleset_arg_plumbing(monkeypatch):
 
     sentinel_models = SimpleNamespace(st=object())
     sentinel_root = Path("/sentinel/root")
-    other_models = SimpleNamespace(st=object())
 
     monkeypatch.setattr("reporails_cli.core.mapper.pipeline.multislot_available", lambda: True)
     monkeypatch.setattr(pl, "_get_stage_timer", lambda: SimpleNamespace(mark=lambda *a, **k: None))
-    monkeypatch.setattr(pl, "get_models", lambda: other_models)
     monkeypatch.setattr(pl, "_open_map_cache", lambda *a, **k: None)
     monkeypatch.setattr(pl, "load_registry", lambda: {})
     monkeypatch.setattr(pl, "_classify_all_files", _fake_classify)
@@ -357,7 +356,7 @@ def test_map_ruleset_refuses_to_map_without_the_whole_model(monkeypatch):
     monkeypatch.setattr("reporails_cli.core.mapper.pipeline.multislot_available", lambda: False)
 
     with pytest.raises(RuntimeError, match="not complete on disk"):
-        pl.map_ruleset([Path("/some/dir/file.md")], root=Path("/some/dir"))
+        pl.map_ruleset([Path("/some/dir/file.md")], root=Path("/some/dir"), models=no_models())
 
 
 # --- description embeddings live in the per-file cache entry ---

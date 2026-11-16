@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.heal.keyed import keyed_heal
 from reporails_cli.core.lint.suppression import suppressed_lines
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.pipeline.check_one import check_path
 from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.config.api_key import has_api_key
@@ -122,6 +123,19 @@ def suppressed_by_path(files: Iterable[Path], target: Path) -> dict[Path, set[in
     return {safe_resolve(Path(k)): v for k, v in raw.items()}
 
 
+def heal_remap(
+    root: ConfiguredRoot, daemon: DaemonTransport, models: Models
+) -> Callable[[list[Path]], RulesetMap | None]:
+    """The re-map a heal run checks each written file with: the files mapped under `root`'s mapper config."""
+
+    def remap(files: list[Path]) -> RulesetMap | None:
+        return map_instruction_files(
+            root.root, files, spawn_daemon=False, mapper=root.config.mapper, daemon=daemon, models=models
+        )
+
+    return remap
+
+
 def apply_keyed_heal(
     ruleset_map: RulesetMap | None,
     root: ConfiguredRoot,
@@ -131,21 +145,17 @@ def apply_keyed_heal(
     allowed_files: Iterable[Path] | None,
     suppressed: Mapping[Path, set[int]] | None,
     environment_for: EnvironmentFor,
-    daemon: DaemonTransport,
+    remap: Callable[[list[Path]], RulesetMap | None],
 ) -> KeyedResult:
     """Fix each finding the workflow lists at the place it names; list the places that need a decision.
 
     `allowed_files` bounds the write set (a file `heal_exclude` matches is never written); `suppressed`
     maps a resolved path to its `ails-disable-line` lines, which heal leaves alone. A written file is
-    re-mapped and checked against its plan; one that departs is put back.
+    re-mapped through `remap` and checked against its plan; one that departs is put back.
     """
     if ruleset_map is None or workflow is None:
         return KeyedResult()
     target, config = root.root, root.config
-
-    def remap(files: list[Path]) -> RulesetMap | None:
-        return map_instruction_files(target, files, spawn_daemon=False, mapper=config.mapper, daemon=daemon)
-
     return keyed_heal(
         ruleset_map,
         target,
@@ -166,6 +176,7 @@ def heal_workflow_within(
     *,
     environment_for: EnvironmentFor,
     daemon: DaemonTransport,
+    models: Models,
 ) -> KeyedResult:
     """Write the workflow's keyed fixes to the mapped files inside `target`'s scope (`heal_scope_files`).
 
@@ -182,7 +193,7 @@ def heal_workflow_within(
         allowed_files=files,
         suppressed=suppressed_by_path(files, root.root),
         environment_for=environment_for,
-        daemon=daemon,
+        remap=heal_remap(root, daemon, models),
     )
 
 
@@ -195,13 +206,14 @@ def heal_one(
     run: RunContext,
     fetch: HttpGet,
     daemon: DaemonTransport,
+    models: Models,
 ) -> HealOutcome:
     """Check one file and write the fixes the reply carries for it.
 
     A refused check, a run with no map or no workflow writes nothing and says why in the words
     `ails check --heal` uses.
     """
-    checked = check_path(path, project_root, lint=lint, run=run, fetch=fetch, daemon=daemon)
+    checked = check_path(path, project_root, lint=lint, run=run, fetch=fetch, daemon=daemon, models=models)
     target = Path(path)
     if isinstance(checked, Refusal):
         return HealOutcome(None, checked.text, target.parent)
@@ -225,5 +237,6 @@ def heal_one(
         run.configured_root(checked.scope.scan_root),
         environment_for=environment_for,
         daemon=daemon,
+        models=models,
     )
     return HealOutcome(written, "", checked.scope.scan_root)

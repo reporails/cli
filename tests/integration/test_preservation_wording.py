@@ -15,17 +15,17 @@ from reporails_cli.core.platform.dto.heal import Snapshot
 
 
 def _verdict(tmp_path, original: str, rewrite: str) -> dict[str, Any]:
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     target = tmp_path / "CLAUDE.md"
     before_text, after_text = f"# Agent\n\n{original}\n", f"# Agent\n\n{rewrite}\n"
     target.write_text(before_text, encoding="utf-8")
-    before_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    before_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     snap = take_snapshot(str(target), before_text, before_map, 5.0)
     assert isinstance(snap, Snapshot)
     target.write_text(after_text, encoding="utf-8")
-    after_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    after_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     return compare(snap, after_map, after_text, 5.0, environment=LocalProjectEnvironment(tmp_path))
 
 

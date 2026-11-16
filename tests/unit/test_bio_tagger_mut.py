@@ -24,6 +24,7 @@ from reporails_cli.core.mapper.multislot_frames import (
     _decode_span_axis_runs,
 )
 from reporails_cli.core.platform.dto.mapping import Span
+from tests.fake_models import fresh_models, no_models
 
 _CHARGE_TAG = {"O": 0, "B-DIR": 1, "I-DIR": 2, "B-REST": 3, "I-REST": 4, "B-NEUT": 5, "I-NEUT": 6}
 
@@ -194,11 +195,11 @@ def test_multislot_available_false_when_graph_missing(monkeypatch: pytest.Monkey
 @pytest.mark.subsys_map
 def test_enc_a_repairs_cache_once_and_retries_after_a_corrupted_load(monkeypatch: pytest.MonkeyPatch) -> None:
     """REGRESSION: a same-size corrupted `charge_encoder_encA.onnx` must not
-    crash every check forever with a raw ONNX-runtime traceback. `_enc_a()` repairs
+    crash every check forever with a raw ONNX-runtime traceback. `charge_encoders()` repairs
     the persistent cache once (never the in-package dev tree) and retries the load."""
     from reporails_cli.core.mapper import model_fetch, model_manifest, model_store
 
-    bio_tagger._enc_a.cache_clear()
+    models = fresh_models()
     monkeypatch.setattr(model_manifest, "in_package_tree_present", lambda: False)
     monkeypatch.setattr(model_store, "_repair_events", {})
     # tests/conftest.py defaults AILS_MODEL_OFFLINE=1 for the whole suite; this
@@ -223,13 +224,10 @@ def test_enc_a_repairs_cache_once_and_retries_after_a_corrupted_load(monkeypatch
     repaired = {"called": False}
     monkeypatch.setattr(model_fetch, "repair_cache", lambda *a, **k: repaired.update(called=True))
 
-    try:
-        encoder = bio_tagger._enc_a()
-    finally:
-        bio_tagger._enc_a.cache_clear()
+    encoder, _ = models.charge_encoders()
 
     assert repaired["called"] is True
-    assert attempts["n"] == 2  # one failing load, one repaired retry — never a third
+    assert attempts["n"] == 3  # encA: one failing load and one repaired retry; encB: one load; never a repair loop
     assert isinstance(encoder, bio_tagger._BioEncoder)
 
 
@@ -240,7 +238,7 @@ def test_enc_a_never_repairs_the_in_package_dev_tree(monkeypatch: pytest.MonkeyP
     re-raise unchanged — a network repair could not fix a dev checkout's own files."""
     from reporails_cli.core.mapper import model_fetch, model_manifest
 
-    bio_tagger._enc_a.cache_clear()
+    models = fresh_models()
     monkeypatch.setattr(model_manifest, "in_package_tree_present", lambda: True)
 
     def always_fails(self: object, onnx_path: Path) -> None:
@@ -250,11 +248,8 @@ def test_enc_a_never_repairs_the_in_package_dev_tree(monkeypatch: pytest.MonkeyP
     repaired = {"called": False}
     monkeypatch.setattr(model_fetch, "repair_cache", lambda *a, **k: repaired.update(called=True))
 
-    try:
-        with pytest.raises(RuntimeError, match="dev tree file is broken"):
-            bio_tagger._enc_a()
-    finally:
-        bio_tagger._enc_a.cache_clear()
+    with pytest.raises(RuntimeError, match="dev tree file is broken"):
+        models.charge_encoders()
 
     assert repaired["called"] is False
 
@@ -511,7 +506,7 @@ def test_pooled_words_each_pool_their_own_token() -> None:
     collapses every row to the shared all-token mean)."""
     if not bio_graphs.multislot_available():
         pytest.skip("encoder not bundled")
-    ((hidden, offsets),) = bio_tagger._enc_a().forward_bucket(["alpha beta"])
+    ((hidden, offsets),) = no_models().charge_encoders()[0].forward_bucket(["alpha beta"])
     feats, _word_spans, _covered = bio_tagger._pool_words(hidden, offsets, "alpha beta")
     assert feats.shape[0] == 2
     assert not np.allclose(feats[0], feats[1])

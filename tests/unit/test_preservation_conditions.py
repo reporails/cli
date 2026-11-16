@@ -119,17 +119,17 @@ _ROWS = [
 @pytest.mark.requires_model
 @pytest.mark.parametrize(("name", "original", "rewrite", "listed"), _ROWS, ids=[r[0] for r in _ROWS])
 def test_added_conditions_on_the_real_mapper(tmp_path, name: str, original: str, rewrite: str, listed: bool) -> None:
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     target = tmp_path / "CLAUDE.md"
     before_text, after_text = f"# Agent\n\n{original}\n", f"# Agent\n\n{rewrite}\n"
     target.write_text(before_text, encoding="utf-8")
-    before_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    before_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     snap = take_snapshot(str(target), before_text, before_map, 5.0)
     assert isinstance(snap, Snapshot)
     target.write_text(after_text, encoding="utf-8")
-    after_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    after_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     result = compare(snap, after_map, after_text, 5.0, environment=LocalProjectEnvironment(tmp_path))
     assert bool(result["added_conditions"]) is listed
 
@@ -355,8 +355,8 @@ def test_a_code_token_never_opens_a_condition_or_narrows(
 @pytest.mark.integration
 @pytest.mark.requires_model
 def test_whole_line_quotation_maps_as_one_neutral_atom(tmp_path) -> None:
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     quote = (
         '"Answer every question: each answer states its source. Quote every figure, date, name; '
@@ -364,7 +364,7 @@ def test_whole_line_quotation_maps_as_one_neutral_atom(tmp_path) -> None:
     )
     target = tmp_path / "CLAUDE.md"
     target.write_text(f"# T\n\n## Contract\n\n{quote}\n\nRun `pytest` before every commit in this repository.\n")
-    mapped = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    mapped = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     on_line = [a for a in mapped.atoms if a.line == 5]
     assert len(on_line) == 1
     assert on_line[0].charge_value == 0
@@ -402,14 +402,14 @@ def test_quotation_followed_by_text_still_splits_under_structure_aware() -> None
 @pytest.mark.integration
 @pytest.mark.requires_model
 def test_whole_line_quotation_maps_as_one_neutral_atom_structure_aware(tmp_path) -> None:
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
     from reporails_cli.core.mapper.prose_split import SEGMENTATION_STRUCTURE_AWARE
+    from tests.fake_models import no_models
 
     target = tmp_path / "CLAUDE.md"
     target.write_text(f"# T\n\n## Contract\n\n{_QUOTE_LINE}\n\nRun `pytest` before every commit in this repository.\n")
     mapped = map_ruleset(
-        [target], models=get_models(), root=tmp_path, cache_dir=None, segmentation=SEGMENTATION_STRUCTURE_AWARE
+        [target], models=no_models(), root=tmp_path, cache_dir=None, segmentation=SEGMENTATION_STRUCTURE_AWARE
     )
     on_line = [a for a in mapped.atoms if a.line == 5]
     assert len(on_line) == 1

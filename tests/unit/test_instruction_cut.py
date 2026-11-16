@@ -9,6 +9,7 @@ from reporails_cli.core.mapper import bio_pipeline
 from reporails_cli.core.mapper.instructions import instruction_starts, instruction_texts
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap, RulesetSummary
+from tests.fake_models import no_models
 
 
 def _pieces(sentence: str) -> list[str]:
@@ -16,7 +17,7 @@ def _pieces(sentence: str) -> list[str]:
 
 
 def _mapped(md: str) -> list[Atom]:
-    atoms = bio_pipeline.apply_multislot(list(tokenize(md)))
+    atoms = bio_pipeline.apply_multislot(list(tokenize(md)), no_models())
     for a in atoms:
         a.file_path = "test.md"
     return [a for a in atoms if a.kind != "heading"]

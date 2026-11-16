@@ -31,6 +31,7 @@ from reporails_cli.core.heal.plan import PartnerKey, apply_edits, build_plan, le
 from reporails_cli.core.heal.transforms import atoms_at
 from reporails_cli.core.lint.content_queries import atoms_for_file
 from reporails_cli.core.lint.rule_pages import EXAMPLE_KINDS, load_rule_examples
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_list, opt_int, str_list
 from reporails_cli.core.platform.dto.diagnostics import subtree_tier_rank, walk_findings
@@ -101,12 +102,14 @@ class _BuiltFile:
     text: str
 
 
-def _build_file(rel: str, scan_root: Path) -> _BuiltFile | str:
+def _build_file(rel: str, scan_root: Path, models: Models) -> _BuiltFile | str:
     """The built file for `rel`, or the reason its pipeline run produced no map — the underlying
     cause, never a bare sentinel."""
 
     abs_file = resolve_from_root(rel, scan_root)
-    payload, ruleset_map, score = run_pipeline_for_path(str(abs_file), True, project_root=scan_root, run=RunContext())
+    payload, ruleset_map, score = run_pipeline_for_path(
+        str(abs_file), True, project_root=scan_root, run=RunContext(), models=models
+    )
     if ruleset_map is None:
         return _pipeline_failure_reason(payload)
     try:
@@ -118,7 +121,7 @@ def _build_file(rel: str, scan_root: Path) -> _BuiltFile | str:
     )
 
 
-def _build_files(location: JsonObject, scan_root: Path) -> list[_BuiltFile] | JsonObject:
+def _build_files(location: JsonObject, scan_root: Path, models: Models) -> list[_BuiltFile] | JsonObject:
     """Every real file of the location built — or the structured `brief_unavailable` error naming
     the file, when any of them yields no map. A `files[]` entry that names a directory — a folder
     that only groups skills and has no `SKILL.md` of its own — has no pipeline of its own to run:
@@ -131,7 +134,7 @@ def _build_files(location: JsonObject, scan_root: Path) -> list[_BuiltFile] | Js
         if resolve_from_root(rel, scan_root).is_dir():
             directories.append(rel)
             continue
-        result = _build_file(rel, scan_root)
+        result = _build_file(rel, scan_root, models)
         if isinstance(result, str):
             return {"error": "brief_unavailable", "message": _brief_unavailable_message(rel, result)}
         built.append(result)
@@ -397,7 +400,12 @@ def _annotated_lines(built: list[_BuiltFile], scan_root: Path) -> dict[str, set[
 
 
 def build_remedy_brief(
-    location: JsonObject, scan_root: Path, project_map: RulesetMap | None = None, *, preservation_contract: str
+    location: JsonObject,
+    scan_root: Path,
+    project_map: RulesetMap | None = None,
+    *,
+    preservation_contract: str,
+    models: Models,
 ) -> JsonObject:
     """Build the `remedy_brief` reply for one already-resolved workflow `location` (a location dict
     from the stored full `validate` payload, so its findings and relations are already
@@ -413,7 +421,7 @@ def build_remedy_brief(
     `file` names resolve against; every edit and slot carries its file's absolute `path` beside the
     relative `file`. A rewrite or a `validate(path=<file>)` check must use `path`, never `file`."""
 
-    built = _build_files(location, scan_root)
+    built = _build_files(location, scan_root, models)
     if isinstance(built, dict):
         return built
     suppressed = _annotated_lines(built, scan_root)
@@ -425,14 +433,15 @@ def build_remedy_brief(
     atoms_by_file = {str(f.abs_file): atoms_for_file(f.ruleset_map, str(f.abs_file)) for f in built}
     lines_by_file = {str(f.abs_file): f.lines for f in built}
     lines_by_file.update({name: split_lines(text)[0] for name, (text, _) in held.items()})
-    maps = [m for m in (project_map, *(f.ruleset_map for f in built)) if m is not None]
     plan = _with_held_plans(
         drop_suppressed_edits(
             build_plan(
                 [o for o in ops if o.file not in held],
                 atoms_by_file,
                 lines_by_file,
-                _partner_atoms(ops, scan_root, maps),
+                _partner_atoms(
+                    ops, scan_root, [m for m in (project_map, *(f.ruleset_map for f in built)) if m is not None]
+                ),
             ),
             suppressed,
         ),

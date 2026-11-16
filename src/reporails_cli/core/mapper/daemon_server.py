@@ -16,11 +16,12 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from reporails_cli.core.mapper.daemon import code_identity, pid_path, socket_path
-from reporails_cli.core.mapper.models import Models, get_models
+from reporails_cli.core.mapper.daemon import code_identity, remove_runtime_files, remove_socket, socket_path, write_pid
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.mapper.pipeline import map_ruleset
 from reporails_cli.core.mapper.serialize import ruleset_map_json
 from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir, parse_idle_timeout_env
+from reporails_cli.core.platform.contract.http_get import HttpGet
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_str, str_list
 from reporails_cli.core.platform.dto.ports import DaemonTransport
 from reporails_cli.core.platform.observability.log_levels import configure_logging
@@ -50,14 +51,14 @@ def _init_daemon_process() -> None:
     if sys.platform != "win32":  # no SIGALRM/setitimer on Windows
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, signal.SIG_DFL)
-    pid_path().write_text(str(os.getpid()))
+    write_pid(os.getpid())
 
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-def _start_model_warmup() -> tuple[Models, threading.Event]:
+def _start_model_warmup(fetch: HttpGet) -> tuple[Models, threading.Event]:
     """Start model warmup in a background thread. Returns (models, warmup_done)."""
-    models = get_models()
+    models = Models(fetch)
     warmup_done = threading.Event()
 
     def _warmup() -> None:
@@ -72,7 +73,7 @@ def _start_model_warmup() -> tuple[Models, threading.Event]:
     return models, warmup_done
 
 
-def run_daemon(transport: DaemonTransport) -> None:
+def run_daemon(transport: DaemonTransport, fetch: HttpGet) -> None:
     """Main daemon loop: warm models in the background, serve requests on `transport`.
 
     The socket is bound as soon as the warmup thread has started, so the parent's ``start_daemon``
@@ -91,7 +92,7 @@ def run_daemon(transport: DaemonTransport) -> None:
         return
 
     _init_daemon_process()
-    models, warmup_done = _start_model_warmup()
+    models, warmup_done = _start_model_warmup(fetch)
 
     def _handle(request: JsonObject, send: Callable[[JsonObject], None]) -> JsonObject:
         # Stream a per-element progress frame to the client mid-map.
@@ -101,12 +102,11 @@ def run_daemon(transport: DaemonTransport) -> None:
         with get_stage_timer().run(f"daemon {as_str(request.get('cmd', ''))}"):
             return _dispatch(request, models, warmup_done, _send_progress)
 
-    socket_path().unlink(missing_ok=True)
+    remove_socket()
     try:
         transport.serve(socket_path(), _handle, idle_timeout=_IDLE_TIMEOUT_S)
     finally:
-        socket_path().unlink(missing_ok=True)
-        pid_path().unlink(missing_ok=True)
+        remove_runtime_files()
         models.unload()  # release resident models before the daemon process exits
 
 

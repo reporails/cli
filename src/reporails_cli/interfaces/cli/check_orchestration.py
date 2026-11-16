@@ -45,6 +45,7 @@ from reporails_cli.interfaces.cli.helpers import console
 from reporails_cli.interfaces.cli.output_formats import CHECK_FORMATS
 
 if TYPE_CHECKING:
+    from reporails_cli.core.mapper.models import Models
     from reporails_cli.core.platform.dto.diagnostics import Notice, RemediationWorkflow
     from reporails_cli.core.platform.dto.ruleset import RulesetMap
     from reporails_cli.core.platform.observability.stage_timer import StageTimer
@@ -276,11 +277,12 @@ def _emit_stage_timing(stage_timer: StageTimer, output_format: str) -> None:
 
 
 class HealScope(NamedTuple):
-    """The files a heal pass may touch, the agent they are checked under, and what the run left out."""
+    """The files a heal pass may touch, their agent, what the run left out, and the models it re-maps with."""
 
     instruction_files: list[Path]
     effective_agent: str
     exclusions: RunExclusions
+    models: Models
 
 
 def _run_heal_pass(
@@ -307,15 +309,16 @@ def _run_heal_pass(
         suppressed = suppressed_by_path(scope.instruction_files, target)
         # The mechanical pass writes only within the scoped `instruction_files` set — it
         # cannot rewrite a mapped file outside scope. Section suggestions never write.
+        if show and ruleset_map is not None and workflow is not None:
+            console.print("[bold]Applying fixes...[/bold]")
         keyed = _apply_keyed_fixes(
             ruleset_map,
             run.configured_root(target),
             workflow,
             dry_run=dry_run,
-            show_progress=show,
-            console=console,
             allowed_files=scope.instruction_files,
             suppressed=suppressed,
+            models=scope.models,
         )
         suggested = _collect_section_suggestions(
             run,

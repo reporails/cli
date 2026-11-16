@@ -30,12 +30,12 @@ F = "a.md"
 
 
 def _mapped(tmp_path: Path, text: str) -> tuple[list[Atom], list[str]]:
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     path = tmp_path / "SKILL.md"
     path.write_text(text, encoding="utf-8")
-    ruleset = map_ruleset([path], models=get_models(), root=tmp_path, cache_dir=None)
+    ruleset = map_ruleset([path], models=no_models(), root=tmp_path, cache_dir=None)
     return list(ruleset.atoms), [t + "\n" for t in text.split("\n")[:-1]]
 
 

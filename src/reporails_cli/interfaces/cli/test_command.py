@@ -109,6 +109,12 @@ def test_rules(opts: RulesTestOptions) -> None:
     from reporails_cli.core.lint.harness import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         run_harness,
     )
+    from reporails_cli.core.mapper.models import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        Models,
+    )
+    from reporails_cli.core.platform.adapters.http_get import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        http_get,
+    )
 
     results = run_harness(
         root,
@@ -116,6 +122,7 @@ def test_rules(opts: RulesTestOptions) -> None:
         filter_rule=opts.rule,
         package_roots=package_roots,
         agent=opts.agent,
+        models=Models(http_get),
     )
 
     if not results:

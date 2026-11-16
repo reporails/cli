@@ -12,6 +12,7 @@ import pytest
 
 from reporails_cli.core.mapper.granularity import audit_over_merged
 from reporails_cli.core.platform.dto.ruleset import Atom
+from tests.fake_models import no_fetch
 
 
 def _atom(text: str, *, kind: str = "excitation") -> Atom:
@@ -164,7 +165,7 @@ def test_real_embedder_flags_two_topic_atom() -> None:
     try:
         from reporails_cli.core.mapper.onnx_embedder import OnnxEmbedder
 
-        encoder = OnnxEmbedder()
+        encoder = OnnxEmbedder(no_fetch)
     except (RuntimeError, ImportError) as exc:
         pytest.skip(f"bundled embedder unavailable: {exc}")
 

@@ -9,6 +9,7 @@ from reporails_cli.core.lint.client_checks import _check_unformatted_code, run_c
 from reporails_cli.core.mapper import bio_pipeline
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots, FileRecord, RulesetMap, RulesetSummary
+from tests.fake_models import no_models
 
 
 def _make_map(atoms: list[Atom]) -> RulesetMap:
@@ -274,7 +275,9 @@ class TestBroadScopeRiskyWording:
 
     @staticmethod
     def _scope_findings(text: str) -> list:
-        atoms = [a for a in bio_pipeline.apply_multislot(list(tokenize(text + "\n"))) if a.scope_conditional]
+        atoms = [
+            a for a in bio_pipeline.apply_multislot(list(tokenize(text + "\n")), no_models()) if a.scope_conditional
+        ]
         return [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
 
     @pytest.mark.unit
@@ -345,7 +348,9 @@ class TestBroadScopeOpeners:
     @pytest.mark.parametrize("opener", ["While", "Whenever", "Once", "Where", "Given"])
     def test_an_opener_beyond_when_and_if_is_checked(self, opener: str) -> None:
         text = f"{opener} external services are slow, retry the request."
-        atoms = [a for a in bio_pipeline.apply_multislot(list(tokenize(text + "\n"))) if a.scope_conditional]
+        atoms = [
+            a for a in bio_pipeline.apply_multislot(list(tokenize(text + "\n")), no_models()) if a.scope_conditional
+        ]
         assert atoms, "the mapper must read the sentence as a conditional frame"
         findings = [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
         assert len(findings) == 1, [f.message for f in findings]

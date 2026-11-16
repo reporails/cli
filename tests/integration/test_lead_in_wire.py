@@ -14,13 +14,13 @@ import pytest
 
 def _wire(tmp_path: Path, markdown: str) -> list[tuple[int, bool]]:
     """(line, carries `li`) for each atom the file sends."""
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
     from reporails_cli.core.platform.adapters.payload import project_payload
+    from tests.fake_models import no_models
 
     f = tmp_path / "CLAUDE.md"
     f.write_text(markdown)
-    ruleset = map_ruleset([f], models=get_models(), root=tmp_path, cache_dir=None)
+    ruleset = map_ruleset([f], models=no_models(), root=tmp_path, cache_dir=None)
     return [(a["line"], bool(a.get("li"))) for a in project_payload(ruleset, tmp_path)["atoms"]]
 
 

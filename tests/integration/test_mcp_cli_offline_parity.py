@@ -25,6 +25,7 @@ from typer.testing import CliRunner
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli.main import app
 from reporails_cli.interfaces.mcp import tools
+from tests.fake_models import no_models
 
 runner = CliRunner()
 
@@ -137,7 +138,9 @@ def test_cli_and_mcp_agree_offline_and_server_error_on_a_server_error_response(
     with _stub_error_server(status_code) as server_url:
         monkeypatch.setenv("AILS_SERVER_URL", server_url)
         cli_payload = _cli_payload(project)
-        mcp_payload = tools.run_pipeline_for_path(str(project), full=True, project_root=project, run=RunContext())[0]
+        mcp_payload = tools.run_pipeline_for_path(
+            str(project), full=True, project_root=project, run=RunContext(), models=no_models()
+        )[0]
 
     assert cli_payload["offline"] is True, cli_payload
     assert mcp_payload["offline"] is True, mcp_payload

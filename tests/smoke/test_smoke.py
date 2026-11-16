@@ -24,6 +24,7 @@ from typer.testing import CliRunner
 from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
 from reporails_cli.core.platform.dto.results import MapperConfig
 from reporails_cli.interfaces.cli.main import app
+from tests.fake_models import no_models
 
 runner = CliRunner()
 
@@ -1541,7 +1542,7 @@ def _serve_fixes(monkeypatch: pytest.MonkeyPatch, project: Path) -> None:
 
     path = project / "CLAUDE.md"
     mapped = map_instruction_files(
-        project, [path], spawn_daemon=False, mapper=MapperConfig(), daemon=UnixDaemonSocket()
+        project, [path], spawn_daemon=False, mapper=MapperConfig(), daemon=UnixDaemonSocket(), models=no_models()
     )
     line = next(i for i, t in enumerate(path.read_text().splitlines(), 1) if "**IMPORTANT**" in t)
     pi = next(a.position_index for a in mapped.atoms if a.line == line)

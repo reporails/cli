@@ -11,6 +11,7 @@ from reporails_cli.core.pipeline import mapping
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.mcp import tools
 from reporails_cli.interfaces.mcp.prepare import prepare_for_path
+from tests.fake_models import no_models
 
 _has_onnx_model = (
     Path(__file__).resolve().parents[2]
@@ -57,11 +58,14 @@ def test_validate_after_prepare_replies_as_a_cold_validate_and_does_not_map_agai
 
     _use_cache(monkeypatch, tmp_path / "cold-cache")
     cold = json.dumps(
-        tools.run_pipeline_for_path(str(project), full=True, project_root=project, run=RunContext())[0], sort_keys=True
+        tools.run_pipeline_for_path(
+            str(project), full=True, project_root=project, run=RunContext(), models=no_models()
+        )[0],
+        sort_keys=True,
     )
 
     _use_cache(monkeypatch, tmp_path / "warm-cache")
-    assert prepare_for_path(str(project), None, project)["files"] == 2
+    assert prepare_for_path(str(project), None, project, no_models())["files"] == 2
     real_map = mapping._map_via_daemon_or_process
     maps: list[int] = []
 
@@ -71,7 +75,10 @@ def test_validate_after_prepare_replies_as_a_cold_validate_and_does_not_map_agai
 
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping._map_via_daemon_or_process", counting)
     warm = json.dumps(
-        tools.run_pipeline_for_path(str(project), full=True, project_root=project, run=RunContext())[0], sort_keys=True
+        tools.run_pipeline_for_path(
+            str(project), full=True, project_root=project, run=RunContext(), models=no_models()
+        )[0],
+        sort_keys=True,
     )
 
     assert maps == []

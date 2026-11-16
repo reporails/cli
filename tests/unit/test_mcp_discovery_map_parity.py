@@ -17,6 +17,7 @@ from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.results import MapperConfig
 from tests.fake_daemon import FakeDaemonTransport
+from tests.fake_models import no_models
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_map]
 
@@ -35,7 +36,7 @@ def test_build_map_routes_through_shared_warm_path(monkeypatch):
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.map_instruction_files", fake_map)
 
     ruleset_map, mapper_error = check_one.build_map(
-        Path("/proj"), [Path("/proj/CLAUDE.md")], MapperConfig(), daemon=FakeDaemonTransport()
+        Path("/proj"), [Path("/proj/CLAUDE.md")], MapperConfig(), daemon=FakeDaemonTransport(), models=no_models()
     )
 
     assert ruleset_map == "SENTINEL_MAP", "MCP must map via the shared warm path, not a cold map_ruleset"
@@ -58,7 +59,7 @@ def test_build_map_keeps_the_swallowed_exception_text_for_its_caller(monkeypatch
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.map_instruction_files", raising_map)
 
     ruleset_map, mapper_error = check_one.build_map(
-        Path("/proj"), [Path("/proj/CLAUDE.md")], MapperConfig(), daemon=FakeDaemonTransport()
+        Path("/proj"), [Path("/proj/CLAUDE.md")], MapperConfig(), daemon=FakeDaemonTransport(), models=no_models()
     )
 
     assert ruleset_map is None
@@ -121,8 +122,8 @@ def test_prepare_and_validate_map_the_same_files_for_a_named_left_out_file(monke
     monkeypatch.setattr(check_one, "check_and_assemble", lambda *_a, **_k: (CombinedResult(), None))
     tokens = ("packages/x/CLAUDE.md",)
 
-    asyncio.run(server._fresh_validate_payload(str(project), tokens, project, server.CircuitState()))
-    prepare_for_path(str(project), list(tokens), project)
+    asyncio.run(server._fresh_validate_payload(str(project), tokens, project, server.CircuitState(), no_models()))
+    prepare_for_path(str(project), list(tokens), project, no_models())
 
     assert len(seen) == 2
     assert seen[0] == seen[1]
