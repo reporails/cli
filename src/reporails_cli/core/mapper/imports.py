@@ -16,6 +16,7 @@ from pathlib import Path
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.md_parser import line_offsets
 from reporails_cli.core.mapper.structure import code_ranges, in_any_span
+from reporails_cli.core.platform.utils.file_read import read_file_text
 
 # Match @path references in instruction files.
 # Claude Code: @README, @docs/guide.md, @~/path, @./relative
@@ -134,7 +135,7 @@ def expand_imports(
         if target is None:
             return match.group(0)
         try:
-            imported = target.read_text(encoding="utf-8", errors="replace")
+            imported = read_file_text(target, errors="replace")
         except OSError:
             return match.group(0)
         # Add for the duration of this target's own expansion (ancestor-chain
@@ -198,7 +199,7 @@ def _expand_one_match(
     if target is None:
         return None
     try:
-        imported = target.read_text(encoding="utf-8", errors="replace")
+        imported = read_file_text(target, errors="replace")
     except OSError:
         return None
     visited.add(str(target))

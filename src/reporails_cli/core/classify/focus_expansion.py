@@ -28,6 +28,7 @@ from reporails_cli.core.classify.capability_paths import (
 )
 from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions
 from reporails_cli.core.platform.dto.classify import UnresolvedSkill
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import read_frontmatter
 
 if TYPE_CHECKING:
@@ -124,7 +125,7 @@ def _read_preloaded_skills(path: Path) -> list[str]:
 def _load_frontmatter_field(path: Path, key: str) -> object:
     """Read `path`'s YAML frontmatter and return the value at `key`, or None."""
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = read_file_text(path, errors="replace")
     except OSError as exc:
         logger.debug("expand_focus: cannot read %s: %s", path, exc)
         return None

@@ -23,6 +23,7 @@ from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.classify import LinkEdge
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileTypeDeclaration
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
 
 
@@ -218,7 +219,7 @@ def _classify_one(
         is_freeform = fmt == "freeform" or (isinstance(fmt, list) and "freeform" in fmt)
         if is_freeform and "content_format" not in props:
             try:
-                cf = detect_content_format(file_path.read_text(encoding="utf-8", errors="replace"))
+                cf = detect_content_format(read_file_text(file_path, errors="replace"))
                 if cf:
                     props["content_format"] = cf
             except OSError:

@@ -44,6 +44,7 @@ from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap
 from reporails_cli.core.platform.observability.stage_timer import StageTimer
 from reporails_cli.core.platform.observability.stage_timer import get_stage_timer as _get_stage_timer
 from reporails_cli.core.platform.utils.directives import strip_directives
+from reporails_cli.core.platform.utils.file_read import read_file_text
 
 logger = logging.getLogger(__name__)
 
@@ -140,9 +141,7 @@ def _classify_file(
     cache goes fresh through charge + embed exactly like the first copy — it is
     never short-circuited by an earlier, not-yet-charged same-run write.
     """
-    expanded, line_map, origins = expand_imports_with_origins(
-        path.read_text(encoding="utf-8", errors="replace"), path, root
-    )
+    expanded, line_map, origins = expand_imports_with_origins(read_file_text(path, errors="replace"), path, root)
     content = strip_directives(expanded)
     chash = content_hash(content)
 

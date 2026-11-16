@@ -33,6 +33,7 @@ from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValu
 from reporails_cli.core.platform.dto.discovery import AliasFile, RunExclusions, SkippedFile
 from reporails_cli.core.platform.dto.mapping import FileRead
 from reporails_cli.core.platform.dto.results import ProjectConfig
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.hook_config import hook_sites, read_hook_config
 from reporails_cli.core.platform.utils.utils import relative_wire_path, strip_frontmatter
 
@@ -207,7 +208,7 @@ def _is_blank(path: Path) -> bool:
     """Whether the file holds nothing but whitespace once its byte-order mark and frontmatter are
     removed; Claude Code sends nothing for it. A file that cannot be read stays listed."""
     try:
-        return not strip_frontmatter(path.read_text(encoding="utf-8-sig")).strip()
+        return not strip_frontmatter(read_file_text(path, encoding="utf-8-sig")).strip()
     except (OSError, UnicodeDecodeError):
         return False
 

@@ -25,6 +25,7 @@ from reporails_cli.core.platform.dto.xray_sources import (
     XrayPeek,
     is_artifact_scope,
 )
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import (
     frontmatter_block,
     read_frontmatter_file,
@@ -248,8 +249,7 @@ def peek_text(item: ArtifactFile, root: Path) -> XrayPeek | None:
     try:
         if not path.is_file():
             return None
-        with path.open(encoding="utf-8", errors="replace") as handle:
-            text = handle.read(PEEK_LIMIT + 1)
+        text = read_file_text(path, errors="replace", limit=PEEK_LIMIT + 1)
     except OSError:
         return None
     cut = text[:PEEK_LIMIT]

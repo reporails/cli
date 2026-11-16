@@ -22,6 +22,7 @@ from yaml.resolver import Resolver
 from reporails_cli.core.platform.contract.glob_pattern import glob_matches
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.frontmatter import Frontmatter, FrontmatterBlock, FrontmatterProblem
+from reporails_cli.core.platform.utils.file_read import read_file_text
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,7 @@ def load_yaml_file(path: Path) -> JsonValue:
     cached = _yaml_file_cache.get(key)
     if cached is not None and cached[0] == stamp and cached[1] is not None:
         return cached[1]
-    data = fast_yaml_load(path.read_text(encoding="utf-8"))
+    data = fast_yaml_load(read_file_text(path))
     _yaml_file_cache[key] = (stamp, data)
     return data
 
@@ -260,7 +261,7 @@ def read_frontmatter(content: str, *, lenient: bool = False) -> Frontmatter:
 def read_frontmatter_file(path: Path, *, lenient: bool = False) -> Frontmatter | None:
     """`read_frontmatter` of the file at `path`, or None when the file cannot be read. I/O function."""
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = read_file_text(path, errors="replace")
     except OSError:
         return None
     return read_frontmatter(text, lenient=lenient)
