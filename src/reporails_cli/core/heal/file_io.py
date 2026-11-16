@@ -20,3 +20,18 @@ def read_lines(path: Path) -> tuple[list[str], list[str]]:
     """The file's lines and the ending each was written with (see `split_lines`)."""
     with path.open(encoding="utf-8", newline="") as handle:
         return split_lines(handle.read())
+
+
+def read_original(path: Path) -> bytes:
+    """The raw bytes of a heal target, kept to put it back."""
+    return path.read_bytes()
+
+
+def write_bytes(path: Path, data: bytes) -> None:
+    """Write `data` as the whole file."""
+    path.write_bytes(data)
+
+
+def read_written(path: Path) -> str:
+    """The text a heal wrote, decoded leniently."""
+    return path.read_text(encoding="utf-8", errors="replace")

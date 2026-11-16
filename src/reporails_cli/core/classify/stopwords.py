@@ -5,8 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import yaml
-
+from reporails_cli.core.discovery.walk import path_rglob
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str
 from reporails_cli.core.platform.dto.classify import ExtractResult, PatternInfo, PatternParts
 from reporails_cli.core.platform.dto.models import REGEX_PATTERN_FIELDS
@@ -236,7 +235,7 @@ def extract_all(rules_root: Path) -> list[ExtractResult]:
     """Extract vocab from all rules under rules_root."""
     results: list[ExtractResult] = []
 
-    for checks_path in sorted(rules_root.rglob("checks.yml")):
+    for checks_path in sorted(path_rglob(rules_root, "checks.yml")):
         if "tests" in checks_path.parts:
             continue
         rule_dir = checks_path.parent
@@ -251,13 +250,3 @@ def extract_all(rules_root: Path) -> list[ExtractResult]:
             results.append(ExtractResult(rule_dir, None, "no extractable vocab"))
 
     return results
-
-
-def write_vocab(rule_dir: Path, vocab: JsonObject) -> Path:
-    """Write vocab.yml to a rule directory."""
-    vocab_path = rule_dir / "vocab.yml"
-    vocab_path.write_text(
-        yaml.dump(vocab, default_flow_style=False, sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
-    )
-    return vocab_path

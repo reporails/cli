@@ -5,7 +5,6 @@ All functions here are internal to the agent subsystem.
 
 from __future__ import annotations
 
-import glob
 import os
 import re
 from collections.abc import Mapping, Sequence
@@ -33,6 +32,7 @@ from reporails_cli.core.discovery.surface_config import (
 from reporails_cli.core.discovery.walk import (
     Pruner,
     documented_path,
+    glob_folders,
     inside_git_repository,
     list_dir,
     walk_glob,
@@ -42,6 +42,7 @@ from reporails_cli.core.discovery.walk import (
 from reporails_cli.core.platform.config.claude_settings import claude_synced_account_folder
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.discovery import AgentScope, OwnAccountOnly, RunExclusions
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import config_pattern_matches, is_rooted_pattern, matches_any_glob
 
 if TYPE_CHECKING:
@@ -160,7 +161,7 @@ def _is_separate_repository(folder: Path, cache: dict[Path, bool]) -> bool:
         separate = True
     elif marker.is_file():
         try:
-            text = marker.read_text(encoding="utf-8", errors="replace")
+            text = read_file_text(marker, errors="replace")
         except OSError:
             text = ""
         for line in text.splitlines():
@@ -328,7 +329,7 @@ def _glob_directory_entries(
         resolved = resolve_external_pattern(dir_pattern, claude_project_folder_name(target))
         if resolved is None:
             return
-        for d in glob.glob(Path(resolved).expanduser().as_posix()):
+        for d in glob_folders(Path(resolved).expanduser().as_posix()):
             base = Path(d)
             if base.is_dir():
                 found.extend(walk_markdown(base, exclusions))
@@ -345,7 +346,7 @@ def _resolve_in_tree_dirs(
     exclusions: RunExclusions,
 ) -> list[Path]:
     """Resolve an in-tree directory glob (no trailing slash) to existing directories."""
-    candidates = [Path(p) for p in glob.glob(str(target / dir_pattern))]
+    candidates = [Path(p) for p in glob_folders(str(target / dir_pattern))]
     return [p for p in candidates if p.is_dir() and not covers(exclusions, p)]
 
 

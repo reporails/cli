@@ -9,6 +9,7 @@ from reporails_cli.core.discovery.agent_config import load_config_file_types
 from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES, glob_file_type_patterns
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, pattern_list
 from reporails_cli.core.platform.dto.discovery import MemoryEntry, RunExclusions
+from reporails_cli.core.platform.utils.file_read import read_file_text
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ def _entries_from_directory_globs(
     entries: list[MemoryEntry] = []
     for path in paths:
         try:
-            body = path.read_text(encoding="utf-8", errors="replace")
+            body = read_file_text(path, errors="replace")
         except OSError:
             continue
         entries.append(MemoryEntry(agent=agent, path=path, body=body))

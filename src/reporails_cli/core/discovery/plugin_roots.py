@@ -24,6 +24,7 @@ from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadab
 from reporails_cli.core.platform.contract.glob_pattern import escape_glob
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, pattern_list
 from reporails_cli.core.platform.dto.discovery import ListedEntry
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import config_pattern_matches
 
 PLUGIN_SCOPE = "plugin"
@@ -189,7 +190,7 @@ def _install_records(registry: Path) -> dict[str, list[JsonObject]]:
     if not registry.is_file():
         return {}
     try:
-        data = as_object(json.loads(registry.read_text(encoding="utf-8")))
+        data = as_object(json.loads(read_file_text(registry)))
     except (OSError, ValueError) as exc:
         raise InstalledPluginsUnreadableError(f"{registry}: cannot be read as JSON ({exc})") from exc
     plugins = data.get("plugins")
@@ -218,7 +219,7 @@ def _applies_to(install: JsonObject, root: Path) -> bool:
 def _enabled_by_default(plugin_root: Path) -> bool:
     """A plugin's manifest `defaultEnabled` (true when the manifest is absent, unreadable or silent)."""
     try:
-        manifest = as_object(json.loads((plugin_root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")))
+        manifest = as_object(json.loads(read_file_text(plugin_root / ".claude-plugin" / "plugin.json")))
     except (OSError, ValueError):
         return True
     return manifest.get("defaultEnabled") is not False

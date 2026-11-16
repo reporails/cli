@@ -18,7 +18,7 @@ from reporails_cli.core.discovery.agent_discovery import (
 from reporails_cli.core.discovery.agents import detect_agents, get_all_instruction_files
 from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions
 from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
-from reporails_cli.core.discovery.walk import is_under, safe_resolve
+from reporails_cli.core.discovery.walk import has_entries, is_under, safe_resolve
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions, SurfaceScan
@@ -299,6 +299,6 @@ def _detect_auto_memory(target: Path) -> bool:
     if not auto_memory_root.exists():
         return False
     try:
-        return any(auto_memory_root.iterdir())
+        return has_entries(auto_memory_root)
     except OSError:
         return False

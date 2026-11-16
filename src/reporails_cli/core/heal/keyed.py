@@ -9,7 +9,7 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.heal.conformance import check_plan
-from reporails_cli.core.heal.file_io import read_lines
+from reporails_cli.core.heal.file_io import read_lines, read_original, read_written, write_bytes
 from reporails_cli.core.heal.plan import _touched, apply_edits, build_plan, leaving_lines
 from reporails_cli.core.heal.preservation import check_rewrite, failed_checks, take_snapshot
 from reporails_cli.core.lint.suppression import finding_surface
@@ -231,8 +231,8 @@ def _write(plan: Plan, raw: Mapping[str, tuple[list[str], list[str]]]) -> dict[s
     for file in sorted({e.file for e in plan.edits}):
         lines, endings = raw[file]
         body, where = apply_edits(lines, [e for e in plan.edits if e.file == file])
-        originals[file] = Path(file).read_bytes()
-        Path(file).write_bytes(_text(lines, endings, body, where).encode("utf-8"))
+        originals[file] = read_original(Path(file))
+        write_bytes(Path(file), _text(lines, endings, body, where).encode("utf-8"))
     return originals
 
 
@@ -270,7 +270,7 @@ def _rewrite_failure(
     the lines in `deduped` are repeats the plan removes, so their going is no loss."""
     text = original.decode("utf-8", errors="replace")
     snapshot = take_snapshot(file, text, ruleset_map, None, deduped)
-    written = Path(file).read_text(encoding="utf-8", errors="replace")
+    written = read_written(Path(file))
     block = check_rewrite(
         snapshot, Path(file), fresh, written, score=None, scan_root=target, environment_for=environment_for
     )
@@ -316,7 +316,7 @@ def _put_back(
     out: list[JsonObject] = []
     if fresh_map is None:
         for file in touched:
-            Path(file).write_bytes(originals[file])
+            write_bytes(Path(file), originals[file])
             out.append({"file": file, "op": "", "rule": "", "line": 0, "check": REMAP_CHECK})
         return out
     fresh = _group(fresh_map.atoms)
@@ -337,6 +337,6 @@ def _put_back(
             )
         )
         if failure is not None:
-            Path(file).write_bytes(originals[file])
+            write_bytes(Path(file), originals[file])
             out.append(failure)
     return out

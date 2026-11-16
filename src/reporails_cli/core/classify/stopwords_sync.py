@@ -252,3 +252,13 @@ def sync_all(rules_root: Path, *, dry_run: bool = False) -> list[SyncResult]:
         results.append(sync_vocab(rule_dir, dry_run=dry_run))
 
     return results
+
+
+def write_vocab(rule_dir: Path, vocab: JsonObject) -> Path:
+    """Write vocab.yml to a rule directory."""
+    vocab_path = rule_dir / "vocab.yml"
+    vocab_path.write_text(
+        yaml.dump(vocab, default_flow_style=False, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    return vocab_path

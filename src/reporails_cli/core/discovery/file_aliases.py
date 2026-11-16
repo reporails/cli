@@ -15,6 +15,7 @@ from pathlib import Path
 from reporails_cli.core.cache.hashing import file_bytes_digest
 from reporails_cli.core.discovery.walk import has_symlink_loop, safe_resolve
 from reporails_cli.core.platform.config.run_context import RunContext
+from reporails_cli.core.platform.utils.file_read import read_file_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 def has_same_text(first: Path, second: Path) -> bool:
     """True when both files can be read and hold exactly the same bytes; bytes are read only when the sizes match."""
     try:
-        return first.stat().st_size == second.stat().st_size and first.read_bytes() == second.read_bytes()
+        return first.stat().st_size == second.stat().st_size and read_file_bytes(first) == read_file_bytes(second)
     except OSError:
         return False
 

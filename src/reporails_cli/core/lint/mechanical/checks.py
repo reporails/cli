@@ -6,13 +6,14 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 
 from reporails_cli.core.discovery.exclusions import leaves_out
-from reporails_cli.core.discovery.walk import inside_git_repository, safe_resolve, walk_glob_matches
+from reporails_cli.core.discovery.walk import inside_git_repository, path_glob, safe_resolve, walk_glob_matches
 from reporails_cli.core.mapper.skills import skill_entry_paths
 from reporails_cli.core.platform.contract.json_value import JsonValue, str_list
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 from reporails_cli.core.platform.policy.matching import prop_matches
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import read_frontmatter_file
 
 # What a check reads: the check's own arguments (parsed `checks.yml` values), upstream annotations
@@ -160,7 +161,7 @@ def target_texts(
         if not match.is_file():
             continue
         try:
-            yield match, match.read_text(encoding="utf-8", errors="replace")
+            yield match, read_file_text(match, errors="replace")
         except OSError:
             continue
 
@@ -220,7 +221,7 @@ def directory_contains(
     target = root / path
     if not target.is_dir():
         return CheckResult(passed=False, message=f"Directory not found: {path}")
-    matches = list(target.glob(pattern))
+    matches = path_glob(target, pattern)
     if len(matches) >= min_count:
         return CheckResult(passed=True, message=f"Found {len(matches)} file(s)")
     return CheckResult(passed=False, message=f"Found {len(matches)}, need {min_count}")
@@ -322,7 +323,7 @@ def line_count(
             continue
         try:
             rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
-            count = len(match.read_text(encoding="utf-8", errors="replace").splitlines())
+            count = len(read_file_text(match, errors="replace").splitlines())
             if count > max_lines:
                 return CheckResult(
                     passed=False,

@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import errno
+import glob as stdlib_glob
 import logging
 import os
 from collections.abc import Callable, Iterator
@@ -179,6 +180,31 @@ def list_dir(path: str) -> list[ListedEntry] | None:
     if shared is not None:
         shared[path] = listed
     return listed
+
+
+def glob_folders(pattern: str) -> list[str]:
+    """The paths `glob.glob` matches for `pattern` (dot-folders skipped, folders matched)."""
+    return stdlib_glob.glob(pattern)
+
+
+def has_entries(folder: Path) -> bool:
+    """Whether `folder` holds at least one entry (raises `OSError` when it cannot be listed)."""
+    return any(folder.iterdir())
+
+
+def path_glob(folder: Path, pattern: str) -> list[Path]:
+    """The paths `Path.glob(pattern)` yields under `folder`."""
+    return list(folder.glob(pattern))
+
+
+def path_rglob(folder: Path, pattern: str) -> list[Path]:
+    """The paths `Path.rglob(pattern)` yields under `folder`."""
+    return list(folder.rglob(pattern))
+
+
+def entries(folder: Path) -> list[Path]:
+    """The entries of `folder` in `Path.iterdir` order."""
+    return list(folder.iterdir())
 
 
 def child_real(path: str, name: str, parent_real: str, is_symlink: bool) -> str:

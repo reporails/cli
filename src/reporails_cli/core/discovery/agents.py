@@ -24,10 +24,12 @@ from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusi
 from reporails_cli.core.discovery.file_aliases import dedupe_with_aliases, store_alias_cache
 from reporails_cli.core.discovery.read_gates import reads_as_fallback
 from reporails_cli.core.discovery.surface_config import config_names_agent
+from reporails_cli.core.discovery.walk import has_entries
 from reporails_cli.core.platform.config.config import get_rules_path, iter_agent_configs
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_str, str_list
 from reporails_cli.core.platform.dto.discovery import AgentType, DetectedAgent, RunExclusions
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
 if TYPE_CHECKING:
@@ -133,7 +135,7 @@ def _detect_agent(
     detected_dirs: dict[str, str] = {}
     for label, dir_path in agent_type.directory_patterns:
         full_path = target / dir_path
-        if full_path.is_dir() and any(full_path.iterdir()):
+        if full_path.is_dir() and has_entries(full_path):
             detected_dirs[label] = dir_path + "/"
     return DetectedAgent(
         agent_type=agent_type,
@@ -249,7 +251,7 @@ def _codex_global_heuristic(target: Path) -> bool:
     if not gitignore.exists():
         return False
     try:
-        content = gitignore.read_text(encoding="utf-8")
+        content = read_file_text(gitignore)
     except OSError:
         return False
     return ".codex" in content or "AGENTS.override" in content

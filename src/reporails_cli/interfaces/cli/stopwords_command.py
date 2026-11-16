@@ -29,6 +29,8 @@ def stopwords_extract(
     """Extract alternation terms from checks.yml into vocab.yml files."""
     from reporails_cli.core.classify.stopwords import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         extract_all,
+    )
+    from reporails_cli.core.classify.stopwords_sync import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         write_vocab,
     )
 

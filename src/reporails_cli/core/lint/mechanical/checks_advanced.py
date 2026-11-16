@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from reporails_cli.core.discovery.exclusions import leaves_out, no_exclusions
-from reporails_cli.core.discovery.walk import safe_resolve, walk_files, walk_glob_matches
+from reporails_cli.core.discovery.walk import entries, safe_resolve, walk_files, walk_glob_matches
 from reporails_cli.core.lint.mechanical.checks import (
     CheckArgs,
     _get_counted_files,
@@ -31,6 +31,7 @@ from reporails_cli.core.platform.contract.json_value import JsonValue, as_list, 
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.frontmatter import FrontmatterBlock
 from reporails_cli.core.platform.dto.models import ClassifiedFile
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import read_frontmatter, read_frontmatter_file
 
 
@@ -205,7 +206,7 @@ def extract_imports(
             continue
         rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else str(match)
         try:
-            refs = import_refs_with_lines(match.read_text(encoding="utf-8", errors="replace"))
+            refs = import_refs_with_lines(read_file_text(match, errors="replace"))
         except OSError:
             continue
         imports_found.extend(f"{rel}::{ref}::{line}" for ref, line in refs)
@@ -231,7 +232,7 @@ _PROGRESSIVE_LOADING = frozenset({"on_invocation"})
 def _metadata_bytes(path: Path) -> int:
     """Startup footprint of a progressive surface — its name + description frontmatter only."""
     try:
-        content = path.read_text(encoding="utf-8", errors="replace")
+        content = read_file_text(path, errors="replace")
     except OSError:
         return 0
     fm = read_frontmatter(content).data
@@ -289,7 +290,7 @@ def import_depth(
             return depth
         visited.add(filepath)
         try:
-            content = filepath.read_text(encoding="utf-8", errors="replace")
+            content = read_file_text(filepath, errors="replace")
         except OSError:
             return depth
         max_d = depth
@@ -322,7 +323,7 @@ def directory_file_types(
     target = root / path
     if not target.is_dir():
         return CheckResult(passed=True, message=f"Directory not found: {path} (OK)")
-    bad = [f.name for f in target.iterdir() if f.is_file() and f.suffix not in extensions]
+    bad = [f.name for f in entries(target) if f.is_file() and f.suffix not in extensions]
     if bad:
         return CheckResult(passed=False, message=f"Non-{extensions} files: {', '.join(bad[:5])}")
     return CheckResult(passed=True, message=f"All files in {path} match {extensions}")
