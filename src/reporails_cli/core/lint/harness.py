@@ -331,7 +331,7 @@ def _run_fixture_checks(
     for check in rule.checks:
         if kind == "pass":
             passed, run, raw = _check_fixture(
-                check, effective_dir, rule, file_types, fixture_maps, label, extra_args=extra
+                check, effective_dir, rule, file_types, label, fixture_maps=fixture_maps, extra_args=extra
             )
             if not passed:
                 result.status = HarnessStatus.FAILED
@@ -352,9 +352,9 @@ def _check_fixture(
     fixture_root: Path,
     rule: RuleInfo,
     file_types: list[FileTypeDeclaration],
-    fixture_maps: dict[Path, RulesetMap],
     fixture_name: str,
     *,
+    fixture_maps: dict[Path, RulesetMap],
     extra_args: JsonObject | None = None,
 ) -> tuple[bool, CheckRun, CheckResult | None]:
     """Run a check against a pass fixture. Returns (passed, CheckRun, raw_result).
@@ -363,7 +363,7 @@ def _check_fixture(
     or None for non-mechanical paths; the caller threads annotations into
     subsequent checks via the `extra_args` parameter.
     """
-    check_id, check_type, expect = check.id, check.type, check.expect
+    check_id, check_type = check.id, check.type
     if check_type == "mechanical":
         classified = _classify_fixture(fixture_root, file_types)
         cr = _run_mechanical_check(check, fixture_root, classified, extra_args=extra_args)
@@ -373,7 +373,7 @@ def _check_fixture(
         ok, count, msg = _run_deterministic_check(
             rule.inherited_checks_yml.get(check_id, rule.checks_yml), check, fixture_root
         )
-        passed = (ok and count > 0) if expect == "present" else (ok and count == 0)
+        passed = (ok and count > 0) if check.expect == "present" else (ok and count == 0)
         return passed, CheckRun(check_id, check_type, fixture_name, passed, msg), None
 
     ok, msg = _run_content_query_check(check, fixture_root, rule, file_types, fixture_maps)
@@ -480,6 +480,16 @@ def run_harness(
     # never sees this merge (see `apply_check_inheritance`'s docstring).
     apply_check_inheritance(rules)
 
+    return _run_rules(rules, prefix_map, agent_cache, default_file_types)
+
+
+def _run_rules(
+    rules: list[RuleInfo],
+    prefix_map: dict[str, str],
+    agent_cache: dict[str, tuple[list[FileTypeDeclaration], list[str]]],
+    default_file_types: list[FileTypeDeclaration],
+) -> list[HarnessResult]:
+    """Run each rule with its agent's file types, skipping the rules its agent config excludes."""
     results: list[HarnessResult] = []
     fixture_maps: dict[Path, RulesetMap] = {}
     for rule in rules:
