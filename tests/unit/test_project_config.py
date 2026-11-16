@@ -244,7 +244,7 @@ class TestLoadRulesWithPackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_additional_path_overrides_framework(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         # Create framework rules dir
         rules_dir = tmp_path / "rules"
@@ -270,7 +270,7 @@ class TestLoadRulesWithPackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_disabled_rules_excluded(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         # Create framework rules
         rules_dir = tmp_path / "rules"
@@ -299,7 +299,7 @@ class TestLoadRulesWithPackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_disabled_nonexistent_rule_harmless(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = tmp_path / "rules"
         core_dir = rules_dir / "core" / "structure"
@@ -323,7 +323,7 @@ class TestLoadRulesWithPackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_no_project_root_backward_compat(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = tmp_path / "rules"
         core_dir = rules_dir / "core" / "structure"
@@ -360,7 +360,7 @@ class TestLoadRulesRulePackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_listed_package_rule_is_loaded(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = self._framework(tmp_path)
         project = self._project(tmp_path, "packages:\n  - mypack\n")
@@ -373,7 +373,7 @@ class TestLoadRulesRulePackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_unlisted_package_rule_is_not_loaded(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = self._framework(tmp_path)
         project = self._project(tmp_path, "disabled_rules: []\n")
@@ -385,8 +385,8 @@ class TestLoadRulesRulePackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_package_rule_with_a_bundled_id_stops_the_run_naming_both(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
         from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = self._framework(tmp_path)
         project = self._project(tmp_path, "packages:\n  - mypack\n")
@@ -403,8 +403,8 @@ class TestLoadRulesRulePackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_two_packages_defining_the_same_id_stop_the_run_naming_both(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
         from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = self._framework(tmp_path)
         project = self._project(tmp_path, "packages:\n  - packa\n  - packb\n")
@@ -422,7 +422,7 @@ class TestLoadRulesRulePackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_package_rule_with_its_own_prefix_loads_beside_the_bundled_rules(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = self._framework(tmp_path)
         project = self._project(tmp_path, "packages:\n  - mypack\n")
@@ -437,7 +437,7 @@ class TestLoadRulesRulePackages:
     def test_global_package_is_the_fallback_and_project_copy_wins(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         global_packages = tmp_path / "home" / "packages"
         monkeypatch.setattr(
@@ -459,7 +459,7 @@ class TestLoadRulesRulePackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_disabled_rules_turns_a_package_rule_off(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = self._framework(tmp_path)
         project = self._project(tmp_path, 'packages:\n  - mypack\ndisabled_rules:\n  - "CORE:S:0900"\n')
@@ -472,7 +472,7 @@ class TestLoadRulesRulePackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_scan_root_packages_resolve_against_scan_root(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = self._framework(tmp_path)
         project = self._project(tmp_path, "disabled_rules: []\n")
@@ -489,8 +489,8 @@ class TestLoadRulesRulePackages:
     def test_missing_package_raises_naming_it_and_both_folders(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
         from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         global_packages = tmp_path / "home" / "packages"
         monkeypatch.setattr(
@@ -522,7 +522,7 @@ class TestPackageRuleBehaviour:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_a_package_rule_keeps_its_own_id_prefix(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         project = self._project(tmp_path)
         _create_rule(project / ".ails" / "packages" / "mypack", "MYPACK:S:0001", "Own Prefix")
@@ -533,7 +533,7 @@ class TestPackageRuleBehaviour:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_another_known_agents_package_rule_is_dropped(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         project = self._project(tmp_path)
         _create_rule(project / ".ails" / "packages" / "mypack", "CODEX:S:0999", "Codex Pack")
@@ -543,7 +543,7 @@ class TestPackageRuleBehaviour:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_an_edited_package_rule_is_read_fresh(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         project = self._project(tmp_path)
         pack = project / ".ails" / "packages" / "mypack"
@@ -557,7 +557,8 @@ class TestPackageRuleBehaviour:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_run_dependencies_include_package_rules(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules, rule_dependencies
+        from reporails_cli.core.platform.policy.rule_sets import rule_dependencies
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         project = self._project(tmp_path)
         pack = project / ".ails" / "packages" / "mypack" / "dependent"

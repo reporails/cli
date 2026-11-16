@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.adapters.registry import RuleReadError, read_checks_document
-from reporails_cli.core.platform.adapters.rule_builder import build_rule, load_checks
 from reporails_cli.core.platform.dto.models import Category, Rule, RuleType
+from reporails_cli.core.platform.rules.registry import RuleReadError, read_checks_document
+from reporails_cli.core.platform.rules.rule_builder import build_rule, load_checks
 
 MINIMAL_FRONTMATTER = {
     "id": "CORE:S:0001",
@@ -137,8 +137,8 @@ class TestApplyInheritance:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_inheritance_merges_checks(self) -> None:
-        from reporails_cli.core.platform.adapters.registry import _apply_inheritance
         from reporails_cli.core.platform.dto.models import Check
+        from reporails_cli.core.platform.rules.registry import _apply_inheritance
 
         parent_check = Check(id="CORE.S.0038.has_frontmatter", type="mechanical", check="frontmatter_present")
         child_check = Check(id="CLAUDE.S.0015.has_paths_key", type="mechanical", check="frontmatter_key")
@@ -175,7 +175,7 @@ class TestApplyInheritance:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_inheritance_missing_parent_is_noop(self) -> None:
-        from reporails_cli.core.platform.adapters.registry import _apply_inheritance
+        from reporails_cli.core.platform.rules.registry import _apply_inheritance
 
         rules: dict[str, Rule] = {
             "CLAUDE:S:0015": Rule(
@@ -198,7 +198,7 @@ class TestValidateDependsOn:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_no_cycle_passes_silently(self) -> None:
-        from reporails_cli.core.platform.adapters.registry import _validate_depends_on
+        from reporails_cli.core.platform.rules.registry import _validate_depends_on
 
         rules: dict[str, Rule] = {
             "A": Rule(
@@ -211,7 +211,7 @@ class TestValidateDependsOn:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_cycle_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
-        from reporails_cli.core.platform.adapters.registry import _validate_depends_on
+        from reporails_cli.core.platform.rules.registry import _validate_depends_on
 
         rules: dict[str, Rule] = {
             "A": Rule(
@@ -228,7 +228,7 @@ class TestValidateDependsOn:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_dependency_unknown_to_every_source_warns(self, caplog: pytest.LogCaptureFixture) -> None:
-        from reporails_cli.core.platform.adapters.registry import _validate_depends_on
+        from reporails_cli.core.platform.rules.registry import _validate_depends_on
 
         rules: dict[str, Rule] = {
             "A": Rule(
@@ -242,7 +242,7 @@ class TestValidateDependsOn:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_dependency_left_out_by_agent_config_is_silent(self, caplog: pytest.LogCaptureFixture) -> None:
-        from reporails_cli.core.platform.adapters.registry import _validate_depends_on
+        from reporails_cli.core.platform.rules.registry import _validate_depends_on
 
         rules: dict[str, Rule] = {
             "A": Rule(
@@ -256,7 +256,7 @@ class TestValidateDependsOn:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_copilot_load_keeps_dependent_rule_without_warning(self, caplog: pytest.LogCaptureFixture) -> None:
-        from reporails_cli.core.platform.adapters import registry
+        from reporails_cli.core.platform.rules import registry
 
         rules_dir = Path(__file__).resolve().parents[2] / "framework" / "rules"
         registry._read_rules.cache_clear()
@@ -287,7 +287,7 @@ class TestInferAgentFromRuleId:
         ],
     )
     def test_infer(self, rule_id: str, expected: str) -> None:
-        from reporails_cli.core.platform.adapters.registry import infer_agent_from_rule_id
+        from reporails_cli.core.platform.rules.registry import infer_agent_from_rule_id
 
         assert infer_agent_from_rule_id(rule_id) == expected
 
@@ -298,7 +298,7 @@ class TestSizeRuleSupersession:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_codex_supersedes_with_hard_cap(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules = load_rules(project_root=tmp_path, scan_root=tmp_path, agent="codex")
         assert "CORE:E:0001" not in rules  # superseded for codex
@@ -310,7 +310,7 @@ class TestSizeRuleSupersession:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_generic_core_size_rule_is_a_warning(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules = load_rules(project_root=tmp_path, scan_root=tmp_path, agent="claude")
         assert rules["CORE:E:0001"].severity.value == "low"  # demoted tier — renders as info, not error
@@ -335,7 +335,8 @@ class TestRuleDependencies:
     def test_a_dependency_on_a_superseded_core_rule_names_the_superseding_agent_rule(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from reporails_cli.core.platform.adapters import registry
+        from reporails_cli.core.platform.policy.rule_sets import rule_dependencies
+        from reporails_cli.core.platform.rules import registry
 
         self._write(tmp_path, "core/base", "CORE:S:0901")
         self._write(tmp_path, "core/dependent", "CORE:S:0902", "depends_on: [CORE:S:0901]\n")
@@ -343,11 +344,9 @@ class TestRuleDependencies:
         monkeypatch.setattr(registry, "get_rules_dir", lambda: tmp_path)
         registry._read_rules.cache_clear()
         try:
-            claude = registry.rule_dependencies(registry.load_rules(agent="claude"))
+            claude = rule_dependencies(registry.load_rules(agent="claude"))
             assert claude == {"CORE:S:0902": frozenset({"CLAUDE:S:0901"})}
-            assert registry.rule_dependencies(registry.load_rules(agent="")) == {
-                "CORE:S:0902": frozenset({"CORE:S:0901"})
-            }
+            assert rule_dependencies(registry.load_rules(agent="")) == {"CORE:S:0902": frozenset({"CORE:S:0901"})}
         finally:
             registry._read_rules.cache_clear()
 
@@ -358,7 +357,7 @@ class TestProjectScopeModes:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_the_shipped_checks_declare_their_mode(self, dev_rules_dir: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules = load_rules(agent="claude")
         modes = {c.id: c.project_scope for r in rules.values() for c in r.checks if c.project_scope}
@@ -380,7 +379,8 @@ class TestProjectScopeModes:
     @pytest.mark.subsys_lint
     def test_both_modes_stand_for_the_run_as_a_whole(self, dev_rules_dir: Path) -> None:
         """The once-per-project git check reports on the first matched file, like the aggregate checks."""
-        from reporails_cli.core.platform.adapters.registry import load_rules, whole_run_check_ids
+        from reporails_cli.core.platform.policy.rule_sets import whole_run_check_ids
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         whole_run = whole_run_check_ids(load_rules(agent="claude"))
         assert "CORE.G.0001.check" in whole_run
@@ -393,7 +393,7 @@ class TestScanRulesNonMappingCheck:
     def test_a_string_check_entry_skips_the_rule_and_names_the_problem(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        from reporails_cli.core.platform.adapters.registry import _scan_rules
+        from reporails_cli.core.platform.rules.registry import _scan_rules
 
         slug_dir = tmp_path / "core" / "demo"
         slug_dir.mkdir(parents=True)

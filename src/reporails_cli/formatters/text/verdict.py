@@ -13,10 +13,10 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from reporails_cli.core.platform.adapters.rules_query import rule_severity
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.models import SEVERITY_ORDER, Severity
 from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.rules.rules_query import rule_severity
 from reporails_cli.formatters.text.display_constants import (
     conventions_phrase,
     counted,

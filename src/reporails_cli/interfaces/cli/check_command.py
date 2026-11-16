@@ -145,7 +145,7 @@ def explain(
     from reporails_cli.core.lint.rule_pages import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         rule_page_data,
     )
-    from reporails_cli.core.platform.adapters.registry import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+    from reporails_cli.core.platform.rules.registry import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         infer_agent_from_rule_id,
         load_rules,
     )

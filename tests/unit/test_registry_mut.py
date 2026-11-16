@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.adapters import registry as reg
 from reporails_cli.core.platform.dto.models import Category, Execution, Rule, RuleType
 from reporails_cli.core.platform.dto.results import ProjectConfig
+from reporails_cli.core.platform.rules import registry as reg
 
 
 def _rule(rid: str, **over) -> Rule:

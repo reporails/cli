@@ -301,6 +301,32 @@ def home_relative(path: Path) -> str | None:
     return None
 
 
+def relative_wire_path(path: str, root: Path) -> str:
+    """`path` relative to the project or the home folder, as it rides the wire. `root` is the checked
+    project's root, never a root guessed from the mapped files themselves (that guess collapses to the wrong
+    directory whenever the mapped set doesn't happen to span down from the real root —
+    a single mapped file, or a `.claude/rules/`-only project).
+
+    Three forms, decided by where `path` actually sits, each one mapping back to the
+    same local file when the response is read:
+
+    * inside `root`: the project-relative posix path.
+    * outside `root` but inside the user's home directory (a user-level
+      `~/.claude/CLAUDE.md`, an agent-memory file) — `~/`-relative, so the home
+      directory and the username never ride the wire, only the literal `~`.
+    * neither: `path` unchanged. This only reaches a file the CLI itself resolved
+      outside both the project and the home directory, which carries no home-directory
+      component to begin with.
+    """
+    p = Path(path)
+    if p.is_relative_to(root):
+        return p.relative_to(root).as_posix()
+    under_home = home_relative(p)
+    if under_home is not None:
+        return "~/" + under_home
+    return path
+
+
 def expand_home_pattern(pattern: str) -> tuple[str, ...]:
     """A glob pattern with a leading `~` written out once per spelling of the home folder, the resolved one first.
 

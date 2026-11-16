@@ -21,7 +21,6 @@ from reporails_cli.core.eventbus.transcript import (
     subagent_system,
 )
 from reporails_cli.core.pipeline.expected_loads import AGENT
-from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.config.claude_settings import (
     claude_settings_files,
     leaving_out_unreadable_cache,
@@ -44,6 +43,7 @@ from reporails_cli.core.platform.dto.xray import (
 )
 from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayPeek
+from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.artifacts import (
     advertised_files,
     agent_file_tokens,

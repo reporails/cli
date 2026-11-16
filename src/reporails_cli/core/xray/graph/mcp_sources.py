@@ -7,11 +7,11 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from reporails_cli.core.eventbus.adapters.claude_calls import mcp_server
-from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessEntry
 from reporails_cli.core.platform.dto.mcp import McpDeclaration, McpSeen
 from reporails_cli.core.platform.dto.xray_build import Frame
 from reporails_cli.core.platform.dto.xray_sources import McpDetail, McpState, SourceEntry
+from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.derive import tokens_of
 
 PLUGIN_SERVER_PREFIX = "plugin:"

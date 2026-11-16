@@ -46,13 +46,13 @@ from reporails_cli.core.lint.rule_scaffold import (
     _scaffold_scoped_rule_file,
 )
 from reporails_cli.core.mapper.pipeline import map_ruleset
-from reporails_cli.core.platform.adapters.registry import RuleReadError, load_rules_from_path, read_checks_document
-from reporails_cli.core.platform.adapters.rule_builder import load_checks
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.lint import CheckRun, CompiledCheck, CompiledRuleSet, HarnessResult, RuleInfo
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, FileTypeDeclaration, Rule
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.rules.registry import RuleReadError, load_rules_from_path, read_checks_document
+from reporails_cli.core.platform.rules.rule_builder import load_checks
 
 logger = logging.getLogger(__name__)
 

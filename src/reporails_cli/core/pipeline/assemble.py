@@ -35,21 +35,19 @@ from reporails_cli.core.lint.suppression import (
 from reporails_cli.core.mapper.inspect import file_type_of, load_registry
 from reporails_cli.core.mapper.parse import holds_position
 from reporails_cli.core.mapper.skills import skill_membership, skill_slot_folders, skill_type
-from reporails_cli.core.platform.adapters.payload import local_entries
-from reporails_cli.core.platform.adapters.registry import (
-    convention_check_ids,
-    file_level_check_ids,
-    load_rules,
-    registry_rule_ids,
-    rule_dependencies,
-    structural_rule_ids,
-    whole_run_check_ids,
-)
-from reporails_cli.core.platform.adapters.rules_query import load_all_rules, rule_title
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.policy.dependencies import drop_dependent_findings
 from reporails_cli.core.platform.policy.levels import determine_level_from_gates
+from reporails_cli.core.platform.policy.local_entries import local_entries
+from reporails_cli.core.platform.policy.rule_sets import convention_check_ids, rule_dependencies, whole_run_check_ids
+from reporails_cli.core.platform.rules.registry import (
+    file_level_check_ids,
+    load_rules,
+    registry_rule_ids,
+    structural_rule_ids,
+)
+from reporails_cli.core.platform.rules.rules_query import load_all_rules, rule_title
 from reporails_cli.core.platform.runtime.merger import (
     collapse_same_secret,
     drop_findings,

@@ -44,7 +44,7 @@ _READERS: dict[str, str] = {
         ".ails/config.yml, .ails/config.local.yml, ~/.reporails/config.yml"
     ),
     "core/platform/config/config.py::read_agent_config": "<rules root>/<agent>/config.yml",
-    "core/platform/adapters/registry.py::read_checks_document": "<rule>/checks.yml",
+    "core/platform/rules/registry.py::read_checks_document": "<rule>/checks.yml",
     "core/classify/stopwords_sync.py::_read_vocab_file": "<rule>/vocab.yml",
     "core/platform/config/credentials.py::load_credentials_record": "~/.reporails/credentials.yml",
     "core/platform/config/capabilities.py::_matrix_section": "framework/capabilities_matrix.yml",

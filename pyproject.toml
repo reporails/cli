@@ -288,6 +288,7 @@ source_modules = [
 ]
 forbidden_modules = [
     "reporails_cli.core.platform.adapters",
+    "reporails_cli.core.platform.rules",
     "reporails_cli.core.platform.runtime",
     "reporails_cli.core.platform.config",
     "reporails_cli.core.platform.observability",

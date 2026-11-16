@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.platform.adapters import api_client as api_client_mod
-from reporails_cli.core.platform.adapters import api_key as api_key_mod
 from reporails_cli.core.platform.adapters.api_client import (
     AilsClient,
     _deserialize_cross_file_coordinates,
@@ -16,7 +15,8 @@ from reporails_cli.core.platform.adapters.api_client import (
     _deserialize_per_file,
     _tier_from_config,
 )
-from reporails_cli.core.platform.adapters.api_key import api_key_from_credentials
+from reporails_cli.core.platform.config import api_key as api_key_mod
+from reporails_cli.core.platform.config.api_key import api_key_from_credentials
 from reporails_cli.core.platform.contract.errors import (
     ConfigUnreadableError,
     CredentialsUnreadableError,

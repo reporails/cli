@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.platform.adapters.api_client import _deserialize_per_file
-from reporails_cli.core.platform.adapters.rules_query import rule_title
 from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, RulesetReport
+from reporails_cli.core.platform.rules.rules_query import rule_title
 from reporails_cli.core.platform.runtime.merger import merge_results
 from reporails_cli.formatters.mcp import with_rule_labels
 from reporails_cli.formatters.mcp_view import render_text_view

@@ -31,11 +31,11 @@ from reporails_cli.core.heal.plan import PartnerKey, apply_edits, build_plan, le
 from reporails_cli.core.heal.transforms import atoms_at
 from reporails_cli.core.lint.content_queries import atoms_for_file
 from reporails_cli.core.lint.rule_pages import EXAMPLE_KINDS, load_rule_examples
-from reporails_cli.core.platform.adapters.rules_query import find_rule_by_id, rule_title
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_list, opt_int, str_list
 from reporails_cli.core.platform.dto.diagnostics import subtree_tier_rank, walk_findings
 from reporails_cli.core.platform.dto.heal_plan import Edit, HealOp, Plan, PlanOp
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
+from reporails_cli.core.platform.rules.rules_query import find_rule_by_id, rule_title
 from reporails_cli.formatters.mcp import LOCATION_INDEX_KEYS, remedy_brief_payload
 from reporails_cli.interfaces.mcp import snapshots
 from reporails_cli.interfaces.mcp.tools import run_pipeline_for_path

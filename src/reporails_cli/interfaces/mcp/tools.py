@@ -10,7 +10,7 @@ from pathlib import Path
 from reporails_cli.core.discovery.agents import get_known_agents
 from reporails_cli.core.pipeline.check_one import check_path, model_refusal, rules_missing_message
 from reporails_cli.core.pipeline.server_gate import server_gate
-from reporails_cli.core.platform.adapters.api_key import has_api_key
+from reporails_cli.core.platform.config.api_key import has_api_key
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import FunnelError, tiers_unpaid
 from reporails_cli.core.platform.dto.pipeline import CheckRun, Refusal

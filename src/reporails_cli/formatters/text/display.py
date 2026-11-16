@@ -14,7 +14,7 @@ from typing import NamedTuple
 
 from rich.console import Console
 
-from reporails_cli.core.platform.adapters.api_key import has_api_key
+from reporails_cli.core.platform.config.api_key import has_api_key
 from reporails_cli.core.platform.dto.diagnostics import (
     KNOWN_ERRORS,
     OFFLINE_REQUESTED,

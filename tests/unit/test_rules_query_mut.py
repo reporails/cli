@@ -1,4 +1,4 @@
-"""Mutation-closing tests for `core/platform/adapters/rules_query.py`."""
+"""Mutation-closing tests for `core/platform/rules/rules_query.py`."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.adapters import rules_query
-from reporails_cli.core.platform.adapters.rules_query import load_all_rules
 from reporails_cli.core.platform.dto.models import Category, Rule, RuleType, Severity
 from reporails_cli.core.platform.dto.results import AgentConfig
+from reporails_cli.core.platform.rules import rules_query
+from reporails_cli.core.platform.rules.rules_query import load_all_rules
 
 
 def _make_rule(rule_id: str) -> Rule:

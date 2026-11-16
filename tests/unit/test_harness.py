@@ -1234,7 +1234,7 @@ class TestLoadFailureLint:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_the_registry_scan_logs_the_file_at_fault(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        from reporails_cli.core.platform.adapters.registry import _scan_rules
+        from reporails_cli.core.platform.rules.registry import _scan_rules
 
         self._rule(
             tmp_path,
@@ -1298,8 +1298,8 @@ class TestLoadFailureLint:
     def test_field_problems_gives_one_record_per_field_path_without_union_tags(self) -> None:
         from pydantic import ValidationError
 
-        from reporails_cli.core.platform.adapters.rule_builder import field_problems
         from reporails_cli.core.platform.dto.models import FieldProblem, Rule
+        from reporails_cli.core.platform.rules.rule_builder import field_problems
 
         with pytest.raises(ValidationError) as caught:
             Rule.model_validate({"id": "a", "category": "structure", "type": "mechanical", "match": {"type": 5}})

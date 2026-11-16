@@ -22,7 +22,6 @@ from reporails_cli.core.eventbus.store import prune
 from reporails_cli.core.mapper.inspect import SESSION_INVOCABLE_TYPES, file_read_by, load_registry
 from reporails_cli.core.mapper.labels import file_label
 from reporails_cli.core.mapper.memory_index import is_linked, memory_type
-from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.config.bootstrap import get_xray_log_dir
 from reporails_cli.core.platform.config.claude_settings import (
     LAUNCH_INSTRUCTION_FILE_TYPES,
@@ -35,7 +34,7 @@ from reporails_cli.core.platform.dto.discovery import AliasFile, RunExclusions, 
 from reporails_cli.core.platform.dto.mapping import FileRead
 from reporails_cli.core.platform.dto.results import ProjectConfig
 from reporails_cli.core.platform.utils.hook_config import hook_sites, read_hook_config
-from reporails_cli.core.platform.utils.utils import strip_frontmatter
+from reporails_cli.core.platform.utils.utils import relative_wire_path, strip_frontmatter
 
 AGENT = "claude"
 

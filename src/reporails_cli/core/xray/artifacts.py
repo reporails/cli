@@ -8,7 +8,6 @@ from pathlib import Path
 from reporails_cli.core.discovery.exclusions import exclusion_hits
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.pipeline.expected_loads import expected_loads
-from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object, as_str, pattern_list
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessKind
 from reporails_cli.core.platform.dto.exclusion import FileLeftOut
@@ -26,7 +25,12 @@ from reporails_cli.core.platform.dto.xray_sources import (
     XrayPeek,
     is_artifact_scope,
 )
-from reporails_cli.core.platform.utils.utils import frontmatter_block, read_frontmatter_file, strip_frontmatter
+from reporails_cli.core.platform.utils.utils import (
+    frontmatter_block,
+    read_frontmatter_file,
+    relative_wire_path,
+    strip_frontmatter,
+)
 from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path
 
 # The most characters of a file the page may ask for.

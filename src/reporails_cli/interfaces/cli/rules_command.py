@@ -15,8 +15,8 @@ from pathlib import Path
 import typer
 
 from reporails_cli.core.discovery.agents import detect_agents
-from reporails_cli.core.platform.adapters.rules_query import list_known_agents
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
+from reporails_cli.core.platform.rules.rules_query import list_known_agents
 from reporails_cli.interfaces.cli.helpers import console
 from reporails_cli.interfaces.cli.output_formats import RULES_LIST_FORMATS, RULES_PLAIN_FORMATS
 from reporails_cli.interfaces.cli.typer_app import HELP_CONTEXT_SETTINGS, app

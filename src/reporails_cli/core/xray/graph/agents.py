@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.dto.attachments import WHOLE_FILE_ATTACHMENT_KINDS
 from reporails_cli.core.platform.dto.events import ASSISTANT_ROW_KINDS, EventRecord, SubagentMeta, is_note_kind
 from reporails_cli.core.platform.dto.xray_build import (
@@ -38,6 +37,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayPrompt,
     XrayUsage,
 )
+from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.cost import agent_cost
 from reporails_cli.core.xray.derive import (
     build_compactions,

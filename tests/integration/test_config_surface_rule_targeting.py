@@ -198,7 +198,7 @@ def _prose_only_rule_ids() -> set[str]:
     schema_validated]}`) has declared the machine-config surface in scope and is
     deliberately excluded.
     """
-    from reporails_cli.core.platform.adapters.registry import load_rules
+    from reporails_cli.core.platform.rules.registry import load_rules
 
     out: set[str] = set()
     for rule_id, rule in load_rules(agent="claude").items():

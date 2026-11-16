@@ -14,11 +14,11 @@ from pathlib import Path
 
 import httpx
 
-from reporails_cli.core.platform.adapters.api_key import diagnostics_server_api_key
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER, notices_from_header
 from reporails_cli.core.platform.adapters.payload import encode_msgpack, mapped_paths, project_local, project_payload
 from reporails_cli.core.platform.adapters.rate_cooldown import active_cooldown, record_cooldown
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
+from reporails_cli.core.platform.config.api_key import diagnostics_server_api_key
 from reporails_cli.core.platform.config.bootstrap import env_flag, offline_requested
 from reporails_cli.core.platform.config.config import get_global_config
 from reporails_cli.core.platform.config.credentials import (

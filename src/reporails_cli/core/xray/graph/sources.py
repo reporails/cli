@@ -7,7 +7,6 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME
-from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.dto.events import EventRecord
 from reporails_cli.core.platform.dto.exclusion import FileLeftOut
 from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
@@ -19,6 +18,7 @@ from reporails_cli.core.platform.dto.xray_sources import (
     SourceEntry,
     XrayArtifact,
 )
+from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.artifacts import is_actionable, left_out_files, unlisted_loads, winners
 from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path
 from reporails_cli.core.xray.graph.hook_sources import hook_sources

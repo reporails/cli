@@ -562,7 +562,7 @@ class TestExplainTool:
         """Explaining a known rule should return readable text with rule ID and title."""
         from reporails_cli.interfaces.mcp.rule_tools import explain_tool
 
-        monkeypatch.setattr("reporails_cli.core.platform.adapters.registry.get_rules_dir", lambda: dev_rules_dir)
+        monkeypatch.setattr("reporails_cli.core.platform.rules.registry.get_rules_dir", lambda: dev_rules_dir)
         result = explain_tool("CORE:S:0002")
         assert isinstance(result, str)
         assert "CORE:S:0002" in result
@@ -962,7 +962,7 @@ class TestPreflightToolHelper:
         own rules on top of the universal ones, never the universal rules alone. The universal
         count is measured directly (`preflight("no-such-type")` no longer stands in
         for it — that capability now errors as `unknown_capability`, not a plausible universal set)."""
-        from reporails_cli.core.platform.adapters.rules_query import load_all_rules
+        from reporails_cli.core.platform.rules.rules_query import load_all_rules
         from reporails_cli.interfaces.mcp.rule_tools import preflight_tool
 
         universal = sum(1 for r in load_all_rules() if r.match is None or r.match.type is None)

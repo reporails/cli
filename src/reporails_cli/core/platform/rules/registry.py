@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
 from fnmatch import fnmatch
 from functools import cache, lru_cache
 from pathlib import Path
 
 import yaml
 
-from reporails_cli.core.platform.adapters.rule_builder import RuleFieldError, build_rule, load_checks
 from reporails_cli.core.platform.config.bootstrap import get_package_paths
 from reporails_cli.core.platform.config.capabilities import agent_capabilities
 from reporails_cli.core.platform.config.config import (
@@ -24,6 +22,8 @@ from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
 from reporails_cli.core.platform.dto.models import Check, Execution, FieldProblem, Rule, RuleRead, RuleType, Severity
 from reporails_cli.core.platform.dto.results import AgentConfig, ProjectConfig
 from reporails_cli.core.platform.policy.applicability import filter_by_capability
+from reporails_cli.core.platform.policy.rule_sets import file_level_ids
+from reporails_cli.core.platform.rules.rule_builder import RuleFieldError, build_rule, load_checks
 from reporails_cli.core.platform.utils.utils import (
     load_yaml_file,
     read_frontmatter,
@@ -57,53 +57,13 @@ def registry_rule_ids(agent: str = "") -> frozenset[str]:
     return frozenset(load_rules(agent=agent))
 
 
-def _file_level_ids(rules: Mapping[str, Rule]) -> frozenset[str]:
-    """Ids of the content checks of `rules` that require something in a file."""
-    return frozenset(
-        check.id
-        for rule in rules.values()
-        for check in rule.checks
-        if check.type == "content_query" and check.expect == "present" and check.id
-    )
-
-
 @lru_cache(maxsize=8)
 def file_level_check_ids(agent: str = "") -> frozenset[str]:
     """Ids of the bundled content checks that require something in a file (bundled rules only).
 
     A finding from one of these concerns the whole file: there is no line to point at.
     """
-    return _file_level_ids(load_rules(agent=agent))
-
-
-def convention_check_ids(rules: Mapping[str, Rule]) -> frozenset[str]:
-    """Ids of the checks of `rules` flagged `convention: true`: their finding names a missing convention."""
-    return frozenset(check.id for rule in rules.values() for check in rule.checks if check.convention and check.id)
-
-
-def whole_run_check_ids(rules: Mapping[str, Rule]) -> frozenset[str]:
-    """Ids of the checks of `rules` whose finding stands for the matched files as a whole.
-
-    These are the content checks that require something in a file and the project-aggregate
-    checks: neither points at one file or line.
-    """
-    return _file_level_ids(rules) | frozenset(
-        check.id for rule in rules.values() for check in rule.checks if check.project_scope and check.id
-    )
-
-
-def rule_dependencies(rules: Mapping[str, Rule]) -> dict[str, frozenset[str]]:
-    """`{rule id: the rule ids it depends on}` across `rules`, resolved through supersession.
-
-    A dependency on a rule an agent rule supersedes names the superseding rule, which carries
-    the findings under its own id.
-    """
-    successor = {r.supersedes: rid for rid, r in rules.items() if r.supersedes}
-    return {
-        rid: frozenset(successor.get(dep, dep) for dep in rule.depends_on)
-        for rid, rule in rules.items()
-        if rule.depends_on
-    }
+    return file_level_ids(load_rules(agent=agent))
 
 
 def get_rules_dir() -> Path:

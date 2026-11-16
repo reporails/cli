@@ -123,7 +123,7 @@ def test_explain_tool_returns_the_whole_rule_body_without_repeating_examples(mon
         "## Pass / Fail\n\n### Pass\n\n~~~~markdown\nUse `ruff`.\n~~~~\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr("reporails_cli.core.platform.adapters.registry.get_rules_dir", lambda: tmp_path)
+    monkeypatch.setattr("reporails_cli.core.platform.rules.registry.get_rules_dir", lambda: tmp_path)
     out = explain_tool("CORE:S:0902")
     assert isinstance(out, str)
     assert "Late antipattern" in out

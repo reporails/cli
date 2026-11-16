@@ -1,7 +1,7 @@
 """Loader for the bundled capability keyword vocabulary.
 
 Lives in the platform layer so both ``core/classify`` (the classifier's
-capability resolver) and ``core/platform/adapters`` (the read-side rule query)
+capability resolver) and ``core/platform/rules`` (the read-side rule query)
 read one source instead of hand-keeping a mirror. Reads
 ``bundled/lexicon/capabilities.yml`` via the cached ``load_yaml_file`` helper
 and shape-validates it against ``CapabilityVocabulary``.

@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reporails_cli.core.platform.adapters.rules_query import rule_title
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object
 from reporails_cli.core.platform.dto.diagnostics import walk_findings
+from reporails_cli.core.platform.rules.rules_query import rule_title
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.interfaces.mcp.remedy_brief import _sorted_findings
 

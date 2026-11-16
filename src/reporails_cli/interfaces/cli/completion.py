@@ -12,8 +12,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import detect_agents
-from reporails_cli.core.platform.adapters.rules_query import list_known_agents, load_all_rules
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
+from reporails_cli.core.platform.rules.rules_query import list_known_agents, load_all_rules
 
 
 def _no_candidates_when_config_unreadable(complete: Callable[[str], list[str]]) -> Callable[[str], list[str]]:

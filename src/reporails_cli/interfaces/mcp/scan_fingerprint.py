@@ -8,7 +8,7 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.pipeline.check_one import discover_files
-from reporails_cli.core.platform.adapters.api_key import has_api_key
+from reporails_cli.core.platform.config.api_key import has_api_key
 from reporails_cli.core.platform.config.bootstrap import (
     get_global_config_path,
     get_local_config_path,

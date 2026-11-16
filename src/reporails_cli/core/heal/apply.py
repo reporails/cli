@@ -10,7 +10,7 @@ from reporails_cli.core.heal.keyed import keyed_heal
 from reporails_cli.core.lint.suppression import suppressed_lines
 from reporails_cli.core.pipeline.check_one import check_path
 from reporails_cli.core.pipeline.mapping import map_instruction_files
-from reporails_cli.core.platform.adapters.api_key import has_api_key
+from reporails_cli.core.platform.config.api_key import has_api_key
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, RemediationWorkflow, tiers_unpaid
 from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult

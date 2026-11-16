@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.platform.adapters.registry import _read_rules, load_rules
 from reporails_cli.core.platform.config.capabilities import (
     agent_capabilities,
     load_capability_matrix,
 )
 from reporails_cli.core.platform.dto.models import Category, FileMatch, Rule, RuleType
 from reporails_cli.core.platform.policy.applicability import filter_by_capability
+from reporails_cli.core.platform.rules.registry import _read_rules, load_rules
 
 
 def _rule(rule_id: str, requires_capability: str | None = None) -> Rule:

@@ -3,12 +3,12 @@
 from reporails_cli.core.classify import load_file_types
 from reporails_cli.core.discovery.agents import get_known_agents
 from reporails_cli.core.lint.rule_pages import load_rule_examples, rule_page_data, rule_page_summary
-from reporails_cli.core.platform.adapters.registry import infer_agent_from_rule_id, load_rules
-from reporails_cli.core.platform.adapters.rules_query import rules_for_capability
 from reporails_cli.core.platform.config.config import is_initialized
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.models import Rule
+from reporails_cli.core.platform.rules.registry import infer_agent_from_rule_id, load_rules
+from reporails_cli.core.platform.rules.rules_query import rules_for_capability
 from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.interfaces.mcp.tools import _rules_missing_payload, _unknown_agent_error
 

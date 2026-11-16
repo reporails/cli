@@ -15,11 +15,11 @@ from reporails_cli.core.discovery.agents import (
     auto_detect_agent,
     get_known_agents,
 )
-from reporails_cli.core.platform.adapters.registry import _apply_agent_overrides, _is_other_agent_rule, load_rules
 from reporails_cli.core.platform.config.config import get_agent_config
 from reporails_cli.core.platform.dto.discovery import DetectedAgent
 from reporails_cli.core.platform.dto.models import Category, Check, Rule, RuleType, Severity
 from reporails_cli.core.platform.dto.results import AgentConfig
+from reporails_cli.core.platform.rules.registry import _apply_agent_overrides, _is_other_agent_rule, load_rules
 
 # =============================================================================
 # get_agent_config tests
@@ -249,8 +249,8 @@ class TestLoadRulesExcludes:
 
         agent_config = AgentConfig(excludes=["CORE:S:0001"])
         with (
-            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
-            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+            patch("reporails_cli.core.platform.rules.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
         ):
             rules = load_rules([tmp_path], agent="test")
 
@@ -271,8 +271,8 @@ class TestLoadRulesExcludes:
 
         agent_config = AgentConfig(excludes=["NONEXISTENT"])
         with (
-            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
-            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+            patch("reporails_cli.core.platform.rules.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
         ):
             rules = load_rules([tmp_path], agent="test")
 
@@ -318,8 +318,8 @@ class TestLoadRulesExcludes:
             excludes=["CLAUDE:*", "CODEX:*"],
         )
         with (
-            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
-            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+            patch("reporails_cli.core.platform.rules.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
         ):
             rules = load_rules([tmp_path], agent="copilot")
 
@@ -350,8 +350,8 @@ class TestLoadRulesExcludes:
             excludes=["CORE:S:0001", "CLAUDE:*"],
         )
         with (
-            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
-            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+            patch("reporails_cli.core.platform.rules.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
         ):
             rules = load_rules([tmp_path], agent="test")
 
@@ -405,8 +405,8 @@ class TestPrefixNamespaceFiltering:
         # Agent name is "myagent" but prefix is "MYPREFIX" — prefix should win
         agent_config = AgentConfig(prefix="MYPREFIX")
         with (
-            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
-            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+            patch("reporails_cli.core.platform.rules.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
         ):
             rules = load_rules([tmp_path], agent="myagent")
 
@@ -435,8 +435,8 @@ class TestPrefixNamespaceFiltering:
         # No prefix — agent.upper() = "CLAUDE" used for filtering
         agent_config = AgentConfig()
         with (
-            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
-            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+            patch("reporails_cli.core.platform.rules.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
         ):
             rules = load_rules([tmp_path], agent="claude")
 

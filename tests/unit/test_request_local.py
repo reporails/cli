@@ -16,10 +16,8 @@ from reporails_cli.core.lint.regex.compiler import display_severity
 from reporails_cli.core.platform.adapters.payload import (
     _MAX_LOCAL_ENTRIES,
     encode_msgpack,
-    local_entries,
     project_local,
 )
-from reporails_cli.core.platform.adapters.registry import registry_rule_ids, structural_rule_ids
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.models import (
     Category,
@@ -30,6 +28,8 @@ from reporails_cli.core.platform.dto.models import (
     RuleType,
     Severity,
 )
+from reporails_cli.core.platform.policy.local_entries import local_entries
+from reporails_cli.core.platform.rules.registry import registry_rule_ids, structural_rule_ids
 
 
 def _finding(rule: str, severity: str = "error", file: str = "a.md", line: int = 1, check: str = "") -> FindingItem:

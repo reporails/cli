@@ -15,8 +15,8 @@ import pytest
 
 from reporails_cli.core.lint.rule_runner import run_m_probes
 from reporails_cli.core.pipeline.assemble import lint_request_local
-from reporails_cli.core.platform.adapters.registry import load_rules, structural_rule_ids
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs
+from reporails_cli.core.platform.rules.registry import load_rules, structural_rule_ids
 
 HANDLER_RULE_SLUGS = {
     "hook-command-has-field",

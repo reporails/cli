@@ -6,12 +6,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.contract.json_value import JsonValue, as_str
 from reporails_cli.core.platform.dto.events import EventRecord, is_note_kind
 from reporails_cli.core.platform.dto.xray_build import Frame
 from reporails_cli.core.platform.dto.xray_sources import HookCommand, HookDetail, HookRun, SourceEntry, XrayArtifact
 from reporails_cli.core.platform.utils.hook_config import hook_sites, read_hook_config
+from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.derive import frame_time, real_path, tokens_of
 
 # The firings of one hook the page lists, the latest first kept.

@@ -9,7 +9,6 @@ import regex
 import yaml
 
 from reporails_cli.core.classify.stopwords import decompose, is_guard, recompose
-from reporails_cli.core.platform.adapters.registry import RuleReadError, read_checks_document
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
     JsonValue,
@@ -20,6 +19,7 @@ from reporails_cli.core.platform.contract.json_value import (
 from reporails_cli.core.platform.contract.rule_pattern import compile_rule_pattern
 from reporails_cli.core.platform.dto.classify import FieldOutcome, PatternParts, SyncResult
 from reporails_cli.core.platform.dto.models import REGEX_PATTERN_FIELDS
+from reporails_cli.core.platform.rules.registry import RuleReadError, read_checks_document
 from reporails_cli.core.platform.utils.utils import (
     fast_yaml_load,
     forget_yaml_file,

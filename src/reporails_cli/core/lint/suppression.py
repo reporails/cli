@@ -34,7 +34,6 @@ from pathlib import Path
 from reporails_cli.core.discovery.file_tags import classify_file
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.imports import expand_imports_with_origins
-from reporails_cli.core.platform.adapters.rules_query import rule_slug
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import (
@@ -51,6 +50,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
 )
 from reporails_cli.core.platform.dto.models import Rule
 from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.rules.rules_query import rule_slug
 from reporails_cli.core.platform.runtime.merger import drop_findings, normalize_finding_path, rebuild_cross_file_stats
 from reporails_cli.core.platform.utils.directives import parse_directives
 from reporails_cli.core.platform.utils.utils import home_folder, matches_any_glob

@@ -14,13 +14,13 @@ from pathlib import Path
 from rich.text import Text
 
 from reporails_cli.core.discovery.agent_surfaces import agent_main_literal_paths, agent_rule_surface_markers
-from reporails_cli.core.platform.adapters.api_key import has_api_key
-from reporails_cli.core.platform.adapters.rules_query import rule_title
+from reporails_cli.core.platform.config.api_key import has_api_key
 from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem, FindingSeverity
 from reporails_cli.core.platform.dto.models import CATEGORY_CODES
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
+from reporails_cli.core.platform.rules.rules_query import rule_title
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path, overlapping_pairs
 from reporails_cli.formatters.text.display_constants import (
     HEALTH_BAR_WIDTH,

@@ -155,9 +155,9 @@ def test_shipped_heading_rule_reports_a_mapped_file_no_file_type_claims() -> Non
     """A file the mapper read but no file type claims still gets its charged headings reported."""
     from pathlib import Path
 
-    from reporails_cli.core.platform.adapters.registry import load_rules
     from reporails_cli.core.platform.dto.models import ClassifiedFile
     from reporails_cli.core.platform.policy.matching import is_wildcard_match
+    from reporails_cli.core.platform.rules.registry import load_rules
 
     rules = load_rules(rules_paths=[Path(__file__).parents[2] / "framework" / "rules"])
     rule = rules["CORE:S:0039"]

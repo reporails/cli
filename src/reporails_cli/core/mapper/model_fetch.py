@@ -44,7 +44,7 @@ from reporails_cli.core.mapper.model_manifest import (
     cache_models_dir,
     models_present,
 )
-from reporails_cli.core.platform.adapters.api_key import default_server_api_key
+from reporails_cli.core.platform.config.api_key import default_server_api_key
 from reporails_cli.core.platform.config.bootstrap import (
     env_flag,
     env_text,

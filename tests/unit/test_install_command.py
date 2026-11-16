@@ -109,7 +109,7 @@ def _setup(
     monkeypatch.setattr(install_module, "_install_to_path", lambda: True)
     monkeypatch.setattr(install_module.shutil, "which", lambda cmd: f"/bin/{cmd}" if cmd in present else None)
     monkeypatch.setattr(programs_module.subprocess, "run", runner)
-    monkeypatch.setattr("reporails_cli.core.platform.adapters.api_key.has_api_key", lambda: key)
+    monkeypatch.setattr("reporails_cli.core.platform.config.api_key.has_api_key", lambda: key)
     if tmp_path is not None:
         monkeypatch.chdir(tmp_path)
 

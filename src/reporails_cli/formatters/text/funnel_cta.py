@@ -14,7 +14,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from rich.markup import escape as escape_markup
 from rich.markup import render as render_markup
 
-from reporails_cli.core.platform.adapters.api_key import has_api_key
+from reporails_cli.core.platform.config.api_key import has_api_key
 from reporails_cli.core.platform.dto.diagnostics import (
     DEFAULT_RETRY_AFTER_S,
     OFFLINE_REQUESTED,

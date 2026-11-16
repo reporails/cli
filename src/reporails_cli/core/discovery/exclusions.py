@@ -8,7 +8,6 @@ from dataclasses import replace
 from pathlib import Path
 
 from reporails_cli.core.discovery.walk import child_real, safe_resolve
-from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.config.bootstrap import (
     get_global_config_path,
     get_local_config_path,
@@ -19,7 +18,7 @@ from reporails_cli.core.platform.contract.json_value import str_list
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.exclusion import EXCLUSION_SETTINGS, ExclusionHit, ExclusionSetting, FolderValue
 from reporails_cli.core.platform.policy.exclusion import parse_folder_value
-from reporails_cli.core.platform.utils.utils import matches_any_glob
+from reporails_cli.core.platform.utils.utils import matches_any_glob, relative_wire_path
 
 
 def _roots_of(root: Path) -> tuple[Path, ...]:

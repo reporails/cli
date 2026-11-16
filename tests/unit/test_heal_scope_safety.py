@@ -48,7 +48,7 @@ def test_heal_against_dot_is_refused(dot: str) -> None:
 @pytest.mark.subsys_heal
 def test_has_api_key_true_with_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """`--heal` is gated on auth; an env key reads as authenticated."""
-    from reporails_cli.core.platform.adapters.api_key import has_api_key
+    from reporails_cli.core.platform.config.api_key import has_api_key
 
     monkeypatch.setenv("AILS_API_KEY", "k")
     assert has_api_key() is True
@@ -58,7 +58,7 @@ def test_has_api_key_true_with_env(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.subsys_heal
 def test_has_api_key_false_when_anonymous(monkeypatch: pytest.MonkeyPatch) -> None:
     """No env key + isolated HOME (no credentials) reads as anonymous — `--heal` is gated off."""
-    from reporails_cli.core.platform.adapters.api_key import has_api_key
+    from reporails_cli.core.platform.config.api_key import has_api_key
 
     assert has_api_key() is False
 

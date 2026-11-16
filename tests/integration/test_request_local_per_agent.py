@@ -86,7 +86,7 @@ def test_auto_detected_run_sends_what_the_agents_own_run_sends(tmp_path: Path, m
 def test_auto_detected_run_counts_the_structural_rules_it_is_checked_against(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from reporails_cli.core.platform.adapters.registry import structural_rule_ids
+    from reporails_cli.core.platform.rules.registry import structural_rule_ids
 
     project = _claude_and_cursor_project(tmp_path)
     _, required, _ = _check(project, monkeypatch)
@@ -100,7 +100,7 @@ def test_auto_detected_run_counts_the_structural_rules_it_is_checked_against(
 def test_explicit_agent_run_sends_what_the_agents_registry_defines(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from reporails_cli.core.platform.adapters.registry import registry_rule_ids, structural_rule_ids
+    from reporails_cli.core.platform.rules.registry import registry_rule_ids, structural_rule_ids
 
     project = _claude_and_cursor_project(tmp_path)
     explicit, required, reported = _check(project, monkeypatch, "--agent", "claude")

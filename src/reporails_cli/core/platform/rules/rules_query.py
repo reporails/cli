@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from reporails_cli.core.platform.adapters.registry import apply_agent_excludes, get_rules_dir, load_rules_from_path
 from reporails_cli.core.platform.config.config import get_agent_config
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 from reporails_cli.core.platform.dto.models import SEVERITY_ORDER, Category, Rule, Severity
+from reporails_cli.core.platform.rules.registry import apply_agent_excludes, get_rules_dir, load_rules_from_path
 
 _CATEGORY_ORDER: dict[Category, int] = {
     Category.STRUCTURE: 0,

@@ -13,7 +13,6 @@ from dataclasses import replace
 from pathlib import Path
 from typing import get_args
 
-from reporails_cli.core.platform.adapters.rules_query import rule_title
 from reporails_cli.core.platform.dto.diagnostics import (
     CLIENT_CHECK_KINDS,
     SEVERITY_RANK,
@@ -29,6 +28,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
 )
 from reporails_cli.core.platform.dto.models import Level, LocalFinding
 from reporails_cli.core.platform.dto.platform import CombinedResult, CombinedStats, ServerReply, SeverityCounts
+from reporails_cli.core.platform.rules.rules_query import rule_title
 from reporails_cli.core.platform.utils.utils import home_relative
 
 

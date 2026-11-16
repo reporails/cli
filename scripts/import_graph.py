@@ -37,8 +37,9 @@ ALLOWED: dict[str, set[str]] = {
     "dto": {"contract"},
     "policy": {"contract", "dto"},
     "adapters": {"contract", "dto", "policy", "config", "observability", "utils"},
-    # The merger names a server finding by its rule title; adapters never import runtime.
-    "runtime": {"contract", "dto", "policy", "config", "observability", "utils", "adapters"},
+    "rules": {"contract", "dto", "policy", "config", "observability", "utils"},
+    # The merger names a server finding by its rule title, which the rule query reads.
+    "runtime": {"contract", "dto", "policy", "config", "observability", "utils", "rules"},
     # Config checks a setting against the pure folder grammar, and locates the bundled lexicon file.
     "config": {"contract", "dto", "utils", "policy", "bundled"},
     "observability": {"contract", "dto", "config", "utils"},
@@ -50,7 +51,6 @@ ALLOWED: dict[str, set[str]] = {
         "contract",
         "dto",
         "policy",
-        "adapters",
         "runtime",
         "config",
         "observability",
@@ -66,7 +66,6 @@ ALLOWED: dict[str, set[str]] = {
         "contract",
         "dto",
         "policy",
-        "adapters",
         "runtime",
         "config",
         "observability",
