@@ -48,6 +48,7 @@ def _inputs(root, **overrides: object) -> AssembleInputs:
         "effective_agent": "claude",
         "lint_result": None,
     }
+    base["project_config"] = RunContext().project_config(root)
     base.update(overrides)
     return AssembleInputs(**base)  # type: ignore[arg-type]
 

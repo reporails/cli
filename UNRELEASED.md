@@ -60,6 +60,7 @@
 - An architecture test fails on any core module that imports a driven adapter, in any import form; core declares the port and the command line, MCP server and x-ray page pass the adapter in.
 - Caches of the bundled rules and agent settings are bounded, read-only and kept per rules folder, and a rules folder outside the bundle is read fresh on each load.
 - CI now runs the model-backed integration tests on a fetched model.
+- Which rules a run reports and each rule's line thresholds come from the config the run already read, so a run reads the project config once.
 - The Windows check scenarios and the MCP x-ray two-call scenario lose their skip tag. The two-call scenario reads the page while the agent's MCP server still runs, because on Windows the test client ends the server's process tree, the page with it.
 - The rewrite-check tests build named constructs, plain text and the rewrite's map as a real run produces them.
 - Heal's rewrite check reads each instruction from the map, and a test suite holds rewrites that keep the words but change the meaning.

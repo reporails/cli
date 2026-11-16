@@ -166,3 +166,11 @@ class ProjectConfig:
     # Mapper atomizer tuning. `mapper.segmentation` picks the boundary policy
     # ("legacy" | "structure-aware"), defaulting to the shipped behavior.
     mapper: MapperConfig = field(default_factory=MapperConfig)
+
+
+@dataclass(frozen=True)
+class ConfiguredRoot:
+    """A folder together with the project config read there."""
+
+    root: Path
+    config: ProjectConfig

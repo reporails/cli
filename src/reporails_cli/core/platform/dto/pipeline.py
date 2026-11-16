@@ -53,6 +53,7 @@ class AssembleInputs:
     filter_agents: list[DetectedAgent] | None
     effective_agent: str
     lint_result: LintResult | None
+    project_config: ProjectConfig  # the config of `scan_root`
     rule_agents: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
     # `(rule id, file)` pairs whose check did not finish in time; the file is as the check reported it.

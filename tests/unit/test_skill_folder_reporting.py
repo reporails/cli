@@ -471,6 +471,7 @@ class TestSkillRecordConsumers:
         inp = AssembleInputs(
             m_findings=[], content_findings=[], client_findings=[], ruleset_map=rmap, scan_root=tmp_path,
             filter_agents=None, effective_agent="claude", lint_result=None,
+        project_config=RunContext().project_config(tmp_path),
         )  # fmt: skip
         typed = _local_finding_type_resolver(inp, load_registry())
         root = tmp_path.as_posix()

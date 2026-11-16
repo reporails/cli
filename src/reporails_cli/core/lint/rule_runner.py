@@ -22,11 +22,11 @@ from reporails_cli.core.lint.mechanical.runner import run_mechanical_checks
 from reporails_cli.core.lint.regex import run_checks
 from reporails_cli.core.lint.regex.compiler import display_severity
 from reporails_cli.core.mapper.skills import skill_entry_paths, skill_membership
-from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.diagnostics import SEVERITY_RANK
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import ClassifiedFile, Execution, LocalFinding, Rule, RuleType
+from reporails_cli.core.platform.dto.results import ConfiguredRoot
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.policy.matching import match_files
 from reporails_cli.core.platform.rules.registry import load_rules
@@ -75,9 +75,8 @@ def _has_deterministic_checks(rule: Rule) -> bool:
     return any(c.type == "deterministic" for c in rule.checks)
 
 
-def _min_lines_overrides(project_dir: Path) -> dict[str, int]:
+def _min_lines_overrides(thresholds: Mapping[str, Mapping[str, int]]) -> dict[str, int]:
     """The per-rule `min_lines` thresholds the project's config sets."""
-    thresholds = get_project_config(project_dir).rule_thresholds
     overrides: dict[str, int] = {}
     for rule_id, args in thresholds.items():
         min_lines = args.get("min_lines")
@@ -98,7 +97,9 @@ def _collect_deterministic_findings(
     project_dir: Path,
     instruction_files: list[Path],
     classified: list[ClassifiedFile],
+    *,
     exclusions: RunExclusions,
+    thresholds: Mapping[str, Mapping[str, int]],
 ) -> list[LocalFinding]:
     """Run deterministic checks against matched target files.
 
@@ -106,7 +107,7 @@ def _collect_deterministic_findings(
     scopes, formats, or other properties get the correct file set.
     Rules of any type are included if they contain deterministic checks.
     """
-    min_lines_overrides = _min_lines_overrides(project_dir)
+    min_lines_overrides = _min_lines_overrides(thresholds)
     skill_entries = skill_entry_paths(classified)
     findings: list[LocalFinding] = []
     for rule in rules.values():
@@ -153,13 +154,15 @@ def _classify_agent_files(
     project_dir: Path,
     instruction_files: list[Path],
     agent: str,
+    generic_scanning: bool,
+    *,
     skills: Mapping[str, str] | None = None,
     exclusions: RunExclusions | None = None,
-) -> tuple[list[ClassifiedFile], bool]:
-    """Classify `instruction_files` with `agent`'s file types; also return whether generic scanning is on."""
+) -> list[ClassifiedFile]:
+    """Classify `instruction_files` with `agent`'s file types, link-reached generic files included when
+    `generic_scanning` is on."""
     file_types = load_file_types(agent or "generic", project_root=project_dir)
-    generic_scanning = get_project_config(project_dir).generic_scanning
-    classified = classify_files(
+    return classify_files(
         project_dir,
         instruction_files,
         file_types,
@@ -167,7 +170,12 @@ def _classify_agent_files(
         skills=skills,
         exclusions=exclusions,
     )
-    return classified, generic_scanning
+
+
+def _rule_roots(run: RunContext, project_dir: Path) -> tuple[ConfiguredRoot, ConfiguredRoot]:
+    """The project folder and the folder scanned (itself, or a file's parent), each with its config."""
+    scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
+    return run.configured_root(project_dir), run.configured_root(scan_dir)
 
 
 def run_m_probes(
@@ -190,9 +198,12 @@ def run_m_probes(
     later pass (project-wide checks alone). `skills` maps each file in a skill to its
     skill folder; when given, only those files are typed `skills`.
     """
-    scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
-    rules = load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent)
-    classified, generic_scanning = _classify_agent_files(project_dir, instruction_files, agent, skills, exclusions)
+    project, scan = _rule_roots(run, project_dir)
+    rules = load_rules(project=project, scan=scan, agent=agent)
+    generic_scanning = project.config.generic_scanning
+    classified = _classify_agent_files(
+        project_dir, instruction_files, agent, generic_scanning, skills=skills, exclusions=exclusions
+    )
     effective_files = _extend_with_generic(instruction_files, classified, generic_scanning)
 
     findings: list[LocalFinding] = []
@@ -204,7 +215,12 @@ def run_m_probes(
     if project_checks != "only":
         findings.extend(
             _collect_deterministic_findings(
-                rules, project_dir, effective_files, classified, load_run_exclusions(run, project_dir)
+                rules,
+                project_dir,
+                effective_files,
+                classified,
+                exclusions=load_run_exclusions(run, project_dir),
+                thresholds=project.config.rule_thresholds,
             )
         )
 
@@ -213,12 +229,12 @@ def run_m_probes(
 
 
 def _replaced_core_rules(
-    project_dir: Path, scan_dir: Path, agent_ids: list[str], core_rules: dict[str, Rule]
+    project: ConfiguredRoot, scan: ConfiguredRoot, agent_ids: list[str], core_rules: dict[str, Rule]
 ) -> dict[str, set[str]]:
     """For each core rule an agent's own rule supersedes, the agents whose rule replaces it."""
     replaced_by: dict[str, set[str]] = {}
     for agent_id in agent_ids:
-        for rule in load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent_id).values():
+        for rule in load_rules(project=project, scan=scan, agent=agent_id).values():
             if rule.supersedes in core_rules:
                 replaced_by.setdefault(rule.supersedes, set()).add(agent_id)
     return replaced_by
@@ -226,6 +242,7 @@ def _replaced_core_rules(
 
 def _files_by_first_agent(
     project_dir: Path,
+    generic_scanning: bool,
     pairs: list[tuple[str, list[Path]]],
     skills: Mapping[str, str] | None,
     exclusions: RunExclusions,
@@ -233,12 +250,15 @@ def _files_by_first_agent(
     """Each file the pairs name, classified by the first agent that lists it: path -> (agent, classified file)."""
     seen: dict[Path, tuple[str, ClassifiedFile]] = {}
     for agent_id, agent_files in pairs:
-        for cf in _classify_agent_files(project_dir, agent_files, agent_id, skills, exclusions)[0]:
+        for cf in _classify_agent_files(
+            project_dir, agent_files, agent_id, generic_scanning, skills=skills, exclusions=exclusions
+        ):
             seen.setdefault(cf.path, (agent_id, cf))
     return seen
 
 
 def _project_wide_findings(
+    run: RunContext,
     project_dir: Path,
     pairs: list[tuple[str, list[Path]]],
     *,
@@ -251,10 +271,10 @@ def _project_wide_findings(
     A core rule that an agent's own rule replaces does not judge that agent's files: the
     agent's pass already reports them under the agent's rule.
     """
-    scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
-    rules = load_rules(project_root=project_dir, scan_root=scan_dir, agent="")
-    seen = _files_by_first_agent(project_dir, pairs, skills, exclusions)
-    replaced_by = _replaced_core_rules(project_dir, scan_dir, [agent_id for agent_id, _ in pairs if agent_id], rules)
+    project, scan = _rule_roots(run, project_dir)
+    rules = load_rules(project=project, scan=scan, agent="")
+    seen = _files_by_first_agent(project_dir, project.config.generic_scanning, pairs, skills, exclusions)
+    replaced_by = _replaced_core_rules(project, scan, [agent_id for agent_id, _ in pairs if agent_id], rules)
     groups: dict[frozenset[str], dict[str, Rule]] = {}
     for rule_id, rule in rules.items():
         groups.setdefault(frozenset(replaced_by.get(rule_id, ())), {})[rule_id] = rule
@@ -305,14 +325,18 @@ def run_m_probes_over_pairs(
             )
         )
     if several:
-        findings.extend(_project_wide_findings(project_dir, pairs, scoped=scoped, skills=skills, exclusions=exclusions))
+        findings.extend(
+            _project_wide_findings(run, project_dir, pairs, scoped=scoped, skills=skills, exclusions=exclusions)
+        )
     return findings
 
 
 def run_content_quality_checks(
+    run: RunContext,
     ruleset_map: RulesetMap | None,
     project_dir: Path,
     instruction_files: list[Path] | None = None,
+    *,
     agent: str = "",
     exclusions: RunExclusions | None = None,
 ) -> list[LocalFinding]:
@@ -324,14 +348,19 @@ def run_content_quality_checks(
     if ruleset_map is None:
         return []
 
-    scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
-    rules = load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent)
+    project, scan = _rule_roots(run, project_dir)
+    rules = load_rules(project=project, scan=scan, agent=agent)
 
     # Classify files so content_checker can respect rule.match targeting
     classified: list[ClassifiedFile] = []
     if instruction_files:
-        classified, _ = _classify_agent_files(
-            project_dir, instruction_files, agent, skill_membership(ruleset_map), exclusions
+        classified = _classify_agent_files(
+            project_dir,
+            instruction_files,
+            agent,
+            project.config.generic_scanning,
+            skills=skill_membership(ruleset_map),
+            exclusions=exclusions,
         )
 
     return run_content_checks(ruleset_map, rules, classified)

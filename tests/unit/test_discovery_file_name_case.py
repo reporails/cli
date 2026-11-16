@@ -82,7 +82,7 @@ def test_wrong_case_copy_is_discovered_and_typed_on_a_case_insensitive_filesyste
     exact_level = _level(tmp_path)
     exact_types = {
         cf.path.relative_to(tmp_path).as_posix(): cf.file_type
-        for cf in _classify_agent_files(tmp_path, [tmp_path / "docs" / "CLAUDE.md"], "claude")[0]
+        for cf in _classify_agent_files(tmp_path, [tmp_path / "docs" / "CLAUDE.md"], "claude", False)
     }
     (tmp_path / "docs" / "CLAUDE.md").rename(tmp_path / "docs" / "claude.md")
     monkeypatch.setattr(walk, "_same_file", lambda documented, listed: True)
@@ -90,7 +90,7 @@ def test_wrong_case_copy_is_discovered_and_typed_on_a_case_insensitive_filesyste
     found = _files(tmp_path, "claude")
     typed = {
         cf.path.relative_to(tmp_path).as_posix(): cf.file_type
-        for cf in _classify_agent_files(tmp_path, [tmp_path / "docs" / "CLAUDE.md"], "claude")[0]
+        for cf in _classify_agent_files(tmp_path, [tmp_path / "docs" / "CLAUDE.md"], "claude", False)
     }
 
     assert "docs/CLAUDE.md" in found
@@ -109,8 +109,8 @@ def test_lowercase_claude_md_rules_file_stays_a_rules_file_on_a_case_sensitive_f
     typed = {
         cf.path.relative_to(tmp_path).as_posix(): cf.file_type
         for cf in _classify_agent_files(
-            tmp_path, [tmp_path / "CLAUDE.md", tmp_path / ".claude/rules/claude.md"], "claude"
-        )[0]
+            tmp_path, [tmp_path / "CLAUDE.md", tmp_path / ".claude/rules/claude.md"], "claude", False
+        )
     }
 
     assert typed[".claude/rules/claude.md"] == "rules"

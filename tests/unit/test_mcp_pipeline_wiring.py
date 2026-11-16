@@ -277,7 +277,16 @@ def test_assemble_mcp_result_surfaces_the_funnel_error(monkeypatch, tmp_path):
 
     _result, funnel_error = check_one._assemble(
         RunContext(),
-        check_one._assemble_inputs(tmp_path, "claude", [], None, ([], [], []), rule_agents=(), not_evaluated=()),
+        check_one._assemble_inputs(
+            tmp_path,
+            "claude",
+            [],
+            None,
+            ([], [], []),
+            project_config=RunContext().project_config(tmp_path),
+            rule_agents=(),
+            not_evaluated=(),
+        ),
         no_exclusions(tmp_path),
         ServerLint(),
     )

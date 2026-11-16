@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import Category, Execution, Rule, RuleType
-from reporails_cli.core.platform.dto.results import ProjectConfig
 from reporails_cli.core.platform.rules import registry as reg
 
 
@@ -270,18 +270,14 @@ def test_scan_root_disabled_rules_are_merged(tmp_path, monkeypatch):
     project_root = tmp_path / "proj"
     scan_root = tmp_path / "scan"
     project_root.mkdir()
-    scan_root.mkdir()
+    (scan_root / ".ails").mkdir(parents=True)
+    (scan_root / ".ails" / "config.yml").write_text('disabled_rules:\n  - "CORE:S:0096"\n')
 
-    def _fake_config(root):
-        if root == scan_root:
-            return ProjectConfig(disabled_rules=["CORE:S:0096"])
-        return ProjectConfig()
-
-    monkeypatch.setattr(reg, "_load_project_config", _fake_config)
+    run = RunContext()
     loaded = reg.load_rules(
         rules_paths=[rules_root],
-        project_root=project_root,
-        scan_root=scan_root,
+        project=run.configured_root(project_root),
+        scan=run.configured_root(scan_root),
     )
     assert "CORE:S:0096" not in loaded
 
@@ -292,6 +288,7 @@ def test_rule_present_without_scan_disable(tmp_path, monkeypatch):
     """Control: with no scan disable, the rule loads (guards the above)."""
     rules_root = tmp_path / "rules"
     _write_rule_md(rules_root, "core/myrule", "CORE:S:0095")
-    monkeypatch.setattr(reg, "_load_project_config", lambda root: ProjectConfig())
-    loaded = reg.load_rules(rules_paths=[rules_root], project_root=tmp_path / "p")
+    project_root = tmp_path / "p"
+    project_root.mkdir()
+    loaded = reg.load_rules(rules_paths=[rules_root], project=RunContext().configured_root(project_root))
     assert "CORE:S:0095" in loaded

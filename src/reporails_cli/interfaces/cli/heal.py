@@ -20,7 +20,6 @@ from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_
 from reporails_cli.core.lint.suppression import build_index, is_suppressed
 from reporails_cli.core.mapper.skills import skill_membership
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
-from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
 from reporails_cli.core.platform.dto.discovery import RunExclusions
@@ -98,11 +97,11 @@ def _collect_section_suggestions(
         exclusions=exclusions,
     )
     findings += run_content_quality_checks(
-        ruleset_map, target, instruction_files, agent=effective_agent, exclusions=exclusions
+        run, ruleset_map, target, instruction_files, agent=effective_agent, exclusions=exclusions
     )
     findings = _drop_suppressed(findings, target)
 
-    classified_files, rules = _classify_for_suggestions(target, instruction_files, effective_agent, exclusions)
+    classified_files, rules = _classify_for_suggestions(run, target, instruction_files, effective_agent, exclusions)
     suggestions = suggest_missing_sections(_findings_to_violations(findings), target, classified_files, rules)
     return [
         {"rule_id": s.rule_id, "file_path": s.file_path, "section": s.section, "description": s.description}
@@ -137,7 +136,7 @@ def _findings_to_violations(findings: list[LocalFinding]) -> list[Violation]:
 
 
 def _classify_for_suggestions(
-    target: Path, instruction_files: list[Path], agent: str, exclusions: RunExclusions
+    run: RunContext, target: Path, instruction_files: list[Path], agent: str, exclusions: RunExclusions
 ) -> tuple[list[ClassifiedFile], dict[str, Rule]]:
     """Classify files and load rules so a section suggestion can name the file the
     rule's own `match.type` is about, instead of wherever the underlying finding
@@ -145,12 +144,12 @@ def _classify_for_suggestions(
     file in sorted path order, which is not necessarily the project's main file).
     """
 
-    generic_scanning = get_project_config(target).generic_scanning
+    root = run.configured_root(target)
     file_types = load_file_types(agent or "generic")
     classified = classify_files(
-        target, instruction_files, file_types, generic_scanning=generic_scanning, exclusions=exclusions
+        target, instruction_files, file_types, generic_scanning=root.config.generic_scanning, exclusions=exclusions
     )
-    rules = load_rules(project_root=target, scan_root=target, agent=agent)
+    rules = load_rules(project=root, scan=root, agent=agent)
     return classified, rules
 
 

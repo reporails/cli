@@ -42,7 +42,7 @@ def test_fallback_file_is_kept_when_files_are_classified_for_rules(tmp_path: Pat
     _project(tmp_path, agents_md=True)
     files = [tmp_path / "AGENTS.md", tmp_path / "TEAM_GUIDE.md"]
 
-    classified, _generic = _classify_agent_files(tmp_path, files, "codex")
+    classified = _classify_agent_files(tmp_path, files, "codex", False)
 
     assert {cf.path.name: cf.file_type for cf in classified} == {"AGENTS.md": "main", "TEAM_GUIDE.md": "main"}
 

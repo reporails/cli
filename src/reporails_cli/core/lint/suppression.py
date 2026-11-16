@@ -34,7 +34,6 @@ from pathlib import Path
 from reporails_cli.core.discovery.file_tags import classify_file
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.imports import expand_imports_with_origins
-from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import (
     FindingBase,
@@ -53,6 +52,7 @@ from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.rules.rules_query import rule_slug
 from reporails_cli.core.platform.runtime.merger import drop_findings, normalize_finding_path, rebuild_cross_file_stats
 from reporails_cli.core.platform.utils.directives import parse_directives
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import home_folder, matches_any_glob
 
 
@@ -89,7 +89,7 @@ def _index_file(index: SuppressionIndex, rel: str, path: Path, boundary: Path) -
     its own line.
     """
     try:
-        raw = path.read_text(encoding="utf-8", errors="replace")
+        raw = read_file_text(path, errors="replace")
     except OSError:
         return
     try:
@@ -368,7 +368,7 @@ def list_heal_excluded(
     return replace(pruned, listed=listed, summary=workflow_summary(pruned.locations, listed))
 
 
-def apply_config_listing(result: CombinedResult, project_root: Path | None = None) -> CombinedResult:
+def apply_config_listing(result: CombinedResult, project_root: Path, heal_exclude: Sequence[str]) -> CombinedResult:
     """`result` whose workflow lists config-format files' findings, and those of files in the
     project's `heal_exclude`, instead of locating them. Findings, scores and stats stay as they are."""
     workflow = result.reply.workflow
@@ -379,8 +379,8 @@ def apply_config_listing(result: CombinedResult, project_root: Path | None = Non
         return normalize_finding_path(file, project_root)
 
     projected = list_config_locations(workflow, norm)
-    patterns = get_project_config(project_root).heal_exclude if project_root is not None else []
-    if patterns and project_root is not None:
+    patterns = list(heal_exclude)
+    if patterns:
         projected = list_heal_excluded(
             projected,
             lambda rel: matches_any_glob(project_root / rel, patterns, project_root, root_anchored=True),

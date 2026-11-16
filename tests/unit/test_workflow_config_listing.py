@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -63,7 +64,7 @@ def test_only_config_locations_leaves_nothing_to_rewrite_and_findings_untouched(
     wf = _wf([_loc(1, "config", [CFG], [_row(RULE_A, CFG)])])
     items = (FindingItem(file=CFG, line=2, severity="warning", rule=RULE_A, message="m", source="server", pi=0),)
     result = CombinedResult(findings=items, stats=CombinedStats(total_findings=1), reply=ServerReply(workflow=wf))
-    out = apply_config_listing(result)
+    out = apply_config_listing(result, Path("."), [])
     assert out.reply.workflow.locations == ()
     assert out.reply.workflow.summary == "Nothing to rewrite — every finding is listed with the reason it takes none."
     assert out.findings == items
@@ -97,3 +98,19 @@ def test_a_heal_excluded_rule_lists_the_files_it_fired_on() -> None:
     out = list_heal_excluded(wf, lambda rel: True, _norm)
     [entry] = out.listed
     assert (entry.rule, entry.count, entry.files) == (RULE_A, 3, (a, b))
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_diagnostic
+def test_heal_excluded_file_is_listed_not_located(tmp_path: Path) -> None:
+    from reporails_cli.core.lint.suppression import HEAL_EXCLUDED_REASON
+
+    wf = _wf([_loc(1, "main", ["docs/a.md"], [_row(RULE_A, "docs/a.md")])])
+    result = CombinedResult(findings=(), stats=CombinedStats(total_findings=0), reply=ServerReply(workflow=wf))
+
+    kept = apply_config_listing(result, tmp_path, [])
+    listed = apply_config_listing(result, tmp_path, ["docs/*.md"])
+
+    assert [loc.kind for loc in kept.reply.workflow.locations] == ["main"]
+    assert listed.reply.workflow.locations == ()
+    assert [e.reason for e in listed.reply.workflow.listed] == [HEAL_EXCLUDED_REASON]

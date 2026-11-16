@@ -136,7 +136,7 @@ def _run_content_checks(state: CheckState) -> None:
         finding
         for agent_id, files in _agent_file_pairs(state)
         for finding in run_content_quality_checks(
-            ruleset_map, state.targets.target, files, agent=agent_id, exclusions=state.scope.exclusions
+            state.run, ruleset_map, state.targets.target, files, agent=agent_id, exclusions=state.scope.exclusions
         )
     ]
     state.pipeline.client_findings = run_client_checks(ruleset_map)
@@ -170,6 +170,7 @@ def _assemble_inputs(state: CheckState, lint_result: LintResult | None = None) -
         filter_agents=state.scope.filtered,
         effective_agent=state.scope.effective_agent,
         lint_result=lint_result,
+        project_config=state.run.project_config(state.targets.target),
         rule_agents=state.pipeline.rule_agents,
         notices=state.pipeline.notices,
         not_evaluated=state.pipeline.not_evaluated,

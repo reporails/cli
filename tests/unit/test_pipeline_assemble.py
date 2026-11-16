@@ -12,6 +12,7 @@ tests pin:
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -20,6 +21,7 @@ from reporails_cli.core.pipeline.assemble import assemble_result
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import Level
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs
+from reporails_cli.core.platform.dto.results import ProjectConfig
 
 
 def _inputs(**overrides: object) -> AssembleInputs:
@@ -34,6 +36,10 @@ def _inputs(**overrides: object) -> AssembleInputs:
         "lint_result": None,
     }
     base.update(overrides)
+    scan_root = base["scan_root"]
+    base.setdefault(
+        "project_config", RunContext().project_config(scan_root) if isinstance(scan_root, Path) else ProjectConfig()
+    )
     return AssembleInputs(**base)  # type: ignore[arg-type]
 
 

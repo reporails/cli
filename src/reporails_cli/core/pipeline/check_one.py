@@ -36,6 +36,7 @@ from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs, CheckRun, Discovered, LeftOut, Refusal, Scope
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ports import LintService
+from reporails_cli.core.platform.dto.results import ProjectConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
@@ -296,7 +297,9 @@ def _checks_over_pairs(
     for agent_id, agent_files in pairs:
         if ruleset_map:
             content_findings.extend(
-                run_content_quality_checks(ruleset_map, scan_root, agent_files, agent=agent_id, exclusions=exclusions)
+                run_content_quality_checks(
+                    run, ruleset_map, scan_root, agent_files, agent=agent_id, exclusions=exclusions
+                )
             )
     client_findings = run_client_checks(ruleset_map) if ruleset_map else []
     return m_findings, content_findings, client_findings
@@ -334,6 +337,7 @@ def _assemble_inputs(
     ruleset_map: RulesetMap | None,
     local: LocalFindings,
     *,
+    project_config: ProjectConfig,
     rule_agents: tuple[str, ...],
     not_evaluated: tuple[tuple[str, str], ...],
 ) -> AssembleInputs:
@@ -348,6 +352,7 @@ def _assemble_inputs(
         filter_agents=filter_agents,
         effective_agent=effective_agent,
         lint_result=None,
+        project_config=project_config,
         rule_agents=rule_agents,
         not_evaluated=not_evaluated,
     )
@@ -385,6 +390,7 @@ def check_and_assemble(
         filter_agents,
         ruleset_map,
         local,
+        project_config=run.project_config(scan_root),
         rule_agents=tuple(dict.fromkeys(agent_id for agent_id, _ in pairs)),
         not_evaluated=tuple(unfinished),
     )

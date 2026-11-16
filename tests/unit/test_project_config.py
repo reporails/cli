@@ -9,6 +9,7 @@ import pytest
 
 from reporails_cli.core.platform.config.bootstrap import get_package_paths
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.config.run_context import RunContext
 
 
 class TestGetProjectConfig:
@@ -291,7 +292,7 @@ class TestLoadRulesWithPackages:
 
         rules = load_rules(
             rules_paths=[rules_dir],
-            project_root=project,
+            project=RunContext().configured_root(project),
         )
         assert "CORE:S:0001" not in rules
         assert "CORE:S:0002" in rules
@@ -316,7 +317,7 @@ class TestLoadRulesWithPackages:
 
         rules = load_rules(
             rules_paths=[rules_dir],
-            project_root=project,
+            project=RunContext().configured_root(project),
         )
         assert "CORE:S:0001" in rules
 
@@ -366,7 +367,7 @@ class TestLoadRulesRulePackages:
         project = self._project(tmp_path, "packages:\n  - mypack\n")
         _create_rule(project / ".ails" / "packages" / "mypack", "CORE:S:0900", "Pack Rule")
 
-        rules = load_rules(rules_paths=[rules_dir], project_root=project)
+        rules = load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
         assert rules["CORE:S:0900"].title == "Pack Rule"
         assert rules["CORE:S:0001"].title == "Bundled S1"
 
@@ -379,7 +380,7 @@ class TestLoadRulesRulePackages:
         project = self._project(tmp_path, "disabled_rules: []\n")
         _create_rule(project / ".ails" / "packages" / "mypack", "CORE:S:0900", "Pack Rule")
 
-        rules = load_rules(rules_paths=[rules_dir], project_root=project)
+        rules = load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
         assert "CORE:S:0900" not in rules
 
     @pytest.mark.unit
@@ -393,7 +394,7 @@ class TestLoadRulesRulePackages:
         _create_rule(project / ".ails" / "packages" / "mypack", "CORE:S:0001", "Pack Replacement")
 
         with pytest.raises(ConfigUnreadableError) as excinfo:
-            load_rules(rules_paths=[rules_dir], project_root=project)
+            load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
 
         message = str(excinfo.value)
         assert "'mypack'" in message
@@ -412,7 +413,7 @@ class TestLoadRulesRulePackages:
         _create_rule(project / ".ails" / "packages" / "packb", "PACK:S:0001", "B")
 
         with pytest.raises(ConfigUnreadableError) as excinfo:
-            load_rules(rules_paths=[rules_dir], project_root=project)
+            load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
 
         message = str(excinfo.value)
         assert "'packa'" in message
@@ -428,7 +429,7 @@ class TestLoadRulesRulePackages:
         project = self._project(tmp_path, "packages:\n  - mypack\n")
         _create_rule(project / ".ails" / "packages" / "mypack", "MYPACK:S:0001", "Own Prefix")
 
-        rules = load_rules(rules_paths=[rules_dir], project_root=project)
+        rules = load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
         assert rules["MYPACK:S:0001"].title == "Own Prefix"
         assert rules["CORE:S:0001"].title == "Bundled S1"
 
@@ -451,7 +452,7 @@ class TestLoadRulesRulePackages:
         project = self._project(tmp_path, "packages:\n  - globalpack\n  - both\n")
         _create_rule(project / ".ails" / "packages" / "both", "CORE:S:0903", "Project Both")
 
-        rules = load_rules(rules_paths=[rules_dir], project_root=project)
+        rules = load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
         assert rules["CORE:S:0901"].title == "Global Rule"
         assert rules["CORE:S:0903"].title == "Project Both"
         assert "CORE:S:0902" not in rules
@@ -465,7 +466,7 @@ class TestLoadRulesRulePackages:
         project = self._project(tmp_path, 'packages:\n  - mypack\ndisabled_rules:\n  - "CORE:S:0900"\n')
         _create_rule(project / ".ails" / "packages" / "mypack", "CORE:S:0900", "Pack Rule")
 
-        rules = load_rules(rules_paths=[rules_dir], project_root=project)
+        rules = load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
         assert "CORE:S:0900" not in rules
         assert "CORE:S:0001" in rules
 
@@ -481,7 +482,11 @@ class TestLoadRulesRulePackages:
         (scan / ".ails" / "config.yml").write_text("packages:\n  - scanpack\n")
         _create_rule(scan / ".ails" / "packages" / "scanpack", "CORE:S:0904", "Scan Rule")
 
-        rules = load_rules(rules_paths=[rules_dir], project_root=project, scan_root=scan)
+        rules = load_rules(
+            rules_paths=[rules_dir],
+            project=RunContext().configured_root(project),
+            scan=RunContext().configured_root(scan),
+        )
         assert rules["CORE:S:0904"].title == "Scan Rule"
 
     @pytest.mark.unit
@@ -501,7 +506,7 @@ class TestLoadRulesRulePackages:
         project = self._project(tmp_path, "packages:\n  - ghostpack\n")
 
         with pytest.raises(ConfigUnreadableError) as excinfo:
-            load_rules(rules_paths=[rules_dir], project_root=project)
+            load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
 
         message = str(excinfo.value)
         assert "ghostpack" in message
@@ -526,7 +531,7 @@ class TestPackageRuleBehaviour:
 
         project = self._project(tmp_path)
         _create_rule(project / ".ails" / "packages" / "mypack", "MYPACK:S:0001", "Own Prefix")
-        rules = load_rules(project_root=project, agent="claude")
+        rules = load_rules(project=RunContext().configured_root(project), agent="claude")
         assert "MYPACK:S:0001" in rules
         assert not any(rid.startswith(("CODEX:", "COPILOT:", "CURSOR:")) for rid in rules)
 
@@ -537,8 +542,8 @@ class TestPackageRuleBehaviour:
 
         project = self._project(tmp_path)
         _create_rule(project / ".ails" / "packages" / "mypack", "CODEX:S:0999", "Codex Pack")
-        assert "CODEX:S:0999" not in load_rules(project_root=project, agent="claude")
-        assert "CODEX:S:0999" in load_rules(project_root=project, agent="codex")
+        assert "CODEX:S:0999" not in load_rules(project=RunContext().configured_root(project), agent="claude")
+        assert "CODEX:S:0999" in load_rules(project=RunContext().configured_root(project), agent="codex")
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
@@ -548,11 +553,11 @@ class TestPackageRuleBehaviour:
         project = self._project(tmp_path)
         pack = project / ".ails" / "packages" / "mypack"
         _create_rule(pack, "MYPACK:S:0001", "Old Title")
-        assert load_rules(project_root=project)["MYPACK:S:0001"].title == "Old Title"
+        assert load_rules(project=RunContext().configured_root(project))["MYPACK:S:0001"].title == "Old Title"
         (pack / "old-title" / "rule.md").write_text(
             RULE_MD_TEMPLATE.format(rule_id="MYPACK:S:0001", title="New Title", slug="old-title")
         )
-        assert load_rules(project_root=project)["MYPACK:S:0001"].title == "New Title"
+        assert load_rules(project=RunContext().configured_root(project))["MYPACK:S:0001"].title == "New Title"
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
@@ -568,7 +573,13 @@ class TestPackageRuleBehaviour:
                 "---\n\n#", "depends_on: [CORE:C:0037]\n---\n\n#", 1
             )
         )
-        deps = rule_dependencies(load_rules(project_root=project, scan_root=project, agent="claude"))
+        deps = rule_dependencies(
+            load_rules(
+                project=RunContext().configured_root(project),
+                scan=RunContext().configured_root(project),
+                agent="claude",
+            )
+        )
         assert deps["CORE:S:0952"] == frozenset({"CORE:C:0037"})
 
         from reporails_cli.core.platform.dto.models import LocalFinding

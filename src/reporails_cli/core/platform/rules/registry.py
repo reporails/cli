@@ -15,14 +15,13 @@ from reporails_cli.core.platform.config.bootstrap import get_package_paths
 from reporails_cli.core.platform.config.capabilities import agent_capabilities
 from reporails_cli.core.platform.config.config import (
     bundled_agent_config,
-    get_project_config,
     get_rules_path,
     iter_agent_configs,
 )
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
 from reporails_cli.core.platform.dto.models import Check, Execution, FieldProblem, Rule, RuleRead, RuleType, Severity
-from reporails_cli.core.platform.dto.results import AgentConfig, ProjectConfig
+from reporails_cli.core.platform.dto.results import AgentConfig, ConfiguredRoot
 from reporails_cli.core.platform.policy.applicability import filter_by_capability
 from reporails_cli.core.platform.policy.rule_sets import file_level_ids
 from reporails_cli.core.platform.rules.rule_builder import RuleFieldError, build_rule, load_checks
@@ -268,9 +267,10 @@ def _load_all_packages(roots: list[tuple[Path, list[str]]], bundled_ids: set[str
 
 def load_rules(
     rules_paths: list[Path] | None = None,
-    project_root: Path | None = None,
     agent: str = "",
-    scan_root: Path | None = None,
+    *,
+    project: ConfiguredRoot | None = None,
+    scan: ConfiguredRoot | None = None,
 ) -> dict[str, Rule]:
     """Load rules from directories, filtered by agent and project config."""
     if not rules_paths:
@@ -283,8 +283,7 @@ def load_rules(
         return {}
 
     rules: dict[str, Rule] = {}
-    config = _load_project_config(project_root)
-    scan_config = _load_project_config(scan_root) if scan_root and scan_root != project_root else ProjectConfig()
+    scan_extra = scan if scan is not None and (project is None or scan.root != project.root) else None
 
     # 1. Load framework rules from primary path (core + selected agent)
     rules.update(load_rules_from_path(primary / "core"))
@@ -299,10 +298,10 @@ def load_rules(
 
     # 2b. Load the project's rule packages after the framework rules: a package rule
     # reusing a bundled rule's ID (or another package's) stops the run.
-    if project_root is not None:
-        roots = [(project_root, config.packages)]
-        if scan_root and scan_root != project_root:
-            roots.append((scan_root, scan_config.packages))
+    if project is not None:
+        roots = [(project.root, project.config.packages)]
+        if scan_extra is not None:
+            roots.append((scan_extra.root, scan_extra.config.packages))
         rules.update(_load_all_packages(roots, set(rules)))
 
     on_disk_ids = set(rules)
@@ -325,7 +324,9 @@ def load_rules(
     _validate_depends_on(rules, superseded_by, on_disk_ids)
 
     # 5. Remove disabled rules (merge from project_root + scan_root configs)
-    disabled: set[str] = set(config.disabled_rules or []) | set(scan_config.disabled_rules or [])
+    disabled: set[str] = set(project.config.disabled_rules if project else ()) | set(
+        scan_extra.config.disabled_rules if scan_extra else ()
+    )
     if disabled:
         rules = {k: v for k, v in rules.items() if k not in disabled}
 
@@ -534,10 +535,3 @@ def _apply_agent_overrides(
             new_checks.append(check)
         result[rule_id] = new_rule.model_copy(update={"checks": new_checks})
     return result
-
-
-def _load_project_config(project_root: Path | None) -> ProjectConfig:
-    """Load project config, returning defaults when project_root is None."""
-    if project_root is None:
-        return ProjectConfig()
-    return get_project_config(project_root)

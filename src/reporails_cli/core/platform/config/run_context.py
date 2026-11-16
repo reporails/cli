@@ -12,7 +12,7 @@ from reporails_cli.core.platform.config.bootstrap import (
 from reporails_cli.core.platform.config.config import get_global_config, get_project_config, read_config_file
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.discovery import DetectedAgent
-from reporails_cli.core.platform.dto.results import GlobalConfig, ProjectConfig
+from reporails_cli.core.platform.dto.results import ConfiguredRoot, GlobalConfig, ProjectConfig
 
 
 class RunContext:
@@ -44,6 +44,10 @@ class RunContext:
             config = get_project_config(root)
             self._projects[key] = config
         return config
+
+    def configured_root(self, root: Path) -> ConfiguredRoot:
+        """`root` with its project config, read on first use."""
+        return ConfiguredRoot(root, self.project_config(root))
 
     def config_documents(self, root: Path) -> tuple[tuple[Path, JsonObject], ...]:
         """The project, local and global config files of `root` as `read_config_file` reads them, read on

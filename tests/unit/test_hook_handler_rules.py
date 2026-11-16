@@ -461,6 +461,7 @@ def test_handler_finding_is_sent_as_a_located_entry(tmp_path: Path, dev_rules_di
         filter_agents=None,
         effective_agent=agent,
         lint_result=None,
+        project_config=RunContext().project_config(project),
     )
     entries, structural_total = lint_request_local(inputs)
     wanted = _handler_rule_ids(agent)

@@ -91,7 +91,9 @@ class TestRunMProbes:
         """Without agent param, only CORE rules load — no agent-specific rules."""
         from reporails_cli.core.platform.rules.registry import load_rules
 
-        rules = load_rules(project_root=level2_project, scan_root=level2_project)
+        rules = load_rules(
+            project=RunContext().configured_root(level2_project), scan=RunContext().configured_root(level2_project)
+        )
         assert all(not k.startswith("CLAUDE:") for k in rules)
 
     @pytest.mark.unit

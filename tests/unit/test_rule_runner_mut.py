@@ -188,7 +188,11 @@ def test_mechanical_check_runs_in_a_local_rule_of_any_type(tmp_path: Path, monke
     monkeypatch.setattr(f"{_RR}.load_rules", lambda **k: rules)
 
     findings = run_m_probes(
-        RunContext(), tmp_path, [main], agent="claude", exclusions=load_run_exclusions(RunContext(), tmp_path)
+        RunContext(),
+        tmp_path,
+        [main],
+        agent="claude",
+        exclusions=load_run_exclusions(RunContext(), tmp_path),
     )
 
     assert sorted((f.rule, f.file) for f in findings) == [("CORE:X:0001", "CLAUDE.md"), ("CORE:X:0002", "CLAUDE.md")]
@@ -239,7 +243,12 @@ def test_deterministic_type_rule_with_mechanical_checks_still_runs(
     rule = _rule(id="R", type=RuleType.DETERMINISTIC, match=None, yml_path=yml)
 
     out = _collect_deterministic_findings(
-        {"R": rule}, tmp_path, [tmp_path / "a.md"], [], exclusions=load_run_exclusions(RunContext(), tmp_path)
+        {"R": rule},
+        tmp_path,
+        [tmp_path / "a.md"],
+        [],
+        exclusions=load_run_exclusions(RunContext(), tmp_path),
+        thresholds={},
     )
     assert sentinel in out
 
@@ -262,7 +271,12 @@ def test_deterministic_rule_without_yml_path_is_skipped(tmp_path: Path, monkeypa
     )
     assert (
         _collect_deterministic_findings(
-            {"R": rule}, tmp_path, [tmp_path / "a.md"], [], exclusions=load_run_exclusions(RunContext(), tmp_path)
+            {"R": rule},
+            tmp_path,
+            [tmp_path / "a.md"],
+            [],
+            exclusions=load_run_exclusions(RunContext(), tmp_path),
+            thresholds={},
         )
         == []
     )
@@ -299,14 +313,13 @@ class TestRunMProbesScopedDefault:
 def test_run_m_probes_stops_on_an_unreadable_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An unreadable project config stops the probe run; it never falls back to generic scanning off."""
 
-    def raise_cfg(_pd: Path) -> object:
-        raise ConfigUnreadableError("boom")
+    (tmp_path / ".ails").mkdir()
+    (tmp_path / ".ails" / "config.yml").write_text("- not a mapping\n")
 
     monkeypatch.setattr(f"{_RR}.load_rules", lambda **k: {})
     monkeypatch.setattr(f"{_RR}.load_file_types", lambda _a, **_kw: {})
-    monkeypatch.setattr(f"{_RR}.get_project_config", raise_cfg)
 
-    with pytest.raises(ConfigUnreadableError, match="boom"):
+    with pytest.raises(ConfigUnreadableError, match="config"):
         run_m_probes(RunContext(), tmp_path, [], exclusions=load_run_exclusions(RunContext(), tmp_path))
 
 
@@ -332,12 +345,8 @@ def test_content_quality_agent_defaults_to_generic(tmp_path: Path, monkeypatch: 
     monkeypatch.setattr(f"{_RR}.run_content_checks", lambda *a, **k: [])
     monkeypatch.setattr(f"{_RR}.load_file_types", lambda a, **_kw: captured.__setitem__("agent", a) or {})
     monkeypatch.setattr(f"{_RR}.classify_files", lambda *a, **k: [])
-    monkeypatch.setattr(
-        f"{_RR}.get_project_config",
-        lambda _pd: SimpleNamespace(generic_scanning=False, exclude_files=None),
-    )
 
-    run_content_quality_checks(_ruleset_map(), tmp_path, instruction_files=[tmp_path / "a.md"], agent="")
+    run_content_quality_checks(RunContext(), _ruleset_map(), tmp_path, instruction_files=[tmp_path / "a.md"], agent="")
     assert captured["agent"] == "generic"
 
 
@@ -346,13 +355,14 @@ def test_content_quality_agent_defaults_to_generic(tmp_path: Path, monkeypatch: 
 def test_content_quality_stops_on_an_unreadable_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An unreadable project config stops the content-quality run; it never falls back to generic scanning off."""
 
-    def raise_cfg(_pd: Path) -> object:
-        raise ConfigUnreadableError("boom")
+    (tmp_path / ".ails").mkdir()
+    (tmp_path / ".ails" / "config.yml").write_text("- not a mapping\n")
 
     monkeypatch.setattr(f"{_RR}.load_rules", lambda **k: {})
     monkeypatch.setattr(f"{_RR}.run_content_checks", lambda *a, **k: [])
     monkeypatch.setattr(f"{_RR}.load_file_types", lambda _a, **_kw: {})
-    monkeypatch.setattr(f"{_RR}.get_project_config", raise_cfg)
 
-    with pytest.raises(ConfigUnreadableError, match="boom"):
-        run_content_quality_checks(_ruleset_map(), tmp_path, instruction_files=[tmp_path / "a.md"], agent="claude")
+    with pytest.raises(ConfigUnreadableError, match="config"):
+        run_content_quality_checks(
+            RunContext(), _ruleset_map(), tmp_path, instruction_files=[tmp_path / "a.md"], agent="claude"
+        )

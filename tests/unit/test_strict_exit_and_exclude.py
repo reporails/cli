@@ -105,6 +105,6 @@ class TestExcludeFilesDropsLinkWalked:
         (tmp_path / ".ails" / "config.yml").write_text("generic_scanning: true\n", encoding="utf-8")
         exclusions = parse_run_exclusions(tmp_path, (), ("VENDORED.md",))
 
-        classified, _ = _classify_agent_files(tmp_path, [tmp_path / "CLAUDE.md"], "claude", exclusions=exclusions)
+        classified = _classify_agent_files(tmp_path, [tmp_path / "CLAUDE.md"], "claude", True, exclusions=exclusions)
         names = {cf.path.name for cf in classified}
         assert names == {"CLAUDE.md", "other.md"}

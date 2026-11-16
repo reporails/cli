@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import Category, Rule, RuleType
 from reporails_cli.core.platform.rules.registry import RuleReadError, read_checks_document
 from reporails_cli.core.platform.rules.rule_builder import build_rule, load_checks
@@ -296,7 +297,9 @@ class TestSizeRuleSupersession:
     def test_codex_supersedes_with_hard_cap(self, tmp_path: Path) -> None:
         from reporails_cli.core.platform.rules.registry import load_rules
 
-        rules = load_rules(project_root=tmp_path, scan_root=tmp_path, agent="codex")
+        rules = load_rules(
+            project=RunContext().configured_root(tmp_path), scan=RunContext().configured_root(tmp_path), agent="codex"
+        )
         assert "CORE:E:0001" not in rules  # superseded for codex
         codex = rules["CODEX:E:0001"]
         assert codex.severity.value == "high"  # an actual failure
@@ -308,7 +311,9 @@ class TestSizeRuleSupersession:
     def test_generic_core_size_rule_is_a_warning(self, tmp_path: Path) -> None:
         from reporails_cli.core.platform.rules.registry import load_rules
 
-        rules = load_rules(project_root=tmp_path, scan_root=tmp_path, agent="claude")
+        rules = load_rules(
+            project=RunContext().configured_root(tmp_path), scan=RunContext().configured_root(tmp_path), agent="claude"
+        )
         assert rules["CORE:E:0001"].severity.value == "low"  # demoted tier — renders as info, not error
 
 

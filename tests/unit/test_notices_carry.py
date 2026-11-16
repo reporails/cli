@@ -128,6 +128,7 @@ def test_assemble_result_puts_notices_on_the_result(tmp_path: Path) -> None:
         filter_agents=None,
         effective_agent="claude",
         lint_result=None,
+        project_config=RunContext().project_config(tmp_path),
         notices=(WARN, INFO),
     )
     assert assemble_result(RunContext(), inp).reply.notices == (WARN, INFO)
