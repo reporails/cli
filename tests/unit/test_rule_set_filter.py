@@ -31,7 +31,6 @@ from reporails_cli.core.platform.dto.diagnostics import (
 )
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs
-from reporails_cli.core.platform.dto.results import AgentConfig
 
 _DISABLED = "CORE:E:0003"
 _OTHER = "CORE:C:0042"
@@ -116,12 +115,9 @@ def test_a_formatting_client_check_is_reported_when_its_rule_is_on(tmp_path):
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_an_agent_exclude_drops_a_client_check_finding(tmp_path, monkeypatch):
+def test_an_agent_exclude_drops_a_client_check_finding(tmp_path, use_agent_configs):
     root = _project(tmp_path, disabled=())
-    monkeypatch.setattr(
-        "reporails_cli.core.platform.rules.registry.bundled_agent_config",
-        lambda _agent: AgentConfig(excludes=[FORMATTING_RULE]),
-    )
+    use_agent_configs({"claude": {"excludes": [FORMATTING_RULE]}}, keep_bundled=True)
     inp = _inputs(root, client_findings=[_finding(FORMATTING_RULE, check_id="format"), _finding(_OTHER)])
 
     assert _rules(assemble_result(RunContext(), inp)) == [_OTHER]
@@ -216,18 +212,15 @@ def test_rule_aliases_are_the_id_the_slug_and_the_short_token():
     assert rule_aliases("ambiguous_charge") == {"ambiguous_charge"}
 
 
-def _exclude_per_agent(monkeypatch, excludes: dict[str, list[str]]) -> None:
-    monkeypatch.setattr(
-        "reporails_cli.core.platform.rules.registry.bundled_agent_config",
-        lambda agent: AgentConfig(excludes=excludes.get(agent, [])),
-    )
+def _exclude_per_agent(use_agent_configs, excludes: dict[str, list[str]]) -> None:
+    use_agent_configs({agent: {"excludes": rules} for agent, rules in excludes.items()}, keep_bundled=True)
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_a_rule_one_agent_excludes_stays_when_another_agent_of_the_run_keeps_it(tmp_path, monkeypatch):
+def test_a_rule_one_agent_excludes_stays_when_another_agent_of_the_run_keeps_it(tmp_path, use_agent_configs):
     root = _project(tmp_path, disabled=())
-    _exclude_per_agent(monkeypatch, {"claude": [FORMATTING_RULE]})
+    _exclude_per_agent(use_agent_configs, {"claude": [FORMATTING_RULE], "codex": []})
     inp = _inputs(
         root,
         rule_agents=("claude", "codex"),
@@ -239,9 +232,9 @@ def test_a_rule_one_agent_excludes_stays_when_another_agent_of_the_run_keeps_it(
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_a_rule_every_agent_of_the_run_excludes_is_dropped(tmp_path, monkeypatch):
+def test_a_rule_every_agent_of_the_run_excludes_is_dropped(tmp_path, use_agent_configs):
     root = _project(tmp_path, disabled=())
-    _exclude_per_agent(monkeypatch, {"claude": [FORMATTING_RULE], "codex": [FORMATTING_RULE]})
+    _exclude_per_agent(use_agent_configs, {"claude": [FORMATTING_RULE], "codex": [FORMATTING_RULE]})
     inp = _inputs(
         root,
         rule_agents=("claude", "codex"),

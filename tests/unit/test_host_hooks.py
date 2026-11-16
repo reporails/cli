@@ -324,17 +324,24 @@ def test_a_cursor_before_read_file_hook_is_listed_with_the_read_tool(tmp_path: P
 
 @pytest.mark.unit
 @pytest.mark.subsys_gates
-def test_the_agent_config_is_read_once_per_agent_for_many_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_agent_config_is_read_once_per_agent_for_many_hooks(
+    monkeypatch: pytest.MonkeyPatch, use_agent_configs
+) -> None:
+    from reporails_cli.core.platform.utils import utils
+
+    use_agent_configs({"claude": {"prefix": "CLAUDEX"}, "codex": {"prefix": "CODEXX"}})
+    parsed: list[str] = []
+    real = utils.fast_yaml_load
+
+    def counting(text: str) -> object:
+        parsed.append(text)
+        return real(text)
+
+    monkeypatch.setattr(utils, "fast_yaml_load", counting)
+    hooks = [_entry(agent, "PreToolUse", m) for agent in ("claude", "codex") for m in ("Read", "Edit", "Write")]
     from reporails_cli.formatters import host_hooks
 
-    calls: list[str] = []
-    real = host_hooks.bundled_agent_config
-
-    def counting(agent: str) -> object:
-        calls.append(agent)
-        return real(agent)
-
-    monkeypatch.setattr(host_hooks, "bundled_agent_config", counting)
-    hooks = [_entry("claude", "PreToolUse", m) for m in ("Read", "Edit", "Write")]
-    assert len(host_hooks.host_hooks_field(hooks)["host_hooks"]) == 3
-    assert calls == ["claude"]
+    host_hooks.host_hooks_field(hooks)
+    assert sorted(t for t in parsed if "CLAUDEX" in t or "CODEXX" in t) == sorted(
+        ["prefix: CLAUDEX\n", "prefix: CODEXX\n"]
+    )

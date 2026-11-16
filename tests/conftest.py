@@ -415,3 +415,40 @@ def run_rule_files(yml_paths: list[Path], target: Path, instruction_files: list[
 
     exclusions = load_run_exclusions(RunContext(), target)
     return scan_ruleset(compile_rules(yml_paths), target, exclusions, instruction_files)
+
+
+@pytest.fixture
+def use_agent_configs(tmp_path_factory: pytest.TempPathFactory):
+    """Factory: point the global config's `framework_path` at a rules root holding real agent configs.
+
+    `use({"claude": {"excludes": [...]}})` writes `<root>/claude/config.yml` (`core/` for the generic
+    agent) and returns the root. With `keep_bundled=True` the root also carries every bundled rule
+    folder (symlinked), so a test that resolves real rules keeps them. A pre-made `root` is used as is.
+    """
+    import yaml
+
+    from reporails_cli.core.platform.config.bundled import get_bundled_rules_path
+
+    def _use(configs: dict[str, dict[str, Any]], *, keep_bundled: bool = False, root: Path | None = None) -> Path:
+        root = root if root is not None else tmp_path_factory.mktemp("rules")
+        dirs = {("core" if agent == "generic" else agent): data for agent, data in configs.items()}
+        bundled = get_bundled_rules_path()
+        if keep_bundled and bundled is not None:
+            for entry in bundled.iterdir():
+                if entry.name not in dirs:
+                    (root / entry.name).symlink_to(entry)
+            for name in dirs:
+                source = bundled / name
+                (root / name).mkdir(exist_ok=True)
+                for child in source.iterdir() if source.is_dir() else ():
+                    if child.name != "config.yml":
+                        (root / name / child.name).symlink_to(child)
+        for name, data in dirs.items():
+            (root / name).mkdir(exist_ok=True)
+            (root / name / "config.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+        home = Path.home() / ".reporails"
+        home.mkdir(parents=True, exist_ok=True)
+        (home / "config.yml").write_text(yaml.safe_dump({"framework_path": str(root)}), encoding="utf-8")
+        return root
+
+    return _use

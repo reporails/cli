@@ -9,7 +9,6 @@ covered by `tests/integration/test_mcp_cli_equivalence.py`.
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -310,10 +309,8 @@ def test_discover_files_folds_generic_scanned_imports(monkeypatch, tmp_path):
     claude_md.write_text("# Claude\n", encoding="utf-8")
     arch = tmp_path / "docs" / "arch.md"
 
-    monkeypatch.setattr(
-        "reporails_cli.core.platform.config.run_context.get_project_config",
-        lambda _t: SimpleNamespace(default_agent="", exclude_dirs=[], exclude_files=[], generic_scanning=True),
-    )
+    (tmp_path / ".ails").mkdir()
+    (tmp_path / ".ails" / "config.yml").write_text("generic_scanning: true\n", encoding="utf-8")
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.detect_agents", lambda _r, _t: [])
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.mapping.resolve_agent_filters",
@@ -343,10 +340,8 @@ def test_discover_files_skips_generic_scan_fold_when_disabled(monkeypatch, tmp_p
     claude_md = tmp_path / "CLAUDE.md"
     claude_md.write_text("# Claude\n", encoding="utf-8")
 
-    monkeypatch.setattr(
-        "reporails_cli.core.platform.config.run_context.get_project_config",
-        lambda _t: SimpleNamespace(default_agent="", exclude_dirs=[], exclude_files=[], generic_scanning=False),
-    )
+    (tmp_path / ".ails").mkdir()
+    (tmp_path / ".ails" / "config.yml").write_text("generic_scanning: false\n", encoding="utf-8")
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.detect_agents", lambda _r, _t: [])
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.mapping.resolve_agent_filters",

@@ -225,7 +225,7 @@ class TestLoadRulesExcludes:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_excludes_removes_rules(self, tmp_path: Path) -> None:
+    def test_excludes_removes_rules(self, tmp_path: Path, use_agent_configs) -> None:
         """Excluded rule IDs are filtered out."""
         # Create a minimal rules dir with two rules (new format: rule.md in slug dirs)
         for slug, coord in (("rule-a", "CORE:S:0001"), ("rule-b", "CORE:S:0002")):
@@ -237,11 +237,8 @@ class TestLoadRulesExcludes:
                 f"targets: '{{{{instruction_files}}}}'\nbacked_by:\n  - anthropic-docs\n---\n"
             )
 
-        agent_config = AgentConfig(excludes=["CORE:S:0001"])
-        with (
-            patch("reporails_cli.core.platform.rules.registry.bundled_agent_config", return_value=agent_config),
-            patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
-        ):
+        use_agent_configs({"test": {"excludes": ["CORE:S:0001"]}})
+        with patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})):
             rules = load_rules([tmp_path], agent="test")
 
         assert "CORE:S:0001" not in rules
@@ -249,7 +246,7 @@ class TestLoadRulesExcludes:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_excludes_nonexistent_rule_is_noop(self, tmp_path: Path) -> None:
+    def test_excludes_nonexistent_rule_is_noop(self, tmp_path: Path, use_agent_configs) -> None:
         """Excluding a rule ID that doesn't exist is harmless."""
         rule_dir = tmp_path / "core" / "structure" / "rule-a"
         rule_dir.mkdir(parents=True)
@@ -259,11 +256,8 @@ class TestLoadRulesExcludes:
             "targets: '{{instruction_files}}'\nbacked_by:\n  - anthropic-docs\n---\n"
         )
 
-        agent_config = AgentConfig(excludes=["NONEXISTENT"])
-        with (
-            patch("reporails_cli.core.platform.rules.registry.bundled_agent_config", return_value=agent_config),
-            patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
-        ):
+        use_agent_configs({"test": {"excludes": ["NONEXISTENT"]}})
+        with patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})):
             rules = load_rules([tmp_path], agent="test")
 
         assert "CORE:S:0001" in rules
@@ -286,7 +280,7 @@ class TestLoadRulesExcludes:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_glob_excludes_match_namespaced_rules(self, tmp_path: Path) -> None:
+    def test_glob_excludes_match_namespaced_rules(self, tmp_path: Path, use_agent_configs) -> None:
         """Glob pattern CLAUDE:* excludes all CLAUDE-namespaced rules."""
         rule_fm = (
             '---\nid: "{}"\ntitle: Rule {}\ncategory: structure\n'
@@ -303,14 +297,8 @@ class TestLoadRulesExcludes:
             rule_dir.mkdir(parents=True)
             (rule_dir / "rule.md").write_text(rule_fm.format(coord, coord, slug))
 
-        agent_config = AgentConfig(
-            prefix="COPILOT",
-            excludes=["CLAUDE:*", "CODEX:*"],
-        )
-        with (
-            patch("reporails_cli.core.platform.rules.registry.bundled_agent_config", return_value=agent_config),
-            patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
-        ):
+        use_agent_configs({"copilot": {"prefix": "COPILOT", "excludes": ["CLAUDE:*", "CODEX:*"]}})
+        with patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})):
             rules = load_rules([tmp_path], agent="copilot")
 
         assert "CORE:S:0001" in rules
@@ -320,7 +308,7 @@ class TestLoadRulesExcludes:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_exact_and_glob_excludes_coexist(self, tmp_path: Path) -> None:
+    def test_exact_and_glob_excludes_coexist(self, tmp_path: Path, use_agent_configs) -> None:
         """Exact IDs and glob patterns work together in excludes."""
         rule_fm = (
             '---\nid: "{}"\ntitle: Rule {}\ncategory: structure\n'
@@ -336,13 +324,8 @@ class TestLoadRulesExcludes:
             rule_dir.mkdir(parents=True)
             (rule_dir / "rule.md").write_text(rule_fm.format(coord, coord, slug))
 
-        agent_config = AgentConfig(
-            excludes=["CORE:S:0001", "CLAUDE:*"],
-        )
-        with (
-            patch("reporails_cli.core.platform.rules.registry.bundled_agent_config", return_value=agent_config),
-            patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
-        ):
+        use_agent_configs({"test": {"excludes": ["CORE:S:0001", "CLAUDE:*"]}})
+        with patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})):
             rules = load_rules([tmp_path], agent="test")
 
         assert "CORE:S:0001" not in rules  # exact exclude
@@ -376,7 +359,7 @@ class TestPrefixNamespaceFiltering:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_prefix_from_config_used(self, tmp_path: Path) -> None:
+    def test_prefix_from_config_used(self, tmp_path: Path, use_agent_configs) -> None:
         """When agent_config.prefix is set, it's used instead of agent.upper()."""
         rule_fm = (
             '---\nid: "{}"\ntitle: Rule {}\ncategory: structure\n'
@@ -393,11 +376,8 @@ class TestPrefixNamespaceFiltering:
             (rule_dir / "rule.md").write_text(rule_fm.format(coord, coord, slug))
 
         # Agent name is "myagent" but prefix is "MYPREFIX" — prefix should win
-        agent_config = AgentConfig(prefix="MYPREFIX")
-        with (
-            patch("reporails_cli.core.platform.rules.registry.bundled_agent_config", return_value=agent_config),
-            patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
-        ):
+        use_agent_configs({"myagent": {"prefix": "MYPREFIX"}})
+        with patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})):
             rules = load_rules([tmp_path], agent="myagent")
 
         assert "CORE:S:0001" in rules
@@ -406,7 +386,7 @@ class TestPrefixNamespaceFiltering:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_fallback_to_agent_upper_without_prefix(self, tmp_path: Path) -> None:
+    def test_fallback_to_agent_upper_without_prefix(self, tmp_path: Path, use_agent_configs) -> None:
         """Without prefix in config, falls back to agent.upper()."""
         rule_fm = (
             '---\nid: "{}"\ntitle: Rule {}\ncategory: structure\n'
@@ -423,11 +403,8 @@ class TestPrefixNamespaceFiltering:
             (rule_dir / "rule.md").write_text(rule_fm.format(coord, coord, slug))
 
         # No prefix — agent.upper() = "CLAUDE" used for filtering
-        agent_config = AgentConfig()
-        with (
-            patch("reporails_cli.core.platform.rules.registry.bundled_agent_config", return_value=agent_config),
-            patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
-        ):
+        use_agent_configs({"claude": {"excludes": []}})
+        with patch("reporails_cli.core.platform.rules.registry._agent_prefixes", return_value=frozenset({"OTHER"})):
             rules = load_rules([tmp_path], agent="claude")
 
         assert "CORE:S:0001" in rules

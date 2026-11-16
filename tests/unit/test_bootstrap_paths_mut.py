@@ -13,7 +13,6 @@ from unittest.mock import patch
 import pytest
 
 from reporails_cli.core.platform.config.config import get_agent_config_path, get_framework_root, is_initialized
-from reporails_cli.core.platform.dto.results import GlobalConfig
 
 
 # --- get_framework_root: override guard (L87) -----------------------------
@@ -23,15 +22,12 @@ def test_framework_root_ignores_nonexistent_override(tmp_path: Path) -> None:
     bad_override = tmp_path / "nope"  # set, but not a real directory
     bundled = tmp_path / "bundled"
     bundled.mkdir()
-    with (
-        patch(
-            "reporails_cli.core.platform.config.config.get_global_config",
-            return_value=GlobalConfig(framework_path=bad_override),
-        ),
-        patch(
-            "reporails_cli.core.platform.config.config.get_bundled_package_root",
-            return_value=bundled,
-        ),
+    home = Path.home() / ".reporails"
+    home.mkdir(parents=True)
+    (home / "config.yml").write_text(f"framework_path: {bad_override}\n", encoding="utf-8")
+    with patch(
+        "reporails_cli.core.platform.config.config.get_bundled_package_root",
+        return_value=bundled,
     ):
         # `and`->`or`: a set-but-missing override would be returned instead of
         # falling through to the bundled root.

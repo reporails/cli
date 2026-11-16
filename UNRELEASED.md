@@ -64,6 +64,7 @@
 - An architecture test fails on a network import or connection call under core outside the driven adapters, in any import form.
 - Caches of the bundled rules and agent settings are bounded, read-only and kept per rules folder, and a rules folder outside the bundle is read fresh on each load.
 - CI now runs the model-backed integration tests on a fetched model.
+- Tests that set a config value write the real config file and agent settings rather than replacing the reader.
 - Which rules a run reports and each rule's line thresholds come from the config the run already read, so a run reads the project config once.
 - The Windows check scenarios and the MCP x-ray two-call scenario lose their skip tag. The two-call scenario reads the page while the agent's MCP server still runs, because on Windows the test client ends the server's process tree, the page with it.
 - Each process builds one model handle that carries the download port, so a damaged model file is still repaired on load with no HTTP client in core.
