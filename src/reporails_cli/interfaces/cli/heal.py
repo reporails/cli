@@ -19,6 +19,7 @@ from reporails_cli.core.heal.keyed import put_back_line
 from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes
 from reporails_cli.core.lint.suppression import build_index, is_suppressed
 from reporails_cli.core.mapper.skills import skill_membership
+from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
@@ -56,13 +57,13 @@ def _apply_keyed_fixes(
         console.print("[bold]Applying fixes...[/bold]")
     return apply_keyed_heal(
         ruleset_map,
-        root.root,
+        root,
         workflow,
         dry_run=dry_run,
         allowed_files=allowed_files,
         suppressed=suppressed,
         environment_for=LocalProjectEnvironment,
-        config=root.config,
+        daemon=UnixDaemonSocket(),
     )
 
 

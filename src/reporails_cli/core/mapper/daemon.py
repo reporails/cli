@@ -12,11 +12,9 @@ from __future__ import annotations
 
 import contextlib
 import functools
-import json
 import logging
 import os
 import signal
-import socket
 import stat
 import sys
 import time
@@ -24,6 +22,8 @@ from pathlib import Path
 
 from reporails_cli.core.mapper.map_cache import CACHE_VERSION
 from reporails_cli.core.platform.config.bootstrap import get_daemon_dir
+from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
+from reporails_cli.core.platform.dto.ports import DaemonTransport
 from reporails_cli.core.platform.utils.version import installed_version
 
 logger = logging.getLogger(__name__)
@@ -68,29 +68,22 @@ def is_daemon_running() -> bool:
     return True
 
 
-def stop_daemon() -> bool:
+def stop_daemon(transport: DaemonTransport) -> bool:
     """Send shutdown command to daemon. Returns True if stopped."""
     if sys.platform == "win32":
         return False
     if not is_daemon_running():
         return False
-    sock_path = socket_path()
     try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(5.0)
-            sock.connect(str(sock_path))
-            sock.sendall(json.dumps({"cmd": "shutdown"}).encode() + b"\n")
-            resp = sock.recv(4096)
-            logger.debug("Daemon shutdown response: %s", resp.decode())
-    except (OSError, TimeoutError):
+        resp = transport.exchange(socket_path(), {"cmd": "shutdown"}, timeout=_SHUTDOWN_TIMEOUT_S, on_message=None)
+    except PlatformUnavailableError:
         # Force kill
-        pid_file = pid_path()
-        if pid_file.exists():
-            try:
-                pid = int(pid_file.read_text().strip())
+        pid = daemon_pid()
+        if pid is not None:
+            with contextlib.suppress(ProcessLookupError, OSError):
                 os.kill(pid, signal.SIGTERM)
-            except (ValueError, ProcessLookupError, OSError):
-                pass
+    else:
+        logger.debug("Daemon shutdown response: %s", resp)
     # Clean up
     pid_path().unlink(missing_ok=True)
     socket_path().unlink(missing_ok=True)
@@ -107,9 +100,11 @@ def daemon_pid() -> int | None:
 
 # Seconds a retired daemon is given to answer and to exit.
 _RETIRE_TIMEOUT_S = 5.0
+# Seconds a daemon being stopped is given to answer.
+_SHUTDOWN_TIMEOUT_S = 5.0
 
 
-def retire_daemon(pid: object) -> bool:
+def retire_daemon(transport: DaemonTransport, pid: object) -> bool:
     """Shut down the daemon running as `pid` and wait for it to exit. True once it is gone.
 
     Only a daemon that still owns the daemon files is asked, and it removes its own files
@@ -122,12 +117,8 @@ def retire_daemon(pid: object) -> bool:
     if daemon_pid() != pid:
         return False
     try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(_RETIRE_TIMEOUT_S)
-            sock.connect(str(socket_path()))
-            sock.sendall(json.dumps({"cmd": "shutdown"}).encode() + b"\n")
-            sock.recv(4096)
-    except OSError:
+        transport.exchange(socket_path(), {"cmd": "shutdown"}, timeout=_RETIRE_TIMEOUT_S, on_message=None)
+    except PlatformUnavailableError:
         return False
     deadline = time.monotonic() + _RETIRE_TIMEOUT_S
     while time.monotonic() < deadline:
@@ -141,7 +132,7 @@ def retire_daemon(pid: object) -> bool:
     return False
 
 
-def _become_daemon() -> None:
+def _become_daemon(transport: DaemonTransport) -> None:
     """Detach from parent, close inherited FDs, redirect stdio, run daemon loop.
 
     Called in the forked child process. Never returns — calls os._exit(0).
@@ -177,14 +168,14 @@ def _become_daemon() -> None:
             run_daemon,
         )
 
-        run_daemon()
+        run_daemon(transport)
     except Exception:  # pylint: disable=broad-exception-caught  # the daemon child must not crash on transient errors
         logger.warning("daemon process failed", exc_info=True)
     finally:
         os._exit(0)  # daemon child must not return
 
 
-def start_daemon() -> int:
+def start_daemon(transport: DaemonTransport) -> int:
     """Start global daemon in a forked subprocess. Returns child PID.
 
     Uses flock on mapper.lock to serialize concurrent starts.
@@ -211,7 +202,7 @@ def start_daemon() -> int:
             pass  # another process holds the lock: it is starting the daemon
         else:
             try:
-                return _fork_daemon()
+                return _fork_daemon(transport)
             finally:
                 fcntl.flock(lock_fd, fcntl.LOCK_UN)
     # Another process is starting the daemon — wait for it
@@ -222,7 +213,7 @@ def start_daemon() -> int:
     return 0
 
 
-def _fork_daemon() -> int:
+def _fork_daemon(transport: DaemonTransport) -> int:
     """Fork the daemon child while holding the start lock. Returns the child PID.
 
     Unreachable on Windows: callers gate on sys.platform before forking.
@@ -248,7 +239,7 @@ def _fork_daemon() -> int:
                 break
         return pid
 
-    _become_daemon()
+    _become_daemon(transport)
 
     return 0  # unreachable
 

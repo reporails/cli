@@ -28,9 +28,13 @@ def start() -> None:
         runs_older_code,
         serves_this_code,
     )
+    from reporails_cli.core.platform.adapters.daemon_socket import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        UnixDaemonSocket,
+    )
 
+    transport = UnixDaemonSocket()
     if is_daemon_running():
-        pong = ping()
+        pong = ping(transport)
         if pong is None or serves_this_code(pong):
             console.print("[dim]Daemon already running.[/dim]")
             return
@@ -38,14 +42,14 @@ def start() -> None:
             whose = "A newer version's" if runs_newer_code(pong) else "An unrecognized version's"
             console.print(f"[dim]{whose} daemon is running; this version checks without it.[/dim]")
             return
-        if not retire_daemon(pong.get("pid")):
+        if not retire_daemon(transport, pong.get("pid")):
             console.print("[yellow]A daemon from an older version of ails is busy; try again when it is idle.[/yellow]")
             raise typer.Exit(1)
         console.print("Stopped the daemon left by an older version of ails.")
 
     console.print("Starting analysis daemon...")
     try:
-        pid = start_daemon()
+        pid = start_daemon(transport)
     except OSError as exc:
         console.print(f"[red]{exc}[/red]")
         console.print("[dim]Use 'ails check' directly — it falls back to in-process mapping.[/dim]")
@@ -63,8 +67,11 @@ def stop() -> None:
     from reporails_cli.core.mapper.daemon import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         stop_daemon,
     )
+    from reporails_cli.core.platform.adapters.daemon_socket import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        UnixDaemonSocket,
+    )
 
-    if stop_daemon():
+    if stop_daemon(UnixDaemonSocket()):
         console.print("[green]Daemon stopped.[/green]")
     else:
         console.print("[dim]Daemon not running.[/dim]")
@@ -82,12 +89,15 @@ def status() -> None:
         runs_older_code,
         serves_this_code,
     )
+    from reporails_cli.core.platform.adapters.daemon_socket import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        UnixDaemonSocket,
+    )
 
     if not is_daemon_running():
         console.print("Daemon: [dim]not running[/dim]")
         return
 
-    resp = ping()
+    resp = ping(UnixDaemonSocket())
     if not (resp and resp.get("ok")):
         console.print("Daemon: [yellow]PID file exists but unresponsive[/yellow]")
         return

@@ -1,36 +1,30 @@
 """Mapper daemon serving loop: keeps the models loaded and answers map requests.
 
-Serves map requests over the Unix domain socket named by `daemon.socket_path`. The embedding
-model stays in memory between invocations, eliminating the 5-10s model load time on
+Serves map requests on the socket named by `daemon.socket_path`, through the `DaemonTransport` it is
+given. The embedding model stays in memory between invocations, eliminating the 5-10s model load time on
 subsequent runs. One daemon serves all projects on the machine.
 Protocol: JSON-line over Unix domain socket (one JSON object per line).
 """
 
 from __future__ import annotations
 
-import contextlib
-import json
 import logging
 import os
 import signal
-import socket
 import sys
-import tempfile
 import threading
-import time
 from collections.abc import Callable
 from pathlib import Path
 
 from reporails_cli.core.mapper.daemon import code_identity, pid_path, socket_path
 from reporails_cli.core.mapper.models import Models, get_models
 from reporails_cli.core.mapper.pipeline import map_ruleset
-from reporails_cli.core.mapper.serialize import save_ruleset_map
+from reporails_cli.core.mapper.serialize import ruleset_map_json
 from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir, parse_idle_timeout_env
-from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, as_str, str_list
-from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_str, str_list
+from reporails_cli.core.platform.dto.ports import DaemonTransport
 from reporails_cli.core.platform.observability.log_levels import configure_logging
 from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
-from reporails_cli.core.platform.utils.utils import compact_json
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +40,6 @@ def _parse_idle_timeout() -> int | None:
 
 
 _IDLE_TIMEOUT_S: int | None = _parse_idle_timeout()
-_SOCKET_BACKLOG = 2
-_MAX_REQUEST_BYTES = 10_000_000  # 10MB
 
 
 def _init_daemon_process() -> None:
@@ -80,12 +72,11 @@ def _start_model_warmup() -> tuple[Models, threading.Event]:
     return models, warmup_done
 
 
-def run_daemon() -> None:
-    """Main daemon loop: bind socket, warm models in background, serve requests.
+def run_daemon(transport: DaemonTransport) -> None:
+    """Main daemon loop: warm models in the background, serve requests on `transport`.
 
-    Socket is bound BEFORE model warmup so the parent's ``start_daemon`` can
-    return as soon as the socket exists (microseconds after fork) and
-    proceed with file discovery + M probes in parallel with model loading.
+    The socket is bound as soon as the warmup thread has started, so the parent's ``start_daemon``
+    can return and proceed with file discovery + M probes in parallel with model loading.
     ``map_ruleset`` requests block on ``warmup_done`` before dispatching;
     ``ping`` and ``shutdown`` are answered immediately regardless.
 
@@ -100,98 +91,23 @@ def run_daemon() -> None:
         return
 
     _init_daemon_process()
-
-    _shutdown = False
-
-    def _handle_signal(_signum: int, _frame: object) -> None:
-        nonlocal _shutdown
-        _shutdown = True
-
-    signal.signal(signal.SIGTERM, _handle_signal)
-    signal.signal(signal.SIGINT, _handle_signal)
-    # SIGPIPE on a half-closed client connection must not kill the daemon —
-    # Python's socket layer raises BrokenPipeError, caught by the per-request
-    # `except Exception` in the accept loop. Default SIGPIPE handler terminates.
-    signal.signal(signal.SIGPIPE, signal.SIG_IGN)
-
-    sock_path = socket_path()
-    sock_path.unlink(missing_ok=True)
-    server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    server_sock.bind(str(sock_path))
-    server_sock.listen(_SOCKET_BACKLOG)
-    server_sock.settimeout(1.0)
-
     models, warmup_done = _start_model_warmup()
 
-    last_activity = time.monotonic()
+    def _handle(request: JsonObject, send: Callable[[JsonObject], None]) -> JsonObject:
+        # Stream a per-element progress frame to the client mid-map.
+        def _send_progress(msg: str) -> None:
+            send({"type": "progress", "msg": msg})
 
-    while not _shutdown:
-        if _IDLE_TIMEOUT_S is not None and time.monotonic() - last_activity > _IDLE_TIMEOUT_S:
-            break
+        with get_stage_timer().run(f"daemon {as_str(request.get('cmd', ''))}"):
+            return _dispatch(request, models, warmup_done, _send_progress)
 
-        try:
-            conn, _ = server_sock.accept()
-        except TimeoutError:
-            continue
-        except OSError:
-            break
-
-        last_activity = time.monotonic()
-        try:
-            _handle_connection(conn, models, warmup_done)
-        except Exception:  # pylint: disable=broad-exception-caught  # one failed request must not stop the daemon serving
-            logger.warning("daemon request failed", exc_info=True)
-        finally:
-            conn.close()
-
-    server_sock.close()
-    sock_path.unlink(missing_ok=True)
-    pid_path().unlink(missing_ok=True)
-    models.unload()  # release resident models before the daemon process exits
-
-
-def _handle_connection(
-    conn: socket.socket,
-    models: Models,
-    warmup_done: threading.Event,
-) -> None:
-    """Handle a single client connection.
-
-    ``map_ruleset`` requests block on ``warmup_done`` before dispatching —
-    this lets the parent connect to the socket before models are loaded
-    and get a fast response once they are. ``ping`` and ``shutdown`` never
-    block so callers can reason about daemon liveness even mid-warmup.
-    """
-    conn.settimeout(300.0)  # enough for cold warmup + map
-    data = b""
-    while b"\n" not in data:
-        chunk = conn.recv(65536)
-        if not chunk:
-            return
-        data += chunk
-        if len(data) > _MAX_REQUEST_BYTES:
-            conn.sendall(json.dumps({"ok": False, "error": "request too large"}).encode() + b"\n")
-            return
-
-    line = data.split(b"\n", 1)[0]
+    socket_path().unlink(missing_ok=True)
     try:
-        decoded: JsonValue = json.loads(line)
-    except json.JSONDecodeError:
-        conn.sendall(json.dumps({"ok": False, "error": "invalid JSON"}).encode() + b"\n")
-        return
-
-    request = as_object(decoded)
-
-    def _send_progress(msg: str) -> None:
-        # Stream a per-element progress line to the client mid-map. A closed/
-        # half-open client connection raises here; swallow it — a progress write
-        # failure must never crash the daemon or abort the map.
-        with contextlib.suppress(OSError):
-            conn.sendall(compact_json({"type": "progress", "msg": msg}).encode() + b"\n")
-
-    with get_stage_timer().run(f"daemon {as_str(request.get('cmd', ''))}"):
-        response = _dispatch(request, models, warmup_done, _send_progress)
-    conn.sendall(compact_json(response).encode() + b"\n")
+        transport.serve(socket_path(), _handle, idle_timeout=_IDLE_TIMEOUT_S)
+    finally:
+        socket_path().unlink(missing_ok=True)
+        pid_path().unlink(missing_ok=True)
+        models.unload()  # release resident models before the daemon process exits
 
 
 def _dispatch(
@@ -221,17 +137,6 @@ def _dispatch(
     return {"ok": False, "error": f"unknown command: {cmd}"}
 
 
-def _ruleset_map_to_dict(ruleset_map: RulesetMap) -> JsonObject:
-    """Serialize a RulesetMap to a JSON-compatible dict via a temp round-trip."""
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
-        save_ruleset_map(ruleset_map, Path(f.name))
-        tmp_path = f.name
-    result_json = Path(tmp_path).read_text(encoding="utf-8")
-    Path(tmp_path).unlink()
-    data: JsonValue = json.loads(result_json)
-    return as_object(data)
-
-
 def _handle_map_ruleset(
     request: JsonObject, models: Models, progress: Callable[[str], None] | None = None
 ) -> JsonObject:
@@ -253,7 +158,7 @@ def _handle_map_ruleset(
             segmentation=segmentation,
             progress=progress,
         )
-        return {"ok": True, "ruleset_map": _ruleset_map_to_dict(ruleset_map), "code": code_identity()}
+        return {"ok": True, "ruleset_map": ruleset_map_json(ruleset_map), "code": code_identity()}
     except Exception as e:  # pylint: disable=broad-exception-caught  # the daemon answers with an error dict, never crashes
         logger.warning("daemon map_ruleset failed", exc_info=True)
         return {"ok": False, "error": str(e)}

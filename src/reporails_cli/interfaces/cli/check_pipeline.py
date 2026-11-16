@@ -20,6 +20,7 @@ from reporails_cli.core.mapper.skills import skill_membership
 from reporails_cli.core.pipeline.assemble import assemble_result, lint_request_local, with_exclusions
 from reporails_cli.core.pipeline.mapping import agent_file_pairs, map_instruction_files
 from reporails_cli.core.platform.adapters.api_client import AilsClient, offline_reply
+from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
 from reporails_cli.core.platform.adapters.notices_seen import visible_notices
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs
 from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
@@ -85,6 +86,7 @@ def _flow_pipeline(state: CheckState) -> None:
                 progress=map_progress,
                 filtered_agents=state.scope.filtered,
                 mapper=state.run.project_config(state.targets.target).mapper,
+                daemon=UnixDaemonSocket(),
             )
         except (ImportError, RuntimeError) as exc:
             logger.warning("Mapper unavailable: %s. Content checks skipped.", exc)

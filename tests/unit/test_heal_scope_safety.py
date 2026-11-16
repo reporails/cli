@@ -19,6 +19,7 @@ from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.interfaces.cli.main import app
+from tests.fake_daemon import FakeDaemonTransport
 
 runner = CliRunner()
 
@@ -226,7 +227,14 @@ def test_single_file_heal_writes_only_the_named_file_not_what_it_imports(tmp_pat
     imported_before = imported.read_bytes()
     rmap, wf = _two_file_map(main, imported)
 
-    fixes = heal_workflow_within(rmap, wf, main, RunContext().configured_root(base), LocalProjectEnvironment).fixes
+    fixes = heal_workflow_within(
+        rmap,
+        wf,
+        main,
+        RunContext().configured_root(base),
+        environment_for=LocalProjectEnvironment,
+        daemon=FakeDaemonTransport(),
+    ).fixes
 
     assert imported.read_bytes() == imported_before
     assert "`pyproject.toml`" in main.read_text(encoding="utf-8")

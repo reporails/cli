@@ -66,6 +66,7 @@
 - The rewrite-check tests build named constructs, plain text and the rewrite's map as a real run produces them.
 - The lint checks read rule pages, fixtures and instruction files through the same file and folder readers as the rest of the run.
 - Heal's rewrite check reads each instruction from the map, and a test suite holds rewrites that keep the words but change the meaning.
+- The mapper daemon's socket sits behind one transport the command line, MCP server and x-ray page pass in, and a map crosses it in memory rather than through a temporary file.
 - One module reads each file's text or bytes for the checks, and each read keeps the decoding it used before.
 - Three check scenarios guard linked folders: a `.claude/rules` folder linked to a dotfiles folder stays part of `ails check .claude`, a linked file under a `~/.claude` linked to a dotfiles folder keeps its user-level root, and a `~/.claude` folder keeps its findings when the home folder is reached through a link.
 - No core module reads the config files on its own: the tier, segmentation, heal exclusions and project overrides come from the run, and the in-process YAML cache is gone.

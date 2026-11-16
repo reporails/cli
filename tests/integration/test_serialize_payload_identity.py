@@ -1,10 +1,11 @@
 """The JSON serialize round-trip must be payload-lossless.
 
 `ails check` tries the mapper daemon first, and the daemon hands the client its
-`RulesetMap` via `daemon_server._ruleset_map_to_dict` — a JSON round-trip through
-`save_ruleset_map`/`load_ruleset_map` (`core/mapper/serialize.py`). The
-whole-map cache (`full_map_cache.py`) round-trips the SAME two functions to
-disk. `_atom_to_dict`/`_atom_from_dict` must carry `slots` (the span coordinates the
+`RulesetMap` via `serialize.ruleset_map_json` and reads it back with `ruleset_map_from_json`
+(`core/mapper/serialize.py`). The
+whole-map cache (`full_map_cache.py`) round-trips the same map through
+`save_ruleset_map`/`load_ruleset_map` on disk. `_atom_to_dict`/`_atom_from_dict` must carry `slots`
+(the span coordinates the
 wire `so` block projects), plus `stage`, `over_merged`, `min_clause_cosine`,
 and `abstained` — so a daemon or whole-map-cache-hit run
 ships the same payload, `so` block included, as a cold in-process run.
@@ -17,6 +18,7 @@ projected+encoded msgpack payloads are byte-identical.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -46,7 +48,12 @@ def test_daemon_style_round_trip_preserves_the_v4_payload(tmp_path: Path) -> Non
     the daemon dict path and the whole-map cache disk path exercise)."""
     from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
-    from reporails_cli.core.mapper.serialize import load_ruleset_map, save_ruleset_map
+    from reporails_cli.core.mapper.serialize import (
+        load_ruleset_map,
+        ruleset_map_from_json,
+        ruleset_map_json,
+        save_ruleset_map,
+    )
     from reporails_cli.core.platform.adapters.payload import encode_msgpack, project_payload
 
     f_a = tmp_path / "a.md"
@@ -72,3 +79,6 @@ def test_daemon_style_round_trip_preserves_the_v4_payload(tmp_path: Path) -> Non
     reloaded_bytes = encode_msgpack(project_payload(reloaded_map, tmp_path))
 
     assert reloaded_bytes == cold_bytes
+
+    in_memory = ruleset_map_from_json(json.loads(json.dumps(ruleset_map_json(cold_map))))
+    assert encode_msgpack(project_payload(in_memory, tmp_path)) == cold_bytes

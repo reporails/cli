@@ -37,6 +37,7 @@ from reporails_cli.core.eventbus.transcript import known_session
 from reporails_cli.core.heal.apply import heal_one, resolved_within
 from reporails_cli.core.pipeline.check_one import check_path, file_findings
 from reporails_cli.core.pipeline.server_gate import server_gate
+from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
 from reporails_cli.core.platform.adapters.http_get import http_get
 from reporails_cli.core.platform.adapters.key_check import handshake
 from reporails_cli.core.platform.adapters.programs import open_in_browser
@@ -366,7 +367,9 @@ class XrayServer:
     def _check(self, target: Path) -> JSONResponse:
         with self._work_lock:
             run = RunContext()
-            checked = check_path(str(target), self._root, lint=ServerLint(run.tier()), run=run, fetch=http_get)
+            checked = check_path(
+                str(target), self._root, lint=ServerLint(run.tier()), run=run, fetch=http_get, daemon=UnixDaemonSocket()
+            )
             if isinstance(checked, Refusal):
                 return _refused(400, checked.text)
             found = file_findings(checked, target)
@@ -407,7 +410,14 @@ class XrayServer:
             refusal = server_gate("xray", partial(handshake, tier=run.tier()))
             if refusal is not None:
                 return XrayCheck("refused", refusal.text), {}
-            checked = check_path(str(self._root), self._root, lint=ServerLint(run.tier()), run=run, fetch=http_get)
+            checked = check_path(
+                str(self._root),
+                self._root,
+                lint=ServerLint(run.tier()),
+                run=run,
+                fetch=http_get,
+                daemon=UnixDaemonSocket(),
+            )
             if isinstance(checked, Refusal):
                 return XrayCheck("refused", checked.text), {}
             return XrayCheck("done", None), tallies_by_file(checked)
@@ -432,6 +442,7 @@ class XrayServer:
                 environment_for=LocalProjectEnvironment,
                 run=run,
                 fetch=http_get,
+                daemon=UnixDaemonSocket(),
             )
             with self._view_lock:
                 self._findings.pop(self._key(target), None)

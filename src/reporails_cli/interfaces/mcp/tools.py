@@ -11,6 +11,7 @@ from pathlib import Path
 from reporails_cli.core.discovery.agents import get_known_agents
 from reporails_cli.core.pipeline.check_one import check_path, model_refusal, rules_missing_message
 from reporails_cli.core.pipeline.server_gate import server_gate
+from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
 from reporails_cli.core.platform.adapters.http_get import http_get
 from reporails_cli.core.platform.adapters.key_check import handshake
 from reporails_cli.core.platform.adapters.server_lint import ServerLint
@@ -163,7 +164,9 @@ def run_pipeline_for_path(
     `file_score` is that single file's own display score (`None` for a directory or an unscored file).
     `named` and `project_root` are read as in `core.pipeline.check_one.scope_for_path`; `run` is this tool call's own.
     """
-    checked = check_path(path, project_root, named, lint=ServerLint(run.tier()), run=run, fetch=http_get)
+    checked = check_path(
+        path, project_root, named, lint=ServerLint(run.tier()), run=run, fetch=http_get, daemon=UnixDaemonSocket()
+    )
     if isinstance(checked, Refusal):
         return refusal_payload(checked), None, None
     return format_run(checked, full=full), checked.ruleset_map, checked.file_score

@@ -16,7 +16,6 @@ No shape-only tests -- every test drives a real branch of `map_instruction_files
 
 from __future__ import annotations
 
-import json
 import logging
 import sys
 from pathlib import Path
@@ -29,6 +28,7 @@ from reporails_cli.core.pipeline import mapping
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.results import MapperConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from tests.fake_daemon import FakeDaemonTransport
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_map]
 
@@ -80,7 +80,9 @@ def test_cache_hit_short_circuits_before_daemon_resolution(monkeypatch):
     _patch_config_and_cache(monkeypatch, cache_hit=CACHED_MAP)
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ensure_daemon", _boom)
 
-    result = mapping.map_instruction_files(Path("/proj"), [Path("/proj/CLAUDE.md")], mapper=MapperConfig())
+    result = mapping.map_instruction_files(
+        Path("/proj"), [Path("/proj/CLAUDE.md")], mapper=MapperConfig(), daemon=FakeDaemonTransport()
+    )
 
     assert result is CACHED_MAP
 
@@ -97,7 +99,11 @@ def test_mcp_path_never_spawns_a_daemon_when_none_is_running(monkeypatch):
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping._map_in_process", lambda *_a, **_k: IN_PROCESS_MAP)
 
     result = mapping.map_instruction_files(
-        Path("/proj"), [Path("/proj/CLAUDE.md")], spawn_daemon=False, mapper=MapperConfig()
+        Path("/proj"),
+        [Path("/proj/CLAUDE.md")],
+        spawn_daemon=False,
+        mapper=MapperConfig(),
+        daemon=FakeDaemonTransport(),
     )
 
     assert result is IN_PROCESS_MAP
@@ -111,12 +117,16 @@ def test_mcp_path_attaches_to_an_already_running_daemon(monkeypatch):
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.is_daemon_running", lambda: True)
     from reporails_cli.core.mapper.daemon import code_identity
 
-    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ping", lambda: {"ok": True, "code": code_identity()})
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ping", lambda _t: {"ok": True, "code": code_identity()})
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ensure_daemon", _boom)
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.map_ruleset_via_daemon", lambda *_a, **_k: DAEMON_MAP)
 
     result = mapping.map_instruction_files(
-        Path("/proj"), [Path("/proj/CLAUDE.md")], spawn_daemon=False, mapper=MapperConfig()
+        Path("/proj"),
+        [Path("/proj/CLAUDE.md")],
+        spawn_daemon=False,
+        mapper=MapperConfig(),
+        daemon=FakeDaemonTransport(),
     )
 
     assert result is DAEMON_MAP
@@ -137,13 +147,17 @@ def test_mcp_path_maps_in_process_beside_a_daemon_running_other_code(monkeypatch
     _patch_config_and_cache(monkeypatch, cache_hit=None)
     stops: list[object] = []
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.is_daemon_running", lambda: True)
-    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.retire_daemon", lambda pid: bool(stops.append(pid)))
-    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ping", lambda: pong)
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.retire_daemon", lambda _t, pid: bool(stops.append(pid)))
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ping", lambda _t: pong)
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.map_ruleset_via_daemon", _boom)
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping._map_in_process", lambda *_a, **_k: IN_PROCESS_MAP)
 
     result = mapping.map_instruction_files(
-        Path("/proj"), [Path("/proj/CLAUDE.md")], spawn_daemon=False, mapper=MapperConfig()
+        Path("/proj"),
+        [Path("/proj/CLAUDE.md")],
+        spawn_daemon=False,
+        mapper=MapperConfig(),
+        daemon=FakeDaemonTransport(),
     )
 
     assert result is IN_PROCESS_MAP
@@ -163,12 +177,12 @@ def test_cli_path_replaces_a_daemon_left_by_an_older_version(monkeypatch, pong):
     calls: list[str] = []
     monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.is_daemon_running", lambda: running[-1])
 
-    def _retire(pid: object) -> bool:
+    def _retire(_t: object, pid: object) -> bool:
         calls.append(f"retire {pid}")
         running.append(False)
         return True
 
-    def _start() -> int:
+    def _start(_t: object) -> int:
         calls.append("start")
         running.append(True)
         return 2
@@ -176,9 +190,9 @@ def test_cli_path_replaces_a_daemon_left_by_an_older_version(monkeypatch, pong):
     monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.retire_daemon", _retire)
     monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.start_daemon", _start)
     pongs = iter([pong])
-    monkeypatch.setattr(daemon_client, "ping", lambda: next(pongs, {"ok": True}))
+    monkeypatch.setattr(daemon_client, "ping", lambda _t: next(pongs, {"ok": True}))
 
-    assert daemon_client.ensure_daemon() == DaemonStatus.STARTED
+    assert daemon_client.ensure_daemon(FakeDaemonTransport()) == DaemonStatus.STARTED
     assert calls == [f"retire {pong.get('pid')}", "start"]
 
 
@@ -191,12 +205,12 @@ def test_cli_path_leaves_an_older_daemon_that_does_not_exit(monkeypatch):
     from reporails_cli.core.mapper.daemon_client import DaemonStatus
 
     monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.is_daemon_running", lambda: True)
-    monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.retire_daemon", lambda _pid: False)
+    monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.retire_daemon", lambda _t, _pid: False)
     monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.daemon_pid", lambda: _OLDER[0]["pid"])
     monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.start_daemon", _boom)
-    monkeypatch.setattr(daemon_client, "ping", lambda: _OLDER[0])
+    monkeypatch.setattr(daemon_client, "ping", lambda _t: _OLDER[0])
 
-    assert daemon_client.ensure_daemon() == DaemonStatus.UNAVAILABLE
+    assert daemon_client.ensure_daemon(FakeDaemonTransport()) == DaemonStatus.UNAVAILABLE
 
 
 @pytest.mark.unit
@@ -208,13 +222,13 @@ def test_cli_path_attaches_when_a_check_beside_it_already_replaced_the_older_dae
     from reporails_cli.core.mapper.daemon_client import DaemonStatus
 
     monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.is_daemon_running", lambda: True)
-    monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.retire_daemon", lambda _pid: False)
+    monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.retire_daemon", lambda _t, _pid: False)
     monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.daemon_pid", lambda: 999)
-    monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.start_daemon", lambda: 999)
+    monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.start_daemon", lambda _t: 999)
     pongs = iter([_OLDER[0]])
-    monkeypatch.setattr(daemon_client, "ping", lambda: next(pongs, {"ok": True}))
+    monkeypatch.setattr(daemon_client, "ping", lambda _t: next(pongs, {"ok": True}))
 
-    assert daemon_client.ensure_daemon() == DaemonStatus.STARTED
+    assert daemon_client.ensure_daemon(FakeDaemonTransport()) == DaemonStatus.STARTED
 
 
 @pytest.mark.unit
@@ -226,9 +240,9 @@ def test_cli_path_leaves_a_newer_version_s_daemon_to_that_version(monkeypatch):
     monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.is_daemon_running", lambda: True)
     monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.retire_daemon", _boom)
     monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.start_daemon", _boom)
-    monkeypatch.setattr(daemon_client, "ping", lambda: _NEWER)
+    monkeypatch.setattr(daemon_client, "ping", lambda _t: _NEWER)
 
-    assert daemon_client.ensure_daemon() == DaemonStatus.UNAVAILABLE
+    assert daemon_client.ensure_daemon(FakeDaemonTransport()) == DaemonStatus.UNAVAILABLE
 
 
 @pytest.mark.unit
@@ -241,28 +255,9 @@ def test_cli_path_queues_on_a_daemon_too_busy_to_answer_the_ping(monkeypatch):
 
     monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.is_daemon_running", lambda: True)
     monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.start_daemon", _boom)
-    monkeypatch.setattr(daemon_client, "ping", lambda: None)
+    monkeypatch.setattr(daemon_client, "ping", lambda _t: None)
 
-    assert daemon_client.ensure_daemon() == DaemonStatus.ATTACHED
-
-
-class _MapReplySocket:
-    """A daemon socket that answers a map request with one result line."""
-
-    def __init__(self, reply: dict) -> None:
-        self._out = [json.dumps(reply).encode() + b"\n"]
-
-    def settimeout(self, _t: float) -> None:
-        pass
-
-    def sendall(self, _b: bytes) -> None:
-        pass
-
-    def recv(self, _n: int) -> bytes:
-        return self._out.pop(0) if self._out else b""
-
-    def close(self) -> None:
-        pass
+    assert daemon_client.ensure_daemon(FakeDaemonTransport()) == DaemonStatus.ATTACHED
 
 
 @pytest.mark.unit
@@ -274,9 +269,13 @@ def test_a_map_from_a_daemon_running_other_code_is_refused(monkeypatch, code):
     from reporails_cli.core.mapper import daemon_client
 
     reply = {"ok": True, "ruleset_map": {}} | ({"code": code} if code else {})
-    monkeypatch.setattr(daemon_client, "connect", lambda: _MapReplySocket(reply))
 
-    assert daemon_client.map_ruleset_via_daemon([Path("/proj/CLAUDE.md")], Path("/proj"), "legacy") is None
+    assert (
+        daemon_client.map_ruleset_via_daemon(
+            FakeDaemonTransport(reply), [Path("/proj/CLAUDE.md")], Path("/proj"), "legacy"
+        )
+        is None
+    )
 
 
 @pytest.mark.unit
@@ -301,11 +300,13 @@ def test_daemon_round_trip_failure_falls_back_to_in_process(monkeypatch):
     _patch_config_and_cache(monkeypatch, cache_hit=None)
     from reporails_cli.core.mapper.daemon_client import DaemonStatus
 
-    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ensure_daemon", lambda **_k: DaemonStatus.ATTACHED)
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ensure_daemon", lambda *_a, **_k: DaemonStatus.ATTACHED)
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.map_ruleset_via_daemon", lambda *_a, **_k: None)
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping._map_in_process", lambda *_a, **_k: FALLBACK_MAP)
 
-    result = mapping.map_instruction_files(Path("/proj"), [Path("/proj/CLAUDE.md")], mapper=MapperConfig())
+    result = mapping.map_instruction_files(
+        Path("/proj"), [Path("/proj/CLAUDE.md")], mapper=MapperConfig(), daemon=FakeDaemonTransport()
+    )
 
     assert result is FALLBACK_MAP
 
@@ -319,11 +320,13 @@ def test_daemon_starting_routes_to_daemon(monkeypatch):
     _patch_config_and_cache(monkeypatch, cache_hit=None)
     from reporails_cli.core.mapper.daemon_client import DaemonStatus
 
-    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ensure_daemon", lambda **_k: DaemonStatus.STARTING)
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ensure_daemon", lambda *_a, **_k: DaemonStatus.STARTING)
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.map_ruleset_via_daemon", lambda *_a, **_k: DAEMON_MAP)
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping._map_in_process", _boom)
 
-    result = mapping.map_instruction_files(Path("/proj"), [Path("/proj/CLAUDE.md")], mapper=MapperConfig())
+    result = mapping.map_instruction_files(
+        Path("/proj"), [Path("/proj/CLAUDE.md")], mapper=MapperConfig(), daemon=FakeDaemonTransport()
+    )
 
     assert result is DAEMON_MAP
 
@@ -338,11 +341,13 @@ def test_daemon_unavailable_maps_in_process(monkeypatch, status_name):
     from reporails_cli.core.mapper.daemon_client import DaemonStatus
 
     status = getattr(DaemonStatus, status_name)
-    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ensure_daemon", lambda **_k: status)
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ensure_daemon", lambda *_a, **_k: status)
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.map_ruleset_via_daemon", _boom)
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping._map_in_process", lambda *_a, **_k: IN_PROCESS_MAP)
 
-    result = mapping.map_instruction_files(Path("/proj"), [Path("/proj/CLAUDE.md")], mapper=MapperConfig())
+    result = mapping.map_instruction_files(
+        Path("/proj"), [Path("/proj/CLAUDE.md")], mapper=MapperConfig(), daemon=FakeDaemonTransport()
+    )
 
     assert result is IN_PROCESS_MAP
 
@@ -435,7 +440,11 @@ def test_in_process_fallback_maps_against_the_project_root(monkeypatch):
 
     target = Path("/proj")
     result = mapping.map_instruction_files(
-        target, [target / ".cursor/rules/style.mdc"], spawn_daemon=False, mapper=MapperConfig()
+        target,
+        [target / ".cursor/rules/style.mdc"],
+        spawn_daemon=False,
+        mapper=MapperConfig(),
+        daemon=FakeDaemonTransport(),
     )
 
     assert result is IN_PROCESS_MAP
@@ -457,21 +466,31 @@ def test_daemon_and_in_process_arms_receive_the_same_root(monkeypatch):
     _patch_config_and_cache(monkeypatch, cache_hit=None)
     daemon_roots: list[Path] = []
 
-    def _via_daemon(paths: list[Path], root: Path, segmentation: str, progress=None) -> str:
+    def _via_daemon(_transport: object, paths: list[Path], root: Path, segmentation: str, progress=None) -> str:
         daemon_roots.append(root)
         return DAEMON_MAP
 
     from reporails_cli.core.mapper.daemon import code_identity
 
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.is_daemon_running", lambda: True)
-    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ping", lambda: {"ok": True, "code": code_identity()})
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ping", lambda _t: {"ok": True, "code": code_identity()})
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.map_ruleset_via_daemon", _via_daemon)
-    assert mapping.map_instruction_files(target, files, spawn_daemon=False, mapper=MapperConfig()) is DAEMON_MAP
+    assert (
+        mapping.map_instruction_files(
+            target, files, spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport()
+        )
+        is DAEMON_MAP
+    )
 
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.is_daemon_running", lambda: False)
     seen: dict = {}
     _capture_in_process_map(monkeypatch, seen)
-    assert mapping.map_instruction_files(target, files, spawn_daemon=False, mapper=MapperConfig()) is IN_PROCESS_MAP
+    assert (
+        mapping.map_instruction_files(
+            target, files, spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport()
+        )
+        is IN_PROCESS_MAP
+    )
 
     assert daemon_roots == [target]
     assert seen["root"] == daemon_roots[0]
@@ -487,9 +506,10 @@ def test_retire_daemon_leaves_a_daemon_started_since_the_ping(monkeypatch, tmp_p
     monkeypatch.setattr(daemon.sys, "platform", "linux")
     (tmp_path / "mapper.pid").write_text("200")
     monkeypatch.setattr(daemon, "pid_path", lambda: tmp_path / "mapper.pid")
-    monkeypatch.setattr(daemon.socket, "socket", _boom)
+    transport = FakeDaemonTransport({"ok": True})
 
-    assert daemon.retire_daemon(100) is False
+    assert daemon.retire_daemon(transport, 100) is False
+    assert transport.exchanges == []  # the daemon now holding the files was never asked
 
 
 @pytest.mark.unit
@@ -497,27 +517,6 @@ def test_retire_daemon_leaves_a_daemon_started_since_the_ping(monkeypatch, tmp_p
 @pytest.mark.skipif(sys.platform == "win32", reason="the mapper daemon socket is POSIX-only")
 def test_retire_daemon_waits_for_the_answering_daemon_to_exit(monkeypatch, tmp_path):
     from reporails_cli.core.mapper import daemon
-
-    sent: list[bytes] = []
-
-    class _Sock:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_a):
-            return False
-
-        def settimeout(self, _t):
-            pass
-
-        def connect(self, _p):
-            pass
-
-        def sendall(self, b):
-            sent.append(b)
-
-        def recv(self, _n):
-            return b'{"ok": true}\n'
 
     alive = iter([None, None])
 
@@ -530,12 +529,13 @@ def test_retire_daemon_waits_for_the_answering_daemon_to_exit(monkeypatch, tmp_p
     (tmp_path / "mapper.pid").write_text("100")
     monkeypatch.setattr(daemon, "pid_path", lambda: tmp_path / "mapper.pid")
     monkeypatch.setattr(daemon, "socket_path", lambda: tmp_path / "mapper.sock")
-    monkeypatch.setattr(daemon.socket, "socket", lambda *_a: _Sock())
     monkeypatch.setattr(daemon.os, "kill", _kill)
     monkeypatch.setattr(daemon.time, "sleep", lambda _s: None)
 
-    assert daemon.retire_daemon(100) is True
-    assert sent == [b'{"cmd": "shutdown"}\n']
+    transport = FakeDaemonTransport({"ok": True})
+
+    assert daemon.retire_daemon(transport, 100) is True
+    assert transport.exchanges == [(tmp_path / "mapper.sock", {"cmd": "shutdown"})]
 
 
 @pytest.mark.unit
@@ -557,12 +557,12 @@ def test_daemon_start_reports_whose_daemon_holds_the_socket(monkeypatch, pong, r
     running = [True]
     starts: list[bool] = []
     monkeypatch.setattr("reporails_cli.core.mapper.daemon.is_daemon_running", lambda: running[-1])
-    monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.ping", lambda: pong)
+    monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.ping", lambda _t: pong)
     monkeypatch.setattr(
-        "reporails_cli.core.mapper.daemon.retire_daemon", lambda _pid: bool(running.append(False)) or retired
+        "reporails_cli.core.mapper.daemon.retire_daemon", lambda _t, _pid: bool(running.append(False)) or retired
     )
 
-    def _start() -> int:
+    def _start(_t: object) -> int:
         starts.append(True)
         running.append(True)
         return 3
@@ -596,7 +596,7 @@ def test_daemon_status_says_whose_daemon_is_running(monkeypatch, pong, says):
     from reporails_cli.interfaces.cli.daemon_cmd import daemon_app
 
     monkeypatch.setattr("reporails_cli.core.mapper.daemon.is_daemon_running", lambda: True)
-    monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.ping", lambda: pong)
+    monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.ping", lambda _t: pong)
 
     result = CliRunner().invoke(daemon_app, ["status"])
 
@@ -710,7 +710,7 @@ def test_daemon_status_of_this_version_s_daemon(monkeypatch):
 
     monkeypatch.setattr("reporails_cli.core.mapper.daemon.is_daemon_running", lambda: True)
     monkeypatch.setattr(
-        "reporails_cli.core.mapper.daemon_client.ping", lambda: {"ok": True, "pid": 5, "code": code_identity()}
+        "reporails_cli.core.mapper.daemon_client.ping", lambda _t: {"ok": True, "pid": 5, "code": code_identity()}
     )
 
     result = CliRunner().invoke(daemon_app, ["status"])
@@ -755,7 +755,9 @@ def test_the_cache_holds_the_map_as_mapped_before_membership_is_applied(monkeypa
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.is_daemon_running", lambda: False)
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping._map_in_process", lambda *_a, **_k: rmap)
 
-    result = mapping.map_instruction_files(tmp_path, [Path(rec.path)], spawn_daemon=False, mapper=MapperConfig())
+    result = mapping.map_instruction_files(
+        tmp_path, [Path(rec.path)], spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport()
+    )
 
     assert seen == [("skills", "")]  # cached as mapped
     assert (result.files[0].type, result.files[0].skill) == ("generic", "")  # then decided for this run
@@ -817,7 +819,13 @@ def test_two_threads_mapping_the_same_files_map_once(monkeypatch, tmp_path):
 
     def run() -> None:
         results.append(
-            mapping.map_instruction_files(project, [project / "CLAUDE.md"], spawn_daemon=False, mapper=MapperConfig())
+            mapping.map_instruction_files(
+                project,
+                [project / "CLAUDE.md"],
+                spawn_daemon=False,
+                mapper=MapperConfig(),
+                daemon=FakeDaemonTransport(),
+            )
         )
 
     threads = [threading.Thread(target=run) for _ in range(2)]
@@ -929,6 +937,23 @@ def test_a_single_call_still_maps_once(monkeypatch, tmp_path):
     calls: list[int] = []
     _slow_counting_map(monkeypatch, calls)
 
-    result = mapping.map_instruction_files(project, [project / "CLAUDE.md"], spawn_daemon=False, mapper=MapperConfig())
+    result = mapping.map_instruction_files(
+        project, [project / "CLAUDE.md"], spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport()
+    )
 
     assert result is not None and calls == [1]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+def test_a_daemon_that_does_not_answer_reads_as_no_ping_and_no_map(monkeypatch, tmp_path):
+    """A socket that does not answer is `None` to the callers, who fall back, never an exception."""
+    from reporails_cli.core.mapper import daemon, daemon_client
+
+    (tmp_path / "mapper.pid").write_text("100")
+    monkeypatch.setattr(daemon, "pid_path", lambda: tmp_path / "mapper.pid")
+    silent = FakeDaemonTransport()
+
+    assert daemon_client.ping(silent) is None
+    assert daemon_client.map_ruleset_via_daemon(silent, [Path("/p/CLAUDE.md")], Path("/p"), "legacy") is None
+    assert daemon.retire_daemon(silent, 100) is False

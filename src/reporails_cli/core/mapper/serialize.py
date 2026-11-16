@@ -225,7 +225,12 @@ def _unpack_slot_coords(slot_coords: JsonObject | None) -> AtomSlots | None:
 def save_ruleset_map(ruleset_map: RulesetMap, path: Path) -> None:
     """Serialize a RulesetMap to JSON."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    data: JsonObject = {
+    path.write_text(json.dumps(ruleset_map_json(ruleset_map), indent=2) + "\n", encoding="utf-8")
+
+
+def ruleset_map_json(ruleset_map: RulesetMap) -> JsonObject:
+    """A RulesetMap in its JSON form."""
+    return {
         "schema_version": ruleset_map.schema_version,
         "embedding_model": ruleset_map.embedding_model,
         "generated_at": ruleset_map.generated_at,
@@ -252,7 +257,6 @@ def save_ruleset_map(ruleset_map: RulesetMap, path: Path) -> None:
             "n_neutral": ruleset_map.summary.n_neutral,
         },
     }
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def _file_record_from_dict(f: JsonObject) -> FileRecord:
@@ -264,9 +268,13 @@ def _file_record_from_dict(f: JsonObject) -> FileRecord:
 
 
 def load_ruleset_map(path: Path) -> RulesetMap:
-    """Deserialize a RulesetMap from JSON."""
+    """Deserialize a RulesetMap from the JSON file at `path`."""
     loaded: JsonValue = json.loads(path.read_text(encoding="utf-8"))
-    data = as_object(loaded)
+    return ruleset_map_from_json(as_object(loaded))
+
+
+def ruleset_map_from_json(data: JsonObject) -> RulesetMap:
+    """Deserialize a RulesetMap from its JSON form."""
 
     files = tuple(_file_record_from_dict(as_object(f)) for f in as_list(data["files"]))
     atoms = tuple(_atom_from_dict(as_object(a)) for a in as_list(data["atoms"]))

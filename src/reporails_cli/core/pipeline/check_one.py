@@ -35,7 +35,7 @@ from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusio
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs, CheckRun, Discovered, LeftOut, Refusal, Scope
 from reporails_cli.core.platform.dto.platform import CombinedResult
-from reporails_cli.core.platform.dto.ports import LintService
+from reporails_cli.core.platform.dto.ports import DaemonTransport, LintService
 from reporails_cli.core.platform.dto.results import MapperConfig, ProjectConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
@@ -146,6 +146,8 @@ def build_map(
     instruction_files: list[Path],
     mapper: MapperConfig,
     filter_agents: list[DetectedAgent] | None = None,
+    *,
+    daemon: DaemonTransport,
 ) -> tuple[RulesetMap | None, str | None]:
     """Build the ruleset map via the shared warm path, so a long-lived process reuses a warm model
     instead of loading one on every call.
@@ -165,7 +167,12 @@ def build_map(
     try:
         return (
             map_instruction_files(
-                target, list(instruction_files), spawn_daemon=False, filtered_agents=filter_agents, mapper=mapper
+                target,
+                list(instruction_files),
+                spawn_daemon=False,
+                filtered_agents=filter_agents,
+                mapper=mapper,
+                daemon=daemon,
             ),
             None,
         )
@@ -408,7 +415,7 @@ def check_and_assemble(
     return with_exclusions(result, left_out.record), funnel_error
 
 
-def check_scope(run: RunContext, scope: Scope, lint: LintService) -> CheckRun:
+def check_scope(run: RunContext, scope: Scope, lint: LintService, daemon: DaemonTransport) -> CheckRun:
     """Run M-probes + content/client checks over a scope's files and assemble the result.
 
     Regime and surface health key against `scope.scan_root` (the checked path), not the server cwd.
@@ -421,7 +428,7 @@ def check_scope(run: RunContext, scope: Scope, lint: LintService) -> CheckRun:
     """
 
     ruleset_map, mapper_error = build_map(
-        scope.scan_root, scope.instruction_files, scope.config.mapper, scope.filter_agents
+        scope.scan_root, scope.instruction_files, scope.config.mapper, scope.filter_agents, daemon=daemon
     )
     result, funnel_error = check_and_assemble(run, scope, ruleset_map, lint=lint)
     file_score = display_score(result, scope.single_file, scope.scan_root) if scope.single_file is not None else None
@@ -442,6 +449,7 @@ def check_path(
     lint: LintService,
     run: RunContext,
     fetch: HttpGet,
+    daemon: DaemonTransport,
 ) -> CheckRun | Refusal:
     """Check `path` (directory or file): the `CheckRun`, or the `Refusal` saying why nothing was checked.
 
@@ -452,6 +460,6 @@ def check_path(
         scope = scope_for_path(path, project_root, named, run=run, fetch=fetch)
         if isinstance(scope, Refusal):
             return scope
-        return check_scope(run, scope, lint)
+        return check_scope(run, scope, lint, daemon)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return Refusal("failed", str(e) or f"The check failed ({type(e).__name__}).")

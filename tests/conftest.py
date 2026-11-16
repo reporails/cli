@@ -77,7 +77,9 @@ def _isolate_home(
         from reporails_cli.core.mapper.daemon import is_daemon_running, stop_daemon
 
         if is_daemon_running():
-            stop_daemon()
+            from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
+
+            stop_daemon(UnixDaemonSocket())
     except Exception:
         pass
 

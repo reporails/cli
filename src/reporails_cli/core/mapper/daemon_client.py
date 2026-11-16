@@ -6,11 +6,7 @@ returns None and caller uses in-process mapping.
 
 from __future__ import annotations
 
-import json
 import logging
-import socket
-import sys
-import tempfile
 import time
 from collections.abc import Callable
 from enum import Enum
@@ -26,10 +22,11 @@ from reporails_cli.core.mapper.daemon import (
     socket_path,
     start_daemon,
 )
-from reporails_cli.core.mapper.serialize import load_ruleset_map
-from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
+from reporails_cli.core.mapper.serialize import ruleset_map_from_json
+from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
+from reporails_cli.core.platform.dto.ports import DaemonTransport
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.core.platform.utils.utils import compact_json
 
 logger = logging.getLogger(__name__)
 
@@ -43,54 +40,12 @@ class DaemonStatus(str, Enum):
     UNAVAILABLE = "unavailable"  # Windows, fork failure, or process died
 
 
-# Seconds a connection to the daemon socket may take.
-_CONNECT_TIMEOUT_S = 5.0
-
-
-def connect() -> socket.socket | None:
-    """Connect to global daemon socket. Returns None if unreachable."""
-    if sys.platform == "win32":
-        return None
-    sock_path = socket_path()
-    if not sock_path.exists():
-        return None
-    try:
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(_CONNECT_TIMEOUT_S)
-        sock.connect(str(sock_path))
-        return sock
-    except (OSError, TimeoutError):
-        return None
-
-
-def send_request(sock: socket.socket, request: JsonObject, timeout: float = 120.0) -> JsonObject | None:
-    """Send JSON-line request, read JSON-line response."""
-    try:
-        sock.settimeout(timeout)
-        sock.sendall(compact_json(request).encode() + b"\n")
-
-        data = b""
-        while b"\n" not in data:
-            chunk = sock.recv(65536)
-            if not chunk:
-                return None
-            data += chunk
-
-        line = data.split(b"\n", 1)[0]
-        result: JsonValue = json.loads(line)
-        return result if isinstance(result, dict) else None
-    except (OSError, TimeoutError, json.JSONDecodeError):
-        return None
-    finally:
-        sock.close()
-
-
-def ping() -> JsonObject | None:
+def ping(transport: DaemonTransport) -> JsonObject | None:
     """Ping daemon. Returns response dict or None if unreachable."""
-    sock = connect()
-    if sock is None:
+    try:
+        return transport.exchange(socket_path(), {"cmd": "ping"}, timeout=5.0, on_message=None)
+    except PlatformUnavailableError:
         return None
-    return send_request(sock, {"cmd": "ping"}, timeout=5.0)
 
 
 def _code_key(code: str) -> tuple[Version, int] | None:
@@ -130,54 +85,23 @@ def serves_this_code(pong: JsonObject | None) -> bool:
     return pong is not None and pong.get("code") == code_identity()
 
 
-def _stream_map_response(
-    sock: socket.socket,
-    request: JsonObject,
-    progress: Callable[[str], None] | None,
-    timeout: float,
-) -> JsonObject | None:
-    """Send a map request, forward streamed progress lines, return the result line.
-
-    Reads newline-delimited JSON objects: a ``{"type": "progress", "msg": ...}``
-    line is handed to ``progress`` and reading continues; the first line carrying
-    ``ok`` is the result and is returned. Returns None on timeout, socket error,
-    a malformed line, or a stream that closes before the result arrives.
-    """
-    try:
-        sock.settimeout(timeout)
-        sock.sendall(compact_json(request).encode() + b"\n")
-
-        buf = b""
-        while True:
-            while b"\n" not in buf:
-                chunk = sock.recv(65536)
-                if not chunk:
-                    return None  # stream closed before a result line
-                buf += chunk
-            line, buf = buf.split(b"\n", 1)
-            if not line.strip():
-                continue
-            parsed: JsonValue = json.loads(line)
-            if not isinstance(parsed, dict):
-                return None
-            obj = parsed
-            if obj.get("type") == "progress":
-                if progress is not None:
-                    # A spinner/render error in the caller's callback must never
-                    # abort the map or the result read — swallow and keep reading.
-                    try:
-                        progress(str(obj.get("msg", "")))
-                    except Exception:  # pylint: disable=broad-exception-caught  # caller callback must never abort the map
-                        logger.debug("map progress callback raised; ignoring", exc_info=True)
-                continue
-            return obj  # the result line (carries `ok`)
-    except (OSError, TimeoutError, json.JSONDecodeError):
+def _forward_progress(progress: Callable[[str], None] | None) -> Callable[[JsonObject], None] | None:
+    """A frame handler handing each streamed progress message to `progress`, or None when nobody listens."""
+    if progress is None:
         return None
-    finally:
-        sock.close()
+
+    def forward(frame: JsonObject) -> None:
+        # A spinner/render error in the caller's callback must never abort the map or the result read.
+        try:
+            progress(str(frame.get("msg", "")))
+        except Exception:  # pylint: disable=broad-exception-caught  # caller callback must never abort the map
+            logger.debug("map progress callback raised; ignoring", exc_info=True)
+
+    return forward
 
 
 def map_ruleset_via_daemon(
+    transport: DaemonTransport,
     paths: list[Path],
     root: Path,
     segmentation: str,
@@ -193,10 +117,6 @@ def map_ruleset_via_daemon(
     result line carrying ``ok`` + ``ruleset_map``. A malformed line or a closed
     stream before the result yields None so the caller falls back to in-process.
     """
-    sock = connect()
-    if sock is None:
-        return None
-
     request: JsonObject = {
         "cmd": "map_ruleset",
         "paths": [str(p) for p in paths],
@@ -205,9 +125,13 @@ def map_ruleset_via_daemon(
     }
     # Matches the daemon-side connection timeout; covers a cold model load and the
     # first encode, plus mapping work, with headroom.
-    response = _stream_map_response(sock, request, progress, timeout=300.0)
-    if response is None or not response.get("ok"):
-        logger.debug("Daemon map_ruleset failed: %s", response.get("error") if response else "no response")
+    try:
+        response = transport.exchange(socket_path(), request, timeout=300.0, on_message=_forward_progress(progress))
+    except PlatformUnavailableError:
+        logger.debug("Daemon map_ruleset failed: no response")
+        return None
+    if not response.get("ok"):
+        logger.debug("Daemon map_ruleset failed: %s", response.get("error"))
         return None
     if not serves_this_code(response):
         # Mapped by another version's code: not this version's map.
@@ -220,19 +144,13 @@ def map_ruleset_via_daemon(
         return None
 
     try:
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
-            json.dump(map_data, f)
-            tmp_path = Path(f.name)
-
-        result = load_ruleset_map(tmp_path)
-        tmp_path.unlink()
-        return result
-    except (OSError, TimeoutError, json.JSONDecodeError, RuntimeError):
+        return ruleset_map_from_json(as_object(map_data))
+    except (RuntimeError, ValueError):
         logger.debug("Failed to deserialize daemon response", exc_info=True)
         return None
 
 
-def _reconcile_running_daemon() -> DaemonStatus | None:
+def _reconcile_running_daemon(transport: DaemonTransport) -> DaemonStatus | None:
     """Status decided by an already-running daemon, or None when this version must start its own."""
     if not is_daemon_running():
         return None
@@ -240,7 +158,7 @@ def _reconcile_running_daemon() -> DaemonStatus | None:
     # other code is refused on arrival. A daemon that answers with other code is never used:
     # an older version's (left over from before an upgrade) is replaced by this version's
     # once it has exited, a newer version's is left to that version.
-    pong = ping()
+    pong = ping(transport)
     if pong is None or serves_this_code(pong):
         return DaemonStatus.ATTACHED
     if not runs_older_code(pong):
@@ -248,12 +166,12 @@ def _reconcile_running_daemon() -> DaemonStatus | None:
     # Not retired because it is busy or slow to exit: leave it. Not retired because it is
     # already gone or replaced (a check running beside this one got there first): start or
     # attach to this version's below.
-    if not retire_daemon(pong.get("pid")) and daemon_pid() == pong.get("pid"):
+    if not retire_daemon(transport, pong.get("pid")) and daemon_pid() == pong.get("pid"):
         return DaemonStatus.UNAVAILABLE
     return None
 
 
-def ensure_daemon(emit: Callable[[str], None] | None = None) -> DaemonStatus:
+def ensure_daemon(transport: DaemonTransport, emit: Callable[[str], None] | None = None) -> DaemonStatus:
     """Ensure global daemon is running. Start it if not.
 
     Returns a status enum the caller uses to drive user-visible messaging and
@@ -268,13 +186,13 @@ def ensure_daemon(emit: Callable[[str], None] | None = None) -> DaemonStatus:
     """
     say = emit if emit is not None else (lambda _msg: None)
 
-    status = _reconcile_running_daemon()
+    status = _reconcile_running_daemon(transport)
     if status is not None:
         return status
 
     say("Starting Reporails...")
     try:
-        start_daemon()
+        start_daemon(transport)
     except OSError:
         return DaemonStatus.UNAVAILABLE
 
@@ -284,7 +202,7 @@ def ensure_daemon(emit: Callable[[str], None] | None = None) -> DaemonStatus:
     say("Loading tools...")
     deadline = time.monotonic() + 1.0
     while time.monotonic() < deadline:
-        if ping() is not None:
+        if ping(transport) is not None:
             return DaemonStatus.STARTED
         time.sleep(0.05)
     return DaemonStatus.STARTING

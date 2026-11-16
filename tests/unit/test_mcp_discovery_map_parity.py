@@ -16,6 +16,7 @@ import pytest
 from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.results import MapperConfig
+from tests.fake_daemon import FakeDaemonTransport
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_map]
 
@@ -33,7 +34,9 @@ def test_build_map_routes_through_shared_warm_path(monkeypatch):
 
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.map_instruction_files", fake_map)
 
-    ruleset_map, mapper_error = check_one.build_map(Path("/proj"), [Path("/proj/CLAUDE.md")], MapperConfig())
+    ruleset_map, mapper_error = check_one.build_map(
+        Path("/proj"), [Path("/proj/CLAUDE.md")], MapperConfig(), daemon=FakeDaemonTransport()
+    )
 
     assert ruleset_map == "SENTINEL_MAP", "MCP must map via the shared warm path, not a cold map_ruleset"
     assert mapper_error is None
@@ -54,7 +57,9 @@ def test_build_map_keeps_the_swallowed_exception_text_for_its_caller(monkeypatch
 
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.map_instruction_files", raising_map)
 
-    ruleset_map, mapper_error = check_one.build_map(Path("/proj"), [Path("/proj/CLAUDE.md")], MapperConfig())
+    ruleset_map, mapper_error = check_one.build_map(
+        Path("/proj"), [Path("/proj/CLAUDE.md")], MapperConfig(), daemon=FakeDaemonTransport()
+    )
 
     assert ruleset_map is None
     assert mapper_error == "RuntimeError: dictionary changed size during iteration"

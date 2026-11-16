@@ -17,7 +17,6 @@ daemon process: no fork, no socket file, no shared ~/.reporails state — but th
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -38,29 +37,19 @@ _onnx_path = (
 requires_model = pytest.mark.skipif(not _onnx_path.exists(), reason="Bundled ONNX model not available")
 
 
-class _LoopbackDaemonSock:
-    """Serves the client's real request with the real daemon handler, in this process."""
+class _LoopbackDaemon:
+    """Answers the client's real request with the real daemon handler, in this process."""
 
-    def __init__(self) -> None:
-        self.pending = b""
-        self.closed = False
-
-    def settimeout(self, _timeout: float) -> None:
-        pass
-
-    def sendall(self, payload: bytes) -> None:
+    def exchange(self, address, request, *, timeout, on_message):
         from reporails_cli.core.mapper import daemon_server
+        from reporails_cli.core.mapper.daemon import code_identity
 
-        request = json.loads(payload.decode("utf-8"))
-        response = daemon_server._handle_map_ruleset(request, None)
-        self.pending = (json.dumps(response) + "\n").encode("utf-8")
+        if request.get("cmd") == "ping":
+            return {"ok": True, "code": code_identity()}
+        return daemon_server._handle_map_ruleset(request, None)
 
-    def recv(self, size: int) -> bytes:
-        chunk, self.pending = self.pending[:size], self.pending[size:]
-        return chunk
-
-    def close(self) -> None:
-        self.closed = True
+    def serve(self, address, handle, *, idle_timeout):
+        raise AssertionError("not served in this test")
 
 
 def _build_fixture(root: Path) -> list[Path]:
@@ -121,9 +110,10 @@ def test_in_process_and_daemon_arms_attribute_files_identically(
         "reporails_cli.core.mapper.daemon_server.get_global_cache_dir", lambda: tmp_path / "cache-daemon"
     )
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.is_daemon_running", lambda: True)
-    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ping", lambda: {"ok": True})
-    monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.connect", _LoopbackDaemonSock)
-    daemon_map = mapping.map_instruction_files(project, list(files), spawn_daemon=False, mapper=MapperConfig())
+    loopback = _LoopbackDaemon()
+    daemon_map = mapping.map_instruction_files(
+        project, list(files), spawn_daemon=False, mapper=MapperConfig(), daemon=loopback
+    )
     assert daemon_map is not None
 
     monkeypatch.setattr(
@@ -133,7 +123,9 @@ def test_in_process_and_daemon_arms_attribute_files_identically(
         "reporails_cli.core.mapper.daemon_server.get_global_cache_dir", lambda: tmp_path / "cache-in-process"
     )
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.is_daemon_running", lambda: False)
-    in_process_map = mapping.map_instruction_files(project, list(files), spawn_daemon=False, mapper=MapperConfig())
+    in_process_map = mapping.map_instruction_files(
+        project, list(files), spawn_daemon=False, mapper=MapperConfig(), daemon=loopback
+    )
     assert in_process_map is not None
 
     assert _attribution(in_process_map, project) == _attribution(daemon_map, project)

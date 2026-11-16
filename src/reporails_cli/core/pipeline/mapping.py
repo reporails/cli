@@ -52,6 +52,7 @@ from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
 from reporails_cli.core.platform.dto.pipeline import ScopeDiscovery
+from reporails_cli.core.platform.dto.ports import DaemonTransport
 from reporails_cli.core.platform.dto.results import MapperConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.observability.log_levels import quiet_loggers
@@ -387,6 +388,7 @@ def map_instruction_files(
     spawn_daemon: bool = True,
     filtered_agents: list[DetectedAgent] | None = None,
     mapper: MapperConfig,
+    daemon: DaemonTransport,
 ) -> RulesetMap | None:
     """Map instruction files via the whole-map cache, else the daemon, else in-process.
 
@@ -422,16 +424,20 @@ def map_instruction_files(
             _apply_run_context(cached, filtered_agents, target)
             return cached
 
-        daemon_status = _resolve_daemon(emit, spawn_daemon=spawn_daemon)
+        daemon_status = _resolve_daemon(daemon, emit, spawn_daemon=spawn_daemon)
 
-        ruleset_map = _map_via_daemon_or_process(daemon_status, list(instruction_files), target, mapper, emit)
+        ruleset_map = _map_via_daemon_or_process(
+            daemon, daemon_status, list(instruction_files), target, mapper_cfg=mapper, emit=emit
+        )
         if ruleset_map is not None:
             full_cache.put(identity, ruleset_map)  # the map as mapped; a later run with other agents decides again
             _apply_run_context(ruleset_map, filtered_agents, target)
         return ruleset_map
 
 
-def _resolve_daemon(emit: Callable[[str], None], *, spawn_daemon: bool = True) -> DaemonStatus:
+def _resolve_daemon(
+    transport: DaemonTransport, emit: Callable[[str], None], *, spawn_daemon: bool = True
+) -> DaemonStatus:
     """Attach to (or, when allowed, start) the global mapper daemon; return its status.
 
     When ``spawn_daemon`` is False this only ever attaches to an already-running daemon
@@ -440,12 +446,12 @@ def _resolve_daemon(emit: Callable[[str], None], *, spawn_daemon: bool = True) -
     """
     if not spawn_daemon:
         try:
-            pong = ping() if is_daemon_running() else None
+            pong = ping(transport) if is_daemon_running() else None
             attached = serves_this_code(pong)
             if pong is not None and not attached and runs_older_code(pong):
                 # Left over from an older version: retire it so it does not linger; the next
                 # check that may start a daemon starts this version's.
-                retire_daemon(pong.get("pid"))
+                retire_daemon(transport, pong.get("pid"))
         except OSError:
             attached = False
         if not attached:
@@ -454,7 +460,7 @@ def _resolve_daemon(emit: Callable[[str], None], *, spawn_daemon: bool = True) -
         return DaemonStatus.ATTACHED
 
     try:
-        status = ensure_daemon(emit=emit)
+        status = ensure_daemon(transport, emit=emit)
     except (ImportError, OSError):
         return DaemonStatus.UNAVAILABLE
 
@@ -468,7 +474,13 @@ def _resolve_daemon(emit: Callable[[str], None], *, spawn_daemon: bool = True) -
 
 
 def _map_via_daemon_or_process(
-    daemon_status: DaemonStatus, files: list[Path], target: Path, mapper_cfg: MapperConfig, emit: Callable[[str], None]
+    transport: DaemonTransport,
+    daemon_status: DaemonStatus,
+    files: list[Path],
+    target: Path,
+    *,
+    mapper_cfg: MapperConfig,
+    emit: Callable[[str], None],
 ) -> RulesetMap | None:
     """Map via the daemon when attached, else in-process with sub-logger noise quieted."""
 
@@ -479,7 +491,9 @@ def _map_via_daemon_or_process(
         # second, redundant model load) while the freshly-spawned daemon warms a copy it never
         # serves for this run. In-process stays the fallback below only when the daemon is
         # UNAVAILABLE or the round-trip returns None.
-        ruleset_map: RulesetMap | None = map_ruleset_via_daemon(files, target, mapper_cfg.segmentation, progress=emit)
+        ruleset_map: RulesetMap | None = map_ruleset_via_daemon(
+            transport, files, target, mapper_cfg.segmentation, progress=emit
+        )
         if ruleset_map is not None:
             return ruleset_map
         emit("Restarting Reporails...")

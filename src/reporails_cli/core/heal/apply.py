@@ -17,8 +17,8 @@ from reporails_cli.core.platform.contract.http_get import HttpGet
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, RemediationWorkflow, tiers_unpaid
 from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult
 from reporails_cli.core.platform.dto.pipeline import Refusal
-from reporails_cli.core.platform.dto.ports import LintService
-from reporails_cli.core.platform.dto.results import ConfiguredRoot, ProjectConfig
+from reporails_cli.core.platform.dto.ports import DaemonTransport, LintService
+from reporails_cli.core.platform.dto.results import ConfiguredRoot
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.utils.utils import matches_any_glob
 
@@ -124,14 +124,14 @@ def suppressed_by_path(files: Iterable[Path], target: Path) -> dict[Path, set[in
 
 def apply_keyed_heal(
     ruleset_map: RulesetMap | None,
-    target: Path,
+    root: ConfiguredRoot,
     workflow: RemediationWorkflow | None,
     *,
     dry_run: bool,
     allowed_files: Iterable[Path] | None,
     suppressed: Mapping[Path, set[int]] | None,
     environment_for: EnvironmentFor,
-    config: ProjectConfig,
+    daemon: DaemonTransport,
 ) -> KeyedResult:
     """Fix each finding the workflow lists at the place it names; list the places that need a decision.
 
@@ -141,9 +141,10 @@ def apply_keyed_heal(
     """
     if ruleset_map is None or workflow is None:
         return KeyedResult()
+    target, config = root.root, root.config
 
     def remap(files: list[Path]) -> RulesetMap | None:
-        return map_instruction_files(target, files, spawn_daemon=False, mapper=config.mapper)
+        return map_instruction_files(target, files, spawn_daemon=False, mapper=config.mapper, daemon=daemon)
 
     return keyed_heal(
         ruleset_map,
@@ -162,7 +163,9 @@ def heal_workflow_within(
     workflow: RemediationWorkflow | None,
     target: Path,
     root: ConfiguredRoot,
+    *,
     environment_for: EnvironmentFor,
+    daemon: DaemonTransport,
 ) -> KeyedResult:
     """Write the workflow's keyed fixes to the mapped files inside `target`'s scope (`heal_scope_files`).
 
@@ -173,13 +176,13 @@ def heal_workflow_within(
     files = heal_scope_files(files, target, root.root)
     return apply_keyed_heal(
         ruleset_map,
-        root.root,
+        root,
         workflow,
         dry_run=False,
         allowed_files=files,
         suppressed=suppressed_by_path(files, root.root),
         environment_for=environment_for,
-        config=root.config,
+        daemon=daemon,
     )
 
 
@@ -191,13 +194,14 @@ def heal_one(
     environment_for: EnvironmentFor,
     run: RunContext,
     fetch: HttpGet,
+    daemon: DaemonTransport,
 ) -> HealOutcome:
     """Check one file and write the fixes the reply carries for it.
 
     A refused check, a run with no map or no workflow writes nothing and says why in the words
     `ails check --heal` uses.
     """
-    checked = check_path(path, project_root, lint=lint, run=run, fetch=fetch)
+    checked = check_path(path, project_root, lint=lint, run=run, fetch=fetch, daemon=daemon)
     target = Path(path)
     if isinstance(checked, Refusal):
         return HealOutcome(None, checked.text, target.parent)
@@ -219,6 +223,7 @@ def heal_one(
         workflow,
         safe_resolve(target),
         run.configured_root(checked.scope.scan_root),
-        environment_for,
+        environment_for=environment_for,
+        daemon=daemon,
     )
     return HealOutcome(written, "", checked.scope.scan_root)
