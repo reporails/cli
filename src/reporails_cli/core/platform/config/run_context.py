@@ -37,12 +37,11 @@ class RunContext:
         return self._global
 
     def project_config(self, root: Path) -> ProjectConfig:
-        """The merged project config of `root`, read on first use per root."""
-        key = root.resolve()
-        config = self._projects.get(key)
+        """The merged project config of `root`, read on first use per root as spelled."""
+        config = self._projects.get(root)
         if config is None:
             config = get_project_config(root)
-            self._projects[key] = config
+            self._projects[root] = config
         return config
 
     def configured_root(self, root: Path) -> ConfiguredRoot:
@@ -52,10 +51,9 @@ class RunContext:
     def config_documents(self, root: Path) -> tuple[tuple[Path, JsonObject], ...]:
         """The project, local and global config files of `root` as `read_config_file` reads them, read on
         first use per root. Raises `ConfigUnreadableError` for a file that cannot be read."""
-        key = root.resolve()
-        documents = self._documents.get(key)
+        documents = self._documents.get(root)
         if documents is None:
             paths = (get_project_config_path(root), get_local_config_path(root), get_global_config_path())
             documents = tuple((path, read_config_file(path)) for path in paths)
-            self._documents[key] = documents
+            self._documents[root] = documents
         return documents

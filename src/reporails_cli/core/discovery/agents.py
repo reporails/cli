@@ -152,10 +152,9 @@ def detect_agents(run: RunContext, target: Path) -> list[DetectedAgent]:
     Uses config.yml file_types from bundled framework for discovery.
     Per-surface include/exclude and Codex fallback filenames come from the
     project's `.ails/config.yml` (and `.ails/config.local.yml`).
-    Remembered on `run` per target path.
+    Remembered on `run` per target path as written, so two spellings of one linked folder keep their own paths.
     """
-    cache_key = target.resolve()
-    cached = run.agents.get(cache_key)
+    cached = run.agents.get(target)
     if cached is not None:
         return cached
 
@@ -183,7 +182,7 @@ def detect_agents(run: RunContext, target: Path) -> list[DetectedAgent]:
     detected = _disambiguate_codex_generic(detected, target, project_config)
     detected = _disambiguate_shared_files(detected, target)
 
-    run.agents[cache_key] = detected
+    run.agents[target] = detected
     return detected
 
 
