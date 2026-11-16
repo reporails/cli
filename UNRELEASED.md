@@ -58,6 +58,7 @@
 
 - A run's left-out folders and files, and the x-ray view, are read from that run's own config, so an `exclude_dirs` edit shows on the next view of the page.
 - An architecture test fails on any core module that imports a driven adapter, in any import form; core declares the port and the command line, MCP server and x-ray page pass the adapter in.
+- An architecture test fails on any config-file read under core outside the config layer, in any import form.
 - Caches of the bundled rules and agent settings are bounded, read-only and kept per rules folder, and a rules folder outside the bundle is read fresh on each load.
 - CI now runs the model-backed integration tests on a fetched model.
 - Which rules a run reports and each rule's line thresholds come from the config the run already read, so a run reads the project config once.
