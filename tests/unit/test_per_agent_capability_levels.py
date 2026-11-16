@@ -260,7 +260,9 @@ class TestPerAgentSurfaceHelpers:
     @pytest.mark.subsys_gates
     def test_cursor_mcp_json_detected(self, tmp_path: Path) -> None:
         _write(tmp_path, ".cursor/mcp.json", '{"mcpServers": {"db": {"command": "db-mcp"}}}')
-        assert _agent_has_surface(tmp_path, "cursor", "mcp", scan_for_target(RunContext(), tmp_path)) is True
+        assert (
+            _agent_has_surface(RunContext(), tmp_path, "cursor", "mcp", scan_for_target(RunContext(), tmp_path)) is True
+        )
 
     @pytest.mark.unit
     @pytest.mark.subsys_gates
@@ -268,7 +270,7 @@ class TestPerAgentSurfaceHelpers:
         """Codex's hooks live in their own `.codex/hooks.json` — never read by the
         old Claude-only `.claude/hooks` / `.githooks` / settings.json check."""
         _write(tmp_path, ".codex/hooks.json", '{"hooks": {"PreToolUse": [{"matcher": "Bash"}]}}')
-        assert _agent_hook_files(tmp_path, "codex", scan_for_target(RunContext(), tmp_path)) == [
+        assert _agent_hook_files(RunContext(), tmp_path, "codex", scan_for_target(RunContext(), tmp_path)) == [
             tmp_path / ".codex/hooks.json"
         ]
 
@@ -278,7 +280,7 @@ class TestPerAgentSurfaceHelpers:
         """Antigravity's hooks live at `.agents/hooks.json` — a different file from
         its own `.gemini/settings.json` config, and from Claude's hooks path."""
         _write(tmp_path, ".agents/hooks.json", '{"hooks": {"BeforeTool": [{"matcher": "run_shell_command"}]}}')
-        assert _agent_hook_files(tmp_path, "antigravity", scan_for_target(RunContext(), tmp_path)) == [
+        assert _agent_hook_files(RunContext(), tmp_path, "antigravity", scan_for_target(RunContext(), tmp_path)) == [
             tmp_path / ".agents/hooks.json"
         ]
 
@@ -286,12 +288,17 @@ class TestPerAgentSurfaceHelpers:
     @pytest.mark.subsys_gates
     def test_copilot_skills_dir_detected(self, tmp_path: Path) -> None:
         _write(tmp_path, ".github/skills/deploy/SKILL.md", SKILL)
-        assert _agent_has_surface(tmp_path, "copilot", "skills", scan_for_target(RunContext(), tmp_path)) is True
+        assert (
+            _agent_has_surface(RunContext(), tmp_path, "copilot", "skills", scan_for_target(RunContext(), tmp_path))
+            is True
+        )
 
     @pytest.mark.unit
     @pytest.mark.subsys_gates
     def test_agent_with_no_hooks_surface_declared_is_false(self, tmp_path: Path) -> None:
-        assert _agent_hook_files(tmp_path, "not-a-real-agent", scan_for_target(RunContext(), tmp_path)) == []
+        assert (
+            _agent_hook_files(RunContext(), tmp_path, "not-a-real-agent", scan_for_target(RunContext(), tmp_path)) == []
+        )
 
 
 class TestLevelFollowsTheCheckedAgent:

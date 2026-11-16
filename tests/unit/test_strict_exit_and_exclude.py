@@ -97,6 +97,7 @@ class TestExcludeFilesDropsLinkWalked:
         """The @import link walk does not reach a file the run left out."""
         from reporails_cli.core.discovery.exclusions import parse_run_exclusions
         from reporails_cli.core.lint.rule_runner import _classify_agent_files
+        from reporails_cli.core.platform.dto.results import ProjectConfig
 
         (tmp_path / "CLAUDE.md").write_text("# P\n\n@VENDORED.md\n\n@other.md\n", encoding="utf-8")
         (tmp_path / "VENDORED.md").write_text("Always lint.\n", encoding="utf-8")
@@ -105,6 +106,8 @@ class TestExcludeFilesDropsLinkWalked:
         (tmp_path / ".ails" / "config.yml").write_text("generic_scanning: true\n", encoding="utf-8")
         exclusions = parse_run_exclusions(tmp_path, (), ("VENDORED.md",))
 
-        classified = _classify_agent_files(tmp_path, [tmp_path / "CLAUDE.md"], "claude", True, exclusions=exclusions)
+        classified = _classify_agent_files(
+            tmp_path, [tmp_path / "CLAUDE.md"], "claude", ProjectConfig(generic_scanning=True), exclusions=exclusions
+        )
         names = {cf.path.name for cf in classified}
         assert names == {"CLAUDE.md", "other.md"}
