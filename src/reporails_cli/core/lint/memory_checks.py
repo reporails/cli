@@ -13,6 +13,7 @@ from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES
 from reporails_cli.core.mapper.structure import link_targets
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.ruleset import FileRecord
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import NOT_A_MAPPING, read_frontmatter
 
 _FRONTMATTER_REQUIRED = {"name", "description", "type"}
@@ -50,7 +51,7 @@ def _validate_link_target(
         ]
 
     try:
-        target_content = target_path.read_text(encoding="utf-8", errors="replace")
+        target_content = read_file_text(target_path, errors="replace")
     except OSError:
         return []
 
@@ -156,7 +157,7 @@ def validate_memory_files(
             fp = Path.cwd() / fp
 
         try:
-            raw = fp.read_text(encoding="utf-8", errors="replace")
+            raw = read_file_text(fp, errors="replace")
         except OSError:
             continue
 

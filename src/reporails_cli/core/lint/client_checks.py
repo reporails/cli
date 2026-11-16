@@ -22,6 +22,7 @@ from reporails_cli.core.platform.dto.mapping import LineSpans
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.ruleset import RUNNING_TEXT_FORMATS, Atom, RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+from reporails_cli.core.platform.utils.file_read import read_file_text
 
 _PATH_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./-")
 # A bare URL (scheme://rest, no whitespace) — a token that sits inside one is left
@@ -182,7 +183,7 @@ def _relative_display_path(file_path: str) -> str:
 def _source_lines(file_path: str) -> list[str]:
     """The file's lines as written; empty when the file cannot be read."""
     try:
-        return Path(file_path).read_text(encoding="utf-8").split("\n")
+        return read_file_text(Path(file_path)).split("\n")
     except (OSError, UnicodeDecodeError, ValueError):
         return []
 

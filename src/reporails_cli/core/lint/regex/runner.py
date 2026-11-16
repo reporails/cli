@@ -21,6 +21,7 @@ from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, 
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.lint import CompiledCheck, CompiledRuleSet
 from reporails_cli.core.platform.dto.models import LocalFinding
+from reporails_cli.core.platform.utils.file_read import read_file_head, read_file_text
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +60,7 @@ def _resolve_scan_targets(
 def _is_text_file(file_path: Path) -> bool:
     """Quick check if a file is likely text (not binary)."""
     try:
-        with open(file_path, "rb") as f:
-            return b"\x00" not in f.read(8192)
+        return b"\x00" not in read_file_head(file_path, 8192)
     except OSError:
         return False
 
@@ -222,7 +222,7 @@ def _scan_file(
         if file_path.stat().st_size > _MAX_FILE_SIZE:
             logger.debug("Skipping oversized file: %s", file_path)
             return
-        content = file_path.read_text(encoding="utf-8-sig")
+        content = read_file_text(file_path, encoding="utf-8-sig")
     except (OSError, UnicodeDecodeError):
         return
 

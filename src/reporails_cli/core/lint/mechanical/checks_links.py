@@ -10,6 +10,7 @@ from reporails_cli.core.mapper.imports import import_target
 from reporails_cli.core.mapper.structure import link_targets, strip_anchor
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
+from reporails_cli.core.platform.utils.file_read import read_file_text
 
 
 def check_import_targets_exist(
@@ -82,7 +83,7 @@ def extract_markdown_links(
         if not match.is_file():
             continue
         try:
-            text = match.read_text(encoding="utf-8", errors="replace")
+            text = read_file_text(match, errors="replace")
         except OSError:
             continue
         rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else str(match)

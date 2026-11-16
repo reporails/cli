@@ -63,6 +63,7 @@
 - Which rules a run reports and each rule's line thresholds come from the config the run already read, so a run reads the project config once.
 - The Windows check scenarios and the MCP x-ray two-call scenario lose their skip tag. The two-call scenario reads the page while the agent's MCP server still runs, because on Windows the test client ends the server's process tree, the page with it.
 - The rewrite-check tests build named constructs, plain text and the rewrite's map as a real run produces them.
+- The lint checks read rule pages, fixtures and instruction files through the same file and folder readers as the rest of the run.
 - Heal's rewrite check reads each instruction from the map, and a test suite holds rewrites that keep the words but change the meaning.
 - One module reads each file's text or bytes for the checks, and each read keeps the decoding it used before.
 - Three check scenarios guard linked folders: a `.claude/rules` folder linked to a dotfiles folder stays part of `ails check .claude`, a linked file under a `~/.claude` linked to a dotfiles folder keeps its user-level root, and a `~/.claude` folder keeps its findings when the home folder is reached through a link.
