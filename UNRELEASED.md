@@ -60,6 +60,7 @@
 - An architecture test fails on any core module that imports a driven adapter, in any import form; core declares the port and the command line, MCP server and x-ray page pass the adapter in.
 - An architecture test fails on any config-file read under core outside the config layer, in any import form.
 - An architecture test fails on a project-file read, write or folder listing under core outside the modules that own that kind of file.
+- An architecture test fails on a network import or connection call under core outside the driven adapters, in any import form.
 - Caches of the bundled rules and agent settings are bounded, read-only and kept per rules folder, and a rules folder outside the bundle is read fresh on each load.
 - CI now runs the model-backed integration tests on a fetched model.
 - Which rules a run reports and each rule's line thresholds come from the config the run already read, so a run reads the project config once.
