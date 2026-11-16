@@ -57,7 +57,7 @@ def test_test_fetches_the_model_before_running_the_rules(monkeypatch) -> None:
     from reporails_cli.interfaces.cli import check_support as bundled_mod
 
     calls: list[str] = []
-    monkeypatch.setattr(bundled_mod, "ensure_models_available", lambda: calls.append("fetch") or object())
+    monkeypatch.setattr(bundled_mod, "ensure_models_available", lambda _fetch: calls.append("fetch") or object())
     monkeypatch.setattr(harness, "run_harness", lambda *a, **k: calls.append("run") or [])
 
     runner.invoke(app, ["test", "--rule", "CORE:S:0002"])
@@ -72,7 +72,7 @@ def test_test_stops_with_a_short_error_when_the_model_cannot_be_fetched(monkeypa
     from reporails_cli.core.mapper.model_manifest import ModelFetchError
     from reporails_cli.interfaces.cli import check_support as bundled_mod
 
-    def _fail() -> None:
+    def _fail(_fetch) -> None:
         raise ModelFetchError("could not download the reporails model")
 
     monkeypatch.setattr(bundled_mod, "ensure_models_available", _fail)
@@ -92,7 +92,7 @@ def test_test_stops_with_a_short_error_when_offline_and_no_model(monkeypatch) ->
     message instead of failing inside the rule run."""
     from reporails_cli.interfaces.cli import check_support as bundled_mod
 
-    monkeypatch.setattr(bundled_mod, "ensure_models_available", lambda: None)
+    monkeypatch.setattr(bundled_mod, "ensure_models_available", lambda _fetch: None)
 
     result = runner.invoke(app, ["test", "--rule", "CORE:S:0002"])
 

@@ -14,6 +14,7 @@ from reporails_cli.core.platform.config.api_key import has_api_key
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.environment import EnvironmentFor
+from reporails_cli.core.platform.contract.http_get import HttpGet
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, RemediationWorkflow, tiers_unpaid
 from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult
 from reporails_cli.core.platform.dto.pipeline import Refusal
@@ -180,14 +181,20 @@ def heal_workflow_within(
 
 
 def heal_one(
-    path: str, project_root: Path, *, lint: LintService, environment_for: EnvironmentFor, run: RunContext
+    path: str,
+    project_root: Path,
+    *,
+    lint: LintService,
+    environment_for: EnvironmentFor,
+    run: RunContext,
+    fetch: HttpGet,
 ) -> HealOutcome:
     """Check one file and write the fixes the reply carries for it.
 
     A refused check, a run with no map or no workflow writes nothing and says why in the words
     `ails check --heal` uses.
     """
-    checked = check_path(path, project_root, lint=lint, run=run)
+    checked = check_path(path, project_root, lint=lint, run=run, fetch=fetch)
     target = Path(path)
     if isinstance(checked, Refusal):
         return HealOutcome(None, checked.text, target.parent)

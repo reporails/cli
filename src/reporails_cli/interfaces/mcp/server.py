@@ -554,10 +554,13 @@ def _prewarm_models() -> None:
     from reporails_cli.core.mapper.model_store import (  # pylint: disable=import-outside-toplevel  # startup: the model fetch loads off the MCP handshake path
         ensure_models_available,
     )
+    from reporails_cli.core.platform.adapters.http_get import (  # pylint: disable=import-outside-toplevel  # startup: loads off the MCP handshake path
+        http_get,
+    )
 
     # On failure `validate` retries and reports the error to the caller.
     with contextlib.suppress(ModelFetchError):
-        ensure_models_available()
+        ensure_models_available(http_get)
 
 
 def main() -> None:

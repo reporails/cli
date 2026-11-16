@@ -14,6 +14,7 @@ import typer
 from reporails_cli.core.heal.apply import heal_signed_in
 from reporails_cli.core.mapper.model_manifest import ModelFetchError
 from reporails_cli.core.mapper.model_store import ensure_models_available
+from reporails_cli.core.platform.adapters.http_get import http_get
 from reporails_cli.core.platform.config.bootstrap import env_int
 from reporails_cli.core.platform.dto.diagnostics import FunnelError
 from reporails_cli.interfaces.cli.helpers import console
@@ -48,7 +49,7 @@ def _ensure_model_or_exit() -> bool:
 
     remaining = _pause_check_timeout()
     try:
-        model_dir = ensure_models_available()
+        model_dir = ensure_models_available(http_get)
         if model_dir is None:
             print(
                 "No model is on disk and downloads are off (AILS_MODEL_OFFLINE or --offline); "

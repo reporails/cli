@@ -23,21 +23,27 @@ import pytest
 
 from reporails_cli.core.mapper import model_fetch, model_manifest
 from reporails_cli.core.mapper.model_manifest import ModelFetchError
+from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
 
 
 class _Resp:
-    def __init__(self, status_code: int, content: bytes = b"", headers: dict | None = None):
-        self.status_code = status_code
+    """An `HttpReply`: the status, the headers and the body in pieces."""
+
+    def __init__(self, status: int, content: bytes = b"", headers: dict | None = None):
+        self.status = status
         self.content = content
         self.headers = headers or {"content-type": "application/octet-stream"}
 
-    def iter_bytes(self, chunk_size: int = 1 << 20):
-        for i in range(0, len(self.content), chunk_size):
-            yield self.content[i : i + chunk_size]
+    def header(self, name: str) -> str:
+        return self.headers.get(name, "")
+
+    def chunks(self, size: int = 1 << 20):
+        for i in range(0, len(self.content), size):
+            yield self.content[i : i + size]
 
 
 class _FakeClient:
-    """httpx.Client stand-in: streams per-asset bytes, or a scripted override.
+    """A fake `HttpGet`: serves per-asset bytes, or a scripted override.
 
     An override value may be a list of responses, served one per request.
     """
@@ -53,7 +59,8 @@ class _FakeClient:
         return self.ok_bytes + model_fetch.asset_name(rel).encode()
 
     @contextmanager
-    def stream(self, method: str, url: str):
+    def __call__(self, url: str, *, headers, timeout: float):
+        self.headers = dict(headers)
         self.calls.append(url)
         if self._raiser is not None:
             raise self._raiser
@@ -64,21 +71,19 @@ class _FakeClient:
             return
         yield _Resp(200, content=self.ok_bytes + asset.encode())
 
-    def __enter__(self) -> _FakeClient:
-        return self
 
-    def __exit__(self, *a) -> None:
-        return None
+_SERVING: dict[str, _FakeClient] = {}
+
+
+def _served_get(url: str, *, headers, timeout: float):
+    """The `HttpGet` the tests pass in: whichever fake `_use_fake` installed."""
+    return _SERVING["client"](url, headers=headers, timeout=timeout)
 
 
 def _use_fake(monkeypatch, client: _FakeClient) -> None:
     """Serve downloads from *client*, with digests pinned to what it serves."""
-
-    def _client(headers=None):
-        client.headers = headers
-        return client
-
-    monkeypatch.setattr(model_fetch, "_http_client", _client)
+    monkeypatch.setitem(_SERVING, "client", client)
+    monkeypatch.setattr(model_fetch, "_repair_get", _served_get)
     pins = {rel: hashlib.sha256(client.body(rel)).hexdigest() for rel in model_fetch.REQUIRED_RELPATHS}
     monkeypatch.setattr(model_fetch, "FETCH_SHA256", pins)
     monkeypatch.setattr(model_manifest, "FETCH_SHA256", pins)
@@ -113,7 +118,7 @@ def test_cache_hit_skips_download(tmp_path, monkeypatch):
 
     monkeypatch.setattr(model_fetch, "_download_all", _boom)
 
-    assert model_fetch.ensure_models_present() == root
+    assert model_fetch.ensure_models_present(_served_get) == root
 
 
 @pytest.mark.unit
@@ -123,7 +128,7 @@ def test_download_populates_and_passes_integrity(tmp_path, monkeypatch):
     fake = _FakeClient()
     _use_fake(monkeypatch, fake)
 
-    result = model_fetch.ensure_models_present()
+    result = model_fetch.ensure_models_present(_served_get)
 
     assert result == root
     assert model_fetch.models_present(root)
@@ -145,7 +150,7 @@ def test_checksum_mismatch_rejected_and_cache_untouched(tmp_path, monkeypatch):
     fake._overrides[tampered] = _Resp(200, content=b"TAMPERED")
 
     with pytest.raises(ModelFetchError, match="checksum"):
-        model_fetch.ensure_models_present()
+        model_fetch.ensure_models_present(_served_get)
 
     assert not root.exists()
 
@@ -161,7 +166,7 @@ def test_html_interstitial_rejected_and_cache_untouched(tmp_path, monkeypatch):
     _use_fake(monkeypatch, fake)
 
     with pytest.raises(ModelFetchError, match="HTML"):
-        model_fetch.ensure_models_present()
+        model_fetch.ensure_models_present(_served_get)
 
     # No partial artifact survives — the cache dir was never swapped into place.
     assert not root.exists()
@@ -171,11 +176,11 @@ def test_html_interstitial_rejected_and_cache_untouched(tmp_path, monkeypatch):
 @pytest.mark.subsys_map
 def test_host_unreachable_empty_cache_raises_clear_error(tmp_path, monkeypatch):
     root = _cache_at(monkeypatch, tmp_path / "models" / model_fetch.MODEL_VERSION)
-    fake = _FakeClient(raiser=OSError("connection refused"))
+    fake = _FakeClient(raiser=PlatformUnavailableError("connection refused"))
     _use_fake(monkeypatch, fake)
 
     with pytest.raises(ModelFetchError) as exc:
-        model_fetch.ensure_models_present()
+        model_fetch.ensure_models_present(_served_get)
 
     msg = str(exc.value)
     assert "AILS_MODEL_URL" in msg  # points at the override escape hatch
@@ -194,7 +199,7 @@ def test_incomplete_cache_is_repaired(tmp_path, monkeypatch):
     fake = _FakeClient()
     _use_fake(monkeypatch, fake)
 
-    assert model_fetch.ensure_models_present() == root
+    assert model_fetch.ensure_models_present(_served_get) == root
 
     assert model_fetch.models_present(root)
     assert (root / "charge_encoder_encB.onnx").read_bytes() == fake.body("charge_encoder_encB.onnx")
@@ -262,7 +267,7 @@ def _fetch_headers(tmp_path, monkeypatch) -> dict | None:
     _cache_at(monkeypatch, tmp_path / "models" / model_fetch.MODEL_VERSION)
     fake = _FakeClient()
     _use_fake(monkeypatch, fake)
-    model_fetch.ensure_models_present()
+    model_fetch.ensure_models_present(_served_get)
     return fake.headers
 
 
@@ -306,7 +311,7 @@ def test_busy_host_is_retried_after_retry_after(tmp_path, monkeypatch):
     waits: list[float] = []
     monkeypatch.setattr(model_fetch.time, "sleep", waits.append)
 
-    assert model_fetch.ensure_models_present() == root
+    assert model_fetch.ensure_models_present(_served_get) == root
 
     assert waits == [7]
     assert model_fetch.models_present(root)
@@ -323,7 +328,7 @@ def test_busy_host_gives_up_after_bounded_attempts(tmp_path, monkeypatch):
     monkeypatch.setattr(model_fetch.time, "sleep", waits.append)
 
     with pytest.raises(ModelFetchError, match="HTTP 429"):
-        model_fetch.ensure_models_present()
+        model_fetch.ensure_models_present(_served_get)
 
     assert waits == [60] * (model_fetch._MAX_ATTEMPTS - 1)  # Retry-After capped
     assert not root.exists()
@@ -366,7 +371,7 @@ def test_repair_cache_redownloads_only_the_mismatched_file(tmp_path, monkeypatch
     root = _cache_at(monkeypatch, tmp_path / "models" / model_fetch.MODEL_VERSION)
     fake = _FakeClient()
     _use_fake(monkeypatch, fake)
-    model_fetch.ensure_models_present()
+    model_fetch.ensure_models_present(_served_get)
     # Corrupt one cached file in place, same size, wrong content — the
     # presence check (existence + non-zero size) does not catch this.
     good = (root / "charge_encoder_encA.onnx").read_bytes()
@@ -397,7 +402,7 @@ def test_repair_cache_refuses_to_download_when_offline(tmp_path, monkeypatch):
     under offline mode must raise before touching the network, not attempt a
     repair download and only incidentally fail. Distinguishes an early offline
     short-circuit from the generic "download failed" path, which also happens
-    to mention AILS_MODEL_OFFLINE in its hint text but reaches `_http_client` first."""
+    to mention AILS_MODEL_OFFLINE in its hint text but reaches `_repair_get` first."""
     monkeypatch.setenv("AILS_MODEL_OFFLINE", "1")
     root = _cache_at(monkeypatch, tmp_path / "models" / model_fetch.MODEL_VERSION)
     root.mkdir(parents=True)
@@ -412,7 +417,7 @@ def test_repair_cache_refuses_to_download_when_offline(tmp_path, monkeypatch):
         calls.append((a, k))
         raise AssertionError("must not reach the network while AILS_MODEL_OFFLINE is set")
 
-    monkeypatch.setattr(model_fetch, "_http_client", _track)
+    monkeypatch.setattr(model_fetch, "_repair_get", _track)
 
     with pytest.raises(ModelFetchError) as exc_info:
         model_fetch.repair_cache()
@@ -443,7 +448,7 @@ def test_cache_damaged_true_for_a_same_size_corrupted_file(tmp_path, monkeypatch
     _use_fake(monkeypatch, fake)
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
     monkeypatch.delenv("AILS_OFFLINE", raising=False)
-    model_fetch.ensure_models_present()
+    model_fetch.ensure_models_present(_served_get)
     good = (root / "charge_encoder_encA.onnx").read_bytes()
     (root / "charge_encoder_encA.onnx").write_bytes(bytes(b ^ 0xFF for b in good))
 
@@ -458,7 +463,7 @@ def test_cache_damaged_false_when_every_pinned_file_matches(tmp_path, monkeypatc
     _use_fake(monkeypatch, fake)
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
     monkeypatch.delenv("AILS_OFFLINE", raising=False)
-    model_fetch.ensure_models_present()
+    model_fetch.ensure_models_present(_served_get)
 
     assert model_fetch.cache_damaged() is False
 
@@ -478,7 +483,7 @@ def test_repair_cache_skips_the_swap_when_already_valid_after_the_lock(tmp_path,
     root = _cache_at(monkeypatch, tmp_path / "models" / model_fetch.MODEL_VERSION)
     fake = _FakeClient()
     _use_fake(monkeypatch, fake)
-    model_fetch.ensure_models_present()
+    model_fetch.ensure_models_present(_served_get)
     assert model_fetch.cache_damaged() is False  # nothing is actually wrong
 
     called = {"n": 0}
@@ -511,7 +516,7 @@ def test_two_threads_repairing_the_same_corruption_never_get_filenotfound(tmp_pa
     root = _cache_at(monkeypatch, tmp_path / "models" / model_fetch.MODEL_VERSION)
     fake = _FakeClient()
     _use_fake(monkeypatch, fake)
-    model_fetch.ensure_models_present()
+    model_fetch.ensure_models_present(_served_get)
     good = (root / "charge_encoder_encA.onnx").read_bytes()
     (root / "charge_encoder_encA.onnx").write_bytes(bytes(b ^ 0xFF for b in good))
     fake.calls.clear()
@@ -522,18 +527,18 @@ def test_two_threads_repairing_the_same_corruption_never_get_filenotfound(tmp_pa
     # corrupted file back to back.
     thread1_holding = threading.Event()
     release_thread1 = threading.Event()
-    orig_stream = fake.stream
+    orig_stream = fake.__call__
     corrupted_asset = model_fetch.asset_name("charge_encoder_encA.onnx")
 
     @contextmanager
-    def gated_stream(method, url):
+    def gated_stream(url, *, headers, timeout):
         if url.endswith(corrupted_asset):
             thread1_holding.set()
             release_thread1.wait(timeout=5)
-        with orig_stream(method, url) as resp:
+        with orig_stream(url, headers=headers, timeout=timeout) as resp:
             yield resp
 
-    monkeypatch.setattr(fake, "stream", gated_stream)
+    monkeypatch.setitem(_SERVING, "client", gated_stream)
 
     errors: list[BaseException] = []
     results: list[Path] = []
@@ -610,7 +615,7 @@ def test_ensure_downloads_when_absent(tmp_path, monkeypatch, _bundled):
     root = _cache_at(monkeypatch, tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION)
     _use_fake(monkeypatch, _FakeClient())
 
-    assert _bundled.ensure_models_available() == root
+    assert _bundled.ensure_models_available(_served_get) == root
     assert model_fetch.models_present(root)
 
 
@@ -622,7 +627,7 @@ def test_ensure_offline_skips_download(tmp_path, monkeypatch, _bundled):
     _cache_at(monkeypatch, tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION)
     monkeypatch.setattr(model_fetch, "ensure_models_present", _no_fetch)
 
-    assert _bundled.ensure_models_available() is None
+    assert _bundled.ensure_models_available(_served_get) is None
 
 
 @pytest.mark.unit
@@ -636,7 +641,7 @@ def test_ensure_offline_uses_a_model_on_disk(tmp_path, monkeypatch, _bundled):
     monkeypatch.setattr(model_fetch, "FETCH_SHA256", pins)
     monkeypatch.setattr(model_manifest, "FETCH_SHA256", pins)
 
-    assert _bundled.ensure_models_available() == root
+    assert _bundled.ensure_models_available(_served_get) == root
 
 
 @pytest.mark.unit
@@ -649,11 +654,11 @@ def test_ensure_repairs_a_same_size_damaged_file_in_the_cache(tmp_path, monkeypa
     root = _cache_at(monkeypatch, tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION)
     fake = _FakeClient()
     _use_fake(monkeypatch, fake)
-    assert _bundled.ensure_models_available() == root
+    assert _bundled.ensure_models_available(_served_get) == root
     good = (root / "charge_encoder_encA.onnx").read_bytes()
     (root / "charge_encoder_encA.onnx").write_bytes(bytes(b ^ 0xFF for b in good))
 
-    assert _bundled.ensure_models_available() == root
+    assert _bundled.ensure_models_available(_served_get) == root
 
     assert (root / "charge_encoder_encA.onnx").read_bytes() == good
 
@@ -669,12 +674,12 @@ def test_ensure_rehashes_nothing_for_an_unchanged_cache(tmp_path, monkeypatch, _
     monkeypatch.setattr(model_manifest, "get_bundled_path", lambda: tmp_path / "empty")
     root = _cache_at(monkeypatch, tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION)
     _use_fake(monkeypatch, _FakeClient())
-    _bundled.ensure_models_available()  # downloads
-    _bundled.ensure_models_available()  # verifies the set once and records it
+    _bundled.ensure_models_available(_served_get)  # downloads
+    _bundled.ensure_models_available(_served_get)  # verifies the set once and records it
     calls: list[Path] = []
     monkeypatch.setattr(graph_hash, "_hash_file_bytes", lambda p: calls.append(p) or "unused")
 
-    assert _bundled.ensure_models_available() == root
+    assert _bundled.ensure_models_available(_served_get) == root
 
     assert calls == []
 
@@ -689,7 +694,7 @@ def test_ensure_offline_with_a_damaged_cache_raises_the_repair_error(tmp_path, m
     _populate(root)
 
     with pytest.raises(ModelFetchError, match="damaged"):
-        _bundled.ensure_models_available()
+        _bundled.ensure_models_available(_served_get)
 
 
 # ─── `ails check` entry ───────────────────────────────────────────────
@@ -703,7 +708,7 @@ def test_check_exits_2_when_the_model_cannot_be_fetched(tmp_path, monkeypatch):
     from reporails_cli.interfaces.cli import check_support as bundled
     from reporails_cli.interfaces.cli.main import app
 
-    def _fail():
+    def _fail(_fetch):
         raise ModelFetchError("could not download the reporails model from https://host.example: refused")
 
     monkeypatch.setattr(bundled, "ensure_models_available", _fail)
@@ -728,7 +733,7 @@ def test_functional_file_without_a_pin_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(model_manifest, "FETCH_SHA256", pins)
 
     with pytest.raises(ModelFetchError, match="no pinned checksum"):
-        model_fetch.ensure_models_present()
+        model_fetch.ensure_models_present(_served_get)
 
     assert not root.exists()
 
@@ -746,7 +751,7 @@ def test_stale_staging_from_a_killed_run_is_swept(tmp_path, monkeypatch):
     os.utime(stale, (old, old))
     _use_fake(monkeypatch, _FakeClient())
 
-    model_fetch.ensure_models_present()
+    model_fetch.ensure_models_present(_served_get)
 
     assert not stale.exists()
     assert model_fetch.models_present(root)
@@ -808,7 +813,7 @@ def test_parallel_first_run_waits_for_the_peer_and_downloads_nothing(tmp_path, m
     assert peer.stdout is not None and peer.stdout.readline().strip() == "held"
 
     result: list[Path] = []
-    worker = threading.Thread(target=lambda: result.append(model_fetch.ensure_models_present()))
+    worker = threading.Thread(target=lambda: result.append(model_fetch.ensure_models_present(_served_get)))
     worker.start()
     worker.join(timeout=30)
     peer.wait(timeout=30)
@@ -863,7 +868,7 @@ def test_repair_downloads_only_missing_or_mismatched_files(tmp_path, monkeypatch
     (root / "charge_encoder_encB.onnx").unlink()  # deleted
     (root / "multislot_head_encA.onnx").write_bytes(b"CORRUPTED")  # no longer matches its pin
 
-    assert model_fetch.ensure_models_present() == root
+    assert model_fetch.ensure_models_present(_served_get) == root
 
     fetched = {url.rsplit("/", 1)[-1] for url in fake.calls}
     assert fetched == {"charge_encoder_encB.onnx", "multislot_head_encA.onnx", *model_manifest.LICENSE_FILES}
@@ -888,7 +893,7 @@ def test_fetch_keeps_the_previous_model_version_and_prunes_older(tmp_path, monke
         os.utime(d, (now - age, now - age))
     _use_fake(monkeypatch, _FakeClient())
 
-    model_fetch.ensure_models_present()
+    model_fetch.ensure_models_present(_served_get)
 
     remaining = sorted(p.name for p in parent.iterdir() if not p.name.startswith("."))
     assert remaining == sorted([model_fetch.MODEL_VERSION, "m-previous"])
@@ -905,7 +910,7 @@ def _record_ensure(monkeypatch) -> list[float]:
 
     seen: list[float] = []
 
-    def _ensure():
+    def _ensure(_fetch):
         seen.append(signal.getitimer(signal.ITIMER_REAL)[0])
         return None
 
@@ -996,7 +1001,7 @@ def test_fetch_works_where_file_locking_is_unsupported(tmp_path, monkeypatch, re
     root = _cache_at(monkeypatch, tmp_path / "models" / model_fetch.MODEL_VERSION)
     _use_fake(monkeypatch, _FakeClient())
 
-    assert model_fetch.ensure_models_present() == root
+    assert model_fetch.ensure_models_present(_served_get) == root
     assert model_fetch.models_present(root)
     assert not model_fetch.download_in_progress()
     assert [str(w.message) for w in recwarn] == []
@@ -1082,7 +1087,7 @@ def test_a_stalled_download_elsewhere_does_not_block_this_run(tmp_path, monkeypa
     _use_fake(monkeypatch, fake)
     t = _hold_lock_in_thread(root.parent / f".{model_fetch.MODEL_VERSION}.lock", hold_s=3.0)
     try:
-        assert model_fetch.ensure_models_present() == root
+        assert model_fetch.ensure_models_present(_served_get) == root
     finally:
         t.join()
     assert model_fetch.models_present(root)
@@ -1108,7 +1113,7 @@ def test_waiting_stops_once_another_run_has_put_the_model_in_place(tmp_path, mon
     threading.Timer(0.3, _populate, args=(root,)).start()
     start = time.monotonic()
     try:
-        assert model_fetch.ensure_models_present() == root
+        assert model_fetch.ensure_models_present(_served_get) == root
         elapsed = time.monotonic() - start
     finally:
         t.join()
@@ -1130,7 +1135,7 @@ def test_an_unwritable_model_cache_is_reported_as_such(tmp_path, monkeypatch):
     root.parent.chmod(0o555)
     try:
         with pytest.raises(ModelFetchError) as exc:
-            model_fetch.ensure_models_present()
+            model_fetch.ensure_models_present(_served_get)
     finally:
         root.parent.chmod(0o755)
     assert "could not write the model cache" in str(exc.value)
@@ -1151,7 +1156,7 @@ def test_download_in_github_actions_points_at_the_ci_cache(tmp_path, monkeypatch
     _cache_at(monkeypatch, tmp_path / "models" / model_fetch.MODEL_VERSION)
     _use_fake(monkeypatch, _FakeClient())
 
-    model_fetch.ensure_models_present()
+    model_fetch.ensure_models_present(_served_get)
 
     err = capfd.readouterr().err
     assert err.count("docs/configuration.md#caching-the-model-in-ci") == (1 if shown else 0)
@@ -1164,7 +1169,7 @@ def test_cached_model_in_github_actions_prints_nothing(tmp_path, monkeypatch, ca
     root = _cache_at(monkeypatch, tmp_path / "models" / model_fetch.MODEL_VERSION)
     _populate(root)
 
-    model_fetch.ensure_models_present()
+    model_fetch.ensure_models_present(_served_get)
 
     assert capfd.readouterr().err == ""
 
@@ -1182,7 +1187,7 @@ def test_a_missing_licence_file_fails_the_whole_fetch(tmp_path, monkeypatch, nam
     _use_fake(monkeypatch, fake)
 
     with pytest.raises(ModelFetchError, match="HTTP 404"):
-        model_fetch.ensure_models_present()
+        model_fetch.ensure_models_present(_served_get)
 
     assert not root.exists()
 

@@ -71,7 +71,7 @@ def test_resume_check_timeout_skips_rearm_when_nothing_was_left(monkeypatch):
 def test_ensure_model_or_exit_announces_content_checks_skipped(monkeypatch, capsys):
     """REGRESSION: `AILS_MODEL_OFFLINE` with no (or only a partial) model set on
     disk must say content checks were skipped, not score on with no notice."""
-    monkeypatch.setattr(check_support, "ensure_models_available", lambda: None)
+    monkeypatch.setattr(check_support, "ensure_models_available", lambda _fetch: None)
 
     assert check_support._ensure_model_or_exit() is False
 
@@ -85,7 +85,7 @@ def test_ensure_model_or_exit_announces_content_checks_skipped(monkeypatch, caps
 def test_ensure_model_or_exit_is_silent_when_the_model_is_available(monkeypatch, capsys):
     from pathlib import Path
 
-    monkeypatch.setattr(check_support, "ensure_models_available", lambda: Path("/some/model/dir"))
+    monkeypatch.setattr(check_support, "ensure_models_available", lambda _fetch: Path("/some/model/dir"))
 
     assert check_support._ensure_model_or_exit() is True
 

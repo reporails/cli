@@ -69,3 +69,4 @@
 - The folder-target check tests run each target from the folder its project roots at, and name a nested root by running from it.
 
 - A check scenario guards the x-ray page checking a rule file written while the page is open.
+- Model downloads and the x-ray page's running-page probe go through one HTTP port the command line, MCP server and x-ray page pass in.

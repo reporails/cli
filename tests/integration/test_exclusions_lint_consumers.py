@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli.main import app
 from reporails_cli.interfaces.mcp import tools
 
@@ -92,7 +93,7 @@ def test_left_out_files_are_not_checked(tmp_path: Path, case: str, config: str, 
     payload = (
         _cli(project, *flags)
         if surface == "cli"
-        else tools.run_pipeline_for_path(str(project), full=True, project_root=project)[0]
+        else tools.run_pipeline_for_path(str(project), full=True, project_root=project, run=RunContext())[0]
     )
     named = _named_paths(payload)
     assert "CLAUDE.md" in named

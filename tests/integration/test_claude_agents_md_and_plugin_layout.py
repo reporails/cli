@@ -160,7 +160,9 @@ def test_claude_as_the_projects_agent_reads_an_agents_md_only_project(
 
     _write(project, ".ails/config.yml", "default_agent: claude\n")
     cli = _json(monkeypatch, project)
-    assert _tuples(cli) == _tuples(tools.run_pipeline_for_path(str(project), full=True, project_root=project)[0])
+    assert _tuples(cli) == _tuples(
+        tools.run_pipeline_for_path(str(project), full=True, project_root=project, run=RunContext())[0]
+    )
 
 
 # ── 2. the same plus a CLAUDE.md ─────────────────────────────────────

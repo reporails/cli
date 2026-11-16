@@ -17,17 +17,23 @@ from reporails_cli.interfaces.mcp import tools
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_server]
 
 
+def _no_fetch(url: str, *, headers: object, timeout: float) -> object:
+    raise AssertionError(f"the model host must not be reached: {url}")
+
+
 @pytest.fixture
 def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "proj"
     (root / ".ails").mkdir(parents=True)
     monkeypatch.setattr(check_one, "is_initialized", lambda: True)
-    monkeypatch.setattr(check_one, "model_refusal", lambda: None)
+    monkeypatch.setattr(check_one, "model_refusal", lambda _fetch: None)
     return root
 
 
 def _refused(path: Path) -> Refusal:
-    refusal = check_path(str(path), path if path.is_dir() else path.parent, lint=ServerLint(), run=RunContext())
+    refusal = check_path(
+        str(path), path if path.is_dir() else path.parent, lint=ServerLint(), run=RunContext(), fetch=_no_fetch
+    )
     assert isinstance(refusal, Refusal)
     return refusal
 
@@ -61,7 +67,7 @@ def test_model_not_ready_refusals_carry_a_sentence_and_mcp_keeps_its_own_wording
     monkeypatch.undo()
     monkeypatch.setattr(check_one, "models_present", lambda _p: False)
     monkeypatch.setattr(model_fetch, "download_in_progress", lambda: True)
-    downloading = check_one.model_refusal()
+    downloading = check_one.model_refusal(_no_fetch)
     assert downloading is not None and downloading.kind == "model_downloading"
     assert downloading.text and "validate" not in downloading.text
     assert "Call validate again" in str(tools.refusal_payload(downloading)["message"])

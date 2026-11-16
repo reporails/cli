@@ -13,6 +13,7 @@ from pathlib import Path
 
 from reporails_cli.core.mapper import model_fetch, model_manifest
 from reporails_cli.core.mapper.graph_hash import graph_content_hash
+from reporails_cli.core.platform.contract.http_get import HttpGet
 
 # `reload_after_repair` coordination: threads failing on the same damaged file at
 # the same moment share one repair (the first is the leader, the rest wait for it
@@ -57,7 +58,7 @@ _known_unrepairable: dict[str, tuple[_Fingerprint, str, float]] = {}
 _repair_generation: dict[str, int] = {}
 
 
-def ensure_models_available() -> Path | None:
+def ensure_models_available(fetch: HttpGet) -> Path | None:
     """Make the model set available on disk, downloading it once if needed.
 
     Returns the model directory, or ``None`` when ``AILS_MODEL_OFFLINE`` is set
@@ -71,7 +72,7 @@ def ensure_models_available() -> Path | None:
         return path
     if model_fetch.offline_requested():
         return None
-    return model_fetch.ensure_models_present(model_manifest.MODEL_VERSION)
+    return model_fetch.ensure_models_present(fetch, model_manifest.MODEL_VERSION)
 
 
 def _repair_if_damaged(root: Path) -> None:

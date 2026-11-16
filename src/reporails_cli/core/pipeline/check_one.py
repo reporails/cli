@@ -29,6 +29,7 @@ from reporails_cli.core.pipeline.mapping import (
 )
 from reporails_cli.core.platform.config.config import get_rules_path, is_initialized
 from reporails_cli.core.platform.config.run_context import RunContext
+from reporails_cli.core.platform.contract.http_get import HttpGet
 from reporails_cli.core.platform.dto.diagnostics import FindingItem, FunnelError, LintResponse, LintResult, Notice
 from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
 from reporails_cli.core.platform.dto.models import LocalFinding
@@ -162,7 +163,7 @@ def build_map(
         return None, f"{type(exc).__name__}: {exc}"
 
 
-def model_refusal() -> Refusal | None:
+def model_refusal(fetch: HttpGet) -> Refusal | None:
     """Make the model set available (downloading it once); a `Refusal` if it is not.
 
     While a download already runs in this process (the server's launch-time fetch), answer
@@ -184,14 +185,14 @@ def model_refusal() -> Refusal | None:
             "The model files are still downloading; try again shortly.",
         )
     try:
-        ensure_models_available()
+        ensure_models_available(fetch)
     except ModelFetchError as exc:
         return Refusal("model_unavailable", str(exc))
     return None
 
 
 def scope_for_path(
-    path: str, project_root: Path, named: frozenset[Path] = frozenset(), *, run: RunContext
+    path: str, project_root: Path, named: frozenset[Path] = frozenset(), *, run: RunContext, fetch: HttpGet
 ) -> Scope | Refusal:
     """The files a check at `path` covers, or why there is nothing to check.
 
@@ -211,7 +212,7 @@ def scope_for_path(
     discovery = discover_files(run, scan_root, single_file=single_file, named=named)
     if isinstance(discovery, Refusal):
         return discovery
-    model_error = model_refusal()
+    model_error = model_refusal(fetch)
     if model_error is not None:
         return model_error
     if single_file is None and target != scan_root and target.is_relative_to(scan_root):
@@ -416,7 +417,13 @@ def file_findings(run: CheckRun, file: Path) -> tuple[FindingItem, ...]:
 
 
 def check_path(
-    path: str, project_root: Path, named: frozenset[Path] = frozenset(), *, lint: LintService, run: RunContext
+    path: str,
+    project_root: Path,
+    named: frozenset[Path] = frozenset(),
+    *,
+    lint: LintService,
+    run: RunContext,
+    fetch: HttpGet,
 ) -> CheckRun | Refusal:
     """Check `path` (directory or file): the `CheckRun`, or the `Refusal` saying why nothing was checked.
 
@@ -424,7 +431,7 @@ def check_path(
     missing file, a bad value or a runtime failure while checking is a `failed` refusal carrying its text.
     """
     try:
-        scope = scope_for_path(path, project_root, named, run=run)
+        scope = scope_for_path(path, project_root, named, run=run, fetch=fetch)
         if isinstance(scope, Refusal):
             return scope
         return check_scope(run, scope, lint)

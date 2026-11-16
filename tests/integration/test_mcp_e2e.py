@@ -20,6 +20,8 @@ from unittest.mock import patch
 
 import pytest
 
+from reporails_cli.core.platform.config.run_context import RunContext
+
 # ---------------------------------------------------------------------------
 # Skip markers
 # ---------------------------------------------------------------------------
@@ -1224,7 +1226,9 @@ class TestPreservationWiring:
         bounded_before = _bounded_reply(target)
         assert "preservation" not in bounded_before, "not yet briefed"
 
-        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True, project_root=tmp_path)
+        _payload, ruleset_map, score = tools.run_pipeline_for_path(
+            str(target), True, project_root=tmp_path, run=RunContext()
+        )
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
         bounded_after = _bounded_reply(target)
@@ -1245,7 +1249,9 @@ class TestPreservationWiring:
 
         target = tmp_path / "CLAUDE.md"
         target.write_text("## Don'ts\n\n- Use mock objects in tests.\n- Use test doubles in the test suite.\n")
-        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True, project_root=tmp_path)
+        _payload, ruleset_map, score = tools.run_pipeline_for_path(
+            str(target), True, project_root=tmp_path, run=RunContext()
+        )
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
         target.write_text(
@@ -1269,7 +1275,9 @@ class TestPreservationWiring:
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Project\n\nNever commit secrets.\n")
 
-        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True, project_root=tmp_path)
+        _payload, ruleset_map, score = tools.run_pipeline_for_path(
+            str(target), True, project_root=tmp_path, run=RunContext()
+        )
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
         calls = {"n": 0}
@@ -1572,7 +1580,9 @@ class TestFeedbackWiring:
         bounded_before = _bounded_reply(target)
         assert "feedback" not in bounded_before, "not yet briefed"
 
-        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True, project_root=tmp_path)
+        _payload, ruleset_map, score = tools.run_pipeline_for_path(
+            str(target), True, project_root=tmp_path, run=RunContext()
+        )
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
         bounded_after = _bounded_reply(target)

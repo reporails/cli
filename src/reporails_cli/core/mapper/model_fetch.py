@@ -28,7 +28,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -51,6 +51,7 @@ from reporails_cli.core.platform.config.bootstrap import (
     running_in_github_actions,
 )
 from reporails_cli.core.platform.config.bootstrap import offline_requested as run_offline_requested
+from reporails_cli.core.platform.contract.http_get import HttpGet, HttpReply
 
 # ─── Host ───────────────────────────────────────────────────
 
@@ -72,6 +73,7 @@ _CHUNK = 1 << 20
 # this many attempts per file.
 _RETRY_STATUSES = frozenset({429, 503})
 _MAX_ATTEMPTS = 3
+_TIMEOUT_S = 120.0
 _MAX_RETRY_WAIT_S = 60
 
 # Printed with the download banner in GitHub Actions, where every run starts
@@ -211,7 +213,7 @@ def download_in_progress() -> bool:
     return False
 
 
-def ensure_models_present(version: str = MODEL_VERSION) -> Path:
+def ensure_models_present(fetch: HttpGet, version: str = MODEL_VERSION) -> Path:
     """Return the cache dir for *version*, fetching the set first if absent.
 
     Idempotent: a populated cache is returned untouched (silent, offline); an empty or
@@ -224,7 +226,7 @@ def ensure_models_present(version: str = MODEL_VERSION) -> Path:
     try:
         with _fetch_lock(root.parent, version):
             if not models_present(root):
-                _download_all(root, version)
+                _download_all(root, version, fetch)
     except OSError as exc:
         raise ModelFetchError(f"could not create the model cache at {root.parent}: {exc}") from exc
     return root
@@ -249,7 +251,7 @@ def repair_cache(version: str = MODEL_VERSION) -> Path:
     try:
         with _fetch_lock(root.parent, version):
             if _verified_files(root) != frozenset(FETCH_SHA256):
-                _download_all(root, version, force=True)
+                _download_all(root, version, _repair_get, force=True)
     except OSError as exc:
         raise ModelFetchError(f"could not repair the model cache at {root.parent}: {exc}") from exc
     return root
@@ -323,7 +325,7 @@ def check_response_head(rel: str, url: str, content_type: str, head: bytes) -> N
         )
 
 
-def _download_one(client: httpx.Client, base: str, rel: str, target: Path) -> None:
+def _download_one(fetch: HttpGet, headers: Mapping[str, str], base: str, rel: str, target: Path) -> None:
     """Stream one file to *target*, verifying its pinned sha256 when one is set.
 
     A busy-host answer (429 / 503) is retried after its ``Retry-After`` (capped), up to
@@ -331,15 +333,15 @@ def _download_one(client: httpx.Client, base: str, rel: str, target: Path) -> No
     url = _remote_url(base, rel)
     target.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(1, _MAX_ATTEMPTS + 1):
-        with client.stream("GET", url) as resp:
-            status = resp.status_code
+        with fetch(url, headers=headers, timeout=_TIMEOUT_S) as resp:
+            status = resp.status
             if status == 200:
                 actual = _write_body(resp, rel, url, target)
                 break
             if status not in _RETRY_STATUSES or attempt == _MAX_ATTEMPTS:
                 busy = " — the model host is busy; try again in a minute" if status in _RETRY_STATUSES else ""
                 raise ModelFetchError(f"fetch of {rel} failed: HTTP {status} from {url}{busy}")
-            wait = _retry_wait(resp.headers.get("retry-after", ""))
+            wait = _retry_wait(resp.header("retry-after"))
         _print(f"  model host busy (HTTP {status}), retrying in {wait}s…")
         time.sleep(wait)
     expected = FETCH_SHA256.get(rel)
@@ -351,12 +353,12 @@ def _download_one(client: httpx.Client, base: str, rel: str, target: Path) -> No
         )
 
 
-def _write_body(resp: httpx.Response, rel: str, url: str, target: Path) -> str:
+def _write_body(resp: HttpReply, rel: str, url: str, target: Path) -> str:
     """Stream a 200 response body to *target*; return its sha256 hex digest."""
     digest = hashlib.sha256()
-    chunks = resp.iter_bytes(_CHUNK)
+    chunks = resp.chunks()
     head = next(chunks, b"")
-    check_response_head(rel, url, resp.headers.get("content-type", ""), head)
+    check_response_head(rel, url, resp.header("content-type"), head)
     with target.open("wb") as out:
         out.write(head)
         digest.update(head)
@@ -375,7 +377,7 @@ def _retry_wait(retry_after: str) -> int:
     return max(1, min(seconds, _MAX_RETRY_WAIT_S))
 
 
-def _download_all(root: Path, version: str, *, force: bool = False) -> None:
+def _download_all(root: Path, version: str, fetch: HttpGet, *, force: bool = False) -> None:
     """Download the set into a temp staging dir, then swap it into place.
 
     Staging into a sibling temp dir and renaming makes the swap safe: each run stages into
@@ -401,14 +403,14 @@ def _download_all(root: Path, version: str, *, force: bool = False) -> None:
         if running_in_github_actions():
             _print(_CI_CACHE_HINT)
         staging = Path(tempfile.mkdtemp(prefix=f".{version}.staging.", dir=parent))
-        with _http_client(_auth_headers(base, version)) as client:
-            for i, rel in enumerate(FETCH_RELPATHS, start=1):
-                if rel in kept:
-                    _print(f"  [{i}/{total}] {rel} (kept)")
-                    _link_or_copy(root / rel, staging / rel)
-                    continue
-                _print(f"  [{i}/{total}] {rel}")
-                _download_one(client, base, rel, staging / rel)
+        headers = _auth_headers(base, version)
+        for i, rel in enumerate(FETCH_RELPATHS, start=1):
+            if rel in kept:
+                _print(f"  [{i}/{total}] {rel} (kept)")
+                _link_or_copy(root / rel, staging / rel)
+                continue
+            _print(f"  [{i}/{total}] {rel}")
+            _download_one(fetch, headers, base, rel, staging / rel)
 
         if not models_present(staging):
             missing = [r for r in REQUIRED_RELPATHS if not (staging / r).is_file()]
@@ -515,8 +517,30 @@ def _swap_into_place(staging: Path, root: Path, *, force: bool = False) -> None:
         raise
 
 
-def _http_client(headers: dict[str, str] | None = None) -> httpx.Client:
-    return httpx.Client(timeout=120.0, follow_redirects=True, headers=headers)
+class _RepairReply:
+    """A streamed `httpx` response read as an `HttpReply`."""
+
+    def __init__(self, response: httpx.Response) -> None:
+        self._response = response
+        self.status = response.status_code
+
+    def header(self, name: str) -> str:
+        """The value of response header `name`, or an empty string."""
+        return str(self._response.headers.get(name, ""))
+
+    def chunks(self) -> Iterator[bytes]:
+        """The body in pieces."""
+        return self._response.iter_bytes(_CHUNK)
+
+
+@contextmanager
+def _repair_get(url: str, *, headers: Mapping[str, str], timeout: float) -> Iterator[HttpReply]:
+    """The repair download's own GET: the in-load repair has no port yet, so it reads through `httpx` here."""
+    with (
+        httpx.Client(timeout=timeout, follow_redirects=True, headers=dict(headers)) as client,
+        client.stream("GET", url) as response,
+    ):
+        yield _RepairReply(response)
 
 
 def _print(msg: str) -> None:

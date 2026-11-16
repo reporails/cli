@@ -115,7 +115,7 @@ def test_prepare_and_validate_map_the_same_files_for_a_named_left_out_file(monke
         seen.append((target, sorted(files)))
 
     monkeypatch.setattr(check_one, "is_initialized", lambda: True)
-    monkeypatch.setattr(check_one, "model_refusal", lambda: None)
+    monkeypatch.setattr(check_one, "model_refusal", lambda _fetch: None)
     monkeypatch.setattr(check_one, "map_instruction_files", capture)
     monkeypatch.setattr(check_one, "check_and_assemble", lambda *_a, **_k: (CombinedResult(), None))
     tokens = ("packages/x/CLAUDE.md",)

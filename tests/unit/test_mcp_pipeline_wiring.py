@@ -69,7 +69,7 @@ def test_run_pipeline_for_path_scopes_a_single_file_target(monkeypatch, tmp_path
         ),
     )
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.is_initialized", lambda: True)
-    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.model_refusal", lambda: None)
+    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.model_refusal", lambda _fetch: None)
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.build_map", lambda *_a, **_k: (None, None))
     monkeypatch.setattr(
         "reporails_cli.core.lint.rule_runner.run_m_probes",
@@ -100,7 +100,7 @@ def test_run_pipeline_for_path_does_not_scope_a_directory_target(monkeypatch, tm
         ),
     )
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.is_initialized", lambda: True)
-    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.model_refusal", lambda: None)
+    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.model_refusal", lambda _fetch: None)
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.build_map", lambda *_a, **_k: (None, None))
     monkeypatch.setattr(
         "reporails_cli.core.lint.rule_runner.run_m_probes",
@@ -513,7 +513,7 @@ def test_validate_result_names_a_rule_file_written_between_two_calls(monkeypatch
     """A rule file written after a first `validate` is in the next call's result, with nothing cleared."""
     monkeypatch.setenv("AILS_OFFLINE", "1")
     monkeypatch.setattr(check_one, "is_initialized", lambda: True)
-    monkeypatch.setattr(check_one, "model_refusal", lambda: None)
+    monkeypatch.setattr(check_one, "model_refusal", lambda _fetch: None)
     monkeypatch.setattr(check_one, "build_map", lambda *_a, **_k: (None, None))
     (tmp_path / "CLAUDE.md").write_text("# Project\n\nmaybe you could possibly consider perhaps running tests\n")
 

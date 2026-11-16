@@ -22,6 +22,7 @@ from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.environment import EnvironmentFor
+from reporails_cli.core.platform.contract.http_get import HttpGet
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult
 from reporails_cli.core.platform.dto.pipeline import Refusal
@@ -86,13 +87,13 @@ def project(tmp_path: Path) -> Path:
 def calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
     seen = Calls()
 
-    def fake_check(path: str, root: Path, *, lint: LintService, run: RunContext) -> Refusal:
+    def fake_check(path: str, root: Path, *, lint: LintService, run: RunContext, fetch: HttpGet) -> Refusal:
         seen.checked.append(path)
         seen.roots.append(root)
         return Refusal("failed", "fake refusal")
 
     def fake_heal(
-        path: str, root: Path, *, lint: LintService, run: RunContext, environment_for: EnvironmentFor
+        path: str, root: Path, *, lint: LintService, run: RunContext, fetch: HttpGet, environment_for: EnvironmentFor
     ) -> HealOutcome:
         seen.healed.append(path)
         seen.roots.append(root)
@@ -203,7 +204,7 @@ def test_check_reports_a_refusal_as_400_and_a_file_as_its_findings(
         pass
 
     finding = FindingItem(file="CLAUDE.md", line=3, severity="warning", rule="CORE:C:0053", message="Say it plainly")
-    monkeypatch.setattr(xray_server, "check_path", lambda path, root, *, lint, run: Run())
+    monkeypatch.setattr(xray_server, "check_path", lambda path, root, *, lint, run, fetch: Run())
     monkeypatch.setattr(xray_server, "file_findings", lambda run, file: (finding,))
     reply = client.post("/check", json={"path": "CLAUDE.md"}, headers={"X-Xray-Token": TOKEN, "Origin": ORIGIN})
     assert reply.json()["findings"] == 1
@@ -241,7 +242,7 @@ def test_the_launch_check_fills_every_files_tally_and_moves_the_version(
         result=SimpleNamespace(findings=[finding, other]),
         scope=SimpleNamespace(scan_root=project.resolve(), instruction_files=[project / "CLAUDE.md"]),
     )
-    monkeypatch.setattr(xray_server, "check_path", lambda path, root, *, lint, run, fixture=run: fixture)
+    monkeypatch.setattr(xray_server, "check_path", lambda path, root, *, lint, run, fetch, fixture=run: fixture)
     app = xray_server.build_app(
         project,
         tmp_path / "session" / "session.jsonl",
@@ -274,7 +275,9 @@ def _resolutions_of_one_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, r
     older.write_text(json.dumps(TYPED_PROMPT) + "\n", encoding="utf-8")
     newer = claude_project_dir(root) / "newer.jsonl"
     shutil.copy(FIXTURES / "session.jsonl", newer)
-    monkeypatch.setattr(xray_server, "check_path", lambda path, root, *, lint, run: Refusal("failed", "fake refusal"))
+    monkeypatch.setattr(
+        xray_server, "check_path", lambda path, root, *, lint, run, fetch: Refusal("failed", "fake refusal")
+    )
     app = xray_server.build_app(
         root, newer, picked="newest", token=TOKEN, launch=LAUNCH, port=PORT, requests=xray_launch.RequestClock()
     )
@@ -315,7 +318,7 @@ def test_the_launch_check_starts_only_after_the_first_view_is_answered(
 ) -> None:
     started = threading.Event()
 
-    def check(path: str, root: Path, *, lint: LintService, run: RunContext) -> Refusal:
+    def check(path: str, root: Path, *, lint: LintService, run: RunContext, fetch: HttpGet) -> Refusal:
         started.set()
         return Refusal("failed", "no model")
 
@@ -345,9 +348,9 @@ def test_the_first_view_on_a_long_session_is_answered_in_under_two_seconds_besid
     real_check = xray_server.check_path
     checking: list[str] = []
 
-    def watched_check(path: str, root: Path, *, lint: LintService, run: RunContext) -> Any:
+    def watched_check(path: str, root: Path, *, lint: LintService, run: RunContext, fetch: HttpGet) -> Any:
         checking.append(path)
-        return real_check(path, root, lint=lint, run=run)
+        return real_check(path, root, lint=lint, run=run, fetch=fetch)
 
     monkeypatch.setattr(xray_server, "check_path", watched_check)
     app = xray_server.build_app(
@@ -416,7 +419,7 @@ def test_the_view_says_running_until_the_launch_check_lands_and_the_version_move
 ) -> None:
     release = threading.Event()
 
-    def slow_check(path: str, root: Path, *, lint: LintService, run: RunContext) -> Refusal:
+    def slow_check(path: str, root: Path, *, lint: LintService, run: RunContext, fetch: HttpGet) -> Refusal:
         release.wait(5)
         return Refusal("failed", "no model")
 
@@ -448,7 +451,7 @@ def test_heal_replies_with_the_receipt_or_the_reason_nothing_was_written(
     monkeypatch.setattr(
         xray_server,
         "heal_one",
-        lambda path, root, *, lint, run, environment_for: HealOutcome(
+        lambda path, root, *, lint, run, fetch, environment_for: HealOutcome(
             None, "Applying fixes needs a Pro account.", Path()
         ),
     )
@@ -484,7 +487,7 @@ def _real_heal(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     result = SimpleNamespace(reply=reply, offline=False)
     run = SimpleNamespace(ruleset_map=m, result=result, funnel_error=None, scope=SimpleNamespace(scan_root=project))
     monkeypatch.setattr(
-        "reporails_cli.core.heal.apply.check_path", lambda _path, _root, *, lint, run, fixture=run: fixture
+        "reporails_cli.core.heal.apply.check_path", lambda _path, _root, *, lint, run, fetch, fixture=run: fixture
     )
 
 
@@ -763,7 +766,7 @@ def _server(project: Path, tmp_path: Path) -> xray_server.XrayServer:
 def test_a_launch_check_that_fails_unexpectedly_lands_as_refused_with_the_error_text(
     project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    def boom(path: str, root: Path, *, lint: LintService, run: RunContext) -> None:
+    def boom(path: str, root: Path, *, lint: LintService, run: RunContext, fetch: HttpGet) -> None:
         raise PermissionError("no read access")
 
     monkeypatch.setattr(xray_server, "check_path", boom)
@@ -784,11 +787,11 @@ def test_a_heal_ordered_after_the_launch_check_keeps_its_dropped_tally(
         result=SimpleNamespace(findings=[]),
         scope=SimpleNamespace(scan_root=project.resolve(), instruction_files=[project / "CLAUDE.md"]),
     )
-    monkeypatch.setattr(xray_server, "check_path", lambda path, root, *, lint, run, fixture=run: fixture)
+    monkeypatch.setattr(xray_server, "check_path", lambda path, root, *, lint, run, fetch, fixture=run: fixture)
     monkeypatch.setattr(
         xray_server,
         "heal_one",
-        lambda path, root, *, lint, run, environment_for: HealOutcome(KeyedResult(), "", project),
+        lambda path, root, *, lint, run, fetch, environment_for: HealOutcome(KeyedResult(), "", project),
     )
     server = _server(project, tmp_path)
     tallies_of = xray_server.tallies_by_file

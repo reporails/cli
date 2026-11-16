@@ -29,7 +29,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root.mkdir()
     (root / "CLAUDE.md").write_text("# Project\n\nAlways run the tests.\n", encoding="utf-8")
     monkeypatch.setattr(check_one, "is_initialized", lambda: True)
-    monkeypatch.setattr(check_one, "model_refusal", lambda: None)
+    monkeypatch.setattr(check_one, "model_refusal", lambda _fetch: None)
     return root
 
 
@@ -56,7 +56,7 @@ def test_prepare_builds_no_api_client_and_leaves_the_validate_state_alone(projec
 
 def test_prepare_passes_model_downloading_through_without_mapping(project, monkeypatch):
     reply = {"error": "model_downloading", "message": tools._MODEL_DOWNLOADING}
-    monkeypatch.setattr(check_one, "model_refusal", lambda: Refusal("model_downloading", "downloading"))
+    monkeypatch.setattr(check_one, "model_refusal", lambda _fetch: Refusal("model_downloading", "downloading"))
 
     def refuse(*_a, **_k):
         raise AssertionError("no map while the model downloads")
@@ -83,7 +83,7 @@ def test_prepare_on_a_project_with_nothing_to_map_answers_zero(tmp_path, monkeyp
     empty = tmp_path / "empty"
     empty.mkdir()
     monkeypatch.setattr(check_one, "is_initialized", lambda: True)
-    monkeypatch.setattr(check_one, "model_refusal", lambda: None)
+    monkeypatch.setattr(check_one, "model_refusal", lambda _fetch: None)
     assert prepare_for_path(str(empty), None, empty) == {"files": 0}
 
 
