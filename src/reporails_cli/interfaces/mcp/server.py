@@ -347,13 +347,6 @@ async def _validate_reply(
 # Server + tool registration (mcp 2.x high-level).
 # ─────────────────────────────────────────────────────────────────────
 
-# `MCPServer`'s own `version` defaults to `""` when not passed, so `initialize`'s
-# `serverInfo.version` was always empty — a caller has no way to tell which server build it
-# is talking to. `StrictArgsMCPServer` also closes a related gap: an unknown tool argument.
-# The models this server process loads; the idle release unloads them.
-process_models = Models(http_get)
-server = StrictArgsMCPServer("ails", version=installed_version(), lifespan=lifespan_releasing(process_models))
-
 _READ_ONLY = ToolAnnotations(read_only_hint=True)
 
 
@@ -375,46 +368,44 @@ def _text_result(text: str) -> CallToolResult:
     return CallToolResult(content=[TextContent(type="text", text=text)])
 
 
-@server.tool(
-    name="validate",
-    description=(
-        "Validate AI instruction files at `path` (directory or single file)."
-        " Returns JSON with findings, per-finding fix text, a `quality` score,"
-        " tier, per-surface category breakdown, and cross-file analysis."
-        " On a Pro account the default reply is a short text view instead: its lines name the"
-        " reply's fields (`workflow.locations`, `workflow.listed`, `surface_health`, `notices`,"
-        " `preservation`, `feedback`, ...) and `full=true` returns the JSON."
-        " The default response is bounded (top findings per file plus whole"
-        " `stats` / `surface_health`). On a paid tier the response carries a"
-        " `workflow` — the ordered locations to rewrite, each without its findings — and"
-        " the per-file finding lists are withheld (each file keeps its `count`)."
-        " Call `remedy_brief(path, location)` for a location's rewrite brief, one kind at a time,"
-        " or `full=true` for every finding. `targets` narrows the locations, the per-file"
-        " findings, and the cross-file entries and pair counts to those holding the named"
-        " files, read the way `ails check` reads its targets — `skills`, `skills:<name>`,"
-        " `agents:<name>`, `@main`,"
-        " a path (the whole project is still diagnosed and its score and stats stay"
-        " whole-project; pass the same `targets` to `remedy_brief`); a targeted view carries its"
-        " locations' findings and relations in this reply when they fit, and otherwise"
-        " `truncated.hint` names `remedy_brief`, which serves them. After"
-        " rewriting a briefed location's files, call"
-        " validate again with `path` set to each rewritten file: the reply then carries a"
-        " `preservation` block saying whether the rewrite kept everything the file had and how many findings it"
-        " `introduced`, an `accepted` flag (true when the file is kept: it kept everything, matches its plan"
-        " and did not lower the score), and a"
-        " `feedback` list of the file's remaining findings, with any problem the rewrite newly"
-        " introduced listed first."
-        " `notices`, when present, are short messages for the user: either about their account"
-        " (for example a failed payment) or an announcement from reporails, marked"
-        ' `kind: "promo"` (a `promo:` line in the text view). Show each one to the user,'
-        " presenting an announcement as an announcement, not as an account message."
-        " `AILS_NO_PROMO=1` in the server's environment leaves announcements out."
-        " Use when user asks to check, validate, or improve instruction files."
-    ),
-    annotations=_READ_ONLY,
+_VALIDATE_DESCRIPTION = (
+    "Validate AI instruction files at `path` (directory or single file)."
+    " Returns JSON with findings, per-finding fix text, a `quality` score,"
+    " tier, per-surface category breakdown, and cross-file analysis."
+    " On a Pro account the default reply is a short text view instead: its lines name the"
+    " reply's fields (`workflow.locations`, `workflow.listed`, `surface_health`, `notices`,"
+    " `preservation`, `feedback`, ...) and `full=true` returns the JSON."
+    " The default response is bounded (top findings per file plus whole"
+    " `stats` / `surface_health`). On a paid tier the response carries a"
+    " `workflow` — the ordered locations to rewrite, each without its findings — and"
+    " the per-file finding lists are withheld (each file keeps its `count`)."
+    " Call `remedy_brief(path, location)` for a location's rewrite brief, one kind at a time,"
+    " or `full=true` for every finding. `targets` narrows the locations, the per-file"
+    " findings, and the cross-file entries and pair counts to those holding the named"
+    " files, read the way `ails check` reads its targets — `skills`, `skills:<name>`,"
+    " `agents:<name>`, `@main`,"
+    " a path (the whole project is still diagnosed and its score and stats stay"
+    " whole-project; pass the same `targets` to `remedy_brief`); a targeted view carries its"
+    " locations' findings and relations in this reply when they fit, and otherwise"
+    " `truncated.hint` names `remedy_brief`, which serves them. After"
+    " rewriting a briefed location's files, call"
+    " validate again with `path` set to each rewritten file: the reply then carries a"
+    " `preservation` block saying whether the rewrite kept everything the file had and how many findings it"
+    " `introduced`, an `accepted` flag (true when the file is kept: it kept everything, matches its plan"
+    " and did not lower the score), and a"
+    " `feedback` list of the file's remaining findings, with any problem the rewrite newly"
+    " introduced listed first."
+    " `notices`, when present, are short messages for the user: either about their account"
+    " (for example a failed payment) or an announcement from reporails, marked"
+    ' `kind: "promo"` (a `promo:` line in the text view). Show each one to the user,'
+    " presenting an announcement as an announcement, not as an account message."
+    " `AILS_NO_PROMO=1` in the server's environment leaves announcements out."
+    " Use when user asks to check, validate, or improve instruction files."
 )
-async def validate(
-    ctx: ToolContext, path: str = ".", full: bool = False, targets: list[str] | None = None
+
+
+async def validate_reply(
+    models: Models, ctx: ToolContext, path: str, full: bool, targets: list[str] | None
 ) -> CallToolResult:
     """Validate instruction files; see the tool description for the response shape."""
     touch_activity()
@@ -423,24 +414,22 @@ async def validate(
         if not isinstance(folder, ProjectFolder):
             return _result(folder)
         key = str(folder.target)
-        payload = await _run_validate(key, bool(full), targets, folder.root, process_models)
+        payload = await _run_validate(key, bool(full), targets, folder.root, models)
         if not has_text_view(payload, full=bool(full)):
             return _result(payload)
         state = validate_states.setdefault(state_key(key, folder.root, target_tokens(targets)), CircuitState())
         return _text_result(render_text_view(unseen_notices(payload, state.shown_notices)))
 
 
-@server.tool(
-    name="prepare",
-    description=(
-        "Map the instruction files that `validate(path, targets)` checks, without checking them, so the next"
-        " `validate` with the same `path` and `targets` returns sooner. Makes no server call and returns no"
-        " findings: `files` is how many files are ready. The reporails plugin calls it in the background as"
-        " files load or change."
-    ),
-    annotations=_READ_ONLY,
+_PREPARE_DESCRIPTION = (
+    "Map the instruction files that `validate(path, targets)` checks, without checking them, so the next"
+    " `validate` with the same `path` and `targets` returns sooner. Makes no server call and returns no"
+    " findings: `files` is how many files are ready. The reporails plugin calls it in the background as"
+    " files load or change."
 )
-async def prepare(ctx: ToolContext, path: str = ".", targets: list[str] | None = None) -> CallToolResult:
+
+
+async def prepare_reply(models: Models, ctx: ToolContext, path: str, targets: list[str] | None) -> CallToolResult:
     """Map the files `validate` would check; see the tool description."""
     touch_activity()
     with get_stage_timer().run("mcp prepare"):
@@ -448,33 +437,29 @@ async def prepare(ctx: ToolContext, path: str = ".", targets: list[str] | None =
         if not isinstance(folder, ProjectFolder):
             return _result(folder)
         try:
-            return _result(
-                await asyncio.to_thread(prepare_for_path, str(folder.target), targets, folder.root, process_models)
-            )
+            return _result(await asyncio.to_thread(prepare_for_path, str(folder.target), targets, folder.root, models))
         except ConfigUnreadableError as exc:
             return _result(_config_unreadable(exc))
 
 
-@server.tool(
-    name="remedy_brief",
-    description=(
-        "Get the rewrite brief for one location of the last `validate(path)`'s paid"
-        " `workflow` — `path` is the path last passed to `validate`, `location` is a"
-        " location's `order` from that reply, `targets` the targets that `validate` call"
-        " passed (none for a whole-project reply). Returns the exact `edits` to apply as"
-        " written (each replaces its `before` text with its `after` text), the few `slots`"
-        " (lines that need a decision) with each rule's own `guides` example and one `ops`"
-        " line per op, any `refused` ops, and the preservation contract the rewrite must keep."
-        " Call this before rewriting a location, one location at a time, one kind at a time,"
-        " then `validate(path=<file>)` for each file: its `conformance` block says whether"
-        " every listed change was made and nothing else changed. Set `has_guide` true"
-        " when your agent carries the rewrite guide (the reporails plugin 0.6.2 and later does);"
-        " without it the call returns `plugin_update_required` and no brief."
-    ),
-    annotations=_READ_ONLY,
+_REMEDY_BRIEF_DESCRIPTION = (
+    "Get the rewrite brief for one location of the last `validate(path)`'s paid"
+    " `workflow` — `path` is the path last passed to `validate`, `location` is a"
+    " location's `order` from that reply, `targets` the targets that `validate` call"
+    " passed (none for a whole-project reply). Returns the exact `edits` to apply as"
+    " written (each replaces its `before` text with its `after` text), the few `slots`"
+    " (lines that need a decision) with each rule's own `guides` example and one `ops`"
+    " line per op, any `refused` ops, and the preservation contract the rewrite must keep."
+    " Call this before rewriting a location, one location at a time, one kind at a time,"
+    " then `validate(path=<file>)` for each file: its `conformance` block says whether"
+    " every listed change was made and nothing else changed. Set `has_guide` true"
+    " when your agent carries the rewrite guide (the reporails plugin 0.6.2 and later does);"
+    " without it the call returns `plugin_update_required` and no brief."
 )
-async def remedy_brief(
-    ctx: ToolContext, path: str, location: int, targets: list[str] | None = None, has_guide: bool = False
+
+
+async def remedy_brief_reply(
+    models: Models, ctx: ToolContext, path: str, location: int, targets: list[str] | None, has_guide: bool
 ) -> CallToolResult:
     """Return the rewrite brief for one workflow location; see the tool description."""
     touch_activity()
@@ -489,24 +474,22 @@ async def remedy_brief(
             targets,
             bool(has_guide),
             project_root=folder.root,
-            models=process_models,
+            models=models,
         )
         return _result(brief)
 
 
-@server.tool(
-    name="preflight",
-    description=(
-        "Return the workflow-ordered rules that govern authoring a file of the given"
-        " `capability` — its file type as the agent config names it (`main`, `rules`,"
-        " `skills`, `agents`, …; `skill`, `agent` and `rule` are read the same). Use BEFORE drafting"
-        " a new SKILL.md / agent / rule so the draft follows the rules from the"
-        " start instead of patching findings after `validate`."
-        " Returns JSON with rules sorted by category in workflow order plus"
-        " Pass / Fail examples."
-    ),
-    annotations=_READ_ONLY,
+_PREFLIGHT_DESCRIPTION = (
+    "Return the workflow-ordered rules that govern authoring a file of the given"
+    " `capability` — its file type as the agent config names it (`main`, `rules`,"
+    " `skills`, `agents`, …; `skill`, `agent` and `rule` are read the same). Use BEFORE drafting"
+    " a new SKILL.md / agent / rule so the draft follows the rules from the"
+    " start instead of patching findings after `validate`."
+    " Returns JSON with rules sorted by category in workflow order plus"
+    " Pass / Fail examples."
 )
+
+
 async def preflight(capability: str, agent: str = "") -> CallToolResult:
     """Return workflow-ordered rules for authoring a file of `capability`."""
     touch_activity()
@@ -517,16 +500,13 @@ async def preflight(capability: str, agent: str = "") -> CallToolResult:
             return _result(_config_unreadable(exc))
 
 
-@server.tool(
-    name="explain",
-    description=(
-        "Get details about a specific rule by ID."
-        " Returns rule title, category, type, description, checks."
-        " Use full coordinate IDs (e.g., CORE:S:0005, CLAUDE:S:0005)."
-    ),
-    annotations=_READ_ONLY,
-    structured_output=False,
+_EXPLAIN_DESCRIPTION = (
+    "Get details about a specific rule by ID."
+    " Returns rule title, category, type, description, checks."
+    " Use full coordinate IDs (e.g., CORE:S:0005, CLAUDE:S:0005)."
 )
+
+
 async def explain(rule_id: str) -> str:
     """Explain one rule as readable text (a JSON error string for an unknown rule).
 
@@ -541,18 +521,17 @@ async def explain(rule_id: str) -> str:
     return result if isinstance(result, str) else json.dumps(result)
 
 
-@server.tool(
-    name="xray",
-    description=(
-        "Open the x-ray page of a session of this project in the background and return its address at once;"
-        " a page already running for the project is reused. Show the returned `url` to the user."
-        " With no `session` it opens the session you are running in (the newest one when this agent cannot say"
-        " which it is, marked `picked: current_unknown`, or the newest of several sessions a `/clear` of yours"
-        " started, marked `picked: current_ambiguous`: tell the user which session is shown and why); pass"
-        " `session` to open another session of the project. Returns `url`, `session`, `picked` and `reused`."
-    ),
-    annotations=ToolAnnotations(read_only_hint=False, idempotent_hint=True),
+_XRAY_DESCRIPTION = (
+    "Open the x-ray page of a session of this project in the background and return its address at once;"
+    " a page already running for the project is reused. Show the returned `url` to the user."
+    " With no `session` it opens the session you are running in (the newest one when this agent cannot say"
+    " which it is, marked `picked: current_unknown`, or the newest of several sessions a `/clear` of yours"
+    " started, marked `picked: current_ambiguous`: tell the user which session is shown and why); pass"
+    " `session` to open another session of the project. Returns `url`, `session`, `picked` and `reused`."
 )
+_XRAY_ANNOTATIONS = ToolAnnotations(read_only_hint=False, idempotent_hint=True)
+
+
 async def xray(ctx: ToolContext, path: str = ".", session: str = "") -> CallToolResult:
     """Start the project's x-ray page in the background; see the tool description."""
     touch_activity()
@@ -577,11 +556,45 @@ def _prewarm_models() -> None:
         ensure_models_available(http_get)
 
 
+def build_server(models: Models) -> StrictArgsMCPServer:
+    """The MCP server whose model-reading tools use `models`; the idle release unloads them."""
+    # `MCPServer`'s own `version` defaults to `""`, so `initialize`'s `serverInfo.version` would be
+    # empty and a caller could not tell which build it talks to. `StrictArgsMCPServer` also
+    # refuses an unknown tool argument.
+    built = StrictArgsMCPServer("ails", version=installed_version(), lifespan=lifespan_releasing(models))
+
+    @built.tool(name="validate", description=_VALIDATE_DESCRIPTION, annotations=_READ_ONLY)
+    async def validate(
+        ctx: ToolContext, path: str = ".", full: bool = False, targets: list[str] | None = None
+    ) -> CallToolResult:
+        """Validate instruction files; see the tool description for the response shape."""
+        return await validate_reply(models, ctx, path, full, targets)
+
+    @built.tool(name="prepare", description=_PREPARE_DESCRIPTION, annotations=_READ_ONLY)
+    async def prepare(ctx: ToolContext, path: str = ".", targets: list[str] | None = None) -> CallToolResult:
+        """Map the files `validate` would check; see the tool description."""
+        return await prepare_reply(models, ctx, path, targets)
+
+    @built.tool(name="remedy_brief", description=_REMEDY_BRIEF_DESCRIPTION, annotations=_READ_ONLY)
+    async def remedy_brief(
+        ctx: ToolContext, path: str, location: int, targets: list[str] | None = None, has_guide: bool = False
+    ) -> CallToolResult:
+        """Return the rewrite brief for one workflow location; see the tool description."""
+        return await remedy_brief_reply(models, ctx, path, location, targets, has_guide)
+
+    built.tool(name="preflight", description=_PREFLIGHT_DESCRIPTION, annotations=_READ_ONLY)(preflight)
+    built.tool(name="explain", description=_EXPLAIN_DESCRIPTION, annotations=_READ_ONLY, structured_output=False)(
+        explain
+    )
+    built.tool(name="xray", description=_XRAY_DESCRIPTION, annotations=_XRAY_ANNOTATIONS)(xray)
+    return built
+
+
 def main() -> None:
     """Entry point for the MCP server (stdio transport)."""
     configure_logging()
     threading.Thread(target=_prewarm_models, name="model-prewarm", daemon=True).start()
-    server.run("stdio")
+    build_server(Models(http_get)).run("stdio")
 
 
 if __name__ == "__main__":

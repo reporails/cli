@@ -66,7 +66,9 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
     from mcp.server.mcpserver.exceptions import ToolError
     from mcp.types import CallToolResult, TextContent
 
-    from reporails_cli.interfaces.mcp.server import server as mcp_server
+    from reporails_cli.interfaces.mcp.server import build_server
+
+    mcp_server = build_server(no_models())
 
     try:
         result = _run_async(mcp_server.call_tool(name, arguments or {}))
@@ -113,7 +115,7 @@ class TestStructuredOutput:
             lambda path, full=False, named=frozenset(), **_k: (dict(payload), None, None),
         )
 
-        result = _run_async(server.server.call_tool("validate", {"path": str(tmp_path)}))
+        result = _run_async(server.build_server(no_models()).call_tool("validate", {"path": str(tmp_path)}))
 
         assert result.is_error is False
         assert isinstance(result.structured_content, dict)
@@ -129,7 +131,9 @@ class TestStructuredOutput:
     @pytest.mark.subsys_server
     def test_all_tools_are_read_only(self) -> None:
         """All three tools carry the read-only annotation for clients that read hints."""
-        from reporails_cli.interfaces.mcp.server import server as mcp_server
+        from reporails_cli.interfaces.mcp.server import build_server
+
+        mcp_server = build_server(no_models())
 
         tools = {t.name: t for t in _run_async(mcp_server.list_tools())}
         for name in ("validate", "prepare", "remedy_brief", "preflight", "explain"):
@@ -148,7 +152,9 @@ class TestListTools:
     @pytest.mark.subsys_api
     def test_all_tools_present(self) -> None:
         """list_tools returns the current surface, `xray` included."""
-        from reporails_cli.interfaces.mcp.server import server as mcp_server
+        from reporails_cli.interfaces.mcp.server import build_server
+
+        mcp_server = build_server(no_models())
 
         tools = _run_async(mcp_server.list_tools())
         names = {t.name for t in tools}
@@ -159,7 +165,9 @@ class TestListTools:
     @pytest.mark.subsys_api
     def test_validate_tool_path_optional(self) -> None:
         """validate tool should not require path (has default)."""
-        from reporails_cli.interfaces.mcp.server import server as mcp_server
+        from reporails_cli.interfaces.mcp.server import build_server
+
+        mcp_server = build_server(no_models())
 
         tools = _run_async(mcp_server.list_tools())
         validate = next(t for t in tools if t.name == "validate")
@@ -172,7 +180,9 @@ class TestListTools:
         """The `validate` description promised a `compliance band` in its JSON — no
         such field reaches the JSON/MCP envelope (`formatters/json.py`'s `quality` key is a
         bare float score); the claim is stale."""
-        from reporails_cli.interfaces.mcp.server import server as mcp_server
+        from reporails_cli.interfaces.mcp.server import build_server
+
+        mcp_server = build_server(no_models())
 
         tools = _run_async(mcp_server.list_tools())
         validate = next(t for t in tools if t.name == "validate")
@@ -186,7 +196,9 @@ class TestListTools:
         never passed its own `version`, and the SDK defaults it to `""`. A caller has no way to
         tell which server build it is talking to without it."""
         from reporails_cli.core.platform.utils.version import installed_version
-        from reporails_cli.interfaces.mcp.server import server
+        from reporails_cli.interfaces.mcp.server import build_server
+
+        server = build_server(no_models())
 
         assert server.version == installed_version()
         assert server.version != ""
@@ -637,7 +649,9 @@ class TestUnknownArgument:
         own `call_tool` convenience shim."""
         from mcp.server.mcpserver.exceptions import ToolError
 
-        from reporails_cli.interfaces.mcp.server import server
+        from reporails_cli.interfaces.mcp.server import build_server
+
+        server = build_server(no_models())
 
         with pytest.raises(ToolError, match="bogus_extra_arg"):
             _run_async(server.call_tool("preflight", {"capability": "skills", "bogus_extra_arg": "x"}))

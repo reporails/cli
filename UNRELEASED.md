@@ -68,6 +68,7 @@
 - Which rules a run reports and each rule's line thresholds come from the config the run already read, so a run reads the project config once.
 - The Windows check scenarios and the MCP x-ray two-call scenario lose their skip tag. The two-call scenario reads the page while the agent's MCP server still runs, because on Windows the test client ends the server's process tree, the page with it.
 - Each process builds one model handle that carries the download port, so a damaged model file is still repaired on load with no HTTP client in core.
+- The MCP server builds its model handle when it starts, not when its module is imported.
 - The rewrite-check tests build named constructs, plain text and the rewrite's map as a real run produces them.
 - The lint checks read rule pages, fixtures and instruction files through the same file and folder readers as the rest of the run.
 - Heal's rewrite check reads each instruction from the map, and a test suite holds rewrites that keep the words but change the meaning.

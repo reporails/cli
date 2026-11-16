@@ -48,7 +48,7 @@ def test_prepare_builds_no_api_client_and_leaves_the_validate_state_alone(projec
     monkeypatch.setattr(check_one, "map_instruction_files", lambda *_a, **_k: _map(1))
     server.validate_states.clear()
 
-    result = asyncio.run(server.prepare(None, str(project)))
+    result = asyncio.run(server.prepare_reply(no_models(), None, str(project), None))
 
     assert json.loads(result.content[0].text) == {"files": 1}
     assert result.structured_content == {"files": 1}
@@ -75,7 +75,7 @@ def test_prepare_answers_target_not_found_as_validate_does(project, monkeypatch)
 def test_prepare_answers_config_unreadable_as_validate_does(project):
     (project / ".ails").mkdir()
     (project / ".ails" / "config.yml").write_text("disabled_rules: [CORE:E:0003\n", encoding="utf-8")
-    reply = json.loads(asyncio.run(server.prepare(None, str(project))).content[0].text)
+    reply = json.loads(asyncio.run(server.prepare_reply(no_models(), None, str(project), None)).content[0].text)
     assert reply["error"] == "config_unreadable"
     assert str(project / ".ails" / "config.yml") in reply["message"]
 
