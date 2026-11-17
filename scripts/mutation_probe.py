@@ -201,11 +201,12 @@ def _split_command(command: str) -> list[str]:
     shell32.CommandLineToArgvW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
     kernel32.LocalFree.argtypes = [ctypes.c_void_p]
     count = ctypes.c_int()
-    argv = shell32.CommandLineToArgvW(command, ctypes.byref(count))
+    # The first token is parsed as a program name, without escape rules, so a placeholder takes that slot.
+    argv = shell32.CommandLineToArgvW("x " + command, ctypes.byref(count))
     if not argv:
         raise ValueError(f"cannot split command {command!r}")
     try:
-        return [argv[i] for i in range(count.value)]
+        return [argv[i] for i in range(1, count.value)]
     finally:
         kernel32.LocalFree(argv)
 
