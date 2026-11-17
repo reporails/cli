@@ -9,7 +9,7 @@ last_updated: 2026-10-08
 
 AI Instruction Diagnostics for coding agents. Reporails reads your instruction system — root instructions (`CLAUDE.md`, `.github/copilot-instructions.md`, `AGENTS.md`, `.cursorrules`, `GEMINI.md`) plus the rule, skill, sub-agent, and hook files alongside them — and runs 120+ deterministic rules across six rule packs (core + per-agent) to surface the vague directives, oversized files, missing reinforcement, cross-file repetition and topic overlap that quietly degrade how reliably your agent follows you.
 
-Run it locally with `npx @reporails/cli check` or wire it into CI. Anonymous mode needs no account, and signing in is free — anonymous and signed-in free accounts share the same rate and payload caps. Pro, the paid subscription, raises those caps and unlocks the remedies for the findings worth fixing. Supports Antigravity, Claude, Codex, Copilot, and Cursor.
+Run it locally with `npx @reporails/cli check` or wire it into CI. Anonymous mode needs no account, and signing in is free and raises the hourly limit from 5 to 100 checks. Pro, the paid subscription, raises those caps and unlocks the remedies for the findings worth fixing. Supports Antigravity, Claude, Codex, Copilot, and Cursor.
 
 ## Where to start
 
