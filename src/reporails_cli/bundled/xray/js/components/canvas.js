@@ -5,7 +5,7 @@ import { clock, k1, range, tk } from '../format.js';
 import { callDetail } from '../api.js';
 import {
   BAND_OPACITY, BOT_H, BOT_W, CH, COLX, CW, GROUP_TILES, SH, SPINE_HALF_MAX, SPINE_HALF_MIN, SPX, STATION_EDGE, STRIPE_HALF, SW, TOP_W, TOP_Y, TRACK_STEP, TRACK_X0, W, Y0,
-  bandColour, layoutTime, lengthFor, mergeStations, placeSources, replyAt, stationSide, tickMarks,
+  bandColour, layoutTime, labelLeft, lengthFor, mergeStations, placeSources, replyAt, stationSide, tickMarks,
 } from '../geometry.js';
 import { groupOpen } from '../state.js';
 import { RESTART_S, callIndex, childrenOf, isSpine, kindOfSource, replyParts, segmentOf, sourceFirsts, startsSession, typeOf } from '../views.js';
@@ -466,6 +466,22 @@ function compactStripe(cur, c, i, y) {
   return m;
 }
 
+// Moves each no-activity label clear of the cards, pills, spine and side track in its stripe's rows, once the page has
+// measured the label. The stripe itself stays full width.
+function settleBreaks(cv) {
+  const boxes = [...cv.querySelectorAll(':scope > .card, :scope > .snode, :scope > .station, :scope > .pill-arch, :scope > .gbox, :scope > .compact')]
+    .map(e => ({ left: e.offsetLeft, right: e.offsetLeft + e.offsetWidth, top: e.offsetTop, bottom: e.offsetTop + e.offsetHeight }));
+  const lanes = cv.querySelector(':scope > .trackg');
+  const from = lanes ? lanes.width.baseVal.value : 0;
+  const spine = { left: SPX - SPINE_HALF_MAX, right: SPX + SPINE_HALF_MAX };
+  for (const band of cv.querySelectorAll(':scope > .brk')) {
+    const label = band.firstElementChild;
+    const top = band.offsetTop, bottom = top + band.offsetHeight;
+    const here = boxes.filter(b => b.top < bottom && b.bottom > top);
+    label.style.marginLeft = `${labelLeft(from, label.offsetWidth, [spine, ...here])}px`;
+  }
+}
+
 // Places each drawn station pill by `stationSide` among the cards, once the page has measured its width.
 function settleStations(cv, rects) {
   for (const e of cv.querySelectorAll('.station')) {
@@ -669,6 +685,7 @@ export function render(box, env) {
   for (const p of placedSources.values()) rects.push({ left: p.left, top: p.top, width: SW, height: SH });
   if (hand) rects.push({ left: SPX - BOT_W / 2, top: botY, width: BOT_W, height: BOT_H });
   settleStations(live, rects);
+  settleBreaks(live);
   const railBox = document.getElementById('rail');
   if (railBox) rail.render(railBox, { height, ys: tr.calls.map(c => scale.y(c.t)), marks });
 }

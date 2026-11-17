@@ -101,7 +101,14 @@ def _short_run(view: dict) -> None:
     edge["out_t"], edge["back_t"] = node["start"] - 1.5, node["end"]
 
 
+def _idle_start(view: dict) -> None:
+    main = next(t for t in view["track"] if t["node"] == "main")
+    main["calls"] = [c for c in main["calls"] if c["t"] >= 60.0]
+    main["breaks"] = [{"start": 0.0, "end": 60.0}, *main["breaks"]]
+
+
 CHANGES = {
+    "the main agent was idle for its first minute": _idle_start,
     "the reviewer subagent ran for only four seconds": _short_run,
     "its calls used fourteen tools": _fourteen_tools,
     "the first subagent has no replies": _no_replies,

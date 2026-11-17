@@ -189,6 +189,18 @@ export function stationSide(y, width, rects) {
   return 'dot';
 }
 
+// Room a stripe's label keeps from the side track, the spine and whatever else is drawn in the stripe's rows.
+export const BRK_GAP = 8;
+
+// The first x at or right of `from` where a label `width` wide keeps BRK_GAP from every block ({ left, right }): `from`
+// itself, else just past a block's right edge; else, when nothing fits inside the canvas, the label's right edge on the canvas's.
+export function labelLeft(from, width, blocks) {
+  const x0 = from + BRK_GAP;
+  const free = x => !blocks.some(b => b.left < x + width + BRK_GAP && b.right + BRK_GAP > x);
+  const starts = [x0, ...blocks.map(b => b.right + BRK_GAP).filter(x => x > x0)].sort((a, b) => a - b);
+  return starts.find(x => free(x) && x + width <= W) ?? Math.max(x0, W - width);
+}
+
 // The reply row at t, numbers interpolated between the two replies around t and read inside the stretch between
 // compactions, so the spine narrows at the compaction itself. A reply row is [t, total, ...].
 export function replyAt(rows, cuts, t) {

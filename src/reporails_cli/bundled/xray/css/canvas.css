@@ -23,7 +23,7 @@
 @media (prefers-reduced-motion:reduce){.arch.flow{animation:none}}
 .tick{z-index:2;position:absolute;font:calc(10.5px / var(--z,1)) 'JetBrains Mono',monospace;color:var(--t3)}
 .brk{position:absolute;left:0;width:100%;display:flex;align-items:center;justify-content:flex-start;pointer-events:none;border-top:1px dashed #3A3C42;border-bottom:1px dashed #3A3C42;background:repeating-linear-gradient(135deg,rgba(255,255,255,.03) 0 6px,transparent 6px 12px)}
-.brk span{margin-left:84px;font-size:calc(10.5px / var(--z,1));color:var(--t3)}
+.brk span{margin-left:84px;white-space:nowrap;font-size:calc(10.5px / var(--z,1));color:var(--t3)}
 .tlabel{position:absolute;transform:translate(-50%,-100%) rotate(-60deg);transform-origin:50% 100%;font-size:calc(10.5px / var(--z,1));color:var(--t3);white-space:nowrap}
 .tline{position:absolute;width:1px;background:#1E2025}
 .ctick{position:absolute;width:11px;height:1.5px;border-radius:1px;background:#6E7076}
