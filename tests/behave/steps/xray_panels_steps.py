@@ -273,3 +273,18 @@ def step_real_pin(context):
 @then("on the real page the subagent's cost tile shows dollars and the main tile's session line is main plus subagents")
 def step_real_cost(context):
     assert _agent_costs(_panels(context, "sub_cost")) is not None or context.scenario.status == "skipped"
+
+
+@then("the card and the row that opened the details are marked open and the one opened before is not")
+def step_open_mark(context):
+    seen = _panels(context, "open_mark")
+    if seen is None:
+        return
+    card = seen["card"]
+    assert card and seen["none"] == [], seen
+    on_card = [m for m in seen["afterCard"] if m["source"] == card and m["tag"] == "BUTTON"]
+    assert on_card and all(m["expanded"] == "true" for m in seen["afterCard"]), seen["afterCard"]
+    assert seen["afterClose"] == [], seen["afterClose"]
+    assert seen["afterRow"] and all(m["peek"] == "peak:main" and m["expanded"] == "true" for m in seen["afterRow"]), (
+        seen["afterRow"]
+    )

@@ -99,3 +99,8 @@ Feature: The x-ray Sources panel and right column list everything and describe o
     And on the real page hovering changes nothing in the right column and a click on a spine source opens its details
     And on the real page a pin survives the session file growing and the page taking the new view
     And on the real page the subagent's cost tile shows dollars and the main tile's session line is main plus subagents
+
+  @page @browser
+  Scenario: The card or row whose details are open is marked as open and loses the mark when another opens
+    Given the bundled page is served over the "view_panels" fixture view
+    Then the card and the row that opened the details are marked open and the one opened before is not

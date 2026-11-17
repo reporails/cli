@@ -122,6 +122,18 @@ export function renderPanel(box, env) {
 // Focus: it goes to the × when details open, and back to the element that opened them when they close.
 const focus = { shown: '', opener: null };
 
+// Marks whatever opens the open details wherever the page draws it (`data-peek` of the same `kind:id`; a source card or row
+// by its `data-source`), and clears the mark everywhere else, so the open item is always the one marked.
+export function markOpen(root, peek) {
+  const key = peekKey(peek);
+  for (const e of root.querySelectorAll('[data-peek], :is(button, div)[data-source]')) {
+    const on = !!peek && (e.dataset.peek === key || (peek.kind === 'src' && e.dataset.source === peek.id));
+    if (on) e.setAttribute('aria-expanded', 'true');
+    else if (e.classList.contains('open')) e.removeAttribute('aria-expanded');
+    e.classList.toggle('open', on);
+  }
+}
+
 // What opened the details: an element, or the key of the element that stands for it; its region and identity find its twin after a redraw.
 export function remember(from) {
   focus.opener = from instanceof Element ? keyOf(from) : from;

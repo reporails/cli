@@ -53,6 +53,21 @@ if (mode === 'column' && ready) {
   out.again = await read();
 }
 
+if (mode === 'open_mark' && ready) {
+  const marked = () => page.ev(`[...document.querySelectorAll('.open')].map(e => ({ tag: e.tagName, peek: e.dataset.peek || null, source: e.dataset.source || null, expanded: e.getAttribute('aria-expanded') }))`);
+  out.card = await page.ev(`(document.querySelector('.snode[data-source]') || { dataset: {} }).dataset.source || null`);
+  out.none = await marked();
+  await click(`.snode[data-source=${JSON.stringify(out.card)}]`);
+  await page.until(`!!document.querySelector('.pk-dialog')`);
+  out.afterCard = await marked();
+  await click('[data-close-peek].pk-x');
+  await sleep(100);
+  out.afterClose = await marked();
+  await click('#inspector [data-peek="peak:main"]');
+  await page.until(`!!document.querySelector('.pk-dialog .pk-lg')`);
+  out.afterRow = await marked();
+}
+
 if (mode === 'details' && ready) {
   await click('#sources .sr[data-source="CLAUDE.md"]');
   await page.until(`!!document.querySelector('.pk-dialog pre.peek')`);

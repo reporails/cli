@@ -20,6 +20,7 @@
 
 ### Fixed
 
+- On the `ails xray` page, the card or row whose details are open in the middle window is marked as open.
 - On the `ails xray` page, a no-activity stripe's label sits clear of the instruction-file cards and the tool lanes.
 - The GitHub Action fails with the service's own message when the reporails service cannot be reached, instead of a Python error; set `AILS_OFFLINE: "1"` on the step for local checks only.
 - With the `ails xray` page open, an instruction or rule file added to the project is checked by the page's next check, without the page restarting.

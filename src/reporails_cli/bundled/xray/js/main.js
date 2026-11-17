@@ -79,6 +79,7 @@ function renderTab(e) {
     else sourcestable.render($('#view-sources'), e);
     details.renderPanel($(SIDES[e.tab]), e);
   }
+  details.markOpen(document, state.peek);
   details.settle(e, $(BODIES[e.tab]), hadFocus);
 }
 
@@ -109,7 +110,7 @@ function renderFocus() { keepFocus(drawFocus); }
 function drawFocus() {
   if (!ix || state.file != null) return;
   const e = env();
-  if (e.tab === 'graph') canvas.render($('#canvas'), e);
+  if (e.tab === 'graph') { canvas.render($('#canvas'), e); details.markOpen($('#canvas'), state.peek); }
   sources.follow($('#sources'), e);
   for (const r of document.querySelectorAll('#sources .sr')) r.classList.toggle('on', !!e.focus && r.dataset.source === e.focus.id);
 }
