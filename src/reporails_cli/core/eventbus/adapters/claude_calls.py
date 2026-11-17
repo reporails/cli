@@ -123,7 +123,8 @@ def reply_blocks(row: JsonObject) -> list[str]:
 
 
 def reply_text(row: JsonObject) -> str | None:
-    """The text blocks of an assistant row joined; None for any other row or a row with no text block."""
+    """The text blocks of an assistant row joined; None for any other row or a row with no text block. Raises
+    `PayloadRefused` for a text block with no text."""
     texts = reply_blocks(row)
     return "".join(texts) if texts else None
 

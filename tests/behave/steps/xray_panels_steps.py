@@ -126,6 +126,9 @@ def step_failed_handback(context):
     assert seen["failed"]["line"] == "Failed", seen["failed"]
     assert seen["failed"]["kicker"].startswith("Result the parent received"), seen["failed"]
     assert seen["failed"]["text"] == "handed-back text of a9", seen["failed"]
+    assert seen["pill"]["kicker"].startswith("Result the parent received"), seen["pill"]
+    assert "What the parent received" in seen["pill"]["title"], seen["pill"]
+    assert seen["pill"]["text"] == "handed-back text of a9", seen["pill"]
 
 
 @then("a source opens its text from the file route and the peak legend adds up to the whole")

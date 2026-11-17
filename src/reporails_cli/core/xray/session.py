@@ -185,8 +185,9 @@ class XraySession:
 
     def output(self, subagent_id: str) -> str | None:
         """The text a subagent handed back, read from the source the last view sized its hand-back from; None for
-        any other id and for a subagent the view found no output text for. Raises `PayloadRefused` when the
-        transcript does not hold it as the adapter is pinned to. The text is not kept."""
+        any other id and for a subagent the view found no output text for. For `reply` a row the adapter refuses
+        is skipped (the last readable reply counts); for `handback` and `result` an unpinned row raises
+        `PayloadRefused`. The text is not kept."""
         source = self._reads.outputs.get(subagent_id)
         if source is None:
             return None

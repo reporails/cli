@@ -176,6 +176,13 @@ if (mode === 'handoff' && ready) {
 
 if (mode === 'failed_handback' && ready) {
   await click('.card[data-node="a9"]');
+  await page.until(`!!document.querySelector('.pill-arch.up[data-peek]')`);
+  await click('.pill-arch.up[data-peek]');
+  await page.until(`!!document.querySelector('.pk-dialog pre.peek')`);
+  out.pill = await page.ev(`({ kicker: document.querySelector('.pk-k').textContent, title: document.querySelector('.pk-dialog').textContent, text: document.querySelector('.pk-dialog pre.peek').textContent })`);
+  await click('[data-close-peek].pk-x');
+  await sleep(100);
+  await click('.card[data-node="a9"]');
   await page.until(`!!document.querySelector('#inspector [data-drill]')`);
   await click('#inspector [data-drill]');
   await page.until(`!!document.querySelector('.card.bottom[data-peek]')`);

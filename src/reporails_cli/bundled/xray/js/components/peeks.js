@@ -247,6 +247,13 @@ const OUTPUT_SOURCES = { handback: 'Hand-back message', reply: 'Last reply', res
 registerPeek('output', (env, id) => handoffPeek(env, id, (node, reader) => {
   const source = node.detail.output_source;
   const body = source ? fetched(env.text('output:' + id, outputUrl(id)), e => e.text) : nk('No output was recorded for this subagent.');
+  if (node.detail.outcome && node.detail.outcome !== 'returned') return {
+    chip: '↑', kicker: `Result the parent received · from ${node.name}`,
+    tags: node.detail.back_tokens_est != null ? [`${tk(node.detail.back_tokens_est, true)} · estimated`] : [],
+    main: [section('What the parent received', body)],
+    facts: [['Received by', reader], ['From', `${node.name} · ${typeOf(env.ix, node).label}`]],
+    note: 'The result the agent that launched it received when it failed.',
+  };
   return {
     chip: '↑', kicker: source ? `${OUTPUT_SOURCES[source]} · handed back to ${reader}` : `Output · handed back to ${reader}`,
     tags: node.detail.back_tokens_est != null ? [`${tk(node.detail.back_tokens_est, true)} · estimated`] : [],

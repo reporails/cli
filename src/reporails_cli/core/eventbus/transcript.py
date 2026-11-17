@@ -221,8 +221,11 @@ def subagent_output(
     the text of the last assistant row of its file when that row holds no tool call (`reply`), or the result of the
     launching call `use_id` in the transcript file that holds it (`result`). None when the source holds no text.
 
+    For `reply` a row the adapter refuses is skipped, so the last readable reply counts; `handback` and `result`
+    raise `PayloadRefused` on a row that is not the shape the adapter is pinned to.
+
     Raises `PayloadRefused` when the agent is unknown, the source is `result` and no launching call is named, or a
-    row read is not the shape the adapter is pinned to. The text is returned, never stored."""
+    `handback` or `result` row read is not the shape the adapter is pinned to. The text is returned, never stored."""
     adapter = get_transcript_adapter(agent)
     if adapter is None:
         raise PayloadRefused(f"unknown agent: {agent}")

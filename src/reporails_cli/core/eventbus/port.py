@@ -55,7 +55,8 @@ class TranscriptAdapter(Protocol):
         call is not the pinned shape."""
 
     def resolve_reply(self, row: JsonObject) -> str | None:
-        """The text of an assistant reply row; None for any other row or a row with no text."""
+        """The text of an assistant reply row; None for any other row or a row with no text. Raises `PayloadRefused` for
+        a text block with no text."""
 
     def resolve_request_shape(self, row: JsonObject) -> str | None:
         """The hash of the request shape an API request row names; None for any other row; raises

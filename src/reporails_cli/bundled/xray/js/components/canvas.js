@@ -287,6 +287,7 @@ function selectedPills(c, p, edge, ys, ye, outcome) {
   };
   const out = [pill('down', `↓ ${tk(edge ? edge.down : null, true)} · ${clock(edge ? edge.out_t : c.start)}`, ys, `task:${c.id}`)];
   if (outcome === 'returned' && ye !== null) out.push(pill('up', `↑ ${tk(edge.back, true)} · ${clock(edge.back_t)}`, ye, c.detail.output_source ? `output:${c.id}` : null));
+  else if (outcome !== 'returned' && c.detail.output_source) out.push(pill('up', `↑ ${tk(edge ? edge.back : null, true)} · ${clock(edge && edge.back_t != null ? edge.back_t : c.end)}`, ye !== null ? ye : ys, `output:${c.id}`));
   return out;
 }
 
