@@ -544,7 +544,7 @@ def _prewarm_models() -> None:
 
 
 def build_server(models: Models) -> StrictArgsMCPServer:
-    """The MCP server whose model-reading tools use `models`; the idle release unloads them."""
+    """The MCP server whose model-reading tools use `models`."""
     # `MCPServer`'s own `version` defaults to `""`, so `initialize`'s `serverInfo.version` would be
     # empty and a caller could not tell which build it talks to. `StrictArgsMCPServer` also
     # refuses an unknown tool argument.

@@ -19,7 +19,7 @@ class HttpReply(Protocol):
         """The body, streamed in pieces."""
 
 
-class HttpGet(Protocol):  # pylint: disable=too-few-public-methods  # a port that is called, not a class with methods
+class HttpGet(Protocol):  # pylint: disable=too-few-public-methods  # a callable, not a class with methods
     """Fetches a URL and holds the reply open for the caller to read; the caller says whether redirects are followed."""
 
     def __call__(

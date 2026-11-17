@@ -24,7 +24,12 @@ One rule, pure `ast`, over every `src/reporails_cli/core/**/*.py` outside `core/
 Known limits: a module name built at run time (`import_module(name)`, `sys.modules[name]`),
 `sys.modules.get("socket")`, `getattr(loop, "create_connection")`, `getattr(asyncio, "...")` and
 a module reached through another module's re-export (`from some_core_module import socket`) are not
-seen. Only `core/` is scanned.
+seen. Only `core/` is scanned. Also not seen, so an attacker can still do each of these: use a network
+library outside the set (`httpcore`, `anyio.connect_tcp`, `aiohttp`, `requests`, any other third-party
+client); `import http` then `http.client.X` as an attribute chain (only `urllib.request` is followed as an
+attribute after `import urllib`); read a URL through `urllib.robotparser`; open a connection through
+`multiprocessing.managers`; build the module name from a folded constant (`import_module('soc' + 'ket')`,
+only a plain string constant is read); reach a submodule with `getattr(urllib, 'request')`.
 
 Why: a connection opened in many places gets its timeout, TLS and error handling many ways. The
 adapters own the wire and core receives ports.

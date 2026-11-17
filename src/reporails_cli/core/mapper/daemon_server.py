@@ -1,8 +1,8 @@
 """Mapper daemon serving loop: keeps the models loaded and answers map requests.
 
-Serves map requests on the socket named by `daemon.socket_path`, through the `DaemonTransport` it is
-given. The embedding model stays in memory between invocations, eliminating the 5-10s model load time on
-subsequent runs. One daemon serves all projects on the machine.
+Serves map requests on the socket named by `daemon.socket_path`. The embedding model stays in
+memory between invocations, eliminating the 5-10s model load time on subsequent runs.
+One daemon serves all projects on the machine.
 Protocol: JSON-line over Unix domain socket (one JSON object per line).
 """
 
@@ -76,17 +76,14 @@ def _start_model_warmup(fetch: HttpGet) -> tuple[Models, threading.Event]:
 def run_daemon(transport: DaemonTransport, fetch: HttpGet) -> None:
     """Main daemon loop: warm models in the background, serve requests on `transport`.
 
-    The socket is bound as soon as the warmup thread has started, so the parent's ``start_daemon``
-    can return and proceed with file discovery + M probes in parallel with model loading.
+    The socket is bound as soon as the warmup thread has started, so requests are accepted
+    while the models are still loading.
     ``map_ruleset`` requests block on ``warmup_done`` before dispatching;
     ``ping`` and ``shutdown`` are answered immediately regardless.
 
     Lifecycle: runs until explicit shutdown command, SIGTERM/SIGINT, or the
-    idle timeout (default 30 min, AILS_DAEMON_IDLE_S seconds; 0 disables). No
-    parent-process tracking; the global daemon isn't a child of any specific
-    CLI process.
-
-    Unreachable on Windows: callers gate on sys.platform before invoking.
+    idle timeout (default 30 min, AILS_DAEMON_IDLE_S seconds; 0 disables).
+    Returns at once on Windows.
     """
     if sys.platform == "win32":
         return

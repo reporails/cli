@@ -50,7 +50,7 @@ def _load_sidecar() -> JsonObject:
 def _save_sidecar(sidecar: JsonObject) -> None:
     """Best-effort persist of the sidecar — a perf cache only, never
     load-bearing for correctness (a write failure just costs the next process
-    a re-hash, same as today)."""
+    a re-hash)."""
     with _sidecar_lock:
         payload = json.dumps(sidecar)
         for path in _sidecar_paths():

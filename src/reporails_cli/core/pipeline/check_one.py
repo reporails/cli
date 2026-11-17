@@ -389,8 +389,8 @@ def _assemble(
 def check_and_assemble(
     run: RunContext, scope: Scope, ruleset_map: RulesetMap | None, *, lint: LintService
 ) -> tuple[CombinedResult, FunnelError | None]:
-    """Run the local checks over `scope`, then the server lint and assemble spine; the request is resolved
-    under the agents whose rules ran. A single-file scope runs the M-probes scoped to it."""
+    """Run the local checks over `scope`, then the server lint, and return the assembled result; the
+    request is resolved under the agents whose rules ran. A single-file scope runs the M-probes scoped to it."""
     scan_root, effective_agent, filter_agents, left_out = (
         scope.scan_root,
         scope.effective_agent,

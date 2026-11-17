@@ -17,7 +17,10 @@ reads, and core receives the values through the run context.
 
 Known limits: a reader name built from a runtime value (a variable, a call result, an f-string with a
 non-literal part, `str.format`, `%`, slicing, `chr`/`bytes` decoding, a name read from data or a file)
-passes; a bare string constant that is not a subscript key or a folded expression passes (so a reader name
+passes (`'get_%s_config' % 'project'` and `'get_{}_config'.format('project')` are not folded);
+`operator.attrgetter('<reader>')` and `m.__getattribute__('<reader>')` pass, even with a plain literal,
+because the string is neither a subscript key nor a `getattr(x, "name")` argument; a bare string
+constant that is not a subscript key or a folded expression passes (so a reader name
 in a docstring or a table of strings is quiet).
 
 The scanner takes the source files and their root, so the planted tests below run the same code on

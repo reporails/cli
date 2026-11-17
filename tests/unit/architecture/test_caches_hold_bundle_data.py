@@ -24,7 +24,8 @@ Pure `ast`, over every `src/reporails_cli/core/**/*.py` and `src/reporails_cli/f
 Path types are `Path`, `PurePath`, `PathLike` and every local name a file binds them to (`from pathlib
 import Path as _P`, `_P = Path`). A path-carrying record is a class of `core/platform/dto/discovery.py`
 with a field naming a path type or another such record (`DetectedAgent`, `AgentScope`, ...), read from that
-file's AST. A cache built by calling the decorator on a module-level function
+file's AST, and every local name a file binds one to (`from ... import DetectedAgent as _DA`, `_DA =
+DetectedAgent`). A cache built by calling the decorator on a module-level function
 (`lru_cache(maxsize=8)(impl)`, `functools.cache(impl)`) counts as caching `impl`.
 
 There is no allowlist. Each failure reads `module:line name rule`.
@@ -36,7 +37,15 @@ container with no annotation (`_agents = []`) or with an element type the annota
 not seen; a cache built on a function reached through a variable, an attribute or a lambda is not seen;
 a `type(...)(...)` or `getattr`-built mutation is not seen; C3 reads the
 top of the return annotation (and its union members), not the containers nested inside a `Mapping` or
-`tuple`.
+`tuple`. Also not seen, so an attacker can still do each of these: an unannotated parameter read inside a
+cached function (C1 reads `Path`-named annotations and calls applied to a parameter name, not the type of
+an untyped argument); `operator.setitem(container, k, v)` (only subscript stores and the listed mutator
+method names are mutations); a `weakref.WeakValueDictionary` or `WeakKeyDictionary` container (not in the
+constructor set); a mutable default argument used as a memo (`def f(p: str, _m={}): ...`, not a
+module-level name); a cache decorator bound to a variable (`_c = lru_cache(maxsize=8)` then `@_c`, only
+the direct decorator and the call-on-function form are resolved); a module-level name rebound with
+`global` and `=` from a `Path`-taking function (`global _n; _n = root`, only in-place mutation counts);
+a container rebound with `=` instead of mutated (`_m = {**_m, root: 1}`).
 
 Why: a cache keyed on project state serves stale or foreign data to the next run of a long-lived process.
 The detectors take the source files and their root, so the planted tests run the same code on tmp files.
@@ -130,6 +139,19 @@ def path_aliases(tree: ast.Module) -> frozenset[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             names.update(a.asname for a in node.names if a.asname and a.name in PATH_TYPES)
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Name) and stmt.value.id in names:
+            names.update(t.id for t in stmt.targets if isinstance(t, ast.Name))
+    return frozenset(names)
+
+
+def record_aliases(tree: ast.Module, records: frozenset[str]) -> frozenset[str]:
+    """The path-carrying records of a file plus every local name they are imported as
+    (`from ...discovery import DetectedAgent as _DA`) or bound to (`_DA = DetectedAgent`)."""
+    names = set(records)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            names.update(a.asname for a in node.names if a.asname and a.name in records)
     for stmt in tree.body:
         if isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Name) and stmt.value.id in names:
             names.update(t.id for t in stmt.targets if isinstance(t, ast.Name))
@@ -359,7 +381,7 @@ def _containers(tree: ast.Module, records: frozenset[str]) -> dict[str, tuple[in
     """Module-level names bound to a mutable container: name -> (line, annotation names a path or a
     path-carrying record)."""
     bare, modules = _constructors(tree)
-    path_names = path_aliases(tree) | records
+    path_names = path_aliases(tree) | record_aliases(tree, records)
     found: dict[str, tuple[int, bool]] = {}
     for stmt in tree.body:
         if isinstance(stmt, ast.Assign) and _is_container(stmt.value, bare, modules):
@@ -630,6 +652,17 @@ def test_c4_fires_across_modules(tmp_path: Path, user: str) -> None:
         (["C4"], "_agents: list[DetectedAgent] = []\ndef g(a: DetectedAgent):\n    _agents.append(a)\n"),
         (["C4"], "_agents: 'dict[str, list[DetectedAgent]]' = {}\ndef g(k, a):\n    _agents.update({k: [a]})\n"),
         (["C4"], "_s: list[AgentScope] = []\ndef g(a):\n    _s.append(a)\n"),
+        (
+            ["C4"],
+            "from reporails_cli.core.platform.dto.discovery import DetectedAgent as _DA\n"
+            "_planted_seen: list[_DA] = []\ndef _planted(agents: list[_DA]) -> None:\n"
+            "    _planted_seen.extend(agents)\n",
+        ),
+        (
+            ["C4"],
+            "from reporails_cli.core.platform.dto.discovery import DetectedAgent\n_DA = DetectedAgent\n"
+            "_seen: list[_DA] = []\ndef g(a):\n    _seen.append(a)\n",
+        ),
     ],
 )
 def test_slipped_forms_fire(tmp_path: Path, rules: list[str], body: str) -> None:

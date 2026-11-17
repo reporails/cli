@@ -50,8 +50,8 @@ def with_preservation(
 
 
 async def breaker_reply(state: CircuitState, target: Path, scan_root: Path) -> JsonObject:
-    """The `circuit_breaker` reply. For a file `remedy_brief` snapshotted whose last full reply the
-    state still holds, it also carries `accepted`, decided from that reply by `with_preservation`."""
+    """The `circuit_breaker` reply. For a file with a snapshot whose last full reply the
+    state still holds, it also carries `accepted`, decided from that reply."""
     reply: JsonObject = {
         "error": "circuit_breaker",
         "message": (

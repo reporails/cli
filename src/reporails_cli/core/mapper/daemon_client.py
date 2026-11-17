@@ -110,13 +110,10 @@ def map_ruleset_via_daemon(
 ) -> RulesetMap | None:
     """Map ruleset via global daemon, with the requested `segmentation`. Returns RulesetMap or None on failure.
 
-    Caller should fall back to in-process mapping when this returns None.
-
     The daemon streams JSON lines: zero or more ``{"type": "progress", "msg": ...}``
-    lines (forwarded to ``progress`` so the caller's spinner advances per harness
-    element on the daemon path too, not just in-process), followed by the single
+    lines (each message passed to ``progress``), followed by the single
     result line carrying ``ok`` + ``ruleset_map``. A malformed line or a closed
-    stream before the result yields None so the caller falls back to in-process.
+    stream before the result yields None.
     """
     request: JsonObject = {
         "cmd": "map_ruleset",

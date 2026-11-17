@@ -1,4 +1,4 @@
-"""The mapper daemon's Unix socket: JSON-line frames behind the `DaemonTransport` contract."""
+"""The mapper daemon's Unix socket: JSON-line frames, one JSON object per line."""
 
 from __future__ import annotations
 

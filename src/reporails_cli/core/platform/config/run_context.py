@@ -17,10 +17,11 @@ from reporails_cli.core.platform.dto.results import ConfiguredRoot, GlobalConfig
 
 
 class RunContext:
-    """What one run reads from the user's and the project's config, read at most once each.
+    """What one run reads from the user's and the project's config, memoized for the run.
 
-    The entry point builds one per run and drops it when the run ends, so a new run reads the
-    project as it is now. Building one does no I/O.
+    Each project root's settings are read once per run. The global settings are read once per
+    run, plus once per root inside that root's merged settings. A new instance reads the files as
+    they are now. Building one does no I/O.
     """
 
     def __init__(self) -> None:

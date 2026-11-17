@@ -30,7 +30,10 @@ References count too, called or not, and are reported as `<label> (reference)`:
 Known limits, not read: metadata probes (`stat`, `lstat`, `exists`, `is_file`, `is_dir`, `is_symlink`,
 `resolve`, `samefile`, `readlink`, `expanduser`, `os.path.*`); I/O through `importlib.resources`; I/O
 through `getattr` (`getattr(p, "read_text")`) or a name built at run time; a third-party reader handed a
-path; a stdlib reader not listed above; an `open` alias rebound through an assignment the scan cannot
+path; a stdlib reader not listed above (`linecache`, `os.copy_file_range`, `os.sendfile`); an `os` call
+outside the listed sets (`os.chown`, `os.mkfifo`, `os.renames`, `os.setxattr`, `os.popen`); `Path.lchmod`
+(only the listed `Path` methods are read); `vars(builtins)['open']` and `operator.methodcaller('read_text')`
+(a method or builtin named by a string is not read); an `open` alias rebound through an assignment the scan cannot
 follow (`_o = open` is seen at the assignment, a later `_o(p)` is not a separate hit); a bound
 `p.open`, `p.glob` or `p.walk` referenced without a call.
 

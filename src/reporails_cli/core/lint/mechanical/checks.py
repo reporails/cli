@@ -63,7 +63,7 @@ def _safe_float(value: JsonValue, default: float = float("inf")) -> float:
 
 
 def run_exclusions(args: CheckArgs) -> RunExclusions:
-    """What the run leaves out: the set `run_mechanical_check` hands in `args`."""
+    """What the run leaves out: the set carried in `args["_exclusions"]`."""
     given = args.get("_exclusions")
     if not isinstance(given, RunExclusions):
         raise TypeError("a mechanical check runs without the run's exclusions")

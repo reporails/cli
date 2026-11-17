@@ -1,4 +1,4 @@
-"""The one HTTP GET: a streaming `httpx` client behind the `HttpGet` contract."""
+"""The one HTTP GET: a streaming `httpx` client that follows redirects on request."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ _CHUNK = 1 << 20
 
 
 class _Reply:
-    """A streamed `httpx` response, read through the `HttpReply` contract."""
+    """A streamed `httpx` response, giving its status, headers and body in pieces."""
 
     def __init__(self, response: httpx.Response) -> None:
         self._response = response
