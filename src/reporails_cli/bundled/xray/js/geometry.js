@@ -193,7 +193,8 @@ export function stationSide(y, width, rects) {
 export const BRK_GAP = 8;
 
 // The first x at or right of `from` where a label `width` wide keeps BRK_GAP from every block ({ left, right }): `from`
-// itself, else just past a block's right edge; else, when nothing fits inside the canvas, the label's right edge on the canvas's.
+// itself, else just past a block's right edge; else, when nothing fits inside the canvas, the label's right edge on the canvas's
+// (the one place it may touch a block).
 export function labelLeft(from, width, blocks) {
   const x0 = from + BRK_GAP;
   const free = x => !blocks.some(b => b.left < x + width + BRK_GAP && b.right + BRK_GAP > x);

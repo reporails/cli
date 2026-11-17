@@ -466,20 +466,27 @@ function compactStripe(cur, c, i, y) {
   return m;
 }
 
-// Moves each no-activity label clear of the cards, pills, spine and side track in its stripe's rows, once the page has
-// measured the label. The stripe itself stays full width.
+// Moves each no-activity label clear of the cards, pills, failure-run labels, spine and side track in its stripe's rows, once
+// the page has measured the label. Every box is read first and every label written after, so the page lays out once. The
+// stripe itself stays full width, and so does a compaction stripe, which holds no place for a label to avoid.
+const BRK_BLOCKS = ':scope > :is(.card, .snode, .station, .pill-arch, .gbox, .blabel, .bracket, .nokids, .selband)';
+
 function settleBreaks(cv) {
-  const boxes = [...cv.querySelectorAll(':scope > .card, :scope > .snode, :scope > .station, :scope > .pill-arch, :scope > .gbox, :scope > .compact')]
-    .map(e => ({ left: e.offsetLeft, right: e.offsetLeft + e.offsetWidth, top: e.offsetTop, bottom: e.offsetTop + e.offsetHeight }));
+  const at = cv.getBoundingClientRect(), zoom = at.width / W || 1;
+  const rel = e => {
+    const r = e.getBoundingClientRect();
+    return { left: (r.left - at.left) / zoom, right: (r.right - at.left) / zoom, top: (r.top - at.top) / zoom, bottom: (r.bottom - at.top) / zoom };
+  };
+  const boxes = [...cv.querySelectorAll(BRK_BLOCKS)].map(rel);
   const lanes = cv.querySelector(':scope > .trackg');
   const from = lanes ? lanes.width.baseVal.value : 0;
-  const spine = { left: SPX - SPINE_HALF_MAX, right: SPX + SPINE_HALF_MAX };
-  for (const band of cv.querySelectorAll(':scope > .brk')) {
-    const label = band.firstElementChild;
-    const top = band.offsetTop, bottom = top + band.offsetHeight;
-    const here = boxes.filter(b => b.top < bottom && b.bottom > top);
-    label.style.marginLeft = `${labelLeft(from, label.offsetWidth, [spine, ...here])}px`;
-  }
+  const spine = { left: SPX - SPINE_HALF_MAX, right: SPX + SPINE_HALF_MAX, top: -Infinity, bottom: Infinity };
+  const placed = [...cv.querySelectorAll(':scope > .brk')].map(band => {
+    const label = band.firstElementChild, row = rel(band);
+    const here = [spine, ...boxes].filter(b => b.top < row.bottom && b.bottom > row.top);
+    return [label, labelLeft(from, label.getBoundingClientRect().width / zoom, here)];
+  });
+  for (const [label, x] of placed) label.style.marginLeft = `${x}px`;
 }
 
 // Places each drawn station pill by `stationSide` among the cards, once the page has measured its width.

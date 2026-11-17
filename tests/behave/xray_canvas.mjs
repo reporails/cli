@@ -32,7 +32,7 @@ if (mode === 'layout' && ready) {
 if (mode === 'breaks' && ready) {
   out.labels = await page.ev(`(() => {
     const box = e => { const r = e.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
-    const taken = [...document.querySelectorAll('.cv > .card, .cv > .snode, .cv > .station, .cv > .pill-arch, .cv > .gbox, .cv > .compact, .cv .tpath, line.spine')];
+    const taken = [...document.querySelectorAll('.cv > .card, .cv > .snode, .cv > .station, .cv > .pill-arch, .cv > .gbox, .cv > .blabel, .cv > .bracket, .cv > .nokids, .cv > .selband, .cv .tpath, line.spine')];
     return [...document.querySelectorAll('.brk span')].map(span => {
       const a = box(span);
       const hits = taken.filter(e => { const b = box(e); return b.left < a.right && b.right > a.left && b.top < a.bottom && b.bottom > a.top; }).map(e => e.className.baseVal ?? e.className);

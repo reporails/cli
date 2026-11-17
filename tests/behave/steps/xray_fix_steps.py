@@ -104,7 +104,7 @@ def _short_run(view: dict) -> None:
 def _idle_start(view: dict) -> None:
     main = next(t for t in view["track"] if t["node"] == "main")
     main["calls"] = [c for c in main["calls"] if c["t"] >= 60.0]
-    main["breaks"] = [{"start": 0.0, "end": 60.0}, *main["breaks"]]
+    main["breaks"] = [{"start": 0.0, "end": 60.0}, {"start": 1250.0, "end": 1500.0}, *main["breaks"]]
 
 
 CHANGES = {
