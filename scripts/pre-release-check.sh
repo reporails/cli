@@ -101,7 +101,8 @@ names = zipfile.ZipFile(glob.glob('dist/*.whl')[0]).namelist()
 heavy = [n for n in names if n.endswith('.onnx')]
 assert not heavy, f'model files in the lean wheel: {heavy}'
 from reporails_cli.core.mapper.model_store import ensure_models_available
-root = ensure_models_available()
+from reporails_cli.core.platform.adapters.http_get import http_get
+root = ensure_models_available(http_get)
 assert root is not None, 'model download is switched off (AILS_MODEL_OFFLINE is set)'
 onnx = root / 'minilm-l6-v2' / 'onnx' / 'model.onnx'
 assert onnx.exists(), f'ONNX model missing after the first-run fetch: {onnx}'

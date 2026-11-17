@@ -108,7 +108,7 @@ jobs:
           key: ails-model-${{ runner.os }}-${{ hashFiles('src/reporails_cli/core/mapper/model_manifest.py') }}
 
       - name: Fetch the model (cache miss)
-        run: uv run python -c "from reporails_cli.core.mapper.model_fetch import ensure_models_present; print(ensure_models_present())"
+        run: uv run python -c "from reporails_cli.core.mapper.model_fetch import ensure_models_present; from reporails_cli.core.platform.adapters.http_get import http_get; print(ensure_models_present(http_get))"
 
       - name: Require the model on disk and serve it to the test suite
         run: |
