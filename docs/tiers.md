@@ -37,7 +37,7 @@ On Free the fix text of the local checks, and on Pro the remedies and the workfl
 
 ## What the limits mean in practice
 
-**Hourly request rate.** Each `ails check` run counts as one request. The free limit covers everyday use — five runs per hour without an account is enough to iterate while editing a single file, and a free account's 100 runs per hour covers a busy day of editing and agent loops. Once you cross the limit, the response is a `429 rate_limit_exceeded` with a call-to-action: anonymous is pointed at `ails login` (100 an hour) and then at Pro (1,200 an hour); a signed-in free user is pointed straight at upgrading to Pro.
+**Hourly request rate.** Each `ails check` run counts as one request. The free limit covers everyday use — five runs per hour without an account is enough to iterate while editing a single file, and a free account's 100 runs per hour covers a busy day of editing and agent loops. Once you cross the limit, the response is a `429 rate_limit_exceeded` with a call-to-action: anonymous is pointed at `ails login` (100 an hour) and then at Pro (1,200 an hour); a signed-in free user is pointed straight at upgrading to Pro. Without Pro, the files checked also count toward 1,000 files an hour, signed in or not, so a project of more than 10 instruction files reaches that budget before the 100th run; the refusal then names the hourly file budget.
 
 After a `429`, the CLI waits for your limit to reset before contacting the server again: every run in the meantime shows the same limit message, with the "Try again in ~N min" countdown. This keeps watchers, hooks, and agent loops that re-run `ails check` from hammering a limit that is already spent. Signing in with `ails login` applies your account's limit straight away.
 
@@ -142,7 +142,7 @@ For CI, create an API key on [reporails.com/account](https://reporails.com/accou
 
 ## Why sign in, and why upgrade?
 
-You can run `ails check` anonymously with no setup — the score, every local finding with its line, and per-file counts for the interaction findings are free, forever. Signing in with a free account keeps your usage under your identity and is the step before subscribing; it does not raise any limit, add the remedies or let `ails check --heal` write fixes. Upgrading to Pro raises the request rate and payload cap and unlocks the remedies for the findings worth fixing, plus the ordered remediation workflow your coding agent applies end to end.
+You can run `ails check` anonymously with no setup — the score, every local finding with its line, and per-file counts for the interaction findings are free, forever. Signing in with a free account keeps your usage under your identity, raises the hourly limit from 5 to 100 checks, and is the step before subscribing; it does not raise the payload cap or the file budget, add the remedies or let `ails check --heal` write fixes. Upgrading to Pro raises the request rate and payload cap and unlocks the remedies for the findings worth fixing, plus the ordered remediation workflow your coding agent applies end to end.
 
 ---
 

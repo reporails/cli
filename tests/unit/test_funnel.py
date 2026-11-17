@@ -502,7 +502,7 @@ class TestFormatCta:
             assert "ails login" in cta
             assert cta.index("ails login") < cta.index("upgrade to Pro")
         # A `free` wire tier with no key held renders the same keyless copy —
-        # the caps are identical, so the wire label alone must not flip it.
+        # the held key decides, so the wire label alone must not flip it.
         free_wire = format_cta(FunnelError(error="rate_limit_exceeded", tier="free", limit=5))
         assert "ails login" in free_wire
         # Each gain is named as a number (100/hr signed in, 1,200/hr Pro), not a multiplier.
@@ -622,7 +622,7 @@ class TestFreeTierCta:
     @pytest.mark.subsys_funnel
     def test_held_key_not_wire_tier_selects_the_cta(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # SEAM: one wire tier (`free`), two callers. The CLI keys the CTA on the
-        # key it holds, because `anonymous` and `free` carry identical caps: a
+        # key it holds: a
         # keyed caller must never be sent to a login they already completed, and
         # a keyless caller cannot act on an upgrade link. Reddens if template
         # selection goes back to reading `err.tier` alone.
