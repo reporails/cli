@@ -106,7 +106,7 @@ def compute_same_dir_content_aliases(paths: Iterable[Path]) -> dict[Path, list[P
 
 
 def store_alias_cache(run: RunContext, target: Path, aliases: dict[Path, list[Path]]) -> None:
-    """Remember aliases on `run`, keyed by project root, so the display layer can look them up."""
+    """Remember aliases on `run`, keyed by the resolved project root."""
     run.aliases[safe_resolve(target)] = aliases
 
 

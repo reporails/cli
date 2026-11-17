@@ -21,7 +21,9 @@ passes (`'get_%s_config' % 'project'` and `'get_{}_config'.format('project')` ar
 `operator.attrgetter('<reader>')` and `m.__getattribute__('<reader>')` pass, even with a plain literal,
 because the string is neither a subscript key nor a `getattr(x, "name")` argument; a bare string
 constant that is not a subscript key or a folded expression passes (so a reader name
-in a docstring or a table of strings is quiet).
+in a docstring or a table of strings is quiet); a raw YAML read of a config path
+(`load_yaml_file(get_project_config_path(root))`, or `file_read` + `yaml.safe_load` of the global config)
+passes this floor and is caught by `test_one_reader_per_file.py` (R1/R2).
 
 The scanner takes the source files and their root, so the planted tests below run the same code on
 tmp files.

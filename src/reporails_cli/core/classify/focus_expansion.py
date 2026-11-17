@@ -50,8 +50,7 @@ def expand_focus(
     """Expand `focus_paths` to include preloaded skills for any subagent in the set.
 
     Reads each focus path's YAML frontmatter and looks for a `skills:`
-    field listing skill names. Each declared skill is resolved through
-    `resolve_capability(run, agent, "skills", name, project_root)` and added
+    field listing skill names. Each declared skill is resolved to its path and added
     to the expanded set, unless the run's `exclusions`
     leave that skill out: it is neither checked nor reported unresolved. Paths that aren't subagents (no `skills:`
     field, no frontmatter, or not a known agents file) pass through

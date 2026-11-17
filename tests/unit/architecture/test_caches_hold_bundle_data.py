@@ -132,26 +132,13 @@ def _annotation_nodes(annotation: ast.expr | None) -> Iterator[ast.AST]:
                 continue
 
 
-def path_aliases(tree: ast.Module) -> frozenset[str]:
-    """The path types of a file: `Path`/`PurePath`/`PathLike` plus every local name they are imported as
-    (`from pathlib import Path as _P`) or bound to (`_P = Path`)."""
-    names = set(PATH_TYPES)
+def aliases_of(tree: ast.Module, seeds: frozenset[str]) -> frozenset[str]:
+    """The seed names plus every local name they are imported as (`from pathlib import Path as _P`)
+    or bound to (`_P = Path`)."""
+    names = set(seeds)
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            names.update(a.asname for a in node.names if a.asname and a.name in PATH_TYPES)
-    for stmt in tree.body:
-        if isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Name) and stmt.value.id in names:
-            names.update(t.id for t in stmt.targets if isinstance(t, ast.Name))
-    return frozenset(names)
-
-
-def record_aliases(tree: ast.Module, records: frozenset[str]) -> frozenset[str]:
-    """The path-carrying records of a file plus every local name they are imported as
-    (`from ...discovery import DetectedAgent as _DA`) or bound to (`_DA = DetectedAgent`)."""
-    names = set(records)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            names.update(a.asname for a in node.names if a.asname and a.name in records)
+            names.update(a.asname for a in node.names if a.asname and a.name in seeds)
     for stmt in tree.body:
         if isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Name) and stmt.value.id in names:
             names.update(t.id for t in stmt.targets if isinstance(t, ast.Name))
@@ -307,7 +294,7 @@ def _cache_rules(tree: ast.Module, fn: Func, aliases: frozenset[str], caches: li
         return set()
     params = _params(fn)
     names = {p.arg for p in params}
-    paths = path_aliases(tree)
+    paths = aliases_of(tree, PATH_TYPES)
     rules: set[str] = set()
     if any(_names_path(p.annotation, paths) for p in params) or _applies_listing(fn, names):
         rules.add("C1")
@@ -381,7 +368,7 @@ def _containers(tree: ast.Module, records: frozenset[str]) -> dict[str, tuple[in
     """Module-level names bound to a mutable container: name -> (line, annotation names a path or a
     path-carrying record)."""
     bare, modules = _constructors(tree)
-    path_names = path_aliases(tree) | record_aliases(tree, records)
+    path_names = aliases_of(tree, PATH_TYPES) | aliases_of(tree, records)
     found: dict[str, tuple[int, bool]] = {}
     for stmt in tree.body:
         if isinstance(stmt, ast.Assign) and _is_container(stmt.value, bare, modules):
@@ -456,7 +443,7 @@ def _hits(target: ast.expr, name: str, own: bool, aliases: set[str]) -> bool:
 def state_violations(sources: list[Path], root: Path, records: frozenset[str] = frozenset()) -> list[Violation]:
     """C4: a project-keyed mutable container at module level of `core/` or `formatters/`."""
     trees = {py.relative_to(root).as_posix(): _tree(py) for py in sources}
-    mutations = {rel: list(_mutations(tree, path_aliases(tree))) for rel, tree in trees.items()}
+    mutations = {rel: list(_mutations(tree, aliases_of(tree, PATH_TYPES))) for rel, tree in trees.items()}
     mutated_names = {
         rel: {t.id if isinstance(t, ast.Name) else t.attr for t, _ in found if isinstance(t, (ast.Name, ast.Attribute))}
         for rel, found in mutations.items()

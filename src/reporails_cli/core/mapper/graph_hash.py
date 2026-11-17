@@ -72,8 +72,7 @@ def graph_content_hash(path: Path) -> str:
 
     Memoized on disk: the on-disk sidecar (:func:`_load_sidecar` / :func:`_save_sidecar`) is
     keyed by (path, size, mtime), so the hash is computed once per install, not once per
-    process — a whole-map cache hit and every shard worker would otherwise each pay the full
-    re-hash. Content hash rather than bare size+mtime — mtime is not stable across install
+    process. Content hash rather than bare size+mtime — mtime is not stable across install
     methods (pip wheel extraction, npx cache re-copy, git checkout), so two installs of the
     identical weights could otherwise fingerprint differently, or (worse) two DIFFERENT
     weight exports could coincidentally share a size+mtime pair.

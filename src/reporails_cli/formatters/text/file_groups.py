@@ -129,7 +129,7 @@ def build_aliases_by_file(
 ) -> dict[str, list[str]]:
     """Combine discovery-time symlink aliases with display-time same-dir content aliases.
 
-    `discovered` holds the paths the discovery layer already collapsed
+    `discovered` maps each path to the alias paths already collapsed into it
     (symlinks to one inode). `compute_same_dir_content_aliases` runs against
     the union of files referenced by findings — catches manual AGENTS.md /
     CLAUDE.md pairs that classify under different agents but should render as

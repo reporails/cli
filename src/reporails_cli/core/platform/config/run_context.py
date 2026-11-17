@@ -19,7 +19,7 @@ from reporails_cli.core.platform.dto.results import ConfiguredRoot, GlobalConfig
 class RunContext:
     """What one run reads from the user's and the project's config, memoized for the run.
 
-    Each method reads on its first call and keeps the result for the run. `global_config()` reads
+    `tier()` reads `AILS_TIER` on every call; it is not memoized. `global_config()` reads
     the global file once. `project_config(root)` reads that root's project, local and global files
     once per root. `config_documents(root)` reads the same three files once per root, separately.
     A new instance reads the files as they are now. Building one does no I/O.

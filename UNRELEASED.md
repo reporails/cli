@@ -57,7 +57,7 @@
 
 ### Internal
 
-- The architecture tests catch more spellings of each pattern they guard, and each one lists the spellings it still cannot see; source comments describe only the code they sit on.
+- The architecture tests catch more spellings of each pattern they guard, and each one lists the spellings it still cannot see, including the ones another architecture test catches; source comments describe only the code they sit on.
 - An architecture test fails on any core module that imports a driven adapter, in any import form; core declares the port and the command line, MCP server and x-ray page pass the adapter in.
 - CI now runs the model-backed integration tests on a fetched model.
 - The Windows check scenarios and the MCP x-ray two-call scenario lose their skip tag. The two-call scenario reads the page while the agent's MCP server still runs, because on Windows the test client ends the server's process tree, the page with it.

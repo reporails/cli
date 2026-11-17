@@ -169,7 +169,8 @@ def run_pipeline_for_path(
     `file_score` are `None` on a structured error/needs-install payload — the caller checks `"error"` /
     `"needs_install"` in the payload. A file `path` narrows the validated set to that single file;
     `file_score` is that single file's own display score (`None` for a directory or an unscored file).
-    `named` and `project_root` are read as in `core.pipeline.check_one.scope_for_path`; `run` is this tool call's own.
+    `project_root` roots the check, `named` holds files the caller named for a directory `path`, and `run` is
+    this tool call's own.
     """
     checked = check_path(
         path,
