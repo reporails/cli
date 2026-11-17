@@ -118,6 +118,16 @@ def step_handoff(context):
     assert seen["down"]["tag"] == seen["up"]["tag"] == "BUTTON", seen
 
 
+@then("a failed subagent's Failed line opens the text its parent received")
+def step_failed_handback(context):
+    seen = _panels(context, "failed_handback")
+    if seen is None:
+        return
+    assert seen["failed"]["line"] == "Failed", seen["failed"]
+    assert seen["failed"]["kicker"].startswith("Result the parent received"), seen["failed"]
+    assert seen["failed"]["text"] == "handed-back text of a9", seen["failed"]
+
+
 @then("a source opens its text from the file route and the peak legend adds up to the whole")
 def step_details(context):
     seen = _panels(context, "details")

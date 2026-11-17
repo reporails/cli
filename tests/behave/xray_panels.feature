@@ -26,6 +26,11 @@ Feature: The x-ray Sources panel and right column list everything and describe o
     Then a selected subagent's down pill opens its task prompt and its up pill opens what it handed back
 
   @page @browser
+  Scenario: A failed subagent's Failed line opens the text its parent received
+    Given the bundled page is served over the "view_panels" fixture view
+    Then a failed subagent's Failed line opens the text its parent received
+
+  @page @browser
   Scenario: The main agent's cost shows the whole session
     Given the bundled page is served over the "view_sample" fixture view
     Then the main agent's cost tile and details list the session total, the subagents' share and the costliest subagents

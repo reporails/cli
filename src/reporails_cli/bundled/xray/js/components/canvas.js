@@ -22,6 +22,13 @@ const abs = (cls, left, top, tag = 'div') => {
   return e;
 };
 
+// Makes `e` (made with the 'button' tag) a button that opens the details `peek`, named by its `label`.
+function peekButton(e, peek, label) {
+  e.type = 'button';
+  e.dataset.peek = peek;
+  e.setAttribute('aria-label', `${label}: open details`);
+}
+
 const hasIt = (focus, node) => !focus || focus.had_by.includes(node.id);
 
 function banner(env, cur, kids) {
@@ -275,9 +282,7 @@ function selectedPills(c, p, edge, ys, ye, outcome) {
     const e = abs('pill-arch ' + cls + ' left', SPX, y, peek ? 'button' : 'div');
     e.textContent = label;
     if (!peek) return e;
-    e.type = 'button';
-    e.dataset.peek = peek;
-    e.setAttribute('aria-label', `${label}: open details`);
+    peekButton(e, peek, label);
     return e;
   };
   const out = [pill('down', `↓ ${tk(edge ? edge.down : null, true)} · ${clock(edge ? edge.out_t : c.start)}`, ys, `task:${c.id}`)];
@@ -636,11 +641,7 @@ export function render(box, env) {
     b.style.width = `${BOT_W}px`;
     b.style.height = `${BOT_H}px`;
     b.textContent = hand.text;
-    if (hand.peek) {
-      b.type = 'button';
-      b.dataset.peek = hand.peek;
-      b.setAttribute('aria-label', `${hand.text}: open details`);
-    }
+    if (hand.peek) peekButton(b, hand.peek, hand.text);
     cv.append(b);
   }
   if (!kids.length) {

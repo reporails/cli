@@ -111,12 +111,21 @@ def handback_message(row: JsonObject) -> str | None:
     return None
 
 
+def reply_blocks(row: JsonObject) -> list[str]:
+    """The text of each text block of an assistant row; none for any other row or a row with no text block.
+    Refuses a text block with no string text."""
+    if row.get("type") != "assistant":
+        return []
+    texts = [block.get("text") for block in content_blocks(row, "text")]
+    if not all(isinstance(text, str) for text in texts):
+        raise PayloadRefused("assistant text block has no text")
+    return [text for text in texts if isinstance(text, str)]
+
+
 def reply_text(row: JsonObject) -> str | None:
     """The text blocks of an assistant row joined; None for any other row or a row with no text block."""
-    if row.get("type") != "assistant" or not content_blocks(row, "text"):
-        return None
-    texts = blocks_text(as_object(row.get("message")).get("content"), "assistant row")
-    return None if texts is None else "".join(texts)
+    texts = reply_blocks(row)
+    return "".join(texts) if texts else None
 
 
 def mcp_server(name: str) -> str | None:

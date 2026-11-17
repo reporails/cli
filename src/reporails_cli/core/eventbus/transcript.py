@@ -243,23 +243,19 @@ def subagent_output(
 
 def _last_reply(adapter: TranscriptAdapter, path: Path, subagent_id: str) -> str | None:
     """The text of the last assistant row of a subagent file that carries text or a tool call, None when that row
-    is a tool call or the file cannot be read."""
-    last: tuple[JsonObject, EventKind] | None = None
-    try:
-        with path.open("rb") as handle:
-            for line in handle:
-                if b'"assistant"' not in line:
-                    continue
-                with contextlib.suppress(ValueError):
-                    row = as_object(json.loads(line))
-                    kinds = [r.event for r in adapter.resolve_row(row, subagent_id) if r.event in ASSISTANT_ROW_KINDS]
-                    if kinds:
-                        last = (row, kinds[-1])
-    except OSError:
+    is a tool call or the file cannot be read. A row the adapter refuses is skipped."""
+
+    def last_kind(row: JsonObject) -> EventKind | None:
+        try:
+            kinds = [r.event for r in adapter.resolve_row(row, subagent_id) if r.event in ASSISTANT_ROW_KINDS]
+        except PayloadRefused:
+            return None
+        return kinds[-1] if kinds else None
+
+    row = _find_row(path, '"assistant"', lambda found: last_kind(found) is not None, latest=True)
+    if row is None or last_kind(row) != "assistant_text":
         return None
-    if last is None or last[1] != "assistant_text":
-        return None
-    return adapter.resolve_reply(last[0])
+    return adapter.resolve_reply(row)
 
 
 def subagent_system(agent: str, session_file: Path, subagent_id: str | None) -> str | None:

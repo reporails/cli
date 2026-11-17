@@ -112,6 +112,7 @@ from reporails_cli.core.eventbus.adapters.claude_calls import (
     handback_message,
     holds_call,
     holds_result,
+    reply_blocks,
     reply_text,
     result_text,
     tool_call,
@@ -338,13 +339,10 @@ class ClaudeTranscriptAdapter:
 
     def _reply_text(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         """One record sizing the text blocks of an assistant row; none when the row holds no text block."""
-        blocks = content_blocks(row, "text")
-        if not blocks:
+        texts = reply_blocks(row)
+        if not texts:
             return []
-        texts = [block.get("text") for block in blocks]
-        if not all(isinstance(text, str) for text in texts):
-            raise PayloadRefused("assistant text block has no text")
-        chars = sum(len(text) for text in texts if isinstance(text, str))
+        chars = sum(len(text) for text in texts)
         synthetic = as_object(row.get("message")).get("model") == SYNTHETIC_MODEL
         return [replace(self._record(row, "assistant_text", subagent_id), item=ReplyText(chars, synthetic))]
 

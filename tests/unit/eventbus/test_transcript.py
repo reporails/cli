@@ -1244,3 +1244,13 @@ def test_a_subagent_output_from_a_result_needs_the_launching_call_and_a_known_ag
         subagent_output("claude", session, SUB_D, "result", None)
     with pytest.raises(PayloadRefused, match="unknown agent"):
         subagent_output("nosuchagent", session, SUB_A, "handback", None)
+
+
+def test_a_reply_lookup_skips_an_assistant_row_the_adapter_refuses(tmp_path: Path) -> None:
+    session = tmp_path / "session.jsonl"
+    refused = _assistant_row(content=[{"type": "text"}])
+    final = _assistant_row(content=[{"type": "text", "text": "the final reply"}])
+    folder = tmp_path / "session" / "subagents"
+    folder.mkdir(parents=True)
+    (folder / "agent-aaaa.jsonl").write_text("".join(json.dumps(row) + "\n" for row in (refused, final)))
+    assert subagent_output("claude", session, "aaaa", "reply", None) == "the final reply"

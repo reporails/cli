@@ -174,5 +174,16 @@ if (mode === 'handoff' && ready) {
   out.up = await opened('up');
 }
 
+if (mode === 'failed_handback' && ready) {
+  await click('.card[data-node="a9"]');
+  await page.until(`!!document.querySelector('#inspector [data-drill]')`);
+  await click('#inspector [data-drill]');
+  await page.until(`!!document.querySelector('.card.bottom[data-peek]')`);
+  const line = await page.ev(`(document.querySelector('.card.bottom') || {}).textContent`);
+  await click('.card.bottom[data-peek]');
+  await page.until(`!!document.querySelector('.pk-dialog pre.peek')`);
+  out.failed = await page.ev(`({ line: ${JSON.stringify(line)}, kicker: document.querySelector('.pk-k').textContent, text: document.querySelector('.pk-dialog pre.peek').textContent })`);
+}
+
 await page.close();
 console.log(JSON.stringify(out));

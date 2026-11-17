@@ -5090,7 +5090,7 @@
     ],
     "prompts": [],
     "brief": true,
-    "output_source": null,
+    "output_source": "result",
     "back_ratio": null,
     "cost": {
      "total_usd": 0.62,

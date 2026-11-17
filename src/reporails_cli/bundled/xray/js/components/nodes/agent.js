@@ -55,9 +55,10 @@ function card(node, env) {
 
 function handback(node, env) {
   const d = node.detail;
-  if (d.outcome === 'returned') return { text: `Handed back ↑ ${tk(d.back_tokens_est, true)} · ${clock(env.ix.edges.get(node.id)?.back_t ?? node.end)}`, peek: d.output_source ? `output:${node.id}` : null };
+  const peek = d.output_source ? `output:${node.id}` : null;
+  if (d.outcome === 'returned') return { text: `Handed back ↑ ${tk(d.back_tokens_est, true)} · ${clock(env.ix.edges.get(node.id)?.back_t ?? node.end)}`, peek };
   const text = d.outcome ? { failed: 'Failed', stopped: 'Stopped, nothing handed back', no_handback: 'Ended with no hand-back', running: 'Still running' }[d.outcome] : null;
-  return text && { text, peek: null };
+  return text && { text, peek };
 }
 
 register('agent', { card, handback });
