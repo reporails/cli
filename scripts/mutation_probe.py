@@ -180,6 +180,18 @@ def run_tests(target: str, timeout: int = _MUTANT_TIMEOUT_S) -> str:
     return "survived" if r.returncode == 0 else "caught"
 
 
+def _split_command(command: str, windows: bool = os.name == "nt") -> list[str]:
+    """Split a killing command into argv; on Windows a backslash stays part of a path."""
+    if not windows:
+        return shlex.split(command)
+    return [t[1:-1] if len(t) > 1 and t[0] == t[-1] and t[0] in "\"'" else t for t in shlex.split(command, posix=False)]
+
+
+def _join_command(argv: list[str], windows: bool = os.name == "nt") -> str:
+    """Join argv back into a command string that `_split_command` reads the same way."""
+    return subprocess.list2cmdline(argv) if windows else shlex.join(argv)
+
+
 def run_command(command: str, timeout: int) -> str:
     """Run an upper-tier killing command against the on-disk mutant.
 
@@ -189,7 +201,7 @@ def run_command(command: str, timeout: int) -> str:
     """
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     try:
-        r = subprocess.run(shlex.split(command), capture_output=True, text=True, timeout=timeout, env=env)
+        r = subprocess.run(_split_command(command), capture_output=True, text=True, timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
         return "hang"
     return "survived" if r.returncode == 0 else "caught"
@@ -225,8 +237,8 @@ def _scenarios_for(coverage: dict[str, list[str]], lines: range) -> list[str]:
 
 def _scoped_command(command: str, scenarios: list[str]) -> str:
     """`command` with its feature-path arguments replaced by the `feature:line` scenario ids."""
-    kept = [t for t in shlex.split(command) if t.startswith("-") or not (".feature" in t or "tests/behave" in t)]
-    return shlex.join([*kept, *scenarios])
+    kept = [t for t in _split_command(command) if t.startswith("-") or not (".feature" in t or "tests/behave" in t)]
+    return _join_command([*kept, *scenarios])
 
 
 def _validate_command(command: str, timeout: int) -> str | None:
@@ -237,7 +249,7 @@ def _validate_command(command: str, timeout: int) -> str | None:
     """
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     try:
-        r = subprocess.run(shlex.split(command), capture_output=True, text=True, timeout=timeout, env=env)
+        r = subprocess.run(_split_command(command), capture_output=True, text=True, timeout=timeout, env=env)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"killing command {command!r} did not complete on the unmutated source: {exc}"
     if r.returncode != 0:

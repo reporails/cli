@@ -216,3 +216,13 @@ class TestValidationStamp:
         (repo / "clean.count").write_text("1")  # the clean run is already red
         assert _probe(monkeypatch, repo, "--validation-stamp", str(repo / "stamp.json")) == 1
         assert not (repo / "stamp.json").exists()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_windows_command_keeps_backslashed_paths_intact() -> None:
+    command = r'C:\src\cli\.venv\Scripts\python.exe "C:\my dir\fake.py" -q'
+    argv = mutation_probe._split_command(command, windows=True)
+    assert argv == [r"C:\src\cli\.venv\Scripts\python.exe", r"C:\my dir\fake.py", "-q"]
+    assert mutation_probe._split_command(mutation_probe._join_command(argv, windows=True), windows=True) == argv
+    assert mutation_probe._split_command("a 'b c' d", windows=False) == ["a", "b c", "d"]

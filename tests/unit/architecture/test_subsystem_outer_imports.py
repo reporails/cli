@@ -46,7 +46,7 @@ def test_subsystems_do_not_import_interfaces_or_formatters() -> None:
     subsystems = sorted(p for p in CORE.iterdir() if p.is_dir() and p.name not in {"platform", "__pycache__"})
     assert subsystems, "core/ must hold subsystems"
     violations = [
-        f"{py.relative_to(ROOT)} imports {imp}"
+        f"{py.relative_to(ROOT).as_posix()} imports {imp}"
         for subsystem in subsystems
         for py in sorted(subsystem.rglob("*.py"))
         if "__pycache__" not in py.parts
@@ -97,7 +97,7 @@ def _adapter_imports(core: Path) -> list[str]:
             # One finding per statement: `from adapters.x import y` names both `adapters.x` and `adapters.x.y`.
             hit = next((target for target in targets if _is_adapter(target)), None)
             if hit:
-                found.append(f"{py.relative_to(src)}:{node.lineno} imports {hit}")
+                found.append(f"{py.relative_to(src).as_posix()}:{node.lineno} imports {hit}")
     return found
 
 

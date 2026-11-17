@@ -66,4 +66,4 @@ def test_head_session_is_built_once_per_head() -> None:
         b = handle.head_session(Path("/heads/b.onnx"))
     assert a1 is a2
     assert a1 is not b
-    assert built == ["/heads/a.onnx", "/heads/b.onnx"]
+    assert built == [str(Path("/heads/a.onnx")), str(Path("/heads/b.onnx"))]

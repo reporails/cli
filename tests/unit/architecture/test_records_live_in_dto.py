@@ -47,7 +47,7 @@ def test_records_live_in_dto() -> None:
     """No module under `core/` outside `platform/dto/` and `platform/contract/` declares a record."""
     assert CORE.is_dir(), f"{CORE} must exist"
     violations = [
-        f"{py.relative_to(ROOT)}:{record}"
+        f"{py.relative_to(ROOT).as_posix()}:{record}"
         for py in sorted(CORE.rglob("*.py"))
         if "__pycache__" not in py.parts and not py.relative_to(CORE).as_posix().startswith(_HOMES)
         for record in records_in(py.read_text(encoding="utf-8"))

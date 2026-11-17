@@ -6,6 +6,7 @@ client forwards them to its callback."""
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -223,6 +224,7 @@ def test_map_handler_maps_with_the_requested_segmentation(monkeypatch, tmp_path)
 
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
+@pytest.mark.skipif(sys.platform == "win32", reason="the daemon socket needs Unix domain sockets")
 def test_exchange_streams_progress_then_reply_over_a_real_socket() -> None:
     """The client's frames and the server's framing meet on one real Unix socket: a progress frame reaches the
     callback and the reply is returned; an address nobody listens on raises `PlatformUnavailableError`."""
