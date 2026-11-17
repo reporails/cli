@@ -9,7 +9,7 @@ last_updated: 2026-10-08
 
 Reporails has two tiers: **Free** and **Pro**.
 
-- **Free** is every user without an active Pro subscription — whether you are anonymous (no account) or signed in with a free account. Both share identical limits and identical diagnostic detail: the score, every local finding with its line, and per-file counts for the interaction findings. Signing in does not raise your limits; it gives you an account (for managing your subscription) and changes the call-to-action from "sign in" to "upgrade".
+- **Free** is every user without an active Pro subscription — whether you are anonymous (no account) or signed in with a free account. Both get identical diagnostic detail: the score, every local finding with its line, and per-file counts for the interaction findings. They differ in the hourly limit: 5 an hour without an account, 100 an hour once you sign in with `ails login`. The payload cap is the same for both, and signing in also gives you an account for managing your subscription.
 - **Pro** is an active paid subscription. It raises the request rate and payload cap and adds what the server works out for your project: which findings to fix first and which to leave alone, and the exact line of every cross-file repetition and topic overlap. The ordered remediation workflow hands these to your coding agent as remedies and checks each file again after your agent rewrites it. The server sends no remedy text to an anonymous or free caller at all — Free gets only the fix text of the local checks, in the diagnosis, and `--heal` writes nothing for it.
 
 The CLI sends your API key (if you have one) with each request; the diagnostic backend resolves your tier from your subscription state and applies the corresponding limits.
@@ -19,7 +19,7 @@ The CLI sends your API key (if you have one) with each request; the diagnostic b
 | Limit / capability                        | Free (anonymous or signed in) | Pro                                       |
 |-------------------------------------------|-------------------------------|-------------------------------------------|
 | Account                                   | Optional (`ails login`)  | Subscription via your account page        |
-| Hourly request rate                       | 5 / hour                      | 1,200 / hour                              |
+| Hourly request rate                       | 5 / hour signed out, 100 / hour signed in | 1,200 / hour                  |
 | Per-request payload cap                   | 2 MB                          | 20 MB                                     |
 | Mechanical and structural rule findings   | Full detail                   | Full detail                               |
 | Per-finding rule body and pass / fail     | Full detail                   | Full detail                               |
@@ -37,7 +37,7 @@ On Free the fix text of the local checks, and on Pro the remedies and the workfl
 
 ## What the limits mean in practice
 
-**Hourly request rate.** Each `ails check` run counts as one request. The free limit covers casual use — five runs per hour is enough to iterate while editing a single file. Once you cross the limit, the response is a `429 rate_limit_exceeded` with a call-to-action: anonymous is pointed at `ails login` and then at Pro (the account is the step before subscribing); a signed-in free user is pointed straight at upgrading to Pro.
+**Hourly request rate.** Each `ails check` run counts as one request. The free limit covers everyday use — five runs per hour without an account is enough to iterate while editing a single file, and a free account's 100 runs per hour covers a busy day of editing and agent loops. Once you cross the limit, the response is a `429 rate_limit_exceeded` with a call-to-action: anonymous is pointed at `ails login` (100 an hour) and then at Pro (1,200 an hour); a signed-in free user is pointed straight at upgrading to Pro.
 
 After a `429`, the CLI waits for your limit to reset before contacting the server again: every run in the meantime shows the same limit message, with the "Try again in ~N min" countdown. This keeps watchers, hooks, and agent loops that re-run `ails check` from hammering a limit that is already spent. Signing in with `ails login` applies your account's limit straight away.
 
@@ -90,17 +90,17 @@ Pro output folds a topic-overlap finding back into the per-file list with its li
 
 A finding about a single instruction inside one file — a vague, weak or too-brief instruction, say — renders with its line on both tiers; the interaction and cross-file findings are where the tiers differ, as above.
 
-When you cross an hourly limit, the normal output is replaced at the bottom of `ails check` with the assessment-box CTA. Anonymous is pointed at signing in first (the account is the prerequisite for subscribing) and then at Pro, which is what actually raises the cap; a signed-in free user is pointed straight at upgrading to Pro; Pro is pointed at the contact form so we can see the use case and raise the cap:
+When you cross an hourly limit, the normal output is replaced at the bottom of `ails check` with the assessment-box CTA. Anonymous is pointed at signing in first (which raises the limit to 100 an hour) and then at Pro (1,200 an hour); a signed-in free user is pointed straight at upgrading to Pro; Pro is pointed at the contact form so we can see the use case and raise the cap:
 
 ```
   ⚠  Server diagnostics unavailable.
-  Anonymous limit hit (5/hr). Try again in ~12 min. Sign in with `ails login`, then upgrade to Pro to raise it to 1,200/hr
+  Anonymous limit hit (5/hr). Try again in ~12 min. Sign in with `ails login` to raise it to 100/hr, then upgrade to Pro for 1,200/hr
   Did you see an error? Let us know: https://github.com/reporails/cli/issues
 ```
 
 ```
   ⚠  Server diagnostics unavailable.
-  Hit the free limit (5/hr). Try again in ~12 min. Upgrade to Pro to raise it to 1,200/hr
+  Hit the free limit (100/hr). Try again in ~12 min. Upgrade to Pro to raise it to 1,200/hr
   Did you see an error? Let us know: https://github.com/reporails/cli/issues
 ```
 

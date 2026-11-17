@@ -272,7 +272,7 @@ _CTA_TEMPLATES: dict[tuple[str, str], str] = {
         "anonymous",
     ): (
         "Anonymous limit hit ({err.limit}/hr). {err.reset_phrase}"
-        "Sign in with `ails login`, then upgrade to Pro to raise it to 1,200/hr"
+        "Sign in with `ails login` to raise it to 100/hr, then upgrade to Pro for 1,200/hr"
     ),
     ("rate_limit_exceeded", "free"): (
         "Hit the free limit ({err.limit}/hr). {err.reset_phrase}Upgrade to Pro to raise it to 1,200/hr"

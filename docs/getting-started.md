@@ -81,7 +81,7 @@ Per-repo settings, rule thresholds, and rule disables live in `.ails/config.yml`
 
 ## Authenticate (optional, free)
 
-The anonymous tier works without an account and is enough to see whether your instructions are working — the full diagnosis, every finding, and the score. Signing in is free and does not change your rate or payload caps — anonymous and signed-in free accounts share the same limits. What an account gives you is an identity (so you can subscribe and manage the subscription); `ails check --heal` writes fixes on a Pro account only, and an anonymous or free run gets the full diagnosis and no changes. Raising the caps and unlocking the full diagnostic detail (the remedies, and the exact line of each cross-file repetition and topic overlap) is what Pro adds:
+The anonymous tier works without an account and is enough to see whether your instructions are working — the full diagnosis, every finding, and the score. Signing in is free and raises your hourly limit from 5 to 100 checks; the payload cap stays the same. An account also gives you an identity (so you can subscribe and manage the subscription); `ails check --heal` writes fixes on a Pro account only, and an anonymous or free run gets the full diagnosis and no changes. Raising the caps and unlocking the full diagnostic detail (the remedies, and the exact line of each cross-file repetition and topic overlap) is what Pro adds:
 
 ```bash
 ails login    # sign this machine in through your browser
