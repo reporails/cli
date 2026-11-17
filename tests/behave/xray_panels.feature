@@ -104,3 +104,8 @@ Feature: The x-ray Sources panel and right column list everything and describe o
   Scenario: The card or row whose details are open is marked as open and loses the mark when another opens
     Given the bundled page is served over the "view_panels" fixture view
     Then the card and the row that opened the details are marked open and the one opened before is not
+
+  @page @browser
+  Scenario: A station pill and a scrolled Tool calls row keep the open mark and the Tool calls strip never takes it
+    Given the bundled page is served over the "view_sample" fixture view
+    Then a station pill, and a Tool calls row scrolled away and back, stay marked open and the Tool calls strip never is

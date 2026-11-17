@@ -8,6 +8,7 @@ import {
   bandColour, layoutTime, labelLeft, lengthFor, mergeStations, placeSources, replyAt, stationSide, tickMarks,
 } from '../geometry.js';
 import { groupOpen } from '../state.js';
+import { markOpen } from './details.js';
 import { RESTART_S, callIndex, childrenOf, isSpine, kindOfSource, replyParts, segmentOf, sourceFirsts, startsSession, typeOf } from '../views.js';
 import { rendererFor } from './nodes/index.js';
 import * as rail from './rail.js';
@@ -23,9 +24,10 @@ const abs = (cls, left, top, tag = 'div') => {
 };
 
 // Makes `e` (made with the 'button' tag) a button that opens the details `peek`, named by its `label`.
-function peekButton(e, peek, label) {
+function peekButton(e, peek, label, now) {
   e.type = 'button';
   e.dataset.peek = peek;
+  markOpen(e, now, [peek]);
   e.setAttribute('aria-label', `${label}: open details`);
 }
 
@@ -271,7 +273,7 @@ function arches(env, kids, placedMap, scale, matchOf, groups) {
       marks.append(svg('circle', { cx: SPX, cy: ye.toFixed(1), r: on ? 4 : 2.5, fill: on && returned ? BLUE : '#8A8C92', opacity: on ? 1 : match ? 0.55 : 0.12 }));
     }
     marks.append(svg('circle', { cx: SPX, cy: ys.toFixed(1), r: on ? 4 : 2.5, fill: on ? VIOLET : '#8A8C92', opacity: on ? 1 : match ? 0.55 : 0.12 }));
-    if (on) pills.push(...selectedPills(c, p, edge, ys, ye, outcome));
+    if (on) pills.push(...selectedPills(env, c, p, edge, ys, ye, outcome));
   }
   for (const grp of groups) if (!grp.expanded) groupEdges(env, grp, placedMap.get(grp.key), scale, matchOf, g, marks);
   return { arches: g, marks, pills };
@@ -280,12 +282,12 @@ function arches(env, kids, placedMap, scale, matchOf, groups) {
 // Canvas room two stacked arch pills need between their times; a nearer pair sits above and below its times instead of centred on them.
 const PILL_PAIR_CLEAR = 24;
 
-function selectedPills(c, p, edge, ys, ye, outcome) {
+function selectedPills(env, c, p, edge, ys, ye, outcome) {
   const pill = (cls, label, y, peek) => {
     const e = abs('pill-arch ' + cls + ' left', SPX, y, peek ? 'button' : 'div');
     e.textContent = label;
     if (!peek) return e;
-    peekButton(e, peek, label);
+    peekButton(e, peek, label, env.state.peek);
     return e;
   };
   const out = [pill('down', `↓ ${tk(edge ? edge.down : null, true)} · ${clock(edge ? edge.out_t : c.start)}`, ys, `task:${c.id}`)];
@@ -380,6 +382,7 @@ function sourceNode(env, it, p) {
   const dim = env.graphFocus && !hot;
   const b = abs('snode' + (it.find ? ' find' : '') + (hot ? ' hot' : '') + (dim ? ' dim' : ''), p.left, p.top, 'button');
   b.dataset.source = it.source;
+  markOpen(b, env.state.peek, [`src:${it.source}`]);
   b.dataset.card = it.key;
   b.title = it.title;
   b.setAttribute('aria-label', it.title);
@@ -430,6 +433,7 @@ function stationPill(env, cl) {
     + (cl.members.some(m => m.find) ? ' find' : '') + (hot ? ' hot' : '') + (dim ? ' dim' : '');
   const b = abs(cls, SPX, cl.y, 'button');
   b.dataset.source = it.source;
+  markOpen(b, env.state.peek, cl.members.map(m => `src:${m.source}`));
   b.dataset.sources = cl.members.map(m => m.source).join(' ');
   b.dataset.station = many ? 'merged' : it.type;
   if (many) {
@@ -451,16 +455,17 @@ function stationPill(env, cl) {
 
 function stations(env, cur, scale, held, cuts) {
   const out = mergeStations(stationItems(env, cur, scale, cuts)).map(cl => stationPill(env, cl));
-  held.forEach((c, i) => out.push(compactStripe(cur, c, i, scale.cuts.get(`cut:${i}`).y)));
+  held.forEach((c, i) => out.push(compactStripe(env, cur, c, i, scale.cuts.get(`cut:${i}`).y)));
   return out;
 }
 
 // A compaction: a thin band across the canvas at its time that opens its details.
-function compactStripe(cur, c, i, y) {
+function compactStripe(env, cur, c, i, y) {
   const both = c.before != null && c.after != null;
   const m = abs('compact', 0, y - STRIPE_HALF, 'button');
   m.type = 'button';
   m.dataset.peek = `compaction:${cur.id}:${i}`;
+  markOpen(m, env.state.peek, [m.dataset.peek]);
   m.setAttribute('aria-label', `Compaction${c.trigger ? ', ' + c.trigger : ''}, at ${clock(c.t)}${both ? `, context ${k1(c.before)} to ${k1(c.after)}` : ''}: open details`);
   m.append(el('span', null, `compacted${both ? ` · ${k1(c.before)} → ${k1(c.after)}` : ''} · at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`));
   return m;
@@ -669,7 +674,7 @@ export function render(box, env) {
     b.style.width = `${BOT_W}px`;
     b.style.height = `${BOT_H}px`;
     b.textContent = hand.text;
-    if (hand.peek) peekButton(b, hand.peek, hand.text);
+    if (hand.peek) peekButton(b, hand.peek, hand.text, env.state.peek);
     cv.append(b);
   }
   if (!kids.length) {

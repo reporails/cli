@@ -108,8 +108,9 @@ button.pill-arch{border:0;font-family:inherit;cursor:pointer}
 .snode.dim{background:transparent;border-color:rgba(255,255,255,.05);color:var(--t3)}
 .snode.dim .kl,.snode.find.dim .kl{background:transparent;color:var(--t3)}
 /* The open details' opener: a canvas element takes the selected card's look, a row in a column its inset bar. */
-.snode.open,.compact.open,.pill-arch.open{background:#22242A;border-color:rgba(236,236,236,.55);box-shadow:0 0 0 4px rgba(165,148,255,.14),0 10px 28px rgba(0,0,0,.5)}
-.ic.open,.sr.open,.ix-expand.open,.vl-row.open{background:#23252C;box-shadow:inset 2px 0 0 var(--sel)}
+.snode.open,.compact.open,.pill-arch.open,.card.bottom.open{background:#22242A;border-color:rgba(236,236,236,.55);box-shadow:0 0 0 4px rgba(165,148,255,.14),0 10px 28px rgba(0,0,0,.5)}
+.station.open{border-color:rgba(236,236,236,.7);box-shadow:0 0 0 3px rgba(165,148,255,.35)}
+.ic.open,.sr.open,.ix-expand.open,.ix-kid.open{background:#23252C;box-shadow:inset 2px 0 0 var(--sel)}
 .trackg{position:absolute;left:0;top:0;pointer-events:none}
 .callslink{z-index:2;position:absolute;padding:0;border:0;background:none;font-size:calc(10.5px / var(--z,1));color:#A9C2FF;cursor:pointer}
 .callslink:hover{text-decoration:underline}

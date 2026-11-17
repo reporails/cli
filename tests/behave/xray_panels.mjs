@@ -68,6 +68,30 @@ if (mode === 'open_mark' && ready) {
   out.afterRow = await marked();
 }
 
+if (mode === 'open_more' && ready) {
+  const state = sel => page.ev(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); return e ? { expanded: e.getAttribute('aria-expanded'), on: e.classList.contains('on') || e.classList.contains('open') } : null; })()`);
+  out.stationKey = await page.ev(`(document.querySelector('.station[data-source]') || { dataset: {} }).dataset.source || null`);
+  await click('.station[data-source]');
+  await page.until(`!!document.querySelector('.pk-dialog')`);
+  out.station = await state('.station[data-source]');
+  await click('[data-close-peek].pk-x');
+  await sleep(100);
+  await click('.tab[data-tab="calls"]');
+  await page.until(`!!document.querySelector('#view-calls .vl-row[data-peek]')`);
+  out.peek = await page.ev(`document.querySelector('#view-calls .vl-row[data-peek]').dataset.peek`);
+  await click(`#view-calls .vl-row[data-peek=${JSON.stringify(out.peek)}]`);
+  await page.until(`!!document.querySelector('#side-calls .pk-title')`);
+  out.row = await state(`#view-calls .vl-row[data-peek=${JSON.stringify(out.peek)}]`);
+  out.rowCount = await page.ev(`document.querySelectorAll('#view-calls .vl-row').length`);
+  await page.ev(`(() => { const v = document.querySelector('#view-calls .vl'); v.scrollTop = v.scrollHeight; })()`);
+  await sleep(300);
+  out.away = await state(`#view-calls .vl-row[data-peek=${JSON.stringify(out.peek)}]`);
+  await page.ev(`(() => { const v = document.querySelector('#view-calls .vl'); v.scrollTop = 0; })()`);
+  await sleep(300);
+  out.back = await state(`#view-calls .vl-row[data-peek=${JSON.stringify(out.peek)}]`);
+  out.strip = await page.ev(`(() => { const e = document.querySelector('.tb-canvas'); return { expanded: e.getAttribute('aria-expanded'), open: e.classList.contains('open') || e.classList.contains('on') }; })()`);
+}
+
 if (mode === 'details' && ready) {
   await click('#sources .sr[data-source="CLAUDE.md"]');
   await page.until(`!!document.querySelector('.pk-dialog pre.peek')`);

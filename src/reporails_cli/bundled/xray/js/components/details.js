@@ -122,16 +122,14 @@ export function renderPanel(box, env) {
 // Focus: it goes to the × when details open, and back to the element that opened them when they close.
 const focus = { shown: '', opener: null };
 
-// Marks whatever opens the open details wherever the page draws it (`data-peek` of the same `kind:id`; a source card or row
-// by its `data-source`), and clears the mark everywhere else, so the open item is always the one marked.
-export function markOpen(root, peek) {
-  const key = peekKey(peek);
-  for (const e of root.querySelectorAll('[data-peek], :is(button, div)[data-source]')) {
-    const on = !!peek && (e.dataset.peek === key || (peek.kind === 'src' && e.dataset.source === peek.id));
-    if (on) e.setAttribute('aria-expanded', 'true');
-    else if (e.classList.contains('open')) e.removeAttribute('aria-expanded');
-    e.classList.toggle('open', on);
-  }
+// Marks an opener the page is creating as open when `peek` (the open item, `{kind, id}` or null) is one of the `keys` it opens
+// (`kind:id`, as written in data-peek; a source's is `src:<id>`): `cls` and aria-expanded. Every builder of an opener calls
+// this as it creates the opener, so a row drawn later (a list scrolled back into view) carries the mark too.
+export function markOpen(e, peek, keys, cls = 'open') {
+  if (!peek || !keys.includes(peekKey(peek))) return e;
+  e.classList.add(cls);
+  e.setAttribute('aria-expanded', 'true');
+  return e;
 }
 
 // What opened the details: an element, or the key of the element that stands for it; its region and identity find its twin after a redraw.

@@ -1,6 +1,7 @@
 // The Sources panel: an inventory of everything the session had, whatever the graph shows. Built in first, then one group
 // per source kind the adapter declares; each header says how many were used and carries the kind's eye for the graph.
 import { el, svg, sync } from '../dom.js';
+import { markOpen } from './details.js';
 import { costEst, fill, tk, plural, MCP_STATES } from '../format.js';
 import { SOURCES_SHOWN } from '../geometry.js';
 import { UNRECORDED, revealedSource } from '../views.js';
@@ -57,6 +58,7 @@ function row(env, s) {
   const never = s.availability !== 'loaded';
   const r = el('div', 'sr' + (never ? ' never' : '') + (env.focus && env.focus.id === s.id ? ' on' : ''));
   r.dataset.source = s.id;
+  markOpen(r, env.state.peek, [`src:${s.id}`]);
   r.tabIndex = 0;
   r.setAttribute('role', 'button');
   const label = s.label || s.name;
@@ -72,9 +74,10 @@ function row(env, s) {
   return r;
 }
 
-function builtinRow(item) {
+function builtinRow(env, item) {
   const r = el('div', 'sr');
   r.dataset.peek = `${BUILTIN}:${item.key}`;
+  markOpen(r, env.state.peek, [r.dataset.peek]);
   r.tabIndex = 0;
   r.setAttribute('role', 'button');
   r.setAttribute('aria-label', `${item.label}. Open details.`);
@@ -220,7 +223,7 @@ export function render(box, env) {
   if (builtin.length) {
     parts.push(group(env, {
       key: BUILTIN, label: 'Built in', letter: '·', used: builtin.length, total: null, usage: plural(builtin.length, 'item'),
-      finds: 0, rows: builtin.map(builtinRow),
+      finds: 0, rows: builtin.map(item => builtinRow(env, item)),
     }));
   }
   for (const k of ix.view.adapter.source_kinds) {

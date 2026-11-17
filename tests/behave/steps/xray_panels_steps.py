@@ -288,3 +288,15 @@ def step_open_mark(context):
     assert seen["afterRow"] and all(m["peek"] == "peak:main" and m["expanded"] == "true" for m in seen["afterRow"]), (
         seen["afterRow"]
     )
+
+
+@then("a station pill, and a Tool calls row scrolled away and back, stay marked open and the Tool calls strip never is")
+def step_open_more(context):
+    seen = _panels(context, "open_more")
+    if seen is None:
+        return
+    assert seen["stationKey"] and seen["station"] == {"expanded": "true", "on": True}, seen
+    assert seen["row"] == {"expanded": "true", "on": True}, seen
+    assert seen["away"] is None, ("the row must have left the page while scrolled away", seen)
+    assert seen["back"] == {"expanded": "true", "on": True}, seen
+    assert seen["strip"] == {"expanded": None, "open": False}, seen
