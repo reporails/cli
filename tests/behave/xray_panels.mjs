@@ -174,6 +174,24 @@ if (mode === 'handoff' && ready) {
   out.up = await opened('up');
 }
 
+if (mode === 'short_pills' && ready) {
+  await click('.card[data-node="a4"]');
+  await page.until(`!!document.querySelector('.pill-arch.up[data-peek]')`);
+  const rect = pill => page.ev(`(() => { const r = document.querySelector('.pill-arch.${pill}[data-peek]').getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; })()`);
+  out.down = { rect: await rect('down') };
+  out.up = { rect: await rect('up') };
+  for (const pill of ['down', 'up']) {
+    // Whatever is on top at the pill's centre takes a user's click.
+    const r = out[pill].rect;
+    out[pill].top = await page.ev(`(() => { const e = document.elementFromPoint(${(r.left + r.right) / 2}, ${(r.top + r.bottom) / 2}); return e && e.classList.contains('pill-arch') ? [...e.classList].find(c => c === 'down' || c === 'up') : null; })()`);
+    await click(`.pill-arch.${pill}[data-peek]`);
+    await page.until(`!!document.querySelector('.pk-dialog pre.peek')`);
+    out[pill].kicker = await page.ev(`document.querySelector('.pk-k').textContent`);
+    await click('[data-close-peek].pk-x');
+    await sleep(100);
+  }
+}
+
 if (mode === 'failed_handback' && ready) {
   await click('.card[data-node="a9"]');
   await page.until(`!!document.querySelector('.pill-arch.up[data-peek]')`);

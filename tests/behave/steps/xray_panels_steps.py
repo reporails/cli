@@ -118,6 +118,19 @@ def step_handoff(context):
     assert seen["down"]["tag"] == seen["up"]["tag"] == "BUTTON", seen
 
 
+@then("a selected short subagent's down and up pills do not overlap and each opens its text")
+def step_short_pills(context):
+    seen = _panels(context, "short_pills")
+    if seen is None:
+        return
+    d, u = seen["down"]["rect"], seen["up"]["rect"]
+    apart = d["right"] <= u["left"] or u["right"] <= d["left"] or d["bottom"] <= u["top"] or u["bottom"] <= d["top"]
+    assert apart, seen
+    assert seen["down"]["top"] == "down" and seen["up"]["top"] == "up", seen
+    assert seen["down"]["kicker"].startswith("Task prompt"), seen["down"]
+    assert seen["up"]["kicker"].startswith("Hand-back message"), seen["up"]
+
+
 @then("a failed subagent's Failed line opens the text its parent received")
 def step_failed_handback(context):
     seen = _panels(context, "failed_handback")

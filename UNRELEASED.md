@@ -4,7 +4,7 @@
 
 - `ails check --offline` (or `AILS_OFFLINE=1`) runs local checks only and makes no network call; the summary says the server analysis did not run.
 - After a heal run through your agent, `ails check` names each healed file whose score fell or whose findings came back since the heal, one line per file (`Since the last heal: CLAUDE.md score 8.4 → 7.9; findings back: CORE:C:0058 +2`), and `--format json` carries them under `heal_regressions` and each file's score under `file_scores`.
-- On the `ails xray` page, a subagent's ↓ and ↑ open its task prompt and what it handed back in the middle window; a failed subagent's ↑ and its Failed line open the result its parent received.
+- On the `ails xray` page, a subagent's ↓ and ↑ open its task prompt and what it handed back in the middle window; a failed subagent's ↑ and its Failed line open the result its parent received; on a short subagent the two pills stay apart.
 
 ### Changed
 

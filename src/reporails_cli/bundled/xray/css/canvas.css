@@ -73,6 +73,7 @@ button.card.bottom{cursor:pointer;font-family:inherit}
 .compact span{position:absolute;left:84px;top:0;line-height:14px;font:calc(10.5px / var(--z,1)) 'JetBrains Mono',monospace;color:var(--find2);background:var(--canvas);padding:0 6px}
 .pill-arch{position:absolute;z-index:4;white-space:nowrap;font-size:calc(11px / var(--z,1));padding:2px 9px;border-radius:999px}
 .pill-arch.right{transform:translate(10px,-50%)} .pill-arch.left{transform:translate(calc(-100% - 10px),-50%)}
+.pill-arch.left.above{transform:translate(calc(-100% - 10px),calc(-100% - 2px))} .pill-arch.left.below{transform:translate(calc(-100% - 10px),2px)}
 button.pill-arch{border:0;font-family:inherit;cursor:pointer}
 .pill-arch.down{color:#E6E0FF;background:#2B2650} .pill-arch.up{color:#DCE7FF;background:#1F2C4A}
 .nokids{position:absolute}

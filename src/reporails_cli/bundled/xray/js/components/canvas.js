@@ -277,6 +277,9 @@ function arches(env, kids, placedMap, scale, matchOf, groups) {
   return { arches: g, marks, pills };
 }
 
+// Canvas room two stacked arch pills need between their times; a nearer pair sits above and below its times instead of centred on them.
+const PILL_PAIR_CLEAR = 24;
+
 function selectedPills(c, p, edge, ys, ye, outcome) {
   const pill = (cls, label, y, peek) => {
     const e = abs('pill-arch ' + cls + ' left', SPX, y, peek ? 'button' : 'div');
@@ -288,6 +291,7 @@ function selectedPills(c, p, edge, ys, ye, outcome) {
   const out = [pill('down', `↓ ${tk(edge ? edge.down : null, true)} · ${clock(edge ? edge.out_t : c.start)}`, ys, `task:${c.id}`)];
   if (outcome === 'returned' && ye !== null) out.push(pill('up', `↑ ${tk(edge.back, true)} · ${clock(edge.back_t)}`, ye, c.detail.output_source ? `output:${c.id}` : null));
   else if (outcome !== 'returned' && c.detail.output_source) out.push(pill('up', `↑ ${tk(edge ? edge.back : null, true)} · ${clock(edge && edge.back_t != null ? edge.back_t : c.end)}`, ye !== null ? ye : ys, `output:${c.id}`));
+  if (out.length === 2 && (ye === null ? 0 : ye - ys) < PILL_PAIR_CLEAR) { out[0].classList.add('above'); out[1].classList.add('below'); }
   return out;
 }
 

@@ -26,6 +26,11 @@ Feature: The x-ray Sources panel and right column list everything and describe o
     Then a selected subagent's down pill opens its task prompt and its up pill opens what it handed back
 
   @page @browser
+  Scenario: A short subagent's two pills never cover one another
+    Given the bundled page is served over the "view_panels" fixture view changed so the reviewer subagent ran for only four seconds
+    Then a selected short subagent's down and up pills do not overlap and each opens its text
+
+  @page @browser
   Scenario: A failed subagent's Failed line opens the text its parent received
     Given the bundled page is served over the "view_panels" fixture view
     Then a failed subagent's Failed line opens the text its parent received

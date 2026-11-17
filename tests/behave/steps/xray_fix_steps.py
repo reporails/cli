@@ -94,7 +94,15 @@ def _fourteen_tools(view: dict) -> None:
             n += 1
 
 
+def _short_run(view: dict) -> None:
+    node = _node(view, "a4")
+    node["end"] = node["start"] + 4.0
+    edge = next(e for e in view["edges"] if e["to"] == "a4")
+    edge["out_t"], edge["back_t"] = node["start"] - 1.5, node["end"]
+
+
 CHANGES = {
+    "the reviewer subagent ran for only four seconds": _short_run,
     "its calls used fourteen tools": _fourteen_tools,
     "the first subagent has no replies": _no_replies,
     "a source id holds a line break": _line_break_id,
