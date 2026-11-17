@@ -180,16 +180,39 @@ def run_tests(target: str, timeout: int = _MUTANT_TIMEOUT_S) -> str:
     return "survived" if r.returncode == 0 else "caught"
 
 
-def _split_command(command: str, windows: bool = os.name == "nt") -> list[str]:
-    """Split a killing command into argv; on Windows a backslash stays part of a path."""
-    if not windows:
+_WINDOWS = os.name == "nt"
+
+
+def _command_args(command: str) -> str | list[str]:
+    """What `subprocess.run` takes for `command`: the string itself on Windows (the child parses it), argv elsewhere."""
+    return command if _WINDOWS else shlex.split(command)
+
+
+def _split_command(command: str) -> list[str]:
+    """Split a command string into argv the way the platform's runtime parses it."""
+    if not _WINDOWS:
         return shlex.split(command)
-    return [t[1:-1] if len(t) > 1 and t[0] == t[-1] and t[0] in "\"'" else t for t in shlex.split(command, posix=False)]
+    import ctypes  # pylint: disable=import-outside-toplevel  # Windows-only branch
+    from ctypes import wintypes  # pylint: disable=import-outside-toplevel  # Windows-only branch
+
+    shell32 = ctypes.windll.shell32  # type: ignore[attr-defined,unused-ignore]
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined,unused-ignore]
+    shell32.CommandLineToArgvW.restype = ctypes.POINTER(wintypes.LPWSTR)
+    shell32.CommandLineToArgvW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    count = ctypes.c_int()
+    argv = shell32.CommandLineToArgvW(command, ctypes.byref(count))
+    if not argv:
+        raise ValueError(f"cannot split command {command!r}")
+    try:
+        return [argv[i] for i in range(count.value)]
+    finally:
+        kernel32.LocalFree(argv)
 
 
-def _join_command(argv: list[str], windows: bool = os.name == "nt") -> str:
-    """Join argv back into a command string that `_split_command` reads the same way."""
-    return subprocess.list2cmdline(argv) if windows else shlex.join(argv)
+def _join_command(argv: list[str]) -> str:
+    """Join argv into a command string that `_split_command` reads back as the same argv."""
+    return subprocess.list2cmdline(argv) if _WINDOWS else shlex.join(argv)
 
 
 def run_command(command: str, timeout: int) -> str:
@@ -201,7 +224,7 @@ def run_command(command: str, timeout: int) -> str:
     """
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     try:
-        r = subprocess.run(_split_command(command), capture_output=True, text=True, timeout=timeout, env=env)
+        r = subprocess.run(_command_args(command), capture_output=True, text=True, timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
         return "hang"
     return "survived" if r.returncode == 0 else "caught"
@@ -237,7 +260,11 @@ def _scenarios_for(coverage: dict[str, list[str]], lines: range) -> list[str]:
 
 def _scoped_command(command: str, scenarios: list[str]) -> str:
     """`command` with its feature-path arguments replaced by the `feature:line` scenario ids."""
-    kept = [t for t in _split_command(command) if t.startswith("-") or not (".feature" in t or "tests/behave" in t)]
+    kept = [
+        t
+        for t in _split_command(command)
+        if t.startswith("-") or not (".feature" in t or "tests/behave" in t.replace("\\", "/"))
+    ]
     return _join_command([*kept, *scenarios])
 
 
@@ -249,7 +276,7 @@ def _validate_command(command: str, timeout: int) -> str | None:
     """
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     try:
-        r = subprocess.run(_split_command(command), capture_output=True, text=True, timeout=timeout, env=env)
+        r = subprocess.run(_command_args(command), capture_output=True, text=True, timeout=timeout, env=env)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"killing command {command!r} did not complete on the unmutated source: {exc}"
     if r.returncode != 0:

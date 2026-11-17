@@ -59,7 +59,7 @@
 
 ### Internal
 
-- Tests: the architecture, daemon, mapper and mutation-probe tests pass on Windows.
+- Tests: the architecture, daemon, mapper and mutation-probe tests pass on Windows, and the mutation probe runs its killing command there.
 - The Windows type check passes again: starting the mapper daemon's server on Windows stops with a clear error, as reaching it already did.
 - The MCP and `ails check` target test expects a skill target to name its whole folder, as `validate` does.
 - The architecture tests catch more spellings of each pattern they guard, and each one lists the spellings it still cannot see, including the ones another architecture test catches; source comments describe only the code they sit on.

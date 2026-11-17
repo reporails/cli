@@ -220,9 +220,35 @@ class TestValidationStamp:
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_windows_command_keeps_backslashed_paths_intact() -> None:
-    command = r'C:\src\cli\.venv\Scripts\python.exe "C:\my dir\fake.py" -q'
-    argv = mutation_probe._split_command(command, windows=True)
-    assert argv == [r"C:\src\cli\.venv\Scripts\python.exe", r"C:\my dir\fake.py", "-q"]
-    assert mutation_probe._split_command(mutation_probe._join_command(argv, windows=True), windows=True) == argv
-    assert mutation_probe._split_command("a 'b c' d", windows=False) == ["a", "b c", "d"]
+def test_posix_command_splits_quotes_and_joins_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mutation_probe, "_WINDOWS", False)
+    assert mutation_probe._split_command("a 'b c' d") == ["a", "b c", "d"]
+    assert mutation_probe._command_args("a 'b c'") == ["a", "b c"]
+    argv = ["x y", "--tags=@a and not @b"]
+    assert mutation_probe._split_command(mutation_probe._join_command(argv)) == argv
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+@pytest.mark.skipif(sys.platform != "win32", reason="splits with the Windows command-line parser")
+def test_windows_join_then_split_returns_the_same_argv() -> None:
+    argv = ["C:\\my dir\\\\", 'x"y', "--tags=@a and not @b"]
+    assert mutation_probe._split_command(mutation_probe._join_command(argv)) == argv
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+@pytest.mark.skipif(sys.platform != "win32", reason="splits with the Windows command-line parser")
+def test_windows_split_keeps_a_quoted_tag_expression_whole() -> None:
+    argv = mutation_probe._split_command('behave tests\\behave --tags="@offline and not @slow"')
+    assert argv == ["behave", "tests\\behave", "--tags=@offline and not @slow"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+@pytest.mark.skipif(sys.platform != "win32", reason="splits with the Windows command-line parser")
+def test_windows_scoped_command_drops_the_backslashed_feature_directory() -> None:
+    scoped = mutation_probe._split_command(
+        mutation_probe._scoped_command("behave tests\\behave --stop", ["f.feature:3"])
+    )
+    assert scoped == ["behave", "--stop", "f.feature:3"]
