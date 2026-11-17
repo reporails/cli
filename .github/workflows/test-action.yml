@@ -22,6 +22,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./action
         id: check
+        env:
+          AILS_OFFLINE: "1"
         with:
           from-source: "true"
           server-url: "http://127.0.0.1:9"
@@ -47,6 +49,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./action
         id: check
+        env:
+          AILS_OFFLINE: "1"
         with:
           agent: claude
           exclude-dir: "vendor,dist"
@@ -102,6 +106,8 @@ jobs:
           FIXTURE
       - uses: ./action
         id: should-fail
+        env:
+          AILS_OFFLINE: "1"
         continue-on-error: true
         with:
           path: /tmp/bad-project

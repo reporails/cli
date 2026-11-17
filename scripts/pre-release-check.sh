@@ -127,23 +127,26 @@ ok "Classifier model present"
 #    default production host. Endpoint resolution, in order:
 #      1. AILS_SERVER_URL exported by the caller  -> honoured verbatim
 #      2. a local dev server answering /health    -> used, in dev mode
-#      3. neither                                 -> fully offline, announced loudly
+#      3. neither                                 -> local checks only (--offline), announced loudly
 step "Verify content checks"
 LOCAL_SERVER="${AILS_LOCAL_SERVER_URL:-http://localhost:8001}"
 if [ -n "${AILS_SERVER_URL:-}" ]; then
   CHECK_SERVER_URL="$AILS_SERVER_URL"
   CHECK_DEV_MODE="${AILS_DEV_MODE:-}"
+  CHECK_OFFLINE=""
   echo -e "  ${DIM}endpoint: AILS_SERVER_URL from the environment${RESET}"
 elif command -v curl >/dev/null 2>&1 && curl -fsS --connect-timeout 2 --max-time 5 "$LOCAL_SERVER/health" >/dev/null 2>&1; then
   CHECK_SERVER_URL="$LOCAL_SERVER"
   CHECK_DEV_MODE="true"
+  CHECK_OFFLINE=""
   echo -e "  ${DIM}endpoint: local dev server at $LOCAL_SERVER${RESET}"
 else
   # An empty URL selects the hosted service, so point at a closed local
-  # address: the check stays on this machine and server diagnostics fail fast.
+  # address and ask for a local-only run: no request leaves this machine.
   CHECK_SERVER_URL="http://127.0.0.1:9"
   CHECK_DEV_MODE=""
-  echo -e "${RED}  ▲ NOTICE: no AILS_SERVER_URL and no local server — running OFFLINE.${RESET}"
+  CHECK_OFFLINE="1"
+  echo -e "${RED}  ▲ NOTICE: no AILS_SERVER_URL and no local server — running OFFLINE (--offline, local checks only).${RESET}"
   echo -e "${RED}    Server-side diagnostics are NOT exercised by this gate. The${RESET}"
   echo -e "${RED}    client-check assertion below still runs and still blocks the push.${RESET}"
   echo -e "${RED}    Export AILS_SERVER_URL to cover the server half as well.${RESET}"
@@ -157,7 +160,7 @@ Use `npm run build` to build the project.
 NEVER commit secrets or API keys.
 FIXTURE
 RESULT=$(HOME="$MODEL_HOME" AILS_SERVER_URL="$CHECK_SERVER_URL" AILS_DEV_MODE="$CHECK_DEV_MODE" \
-  "$VENV/bin/ails" check "$SMOKE_DIR" -f json 2>/dev/null) || true
+  AILS_OFFLINE="$CHECK_OFFLINE" "$VENV/bin/ails" check "$SMOKE_DIR" -f json 2>/dev/null) || true
 # Parse with the verification venv's own interpreter — a bare `python3` is
 # whatever the host happens to ship and may not satisfy requires-python.
 CLIENT=$(echo "$RESULT" | "$VENV/bin/python" -c "import sys,json; print(json.load(sys.stdin).get('stats',{}).get('client_check_count',0))")

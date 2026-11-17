@@ -156,7 +156,7 @@ jobs:
           result = subprocess.run(
               [str(ails), 'check', str(fixture), '-f', 'json'],
               check=True, capture_output=True, text=True,
-              env={**__import__('os').environ, 'AILS_SERVER_URL': 'http://127.0.0.1:9'},
+              env={**__import__('os').environ, 'AILS_SERVER_URL': 'http://127.0.0.1:9', 'AILS_OFFLINE': '1'},
           )
           data = json.loads(result.stdout)
           count = data.get('stats', {}).get('client_check_count', 0)

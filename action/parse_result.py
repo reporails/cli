@@ -5,6 +5,11 @@ Usage: echo '<json>' | python3 parse_result.py
 Outputs: _SCORE=X.X  _LEVEL=LN  _VIOLATIONS=N  _RESULT=ok|server-unavailable
          _SERVER_REASON=<reason-token-or-empty>  _CONTENT_SKIPPED=true|false  (one per line, eval-safe)
 
+When the input is not JSON, or is the service-unreachable error object (a top-level
+`error`), the same lines print with `_SCORE`, `_LEVEL` and `_VIOLATIONS` empty,
+`_RESULT=server-unavailable` and `_SERVER_REASON` set to the error value (or
+`unparsed_output`); the exit code stays 0.
+
 _CONTENT_SKIPPED is true when the result carries `content_checks_skipped` (no model on
 disk): the score then does not reflect the content checks, so the min-score gate fails.
 
@@ -43,8 +48,26 @@ def _server_error_token(server_error: object) -> str:
     return token if _TOKEN_RE.fullmatch(token) else "unknown_error"
 
 
+def _emit(score: str, level: str, violations: object, result: str, reason: str, content_skipped: bool) -> None:
+    print(f"_SCORE={score}")
+    print(f"_LEVEL={level}")
+    print(f"_VIOLATIONS={violations}")
+    print(f"_RESULT={result}")
+    print(f"_SERVER_REASON={reason}")
+    print(f"_CONTENT_SKIPPED={'true' if content_skipped else 'false'}")
+
+
 def main() -> None:
-    d = json.load(sys.stdin)
+    try:
+        d = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        _emit("", "", "", "server-unavailable", "unparsed_output", False)
+        return
+    if not isinstance(d, dict) or "error" in d:
+        # A reply that is not a result: the service-unreachable error object, or other output.
+        reason = _server_error_token(d) if isinstance(d, dict) else "unparsed_output"
+        _emit("", "", "", "server-unavailable", reason or "unparsed_output", False)
+        return
     files = d.get("files", {})
     stats = d.get("stats", {})
 
@@ -55,13 +78,7 @@ def main() -> None:
 
     score_out = "" if quality is None else f"{float(quality):.1f}"
     result_out = "server-unavailable" if server_error_token else "ok"
-
-    print(f"_SCORE={score_out}")
-    print(f"_LEVEL={level}")
-    print(f"_VIOLATIONS={violations}")
-    print(f"_RESULT={result_out}")
-    print(f"_SERVER_REASON={server_error_token}")
-    print(f"_CONTENT_SKIPPED={'true' if d.get('content_checks_skipped') is True else 'false'}")
+    _emit(score_out, level, violations, result_out, server_error_token, d.get("content_checks_skipped") is True)
 
 
 if __name__ == "__main__":
