@@ -383,6 +383,7 @@
      }
     ],
     "brief": false,
+    "output_source": null,
     "back_ratio": null
    },
    "child_sources": {
@@ -548,6 +549,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 58
    },
    "child_sources": {}
@@ -702,6 +704,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 81
    },
    "child_sources": {}
@@ -864,6 +867,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 39
    },
    "child_sources": {}
@@ -1026,6 +1030,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 82
    },
    "child_sources": {}
@@ -1196,6 +1201,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 154
    },
    "child_sources": {
@@ -1345,6 +1351,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 101
    },
    "child_sources": {
@@ -1484,6 +1491,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 77
    },
    "child_sources": {}
@@ -1646,6 +1654,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": null,
     "back_ratio": null
    },
    "child_sources": {}
@@ -1808,6 +1817,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": null,
     "back_ratio": null
    },
    "child_sources": {}
@@ -1964,6 +1974,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 21
    },
    "child_sources": {}
@@ -2126,6 +2137,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": null,
     "back_ratio": null
    },
    "child_sources": {}
@@ -2288,6 +2300,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": null,
     "back_ratio": null
    },
    "child_sources": {}

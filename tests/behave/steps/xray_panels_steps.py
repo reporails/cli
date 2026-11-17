@@ -107,6 +107,17 @@ def step_column(context):
         assert shown["tools"] == [{"tool": t["tool"], "n": t["calls"]} for t in node["tools"]], shown["tools"]
 
 
+@then("a selected subagent's down pill opens its task prompt and its up pill opens what it handed back")
+def step_handoff(context):
+    seen = _panels(context, "handoff")
+    if seen is None:
+        return
+    assert seen["down"]["text"] == "task text of a4" and seen["down"]["kicker"].startswith("Task prompt"), seen["down"]
+    assert seen["up"]["text"] == "handed-back text of a4", seen["up"]
+    assert seen["up"]["kicker"].startswith("Hand-back message"), seen["up"]
+    assert seen["down"]["tag"] == seen["up"]["tag"] == "BUTTON", seen
+
+
 @then("a source opens its text from the file route and the peak legend adds up to the whole")
 def step_details(context):
     seen = _panels(context, "details")

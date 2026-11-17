@@ -96,7 +96,8 @@ the adapter refuses any other shape of a row type it reads:
 
 Never read, except for the sizes (a reply's text included), the brief and the prompts above: message content,
 tool output, `content`, `displayPath`. Tool input is read only for the path, the MCP server, a hand-back message's
-size and a command's hash, and a command's text on request. The meta `description` is read.
+size and a command's hash; on request, a command's text, a hand-back's message and an assistant row's text. The meta
+`description` is read.
 """
 
 from __future__ import annotations
@@ -108,8 +109,10 @@ from reporails_cli.core.eventbus.adapters.claude_calls import (
     call_command,
     call_input,
     content_blocks,
+    handback_message,
     holds_call,
     holds_result,
+    reply_text,
     result_text,
     tool_call,
     tool_result,
@@ -128,6 +131,8 @@ from reporails_cli.core.eventbus.adapters.claude_requests import (
 from reporails_cli.core.eventbus.adapters.claude_rows import (
     attached_paths,
     brief_text,
+    compact_summary_link,
+    compact_summary_text,
     meta_field,
     required_text,
     sized_by_name,
@@ -181,11 +186,6 @@ _HARNESS: dict[str, HarnessAttachment] = {
 
 # The command row a `/clear` opens the new session's transcript with.
 _CLEAR_COMMAND = "<command-name>/clear</command-name>"
-
-
-def _is_compact_summary(row: JsonObject) -> bool:
-    """Whether the row is a compaction summary row: `type: "user"` with `isCompactSummary: true`."""
-    return row.get("type") == "user" and row.get("isCompactSummary") is True
 
 
 class ClaudeTranscriptAdapter:
@@ -247,6 +247,14 @@ class ClaudeTranscriptAdapter:
         """The text of the result of the tool call `use_id` in a user row, for the route that shows it."""
         return result_text(row, use_id)
 
+    def resolve_handback(self, row: JsonObject) -> str | None:
+        """The message of the hand-back call an assistant row holds; None for any other row."""
+        return handback_message(row)
+
+    def resolve_reply(self, row: JsonObject) -> str | None:
+        """The text of an assistant row; None for any other row or a row with no text."""
+        return reply_text(row)
+
     def resolve_brief(self, first_row: JsonObject) -> str:
         """The brief a subagent was given, the text of its first row; refuses a first row that is not a user
         row holding text."""
@@ -280,17 +288,12 @@ class ClaudeTranscriptAdapter:
     def resolve_compact_summary(self, row: JsonObject) -> str | None:
         """The summary text of a compaction summary row (`type: "user"`, `isCompactSummary: true`, string
         `message.content`); None for any other row."""
-        if not _is_compact_summary(row):
-            return None
-        content = as_object(row.get("message")).get("content")
-        return content if isinstance(content, str) else None
+        return compact_summary_text(row)
 
     def resolve_compact_link(self, row: JsonObject) -> str | None:
         """The `parentUuid` of a compaction summary row, the `uuid` of the boundary row it follows; None for any
         other row or a summary row with no parent."""
-        if not _is_compact_summary(row):
-            return None
-        return opt_str(row.get("parentUuid")) or None
+        return compact_summary_link(row)
 
     def opens_with_clear(self, row: JsonObject) -> bool | None:
         """For a user row that is not a harness note, whether it is the `/clear` command row; None for any other

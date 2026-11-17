@@ -1,5 +1,5 @@
 // The node renderer registry: a node kind maps to its card and its hand-back line.
-// A renderer is { card(node, env) -> Element, handback?(node, env) -> string | null }.
+// A renderer is { card(node, env) -> Element, handback?(node, env) -> { text, peek } | null, peek naming the details the line opens }.
 import { el } from '../../dom.js';
 
 const renderers = new Map();

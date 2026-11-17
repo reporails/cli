@@ -18,6 +18,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     CallFacts,
     LoadEvent,
     NodeKind,
+    OutputSource,
     SourceKind,
     XrayDetail,
     XrayDown,
@@ -252,13 +253,15 @@ class AgentWorld:
 
 @dataclass(frozen=True)
 class Handoff:
-    """What went down to a subagent and how it ended: the sizes, the launching call's time and the outcome."""
+    """What went down to a subagent and how it ended: the sizes, the launching call's time, the outcome and the source
+    the hand-back was sized from."""
 
     down: XrayDown
     back: int | None
     out_t: float
     back_t: float | None
     outcome: AgentOutcome
+    source: OutputSource | None
 
 
 @dataclass(frozen=True)

@@ -18,6 +18,7 @@ from reporails_cli.core.eventbus.transcript import (
     read_transcript,
     scan_compact_summaries,
     subagent_brief,
+    subagent_output,
     subagent_system,
 )
 from reporails_cli.core.pipeline.expected_loads import AGENT
@@ -43,6 +44,7 @@ from reporails_cli.core.platform.dto.xray import (
     XrayWindow,
 )
 from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
+from reporails_cli.core.platform.dto.xray_graph import OutputSource
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayArtifact, XrayPeek
 from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.artifacts import (
@@ -80,9 +82,11 @@ HOOK_OUTPUT_CHARS = 20_000
 class _FileReads:
     """Where the reads of one session's transcript files stopped: the cursor of the record read and, per file (a
     subagent id, None for the main one), the byte offset scanned for compaction summaries and the summaries
-    found so far by the id of the boundary row each follows."""
+    found so far by the id of the boundary row each follows, and the source each subagent's output text is read from
+    as the last view sized it."""
 
     def __init__(self) -> None:
+        self.outputs: dict[str, OutputSource] = {}
         self._cursor = TranscriptCursor()
         self._found: dict[str | None, tuple[int, dict[str, SummarySpan]]] = {}
 
@@ -178,6 +182,17 @@ class XraySession:
         if not any(record.subagent_id == subagent_id for record in self._transcript):
             return None
         return subagent_brief(AGENT, self._file, subagent_id)
+
+    def output(self, subagent_id: str) -> str | None:
+        """The text a subagent handed back, read from the source the last view sized its hand-back from; None for
+        any other id and for a subagent the view found no output text for. Raises `PayloadRefused` when the
+        transcript does not hold it as the adapter is pinned to. The text is not kept."""
+        source = self._reads.outputs.get(subagent_id)
+        if source is None:
+            return None
+        run = next((r for r in self._transcript if r.event == "subagent_run" and r.subagent_id == subagent_id), None)
+        use_id = None if run is None or run.launch is None else run.launch.tool_use_id
+        return subagent_output(AGENT, self._file, subagent_id, source, use_id)
 
     def system_prompt(self, agent_type: str) -> str | None:
         """The system prompt the first launch of an agent type that recorded a request was sent with; None when the
@@ -280,6 +295,9 @@ class XraySession:
         table = build_sources(run, artifacts, records, frame)
         prices = load_price_list()
         graph = build_graph(records, frame, table, vocabulary, prices)
+        self._reads.outputs = {
+            node.id: node.detail.back.source for node in graph.nodes if node.detail.back.source is not None
+        }
         window = window_of(replies_of(main_records(records)))
         return XrayView(
             version=self.version,

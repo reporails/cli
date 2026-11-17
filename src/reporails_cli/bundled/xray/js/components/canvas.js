@@ -271,13 +271,17 @@ function arches(env, kids, placedMap, scale, matchOf, groups) {
 }
 
 function selectedPills(c, p, edge, ys, ye, outcome) {
-  const pill = (cls, label, y) => {
-    const e = abs('pill-arch ' + cls + ' left', SPX, y);
+  const pill = (cls, label, y, peek) => {
+    const e = abs('pill-arch ' + cls + ' left', SPX, y, peek ? 'button' : 'div');
     e.textContent = label;
+    if (!peek) return e;
+    e.type = 'button';
+    e.dataset.peek = peek;
+    e.setAttribute('aria-label', `${label}: open details`);
     return e;
   };
-  const out = [pill('down', `↓ ${tk(edge ? edge.down : null, true)} · ${clock(edge ? edge.out_t : c.start)}`, ys)];
-  if (outcome === 'returned' && ye !== null) out.push(pill('up', `↑ ${tk(edge.back, true)} · ${clock(edge.back_t)}`, ye));
+  const out = [pill('down', `↓ ${tk(edge ? edge.down : null, true)} · ${clock(edge ? edge.out_t : c.start)}`, ys, `task:${c.id}`)];
+  if (outcome === 'returned' && ye !== null) out.push(pill('up', `↑ ${tk(edge.back, true)} · ${clock(edge.back_t)}`, ye, c.detail.output_source ? `output:${c.id}` : null));
   return out;
 }
 
@@ -628,10 +632,15 @@ export function render(box, env) {
   for (const it of items) cv.append(sourceNode(env, it, placedSources.get(it.key)));
   cv.append(...stations(env, cur, scale, held, cuts), ...drawn.pills);
   if (hand) {
-    const b = abs('card bottom', SPX - BOT_W / 2, botY);
+    const b = abs('card bottom', SPX - BOT_W / 2, botY, hand.peek ? 'button' : 'div');
     b.style.width = `${BOT_W}px`;
     b.style.height = `${BOT_H}px`;
-    b.textContent = hand;
+    b.textContent = hand.text;
+    if (hand.peek) {
+      b.type = 'button';
+      b.dataset.peek = hand.peek;
+      b.setAttribute('aria-label', `${hand.text}: open details`);
+    }
     cv.append(b);
   }
   if (!kids.length) {

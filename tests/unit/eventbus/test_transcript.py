@@ -21,6 +21,7 @@ from reporails_cli.core.eventbus.transcript import (
     read_transcript,
     scan_compact_summaries,
     subagent_brief,
+    subagent_output,
     subagent_system,
 )
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object
@@ -1218,3 +1219,28 @@ def test_a_recall_names_each_note_it_brought_in() -> None:
 def test_a_recall_row_without_a_list_of_notes_each_with_a_path_is_refused(memories: JsonValue) -> None:
     with pytest.raises(PayloadRefused, match="relevant_memories"):
         ClaudeTranscriptAdapter().resolve_row(_recall_row(memories), None)
+
+
+def test_a_subagent_output_is_read_from_the_source_it_is_asked_for_and_never_stored(tmp_path: Path) -> None:
+    session = _copy_session(tmp_path)
+    handed = subagent_output("claude", session, SUB_A, "handback", None)
+    assert handed is not None and handed.startswith("PLACEHOLDER-HANDBACK") and len(handed) == 480
+    assert subagent_output("claude", session, SUB_C, "reply", None) == "PLACEHOLDER-TEXT-30"
+    returned = subagent_output("claude", session, SUB_D, "result", "toolu_agentD")
+    assert returned is not None and returned.startswith("PLACEHOLDER-D-REPORT")
+
+
+def test_a_subagent_output_is_none_when_its_source_holds_no_text(tmp_path: Path) -> None:
+    session = _copy_session(tmp_path)
+    assert subagent_output("claude", session, SUB_C, "handback", None) is None
+    assert subagent_output("claude", session, SUB_B, "reply", None) is None
+    assert subagent_output("claude", session, "nosuchagent", "reply", None) is None
+    assert subagent_output("claude", session, SUB_D, "result", "toolu_nosuchcall") is None
+
+
+def test_a_subagent_output_from_a_result_needs_the_launching_call_and_a_known_agent(tmp_path: Path) -> None:
+    session = _copy_session(tmp_path)
+    with pytest.raises(PayloadRefused, match="launching call"):
+        subagent_output("claude", session, SUB_D, "result", None)
+    with pytest.raises(PayloadRefused, match="unknown agent"):
+        subagent_output("nosuchagent", session, SUB_A, "handback", None)

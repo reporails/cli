@@ -17,6 +17,26 @@ from reporails_cli.core.platform.contract.json_value import (
 from reporails_cli.core.platform.dto.attachments import AttachmentKind
 
 
+def _is_compact_summary(row: JsonObject) -> bool:
+    """Whether the row is a compaction summary row: `type: "user"` with `isCompactSummary: true`."""
+    return row.get("type") == "user" and row.get("isCompactSummary") is True
+
+
+def compact_summary_text(row: JsonObject) -> str | None:
+    """The string `message.content` of a compaction summary row; None for any other row."""
+    if not _is_compact_summary(row):
+        return None
+    content = as_object(row.get("message")).get("content")
+    return content if isinstance(content, str) else None
+
+
+def compact_summary_link(row: JsonObject) -> str | None:
+    """The `parentUuid` of a compaction summary row; None for any other row or a row with no parent."""
+    if not _is_compact_summary(row):
+        return None
+    return opt_str(row.get("parentUuid")) or None
+
+
 def meta_field[Field: (str, int, bool)](meta: JsonObject, key: str, kind: type[Field]) -> Field | None:
     """A meta field that must be of type `kind` when present; None when absent."""
     value = meta.get(key)

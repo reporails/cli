@@ -742,6 +742,14 @@ def test_brief_refuses_an_unknown_subagent_and_a_missing_query(client: TestClien
     assert _get(client, "/brief", {}).status_code == 400
 
 
+def test_output_is_guarded_like_brief_and_refuses_a_subagent_with_no_recorded_output(client: TestClient) -> None:
+    assert _get(client, "/output", {"subagent": SUB_ID}, token=None).status_code == 403
+    client.get("/view", headers={"X-Xray-Token": TOKEN})
+    reply = _get(client, "/output", {"subagent": "nosuchagent"})
+    assert reply.status_code == 400 and reply.json() == {"error": "no output was recorded for that subagent"}
+    assert _get(client, "/output", {}).status_code == 400
+
+
 def test_view_still_carries_no_text(client: TestClient) -> None:
     body = client.get("/view", headers={"X-Xray-Token": TOKEN}).text
     # A subagent's task description names its node; no prompt, tool or file text is in the view.

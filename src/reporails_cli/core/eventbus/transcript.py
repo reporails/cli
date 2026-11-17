@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from reporails_cli.core.discovery.agent_discovery import claude_project_dir, claude_projects_dir
+from reporails_cli.core.eventbus.adapters.claude_calls import HANDBACK_TOOL
 from reporails_cli.core.eventbus.adapters.claude_transcript import ClaudeTranscriptAdapter
 from reporails_cli.core.eventbus.port import (
     PayloadRefused,
@@ -19,8 +20,15 @@ from reporails_cli.core.eventbus.port import (
 from reporails_cli.core.eventbus.store import UNSAFE_ID_CHARS
 from reporails_cli.core.eventbus.tail import read_appended_lines
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
-from reporails_cli.core.platform.dto.events import EventRecord, FileCursor, TranscriptCursor
+from reporails_cli.core.platform.dto.events import (
+    ASSISTANT_ROW_KINDS,
+    EventKind,
+    EventRecord,
+    FileCursor,
+    TranscriptCursor,
+)
 from reporails_cli.core.platform.dto.transcript import CallDetail, SummarySpan
+from reporails_cli.core.platform.dto.xray_graph import OutputSource
 
 _SUBAGENT_PREFIX = "agent-"
 # How many of a project's transcripts the session listing keeps.
@@ -204,6 +212,54 @@ def subagent_brief(agent: str, session_file: Path, subagent_id: str) -> str | No
         raise PayloadRefused(f"unknown agent: {agent}")
     first_row = _first_row(_subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl")
     return None if first_row is None else adapter.resolve_brief(first_row)
+
+
+def subagent_output(
+    agent: str, session_file: Path, subagent_id: str, source: OutputSource, use_id: str | None
+) -> str | None:
+    """The text one subagent handed back, read from `source`: the first hand-back call of its file (`handback`),
+    the text of the last assistant row of its file when that row holds no tool call (`reply`), or the result of the
+    launching call `use_id` in the transcript file that holds it (`result`). None when the source holds no text.
+
+    Raises `PayloadRefused` when the agent is unknown, the source is `result` and no launching call is named, or a
+    row read is not the shape the adapter is pinned to. The text is returned, never stored."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        raise PayloadRefused(f"unknown agent: {agent}")
+    path = _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
+    if source == "handback":
+        row = _find_row(path, HANDBACK_TOOL, lambda found: adapter.resolve_handback(found) is not None)
+        return None if row is None else adapter.resolve_handback(row)
+    if source == "reply":
+        return _last_reply(adapter, path, subagent_id)
+    if use_id is None:
+        raise PayloadRefused("the subagent's launching call is not named")
+    for _, file in _files(session_file):
+        row = _find_row(file, use_id, lambda found: adapter.holds_result(found, use_id))
+        if row is not None:
+            return adapter.resolve_result(row, use_id)
+    return None
+
+
+def _last_reply(adapter: TranscriptAdapter, path: Path, subagent_id: str) -> str | None:
+    """The text of the last assistant row of a subagent file that carries text or a tool call, None when that row
+    is a tool call or the file cannot be read."""
+    last: tuple[JsonObject, EventKind] | None = None
+    try:
+        with path.open("rb") as handle:
+            for line in handle:
+                if b'"assistant"' not in line:
+                    continue
+                with contextlib.suppress(ValueError):
+                    row = as_object(json.loads(line))
+                    kinds = [r.event for r in adapter.resolve_row(row, subagent_id) if r.event in ASSISTANT_ROW_KINDS]
+                    if kinds:
+                        last = (row, kinds[-1])
+    except OSError:
+        return None
+    if last is None or last[1] != "assistant_text":
+        return None
+    return adapter.resolve_reply(last[0])
 
 
 def subagent_system(agent: str, session_file: Path, subagent_id: str | None) -> str | None:

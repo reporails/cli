@@ -13,13 +13,15 @@ MCP_SEPARATOR = "__"
 FINGERPRINT_CHARS = 16
 # How the result of a launched background agent opens: an acknowledgement, not the agent's answer.
 LAUNCH_ACK_PREFIX = "Async agent launched"
+# The tool a subagent calls to hand its answer back to the parent.
+HANDBACK_TOOL = "SubagentHandback"
 # The tool names of each category the side track and the inspector group by; an MCP tool is told by its prefix.
 TOOL_CATEGORY: dict[str, ToolCategory] = {
     **dict.fromkeys(("Read", "Grep", "Glob", "LS", "NotebookRead", "WebFetch", "WebSearch"), "read"),
     **dict.fromkeys(("Edit", "MultiEdit", "Write", "NotebookEdit"), "edit"),
     **dict.fromkeys(("Bash", "PowerShell"), "run"),
     **dict.fromkeys(("Agent", "Task"), "agent"),
-    "SubagentHandback": "handback",
+    HANDBACK_TOOL: "handback",
 }
 PATH_KEYS = ("file_path", "notebook_path", "path")
 
@@ -92,6 +94,29 @@ def result_text(row: JsonObject, use_id: str) -> str:
                 raise PayloadRefused("tool_result content is neither text nor a list of blocks")
             return "".join(texts)
     raise PayloadRefused(f"row holds no result of tool call {use_id}")
+
+
+def handback_message(row: JsonObject) -> str | None:
+    """The message of the `SubagentHandback` call in an assistant row; None for any other row, a refusal for a call
+    with no string message."""
+    if row.get("type") != "assistant":
+        return None
+    for block in content_blocks(row, "tool_use"):
+        if block.get("name") != HANDBACK_TOOL:
+            continue
+        message = as_object(block.get("input")).get("message")
+        if not isinstance(message, str):
+            raise PayloadRefused("SubagentHandback call has no string message")
+        return message
+    return None
+
+
+def reply_text(row: JsonObject) -> str | None:
+    """The text blocks of an assistant row joined; None for any other row or a row with no text block."""
+    if row.get("type") != "assistant" or not content_blocks(row, "text"):
+        return None
+    texts = blocks_text(as_object(row.get("message")).get("content"), "assistant row")
+    return None if texts is None else "".join(texts)
 
 
 def mcp_server(name: str) -> str | None:

@@ -307,6 +307,18 @@ class XrayServer:
             ),
         )
 
+    async def output(self, request: Request) -> Response:
+        """The text one listed subagent handed back."""
+        return await self._text_route(
+            request,
+            _TextRoute(
+                "subagent",
+                "the query is ?subagent=<id>",
+                text_fields(XraySession.output),
+                "no output was recorded for that subagent",
+            ),
+        )
+
     async def system(self, request: Request) -> Response:
         """The system prompt one launched agent type was sent with; the empty type is the main agent."""
         return await self._text_route(
@@ -529,6 +541,7 @@ def build_app(
             Route("/view", server.view, methods=["GET"]),
             Route("/peek", server.peek, methods=["GET"]),
             Route("/brief", server.brief, methods=["GET"]),
+            Route("/output", server.output, methods=["GET"]),
             Route("/system", server.system, methods=["GET"]),
             Route("/prompt", server.prompt, methods=["GET"]),
             Route("/summary", server.summary, methods=["GET"]),

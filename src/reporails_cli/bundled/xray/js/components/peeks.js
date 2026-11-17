@@ -1,7 +1,7 @@
 // The details renderers for a source, a built-in item, a task prompt, the peak context and the estimated cost.
 import { el, nk, err } from '../dom.js';
 import { clock, costEst, exclusionNote, k1, MCP_STATES, plural, tk, usd } from '../format.js';
-import { briefUrl, hookOutputUrl, peekUrl, systemUrl } from '../api.js';
+import { briefUrl, hookOutputUrl, outputUrl, peekUrl, systemUrl } from '../api.js';
 import { textBlock } from './textblock.js';
 import { hashFor } from '../state.js';
 import { bandColour } from '../geometry.js';
@@ -231,6 +231,29 @@ registerPeek('task', (env, id) => {
     main: [section('The prompt', body)],
     side: [kv([['Written by', writer], ['Sent at', clock(node.start)], ['To', `${node.name} · ${typeOf(ix, node).label}`]]),
       nk('What the parent asked this subagent to do. With its definition and inherited instructions this is everything it was told.')],
+    actions: [b],
+  };
+});
+
+// What the page calls each source of a subagent's output text.
+const OUTPUT_SOURCES = { handback: 'Hand-back message', reply: 'Last reply', result: 'Result the parent received' };
+
+registerPeek('output', (env, id) => {
+  const { ix } = env;
+  const node = ix.nodes.get(id);
+  if (!node || node.parent === null) return null;
+  const source = node.detail.output_source;
+  const body = source ? fetched(env.text('output:' + id, outputUrl(id)), e => e.text) : nk('No output was recorded for this subagent.');
+  const parent = ix.nodes.get(node.parent);
+  const reader = parent ? nodeLabel(parent) : 'its parent';
+  const b = action('Show in graph', {});
+  b.dataset.showInGraph = id;
+  return {
+    chip: '↑', kicker: source ? `${OUTPUT_SOURCES[source]} · handed back to ${reader}` : `Output · handed back to ${reader}`, title: node.name,
+    tags: node.detail.back_tokens_est != null ? [`${tk(node.detail.back_tokens_est, true)} · estimated`] : [],
+    main: [section('What it handed back', body)],
+    side: [kv([['Handed back to', reader], ['From', `${node.name} · ${typeOf(ix, node).label}`]]),
+      nk('The text this subagent returned to the agent that launched it.')],
     actions: [b],
   };
 });

@@ -441,6 +441,7 @@
      }
     ],
     "brief": false,
+    "output_source": null,
     "back_ratio": null,
     "cost": {
      "total_usd": 1.69,

@@ -41,6 +41,7 @@
 .card.dim .badge{background:transparent;color:var(--t3)}
 .card.stackcard{box-shadow:4px 4px 0 -1px #1D1E24,4px 4px 0 0 rgba(255,255,255,.08),0 6px 18px rgba(0,0,0,.35)}
 .card.bottom{flex-direction:row;align-items:center;justify-content:center;font-size:calc(11px / var(--z,1));color:var(--t2);cursor:default;text-align:center}
+button.card.bottom{cursor:pointer;font-family:inherit}
 .card .hd{position:absolute;width:8px;height:8px;border-radius:50%;background:var(--surface);border:1.5px solid var(--off)}
 .nc,.nc-fallback{display:flex;flex-direction:column;gap:2px;min-width:0}
 .nh{display:flex;align-items:center;gap:7px;min-width:0}
@@ -72,6 +73,7 @@
 .compact span{position:absolute;left:84px;top:0;line-height:14px;font:calc(10.5px / var(--z,1)) 'JetBrains Mono',monospace;color:var(--find2);background:var(--canvas);padding:0 6px}
 .pill-arch{position:absolute;z-index:4;white-space:nowrap;font-size:calc(11px / var(--z,1));padding:2px 9px;border-radius:999px}
 .pill-arch.right{transform:translate(10px,-50%)} .pill-arch.left{transform:translate(calc(-100% - 10px),-50%)}
+button.pill-arch{border:0;font-family:inherit;cursor:pointer}
 .pill-arch.down{color:#E6E0FF;background:#2B2650} .pill-arch.up{color:#DCE7FF;background:#1F2C4A}
 .nokids{position:absolute}
 .stretch{z-index:2;position:absolute;width:2px;border-radius:1px;background:#A594FF;opacity:.5}

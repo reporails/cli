@@ -627,7 +627,7 @@ class _Widget:
             None,
             (),
             XrayDown(None, 0),
-            XrayBack(None, None),
+            XrayBack(None, None, None),
             None,
             (),
             (),
@@ -814,6 +814,36 @@ def test_only_a_returned_or_failed_agent_has_a_size_coming_back_whatever_the_lau
     assert (edge.outcome, edge.back) == (kind, back)
     assert _agent(_node(graph, "X")).back.tokens_est == back
     assert (edge.back_t is None) == (back is None)
+
+
+@pytest.mark.parametrize(
+    ("records", "live", "source"),
+    [
+        (
+            [call(250, "hb", "handback", "X", chars=40), _text(251, "X", 90), result(300, "tuX", chars=80)],
+            True,
+            "handback",
+        ),
+        ([_text(250, "X", 90)], False, "reply"),
+        ([result(300, "tuX", chars=80)], True, "result"),
+        ([result(8, "tuX", chars=20, ack=True)], True, None),
+        ([result(8, "tuX", chars=20, ack=True)], False, None),
+    ],
+)
+def test_the_node_names_the_source_its_hand_back_was_sized_from(
+    tmp_path: Path, records: list[EventRecord], live: bool, source: str | None
+) -> None:
+    session = [
+        reply(1),
+        call(5, "tuX", "agent"),
+        launch(6, "X", None, "tuX"),
+        reply(7, "X"),
+        *records,
+        reply(1000),
+    ]
+    detail = _agent(_node(_graph(tmp_path, session, live=live), "X"))
+    assert detail.back.source == source
+    assert (detail.back.tokens_est is None) == (source is None)
 
 
 def test_an_agent_that_ends_on_a_synthetic_reply_failed_even_when_the_parent_saw_a_result(tmp_path: Path) -> None:

@@ -159,5 +159,20 @@ if (mode === 'sub_cost' && ready) {
   out.subTile = await tiles();
 }
 
+if (mode === 'handoff' && ready) {
+  const opened = async pill => {
+    await click(`.card[data-node="a4"]`);
+    await page.until(`!!document.querySelector('.pill-arch.${pill}[data-peek]')`);
+    await click(`.pill-arch.${pill}[data-peek]`);
+    await page.until(`!!document.querySelector('.pk-dialog pre.peek')`);
+    const seen = await page.ev(`({ kicker: document.querySelector('.pk-k').textContent, text: document.querySelector('.pk-dialog pre.peek').textContent, tag: document.querySelector('.pill-arch.${pill}[data-peek]').tagName })`);
+    await click('[data-close-peek].pk-x');
+    await sleep(100);
+    return seen;
+  };
+  out.down = await opened('down');
+  out.up = await opened('up');
+}
+
 await page.close();
 console.log(JSON.stringify(out));

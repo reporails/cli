@@ -912,7 +912,7 @@ STUB_SESSIONS = [
     {"session": "sess-ccc", "started_at": "2026-10-26T08:05:30Z", "length_s": 3725.0, "subagents": 1},
 ]
 STUB_PROMPTS = {s["session"]: f"first prompt of {s['session']}" for s in STUB_SESSIONS}
-SESSION_ROUTES = ("/view", "/peek", "/brief", "/system", "/prompt", "/call", "/sessions", "/first-prompt")
+SESSION_ROUTES = ("/view", "/peek", "/brief", "/output", "/system", "/prompt", "/call", "/sessions", "/first-prompt")
 
 
 class _FixtureHandler(BaseHTTPRequestHandler):
@@ -1024,6 +1024,7 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         texts = {
             "/call": CALLS.get(key, ""),
             "/brief": f"task text of {key}",
+            "/output": f"handed-back text of {key}",
             "/prompt": f"prompt text of {key}",
             "/peek": f"text of {key}",
         }

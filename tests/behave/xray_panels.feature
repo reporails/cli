@@ -21,6 +21,11 @@ Feature: The x-ray Sources panel and right column list everything and describe o
     Then a source opens its text from the file route and the peak legend adds up to the whole
 
   @page @browser
+  Scenario: A selected subagent's pills open its task prompt and what it handed back
+    Given the bundled page is served over the "view_panels" fixture view
+    Then a selected subagent's down pill opens its task prompt and its up pill opens what it handed back
+
+  @page @browser
   Scenario: The main agent's cost shows the whole session
     Given the bundled page is served over the "view_sample" fixture view
     Then the main agent's cost tile and details list the session total, the subagents' share and the costliest subagents

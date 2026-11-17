@@ -29,6 +29,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     LoadEvent,
     LoadTrigger,
     NodeKind,
+    OutputSource,
     XrayAgentDetail,
     XrayBack,
     XrayDown,
@@ -231,23 +232,22 @@ def _prompts(own: AgentRecords, frame: Frame) -> tuple[XrayPrompt, ...]:
 def _detail(
     own: AgentRecords,
     given: Sequence[XrayGiven],
-    handoff: tuple[XrayDown, int | None, AgentOutcome | None],
+    handoff: tuple[XrayDown, int | None, AgentOutcome | None, OutputSource | None],
     world: AgentWorld,
     run_type: str | None,
 ) -> XrayAgentDetail:
-    down, back, outcome = handoff
+    down, back, outcome, source = handoff
     frame = world.frame
-    brief_chars = None if own.key == MAIN_ID else _brief_chars(own)
     series = tuple((moment - frame.t0, context) for moment, context in own.replies.points)
     peak = peak_context(own.replies, own.compactions)
-    series_of = composition_series(own, world.context.sources, frame, brief_chars)
+    series_of = composition_series(own, world.context.sources, frame, None if own.key == MAIN_ID else _brief_chars(own))
     composition, carried = series_of
     return XrayAgentDetail(
         context_start=series[0][1] if series else None,
         peak=peak,
         series=series,
         down=down,
-        back=XrayBack(back, peak // back if outcome == "returned" and peak is not None and back else None),
+        back=XrayBack(back, peak // back if outcome == "returned" and peak is not None and back else None, source),
         outcome=outcome,
         given=tuple(given),
         prompts=_prompts(own, frame) if own.key == MAIN_ID else (),
@@ -312,20 +312,20 @@ def _outcome(meta: SubagentMeta | None, own: AgentRecords, result: CallResult | 
 
 def _back(
     meta: SubagentMeta | None, own: AgentRecords, result: CallResult | None, outcome: AgentOutcome
-) -> tuple[int | None, float | None]:
-    """The size in tokens of what came back to the parent and when, known only for a subagent that returned or
-    failed: its hand-back, else the text it ended on, else the parent's result unless that result only acknowledged
-    a background launch."""
+) -> tuple[int | None, float | None, OutputSource | None]:
+    """The size in tokens of what came back to the parent, when, and which source it was sized from, known only for
+    a subagent that returned or failed: its hand-back, else the text it ended on, else the parent's result unless
+    that result only acknowledged a background launch."""
     if outcome not in HANDED_BACK_OUTCOMES:
-        return None, None
+        return None, None, None
     handback = own.handback
     if handback is not None:
-        return handback.back_tokens_est, handback.t
+        return handback.back_tokens_est, handback.t, "handback"
     if outcome == "returned" and own.reply is not None and not _answered(meta, result):
-        return tokens_of(own.reply.chars), own.reply.t
+        return tokens_of(own.reply.chars), own.reply.t, "reply"
     if result is not None and result.chars is not None and not _acknowledges_launch(meta, result):
-        return tokens_of(result.chars), result.t
-    return None, None
+        return tokens_of(result.chars), result.t, "result"
+    return None, None, None
 
 
 def main_records(records: Sequence[EventRecord]) -> list[EventRecord]:
@@ -341,7 +341,7 @@ def _main_node(own: AgentRecords, world: AgentWorld) -> ProducedNode:
     harness, loaded = _given(own, world.context.sources)
     given = [*harness, *loaded]
     down = XrayDown(None, sum(item.tokens_est or 0 for item in given))
-    detail = _detail(own, given, (down, None, None), world, None)
+    detail = _detail(own, given, (down, None, None, None), world, None)
     return ProducedNode(
         id=MAIN_ID,
         kind=_KIND,
@@ -360,8 +360,8 @@ def _handoff(own: AgentRecords, parent: AgentRecords, meta: SubagentMeta | None,
     result = parent.results.get(use_id) if use_id is not None else None
     launch = next((call for call in parent.calls if call.use_id == use_id), None) if use_id is not None else None
     outcome = _outcome(meta, own, result, live)
-    back, back_t = _back(meta, own, result, outcome)
-    return Handoff(down, back, own.start if launch is None else launch.t, back_t, outcome)
+    back, back_t, source = _back(meta, own, result, outcome)
+    return Handoff(down, back, own.start if launch is None else launch.t, back_t, outcome, source)
 
 
 def _subagent_given(
@@ -383,7 +383,7 @@ def _sub_node(
     run_type = next((r.subagent_type for r in own.records if r.event == "subagent_run"), None)
     task, given, down = _subagent_given(own, meta, run_type, world)
     handoff = _handoff(own, parent, meta, down, world.frame.live)
-    detail = _detail(own, given, (down, handoff.back, handoff.outcome), world, run_type)
+    detail = _detail(own, given, (down, handoff.back, handoff.outcome, handoff.source), world, run_type)
     node = ProducedNode(
         id=own.key,
         kind=_KIND,
