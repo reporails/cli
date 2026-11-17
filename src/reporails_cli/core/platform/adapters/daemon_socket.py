@@ -66,7 +66,12 @@ class UnixDaemonSocket:
         *,
         idle_timeout: int | None,
     ) -> None:
-        """Bind `address` and answer one connection at a time until a signal or the idle timeout."""
+        """Bind `address` and answer one connection at a time until a signal or the idle timeout.
+
+        Raises `PlatformUnavailableError` on Windows.
+        """
+        if sys.platform == "win32":
+            raise PlatformUnavailableError("the daemon socket needs Unix domain sockets")
         stopped = False
 
         def _stop(_signum: int, _frame: object) -> None:
