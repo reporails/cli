@@ -360,7 +360,8 @@ def test_generic_scan_import_reached_file_set_matches_cli(tmp_path, monkeypatch)
 @pytest.mark.subsys_server
 def test_a_target_resolves_to_the_files_ails_check_checks(tmp_path: Path, monkeypatch) -> None:
     """`validate(targets=["skills"])` keeps the locations of exactly the files `ails check skills`
-    checks: both read the token through one resolver, against the same project."""
+    checks: both read the token through one resolver, against the same project. Each skill target
+    also names its whole folder."""
     monkeypatch.setattr(
         "reporails_cli.core.platform.adapters.api_client.AilsClient.lint",
         lambda self, *args, **kwargs: None,
@@ -387,7 +388,7 @@ def test_a_target_resolves_to_the_files_ails_check_checks(tmp_path: Path, monkey
     resolved = validate_targets.resolve_validate_targets(RunContext(), ("skills",), project.resolve())
     assert isinstance(resolved, tuple), resolved
     files, dirs = resolved
-    assert not dirs
+    assert dirs == {(project / ".claude" / "skills" / n).resolve() for n in ("backlog", "release")}
     assert (
         {str(p) for p in files}
         == cli_files
