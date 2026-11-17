@@ -475,7 +475,7 @@ def test_a_damaged_head_file_is_repaired_through_the_download_port_the_handle_ho
 
     monkeypatch.setattr(bio_tagger, "_build_head_session", build)
 
-    def port(url, *, headers, timeout):
+    def port(url, *, headers, timeout, follow_redirects):
         raise AssertionError("the repair is stubbed; the port is only passed through")
 
     models = Models(port)

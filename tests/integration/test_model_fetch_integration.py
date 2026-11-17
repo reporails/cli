@@ -48,7 +48,7 @@ class _RealServingClient:
         self._calls = calls
 
     @contextmanager
-    def __call__(self, url: str, *, headers, timeout: float):
+    def __call__(self, url: str, *, headers, timeout: float, follow_redirects: bool):
         self._calls.append(url)
         rel = url.rsplit("/", 1)[-1].replace("__", "/")
         source = self._root / rel
@@ -102,7 +102,7 @@ def test_first_use_fetches_then_loads_from_cache(tmp_path, monkeypatch):
     # Second run is silent + offline: make the host unreachable — a cache hit
     # must not touch it.
 
-    def _no_host(url, *, headers, timeout):
+    def _no_host(url, *, headers, timeout, follow_redirects):
         raise AssertionError("second run must not hit the host")
 
     assert bundled.ensure_models_available(_no_host) == cache_root

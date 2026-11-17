@@ -1,11 +1,13 @@
 """The `preservation` and `conformance` blocks a `validate` reply carries for a file `remedy_brief` snapshotted."""
 
+import asyncio
 from pathlib import Path
 
 from reporails_cli.core.heal.preservation.compare import rewrite_accepted
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.interfaces.mcp import snapshots
+from reporails_cli.interfaces.mcp.validate_state import CircuitState
 
 
 def with_preservation(
@@ -45,3 +47,26 @@ def with_preservation(
     if out["accepted"] is True:
         snapshots.record_accepted(target, new_text)
     return out
+
+
+async def breaker_reply(state: CircuitState, target: Path, scan_root: Path) -> JsonObject:
+    """The `circuit_breaker` reply. For a file `remedy_brief` snapshotted whose last full reply the
+    state still holds, it also carries `accepted`, decided from that reply by `with_preservation`."""
+    reply: JsonObject = {
+        "error": "circuit_breaker",
+        "message": (
+            "STOP — circuit breaker triggered. "
+            f"Validated this path {state.call_count} times "
+            f"({state.consecutive_unchanged} consecutive unchanged). "
+            "DO NOT call validate again for this path. Instead: "
+            "1. Report the remaining violations to the user. "
+            "2. Explain which ones you could not resolve and why. "
+            "3. Let the user decide how to proceed."
+        ),
+    }
+    if state.full_payload is None:
+        return reply
+    kept = await asyncio.to_thread(
+        with_preservation, state.full_payload, target, state.last_ruleset_map, state.last_score, scan_root
+    )
+    return {**reply, "accepted": kept["accepted"]} if "accepted" in kept else reply

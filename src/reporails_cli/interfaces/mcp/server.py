@@ -32,7 +32,7 @@ from reporails_cli.interfaces.mcp.feedback import file_feedback
 from reporails_cli.interfaces.mcp.heal_record import record_kept_files
 from reporails_cli.interfaces.mcp.idle_release import lifespan_releasing, touch_activity
 from reporails_cli.interfaces.mcp.prepare import prepare_for_path
-from reporails_cli.interfaces.mcp.preservation import with_preservation
+from reporails_cli.interfaces.mcp.preservation import breaker_reply, with_preservation
 from reporails_cli.interfaces.mcp.project_folder import ProjectFolder, ToolContext, resolve_project_folder
 from reporails_cli.interfaces.mcp.remedy_brief import build_remedy_brief
 from reporails_cli.interfaces.mcp.rule_tools import explain_tool, preflight_tool
@@ -174,11 +174,12 @@ async def _fresh_validate_payload(
     scan_root: Path,
     state: CircuitState,
     models: Models,
+    *,
+    run: RunContext,
 ) -> JsonObject | tuple[JsonObject, RulesetMap | None, float | None]:
     """Run the pipeline fresh (never served from `state.full_payload`): resolve `tokens` first,
     narrow `workflow.locations` to them (`keep_target_locations`) and memoize the map/score on
     `state`. Returns `(payload, ruleset_map, score)`, or the target-resolution error payload."""
-    run = RunContext()
     selection: tuple[set[Path], set[Path]] | None = None
     if tokens:
         resolved = await asyncio.to_thread(resolve_validate_targets, run, tokens, scan_root)
@@ -201,7 +202,14 @@ async def _fresh_validate_payload(
 
 
 async def _begin_validate_call(
-    path: str, tokens: tuple[str, ...], full: bool, target: Path, scan_root: Path, *, project_root: Path
+    path: str,
+    tokens: tuple[str, ...],
+    full: bool,
+    target: Path,
+    scan_root: Path,
+    *,
+    project_root: Path,
+    run: RunContext,
 ) -> tuple[CircuitState, bool, str]:
     """Fingerprint the scan inputs, then count this `validate` call on its `(path, targets)` state.
     Returns `(state, unchanged, base_hash)`: whether the content matches the last call's, and the
@@ -212,7 +220,9 @@ async def _begin_validate_call(
     prior = validate_states.get(path_key)
     prior_map = prior.last_ruleset_map if prior is not None else None
     prior_reply = prior.full_payload if prior is not None else None
-    base_hash, mtime_hash = await asyncio.to_thread(compute_scan_fingerprint, scan_root, prior_map, prior_reply, target)
+    base_hash, mtime_hash = await asyncio.to_thread(
+        compute_scan_fingerprint, scan_root, prior_map, prior_reply, target, run=run
+    )
     state = validate_states.get(path_key, CircuitState())
     unchanged = bool(state.last_mtime_hash) and mtime_hash == state.last_mtime_hash
     if not unchanged:
@@ -233,45 +243,23 @@ def _config_unreadable(exc: ConfigUnreadableError) -> JsonObject:
     return {"error": "config_unreadable", "message": str(exc)}
 
 
-async def _breaker_reply(state: CircuitState, target: Path, scan_root: Path) -> JsonObject:
-    """The `circuit_breaker` reply. For a file `remedy_brief` snapshotted whose last full reply the
-    state still holds, it also carries `accepted`, decided from that reply by `with_preservation`."""
-    reply: JsonObject = {
-        "error": "circuit_breaker",
-        "message": (
-            "STOP — circuit breaker triggered. "
-            f"Validated this path {state.call_count} times "
-            f"({state.consecutive_unchanged} consecutive unchanged). "
-            "DO NOT call validate again for this path. Instead: "
-            "1. Report the remaining violations to the user. "
-            "2. Explain which ones you could not resolve and why. "
-            "3. Let the user decide how to proceed."
-        ),
-    }
-    if state.full_payload is None:
-        return reply
-    kept = await asyncio.to_thread(
-        with_preservation, state.full_payload, target, state.last_ruleset_map, state.last_score, scan_root
-    )
-    return {**reply, "accepted": kept["accepted"]} if "accepted" in kept else reply
-
-
 async def _run_validate(
     path: str, full: bool, targets: list[str] | None, project_root: Path, models: Models
 ) -> JsonObject:
     """The `validate` payload; an unreadable config file answers `config_unreadable` naming the file and line."""
     try:
         # A refusal or a model not ready yet is not a validate attempt: answer before the counters move.
-        model_error = await asyncio.to_thread(unserved_or_model_not_ready_error)
+        run = RunContext()  # this call's one read of the project, shared by every step below
+        model_error = await asyncio.to_thread(unserved_or_model_not_ready_error, run)
         if model_error is not None:
             return model_error
-        return await _validate_reply(path, full, targets, project_root, models)
+        return await _validate_reply(path, full, targets, project_root, models, run=run)
     except ConfigUnreadableError as exc:
         return _config_unreadable(exc)
 
 
 async def _validate_reply(
-    path: str, full: bool, targets: list[str] | None, project_root: Path, models: Models
+    path: str, full: bool, targets: list[str] | None, project_root: Path, models: Models, *, run: RunContext
 ) -> JsonObject:
     """Compute the `validate` payload with the content-aware circuit breaker.
 
@@ -300,13 +288,12 @@ async def _validate_reply(
     # keep a same-content repeat validate from ever hitting the cached reply).
     scan_root = resolve_scan_target(target, project_root)[0]
 
-    tokens = target_tokens(targets)
     state, unchanged, base_hash = await _begin_validate_call(
-        path, tokens, full, target, scan_root, project_root=project_root
+        path, target_tokens(targets), full, target, scan_root, project_root=project_root, run=run
     )
 
     if state.call_count > MAX_CALLS or state.consecutive_unchanged >= MAX_UNCHANGED:
-        return await _breaker_reply(state, target, scan_root)
+        return await breaker_reply(state, target, scan_root)
 
     if not target.exists():
         return {"error": "path_not_found", "message": f"Path not found: {target}"}
@@ -319,7 +306,7 @@ async def _validate_reply(
         # Reuse the map/score the last fresh run stored rather than re-running the pipeline.
         ruleset_map, score = state.last_ruleset_map, state.last_score
     else:
-        result = await _fresh_validate_payload(path, tokens, scan_root, state, models)
+        result = await _fresh_validate_payload(path, target_tokens(targets), scan_root, state, models, run=run)
         if isinstance(result, dict):
             return result
         payload, ruleset_map, score = result
@@ -459,7 +446,7 @@ _REMEDY_BRIEF_DESCRIPTION = (
 
 
 async def remedy_brief_reply(
-    models: Models, ctx: ToolContext, path: str, location: int, targets: list[str] | None, has_guide: bool
+    models: Models, ctx: ToolContext, path: str, location: int, *, targets: list[str] | None, has_guide: bool
 ) -> CallToolResult:
     """Return the rewrite brief for one workflow location; see the tool description."""
     touch_activity()
@@ -567,20 +554,17 @@ def build_server(models: Models) -> StrictArgsMCPServer:
     async def validate(
         ctx: ToolContext, path: str = ".", full: bool = False, targets: list[str] | None = None
     ) -> CallToolResult:
-        """Validate instruction files; see the tool description for the response shape."""
         return await validate_reply(models, ctx, path, full, targets)
 
     @built.tool(name="prepare", description=_PREPARE_DESCRIPTION, annotations=_READ_ONLY)
     async def prepare(ctx: ToolContext, path: str = ".", targets: list[str] | None = None) -> CallToolResult:
-        """Map the files `validate` would check; see the tool description."""
         return await prepare_reply(models, ctx, path, targets)
 
     @built.tool(name="remedy_brief", description=_REMEDY_BRIEF_DESCRIPTION, annotations=_READ_ONLY)
     async def remedy_brief(
         ctx: ToolContext, path: str, location: int, targets: list[str] | None = None, has_guide: bool = False
     ) -> CallToolResult:
-        """Return the rewrite brief for one workflow location; see the tool description."""
-        return await remedy_brief_reply(models, ctx, path, location, targets, has_guide)
+        return await remedy_brief_reply(models, ctx, path, location, targets=targets, has_guide=has_guide)
 
     built.tool(name="preflight", description=_PREFLIGHT_DESCRIPTION, annotations=_READ_ONLY)(preflight)
     built.tool(name="explain", description=_EXPLAIN_DESCRIPTION, annotations=_READ_ONLY, structured_output=False)(

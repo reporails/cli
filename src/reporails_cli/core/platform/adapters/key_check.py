@@ -6,6 +6,8 @@ import httpx
 
 from reporails_cli.core.platform.adapters.api_client import AilsClient
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER, notices_from_header
+from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
+from reporails_cli.core.platform.contract.http_get import HttpGet
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import ACCOUNT_TIERS, AUTH_REJECTED_ERRORS, FunnelError
 from reporails_cli.core.platform.dto.sign_in import Handshake, HandshakeStatus, KeyCheck, Surface
@@ -19,10 +21,10 @@ _TIMEOUT_S = 10.0
 _HANDSHAKE_TIMEOUT_S = 5.0
 
 
-def _rejection(resp: httpx.Response) -> FunnelError | None:
+def _rejection(status: int, text: str) -> FunnelError | None:
     """The server's refusal of the credential when the reply is one (a 401, or a body naming a rejected key)."""
-    err = parse_error_body(resp.status_code, resp.text)
-    if err is not None and (resp.status_code == 401 or err.error in AUTH_REJECTED_ERRORS):
+    err = parse_error_body(status, text)
+    if err is not None and (status == 401 or err.error in AUTH_REJECTED_ERRORS):
         return err
     return None
 
@@ -35,7 +37,7 @@ def check_api_key(api_key: str, tier: str) -> KeyCheck:
     except (httpx.HTTPError, OSError):
         return KeyCheck("unavailable", reason=f"could not reach {url}")
 
-    rejected = _rejection(resp)
+    rejected = _rejection(resp.status_code, resp.text)
     if rejected is not None:
         return KeyCheck("rejected", error=rejected.error, reason=rejected.message)
     granted = json_object(resp.text).get("tier")
@@ -44,7 +46,7 @@ def check_api_key(api_key: str, tier: str) -> KeyCheck:
     return KeyCheck("unavailable", reason=f"the server answered HTTP {resp.status_code}")
 
 
-def handshake(surface: Surface, *, tier: str) -> Handshake:
+def handshake(surface: Surface, *, tier: str, fetch: HttpGet) -> Handshake:
     """Asks the server whether it serves this caller: its verdict, or why there is none.
 
     No reply is `unreachable`, a rejected credential is `rejected` (worded as a sign-in still
@@ -54,16 +56,18 @@ def handshake(surface: Surface, *, tier: str) -> Handshake:
     client = AilsClient(tier)
     url, headers = client.diagnose_request("application/json", surface)
     try:
-        resp = httpx.get(url, headers=headers, timeout=_HANDSHAKE_TIMEOUT_S)
-    except (httpx.HTTPError, OSError):
+        with fetch(url, headers=headers, timeout=_HANDSHAKE_TIMEOUT_S, follow_redirects=False) as reply:
+            status = reply.status
+            text = b"".join(reply.chunks()).decode("utf-8", errors="replace")
+    except (PlatformUnavailableError, OSError):
         return Handshake("unreachable")
-    rejected = _rejection(resp)
+    rejected = _rejection(status, text)
     if rejected is not None:
         rejected = client.early_rejection(rejected)
         return Handshake("rejected", error=rejected.error, message=rejected.message)
-    if resp.status_code != 200:
+    if status != 200:
         return Handshake("no_verdict")
-    body = json_object(resp.text)
+    body = json_object(text)
     verdict = body.get("verdict")
     if verdict == "ok":
         return _verdict("ok", body)

@@ -71,7 +71,9 @@ def _answers(page: XrayPage, probe: HttpGet) -> bool:
     """Whether the process on the page's port reports the page's own launch id and the installed code it started
     with."""
     try:
-        with probe(f"http://{HOST}:{page.port}/launch", headers={}, timeout=_PROBE_TIMEOUT_S) as reply:
+        with probe(
+            f"http://{HOST}:{page.port}/launch", headers={}, timeout=_PROBE_TIMEOUT_S, follow_redirects=True
+        ) as reply:
             body = as_object(json.loads(b"".join(reply.chunks())))
         return as_str(body.get("launch")) == page.launch and body.get("changed") is False
     except (PlatformUnavailableError, ValueError):

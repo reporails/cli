@@ -72,9 +72,9 @@ def model_not_ready_error() -> JsonObject | None:
     return None if refusal is None else refusal_payload(refusal)
 
 
-def unserved_or_model_not_ready_error() -> JsonObject | None:
+def unserved_or_model_not_ready_error(run: RunContext) -> JsonObject | None:
     """The error payload when the server will not serve this caller, else when the model set is not ready."""
-    refusal = server_gate("mcp", partial(handshake, tier=RunContext().tier()))
+    refusal = server_gate("mcp", partial(handshake, tier=run.tier(), fetch=http_get))
     return refusal_payload(refusal) if refusal is not None else model_not_ready_error()
 
 

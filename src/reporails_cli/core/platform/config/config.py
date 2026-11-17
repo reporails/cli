@@ -53,13 +53,7 @@ logger = logging.getLogger(__name__)
 
 def bundled_agent_config(agent: str) -> AgentConfig:
     """The `config.yml` of `agent` (excludes, overrides, hooks) under the current rules root; defaults when missing."""
-    return _agent_config_under(str(get_rules_path()), agent)
-
-
-@lru_cache(maxsize=32)
-def _agent_config_under(rules_root: str, agent: str) -> AgentConfig:
-    """The agent config read from one rules root, cached per rules root and agent (the bundle's identity)."""
-    return agent_config_at(get_agent_config_path(agent, Path(rules_root)))
+    return agent_config_at(get_agent_config_path(agent, get_rules_path()))
 
 
 def agent_config_at(config_path: Path) -> AgentConfig:
@@ -480,17 +474,43 @@ def _merge_thresholds(
     return merged
 
 
+@lru_cache(maxsize=4)
+def _framework_path_text(path_text: str, mtime_ns: int, size: int) -> str | None:
+    """The `framework_path` setting in the global config file at `path_text`, read once per file identity.
+
+    Returns None when the setting is absent or not text. A file that `read_config_file` refuses raises
+    `ConfigUnreadableError` on each call; a changed file is read again.
+    """
+    del mtime_ns, size  # part of the cache key only
+    framework_path = read_config_file(Path(path_text)).get("framework_path")
+    return framework_path if isinstance(framework_path, str) else None
+
+
+def _global_framework_path() -> Path | None:
+    """The `framework_path` override in the global config, or None when the file is absent or sets none."""
+    config_path = get_global_config_path()
+    try:
+        stat = config_path.stat()
+    except FileNotFoundError:
+        return None
+    except OSError:
+        text = _framework_path_text.__wrapped__(str(config_path), 0, 0)
+    else:
+        text = _framework_path_text(str(config_path), stat.st_mtime_ns, stat.st_size)
+    return Path(text) if text is not None else None
+
+
 def get_rules_path() -> Path:
     """Get path to rules directory.
 
     Resolution: config override → bundled (package default).
     """
-    config = get_global_config()
-    if config.framework_path and config.framework_path.is_dir():
-        rules_sub = config.framework_path / "rules"
+    framework_path = _global_framework_path()
+    if framework_path and framework_path.is_dir():
+        rules_sub = framework_path / "rules"
         if rules_sub.is_dir():
             return rules_sub
-        return config.framework_path
+        return framework_path
 
     bundled = get_bundled_rules_path()
     if bundled is not None:
@@ -505,9 +525,9 @@ def get_framework_root() -> Path:
 
     Resolution: config override → bundled package root.
     """
-    config = get_global_config()
-    if config.framework_path and config.framework_path.is_dir():
-        return config.framework_path
+    framework_path = _global_framework_path()
+    if framework_path and framework_path.is_dir():
+        return framework_path
 
     bundled_root = get_bundled_package_root()
     if bundled_root is not None:

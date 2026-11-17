@@ -1,9 +1,7 @@
-"""Lazy-loaded resource handle for the mapper — the bundled embedder, charge encoders and heads.
+"""Lazy-loaded resource handle for the mapper — the bundled embedder, encoders and heads.
 
-A `Models` holds the loaded models of one process. Each entry process builds one, giving it
-the download port a damaged model file is repaired through, and passes it down. Each load is
-lock-guarded so the daemon's background warmup thread and a serving thread can't
-double-initialise a model.
+A `Models` holds the loaded models and loads each on first access. Each load is
+lock-guarded so two threads asking for the same model can't double-initialise it.
 """
 
 from __future__ import annotations
@@ -55,7 +53,7 @@ class Models:
         return self._st
 
     def charge_encoders(self) -> tuple[_BioEncoder, _BioEncoder]:
-        """The charge pass's and the span pass's encoders, loading them on first access."""
+        """The two encoders, loading them on first access."""
         if self._charge is None:
             with self._charge_lock:
                 if self._charge is None:

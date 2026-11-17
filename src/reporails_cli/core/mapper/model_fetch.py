@@ -332,7 +332,7 @@ def _download_one(fetch: HttpGet, headers: Mapping[str, str], base: str, rel: st
     url = _remote_url(base, rel)
     target.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(1, _MAX_ATTEMPTS + 1):
-        with fetch(url, headers=headers, timeout=_TIMEOUT_S) as resp:
+        with fetch(url, headers=headers, timeout=_TIMEOUT_S, follow_redirects=True) as resp:
             status = resp.status
             if status == 200:
                 actual = _write_body(resp, rel, url, target)

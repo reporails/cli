@@ -18,8 +18,8 @@ from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValu
 
 _SIDECAR_NAME = "fingerprint.json"
 
-# Guards the sidecar's read-modify-write: the MCP server calls `graph_content_hash` from many
-# worker threads at once, and two threads writing the file at once would corrupt it.
+# Guards the sidecar's read-modify-write: `graph_content_hash` is safe to call from several
+# threads at once, and two threads writing the file at once would corrupt it.
 # Reentrant: `graph_content_hash` holds it across its own calls into `_load_sidecar` / `_save_sidecar`.
 _sidecar_lock = threading.RLock()
 

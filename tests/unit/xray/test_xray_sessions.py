@@ -31,7 +31,7 @@ from reporails_cli.core.xray.sessions import pick_session, session_entries
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 
 
-def _silent_probe(url: str, *, headers: Mapping[str, str], timeout: float) -> NoReturn:
+def _silent_probe(url: str, *, headers: Mapping[str, str], timeout: float, follow_redirects: bool) -> NoReturn:
     """An `HttpGet` for a port nothing listens on."""
     raise PlatformUnavailableError(f"nothing answers at {url}")
 
@@ -53,7 +53,7 @@ def _answering_probe(body: dict[str, object]) -> HttpGet:
     """An `HttpGet` whose port answers `/launch` with `body`."""
 
     @contextmanager
-    def probe(url: str, *, headers: Mapping[str, str], timeout: float) -> Iterator[HttpReply]:
+    def probe(url: str, *, headers: Mapping[str, str], timeout: float, follow_redirects: bool) -> Iterator[HttpReply]:
         yield _Reply(body)
 
     return probe

@@ -51,7 +51,9 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path
         ruleset_map = map_ruleset([Path(path)], models=no_models(), root=root, cache_dir=None)
         return dict(PAYLOAD), ruleset_map, 5.0
 
-    async def fresh(path: str, tokens: Any, scan_root: Path, state: Any, models: Any) -> tuple[dict, Any, float]:
+    async def fresh(
+        path: str, tokens: Any, scan_root: Path, state: Any, models: Any, *, run: Any
+    ) -> tuple[dict, Any, float]:
         payload, ruleset_map, score = pipeline(file)
         state.full_payload, state.scan_root = payload, scan_root
         state.last_ruleset_map, state.last_score = ruleset_map, score
@@ -59,7 +61,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path
 
     monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", pipeline)
     monkeypatch.setattr(server, "_fresh_validate_payload", fresh)
-    monkeypatch.setattr(server, "unserved_or_model_not_ready_error", lambda: None)
+    monkeypatch.setattr(server, "unserved_or_model_not_ready_error", lambda _run: None)
     return root, file
 
 

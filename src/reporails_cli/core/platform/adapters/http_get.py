@@ -33,14 +33,14 @@ class _Reply:
 
 
 @contextmanager
-def http_get(url: str, *, headers: Mapping[str, str], timeout: float) -> Iterator[HttpReply]:
-    """Open `url`, following redirects, and hold the reply open for the body to be read.
+def http_get(url: str, *, headers: Mapping[str, str], timeout: float, follow_redirects: bool) -> Iterator[HttpReply]:
+    """Open `url`, following redirects when `follow_redirects`, and hold the reply open for the body to be read.
 
     Raises `PlatformUnavailableError` when the host cannot be reached or the transfer fails.
     """
     try:
         with (
-            httpx.Client(timeout=timeout, follow_redirects=True, headers=dict(headers)) as client,
+            httpx.Client(timeout=timeout, follow_redirects=follow_redirects, headers=dict(headers)) as client,
             client.stream("GET", url) as response,
         ):
             yield _Reply(response)

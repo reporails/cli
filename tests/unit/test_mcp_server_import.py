@@ -6,12 +6,16 @@ import asyncio
 import subprocess
 import sys
 
+import pytest
+
 from reporails_cli.interfaces.mcp import server
 from tests.fake_models import no_models
 
 _TOOLS = ["explain", "preflight", "prepare", "remedy_brief", "validate", "xray"]
 
 
+@pytest.mark.unit
+@pytest.mark.subsys_server
 def test_import_constructs_no_models() -> None:
     """A fresh process that imports the module with `Models` construction forbidden still imports."""
     code = (
@@ -25,6 +29,8 @@ def test_import_constructs_no_models() -> None:
     assert done.returncode == 0, done.stderr
 
 
+@pytest.mark.unit
+@pytest.mark.subsys_server
 def test_built_server_lists_the_tools() -> None:
     """The server built from a model handle serves exactly the tools the process always served."""
     built = server.build_server(no_models())

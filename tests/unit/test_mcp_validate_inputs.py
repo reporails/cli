@@ -26,7 +26,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (root / "CLAUDE.md").write_text("# Project\n\nRun the tests with pytest.\n", encoding="utf-8")
     (root / ".claude" / "settings.json").write_text(json.dumps({"permissions": {"allow": []}}), encoding="utf-8")
     server.validate_states.clear()
-    monkeypatch.setattr(server, "unserved_or_model_not_ready_error", lambda: None)
+    monkeypatch.setattr(server, "unserved_or_model_not_ready_error", lambda _run: None)
     return root
 
 
@@ -35,7 +35,9 @@ def runs(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     """Every fresh pipeline run, recorded; a cached reply adds nothing."""
     seen: list[int] = []
 
-    async def fake_fresh(path: str, tokens: Any, scan_root: Path, state: Any, models: Any) -> tuple[dict, Any, float]:
+    async def fake_fresh(
+        path: str, tokens: Any, scan_root: Path, state: Any, models: Any, *, run: Any
+    ) -> tuple[dict, Any, float]:
         seen.append(1)
         payload = {"files": {}, "stats": {}}
         state.full_payload = payload
@@ -199,7 +201,9 @@ def mapped(project: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[int], l
     seen: list[int] = []
     mapped_paths: list[str] = []
 
-    async def fake_fresh(path: str, tokens: Any, scan_root: Path, state: Any, models: Any) -> tuple[dict, Any, float]:
+    async def fake_fresh(
+        path: str, tokens: Any, scan_root: Path, state: Any, models: Any, *, run: Any
+    ) -> tuple[dict, Any, float]:
         seen.append(1)
         # The supporting file is reported on in the reply but is not one of the map's records.
         payload = {"files": {p: {"findings": []} for p in mapped_paths}, "stats": {}}
@@ -411,7 +415,9 @@ def test_retryable_replies_beyond_the_call_limit_trip_the_breaker(
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_a_concurrent_calls_result_survives_a_retryable_reply(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_fresh(path: str, tokens: Any, scan_root: Path, state: Any, models: Any) -> tuple[dict, Any, float]:
+    async def fake_fresh(
+        path: str, tokens: Any, scan_root: Path, state: Any, models: Any, *, run: Any
+    ) -> tuple[dict, Any, float]:
         # Another validate on the same path completes while this one awaits the server.
         live = next(iter(server.validate_states.values()))
         live.call_count += 2

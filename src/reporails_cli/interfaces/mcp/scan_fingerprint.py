@@ -21,7 +21,7 @@ from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
 
-def scan_inputs_base(scan_root: Path) -> str:
+def scan_inputs_base(scan_root: Path, *, run: RunContext) -> str:
     """The part of the change fingerprint that needs a walk of `scan_root`.
 
     Covers every file the scan reads (instruction, rule and agent config files, found the
@@ -31,7 +31,6 @@ def scan_inputs_base(scan_root: Path) -> str:
     is found.
     """
 
-    run = RunContext()
     discovery = discover_files(run, scan_root)
     scanned: list[Path] = [] if isinstance(discovery, Refusal) else [Path(f) for f in discovery.instruction_files]
     if not scanned:
@@ -89,12 +88,12 @@ def dependency_files(
 
 
 def compute_scan_fingerprint(
-    scan_root: Path, ruleset_map: RulesetMap | None, payload: JsonObject | None, target: Path
+    scan_root: Path, ruleset_map: RulesetMap | None, payload: JsonObject | None, target: Path, *, run: RunContext
 ) -> tuple[str, str]:
     """Fingerprint every input of a `validate` reply, to detect changes between calls.
 
     Returns the walk's part (reused to restamp after a fresh run, with no second walk) and the
     full fingerprint.
     """
-    base = scan_inputs_base(scan_root)
+    base = scan_inputs_base(scan_root, run=run)
     return base, combine_scan_inputs(base, dependency_files(ruleset_map, target, scan_root, payload))

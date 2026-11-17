@@ -20,8 +20,11 @@ class HttpReply(Protocol):
 
 
 class HttpGet(Protocol):  # pylint: disable=too-few-public-methods  # a port that is called, not a class with methods
-    """Fetches a URL, following redirects, and holds the reply open for the caller to read."""
+    """Fetches a URL and holds the reply open for the caller to read; the caller says whether redirects are followed."""
 
-    def __call__(self, url: str, *, headers: Mapping[str, str], timeout: float) -> AbstractContextManager[HttpReply]:
-        """Open `url` with `headers`, giving up after `timeout` seconds. Raises `PlatformUnavailableError` when the
+    def __call__(
+        self, url: str, *, headers: Mapping[str, str], timeout: float, follow_redirects: bool
+    ) -> AbstractContextManager[HttpReply]:
+        """Open `url` with `headers`, giving up after `timeout` seconds, following redirects when `follow_redirects`
+        (otherwise a redirect is the reply). Raises `PlatformUnavailableError` when the
         host cannot be reached or the transfer fails."""

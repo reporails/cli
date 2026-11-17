@@ -20,6 +20,7 @@
 ### Fixed
 
 - With the `ails xray` page open, an instruction or rule file added to the project is checked by the page's next check, without the page restarting.
+- With the `ails xray` page open, an `exclude_dirs` edit shows on the page's next view.
 - The x-ray counts a memory note as loaded when it arrives by an `@` mention, an edit, a recall or a restore after a compaction, and notes loaded that way are listed by the next compaction; an edit adds no more than a snippet to the chart. The loads show as attached by Claude Code, and a recall row that names no notes is refused. A loaded slot chip on an agent card is clearly lit.
 - The x-ray shows each compaction's summary by the transcript's own link between a compaction and its summary: a compaction that left no summary shows none, and the next compaction no longer shows its summary.
 - Opening a compaction summary in the x-ray reads only that summary from the transcript, not the whole file again.
@@ -56,30 +57,12 @@
 
 ### Internal
 
-- A run's left-out folders and files, and the x-ray view, are read from that run's own config, so an `exclude_dirs` edit shows on the next view of the page.
 - An architecture test fails on any core module that imports a driven adapter, in any import form; core declares the port and the command line, MCP server and x-ray page pass the adapter in.
-- An architecture test fails on any config-file read under core outside the config layer, in any import form.
-- An architecture test fails on a cache or module-level store under core that is keyed by a project path, unbounded, or hands out a mutable value.
-- An architecture test fails on a project-file read, write or folder listing under core outside the modules that own that kind of file.
-- An architecture test fails on a network import or connection call under core outside the driven adapters, in any import form.
-- Caches of the bundled rules and agent settings are bounded, read-only and kept per rules folder, and a rules folder outside the bundle is read fresh on each load.
 - CI now runs the model-backed integration tests on a fetched model.
-- Tests that set a config value write the real config file and agent settings rather than replacing the reader.
-- Which rules a run reports and each rule's line thresholds come from the config the run already read, so a run reads the project config once.
 - The Windows check scenarios and the MCP x-ray two-call scenario lose their skip tag. The two-call scenario reads the page while the agent's MCP server still runs, because on Windows the test client ends the server's process tree, the page with it.
-- Each process builds one model handle that carries the download port, so a damaged model file is still repaired on load with no HTTP client in core.
-- The MCP server builds its model handle when it starts, not when its module is imported.
 - The rewrite-check tests build named constructs, plain text and the rewrite's map as a real run produces them.
-- The lint checks read rule pages, fixtures and instruction files through the same file and folder readers as the rest of the run.
 - Heal's rewrite check reads each instruction from the map, and a test suite holds rewrites that keep the words but change the meaning.
-- The mapper daemon's socket sits behind one transport the command line, MCP server and x-ray page pass in, and a map crosses it in memory rather than through a temporary file.
-- One module reads each file's text or bytes for the checks, and each read keeps the decoding it used before.
 - Three check scenarios guard linked folders: a `.claude/rules` folder linked to a dotfiles folder stays part of `ails check .claude`, a linked file under a `~/.claude` linked to a dotfiles folder keeps its user-level root, and a `~/.claude` folder keeps its findings when the home folder is reached through a link.
-- No core module reads the config files on its own: the tier, segmentation, heal exclusions and project overrides come from the run, and the in-process YAML cache is gone.
-- Each agent's bundled settings file is parsed once per process while it is unchanged, so a check is as fast as before the config reads moved into the run; an edited settings file is read again.
 - The map records a place, time or target phrase (`In CI,` before the clause, `in staging` or `for src/` after its object) as the instruction's scope, and heal's rewrite check reads it.
-- Discovery reads and lists the project only through the file and folder readers, heal reads and restores files through its own file module, and the rule word lists are written by one module.
 - The folder-target check tests run each target from the folder its project roots at, and name a nested root by running from it.
 
-- A check scenario guards the x-ray page checking a rule file written while the page is open.
-- Model downloads and the x-ray page's running-page probe go through one HTTP port the command line, MCP server and x-ray page pass in.

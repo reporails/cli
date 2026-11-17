@@ -122,7 +122,11 @@ def test_prepare_and_validate_map_the_same_files_for_a_named_left_out_file(monke
     monkeypatch.setattr(check_one, "check_and_assemble", lambda *_a, **_k: (CombinedResult(), None))
     tokens = ("packages/x/CLAUDE.md",)
 
-    asyncio.run(server._fresh_validate_payload(str(project), tokens, project, server.CircuitState(), no_models()))
+    asyncio.run(
+        server._fresh_validate_payload(
+            str(project), tokens, project, server.CircuitState(), no_models(), run=RunContext()
+        )
+    )
     prepare_for_path(str(project), list(tokens), project, no_models())
 
     assert len(seen) == 2

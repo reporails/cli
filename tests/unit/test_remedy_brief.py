@@ -739,7 +739,7 @@ def test_a_brief_after_a_project_validate_takes_a_fresh_baseline(monkeypatch, tm
     edited = "# T\n\nKeep `foo`.\n"
     file.write_text(edited, encoding="utf-8")
     snapshots.record_accepted(file, edited)  # the edited file is one a `validate` reply accepted
-    monkeypatch.setattr(server, "unserved_or_model_not_ready_error", lambda: None)
+    monkeypatch.setattr(server, "unserved_or_model_not_ready_error", lambda _run: None)
     monkeypatch.setattr(
         server,
         "run_pipeline_for_path",

@@ -15,14 +15,26 @@ Pure `ast`, over every `src/reporails_cli/core/**/*.py` and `src/reporails_cli/f
 - C4 project-keyed module state: a module-level name bound to a mutable container fails when a `src/`
   statement mutates it (subscript store/delete/augmented assignment, or `append`/`extend`/`insert`/`add`/
   `update`/`setdefault`/`pop`/`popitem`/`remove`/`discard`/`clear`, by bare name or as
-  `<module alias>.<NAME>`) and either its annotation names `Path`/`PurePath`, or the mutation sits in a
-  function with a `Path`-annotated parameter.
+  `<module alias>.<NAME>`, plus a bare or attribute augmented assignment `_c |= ...` and the dunder
+  mutators `__setitem__`/`__delitem__`/`__ior__`/`__iadd__`) and either its annotation names a path type
+  or a path-carrying record, or the mutation sits in a function with a `Path`-annotated parameter. A
+  container is a literal, a comprehension or a call of `dict`/`list`/`set`/`defaultdict`/`OrderedDict`/
+  `deque`/`Counter`/`ChainMap`, bare, imported `as` another name, or through the `collections` module.
+
+Path types are `Path`, `PurePath`, `PathLike` and every local name a file binds them to (`from pathlib
+import Path as _P`, `_P = Path`). A path-carrying record is a class of `core/platform/dto/discovery.py`
+with a field naming a path type or another such record (`DetectedAgent`, `AgentScope`, ...), read from that
+file's AST. A cache built by calling the decorator on a module-level function
+(`lru_cache(maxsize=8)(impl)`, `functools.cache(impl)`) counts as caching `impl`.
 
 There is no allowlist. Each failure reads `module:line name rule`.
 
 Known limits: a project path turned into a `str` before it reaches a cached function or a container
 passes; `ContextVar` values pass; instance attributes of long-lived objects pass; a mutation reached
-through an element (`_c[k].append(...)`) or through an alias of the container is not seen; C3 reads the
+through an element (`_c[k].append(...)`) or through an alias of the container is not seen; a record
+container with no annotation (`_agents = []`) or with an element type the annotation does not name is
+not seen; a cache built on a function reached through a variable, an attribute or a lambda is not seen;
+a `type(...)(...)` or `getattr`-built mutation is not seen; C3 reads the
 top of the return annotation (and its union members), not the containers nested inside a `Mapping` or
 `tuple`.
 
@@ -54,12 +66,30 @@ CACHE_NAMES = frozenset({"cache", "lru_cache"})
 PATH_TYPES = frozenset({"Path", "PurePath", "PathLike"})
 PATH_TEXT = re.compile(r"\b(?:Path|PurePath|PathLike)\b")
 MUTABLE_TYPES = frozenset({"dict", "list", "set", "bytearray", "defaultdict", "OrderedDict", "deque"})
-CONTAINER_CALLS = MUTABLE_TYPES | {"Counter"}
+CONTAINER_CALLS = MUTABLE_TYPES | {"Counter", "ChainMap"}
 CONTENT_ATTRS = frozenset({"open", "read_text", "read_bytes", "iterdir", "glob", "rglob", "walk"})
 OS_LISTING = frozenset({"scandir", "listdir", "walk"})
 MUTATORS = frozenset(
-    {"append", "extend", "insert", "add", "update", "setdefault", "pop", "popitem", "remove", "discard", "clear"}
+    {
+        "append",
+        "extend",
+        "insert",
+        "add",
+        "update",
+        "setdefault",
+        "pop",
+        "popitem",
+        "remove",
+        "discard",
+        "clear",
+        "__setitem__",
+        "__delitem__",
+        "__ior__",
+        "__iadd__",
+    }
 )
+CONTAINER_MODULE = "collections"
+DISCOVERY = SRC / "core" / "platform" / "dto" / "discovery.py"
 
 Func = ast.FunctionDef | ast.AsyncFunctionDef
 
@@ -93,13 +123,46 @@ def _annotation_nodes(annotation: ast.expr | None) -> Iterator[ast.AST]:
                 continue
 
 
-def _names_path(annotation: ast.expr | None) -> bool:
+def path_aliases(tree: ast.Module) -> frozenset[str]:
+    """The path types of a file: `Path`/`PurePath`/`PathLike` plus every local name they are imported as
+    (`from pathlib import Path as _P`) or bound to (`_P = Path`)."""
+    names = set(PATH_TYPES)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            names.update(a.asname for a in node.names if a.asname and a.name in PATH_TYPES)
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Name) and stmt.value.id in names:
+            names.update(t.id for t in stmt.targets if isinstance(t, ast.Name))
+    return frozenset(names)
+
+
+def path_records(discovery: Path) -> frozenset[str]:
+    """The classes of `dto/discovery.py` that carry a project `Path`, directly or through another such class."""
+    classes = [n for n in _tree(discovery).body if isinstance(n, ast.ClassDef)]
+    found: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for cls in classes:
+            if cls.name in found:
+                continue
+            fields = [n.annotation for n in cls.body if isinstance(n, ast.AnnAssign)]
+            if any(_names_path(f, PATH_TYPES | found) for f in fields):
+                found.add(cls.name)
+                changed = True
+    return frozenset(found)
+
+
+def _names_path(annotation: ast.expr | None, names: frozenset[str] | set[str] = PATH_TYPES) -> bool:
+    """Whether an annotation names a path type: `names` are the local spellings of `Path`/`PurePath`/`PathLike`
+    (and, for a container, the path-carrying records)."""
+    pattern = PATH_TEXT if names is PATH_TYPES else re.compile(r"\b(?:" + "|".join(map(re.escape, names)) + r")\b")
     for node in _annotation_nodes(annotation):
-        if isinstance(node, ast.Name) and node.id in PATH_TYPES:
+        if isinstance(node, ast.Name) and node.id in names:
             return True
-        if isinstance(node, ast.Attribute) and node.attr in PATH_TYPES:
+        if isinstance(node, ast.Attribute) and node.attr in names:
             return True
-        if isinstance(node, ast.Constant) and isinstance(node.value, str) and PATH_TEXT.search(node.value):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and pattern.search(node.value):
             return True
     return False
 
@@ -209,14 +272,22 @@ def _applies_listing(fn: Func, names: set[str]) -> bool:
     return False
 
 
-def _cache_rules(tree: ast.Module, fn: Func, aliases: frozenset[str]) -> set[str]:
-    caches = [c for c in (_cache_decorator(tree, d) for d in fn.decorator_list) if c is not None]
+def _applied_cache(tree: ast.Module, call: ast.Call) -> tuple[_Cache, str] | None:
+    """`lru_cache(maxsize=8)(impl)` or `functools.cache(impl)`: the cache and the function name it wraps."""
+    if len(call.args) != 1 or call.keywords or not isinstance(call.args[0], ast.Name):
+        return None
+    cache = _cache_decorator(tree, call.func)
+    return (cache, call.args[0].id) if cache is not None else None
+
+
+def _cache_rules(tree: ast.Module, fn: Func, aliases: frozenset[str], caches: list[_Cache]) -> set[str]:
     if not caches:
         return set()
     params = _params(fn)
     names = {p.arg for p in params}
+    paths = path_aliases(tree)
     rules: set[str] = set()
-    if any(_names_path(p.annotation) for p in params) or _applies_listing(fn, names):
+    if any(_names_path(p.annotation, paths) for p in params) or _applies_listing(fn, names):
         rules.add("C1")
     if params and not all(c.bounded for c in caches):
         rules.add("C2")
@@ -233,13 +304,22 @@ def cache_violations(sources: list[Path], root: Path, aliases: frozenset[str]) -
         if not _in_scope(rel):
             continue
         tree = _tree(py)
+        defs = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                decorated = [c for c in (_cache_decorator(tree, d) for d in node.decorator_list) if c is not None]
                 out.extend(
                     Violation(rule, f"{rel}:{node.lineno} {node.name} {rule}")
-                    for rule in sorted(_cache_rules(tree, node, aliases))
+                    for rule in sorted(_cache_rules(tree, node, aliases, decorated))
                 )
-    return sorted(out, key=lambda v: v.detail)
+            elif isinstance(node, ast.Call) and (applied := _applied_cache(tree, node)) is not None:
+                cache, name = applied
+                if name in defs:
+                    out.extend(
+                        Violation(rule, f"{rel}:{node.lineno} {name} {rule}")
+                        for rule in sorted(_cache_rules(tree, defs[name], aliases, [cache]))
+                    )
+    return sorted(set(out), key=lambda v: v.detail)
 
 
 def _dotted(rel: str) -> str:
@@ -249,22 +329,49 @@ def _dotted(rel: str) -> str:
     return ".".join([PACKAGE, *parts])
 
 
-def _is_container(value: ast.expr | None) -> bool:
+def _constructors(tree: ast.Module) -> tuple[set[str], set[str]]:
+    """The names a container constructor is called by in a file: bare names (builtins and
+    `from collections import X [as Y]`) and the local names of the `collections` module."""
+    bare = set(CONTAINER_CALLS)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == CONTAINER_MODULE:
+            bare.update(a.asname for a in node.names if a.asname and a.name in CONTAINER_CALLS)
+    return bare, module_names(tree, CONTAINER_MODULE)
+
+
+def _is_container(value: ast.expr | None, bare: set[str], modules: set[str]) -> bool:
     if isinstance(value, (ast.Dict, ast.List, ast.Set, ast.DictComp, ast.ListComp, ast.SetComp)):
         return True
-    return isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id in CONTAINER_CALLS
+    if not isinstance(value, ast.Call):
+        return False
+    func = value.func
+    if isinstance(func, ast.Name):
+        return func.id in bare
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr in CONTAINER_CALLS
+        and isinstance(func.value, ast.Name)
+        and func.value.id in modules
+    )
 
 
-def _containers(tree: ast.Module) -> dict[str, tuple[int, bool]]:
-    """Module-level names bound to a mutable container: name -> (line, annotation names a path)."""
+def _containers(tree: ast.Module, records: frozenset[str]) -> dict[str, tuple[int, bool]]:
+    """Module-level names bound to a mutable container: name -> (line, annotation names a path or a
+    path-carrying record)."""
+    bare, modules = _constructors(tree)
+    path_names = path_aliases(tree) | records
     found: dict[str, tuple[int, bool]] = {}
     for stmt in tree.body:
-        if isinstance(stmt, ast.Assign) and _is_container(stmt.value):
+        if isinstance(stmt, ast.Assign) and _is_container(stmt.value, bare, modules):
             for target in stmt.targets:
                 if isinstance(target, ast.Name):
                     found[target.id] = (stmt.lineno, False)
-        elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name) and _is_container(stmt.value):
-            found[stmt.target.id] = (stmt.lineno, _names_path(stmt.annotation))
+        elif (
+            isinstance(stmt, ast.AnnAssign)
+            and isinstance(stmt.target, ast.Name)
+            and _is_container(stmt.value, bare, modules)
+        ):
+            found[stmt.target.id] = (stmt.lineno, _names_path(stmt.annotation, path_names))
     return found
 
 
@@ -294,21 +401,23 @@ def _mutated_target(node: ast.AST) -> ast.expr | None:
         targets = list(node.targets)
     elif isinstance(node, ast.AugAssign):
         targets = [node.target]
+        if isinstance(node.target, ast.Name | ast.Attribute):
+            return node.target
     for target in targets:
         if isinstance(target, ast.Subscript):
             return target.value
     return None
 
 
-def _mutations(node: ast.AST, in_path_fn: bool = False) -> Iterator[tuple[ast.expr, bool]]:
+def _mutations(node: ast.AST, paths: frozenset[str], in_path_fn: bool = False) -> Iterator[tuple[ast.expr, bool]]:
     """Every in-place mutation target with whether it sits in a function with a `Path` parameter."""
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        in_path_fn = in_path_fn or any(_names_path(p.annotation) for p in _params(node))
+        in_path_fn = in_path_fn or any(_names_path(p.annotation, paths) for p in _params(node))
     target = _mutated_target(node)
     if target is not None:
         yield target, in_path_fn
     for child in ast.iter_child_nodes(node):
-        yield from _mutations(child, in_path_fn)
+        yield from _mutations(child, paths, in_path_fn)
 
 
 def _hits(target: ast.expr, name: str, own: bool, aliases: set[str]) -> bool:
@@ -322,10 +431,10 @@ def _hits(target: ast.expr, name: str, own: bool, aliases: set[str]) -> bool:
     )
 
 
-def state_violations(sources: list[Path], root: Path) -> list[Violation]:
+def state_violations(sources: list[Path], root: Path, records: frozenset[str] = frozenset()) -> list[Violation]:
     """C4: a project-keyed mutable container at module level of `core/` or `formatters/`."""
     trees = {py.relative_to(root).as_posix(): _tree(py) for py in sources}
-    mutations = {rel: list(_mutations(tree)) for rel, tree in trees.items()}
+    mutations = {rel: list(_mutations(tree, path_aliases(tree))) for rel, tree in trees.items()}
     mutated_names = {
         rel: {t.id if isinstance(t, ast.Name) else t.attr for t, _ in found if isinstance(t, (ast.Name, ast.Attribute))}
         for rel, found in mutations.items()
@@ -335,7 +444,7 @@ def state_violations(sources: list[Path], root: Path) -> list[Violation]:
         if not _in_scope(rel):
             continue
         dotted = _dotted(rel)
-        for name, (line, path_annotated) in _containers(tree).items():
+        for name, (line, path_annotated) in _containers(tree, records).items():
             for other, other_tree in trees.items():
                 if name not in mutated_names[other]:
                     continue
@@ -349,9 +458,11 @@ def state_violations(sources: list[Path], root: Path) -> list[Violation]:
     return sorted(out, key=lambda v: v.detail)
 
 
-def floor_violations(sources: list[Path], root: Path, aliases: frozenset[str]) -> list[Violation]:
-    """C1-C4 over `sources`."""
-    found = [*cache_violations(sources, root, aliases), *state_violations(sources, root)]
+def floor_violations(
+    sources: list[Path], root: Path, aliases: frozenset[str], records: frozenset[str]
+) -> list[Violation]:
+    """C1-C4 over `sources`; `records` are the path-carrying record classes of `dto/discovery.py`."""
+    found = [*cache_violations(sources, root, aliases), *state_violations(sources, root, records)]
     return sorted(found, key=lambda v: v.detail)
 
 
@@ -361,7 +472,7 @@ def _src_files() -> list[Path]:
 
 def test_caches_hold_bundle_data() -> None:
     """C1-C4: no cache or module container keyed on project state under core or formatters."""
-    found = floor_violations(_src_files(), SRC, mutable_aliases(JSON_VALUE))
+    found = floor_violations(_src_files(), SRC, mutable_aliases(JSON_VALUE), path_records(DISCOVERY))
     lines = [f"{len(found)} violation(s): a cache holds bundled or content-keyed data, bounded and immutable"]
     lines.extend(f"  {v.detail}" for v in found)
     assert not found, "\n".join(lines)
@@ -370,6 +481,7 @@ def test_caches_hold_bundle_data() -> None:
 # ---- planted cases -------------------------------------------------------------------------
 
 ALIASES = mutable_aliases(JSON_VALUE)
+RECORDS = path_records(DISCOVERY)
 
 
 def _plant(tmp_path: Path, files: dict[str, str]) -> list[Path]:
@@ -383,7 +495,13 @@ def _plant(tmp_path: Path, files: dict[str, str]) -> list[Path]:
 
 
 def _rules(tmp_path: Path, files: dict[str, str]) -> list[str]:
-    return [v.rule for v in floor_violations(_plant(tmp_path, files), tmp_path, ALIASES)]
+    return [v.rule for v in floor_violations(_plant(tmp_path, files), tmp_path, ALIASES, RECORDS)]
+
+
+def test_path_records_are_read_from_discovery() -> None:
+    """The record set comes from the dto file's AST: records with a Path field, not plain value records."""
+    assert {"DetectedAgent", "AgentScope", "SkippedFile"} <= RECORDS
+    assert "AgentType" not in RECORDS
 
 
 def test_aliases_are_read_from_json_value() -> None:
@@ -474,6 +592,74 @@ def test_c4_fires_across_modules(tmp_path: Path, user: str) -> None:
     assert _rules(tmp_path, files) == ["C4"]
 
 
+@pytest.mark.parametrize(
+    ("rules", "body"),
+    [
+        (
+            ["C1"],
+            "from pathlib import Path as _P\nfrom functools import lru_cache\n"
+            "@lru_cache(maxsize=8)\ndef f(p: _P) -> str:\n    return ''\n",
+        ),
+        (
+            ["C1"],
+            "import pathlib as pl\nfrom functools import lru_cache\n"
+            "@lru_cache(maxsize=8)\ndef f(p: pl.Path) -> str:\n    return ''\n",
+        ),
+        (
+            ["C1"],
+            "from os import PathLike as PL\nfrom functools import lru_cache\n"
+            "@lru_cache(maxsize=8)\ndef f(p: 'PL[str]') -> str:\n    return ''\n",
+        ),
+        (["C1"], LRU + "def _impl(p: Path) -> str:\n    return ''\n_g = lru_cache(maxsize=8)(_impl)\n"),
+        (
+            ["C2", "C3"],
+            "import functools\ndef _impl(x: str) -> dict[str, int]:\n    return {}\n_g = functools.cache(_impl)\n",
+        ),
+        (["C2"], "import functools as ft\ndef _impl(x: str) -> str:\n    return x\n_g = ft.cache(_impl)\n"),
+        (["C2"], LRU + "def _impl(x: str) -> str:\n    return x\n_g = lru_cache(maxsize=None)(_impl)\n"),
+        (["C4"], "_memo = {}\ndef g(root: Path):\n    global _memo\n    _memo |= {root: 1}\n"),
+        (
+            ["C4"],
+            "import collections\n_memo = collections.defaultdict(int)\ndef g(root: Path):\n    _memo[str(root)] += 1\n",
+        ),
+        (["C4"], "import collections as co\n_memo = co.OrderedDict()\ndef g(root: Path):\n    _memo[1] = 1\n"),
+        (["C4"], "from collections import defaultdict as dd\n_memo = dd(int)\ndef g(root: Path):\n    _memo[1] = 1\n"),
+        (["C4"], "_memo = {}\ndef g(root: Path):\n    _memo.__setitem__(root, 1)\n"),
+        (["C4"], "_memo = {}\ndef g(root: Path):\n    _memo.__delitem__(root)\n"),
+        (["C4"], "_memo = {}\ndef g(root: Path):\n    _memo.__ior__({root: 1})\n"),
+        (["C4"], "_agents: list[DetectedAgent] = []\ndef g(a: DetectedAgent):\n    _agents.append(a)\n"),
+        (["C4"], "_agents: 'dict[str, list[DetectedAgent]]' = {}\ndef g(k, a):\n    _agents.update({k: [a]})\n"),
+        (["C4"], "_s: list[AgentScope] = []\ndef g(a):\n    _s.append(a)\n"),
+    ],
+)
+def test_slipped_forms_fire(tmp_path: Path, rules: list[str], body: str) -> None:
+    """Aliased path types, call-form caches, augmented/dunder mutation, container constructors via a
+    module, and a module list of path-carrying records are all flagged."""
+    assert _rules(tmp_path, {"core/x/mod.py": body}) == rules
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "from pathlib import Path as _P\nfrom functools import lru_cache\n"
+        "@lru_cache(maxsize=8)\ndef f(p: str) -> str:\n    return ''\n",
+        LRU + "def _impl(x: str) -> str:\n    return x\n_g = lru_cache(maxsize=8)(_impl)\n",
+        "import functools\ndef _impl() -> str:\n    return ''\n_g = functools.cache(_impl)\n",
+        LRU + "def _impl(x: str) -> tuple[str, ...]:\n    return ()\n_g = lru_cache(maxsize=8)(_impl)\n",
+        "import functools\n_g = functools.cache(len)\n",
+        "_memo = {}\ndef g(k: str):\n    _memo |= {k: 1}\n",
+        "import collections\n_memo = collections.defaultdict(int)\ndef g(k: str):\n    _memo[k] += 1\n",
+        "_memo = {}\ndef g(k: str):\n    _memo.__setitem__(k, 1)\n",
+        "_agents: list[DetectedAgent] = []\ndef g(a: DetectedAgent):\n    x = list(_agents)\n",
+        "_agents: list[str] = []\ndef g(a: str):\n    _agents.append(a)\n",
+        "n = 0\ndef g(root: Path):\n    global n\n    n += 1\n",
+    ],
+)
+def test_slipped_form_clean_neighbours_are_quiet(tmp_path: Path, body: str) -> None:
+    """The str-keyed, bounded, immutable neighbours of each slipped form pass."""
+    assert _rules(tmp_path, {"core/x/mod.py": body}) == []
+
+
 def test_c4_cross_module_str_keyed_is_quiet(tmp_path: Path) -> None:
     """A str-keyed container mutated from another module passes."""
     files = {
@@ -486,5 +672,5 @@ def test_c4_cross_module_str_keyed_is_quiet(tmp_path: Path) -> None:
 def test_report_line_names_module_line_name_rule(tmp_path: Path) -> None:
     """A failure reads `module:line name rule`."""
     body = "import functools\n@functools.cache\ndef f(x: str) -> str:\n    return x\n"
-    found = floor_violations(_plant(tmp_path, {"core/x/mod.py": body}), tmp_path, ALIASES)
+    found = floor_violations(_plant(tmp_path, {"core/x/mod.py": body}), tmp_path, ALIASES, RECORDS)
     assert [v.detail for v in found] == ["core/x/mod.py:3 f C2"]

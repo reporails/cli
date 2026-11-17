@@ -28,7 +28,7 @@ class RunContext:
         self._projects: dict[Path, ProjectConfig] = {}
         self.agents: dict[Path, list[DetectedAgent]] = {}
         self.aliases: dict[Path, dict[Path, list[Path]]] = {}
-        self.claude_accounts: dict[Path, tuple[tuple[int, int], str | None]] = {}
+        self.claude_accounts: dict[Path, str | None] = {}
         self.memory_links: dict[tuple[str, int], frozenset[str]] = {}
         self._documents: dict[Path, tuple[tuple[Path, JsonObject], ...]] = {}
 

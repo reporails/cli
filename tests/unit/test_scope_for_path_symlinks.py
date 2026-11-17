@@ -13,7 +13,7 @@ from reporails_cli.core.platform.dto.pipeline import Scope
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_server]
 
 
-def _no_fetch(url: str, *, headers: object, timeout: float) -> object:
+def _no_fetch(url: str, *, headers: object, timeout: float, follow_redirects: bool) -> object:
     raise AssertionError(f"the model host must not be reached: {url}")
 
 

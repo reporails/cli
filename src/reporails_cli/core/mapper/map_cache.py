@@ -43,6 +43,7 @@ from reporails_cli.core.platform.dto.ruleset import (
     FileRecord,
 )
 from reporails_cli.core.platform.utils.directives import strip_directives
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import compact_json
 
 logger = logging.getLogger(__name__)
@@ -75,9 +76,7 @@ def file_cache_key(
 
 def cache_key_for_path(path: Path, root: Path) -> str:
     """The per-file cache key the mapper uses for `path`, its `@import`s read within `root`."""
-    expanded, line_map, origins = expand_imports_with_origins(
-        path.read_text(encoding="utf-8", errors="replace"), path, root
-    )
+    expanded, line_map, origins = expand_imports_with_origins(read_file_text(path, errors="replace"), path, root)
     return file_cache_key(path, content_hash(strip_directives(expanded)), line_map, origins)
 
 
@@ -220,7 +219,7 @@ class MapCache:
         if not self.cache_path.exists():
             return
         try:
-            parsed: JsonValue = json.loads(self.cache_path.read_text(encoding="utf-8"))
+            parsed: JsonValue = json.loads(read_file_text(self.cache_path))
         except (json.JSONDecodeError, OSError):
             with contextlib.suppress(OSError):
                 self.cache_path.unlink()
@@ -296,7 +295,7 @@ class MapCache:
             return entry
         path = self._shard_path(chash)
         try:
-            data: JsonValue = json.loads(path.read_text(encoding="utf-8"))
+            data: JsonValue = json.loads(read_file_text(path))
         except (json.JSONDecodeError, OSError):
             return None
         entry = _entry_from_shard(data)

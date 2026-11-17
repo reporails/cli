@@ -309,16 +309,13 @@ def claude_synced_account_folder(run: RunContext) -> str | None:
 
 def _account_folder(run: RunContext, path: Path) -> str | None:
     """The account folder the file at `path` names; the run parses the file once per path as written."""
-    cached = run.claude_accounts.get(path)
-    if cached is not None:
-        return cached[1]
-    stat = path.stat()
-    stamp = (stat.st_mtime_ns, stat.st_size)
+    if path in run.claude_accounts:
+        return run.claude_accounts[path]
     account = as_object(_read_json(path).get("oauthAccount"))
     organization, uuid = account.get("organizationUuid"), account.get("accountUuid")
     named = isinstance(organization, str) and isinstance(uuid, str) and organization and uuid
     folder = f"{organization}_{uuid}" if named else None
-    run.claude_accounts[path] = (stamp, folder)
+    run.claude_accounts[path] = folder
     return folder
 
 

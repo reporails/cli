@@ -102,13 +102,13 @@ class _BuiltFile:
     text: str
 
 
-def _build_file(rel: str, scan_root: Path, models: Models) -> _BuiltFile | str:
+def _build_file(rel: str, scan_root: Path, models: Models, run: RunContext) -> _BuiltFile | str:
     """The built file for `rel`, or the reason its pipeline run produced no map — the underlying
     cause, never a bare sentinel."""
 
     abs_file = resolve_from_root(rel, scan_root)
     payload, ruleset_map, score = run_pipeline_for_path(
-        str(abs_file), True, project_root=scan_root, run=RunContext(), models=models
+        str(abs_file), True, project_root=scan_root, run=run, models=models
     )
     if ruleset_map is None:
         return _pipeline_failure_reason(payload)
@@ -128,13 +128,14 @@ def _build_files(location: JsonObject, scan_root: Path, models: Models) -> list[
     it is skipped, so the location's real files still brief. When EVERY file is such a directory,
     the error names that cause once. Snapshotting stays the caller's job: this builds every real
     file first, so a reply that is never delivered never commits a partial set of snapshots."""
+    run = RunContext()
     built: list[_BuiltFile] = []
     directories: list[str] = []
     for rel in str_list(location.get("files")):
         if resolve_from_root(rel, scan_root).is_dir():
             directories.append(rel)
             continue
-        result = _build_file(rel, scan_root, models)
+        result = _build_file(rel, scan_root, models, run)
         if isinstance(result, str):
             return {"error": "brief_unavailable", "message": _brief_unavailable_message(rel, result)}
         built.append(result)

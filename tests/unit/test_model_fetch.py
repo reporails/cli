@@ -59,7 +59,7 @@ class _FakeClient:
         return self.ok_bytes + model_fetch.asset_name(rel).encode()
 
     @contextmanager
-    def __call__(self, url: str, *, headers, timeout: float):
+    def __call__(self, url: str, *, headers, timeout: float, follow_redirects: bool):
         self.headers = dict(headers)
         self.calls.append(url)
         if self._raiser is not None:
@@ -75,9 +75,9 @@ class _FakeClient:
 _SERVING: dict[str, _FakeClient] = {}
 
 
-def _served_get(url: str, *, headers, timeout: float):
+def _served_get(url: str, *, headers, timeout: float, follow_redirects: bool):
     """The `HttpGet` the tests pass in: whichever fake `_use_fake` installed."""
-    return _SERVING["client"](url, headers=headers, timeout=timeout)
+    return _SERVING["client"](url, headers=headers, timeout=timeout, follow_redirects=follow_redirects)
 
 
 def _use_fake(monkeypatch, client: _FakeClient) -> None:
@@ -528,11 +528,11 @@ def test_two_threads_repairing_the_same_corruption_never_get_filenotfound(tmp_pa
     corrupted_asset = model_fetch.asset_name("charge_encoder_encA.onnx")
 
     @contextmanager
-    def gated_stream(url, *, headers, timeout):
+    def gated_stream(url, *, headers, timeout, follow_redirects):
         if url.endswith(corrupted_asset):
             thread1_holding.set()
             release_thread1.wait(timeout=5)
-        with orig_stream(url, headers=headers, timeout=timeout) as resp:
+        with orig_stream(url, headers=headers, timeout=timeout, follow_redirects=follow_redirects) as resp:
             yield resp
 
     monkeypatch.setitem(_SERVING, "client", gated_stream)

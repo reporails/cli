@@ -10,7 +10,9 @@ from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
 from reporails_cli.core.platform.contract.http_get import HttpReply
 
 
-def no_fetch(url: str, *, headers: Mapping[str, str], timeout: float) -> AbstractContextManager[HttpReply]:
+def no_fetch(
+    url: str, *, headers: Mapping[str, str], timeout: float, follow_redirects: bool
+) -> AbstractContextManager[HttpReply]:
     """A download port with no network: every request fails as an unreachable host does."""
     raise PlatformUnavailableError(f"no network in this test: {url}")
 

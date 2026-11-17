@@ -29,7 +29,7 @@ def briefed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     file = root / "CLAUDE.md"
     file.write_text("# Project\n\nThe build uses a local cache.\n", encoding="utf-8")
     server.validate_states.clear()
-    monkeypatch.setattr(server, "unserved_or_model_not_ready_error", lambda: None)
+    monkeypatch.setattr(server, "unserved_or_model_not_ready_error", lambda _run: None)
     payload = {"files": {"CLAUDE.md": {"findings": []}}, "stats": {}}
     monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", lambda *_a, **_k: (payload, _MAP, 5.0))
     location = {
@@ -42,7 +42,9 @@ def briefed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     score = {"value": 5.0}
 
-    async def fake_fresh(path: str, tokens: Any, scan_root: Path, state: Any, models: Any) -> tuple[dict, Any, float]:
+    async def fake_fresh(
+        path: str, tokens: Any, scan_root: Path, state: Any, models: Any, *, run: Any
+    ) -> tuple[dict, Any, float]:
         state.full_payload = payload
         state.scan_root = scan_root
         state.last_ruleset_map = _MAP

@@ -6,11 +6,19 @@ One rule, pure `ast`, over every `src/reporails_cli/core/**/*.py` outside `core/
   string constant equal to `get_project_config`, `get_global_config`, `get_agent_config` or
   `read_config_file`. An aliased module (`import m as cfg; cfg.get_global_config()`) is caught by the
   attribute name. Function-level and `TYPE_CHECKING` imports count, as do `core/platform/adapters/`.
+  A string constant equal to a reader name used as a subscript key (`vars(m)['get_project_config']`,
+  `m.__dict__[...]`, `globals()[...]`) counts, and so does a `+` concatenation, f-string of literals or
+  `"".join([...])` of literals that folds to a reader name (`getattr(m, 'get_' + 'project_config')`).
   There is no allowlist. `get_agent_config` no longer exists (it was split into `bundled_agent_config`
   and `agent_config_at`); the floor keeps the name so the old reader cannot come back.
 
 Why: a config file read in many places is parsed, defaulted and cached many ways. One folder owns the
 reads, and core receives the values through the run context.
+
+Known limits: a reader name built from a runtime value (a variable, a call result, an f-string with a
+non-literal part, `str.format`, `%`, slicing, `chr`/`bytes` decoding, a name read from data or a file)
+passes; a bare string constant that is not a subscript key or a folded expression passes (so a reader name
+in a docstring or a table of strings is quiet).
 
 The scanner takes the source files and their root, so the planted tests below run the same code on
 tmp files.
@@ -42,8 +50,35 @@ class Violation:
     detail: str
 
 
+def _fold(node: ast.AST) -> str | None:
+    """The string a constant expression folds to: a literal, `+` of folds, an f-string of folds,
+    `"".join([...])` of folds. None for anything with a runtime part."""
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, str) else None
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _fold(node.left), _fold(node.right)
+        return left + right if left is not None and right is not None else None
+    if isinstance(node, ast.JoinedStr):
+        parts = [_fold(v.value if isinstance(v, ast.FormattedValue) else v) for v in node.values]
+        return None if None in parts else "".join(str(p) for p in parts)
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "join"
+        and len(node.args) == 1
+        and isinstance(node.args[0], ast.List | ast.Tuple)
+    ):
+        sep, items = _fold(node.func.value), [_fold(e) for e in node.args[0].elts]
+        return None if sep is None or None in items else sep.join(str(i) for i in items)
+    return None
+
+
 def _named_reader(node: ast.AST) -> str | None:
     """The reader name `node` references, or None."""
+    if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant) and node.slice.value in READERS:
+        return str(node.slice.value)
+    if isinstance(node, ast.BinOp | ast.JoinedStr | ast.Call) and _fold(node) in READERS:
+        return str(_fold(node))
     if isinstance(node, ast.Name) and node.id in READERS:
         return node.id
     if isinstance(node, ast.Attribute) and node.attr in READERS:
@@ -132,6 +167,26 @@ def test_c1_config_read_fires(tmp_path: Path, body: str, detail: str) -> None:
     assert detail in [v.detail for v in found]
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        "x = vars(cfgmod)['get_project_config'](root)\n",
+        "x = cfgmod.__dict__['get_global_config']()\n",
+        "x = globals()['read_config_file'](p)\n",
+        "x = getattr(cfgmod, 'get_' + 'project_config')(root)\n",
+        "x = getattr(cfgmod, f'get_{\"project\"}_config')(root)\n",
+        "x = getattr(cfgmod, 'get_' + 'global' + '_config')()\n",
+        "x = getattr(cfgmod, ''.join(['read_', 'config_file']))(p)\n",
+        "x = getattr(cfgmod, ('get_' + 'agent') + '_config')\n",
+        "x = vars(cfgmod)['get_' + 'project_config'](root)\n",
+    ],
+)
+def test_c1_computed_names_fire(tmp_path: Path, body: str) -> None:
+    """A reader named by a subscript key or by constants that fold to its name is flagged."""
+    found = config_read_violations(_plant(tmp_path, {"core/x/mod.py": body}), tmp_path)
+    assert [v.rule for v in found] == ["C1"]
+
+
 def test_c1_fires_under_adapters(tmp_path: Path) -> None:
     """`core/platform/adapters/` has no exemption."""
     body = "from m import read_config_file\n"
@@ -148,6 +203,10 @@ def test_c1_fires_under_adapters(tmp_path: Path) -> None:
         ("core/x/mod.py", "p = get_project_config_path(root)\nq = get_global_config_path()\n"),
         ("core/x/mod.py", "project_config = {}\nx = project_config.get('a')\n"),
         ("core/x/mod.py", "y = getattr(config, 'project_config')\n"),
+        ("core/x/mod.py", "y = vars(m)['project_config']\nz = d['get_project_config_path']\n"),
+        ("core/x/mod.py", "y = getattr(m, 'get_' + 'project_config_path')\n"),
+        ("core/x/mod.py", "y = getattr(m, f'get_{n}_config')\nz = ''.join(parts)\n"),
+        ("core/x/mod.py", "'get_project_config'\nx = ('get_global_config', 1)\n"),
     ],
 )
 def test_c1_clean_shapes_are_quiet(tmp_path: Path, name: str, body: str) -> None:

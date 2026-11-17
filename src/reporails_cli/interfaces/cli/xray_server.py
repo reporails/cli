@@ -429,7 +429,7 @@ class XrayServer:
             return XrayCheck("refused", HOME_SKIPPED), {}
         try:
             run = RunContext()
-            refusal = server_gate("xray", partial(handshake, tier=run.tier()))
+            refusal = server_gate("xray", partial(handshake, tier=run.tier(), fetch=http_get))
             if refusal is not None:
                 return XrayCheck("refused", refusal.text), {}
             checked = self._check_path(str(self._root), run)
