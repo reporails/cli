@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
 import typer
 
+from reporails_cli.core.platform.config.bootstrap import run_offline
 from reporails_cli.core.platform.policy.exclusion import first_folder_value_problem
 from reporails_cli.interfaces.cli.completion import complete_agent, complete_rule_token, complete_target_token
 from reporails_cli.interfaces.cli.helpers import _print_unknown_rule, console
@@ -111,8 +111,6 @@ def check(options: CheckOptions) -> None:
         _arm_check_timeout,
     )
 
-    if options.offline:
-        os.environ["AILS_OFFLINE"] = "1"
     # a retired/misspelled format is a usage error, not a silent text run
     _validate_output_format(options.output_format)
     _arm_check_timeout()  # wall-clock backstop against a runaway/hung check (POSIX)
@@ -135,7 +133,8 @@ def check(options: CheckOptions) -> None:
         ),
         render=CheckRender(no_promo=options.no_promo),
     )
-    run_check_flow(state)
+    with run_offline(options.offline):
+        run_check_flow(state)
 
 
 @app.command(rich_help_panel="Explore")

@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 from reporails_cli.core.mapper.map_cache import CACHE_VERSION
-from reporails_cli.core.platform.config.bootstrap import get_daemon_dir
+from reporails_cli.core.platform.config.bootstrap import drop_run_offline, get_daemon_dir
 from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
 from reporails_cli.core.platform.contract.http_get import HttpGet
 from reporails_cli.core.platform.dto.ports import DaemonTransport
@@ -256,6 +256,7 @@ def _fork_daemon(transport: DaemonTransport, fetch: HttpGet) -> int:
                 break
         return pid
 
+    drop_run_offline()
     _become_daemon(transport, fetch)
 
     return 0  # unreachable
