@@ -63,13 +63,13 @@ class TestEscaping:
         ids=["percent", "newline", "preserves-colon"],
     )
     def test_escape_workflow_data(self, input_str: str, expected: str) -> None:
-        assert github_formatter._escape_workflow_data(input_str) == expected
+        assert github_formatter.escape_workflow_data(input_str) == expected
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_percent_in_message_escaped_before_other_chars(self) -> None:
         """Percent must be escaped first to avoid double-escaping."""
-        result = github_formatter._escape_workflow_data("100%\n")
+        result = github_formatter.escape_workflow_data("100%\n")
         assert result == "100%25%0A"
 
     @pytest.mark.unit

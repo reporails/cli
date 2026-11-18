@@ -55,3 +55,13 @@ def test_heal_notice_under_json_goes_to_stderr_with_its_code(
     _emit_heal_withheld("json", funnel_error=None, tier="free", server_replied=True)
     captured = capsys.readouterr()
     assert captured.out == "" and '"heal_requires_pro"' in captured.err
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_github_server_refusal_escapes_percent_and_crlf(capsys) -> None:
+    from reporails_cli.core.platform.dto.pipeline import Refusal
+    from reporails_cli.interfaces.cli.check_notices import _emit_server_refusal
+
+    _emit_server_refusal("github", Refusal("kind", "100%\r\nnext"))
+    assert capsys.readouterr().out.strip() == "::error::100%25%0D%0Anext"

@@ -20,6 +20,7 @@ from reporails_cli.core.heal.apply import heal_withheld_for_run
 from reporails_cli.core.pipeline.assemble import with_exclusions
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.formatters.github import escape_workflow_data
 from reporails_cli.formatters.text.verdict import render_excluded_line
 from reporails_cli.interfaces.cli.check_orchestration import RenderContext, _dispatch_output
 from reporails_cli.interfaces.cli.helpers import _print_no_instruction_files, console
@@ -108,7 +109,7 @@ def _emit_server_refusal(output_format: str, refusal: Refusal) -> None:
         print(json.dumps({"error": refusal.kind, "message": refusal.message}))
         return
     if output_format == "github":
-        print(f"::error::{refusal.message.replace(chr(10), '%0A')}")
+        print(f"::error::{escape_workflow_data(refusal.message)}")
         return
     console.print(f"[red]\u2717[/red] {escape_markup(refusal.message)}")
 
