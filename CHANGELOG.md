@@ -87,6 +87,7 @@
 - Docstring and test-fixture examples use neutral text.
 - Heal reads a file through the one file reader.
 - The regex scan reads the config exclusions only, as its test guards.
+- The offline-daemon test is skipped on Windows, where the mapper daemon does not run.
 
 ## 0.6.7
 
