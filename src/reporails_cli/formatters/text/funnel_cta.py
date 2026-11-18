@@ -281,10 +281,10 @@ _CTA_TEMPLATES: dict[tuple[str, str], str] = {
     ),
     ("payload_too_large", "anonymous"): (
         "Project too large for anonymous (2 MB cap). "
-        "Sign in with `ails login`, then upgrade to Pro to raise it to 20 MB"
+        "Sign in with `ails login` to raise it to 5 MB, then upgrade to Pro for 20 MB"
     ),
     ("payload_too_large", "free"): (
-        "Project too large on the free tier (2 MB cap). Upgrade to Pro to raise it to 20 MB"
+        "Project too large on the free tier (5 MB cap). Upgrade to Pro to raise it to 20 MB"
     ),
     ("payload_too_large", "pro"): "Project exceeds the per-request payload cap — let us know your use case",
     ("atom_cap_exceeded", "anonymous"): (

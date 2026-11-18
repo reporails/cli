@@ -358,7 +358,7 @@ When `min-score` is set, the gate fails CLOSED if the diagnostics server rejecte
 
 ## Authentication
 
-The anonymous tier requires no account, and signing in is free. A free account raises your hourly limit from 5 to 100 checks and leaves the payload cap unchanged. Signing in also gives you an identity (so you can subscribe and manage the subscription). `ails check --heal` writes fixes on a Pro account only; an anonymous or free run gets the full diagnosis and no changes. Raising the caps and unlocking the full diagnostic detail is what a Pro subscription adds — see [Tiers and Limits](tiers.md).
+The anonymous tier requires no account, and signing in is free. A free account raises your hourly limit from 5 to 100 checks and the payload cap from 2 MB to 5 MB. Signing in also gives you an identity (so you can subscribe and manage the subscription). `ails check --heal` writes fixes on a Pro account only; an anonymous or free run gets the full diagnosis and no changes. Raising the caps and unlocking the full diagnostic detail is what a Pro subscription adds — see [Tiers and Limits](tiers.md).
 
 ```bash
 ails login        # sign this machine in through your browser

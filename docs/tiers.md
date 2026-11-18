@@ -9,7 +9,7 @@ last_updated: 2026-10-08
 
 Reporails has two tiers: **Free** and **Pro**.
 
-- **Free** is every user without an active Pro subscription — whether you are anonymous (no account) or signed in with a free account. Both get identical diagnostic detail: the score, every local finding with its line, and per-file counts for the interaction findings. They differ in the hourly limit: 5 an hour without an account, 100 an hour once you sign in with `ails login`. The payload cap is the same for both, and signing in also gives you an account for managing your subscription.
+- **Free** is every user without an active Pro subscription — whether you are anonymous (no account) or signed in with a free account. Both get identical diagnostic detail: the score, every local finding with its line, and per-file counts for the interaction findings. They differ in the hourly limit: 5 an hour without an account, 100 an hour once you sign in with `ails login`. Signing in also raises the payload cap from 2 MB to 5 MB, and also gives you an account for managing your subscription.
 - **Pro** is an active paid subscription. It raises the request rate and payload cap and adds what the server works out for your project: which findings to fix first and which to leave alone, and the exact line of every cross-file repetition and topic overlap. The ordered remediation workflow hands these to your coding agent as remedies and checks each file again after your agent rewrites it. The server sends no remedy text to an anonymous or free caller at all — Free gets only the fix text of the local checks, in the diagnosis, and `--heal` writes nothing for it.
 
 The CLI sends your API key (if you have one) with each request; the diagnostic backend resolves your tier from your subscription state and applies the corresponding limits.
@@ -20,7 +20,7 @@ The CLI sends your API key (if you have one) with each request; the diagnostic b
 |-------------------------------------------|-------------------------------|-------------------------------------------|
 | Account                                   | Optional (`ails login`)  | Subscription via your account page        |
 | Hourly request rate                       | 5 / hour signed out, 100 / hour signed in | 1,200 / hour                  |
-| Per-request payload cap                   | 2 MB                          | 20 MB                                     |
+| Per-request payload cap                   | 2 MB signed out, 5 MB signed in | 20 MB                                     |
 | Mechanical and structural rule findings   | Full detail                   | Full detail                               |
 | Per-finding rule body and pass / fail     | Full detail                   | Full detail                               |
 | Overall score and per-surface scores      | Full detail                   | Full detail                               |
@@ -142,7 +142,7 @@ For CI, create an API key on [reporails.com/account](https://reporails.com/accou
 
 ## Why sign in, and why upgrade?
 
-You can run `ails check` anonymously with no setup — the score, every local finding with its line, and per-file counts for the interaction findings are free, forever. Signing in with a free account keeps your usage under your identity, raises the hourly limit from 5 to 100 checks, and is the step before subscribing; it does not raise the payload cap or the file budget, add the remedies or let `ails check --heal` write fixes. Upgrading to Pro raises the request rate and payload cap and unlocks the remedies for the findings worth fixing, plus the ordered remediation workflow your coding agent applies end to end.
+You can run `ails check` anonymously with no setup — the score, every local finding with its line, and per-file counts for the interaction findings are free, forever. Signing in with a free account keeps your usage under your identity, raises the hourly limit from 5 to 100 checks, and is the step before subscribing; it raises the payload cap from 2 MB to 5 MB, but does not raise the file budget, add the remedies or let `ails check --heal` write fixes. Upgrading to Pro raises the request rate and payload cap and unlocks the remedies for the findings worth fixing, plus the ordered remediation workflow your coding agent applies end to end.
 
 ---
 
