@@ -99,14 +99,14 @@ def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tu
     reloaded: set[str] = set()
     whole: set[str] = set()
     named: set[str] = set()
-    kept_in: dict[str | None, str] = {}
+    kept_in: dict[str | None, set[str]] = {}
     done: list[tuple[float, tuple[XrayFileState, ...]]] = []
 
     def settle(*, waiting: bool = False) -> None:
         nonlocal held
         if pending is None:
             return
-        kept = {kept_in[row_id] for row_id in kept_in.keys() & pending[2]}
+        kept = {sid for row_id in kept_in.keys() & pending[2] for sid in kept_in[row_id]}
         states = tuple(
             XrayFileState(src, _state(src, reloaded, whole | kept, named, waiting=waiting)) for src in pending[1]
         )
@@ -123,7 +123,7 @@ def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tu
             settle()
             pending = None
         elif sid is not None:
-            kept_in[row_id] = sid
+            kept_in.setdefault(row_id, set()).add(sid)
             if record.event == "instruction_load" and pending is not None:
                 reloaded.add(sid)
             elif pending is None:
