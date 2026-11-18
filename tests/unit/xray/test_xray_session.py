@@ -544,3 +544,27 @@ def test_a_summary_id_with_a_non_ascii_digit_is_no_summary_not_an_error(tmp_path
     session.refresh()
     session._transcript.append(rec("post_compact", 1, source="auto"))
     assert session.summary(":²") is None
+
+
+def test_two_views_with_nothing_changed_walk_the_project_once_and_a_config_edit_walks_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    walks: list[int] = []
+
+    def counting(*args: object, **kwargs: object) -> object:
+        walks.append(1)
+        return artifact_files(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("reporails_cli.core.xray.session.artifact_files", counting)
+    root = _project(tmp_path)
+    session = _session(tmp_path, "2.1.301", root)
+    first = _view(session)
+    second = _view(session)
+    assert len(walks) == 1 and second.version == first.version
+    (root / ".ails").mkdir()
+    (root / ".ails" / "config.yml").write_text("exclude_dirs:\n  - sub\n", encoding="utf-8")
+    third = _view(session)
+    assert len(walks) == 2 and third.version != second.version
+    (root / ".ails" / "config.yml").write_text("exclude_dirs:\n  - sub\n  - other\n", encoding="utf-8")
+    _view(session)
+    assert len(walks) == 3

@@ -22,6 +22,12 @@ from reporails_cli.core.eventbus.transcript import (
     subagent_system,
 )
 from reporails_cli.core.pipeline.expected_loads import AGENT
+from reporails_cli.core.platform.config.bootstrap import (
+    claude_plugins_dir,
+    get_global_config_path,
+    get_local_config_path,
+    get_project_config_path,
+)
 from reporails_cli.core.platform.config.claude_settings import (
     claude_settings_files,
     leaving_out_unreadable_cache,
@@ -75,8 +81,38 @@ _NO_WINDOW = "context window"
 # A session whose transcript was written this many seconds ago or less is taken to be still going.
 LIVE_WINDOW_S = 300.0
 
+# A listing is walked again after this many seconds even when its stamp holds, so a file added deeper in the tree
+# than the stamp looks shows within that time.
+LISTING_MAX_AGE_S = 30.0
+
 # The most characters of one hook firing's output the page is sent.
 HOOK_OUTPUT_CHARS = 20_000
+
+
+def _stat_of(path: Path) -> tuple[int, int] | None:
+    """The change time and size of `path`; None when it does not exist or cannot be read (a best-effort stamp: a
+    missing file is the stamp's own reading, and an unreadable one reads the same until it changes)."""
+    try:
+        found = path.stat()
+    except OSError:
+        return None
+    return found.st_mtime_ns, found.st_size
+
+
+def _listing_stamp(root: Path) -> tuple[tuple[int, int] | None, ...]:
+    """What the listing reads, cheaply: the change time of the three config files, the settings files, the plugin
+    record, the project folder and each `.claude` folder's own listing folders, in the project and in the home."""
+    claude = (root / ".claude", Path.home() / ".claude")
+    paths = [
+        get_project_config_path(root),
+        get_local_config_path(root),
+        get_global_config_path(),
+        claude_plugins_dir() / "installed_plugins.json",
+        *claude_settings_files(root),
+        root,
+        *(folder for base in claude for folder in (base, base / "rules", base / "skills", base / "agents")),
+    ]
+    return tuple(_stat_of(path) for path in paths)
 
 
 class _FileReads:
@@ -115,7 +151,9 @@ class XraySession:
         self._reads = _FileReads()
         self._listed: tuple[tuple[ArtifactFile, ...], tuple[XrayArtifact, ...]] | None = None
         self._shown: dict[str, ArtifactFile] | None = None
-        self._problems: tuple[str, ...] = ()
+        self._walked: (
+            tuple[tuple[tuple[int, int] | None, ...], float, tuple[ArtifactFile, ...], tuple[str, ...]] | None
+        ) = None
         self._settings: tuple[Path, ...] = ()
         self._plugins: list[tuple[str, Path]] = []
         self._findings: dict[str, FindingTally] = {}
@@ -135,7 +173,13 @@ class XraySession:
     def _listing(self, run: RunContext) -> tuple[ArtifactFile, ...]:
         """The files the page lists; with the installed plugins' record unreadable, none of their files, and with
         the server-managed settings cache unreadable, the files as if it were absent. Every problem is kept for
-        the refusals."""
+        the refusals. The files are walked again only when the config files, the settings files or the folders the
+        stamp reads changed, or after `LISTING_MAX_AGE_S`."""
+        with leaving_out_unreadable_cache():
+            stamp = _listing_stamp(self._root)
+        now = time.monotonic()
+        if self._walked is not None and self._walked[0] == stamp and now - self._walked[1] < LISTING_MAX_AGE_S:
+            return self._walked[2]
         problems: list[str] = []
         with leaving_out_unreadable_cache() as cache_problems:
             try:
@@ -147,7 +191,7 @@ class XraySession:
             files = artifact_files(run, self._root, plugins)
             self._settings = claude_settings_files(self._root)
         problems.extend(f"{problem}; {_CACHE_MAY_DIFFER}" for problem in dict.fromkeys(cache_problems))
-        self._problems = tuple(problems)
+        self._walked = (stamp, now, files, tuple(problems))
         return files
 
     def _shown_as(self, run: RunContext, path: str) -> ArtifactFile | None:
@@ -362,7 +406,7 @@ class XraySession:
     def _gaps(self, window: XrayWindow | None) -> XrayGaps:
         """The refusals the records and the plugin listing hold, and what the view could not read."""
         refusals = [r.refusal for r in self._transcript if r.event == "refusal" and r.refusal]
-        refusals.extend(self._problems)
+        refusals.extend(() if self._walked is None else self._walked[3])
         return XrayGaps(
             refusals=tuple(dict.fromkeys(refusals)),
             not_known=(_NO_WINDOW,) if window is None else (),
