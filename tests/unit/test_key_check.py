@@ -238,3 +238,31 @@ def test_a_refused_handshake_carries_the_servers_message_and_a_rejected_one_its_
         "cli", tier="free", fetch=_FakeGet(_handshake_reply(401, {"error": "invalid_api_key", "message": "nope"}))
     )
     assert (rejected.error, rejected.message) == ("invalid_api_key", "nope")
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_handshake_makes_no_request_inside_a_recorded_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
+    from reporails_cli.core.platform.adapters.rate_cooldown import record_cooldown
+    from reporails_cli.core.platform.dto.diagnostics import FunnelError
+
+    monkeypatch.setenv("AILS_SERVER_URL", "http://srv/")
+    record_cooldown("http://srv", "", FunnelError(error="rate_limit_exceeded", tier="anonymous", limit=5, reset_in=600))
+    fetch = _FakeGet(_handshake_reply(200, {"verdict": "ok"}))
+    answer = handshake("cli", tier="anonymous", fetch=fetch)
+    assert fetch.seen == {}
+    assert answer.status == "refused"
+    assert "Try again in ~10 min" in answer.message
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_a_rate_limited_handshake_reply_opens_the_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AILS_SERVER_URL", "http://srv/")
+    limited = _handshake_reply(429, {"error": "rate_limit_exceeded", "tier": "anonymous", "limit": 5, "reset_in": 900})
+    first = handshake("cli", tier="anonymous", fetch=_FakeGet(limited))
+    assert first.status == "refused"
+    fetch = _FakeGet(_handshake_reply(200, {"verdict": "ok"}))
+    second = handshake("cli", tier="anonymous", fetch=fetch)
+    assert fetch.seen == {}
+    assert "Try again in" in second.message

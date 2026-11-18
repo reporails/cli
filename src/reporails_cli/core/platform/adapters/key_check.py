@@ -6,6 +6,7 @@ import httpx
 
 from reporails_cli.core.platform.adapters.api_client import AilsClient
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER, notices_from_header
+from reporails_cli.core.platform.adapters.rate_cooldown import RATE_LIMIT_ERROR, active_cooldown, record_cooldown
 from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
 from reporails_cli.core.platform.contract.http_get import HttpGet
 from reporails_cli.core.platform.contract.json_value import JsonObject
@@ -51,9 +52,13 @@ def handshake(surface: Surface, *, tier: str, fetch: HttpGet) -> Handshake:
 
     No reply is `unreachable`, a rejected credential is `rejected` (worded as a sign-in still
     arriving when the key was just made), and any reply that holds no verdict (a missing route,
-    a gateway error, an unreadable body) is `no_verdict`.
+    a gateway error, an unreadable body) is `no_verdict`. While a rate-limit window is open (a 429 this
+    caller received, here or on a check) the answer is a `refused` naming when it resets, with no request.
     """
     client = AilsClient(tier)
+    cooldown = active_cooldown(client.base_url, client.api_key)
+    if cooldown is not None:
+        return _rate_limited(cooldown)
     url, headers = client.diagnose_request("application/json", surface)
     try:
         with fetch(url, headers=headers, timeout=_HANDSHAKE_TIMEOUT_S, follow_redirects=False) as reply:
@@ -61,12 +66,9 @@ def handshake(surface: Surface, *, tier: str, fetch: HttpGet) -> Handshake:
             text = b"".join(reply.chunks()).decode("utf-8", errors="replace")
     except (PlatformUnavailableError, OSError):
         return Handshake("unreachable")
-    rejected = _rejection(status, text)
-    if rejected is not None:
-        rejected = client.early_rejection(rejected)
-        return Handshake("rejected", error=rejected.error, message=rejected.message)
-    if status != 200:
-        return Handshake("no_verdict")
+    early = _error_answer(client, status, text)
+    if early is not None:
+        return early
     body = json_object(text)
     verdict = body.get("verdict")
     if verdict == "ok":
@@ -74,6 +76,27 @@ def handshake(surface: Surface, *, tier: str, fetch: HttpGet) -> Handshake:
     if verdict == "refused":
         return _verdict("refused", body)
     return Handshake("no_verdict")
+
+
+def _error_answer(client: AilsClient, status: int, text: str) -> Handshake | None:
+    """The handshake for a reply that holds no verdict: a rate limit (its window is kept), a rejected
+    credential or any other non-200; `None` for a 200 to read the verdict from."""
+    limited = parse_error_body(status, text)
+    if limited is not None and limited.error == RATE_LIMIT_ERROR:
+        record_cooldown(client.base_url, client.api_key, limited)
+        return _rate_limited(limited)
+    rejected = _rejection(status, text)
+    if rejected is not None:
+        rejected = client.early_rejection(rejected)
+        return Handshake("rejected", error=rejected.error, message=rejected.message)
+    return Handshake("no_verdict") if status != 200 else None
+
+
+def _rate_limited(err: FunnelError) -> Handshake:
+    """The refused handshake for a rate-limit window: the reset time, then the server's own wording."""
+    return Handshake(
+        "refused", reason=RATE_LIMIT_ERROR, message=f"{err.reset_phrase}{err.message}".strip(), tier=err.tier
+    )
 
 
 def _verdict(status: HandshakeStatus, body: JsonObject) -> Handshake:
