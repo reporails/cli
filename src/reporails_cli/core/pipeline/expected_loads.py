@@ -22,25 +22,25 @@ from reporails_cli.core.eventbus.store import prune
 from reporails_cli.core.mapper.inspect import SESSION_INVOCABLE_TYPES, file_read_by, load_registry
 from reporails_cli.core.mapper.labels import file_label
 from reporails_cli.core.mapper.memory_index import is_linked, memory_type
-from reporails_cli.core.platform.adapters.payload import relative_wire_path
 from reporails_cli.core.platform.config.bootstrap import get_xray_log_dir
 from reporails_cli.core.platform.config.claude_settings import (
     LAUNCH_INSTRUCTION_FILE_TYPES,
     MODES_WITHOUT_LAUNCH_INSTRUCTIONS,
     claude_instruction_files_mode,
 )
-from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object
 from reporails_cli.core.platform.dto.discovery import AliasFile, RunExclusions, SkippedFile
 from reporails_cli.core.platform.dto.mapping import FileRead
 from reporails_cli.core.platform.dto.results import ProjectConfig
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.hook_config import hook_sites, read_hook_config
-from reporails_cli.core.platform.utils.utils import strip_frontmatter
+from reporails_cli.core.platform.utils.utils import relative_wire_path, strip_frontmatter
 
 AGENT = "claude"
 
 
-def expected_loads(target: Path, plugins: Sequence[tuple[str, Path]] | None = None) -> JsonObject:
+def expected_loads(run: RunContext, target: Path, plugins: Sequence[tuple[str, Path]] | None = None) -> JsonObject:
     """The files Claude Code loads for a session in `target` (instruction and rule files, no config
     surfaces) with their file type, loading mode, precedence and display label (a memory topic file also
     its type and whether the memory index links it), the files a session can invoke (skills, agents,
@@ -49,13 +49,14 @@ def expected_loads(target: Path, plugins: Sequence[tuple[str, Path]] | None = No
     record propagates); without them the installed plugins are read here."""
     root = resolve_project_root(target)
     prune(root)
-    exclusions = load_run_exclusions(root, None, None)
-    project_config = get_project_config(root)
+    exclusions = load_run_exclusions(run, root)
+    project_config = run.project_config(root)
     registry = load_registry()
     mode = claude_instruction_files_mode(root)
     with shared_dir_listings():
-        files, read_instructions, switched_off = _loaded_files(exclusions, project_config, root, registry, mode)
+        files, read_instructions, switched_off = _loaded_files(run, exclusions, root, registry, mode)
         candidates = discover_ungated(
+            run,
             root,
             AGENT,
             gated_file_types(AGENT),
@@ -63,12 +64,37 @@ def expected_loads(target: Path, plugins: Sequence[tuple[str, Path]] | None = No
             project_config=project_config,
         )
         invocable = _invocable_files(
-            exclusions, project_config, root, registry, installed_plugin_roots(root) if plugins is None else plugins
+            run,
+            exclusions,
+            project_config,
+            root,
+            registry=registry,
+            plugins=installed_plugin_roots(root) if plugins is None else plugins,
         )
     skipped = [SkippedFile(path, "setting_off", None) for path in switched_off]
     reads = claude_agents_md_reads([p for p in candidates if not leaves_out(exclusions, p)], root, read_instructions)
     skipped.extend(reads.skipped)
-    skipped_out: list[JsonValue] = [
+    return {
+        "version": 1,
+        "agent": AGENT,
+        "root": str(safe_resolve(root)),
+        "event_log_dir": str(get_xray_log_dir()),
+        "files": files,
+        "invocable": invocable,
+        "skipped": _skipped_rows(skipped, switched_off, root, registry, mode),
+        "aliases": _alias_rows(reads.aliases),
+    }
+
+
+def _skipped_rows(
+    skipped: Sequence[SkippedFile],
+    switched_off: dict[Path, str],
+    root: Path,
+    registry: dict[str, JsonObject],
+    mode: str,
+) -> list[JsonValue]:
+    """The files a session skips, in path order, each with its file type, reason, cause and the setting."""
+    return [
         {
             "path": str(item.path),
             "file_type": switched_off.get(item.path) or _file_type_of_skipped(item.path, root, registry),
@@ -78,16 +104,6 @@ def expected_loads(target: Path, plugins: Sequence[tuple[str, Path]] | None = No
         }
         for item in sorted(skipped, key=lambda s: s.path)
     ]
-    return {
-        "version": 1,
-        "agent": AGENT,
-        "root": str(safe_resolve(root)),
-        "event_log_dir": str(get_xray_log_dir()),
-        "files": files,
-        "invocable": invocable,
-        "skipped": skipped_out,
-        "aliases": _alias_rows(reads.aliases),
-    }
 
 
 def _alias_rows(aliases: Sequence[AliasFile]) -> list[JsonValue]:
@@ -99,12 +115,18 @@ def _alias_rows(aliases: Sequence[AliasFile]) -> list[JsonValue]:
 
 
 def _loaded_files(
-    exclusions: RunExclusions, project_config: ProjectConfig, root: Path, registry: dict[str, JsonObject], mode: str
+    run: RunContext,
+    exclusions: RunExclusions,
+    root: Path,
+    registry: dict[str, JsonObject],
+    mode: str,
 ) -> tuple[list[JsonValue], dict[Path, str], dict[Path, str]]:
     """The non-empty instruction and rule files Claude Code loads (the user's own included), the instruction
     files among them, and the launch files the `instructionFiles` setting turns off (each with its
     file type)."""
-    found = discover_from_config(root, AGENT, exclusions, project_config=project_config, repo_scoped=False)
+    found = discover_from_config(
+        run, root, AGENT, exclusions, project_config=run.project_config(root), repo_scoped=False
+    )
     instruction, rules = (set(bucket) for bucket in found[:2]) if found is not None else (set(), set())
     files: list[JsonValue] = []
     read_instructions: dict[Path, str] = {}
@@ -123,11 +145,11 @@ def _loaded_files(
             continue
         if path in instruction:
             read_instructions[path] = read.loading
-        files.append(_loaded_entry(path, root, read))
+        files.append(_loaded_entry(run, path, root, read))
     return files, read_instructions, switched_off
 
 
-def _loaded_entry(path: Path, root: Path, read: FileRead) -> JsonObject:
+def _loaded_entry(run: RunContext, path: Path, root: Path, read: FileRead) -> JsonObject:
     """One loaded file: its type, loading, precedence and label; a memory topic file also carries
     its type and whether `MEMORY.md` links it."""
     topic = is_memory_recall_entry(read.file_type, path.name)
@@ -141,22 +163,24 @@ def _loaded_entry(path: Path, root: Path, read: FileRead) -> JsonObject:
     }
     if topic:
         entry["memory_type"] = declared
-        entry["linked"] = is_linked(path)
+        entry["linked"] = is_linked(run, path)
     return entry
 
 
-def _skill_entry_patterns(root: Path) -> list[str]:
+def _skill_entry_patterns(run: RunContext, root: Path) -> list[str]:
     """The skill entry patterns of Claude's config, those of the synced skills narrowed to the signed-in account's
     folder (none when no account is signed in)."""
     declared = extract_patterns(as_object(as_object(load_config_file_types(AGENT)).get("skills")), "entry_patterns")
-    resolved = (resolve_external_pattern(pattern, claude_project_folder_name(root)) for pattern in declared)
+    resolved = (resolve_external_pattern(run, pattern, claude_project_folder_name(root)) for pattern in declared)
     return [pattern for pattern in resolved if pattern is not None]
 
 
 def _invocable_files(
+    run: RunContext,
     exclusions: RunExclusions,
     project_config: ProjectConfig,
     root: Path,
+    *,
     registry: dict[str, JsonObject],
     plugins: Sequence[tuple[str, Path]],
 ) -> list[JsonValue]:
@@ -164,10 +188,11 @@ def _invocable_files(
     the user, the managed settings folder and every installed, enabled plugin, each with its precedence, plugin
     id and label."""
     roots = [plugin_root for _, plugin_root in plugins]
-    entries = _skill_entry_patterns(root)
+    entries = _skill_entry_patterns(run, root)
     found: dict[Path, JsonValue] = {}
     for file_type in SESSION_INVOCABLE_TYPES:
         paths = discover_ungated(
+            run,
             root,
             AGENT,
             (file_type,),
@@ -208,7 +233,7 @@ def _is_blank(path: Path) -> bool:
     """Whether the file holds nothing but whitespace once its byte-order mark and frontmatter are
     removed; Claude Code sends nothing for it. A file that cannot be read stays listed."""
     try:
-        return not strip_frontmatter(path.read_text(encoding="utf-8-sig")).strip()
+        return not strip_frontmatter(read_file_text(path, encoding="utf-8-sig")).strip()
     except (OSError, UnicodeDecodeError):
         return False
 

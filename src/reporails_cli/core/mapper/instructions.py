@@ -8,12 +8,14 @@ reader what to do. A sentence holding two such clauses holds two instructions, w
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
 from reporails_cli.core.mapper.charge_floors import _SEE_POINTER_RE
-from reporails_cli.core.mapper.classify import is_conditional_frame
+from reporails_cli.core.mapper.classify import hedge_cue_words, is_conditional_frame
 from reporails_cli.core.mapper.classify_lexicon import (
     CLAUSE_JOINERS,
     DETERMINERS,
+    INDEFINITE_ARTICLES,
     VERBS_AMBIGUOUS,
     VERBS_CORE,
     VERBS_NAMING_TOOLS,
@@ -23,10 +25,13 @@ from reporails_cli.core.mapper.lexical import DASH_MARKS
 from reporails_cli.core.mapper.markers import without_list_marker
 from reporails_cli.core.mapper.md_parser import code_spans, leading_bold_run
 from reporails_cli.core.mapper.parse import _build_scope_mask
+from reporails_cli.core.mapper.word_spans import word_offsets
 from reporails_cli.core.platform.dto.ruleset import LIST_ITEM_FORMATS, LIST_OBJECT_ROLE, Atom
 
 # Where a sentence can start another clause: a semicolon, a comma, a spaced dash, or a bare `and` / `then`.
-_CLAUSE_CUT_RE = re.compile(r"[;,]\s+|\s+[\u2014\u2013]\s+|\s+(?:and|then)\s+", re.IGNORECASE)
+_MARK_CUT_PATTERN = r"[;,]\s+|\s+[\u2014\u2013]\s+"
+_CLAUSE_CUT_RE = re.compile(_MARK_CUT_PATTERN + r"|\s+(?:and|then)\s+", re.IGNORECASE)
+_MARK_CUT_RE = re.compile(_MARK_CUT_PATTERN)
 _LEAD_CONNECTOR_RE = re.compile(r"^(?:(?:and|but|or|then|also|so|always|only|just|please|first)\s+)+", re.IGNORECASE)
 # A plain word label before the instruction (`Note:`) introduces it; it gives no command itself.
 _LEAD_LABEL_RE = re.compile(r"^[A-Za-z][\w-]*:\s+")
@@ -63,7 +68,7 @@ _UNLEXICONED_COMMAND_VERBS = frozenset(
 )
 _COMMAND_VERBS = frozenset(VERBS_CORE | VERBS_SUPPLEMENT | _UNLEXICONED_COMMAND_VERBS) - VERBS_NAMING_TOOLS
 _NOUN_OR_VERB = frozenset(VERBS_AMBIGUOUS | VERBS_NAMING_TOOLS)
-_OBJECT_OPENERS = frozenset(DETERMINERS | {"a", "an", "it", "them", "your", "its", "sure"})
+_OBJECT_OPENERS = frozenset(DETERMINERS | INDEFINITE_ARTICLES | {"it", "them", "your", "its", "sure"})
 # `to install`, `to build`: the verbs listed after it say what the one instruction is for.
 _PURPOSE_RE = re.compile(r"\bto\s+([a-z]+)\b", re.IGNORECASE)
 _WORD_START_RE = re.compile(r"\S+")
@@ -105,17 +110,18 @@ def without_lead(text: str) -> str:
 
 
 def _clause_text(clause: str) -> str:
-    """The clause without its list marker, lead label and emphasis."""
-    return without_lead(clause).strip(" *_")
+    """The clause without its list marker and lead label."""
+    return without_lead(clause).strip()
 
 
 def opens_command(clause: str, *, sequenced: bool = False) -> bool:
     """Whether a clause starts with a command: a prohibition, or a verb telling the reader what to do.
 
     A clause of one bare word is a command only when `then` sets it after another (`…, then commit.`);
-    otherwise it is an item of a list.
+    otherwise it is an item of a list. A hedge cue the clause opens with (`Maybe`, `Try to`) is read past.
     """
     text = _LEAD_CONNECTOR_RE.sub("", _clause_text(clause))
+    text = " ".join(text.split()[hedge_cue_words(text) :])
     if _NEGATION_ONSET_RE.match(text):
         return _CONTRAST_RE.match(text) is None
     words = _WORD_RE.findall(text)[:2]
@@ -132,7 +138,16 @@ def opens_command(clause: str, *, sequenced: bool = False) -> bool:
 _PIPE_JOIN_RE = re.compile(r"\s\|\s")
 
 
-def _pipe_cuts(sentence: str, inside: list[bool]) -> list[re.Match[str]]:
+def _plain_tail(source: str, plain: str, start: int) -> str:
+    """The text of ``source[start:]`` as ``plain`` reads it (:func:`_plain_clause`)."""
+    if plain is source:
+        return source[start:]
+    words = list(_WORD_START_RE.finditer(plain))
+    first = len(source[:start].split())
+    return plain[words[first].start() :] if first < len(words) else ""
+
+
+def _pipe_cuts(sentence: str, inside: list[bool], reading: str) -> list[re.Match[str]]:
     """A ` | ` table-cell join, where the cell after it opens a command, as a cut.
 
     A row is one joined line (`Deploys | Always deploy from CI | Never deploy on Friday`);
@@ -140,15 +155,20 @@ def _pipe_cuts(sentence: str, inside: list[bool]) -> list[re.Match[str]]:
     the cell it introduces, but a cell join whose next cell opens a command is where one
     instruction ends and the row's next one begins.
     """
-    return [m for m in _PIPE_JOIN_RE.finditer(sentence) if not inside[m.start()] and opens_command(sentence[m.end() :])]
+    return [
+        m
+        for m in _PIPE_JOIN_RE.finditer(sentence)
+        if not inside[m.start()] and opens_command(_plain_tail(sentence, reading, m.end()))
+    ]
 
 
-def _cut_mask(sentence: str) -> list[bool]:
+def _cut_mask(sentence: str, code: Sequence[tuple[int, int]] | None = None) -> list[bool]:
     """Where a comma or dash belongs to an aside, an example or a command: inside quotes, parentheses or
-    a code span."""
+    a code span. `code` is the character ranges of the code spans when the sentence is plain text that
+    no longer shows them; omitted, the sentence's own code spans are read."""
     inside = _build_scope_mask(sentence)
-    for span in code_spans(sentence):
-        inside[span.start : span.end] = [True] * (span.end - span.start)
+    for start, end in code if code is not None else [(span.start, span.end) for span in code_spans(sentence)]:
+        inside[start:end] = [True] * (end - start)
     return inside
 
 
@@ -157,29 +177,91 @@ def _states_purpose(clause: str) -> bool:
     return any(m.group(1).lower() in _COMMAND_VERBS | _NOUN_OR_VERB for m in _PURPOSE_RE.finditer(clause))
 
 
+def _joint_lead(joint: str) -> int:
+    """How many chars of a cut's match come before the next instruction's text: all of it after a comma,
+    semicolon or dash; the space before a joining word."""
+    return len(joint) - len(joint.lstrip()) if joint.strip().lower() in CLAUSE_JOINERS else len(joint)
+
+
+def joint_is_mark(joint: str) -> bool:
+    """Whether a joint is one a clause cut matches by a mark (a comma or semicolon, a spaced em or en
+    dash) rather than a joining word."""
+    return _MARK_CUT_RE.fullmatch(joint) is not None
+
+
 def _boundary(cut: re.Match[str]) -> int:
     """Where the next instruction's text begins: after a comma, semicolon or dash; before a joining word."""
-    joined_by_word = cut.group().strip().lower() in CLAUSE_JOINERS
-    return cut.start() + len(cut.group()) - len(cut.group().lstrip()) if joined_by_word else cut.end()
+    return cut.start() + _joint_lead(cut.group())
 
 
-def _clauses(sentence: str) -> list[tuple[int, str, str]]:
-    """Each clause as ``(where its text begins, its text, the joint before it)``.
+def _plain_clause(source: str, plain: str, start: int, end: int) -> str:
+    """The words of ``source[start:end]`` as ``plain`` reads them: ``plain`` is the same sentence without
+    its markdown, so it holds the same words in the same order."""
+    first = len(source[:start].split())
+    last = len(source[:end].split())
+    words = list(_WORD_START_RE.finditer(plain))
+    return plain[words[first].start() : words[last - 1].end()] if 0 <= first < last <= len(words) else ""
 
-    A comma or dash inside quotes, parentheses or a code span starts no clause.
+
+def _clauses(
+    sentence: str, plain: str | None = None, code: Sequence[tuple[int, int]] | None = None
+) -> list[tuple[int, str, str, bool]]:
+    """Each clause as ``(where its text begins, its plain text, the joint before it, whether the clause as
+    written is only a bold label)``.
+
+    ``plain`` is the sentence without its markdown, word for word; ``sentence`` itself when omitted. A comma
+    or dash inside quotes, parentheses or a code span starts no clause.
     """
-    inside = _cut_mask(sentence)
+    reading = sentence if plain is None or len(plain.split()) != len(sentence.split()) else plain
+    inside = _cut_mask(sentence, code)
     cuts = sorted(
-        [m for m in _CLAUSE_CUT_RE.finditer(sentence) if not inside[m.start()]] + _pipe_cuts(sentence, inside),
+        [m for m in _CLAUSE_CUT_RE.finditer(sentence) if not inside[m.start()]] + _pipe_cuts(sentence, inside, reading),
         key=lambda m: m.start(),
     )
-    clauses: list[tuple[int, str, str]] = []
+    clauses: list[tuple[int, str, str, bool]] = []
     prev: re.Match[str] | None = None
     for m in [*cuts, None]:
-        text = sentence[prev.end() if prev else 0 : m.start() if m else len(sentence)]
-        clauses.append((_boundary(prev) if prev else 0, text, prev.group() if prev else ""))
+        begin, stop = prev.end() if prev else 0, m.start() if m else len(sentence)
+        written = sentence[begin:stop]
+        label = _bold_lead_label_end(written)
+        text = written if reading is sentence else _plain_clause(sentence, reading, begin + label, stop)
+        clauses.append(
+            (_boundary(prev) if prev else 0, text, prev.group() if prev else "", _is_bold_label(written.strip()))
+        )
         prev = m
     return clauses
+
+
+def comma_items(text: str) -> list[str]:
+    """`text` cut at the commas the clause cut honours (outside quotes, parentheses and code, followed by
+    a space), the commas dropped (`a (b, c), d` -> `['a (b, c)', ' d']`)."""
+    items: list[str] = []
+    start = 0
+    for begin, _, joint, _ in _clauses(text)[1:]:
+        if joint.strip() == ",":
+            items.append(text[start : begin - len(joint)])
+            start = begin
+    return [*items, text[start:]]
+
+
+def list_items(text: str) -> list[str]:
+    """The items of the list `text` runs on as: `comma_items` of what comes before the first semicolon the
+    clause cut honours, which ends the list (`a, b; c, d` -> `['a', 'b']`)."""
+    for begin, _, joint, _ in _clauses(text)[1:]:
+        if joint.strip() == ";":
+            return comma_items(text[: begin - len(joint)])
+    return comma_items(text)
+
+
+def sentence_openers(text: str) -> list[tuple[int, int]]:
+    """The `(start, end)` columns of each mark in `text` that opens a list or a closing clause: a colon,
+    or a dash set off by spaces, outside quotes, parentheses and code."""
+    inside = _cut_mask(text)
+    marks = [(i, i + 1) for i, ch in enumerate(text) if ch == ":" and not inside[i]]
+    for begin, _, joint, _ in _clauses(text)[1:]:
+        if joint.strip() in DASH_MARKS:
+            marks.append((begin - len(joint), begin))
+    return sorted(marks)
 
 
 def _is_prohibition(clause: str) -> bool:
@@ -187,9 +269,9 @@ def _is_prohibition(clause: str) -> bool:
     return _NEGATION_ONSET_RE.match(text) is not None and _CONTRAST_RE.match(text) is None
 
 
-def _titles_next(clauses: list[tuple[int, str, str]], k: int) -> bool:
+def _titles_next(clauses: list[tuple[int, str, str, bool]], k: int) -> bool:
     """Whether clause `k` is only a bold label and a dash joins it to the clause it titles."""
-    return k + 1 < len(clauses) and _is_bold_label(clauses[k][1].strip()) and clauses[k + 1][2].strip() in DASH_MARKS
+    return k + 1 < len(clauses) and clauses[k][3] and clauses[k + 1][2].strip() in DASH_MARKS
 
 
 def _joins_actions(clause: str) -> bool:
@@ -202,7 +284,7 @@ def _joins_actions(clause: str) -> bool:
     return False
 
 
-def _prohibited_items(clauses: list[tuple[int, str, str]]) -> set[int]:
+def _prohibited_items(clauses: list[tuple[int, str, str, bool]]) -> set[int]:
     """The clauses that list what a prohibition forbids (`Do not commit secrets, push keys, or share tokens`).
 
     After a prohibition, comma-joined clauses closed by `or` / `nor` are its items, not instructions of their
@@ -233,28 +315,36 @@ def _acts_on_an_object(clause: str) -> bool:
     return len(words) == 2 and (words[1].lower() in _OBJECT_OPENERS or words[1][0] == "`")
 
 
-def _closes_item_list(clauses: list[tuple[int, str, str]], k: int) -> bool:
+def _closes_item_list(clauses: list[tuple[int, str, str, bool]], k: int) -> bool:
     """Whether clause ``k`` is the last, `and`-joined item of a list of things that are not commands
     (`Preserve `id`, `slug`, and coordinate fields`); a closing clause that acts on an object
     (`…, and push the tag`) is an instruction of its own."""
     if k < 2:
         return False
-    _, clause, joint = clauses[k]
-    _, prev, prev_joint = clauses[k - 1]
+    _, clause, joint, _ = clauses[k]
+    _, prev, prev_joint, _ = clauses[k - 1]
     joined_by_and = joint.strip().lower() == "and" or _JOINING_AND_RE.match(clause.strip()) is not None
     listed = prev_joint.strip() == "," and not opens_command(prev) and not _sets_condition(prev)
     return joined_by_and and listed and not _acts_on_an_object(clause)
 
 
-def _with_condition(clauses: list[tuple[int, str, str]], k: int) -> int:
-    """Where instruction ``k`` begins: at the conditions set just before its command (`if they fail, fix them`)."""
+def _with_condition(clauses: list[tuple[int, str, str, bool]], k: int) -> tuple[int, str]:
+    """Where instruction ``k`` begins, and the joint before that: at the conditions set just before its
+    command (`if they fail, fix them`)."""
     j = k
     while j > 0 and _sets_condition(clauses[j - 1][1]):
         j -= 1
-    return clauses[j][0]
+    return clauses[j][0], clauses[j][2]
 
 
 def instruction_starts(sentence: str) -> list[int]:
+    """The offset where each instruction of the sentence starts (:func:`_instruction_cuts`)."""
+    return [start for start, _joint in _instruction_cuts(sentence)]
+
+
+def _instruction_cuts(
+    sentence: str, plain: str | None = None, code: Sequence[tuple[int, int]] | None = None
+) -> list[tuple[int, str]]:
     """The offset where each instruction of the sentence starts, one per clause that opens with a command.
 
     Verbs listed after `to` (`Use uv to install packages, add dependencies, and run scripts`) say what one
@@ -263,11 +353,11 @@ def instruction_starts(sentence: str) -> list[int]:
     command (`…; when the build fails, run it again`) starts the instruction it leads into. What a
     `See …` pointer names runs to the next punctuation (`See the build and deploy guide`).
     """
-    clauses = _clauses(sentence)
+    clauses = _clauses(sentence, plain, code)
     items = _prohibited_items(clauses)
-    starts: list[int] = []
+    starts: list[tuple[int, str]] = []
     purpose = titled = False
-    for k, (_, clause, joint) in enumerate(clauses):
+    for k, (_, clause, joint, _) in enumerate(clauses):
         sequenced = "then" in joint.lower() or re.match(r"\s*then\b", clause, re.IGNORECASE) is not None
         purpose = purpose and ";" not in joint and not sequenced and not _is_prohibition(clause)
         titled = titled and joint.strip().lower() == "and"
@@ -284,17 +374,8 @@ def holds_comma_series(text: str) -> bool:
     parentheses and code that does not close a condition (`when the build fails, run it`)."""
     clauses = _clauses(text)
     return any(
-        joint.strip() == "," and not _sets_condition(clauses[k][1]) for k, (_, _, joint) in enumerate(clauses[1:])
+        joint.strip() == "," and not _sets_condition(clauses[k][1]) for k, (_, _, joint, _) in enumerate(clauses[1:])
     )
-
-
-def instruction_word_cuts(sentence: str) -> list[int]:
-    """The word index where each instruction after the first begins.
-
-    Text before the first instruction (`Before merging, run the tests`) and a clause that gives no command
-    stay with the instruction they lead into or follow.
-    """
-    return [len(sentence[:start].split()) for start in instruction_starts(sentence)[1:]]
 
 
 def cut_at_words(text: str, cuts: list[int]) -> list[str]:
@@ -305,15 +386,36 @@ def cut_at_words(text: str, cuts: list[int]) -> list[str]:
     return [p for p in pieces if p.strip()]
 
 
-def instruction_texts(sentence: str, written: str | None = None) -> list[str]:
+def _cut_source(sentence: str, written: str | None) -> str:
+    """The text the instruction cuts are read in: ``written`` when it is the same sentence with its markdown."""
+    return written if written is not None and len(written.split()) == len(sentence.split()) else sentence
+
+
+def instruction_texts(
+    sentence: str, written: str | None = None, code: Sequence[tuple[int, int]] | None = None
+) -> list[str]:
     """The sentence's instructions, in order, each a verbatim slice of ``sentence``; together they cover it.
 
     ``written`` is the same sentence with its markdown (code spans, emphasis) when ``sentence`` is the plain
     reading of it: where each instruction starts is read there, so a comma inside a code span never cuts,
-    and the cut lands on the same word of ``sentence``.
+    and the cut lands on the same word of ``sentence``. Without ``written``, ``code`` gives the character
+    ranges of ``sentence`` that code spans fill.
     """
-    source = written if written is not None and len(written.split()) == len(sentence.split()) else sentence
-    return cut_at_words(sentence, instruction_word_cuts(source))
+    source = _cut_source(sentence, written)
+    cuts = _instruction_cuts(source, sentence, code if source is sentence else None)[1:]
+    return cut_at_words(sentence, [len(source[:start].split()) for start, _joint in cuts])
+
+
+def instruction_leads(
+    sentence: str, written: str | None = None, code: Sequence[tuple[int, int]] | None = None
+) -> list[int]:
+    """For each instruction :func:`instruction_texts` returns, how many chars before its text the cut that
+    started it matched (the comma and space, the dash, the space before a joining word); 0 for the first."""
+    source = _cut_source(sentence, written)
+    cuts = _instruction_cuts(source, sentence, code if source is sentence else None)[1:]
+    leads = [0, *(_joint_lead(joint) for _start, joint in cuts)]
+    pieces = cut_at_words(sentence, [len(source[:start].split()) for start, _joint in cuts])
+    return leads if len(leads) == len(pieces) else [0] * len(pieces)
 
 
 def without_joining_word(instruction: str) -> str:
@@ -340,8 +442,16 @@ def _list_after(atoms: list[Atom], k: int) -> list[Atom]:
     return items
 
 
+def opens_command_after_hedge(atom: Atom) -> bool:
+    """Whether the atom, read without the hedge cue it opens with, still opens with a command."""
+    plain = atom.plain_text or atom.text
+    words = word_offsets(plain)
+    cue = hedge_cue_words(plain)
+    return len(words) > cue and opens_command(plain[words[cue][0] :])
+
+
 def _gives_command(atom: Atom) -> bool:
-    return atom.charge_value != 0 or opens_command(atom.text)
+    return atom.charge_value != 0 or opens_command(atom.plain_text or atom.text)
 
 
 def fold_lead_ins(atoms: list[Atom]) -> list[Atom]:

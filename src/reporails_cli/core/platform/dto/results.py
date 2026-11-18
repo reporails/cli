@@ -88,7 +88,7 @@ class SubagentHooks:
     extension_opt_out: HookFact = field(default_factory=HookFact)
 
 
-@dataclass
+@dataclass(frozen=True)
 class AgentConfig:
     """Agent configuration from framework (agents/{agent}/config.yml)."""
 
@@ -101,7 +101,7 @@ class AgentConfig:
     intercept_events: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
-@dataclass
+@dataclass(frozen=True)
 class MapperConfig:
     """Mapper atomizer tuning knob (default = shipped behavior).
 
@@ -112,11 +112,11 @@ class MapperConfig:
     segmentation: str = "legacy"  # "legacy" | "structure-aware"
 
 
-@dataclass
+@dataclass(frozen=True)
 class GlobalConfig:
     """Global user configuration (~/.reporails/config.yml).
 
-    Shape parity with `ProjectConfig` lets `get_project_config` merge global
+    Shape parity with `ProjectConfig` lets the project config merge global
     defaults under per-project values. Project values win on per-field
     conflict; list fields extend with global entries the project didn't
     already declare; dict fields deep-merge under the project layer.
@@ -138,7 +138,7 @@ class GlobalConfig:
     segmentation: str | None = None  # "legacy" | "structure-aware"; None = no global preference
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProjectConfig:
     """Project-level configuration (.ails/config.yml + .ails/config.local.yml)."""
 
@@ -166,3 +166,11 @@ class ProjectConfig:
     # Mapper atomizer tuning. `mapper.segmentation` picks the boundary policy
     # ("legacy" | "structure-aware"), defaulting to the shipped behavior.
     mapper: MapperConfig = field(default_factory=MapperConfig)
+
+
+@dataclass(frozen=True)
+class ConfiguredRoot:
+    """A folder together with the project config read there."""
+
+    root: Path
+    config: ProjectConfig

@@ -7,6 +7,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests.fake_models import no_fetch, no_models
+
 _onnx_path = (
     Path(__file__).resolve().parents[2]
     / "src"
@@ -40,10 +42,10 @@ def test_decode_logits_batch_with_duplicates_equals_batch_of_one(deterministic_o
     from reporails_cli.core.mapper.multislot_frames import _decode_logits_batch
 
     progress: list[tuple[int, int]] = []
-    batch = _decode_logits_batch(_TEXTS, lambda d, t: progress.append((d, t)))
+    batch = _decode_logits_batch(_TEXTS, no_models(), lambda d, t: progress.append((d, t)))
     assert len(batch) == len(_TEXTS)
     for text, got in zip(_TEXTS, batch, strict=True):
-        (want,) = _decode_logits_batch([text])
+        (want,) = _decode_logits_batch([text], no_models())
         if want is None:
             assert got is None
             continue
@@ -64,7 +66,7 @@ def test_decode_logits_batch_with_duplicates_equals_batch_of_one(deterministic_o
 def test_embedder_with_duplicates_equals_per_text(deterministic_ort: None) -> None:
     from reporails_cli.core.mapper.onnx_embedder import OnnxEmbedder
 
-    embedder = OnnxEmbedder()
+    embedder = OnnxEmbedder(no_fetch)
     batch = embedder.encode(_TEXTS)
     assert batch.shape[0] == len(_TEXTS)
     for i, text in enumerate(_TEXTS):

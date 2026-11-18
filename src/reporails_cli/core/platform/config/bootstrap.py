@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
 
@@ -45,6 +46,34 @@ def environment_without(names: Iterable[str]) -> dict[str, str]:
 def env_flag(var_name: str) -> bool:
     """True when the env var is set to anything but blank, 0, false, no or off (case and spaces ignored)."""
     return env_text(var_name).lower() not in ("", "0", "false", "no", "off")
+
+
+def offline_requested() -> bool:
+    """True when the caller asked for local checks only (`AILS_OFFLINE`)."""
+    return env_flag("AILS_OFFLINE")
+
+
+@contextmanager
+def run_offline(enabled: bool) -> Iterator[None]:
+    """Hold `AILS_OFFLINE` on for the block when `enabled` (`--offline`), then put the variable back as it was."""
+    if not enabled:
+        yield
+        return
+    previous = os.environ.get("AILS_OFFLINE")
+    os.environ["AILS_OFFLINE"] = "1"
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("AILS_OFFLINE", None)
+        else:
+            os.environ["AILS_OFFLINE"] = previous
+
+
+def drop_run_offline() -> None:
+    """Remove `AILS_OFFLINE` from this process: a mapper daemon serves later runs, online ones included."""
+    if "AILS_OFFLINE" in os.environ:
+        del os.environ["AILS_OFFLINE"]
 
 
 @cache
@@ -110,6 +139,11 @@ def get_global_config_path() -> Path:
 def get_project_config_path(project_root: Path) -> Path:
     """Get path to the project config file (<root>/.ails/config.yml)."""
     return project_root / ".ails" / "config.yml"
+
+
+def get_heal_record_path(project_root: Path) -> Path:
+    """Get path to the project's heal record (<root>/.ails/reports/heal-latest.json)."""
+    return project_root / ".ails" / "reports" / "heal-latest.json"
 
 
 def get_local_config_path(project_root: Path) -> Path:

@@ -15,6 +15,7 @@ import pytest
 
 from reporails_cli.core.discovery.exclusions import no_exclusions
 from reporails_cli.core.discovery.features import detect_features_filesystem
+from reporails_cli.core.platform.config.run_context import RunContext
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="symlinks require admin on Windows")
 
@@ -35,7 +36,7 @@ class TestSymlinkFeatureDetection:
 
         os.symlink(str(external), str(project / "CLAUDE.md"))
 
-        features = detect_features_filesystem(project)
+        features = detect_features_filesystem(RunContext(), project)
 
         assert features.has_instruction_file is True
 

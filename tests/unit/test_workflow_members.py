@@ -285,3 +285,21 @@ def test_a_conditional_owner_holding_a_gate_mover_member_sorts_first_after_suppr
 def test_findings_sort_a_conditional_owner_with_a_gate_mover_member_before_a_plain_conditional() -> None:
     ordered = remedy_brief._sorted_findings(_tiered_rows())
     assert [f["rule"] for f in ordered] == [C58, C42]
+
+
+def test_the_wire_workflow_carries_the_servers_preservation_contract() -> None:
+    wf = deserialize_workflow({"workflow": {"locations": [], "preservation_contract": "stand-in contract"}})
+    assert wf is not None and wf.preservation_contract == "stand-in contract"
+    bare = deserialize_workflow({"workflow": {"locations": []}})
+    assert bare is not None and bare.preservation_contract == ""
+
+
+def test_the_contract_rides_the_full_payload_but_not_the_bounded_view() -> None:
+    from reporails_cli.formatters.mcp import bound_validate_payload
+
+    full = {
+        "files": {"CLAUDE.md": {"count": 0, "findings": []}},
+        "workflow": {"summary": "s", "preservation_contract": "stand-in contract", "locations": [_loc_wire([])]},
+    }
+    assert "stand-in contract" not in str(bound_validate_payload(full))
+    assert full["workflow"]["preservation_contract"] == "stand-in contract"

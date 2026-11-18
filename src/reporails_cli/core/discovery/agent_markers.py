@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,7 +37,7 @@ def dir_prefix_from_glob(pattern: str) -> tuple[str, str] | None:
     return dir_parts[-1], Path(*dir_parts).as_posix()
 
 
-def clue_patterns(agent_type: AgentType, registry: dict[str, AgentType]) -> list[str]:
+def clue_patterns(agent_type: AgentType, registry: Mapping[str, AgentType]) -> list[str]:
     """The declared patterns whose presence in a project points at this agent and no other.
 
     The core agent is the default, so every pattern it declares counts. For any other agent
@@ -69,7 +70,7 @@ def _bare(pattern: str) -> str:
     return pattern.lstrip("*/")
 
 
-def scan_marker_at(target: Path, agent_type: AgentType, registry: dict[str, AgentType]) -> bool:
+def scan_marker_at(target: Path, agent_type: AgentType, registry: Mapping[str, AgentType]) -> bool:
     """Check whether a clue to this agent exists at exactly this directory level.
 
     Root-level files match case-INSENSITIVELY (`claude.md` == `CLAUDE.md`):
@@ -98,7 +99,7 @@ def scan_marker_at(target: Path, agent_type: AgentType, registry: dict[str, Agen
 def agent_has_marker(
     target: Path,
     agent_type: AgentType,
-    registry: dict[str, AgentType],
+    registry: Mapping[str, AgentType],
     exclusions: RunExclusions,
 ) -> bool:
     """Fast existence check — does this agent likely apply at target?

@@ -7,16 +7,17 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.platform.adapters import api_client as api_client_mod
-from reporails_cli.core.platform.adapters import api_key as api_key_mod
 from reporails_cli.core.platform.adapters.api_client import (
     AilsClient,
     _deserialize_cross_file_coordinates,
     _deserialize_hints,
     _deserialize_lint_result,
     _deserialize_per_file,
-    _tier_from_config,
 )
-from reporails_cli.core.platform.adapters.api_key import api_key_from_credentials
+from reporails_cli.core.platform.config import api_key as api_key_mod
+from reporails_cli.core.platform.config.api_key import api_key_from_credentials
+from reporails_cli.core.platform.config.bootstrap import get_global_config_path
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import (
     ConfigUnreadableError,
     CredentialsUnreadableError,
@@ -25,6 +26,8 @@ from reporails_cli.core.platform.dto.diagnostics import LintResponse, LintResult
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap, RulesetSummary
 from reporails_cli.core.platform.policy.preflight import UNIVERSAL_ATOM_CAP, WIRE_MAX_FILES, preflight_oversized
 from tests.conftest import ails_client
+
+pytestmark = pytest.mark.usefixtures("server_reachable")
 
 _ROOT = Path("/tmp/reporails-test-scan-root")
 
@@ -87,26 +90,41 @@ class TestFaultDistinction:
 
     @pytest.mark.unit
     @pytest.mark.subsys_api
-    def test_absent_tier_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Genuine absence (config present, tier unset) → "" with no raise."""
-
-        class _Cfg:
-            tier = ""
-
-        monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.get_global_config", lambda: _Cfg())
-        assert _tier_from_config() == ""
+    def test_absent_tier_is_the_default_tier(self) -> None:
+        """Genuine absence (config present, tier unset) → the default tier with no raise."""
+        path = get_global_config_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("default_agent: claude\n", encoding="utf-8")
+        assert RunContext().tier() == "free"
 
     @pytest.mark.unit
     @pytest.mark.subsys_api
-    def test_unreadable_config_raises_typed_cause(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_global_config_tier_is_the_run_tier(self) -> None:
+        """The global config's tier is the tier the run's requests name."""
+        path = get_global_config_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("tier: pro\n", encoding="utf-8")
+        assert RunContext().tier() == "pro"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_env_tier_wins_over_the_global_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`AILS_TIER` overrides the global config's tier."""
+        path = get_global_config_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("tier: pro\n", encoding="utf-8")
+        monkeypatch.setenv("AILS_TIER", "free")
+        assert RunContext().tier() == "free"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_unreadable_config_raises_typed_cause(self) -> None:
         """An unreadable config is a fault, not absence → ConfigUnreadableError."""
-
-        def _boom() -> object:
-            raise ConfigUnreadableError("config.yml: could not be read")
-
-        monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.get_global_config", _boom)
+        path = get_global_config_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("tier: [unterminated", encoding="utf-8")
         with pytest.raises(ConfigUnreadableError):
-            _tier_from_config()
+            RunContext().tier()
 
     @pytest.mark.unit
     @pytest.mark.subsys_api
@@ -120,10 +138,9 @@ class TestFaultDistinction:
             raise CredentialsUnreadableError("corrupt")
 
         monkeypatch.setattr(api_key_mod, "api_key_from_credentials", _raise_creds)
-        monkeypatch.setattr(api_client_mod, "_tier_from_config", lambda: "")
 
         with caplog.at_level(logging.WARNING, logger="reporails_cli.core.platform.adapters.api_client"):
-            client = AilsClient()
+            client = AilsClient("free")
 
         assert client.api_key == ""
         assert client.tier == "free"

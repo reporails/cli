@@ -16,19 +16,28 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.heal.apply import suppressed_by_path
 from reporails_cli.core.heal.file_io import split_lines
-from reporails_cli.core.heal.keyed import heal_op, mapped_path_resolver, resolve_expect
+from reporails_cli.core.heal.keyed import (
+    drop_suppressed_edits,
+    drop_suppressed_ops,
+    heal_op,
+    mapped_path_resolver,
+    resolve_expect,
+)
 from reporails_cli.core.heal.op_guide import change_lines, op_lines
 from reporails_cli.core.heal.plan import PartnerKey, apply_edits, build_plan, leaving_lines
-from reporails_cli.core.heal.preservation import PRESERVATION_CONTRACT
 from reporails_cli.core.heal.transforms import atoms_at
 from reporails_cli.core.lint.content_queries import atoms_for_file
 from reporails_cli.core.lint.rule_pages import EXAMPLE_KINDS, load_rule_examples
-from reporails_cli.core.platform.adapters.rules_query import find_rule_by_id, rule_title
+from reporails_cli.core.mapper.models import Models
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_list, opt_int, str_list
 from reporails_cli.core.platform.dto.diagnostics import subtree_tier_rank, walk_findings
 from reporails_cli.core.platform.dto.heal_plan import Edit, HealOp, Plan, PlanOp
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
+from reporails_cli.core.platform.rules.rules_query import find_rule_by_id, rule_title
 from reporails_cli.formatters.mcp import LOCATION_INDEX_KEYS, remedy_brief_payload
 from reporails_cli.interfaces.mcp import snapshots
 from reporails_cli.interfaces.mcp.tools import run_pipeline_for_path
@@ -93,12 +102,14 @@ class _BuiltFile:
     text: str
 
 
-def _build_file(rel: str, scan_root: Path) -> _BuiltFile | str:
+def _build_file(rel: str, scan_root: Path, models: Models, run: RunContext) -> _BuiltFile | str:
     """The built file for `rel`, or the reason its pipeline run produced no map — the underlying
     cause, never a bare sentinel."""
 
     abs_file = resolve_from_root(rel, scan_root)
-    payload, ruleset_map, score = run_pipeline_for_path(str(abs_file), True, project_root=scan_root)
+    payload, ruleset_map, score = run_pipeline_for_path(
+        str(abs_file), True, project_root=scan_root, run=run, models=models
+    )
     if ruleset_map is None:
         return _pipeline_failure_reason(payload)
     try:
@@ -110,20 +121,21 @@ def _build_file(rel: str, scan_root: Path) -> _BuiltFile | str:
     )
 
 
-def _build_files(location: JsonObject, scan_root: Path) -> list[_BuiltFile] | JsonObject:
+def _build_files(location: JsonObject, scan_root: Path, models: Models) -> list[_BuiltFile] | JsonObject:
     """Every real file of the location built — or the structured `brief_unavailable` error naming
     the file, when any of them yields no map. A `files[]` entry that names a directory — a folder
     that only groups skills and has no `SKILL.md` of its own — has no pipeline of its own to run:
     it is skipped, so the location's real files still brief. When EVERY file is such a directory,
     the error names that cause once. Snapshotting stays the caller's job: this builds every real
     file first, so a reply that is never delivered never commits a partial set of snapshots."""
+    run = RunContext()
     built: list[_BuiltFile] = []
     directories: list[str] = []
     for rel in str_list(location.get("files")):
         if resolve_from_root(rel, scan_root).is_dir():
             directories.append(rel)
             continue
-        result = _build_file(rel, scan_root)
+        result = _build_file(rel, scan_root, models, run)
         if isinstance(result, str):
             return {"error": "brief_unavailable", "message": _brief_unavailable_message(rel, result)}
         built.append(result)
@@ -382,13 +394,26 @@ def _commit_snapshots(built: list[_BuiltFile], held: dict[str, tuple[str, Plan]]
         )
 
 
-def build_remedy_brief(location: JsonObject, scan_root: Path, project_map: RulesetMap | None = None) -> JsonObject:
+def _annotated_lines(built: list[_BuiltFile], scan_root: Path) -> dict[str, set[int]]:
+    """Each briefed file's lines its author marked with an `ails-disable-line` directive."""
+    annotated = suppressed_by_path([f.abs_file for f in built], scan_root)
+    return {str(f.abs_file): annotated.get(safe_resolve(f.abs_file), set()) for f in built}
+
+
+def build_remedy_brief(
+    location: JsonObject,
+    scan_root: Path,
+    project_map: RulesetMap | None = None,
+    *,
+    preservation_contract: str,
+    models: Models,
+) -> JsonObject:
     """Build the `remedy_brief` reply for one already-resolved workflow `location` (a location dict
     from the stored full `validate` payload, so its findings and relations are already
     relative-pathed): the plan's exact edits, the slots that need a decision with each slot rule's
-    guide and one line per op, the refused ops, and the preservation contract. `project_map` is
-    the project's ruleset map, where a dedupe or keep-cut op finds its partner line. A structured
-    `brief_unavailable` error, naming the file, when any of the location's files yields no map.
+    guide and one line per op, the refused ops, and `preservation_contract` (the server's text, passed
+    through). `project_map` is the project's ruleset map, where a dedupe or keep-cut op finds its partner
+    line. A structured `brief_unavailable` error, naming the file, when any of the location's files yields no map.
 
     Runs the location's own file pipeline, and commits the preservation snapshots with each
     file's plan, exactly once.
@@ -397,25 +422,35 @@ def build_remedy_brief(location: JsonObject, scan_root: Path, project_map: Rules
     `file` names resolve against; every edit and slot carries its file's absolute `path` beside the
     relative `file`. A rewrite or a `validate(path=<file>)` check must use `path`, never `file`."""
 
-    built = _build_files(location, scan_root)
+    built = _build_files(location, scan_root, models)
     if isinstance(built, dict):
         return built
+    suppressed = _annotated_lines(built, scan_root)
     ops, names = _location_ops(location, scan_root, [str(f.abs_file) for f in built])
+    ops = drop_suppressed_ops(ops, suppressed)
     # A file already briefed and edited since keeps its stored baseline and plan, shown against the text
     # they were made from.
     held = {str(f.abs_file): h for f in built if (h := snapshots.held_brief(f.abs_file, f.text)) is not None}
     atoms_by_file = {str(f.abs_file): atoms_for_file(f.ruleset_map, str(f.abs_file)) for f in built}
     lines_by_file = {str(f.abs_file): f.lines for f in built}
     lines_by_file.update({name: split_lines(text)[0] for name, (text, _) in held.items()})
-    maps = [m for m in (project_map, *(f.ruleset_map for f in built)) if m is not None]
-    planned = build_plan(
-        [o for o in ops if o.file not in held], atoms_by_file, lines_by_file, _partner_atoms(ops, scan_root, maps)
+    plan = _with_held_plans(
+        drop_suppressed_edits(
+            build_plan(
+                [o for o in ops if o.file not in held],
+                atoms_by_file,
+                lines_by_file,
+                _partner_atoms(
+                    ops, scan_root, [m for m in (project_map, *(f.ruleset_map for f in built)) if m is not None]
+                ),
+            ),
+            suppressed,
+        ),
+        held,
     )
-    plan = _with_held_plans(planned, held)
     names.update({str(f.abs_file): f.rel for f in built})
     _commit_snapshots(built, held, plan)
 
-    slots = _slot_entries(plan, names, ops, scan_root, lines_by_file)
     location_out: JsonObject = {
         **{k: location[k] for k in LOCATION_INDEX_KEYS if k in location},
         "root": str(scan_root),
@@ -423,9 +458,9 @@ def build_remedy_brief(location: JsonObject, scan_root: Path, project_map: Rules
     return remedy_brief_payload(
         location=location_out,
         edits=_edit_entries(plan, lines_by_file, names),
-        slots=slots,
+        slots=_slot_entries(plan, names, ops, scan_root, lines_by_file),
         guides=_guides({s.rule for s in plan.slots}),
         ops={**op_lines({s.op for s in plan.slots}), **change_lines({s.change for s in plan.slots if s.change})},
         refused=_refused_entries(plan, names),
-        preservation_contract=PRESERVATION_CONTRACT,
+        preservation_contract=preservation_contract,
     )

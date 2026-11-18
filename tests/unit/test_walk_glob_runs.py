@@ -10,11 +10,12 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.discovery.agent_discovery import ci_glob
-from reporails_cli.core.discovery.exclusions import no_exclusions
+from reporails_cli.core.discovery.exclusions import load_run_exclusions, no_exclusions
 from reporails_cli.core.discovery.walk import walk_glob_matches, walk_markdown
 from reporails_cli.core.lint.mechanical import runner
 from reporails_cli.core.lint.mechanical.checks import _resolve_glob_targets
 from reporails_cli.core.lint.mechanical.runner import run_mechanical_checks
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import Check, Rule
 
 
@@ -28,7 +29,9 @@ def test_guard_mechanical_run_sees_files_created_between_runs(tmp_path: Path, mo
     seen: list[list[str]] = []
 
     def spy(*_args: object, **_kwargs: object) -> tuple[None, None]:
-        found = _resolve_glob_targets(".claude/skills/*/SKILL.md", tmp_path)
+        found = _resolve_glob_targets(
+            ".claude/skills/*/SKILL.md", tmp_path, load_run_exclusions(RunContext(), tmp_path)
+        )
         seen.append(sorted(p.parent.name for p in found))
         return None, None
 
@@ -36,10 +39,10 @@ def test_guard_mechanical_run_sees_files_created_between_runs(tmp_path: Path, mo
     check = Check(id="c", type="mechanical", check="file_exists")
     rule = Rule(id="CORE:S:9999", title="t", category="structure", type="mechanical", checks=[check])
 
-    run_mechanical_checks({rule.id: rule}, tmp_path, [])
+    run_mechanical_checks({rule.id: rule}, tmp_path, [], exclusions=load_run_exclusions(RunContext(), tmp_path))
     (skills / "beta").mkdir()
     (skills / "beta" / "SKILL.md").write_text("x\n", encoding="utf-8")
-    run_mechanical_checks({rule.id: rule}, tmp_path, [])
+    run_mechanical_checks({rule.id: rule}, tmp_path, [], exclusions=load_run_exclusions(RunContext(), tmp_path))
 
     assert seen == [["alpha"], ["alpha", "beta"]]
 
@@ -52,7 +55,9 @@ def test_guard_relative_root_matches_glob(tmp_path: Path, monkeypatch: pytest.Mo
     monkeypatch.chdir(tmp_path)
     expected = Path(".claude/rules/x.md")
     assert ci_glob(Path("."), ".claude/rules/*.md", no_exclusions(Path("."))) == [expected]
-    assert _resolve_glob_targets(".claude/rules/*.md", Path(".")) == [expected]
+    assert _resolve_glob_targets(".claude/rules/*.md", Path("."), load_run_exclusions(RunContext(), Path("."))) == [
+        expected
+    ]
     assert list(walk_glob_matches(Path("."), "**/*.md", no_exclusions(Path(".")))) == [expected]
 
 

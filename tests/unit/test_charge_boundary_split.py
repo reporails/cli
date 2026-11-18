@@ -8,10 +8,11 @@ import pytest
 from reporails_cli.core.mapper import bio_pipeline
 from reporails_cli.core.mapper.classify import classify_charge
 from reporails_cli.core.mapper.parse import tokenize
+from tests.fake_models import no_models
 
 
 def _mapped(text: str) -> list:
-    return [a for a in bio_pipeline.apply_multislot(list(tokenize(text))) if a.kind != "heading"]
+    return [a for a in bio_pipeline.apply_multislot(list(tokenize(text)), no_models()) if a.kind != "heading"]
 
 
 def _signs(text: str) -> list[int]:

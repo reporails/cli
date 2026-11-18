@@ -10,7 +10,10 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
+from reporails_cli.core.platform.dto.results import MapperConfig
 from reporails_cli.interfaces.cli.main import app
+from tests.fake_models import no_models
 
 runner = CliRunner()
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "projects"
@@ -113,7 +116,9 @@ def test_not_a_git_repository_is_reported_once_per_project_on_every_kind_of_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str | None
 ) -> None:
     project = _copy(monkeypatch, tmp_path, "multi_agent")
-    monkeypatch.chdir(tmp_path if target == "dir" else project)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere if target == "dir" else project)
     args = ["check", str(project)] if target == "dir" else ["check", *([target] if target else [])]
     result = runner.invoke(app, [*args, "-f", "json"])
     assert result.exit_code == 0, result.output
@@ -166,7 +171,14 @@ def _serve_fixes(monkeypatch: pytest.MonkeyPatch, project: Path) -> None:
 
     instructions = project / "CLAUDE.md"
     settings = project / ".claude" / "settings.json"
-    mapped = map_instruction_files(project, [instructions], spawn_daemon=False)
+    mapped = map_instruction_files(
+        project,
+        [instructions],
+        spawn_daemon=False,
+        mapper=MapperConfig(),
+        daemon=UnixDaemonSocket(),
+        models=no_models(),
+    )
     line = next(i for i, text in enumerate(instructions.read_text().splitlines(), 1) if "build.sh" in text)
     pi = next(a.position_index for a in mapped.atoms if a.line == line)
     items = (

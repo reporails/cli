@@ -1,6 +1,6 @@
 [project]
 name = "reporails-cli"
-version = "0.6.7"
+version = "0.6.8"
 description = "AI instruction diagnostics for coding agents"
 readme = "README.md"
 license = "BUSL-1.1 AND LicenseRef-Reporails-Model"
@@ -288,6 +288,7 @@ source_modules = [
 ]
 forbidden_modules = [
     "reporails_cli.core.platform.adapters",
+    "reporails_cli.core.platform.rules",
     "reporails_cli.core.platform.runtime",
     "reporails_cli.core.platform.config",
     "reporails_cli.core.platform.observability",

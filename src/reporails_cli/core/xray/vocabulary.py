@@ -64,6 +64,7 @@ _CLAUDE_TRIGGERS = (
     XrayTriggerInfo("agent", "loaded by the agent"),
     XrayTriggerInfo("inherited", "handed down at launch"),
     XrayTriggerInfo("hook", "added by a hook"),
+    XrayTriggerInfo("attached", "attached by Claude Code"),
 )
 
 _CLAUDE_FACT_NOTES: dict[FactKind, str] = {

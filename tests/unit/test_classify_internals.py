@@ -27,9 +27,27 @@ from reporails_cli.core.classify import (
     _parse_file_types,
     location_matches_mode,
 )
+from reporails_cli.core.mapper.classify import conditional_clause
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, FileTypeDeclaration
 from reporails_cli.core.platform.policy.matching import file_matches, prop_matches
 from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+@pytest.mark.parametrize(
+    ("text", "clause"),
+    [
+        ("Where external services are slow, retry the request.", "Where external services are slow"),
+        ("Unless the cache is warm then rebuild it.", "Unless the cache is warm"),
+        ("While loops must be bounded.", None),
+        ("When to use", None),
+        ("When a batch holds over 1,000 rows, paginate it.", "When a batch holds over 1,000 rows"),
+    ],
+)
+def test_conditional_clause_is_the_frame_up_to_its_closing_comma_or_then(text: str, clause: str | None) -> None:
+    assert conditional_clause(text) == clause
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # is_loose_leaf_pattern — location-ambiguous glob detection (L223, L225)
@@ -185,3 +203,20 @@ def test_the_verb_noun_determiners_extend_the_public_determiner_list() -> None:
 
     assert not hasattr(classify, "_DETERMINERS")
     assert classify_lexicon.DETERMINERS < classify_phases._VERB_NOUN_DETERMINERS
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+@pytest.mark.parametrize(
+    ("text", "phrase"),
+    [
+        ("Only on main, run the deploy script.", "Only on main"),
+        ("Unless told otherwise, run the full suite.", "Unless told otherwise"),
+        ("Run the deploy script only on main.", "only on main."),
+        ("Only modify a, b and c.", "Only modify a, b and c."),
+    ],
+)
+def test_a_fronted_restrictor_phrase_ends_at_its_closing_comma(text: str, phrase: str) -> None:
+    from reporails_cli.core.mapper.classify import restrictor_clause
+
+    assert restrictor_clause(text, (), ()) == phrase

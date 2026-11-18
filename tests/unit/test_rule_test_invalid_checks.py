@@ -109,7 +109,7 @@ def test_lint_names_an_invalid_checks_file_without_a_traceback(tmp_path: Path) -
 def test_a_rule_file_that_is_not_utf8_is_a_load_error_not_a_crash(
     tmp_path: Path, name: str, caplog: pytest.LogCaptureFixture
 ) -> None:
-    from reporails_cli.core.platform.adapters.registry import _scan_rules
+    from reporails_cli.core.platform.rules.registry import _scan_rules
 
     root = _root(tmp_path)
     rule_dir = _rule(root, "demo-bad", "CORE:S:9999", GOOD_CHECKS)

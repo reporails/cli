@@ -23,6 +23,7 @@ from reporails_cli.core.discovery.file_aliases import (
     dedupe_with_aliases,
     get_file_aliases,
 )
+from reporails_cli.core.platform.config.run_context import RunContext
 
 
 class TestDedupeWithAliases:
@@ -131,8 +132,9 @@ class TestGetAllInstructionFilesIntegration:
         os.symlink(str(tmp_path / ".agents" / "skills"), str(tmp_path / ".claude" / "skills"))
         (tmp_path / "CLAUDE.md").write_text("# Claude\n")
 
-        files = get_all_instruction_files(tmp_path)
-        aliases = get_file_aliases(tmp_path)
+        run = RunContext()
+        files = get_all_instruction_files(run, tmp_path)
+        aliases = get_file_aliases(run, tmp_path)
 
         skill_paths = [f for f in files if f.name == "SKILL.md"]
         assert len(skill_paths) == 1, f"Expected 1 SKILL.md after dedup, got {skill_paths}"

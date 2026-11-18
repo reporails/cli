@@ -8,12 +8,12 @@ import pytest
 
 from reporails_cli.core.discovery.agent_markers import clue_patterns, scan_marker_at
 from reporails_cli.core.discovery.agents import (
-    clear_agent_cache,
     detect_agents,
     get_all_scannable_files,
     get_known_agents,
     resolve_agent,
 )
+from reporails_cli.core.platform.config.run_context import RunContext
 
 
 def _write(root: Path, rel: str, text: str = "# Notes\n\nRun `make test` before committing.\n") -> None:
@@ -23,8 +23,7 @@ def _write(root: Path, rel: str, text: str = "# Notes\n\nRun `make test` before 
 
 
 def _detected(root: Path) -> list[str]:
-    clear_agent_cache()
-    return sorted(a.agent_type.id for a in detect_agents(root))
+    return sorted(a.agent_type.id for a in detect_agents(RunContext(), root))
 
 
 _SKILL = "---\nname: foo\ndescription: Use when foo is needed\n---\n\n# Foo\n\nDo `foo`.\n"
@@ -36,8 +35,7 @@ def test_a_folder_with_only_agents_md_is_generic(tmp_path: Path) -> None:
     _write(tmp_path, "AGENTS.md")
 
     assert _detected(tmp_path) == ["generic"]
-    clear_agent_cache()
-    assert resolve_agent("", detect_agents(tmp_path), tmp_path) == ("", False, False)
+    assert resolve_agent("", detect_agents(RunContext(), tmp_path), tmp_path) == ("", False, False)
 
 
 @pytest.mark.unit
@@ -72,8 +70,7 @@ def test_skills_under_a_claude_folder_are_a_claude_project(tmp_path: Path) -> No
     _write(tmp_path, ".claude/skills/foo/SKILL.md", _SKILL)
 
     assert _detected(tmp_path) == ["claude"]
-    clear_agent_cache()
-    assert resolve_agent("", detect_agents(tmp_path), tmp_path)[0] == "claude"
+    assert resolve_agent("", detect_agents(RunContext(), tmp_path), tmp_path)[0] == "claude"
 
 
 @pytest.mark.unit
@@ -106,10 +103,12 @@ def test_codex_fallback_names_in_the_project_config_name_codex(tmp_path: Path) -
     )
 
     assert _detected(tmp_path) == ["codex"]
-    clear_agent_cache()
-    detected = detect_agents(tmp_path)
+    detected = detect_agents(RunContext(), tmp_path)
     assert resolve_agent("", detected, tmp_path)[0] == "codex"
-    assert {p.name for p in get_all_scannable_files(tmp_path, agents=detected)} == {"AGENTS.md", "CODEX.md"}
+    assert {p.name for p in get_all_scannable_files(RunContext(), tmp_path, agents=detected)} == {
+        "AGENTS.md",
+        "CODEX.md",
+    }
 
 
 @pytest.mark.unit
@@ -119,8 +118,7 @@ def test_without_the_config_a_codex_fallback_file_is_not_read(tmp_path: Path) ->
     _write(tmp_path, "sub/CODEX.md")
 
     assert _detected(tmp_path) == ["generic"]
-    clear_agent_cache()
-    assert {p.name for p in get_all_scannable_files(tmp_path)} == {"AGENTS.md"}
+    assert {p.name for p in get_all_scannable_files(RunContext(), tmp_path)} == {"AGENTS.md"}
 
 
 @pytest.mark.unit

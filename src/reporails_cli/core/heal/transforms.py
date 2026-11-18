@@ -21,8 +21,14 @@ from reporails_cli.core.heal.mechanical_fixers import (
 from reporails_cli.core.heal.preservation.conditions import conditional
 from reporails_cli.core.heal.preservation.fragments import opens_step, rewrite_cut
 from reporails_cli.core.lint.client_checks import running_sentences
-from reporails_cli.core.mapper.classify import DROPPABLE_LEADS, hedges_with_should
-from reporails_cli.core.mapper.instructions import holds_comma_series, opens_command, without_joining_word
+from reporails_cli.core.mapper.classify_lexicon import words_of
+from reporails_cli.core.mapper.instructions import (
+    holds_comma_series,
+    opens_command,
+    opens_command_after_hedge,
+    without_joining_word,
+)
+from reporails_cli.core.mapper.lexical import DASH_MARKS
 from reporails_cli.core.mapper.md_parser import code_spans, emphasis_runs, link_spans
 from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark
 from reporails_cli.core.mapper.structure import in_any_span, paragraph_lines, read_structure
@@ -31,14 +37,8 @@ from reporails_cli.core.platform.dto.heal import MechanicalFix
 from reporails_cli.core.platform.dto.heal_plan import Edit, HealOp, PlanOp
 from reporails_cli.core.platform.dto.ruleset import LIST_ITEM_FORMATS, PROSE_OR_LIST_FORMATS, Atom
 
-# The joint between two instructions the mapper cut apart: a mark (or spaced dash) and a joining `and` it left behind.
-_JOINT_TAIL_RE = re.compile(r"(?:\s*[\u2014\u2013;,]|\s-)\s*(?:and\s+)?$", re.IGNORECASE)
 _NEVER_RE = re.compile(r"(Never|never)\b(?=\s+\S)")
-_HEDGE_RE = re.compile(
-    rf"(?:you\s+should|try\s+to|(?:{'|'.join(sorted(DROPPABLE_LEADS))})\b,?)\s+",
-    re.IGNORECASE,
-)
-_OBJECT_TRIM = " \t.,;:!?*_"
+_OBJECT_TRIM = " \t.,;:!?"
 
 
 def _body(line: str) -> str:
@@ -85,12 +85,11 @@ def _packed_sentences(atoms: Sequence[Atom], op: PlanOp) -> list[list[Atom]] | s
 
 
 def _object_text(atom: Atom) -> str | None:
-    """The object the atom's word span names, when it reads exactly as the object the mapper gave."""
+    """The object the atom's word span names: its words of the plain text the span indexes."""
     slots = atom.slots
     if slots is None or slots.object_span is None:
         return None
-    text = words_between(atom.text, *slots.object_span).strip(_OBJECT_TRIM)
-    return text if text and text == slots.object.strip(_OBJECT_TRIM) else None
+    return words_between(atom.plain_text, *slots.object_span).strip(_OBJECT_TRIM) or None
 
 
 def _unalone(sentence: Sequence[Atom]) -> str | None:
@@ -109,28 +108,32 @@ def _unalone(sentence: Sequence[Atom]) -> str | None:
 
 def _starts(content: str, sentences: Sequence[Sequence[Atom]]) -> list[int] | None:
     """Where each atom of the sentences starts in the line, in order; None when one is not found."""
-    starts, cursor = [], 0
-    for atom in (a for s in sentences for a in s):
-        start = _atom_start(content, atom, cursor)
-        if start is None:
-            return None
-        starts.append(start)
-        cursor = start + 1
-    return starts
+    starts = [_atom_start(content, atom) for sentence in sentences for atom in sentence]
+    return None if None in starts else [s for s in starts if s is not None]
 
 
-def _cut_at(content: str, start: int) -> tuple[str, int, int] | None:
+def _joint_at(content: str, atom: Atom, start: int) -> int | None:
+    """Where the joint the mapper recorded for `atom` begins in `content`, which holds the atom at `start`;
+    None when no mark joins the atom to the instruction before it, or the line no longer holds the joint."""
+    if not atom.joint_mark:
+        return None
+    joint = atom.joint
+    at = start - len(joint)
+    return at if at >= 0 and content[at:start] == joint else None
+
+
+def _cut_at(content: str, atom: Atom, start: int) -> tuple[str, int, int] | None:
     """`content` with the joint before the atom at `start` turned into a full stop; also how many emphasis
     runs it reopened and how many joining `and` it dropped. None when no joint mark ends the text before
     `start`, or the joint lies in code or a link."""
-    joint = _JOINT_TAIL_RE.search(content[:start])
-    if joint is None or content[start - 1] in "*_":
+    joint_start = _joint_at(content, atom, start)
+    if joint_start is None or content[start - 1] in "*_":
         return None
-    head = content[: joint.start()].rstrip()
+    head = content[:joint_start].rstrip()
     protected = [(s.start, s.end) for s in code_spans(content)] + list(link_spans(content))
-    if not head or in_any_span(joint.start(), protected) or in_any_span(start, protected):
+    if not head or in_any_span(joint_start, protected) or in_any_span(start, protected):
         return None
-    spanning = [r for r in emphasis_runs(content) if r.content_start <= joint.start() and start < r.content_end]
+    spanning = [r for r in emphasis_runs(content) if r.content_start <= joint_start and start < r.content_end]
     spanning.sort(key=lambda r: (r.start, -r.end))
     stop = "" if ends_with_sentence_mark(head) else "."
     closers = "".join(r.marker for r in reversed(spanning))
@@ -139,8 +142,7 @@ def _cut_at(content: str, start: int) -> tuple[str, int, int] | None:
     tail = _upper_first(rest)
     if tail is None:
         return None
-    dropped = int(joint.group().strip().lower().endswith("and")) + int(rest != content[start:])
-    return f"{head}{stop}{closers} {openers}{tail}", len(spanning), dropped
+    return f"{head}{stop}{closers} {openers}{tail}", len(spanning), int(rest != content[start:])
 
 
 def _offsets(sentences: Sequence[Sequence[Atom]]) -> list[int]:
@@ -150,8 +152,7 @@ def _offsets(sentences: Sequence[Sequence[Atom]]) -> list[int]:
 
 def _only_joints_dropped(before: str, after: str, dropped: int) -> bool:
     """Whether `after` holds the words of `before` but for `dropped` joining `and`."""
-    words = Counter(re.findall(r"\w+", before.lower())) - Counter({"and": dropped})
-    return words == Counter(re.findall(r"\w+", after.lower()))
+    return Counter(words_of(before)) - Counter({"and": dropped}) == Counter(words_of(after))
 
 
 def _scoped(atom: Atom) -> bool:
@@ -175,10 +176,25 @@ def _cuts_series(content: str, sentence: Sequence[Atom], starts: Sequence[int]) 
     """Whether a cut of the sentence falls at a comma after an atom that holds a comma series of its own
     (`read it, classify it, and write it`): the first sentence would end on part of its series."""
     for k in range(1, len(sentence)):
-        joint = _JOINT_TAIL_RE.search(content[: starts[k]])
-        if joint is not None and "," in joint.group() and holds_comma_series(content[starts[k - 1] : joint.start()]):
+        at = _joint_at(content, sentence[k], starts[k])
+        if at is not None and "," in sentence[k].joint and holds_comma_series(content[starts[k - 1] : at]):
+            return True
+        if _opens_series(sentence, k):
             return True
     return False
+
+
+def _opens_series(sentence: Sequence[Atom], k: int) -> bool:
+    """Whether the atom `k` is set off by a dash from an atom of its own charge and the atom after it is joined
+    to it by a comma: the dash opens a comma series that spells out the lead-in, and a cut at the dash would
+    leave the lead-in without it."""
+    joint = sentence[k].joint.strip()
+    return (
+        joint in DASH_MARKS
+        and sentence[k - 1].charge_value == sentence[k].charge_value
+        and k + 1 < len(sentence)
+        and "," in sentence[k + 1].joint
+    )
 
 
 def _hazard(content: str, sentences: Sequence[Sequence[Atom]], starts: Sequence[int]) -> str | None:
@@ -200,11 +216,11 @@ def _cut_sentences(op: PlanOp, content: str, sentences: Sequence[Sequence[Atom]]
     cuts = [
         c
         for sentence, at in zip(sentences, _offsets(sentences), strict=True)
-        for c in starts[at + 1 : at + len(sentence)]
+        for c in zip(sentence[1:], starts[at + 1 : at + len(sentence)], strict=True)
     ]
     text, reopened, dropped = content, 0, 0
-    for start in reversed(cuts):
-        cut = _cut_at(text, start)
+    for atom, start in reversed(cuts):
+        cut = _cut_at(text, atom, start)
         if cut is None:
             return ""
         text, more, gone = cut
@@ -245,13 +261,12 @@ def split_or_reason(op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str]) -> 
 # ── direct / negation-form ──────────────────────────────────────────────
 
 
-def _atom_start(content: str, atom: Atom, after: int = 0) -> int | None:
-    """Where the atom's text starts in the line at or past `after` (past opening emphasis marks, which the
-    mapper re-wraps per atom); None when not found or in code."""
-    at = content.find(atom.text.strip().strip("*_"), after)
-    if at < 0 or in_any_span(at, [(s.start, s.end) for s in code_spans(content)]):
+def _atom_start(content: str, atom: Atom) -> int | None:
+    """Where the atom starts in the line, as the mapper placed it (past opening emphasis marks); None when
+    the mapper placed it nowhere or the line is shorter than the placement."""
+    if atom.source_columns is None or atom.source_columns[1] > len(content):
         return None
-    return at
+    return atom.source_columns[0]
 
 
 def _single_target(atoms: Sequence[Atom], op: PlanOp, lines: Sequence[str]) -> tuple[Atom, str, int] | None:
@@ -268,9 +283,9 @@ def negation_form(op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str]) -> Ed
     target = _single_target(atoms, op, lines)
     if target is None:
         return None
-    _, content, start = target
+    atom, content, start = target
     m = _NEVER_RE.match(content, start)
-    if m is None or not opens_command(content[start:]):
+    if m is None or not opens_command(atom.plain_text or atom.text):
         return None
     swap = "Do not" if m.group(1) == "Never" else "do not"
     after = content[:start] + swap + content[m.end() :]
@@ -285,14 +300,11 @@ def direct(op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str]) -> Edit | No
     target = _single_target(atoms, op, lines)
     if target is None:
         return None
-    _, content, start = target
-    m = _HEDGE_RE.match(content, start)
-    if m is None:
+    atom, content, start = target
+    if atom.hedge_cue is None or atom.hedge_cue[0] != start:
         return None
-    if m.group().lower().startswith("you") and not hedges_with_should(content[start:]):
-        return None
-    rest = content[m.end() :]
-    if not opens_command(rest):
+    rest = content[atom.hedge_cue[1] :]
+    if not opens_command_after_hedge(atom):
         return None
     if content[start].isupper():
         rest = _upper_first(rest) or ""
@@ -348,7 +360,7 @@ def move(op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str]) -> Edit | None
 
 
 def _named(atom: Atom) -> frozenset[str]:
-    return frozenset(t.strip("`") for t in atom.named_tokens)
+    return frozenset(atom.named_tokens)
 
 
 def _paragraph_line_removal(op: PlanOp, lines: Sequence[str]) -> Edit | None:

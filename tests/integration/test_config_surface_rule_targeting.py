@@ -33,6 +33,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
@@ -198,7 +199,7 @@ def _prose_only_rule_ids() -> set[str]:
     schema_validated]}`) has declared the machine-config surface in scope and is
     deliberately excluded.
     """
-    from reporails_cli.core.platform.adapters.registry import load_rules
+    from reporails_cli.core.platform.rules.registry import load_rules
 
     out: set[str] = set()
     for rule_id, rule in load_rules(agent="claude").items():
@@ -266,7 +267,7 @@ def test_hook_files_still_detect_from_settings_json(tmp_path: Path) -> None:
     from reporails_cli.core.platform.policy.levels import FEATURE_DETECTORS
 
     project = _project(tmp_path, "CLAUDE.md", ".claude/settings.json", BROKEN_HOOKS)
-    features = detect_features_filesystem(project)
+    features = detect_features_filesystem(RunContext(), project)
 
     assert features.hook_files == (project / ".claude/settings.json",)
     assert FEATURE_DETECTORS["governance"](features) is True

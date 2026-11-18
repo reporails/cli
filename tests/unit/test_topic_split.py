@@ -128,7 +128,8 @@ def test_reclassifies_subatom_charge_independently() -> None:
 @pytest.mark.subsys_map
 def test_wholly_quoted_over_merged_atom_is_not_split() -> None:
     atom = _atom(
-        '"Keep every instruction: each keeps its polarity; add no filler and invent nothing."', over_merged=True
+        '"Answer every question: each answer states its source; add no preamble and speculate on nothing."',
+        over_merged=True,
     )
     result, n_split = split_over_merged_atoms([atom], _StubEncoder(), recharge=None)
 

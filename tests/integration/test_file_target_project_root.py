@@ -15,9 +15,11 @@ from typer.testing import CliRunner
 
 from reporails_cli.core.discovery.project_root import user_level_agent_dir
 from reporails_cli.core.pipeline import check_one
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli import check_orchestration as orch
 from reporails_cli.interfaces.cli.main import app
 from reporails_cli.interfaces.mcp import tools
+from tests.fake_models import no_models
 
 runner = CliRunner()
 
@@ -139,7 +141,9 @@ def test_validating_a_user_level_file_reads_nothing_outside_its_folder(
 ) -> None:
     main, config = _write_user_level(scratch_home)
     for target in (main, config):
-        payload = tools.run_pipeline_for_path(str(target), full=True, project_root=target.parent)[0]
+        payload = tools.run_pipeline_for_path(
+            str(target), full=True, project_root=target.parent, run=RunContext(), models=no_models()
+        )[0]
         assert reads_outside == []
         assert list(payload["files"]) == [target.name]
 
@@ -158,7 +162,7 @@ def test_a_user_level_file_draws_the_findings_it_draws_as_a_project_file(scratch
     for user_file, project_file in ((main, project / "CLAUDE.md"), (config, project / ".claude" / "settings.json")):
         user_findings = _findings(_check(elsewhere, user_file))
         assert user_findings
-        assert user_findings == _findings(_check(elsewhere, project_file))
+        assert user_findings == _findings(_check(project, project_file))
 
 
 @pytest.mark.integration
@@ -180,5 +184,7 @@ def test_a_misspelled_hook_event_is_reported_in_a_project_with_no_git_checked_fr
     cli = _check(project, settings)
     assert list(cli["files"]) == [".claude/settings.json"]
     assert ("CLAUDE:G:0001", 1) in _findings(cli)
-    mcp = tools.run_pipeline_for_path(str(settings), full=True, project_root=project)[0]
+    mcp = tools.run_pipeline_for_path(
+        str(settings), full=True, project_root=project, run=RunContext(), models=no_models()
+    )[0]
     assert _findings(mcp) == _findings(cli)

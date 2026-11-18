@@ -9,6 +9,8 @@ from typing import Any
 import pytest
 
 from reporails_cli.interfaces.mcp import server
+from reporails_cli.interfaces.mcp.server import build_server
+from tests.fake_models import no_models
 
 _WORKFLOW = {
     "summary": "Rewrite 1 location.",
@@ -32,7 +34,7 @@ def _call(tmp_path: Path, monkeypatch, payload: dict[str, Any], **arguments: Any
     monkeypatch.setattr(
         server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(), **_k: (dict(payload), None, None)
     )
-    return asyncio.run(server.server.call_tool("validate", {"path": str(tmp_path), **arguments}))
+    return asyncio.run(build_server(no_models()).call_tool("validate", {"path": str(tmp_path), **arguments}))
 
 
 def _paid() -> dict[str, Any]:
@@ -81,7 +83,7 @@ def test_free_reply_keeps_both_channels(tmp_path: Path, monkeypatch) -> None:
 @pytest.mark.subsys_server
 def test_error_reply_keeps_both_channels(tmp_path: Path, monkeypatch) -> None:
     server.validate_states.clear()
-    result = asyncio.run(server.server.call_tool("validate", {"path": str(tmp_path / "missing")}))
+    result = asyncio.run(build_server(no_models()).call_tool("validate", {"path": str(tmp_path / "missing")}))
     assert isinstance(result.structured_content, dict) and "error" in result.structured_content
 
 
@@ -107,8 +109,8 @@ def test_notice_appears_in_the_first_view_only(tmp_path: Path, monkeypatch) -> N
         server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(), **_k: (dict(payload), None, None)
     )
     server.validate_states.clear()
-    first = asyncio.run(server.server.call_tool("validate", {"path": str(tmp_path)}))
+    first = asyncio.run(build_server(no_models()).call_tool("validate", {"path": str(tmp_path)}))
     (tmp_path / "CLAUDE.md").write_text("# changed\n", encoding="utf-8")
-    second = asyncio.run(server.server.call_tool("validate", {"path": str(tmp_path)}))
+    second = asyncio.run(build_server(no_models()).call_tool("validate", {"path": str(tmp_path)}))
     assert "Payment failed" in first.content[0].text
     assert "Payment failed" not in second.content[0].text

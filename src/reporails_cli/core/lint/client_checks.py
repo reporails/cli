@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 
 from reporails_cli.core.mapper.annotate import backticked_words, is_unbacked_library_name
-from reporails_cli.core.mapper.classify_lexicon import CONDITION_OPENERS
+from reporails_cli.core.mapper.classify import condition_text
 from reporails_cli.core.mapper.imports import IMPORT_REF_RE
 from reporails_cli.core.mapper.instructions import instruction_starts, without_lead
 from reporails_cli.core.mapper.markers import strip_markdown_inline
@@ -22,6 +22,7 @@ from reporails_cli.core.platform.dto.mapping import LineSpans
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.ruleset import RUNNING_TEXT_FORMATS, Atom, RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+from reporails_cli.core.platform.utils.file_read import read_file_text
 
 _PATH_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./-")
 # A bare URL (scheme://rest, no whitespace) — a token that sits inside one is left
@@ -133,10 +134,6 @@ def unformatted_token_is_reportable(
     return wrap_site(text, token, spans) is not None
 
 
-_SCOPE_RE = re.compile(
-    r"^(?:" + "|".join(re.escape(word) for word in sorted(CONDITION_OPENERS)) + r")\s+(.+?),\s+",
-    re.IGNORECASE,
-)
 # Words that put an outside system in the condition, singular or plural. Wide but harmless wording
 # ("any file", "all tests") is not listed.
 _BROAD_SCOPE_WORDS = (
@@ -186,7 +183,7 @@ def _relative_display_path(file_path: str) -> str:
 def _source_lines(file_path: str) -> list[str]:
     """The file's lines as written; empty when the file cannot be read."""
     try:
-        return Path(file_path).read_text(encoding="utf-8").split("\n")
+        return read_file_text(Path(file_path)).split("\n")
     except (OSError, UnicodeDecodeError, ValueError):
         return []
 
@@ -377,15 +374,13 @@ def _check_bold_patterns(charged: list[Atom], filepath: str) -> list[LocalFindin
 
 
 def _check_broad_scope(charged: list[Atom], filepath: str) -> list[LocalFinding]:
-    """Check for overly broad conditional scope terms."""
+    """Check for overly broad conditional scope terms in the condition the mapper read."""
     findings: list[LocalFinding] = []
     for a in charged:
-        if not a.scope_conditional:
+        condition = condition_text(a, object_restriction=False)
+        if condition is None:
             continue
-        m = _SCOPE_RE.match(a.text)
-        if not m:
-            continue
-        scope_text = m.group(1).lower()
+        scope_text = condition.strip(" ,;:")
         broad_matches = sorted({w.group(0).lower() for w in _BROAD_SCOPE_RE.finditer(scope_text)})
         if broad_matches:
             findings.append(
@@ -395,7 +390,7 @@ def _check_broad_scope(charged: list[Atom], filepath: str) -> list[LocalFinding]
                     severity="warning",
                     rule=BROAD_SCOPE_RULE,
                     message=(
-                        f'Broad conditional scope: "{m.group(1)}". '
+                        f'Broad conditional scope: "{scope_text}". '
                         f"Broad terms ({', '.join(broad_matches)}) may trigger unintended behavior."
                     ),
                     fix="Name the specific situation instead of using broad terms, or remove the condition.",

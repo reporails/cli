@@ -4,7 +4,7 @@
   --canvas:#0D0E10; --surface:#18191D; --panel:rgba(24,25,29,.94); --hair:rgba(255,255,255,.07);
   --t1:#ECECEC; --t2:#A4A6AC; --t3:#9A9CA2; --ctl:#6E7076; --edge:rgba(236,236,236,.20);
   --down:#A594FF; --back:#6EA8FF; --find:#F0883E; --find2:#F2A66E; --sel:#ECECEC;
-  --chip:#2A2C33; --chip-t:#C9CBD0; --off:#4A4C54; --err:#FF6F76;
+  --chip:#2A2C33; --chip-t:#C9CBD0; --lit:#8A8D95; --lit-t:#0D0E10; --off:#4A4C54; --err:#FF6F76;
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -61,6 +61,7 @@ a{color:inherit;text-decoration:none}
 .pstrip .rg{font:11.5px 'JetBrains Mono',monospace;color:var(--t2)}
 .chip{width:15px;height:15px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;flex:none;box-sizing:border-box;border:1px solid #2A2C31;color:var(--t3)}
 .chip.on{background:var(--chip);color:var(--chip-t);border-color:transparent}
+.chip.lit{background:var(--lit);color:var(--lit-t);border-color:transparent}
 .chip.find{background:rgba(240,136,62,.18);color:var(--find2);border-color:transparent}
 .seyes{display:flex;flex-wrap:wrap;gap:4px;padding:0 6px 8px}
 .eye{padding:3px;border:0;border-radius:7px;background:none;cursor:pointer;display:inline-flex}

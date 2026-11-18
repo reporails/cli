@@ -14,6 +14,7 @@ import typer
 from reporails_cli.core.heal.apply import heal_signed_in
 from reporails_cli.core.mapper.model_manifest import ModelFetchError
 from reporails_cli.core.mapper.model_store import ensure_models_available
+from reporails_cli.core.platform.adapters.http_get import http_get
 from reporails_cli.core.platform.config.bootstrap import env_int
 from reporails_cli.core.platform.dto.diagnostics import FunnelError
 from reporails_cli.interfaces.cli.helpers import console
@@ -40,7 +41,7 @@ def _ensure_model_or_exit() -> bool:
     Returns whether the model is on disk (false only when it is not and the run goes on without it).
 
     The wall-clock limit is paused while this runs, so a slow first download is not
-    cut off by it. With ``AILS_MODEL_OFFLINE`` set and no model on disk (whether
+    cut off by it. With downloads off (``AILS_MODEL_OFFLINE`` or ``--offline``) and no model on disk (whether
     nothing was ever fetched, or a prior run left only a partial set), the check
     runs without the content checks (the opt-in the variable documents) and says
     so on stderr, rather than scoring on with no notice.
@@ -48,10 +49,11 @@ def _ensure_model_or_exit() -> bool:
 
     remaining = _pause_check_timeout()
     try:
-        model_dir = ensure_models_available()
+        model_dir = ensure_models_available(http_get)
         if model_dir is None:
             print(
-                "AILS_MODEL_OFFLINE is set and no model is on disk; content checks were skipped.",
+                "No model is on disk and downloads are off (AILS_MODEL_OFFLINE or --offline); "
+                "content checks were skipped.",
                 file=sys.stderr,
             )
         return model_dir is not None

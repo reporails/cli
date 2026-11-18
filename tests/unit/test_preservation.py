@@ -14,35 +14,27 @@ from typing import Any
 
 import pytest
 
-from reporails_cli.core.heal.preservation import PRESERVATION_CONTRACT, compare, take_snapshot
+from reporails_cli.core.heal.preservation import compare, take_snapshot
 from reporails_cli.core.heal.preservation import match as preservation_match
 from reporails_cli.core.heal.preservation import named as preservation_named
 from reporails_cli.core.heal.preservation import structure as preservation_structure
 from reporails_cli.core.heal.preservation.snapshot import make_snapshot
+from reporails_cli.core.mapper.asides import aside_spans
+from reporails_cli.core.mapper.classify_lexicon import CONDITION_OPENERS
+from reporails_cli.core.mapper.negative_headings import is_negative_heading
 from reporails_cli.core.mapper.structure import read_structure
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 from reporails_cli.core.platform.dto.heal import Snapshot, SnapshotAtom
+from reporails_cli.core.platform.dto.ruleset import AtomSlots
 from reporails_cli.interfaces.mcp import snapshots
 
-
-@pytest.mark.unit
-@pytest.mark.subsys_server
-def test_preservation_contract_is_byte_identical_to_the_plugin_s_quoted_text() -> None:
-    """The plugin quotes `PRESERVATION_CONTRACT` verbatim — a paraphrase here silently
-    desyncs the plugin's own copy from the server's."""
-    assert PRESERVATION_CONTRACT == (
-        "Keep every instruction: each keeps its polarity — a prohibition stays a prohibition — its "
-        "scope, with no condition or exception added or dropped, and every construct it names. Keep "
-        "every table row, list item, heading, fenced block, example and link, each list item in its "
-        "own list; delete one only when a relation names it as a true duplicate of its partner. Keep "
-        "a bare negative heading such as `## Don'ts` exactly as it is, with its items under it. Keep "
-        "each constraint directly after the directive it limits. Add no filler and invent nothing: an "
-        "instruction grows only by a construct the file already names or that exists in the project, "
-        "or a reason the file already gives — never by repeating one it already names."
-    )
-
-
 _FILE = "/proj/.claude/agents/reviewer.md"
+
+
+def _with_asides(slots: AtomSlots | None, text: str, named: tuple[str, ...]) -> AtomSlots | None:
+    """`slots` carrying the asides the mapper reads from `text`."""
+    asides = aside_spans(text.replace("`", ""), named)
+    return (slots or AtomSlots()).model_copy(update={"aside_spans": asides}) if asides else slots
 
 
 def _atom(
@@ -57,6 +49,7 @@ def _atom(
     scope_conditional: bool = False,
     heading: bool = False,
     modality: str | None = None,
+    slots: AtomSlots | None = None,
 ) -> SnapshotAtom:
     return SnapshotAtom(
         line=line,
@@ -67,9 +60,10 @@ def _atom(
         embedding_int8=embedding,
         heading_context=heading_context,
         scope_conditional=scope_conditional,
-        heading=heading,
+        negative_heading=heading and is_negative_heading(text),
         plain_text=text.replace("`", ""),
         modality=modality or ("direct" if charge_value else "none"),
+        slots=_with_asides(slots, text, named),
     )
 
 
@@ -82,8 +76,14 @@ def _new_atom(
     file_path: str = _FILE,
     heading_context: str = "",
     scope_conditional: bool = False,
+    slots: AtomSlots | None = None,
 ) -> SimpleNamespace:
     """A stand-in for a mapper `Atom` — `compare()` / `snapshot_file()` only read these fields."""
+    words = text.split()
+    # The scope the mapper decodes on a conditional atom: from its condition opener to the end.
+    opener = next((i for i, w in enumerate(words) if i and scope_conditional and w.lower() in CONDITION_OPENERS), None)
+    if slots is None and opener is not None:
+        slots = AtomSlots(predicate_span=(0, 1), object_span=(1, opener), scope_span=(opener, len(words)))
     return SimpleNamespace(
         line=line,
         position_index=pi,
@@ -97,8 +97,10 @@ def _new_atom(
         format="prose",
         heading_context=heading_context,
         scope_conditional=scope_conditional,
+        negative_heading=False,
         plain_text=text.replace("`", ""),
         modality="direct" if charge_value else "none",
+        slots=_with_asides(slots, text, named),
         imported_from="",
     )
 
@@ -117,6 +119,11 @@ def _snapshot(
     relation_lines: frozenset[int] = frozenset(),
 ) -> Snapshot:
     return make_snapshot(file_path=_FILE, text=text, atoms=atoms, score=6.0, relation_lines=relation_lines)
+
+
+def _original(*lines: str) -> Snapshot:
+    """A baseline whose atoms are `lines`, one atom each, from line 3 on."""
+    return _snapshot("", tuple(_atom(3 + i, text, 0) for i, text in enumerate(lines)))
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +221,14 @@ _TWIN_BEFORE = (
     "compare the report against the baseline before proposing. *Do not edit files without explicit approval.*\n"
 )
 _TWIN_SNAP_ATOMS = (
-    _atom(5, "Run the audit script against the output.", 1, heading_context="Steps"),
+    # the slots the mapper reads: `Run` over everything after it
+    _atom(
+        5,
+        "Run the audit script against the output.",
+        1,
+        heading_context="Steps",
+        slots=AtomSlots(predicate_span=(0, 1), object_span=(1, 7)),
+    ),
     _atom(6, "Present the result.", 1, heading_context="Steps"),
     _atom(10, "Present each change for approval before editing files.", 1, heading_context="Constraints"),
     _atom(10, "Run the audit script", 1, heading_context="Constraints"),
@@ -235,7 +249,14 @@ def _twin_after(
     text = head + (_TWIN_EXAMPLE if grown else "") + "\n\n## Constraints\n\n" + bullet + "\n"
     bullet_line = text.split("\n").index(bullet) + 1
     step_atoms = (
-        _new_atom(5, 0, "Run the audit script against the drafted release notes.", 1, heading_context="Steps"),
+        _new_atom(
+            5,
+            0,
+            "Run the audit script against the drafted release notes.",
+            1,
+            heading_context="Steps",
+            slots=AtomSlots(predicate_span=(0, 1), object_span=(1, 9)),
+        ),
         _new_atom(6, 1, "Present the result.", 1, heading_context="Steps"),
     )
     charges = (1,) * (len(bullet_atoms) - 1) + (-1,)
@@ -309,7 +330,7 @@ def test_a_prohibition_replaced_by_an_unrelated_directive_is_not_ok() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_an_added_instruction_with_no_snapshot_counterpart_is_flagged() -> None:
-    snapshot_text = "# Agent\n\nRun the linter before every commit.\n"
+    snapshot_text = _original("Run the linter before every commit.")
     added = _new_atom(5, 1, "Rotate the deployment keys every quarter.", -1)
     result = preservation_match.added_instructions(snapshot_text, (added,), {}, {})
     assert result == [{"line": 5, "text": "Rotate the deployment keys every quarter."}]
@@ -320,7 +341,7 @@ def test_an_added_instruction_with_no_snapshot_counterpart_is_flagged() -> None:
 def test_a_new_atom_covering_a_snapshot_instruction_s_split_window_is_not_flagged() -> None:
     """`split_covering_for`'s values are excluded outright, regardless of word overlap — the
     split-coverage decision already happened upstream in `_instruction_diffs`."""
-    snapshot_text = "# Agent\n\nRotate the deployment keys and audit access every quarter.\n"
+    snapshot_text = _original("Rotate the deployment keys and audit access every quarter.")
     piece = _new_atom(3, 0, "Rotate the deployment keys every quarter.", 1)
     result = preservation_match.added_instructions(snapshot_text, (piece,), {}, {12345: [piece]})
     assert result == []
@@ -331,7 +352,7 @@ def test_a_new_atom_covering_a_snapshot_instruction_s_split_window_is_not_flagge
 def test_a_directly_matched_instruction_is_not_flagged_even_with_low_word_overlap() -> None:
     """`matched_new_for`'s values are excluded outright — a match the matcher already made
     (even a heavy reword the coverage heuristic alone would not clear) is never an addition."""
-    snapshot_text = "# Agent\n\nRun the linter before every commit.\n"
+    snapshot_text = _original("Run the linter before every commit.")
     reworded = _new_atom(3, 0, "Scan the codebase automatically prior to integration.", 1)
     result = preservation_match.added_instructions(snapshot_text, (reworded,), {987: reworded}, {})
     assert result == []
@@ -387,13 +408,21 @@ def test_a_clean_ideal_rewrite_is_ok() -> None:
     snap = _snapshot(
         _IDEAL_BEFORE,
         (
-            _atom(5, "Maybe run the qa suite and check coverage before you push.", 1, modality="hedged"),
+            # the slots the mapper reads on a hedged sentence that carries its instruction: a predicate and an object
+            _atom(
+                5,
+                "Maybe run the qa suite and check coverage before you push.",
+                1,
+                modality="hedged",
+                slots=AtomSlots(predicate_span=(1, 2), object_span=(2, 8), scope_span=(8, 11)),
+            ),
             _atom(11, "Keep commits small.", 1),
         ),
     )
     new_atoms = (
         _new_atom(5, 0, "Run the `qa suite` before you push.", 1),
-        _new_atom(6, 1, "Check coverage too.", 1),
+        # the mapper's slots for `Check coverage too.`: `too` sits in no slot
+        _new_atom(6, 1, "Check coverage too.", 1, slots=AtomSlots(predicate_span=(0, 1), object_span=(1, 2))),
         _new_atom(12, 2, "Keep commits small.", 1),
     )
     result = compare(snap, _new_map(new_atoms), _IDEAL_AFTER, score_after=7.9)
@@ -561,9 +590,9 @@ _NAMED_SUBSTRING_AFTER = "# Git\n\nKeep the branch protection settings up to dat
 def test_a_named_token_is_not_falsely_present_as_a_substring_of_a_longer_word() -> None:
     """`main` must not read as present just because "maintain" contains the substring
     "main" — the named token is gone, even though `main` occurs textually."""
-    snap = _snapshot(_NAMED_SUBSTRING_BEFORE, (_atom(3, "Never force-push `main`.", -1, named=("`main`",)),))
+    snap = _snapshot(_NAMED_SUBSTRING_BEFORE, (_atom(3, "Never force-push `main`.", -1, named=("main",)),))
     result = compare(snap, _new_map(()), _NAMED_SUBSTRING_AFTER, score_after=6.0)
-    assert result["lost_named"] == ["`main`"]
+    assert result["lost_named"] == ["main"]
     assert result["ok"] is False
 
 
@@ -579,7 +608,7 @@ def _repeat_snapshot() -> Snapshot:
     return _snapshot(
         _REPEAT_BEFORE,
         (
-            _atom(3, "Run `pytest` before you push.", 1, named=("`pytest`",)),
+            _atom(3, "Run `pytest` before you push.", 1, named=("pytest",)),
             _atom(5, "Keep the suite fast.", 1),
             _atom(7, "Fix a failure first.", 1),
         ),
@@ -597,10 +626,10 @@ def test_a_construct_repeated_into_other_instructions_is_flagged() -> None:
         "Also always run `pytest` twice, since `pytest` matters.\n"
     )
     new_atoms = (
-        _new_atom(3, 0, "Run `pytest` before you push.", 1, named=("`pytest`",)),
+        _new_atom(3, 0, "Run `pytest` before you push.", 1, named=("pytest",)),
         _new_atom(5, 1, "Keep the suite fast.", 1),
         _new_atom(7, 2, "Fix a failure first.", 1),
-        _new_atom(9, 3, "Also always run `pytest` twice, since `pytest` matters.", 1, named=("`pytest`", "`pytest`")),
+        _new_atom(9, 3, "Also always run `pytest` twice, since `pytest` matters.", 1, named=("pytest", "pytest")),
     )
     result = compare(_repeat_snapshot(), _new_map(new_atoms), after, score_after=6.0)
     assert result["repeated_named"] == [{"token": "`pytest`", "before": 1, "after": 3, "allowed": 2}]
@@ -616,8 +645,8 @@ def test_a_vague_instruction_naming_an_already_named_construct_is_not_flagged() 
     padding."""
     after = "# Skill\n\nRun `pytest` before you push.\n\nKeep the `pytest` suite fast.\n\nFix a failure first.\n"
     new_atoms = (
-        _new_atom(3, 0, "Run `pytest` before you push.", 1, named=("`pytest`",)),
-        _new_atom(5, 1, "Keep the `pytest` suite fast.", 1, named=("`pytest`",)),
+        _new_atom(3, 0, "Run `pytest` before you push.", 1, named=("pytest",)),
+        _new_atom(5, 1, "Keep the `pytest` suite fast.", 1, named=("pytest",)),
         _new_atom(7, 2, "Fix a failure first.", 1),
     )
     result = compare(_repeat_snapshot(), _new_map(new_atoms), after, score_after=6.0)
@@ -633,8 +662,8 @@ def test_one_extra_mention_per_instruction_that_names_it_is_kept() -> None:
         "Keep the suite fast.\n\nFix a failure first.\n"
     )
     new_atoms = (
-        _new_atom(3, 0, "Run `pytest` before you push.", 1, named=("`pytest`",)),
-        _new_atom(3, 1, "Run `pytest` again after a rebase.", 1, named=("`pytest`",)),
+        _new_atom(3, 0, "Run `pytest` before you push.", 1, named=("pytest",)),
+        _new_atom(3, 1, "Run `pytest` again after a rebase.", 1, named=("pytest",)),
         _new_atom(5, 2, "Keep the suite fast.", 1),
         _new_atom(7, 3, "Fix a failure first.", 1),
     )
@@ -689,9 +718,9 @@ def _category_snapshot() -> Snapshot:
     return _snapshot(
         _CATEGORY_BEFORE,
         (
-            _atom(3, "Check the `category` field before merging.", 1, named=("`category`",)),
-            _atom(5, "Run `/check-category` to verify.", 1, named=("`/check-category`",)),
-            _atom(7, "Run `/check-category` again to confirm.", 1, named=("`/check-category`",)),
+            _atom(3, "Check the `category` field before merging.", 1, named=("category",)),
+            _atom(5, "Run `/check-category` to verify.", 1, named=("/check-category",)),
+            _atom(7, "Run `/check-category` again to confirm.", 1, named=("/check-category",)),
         ),
     )
 
@@ -708,15 +737,15 @@ def test_a_construct_joined_into_a_longer_name_is_not_counted_as_its_own_mention
         "Also run `/check-category` once more, then `/check-category` finally.\n"
     )
     new_atoms = (
-        _new_atom(3, 0, "Check the `category` field before merging.", 1, named=("`category`",)),
-        _new_atom(5, 1, "Run `/check-category` to verify.", 1, named=("`/check-category`",)),
-        _new_atom(7, 2, "Run `/check-category` again to confirm.", 1, named=("`/check-category`",)),
+        _new_atom(3, 0, "Check the `category` field before merging.", 1, named=("category",)),
+        _new_atom(5, 1, "Run `/check-category` to verify.", 1, named=("/check-category",)),
+        _new_atom(7, 2, "Run `/check-category` again to confirm.", 1, named=("/check-category",)),
         _new_atom(
             9,
             3,
             "Also run `/check-category` once more, then `/check-category` finally.",
             1,
-            named=("`/check-category`", "`/check-category`"),
+            named=("/check-category", "/check-category"),
         ),
     )
     result = compare(_category_snapshot(), _new_map(new_atoms), after, score_after=6.0)
@@ -735,9 +764,9 @@ def test_two_bare_mentions_of_an_already_named_construct_are_still_flagged() -> 
         "Also check the category twice, since category matters.\n"
     )
     new_atoms = (
-        _new_atom(3, 0, "Check the `category` field before merging.", 1, named=("`category`",)),
-        _new_atom(5, 1, "Run `/check-category` to verify.", 1, named=("`/check-category`",)),
-        _new_atom(7, 2, "Run `/check-category` again to confirm.", 1, named=("`/check-category`",)),
+        _new_atom(3, 0, "Check the `category` field before merging.", 1, named=("category",)),
+        _new_atom(5, 1, "Run `/check-category` to verify.", 1, named=("/check-category",)),
+        _new_atom(7, 2, "Run `/check-category` again to confirm.", 1, named=("/check-category",)),
         _new_atom(9, 3, "Also check the category twice, since category matters.", 1),
     )
     result = compare(_category_snapshot(), _new_map(new_atoms), after, score_after=6.0)
@@ -755,14 +784,14 @@ def _docs_snapshot() -> Snapshot:
     return _snapshot(
         _DOCS_BEFORE,
         (
-            _atom(3, "Read `docs/` for project notes.", 1, named=("`docs/`",)),
+            _atom(3, "Read `docs/` for project notes.", 1, named=("docs/",)),
             _atom(
                 5,
                 "See `docs/<class>/<topic>/<slug>.md` for the pattern.",
                 1,
-                named=("`docs/<class>/<topic>/<slug>.md`",),
+                named=("docs/<class>/<topic>/<slug>.md",),
             ),
-            _atom(7, "See `docs/<class>/<arg>/` too.", 1, named=("`docs/<class>/<arg>/`",)),
+            _atom(7, "See `docs/<class>/<arg>/` too.", 1, named=("docs/<class>/<arg>/",)),
         ),
     )
 
@@ -777,21 +806,21 @@ def test_a_directory_construct_is_not_counted_inside_a_longer_path_below_it() ->
     is not flagged."""
     after = _DOCS_BEFORE + "\nAlso see `docs/<class>/<other>/<slug>.md` and `docs/<class>/<more>/`.\n"
     new_atoms = (
-        _new_atom(3, 0, "Read `docs/` for project notes.", 1, named=("`docs/`",)),
+        _new_atom(3, 0, "Read `docs/` for project notes.", 1, named=("docs/",)),
         _new_atom(
             5,
             1,
             "See `docs/<class>/<topic>/<slug>.md` for the pattern.",
             1,
-            named=("`docs/<class>/<topic>/<slug>.md`",),
+            named=("docs/<class>/<topic>/<slug>.md",),
         ),
-        _new_atom(7, 2, "See `docs/<class>/<arg>/` too.", 1, named=("`docs/<class>/<arg>/`",)),
+        _new_atom(7, 2, "See `docs/<class>/<arg>/` too.", 1, named=("docs/<class>/<arg>/",)),
         _new_atom(
             9,
             3,
             "Also see `docs/<class>/<other>/<slug>.md` and `docs/<class>/<more>/`.",
             1,
-            named=("`docs/<class>/<other>/<slug>.md`", "`docs/<class>/<more>/`"),
+            named=("docs/<class>/<other>/<slug>.md", "docs/<class>/<more>/"),
         ),
     )
     result = compare(_docs_snapshot(), _new_map(new_atoms), after, score_after=6.0)
@@ -806,16 +835,16 @@ def test_two_bare_mentions_of_a_directory_construct_are_still_flagged() -> None:
     throughout."""
     after = _DOCS_BEFORE + "\nAlso check `docs/` again, since `docs/` matters.\n"
     new_atoms = (
-        _new_atom(3, 0, "Read `docs/` for project notes.", 1, named=("`docs/`",)),
+        _new_atom(3, 0, "Read `docs/` for project notes.", 1, named=("docs/",)),
         _new_atom(
             5,
             1,
             "See `docs/<class>/<topic>/<slug>.md` for the pattern.",
             1,
-            named=("`docs/<class>/<topic>/<slug>.md`",),
+            named=("docs/<class>/<topic>/<slug>.md",),
         ),
-        _new_atom(7, 2, "See `docs/<class>/<arg>/` too.", 1, named=("`docs/<class>/<arg>/`",)),
-        _new_atom(9, 3, "Also check `docs/` again, since `docs/` matters.", 1, named=("`docs/`", "`docs/`")),
+        _new_atom(7, 2, "See `docs/<class>/<arg>/` too.", 1, named=("docs/<class>/<arg>/",)),
+        _new_atom(9, 3, "Also check `docs/` again, since `docs/` matters.", 1, named=("docs/", "docs/")),
     )
     result = compare(_docs_snapshot(), _new_map(new_atoms), after, score_after=6.0)
     entry = next(e for e in result["repeated_named"] if e["token"] == "`docs/`")
@@ -838,11 +867,9 @@ def test_an_invented_tool_name_is_flagged() -> None:
     """The demo case: a rewrite introduces a tool name the original file never mentioned and
     that does not exist on disk — flagged, and `ok` is False."""
     snap = _snapshot(_INVENTED_BEFORE, (_atom(3, "Run the qa suite before you push.", 1),))
-    new_atoms = (
-        _new_atom(3, 0, "Run `mcp__reporails__score` before you push.", 1, named=("`mcp__reporails__score`",)),
-    )
+    new_atoms = (_new_atom(3, 0, "Run `mcp__reporails__score` before you push.", 1, named=("mcp__reporails__score",)),)
     result = compare(snap, _new_map(new_atoms), _INVENTED_AFTER, score_after=6.0)
-    assert result["invented_named"] == [{"line": 3, "token": "`mcp__reporails__score`"}]
+    assert result["invented_named"] == [{"line": 3, "token": "mcp__reporails__score"}]
     assert result["ok"] is False
 
 
@@ -854,7 +881,7 @@ def test_a_word_the_original_had_unbackticked_and_the_rewrite_backticked_is_not_
     before = "# Skill\n\nRun the QA Suite before you push.\n"
     after = "# Skill\n\nRun the `qa suite` before you push.\n"
     snap = _snapshot(before, (_atom(3, "Run the QA Suite before you push.", 1),))
-    new_atoms = (_new_atom(3, 0, "Run the `qa suite` before you push.", 1, named=("`qa suite`",)),)
+    new_atoms = (_new_atom(3, 0, "Run the `qa suite` before you push.", 1, named=("qa suite",)),)
     result = compare(snap, _new_map(new_atoms), after, score_after=6.0)
     assert result["invented_named"] == []
 
@@ -869,7 +896,7 @@ def test_a_real_project_path_the_original_did_not_mention_is_not_invented(tmp_pa
     before = "# Skill\n\nRun the release helper before you push.\n"
     after = "# Skill\n\nRun `scripts/release.py` before you push.\n"
     snap = _snapshot(before, (_atom(3, "Run the release helper before you push.", 1),))
-    new_atoms = (_new_atom(3, 0, "Run `scripts/release.py` before you push.", 1, named=("`scripts/release.py`",)),)
+    new_atoms = (_new_atom(3, 0, "Run `scripts/release.py` before you push.", 1, named=("scripts/release.py",)),)
     result = compare(snap, _new_map(new_atoms), after, score_after=6.0, environment=_env(tmp_path))
     assert result["invented_named"] == []
 
@@ -881,8 +908,8 @@ def test_a_token_the_original_named_is_not_invented() -> None:
     never flagged — the baseline "nothing changed" case."""
     before = "# Git\n\nNever force-push `main`.\n"
     after = "# Git\n\nNever force-push `main` without review.\n"
-    snap = _snapshot(before, (_atom(3, "Never force-push `main`.", -1, named=("`main`",)),))
-    new_atoms = (_new_atom(3, 0, "Never force-push `main` without review.", -1, named=("`main`",)),)
+    snap = _snapshot(before, (_atom(3, "Never force-push `main`.", -1, named=("main",)),))
+    new_atoms = (_new_atom(3, 0, "Never force-push `main` without review.", -1, named=("main",)),)
     result = compare(snap, _new_map(new_atoms), after, score_after=6.0)
     assert result["invented_named"] == []
 
@@ -918,11 +945,11 @@ def test_a_command_the_project_declares_is_not_invented(tmp_path) -> None:
             0,
             "Run `pytest -q` and `mcp__reporails__score` before you push.",
             1,
-            named=("`pytest -q`", "`mcp__reporails__score`"),
+            named=("pytest -q", "mcp__reporails__score"),
         ),
     )
     result = compare(snap, _new_map(new_atoms), after, score_after=6.0, environment=_env(tmp_path))
-    assert result["invented_named"] == [{"line": 3, "token": "`mcp__reporails__score`"}]
+    assert result["invented_named"] == [{"line": 3, "token": "mcp__reporails__score"}]
 
 
 @pytest.mark.unit
@@ -941,7 +968,7 @@ def test_a_path_relative_to_the_file_itself_is_not_invented(tmp_path) -> None:
         score=6.0,
     )
     new_atoms = (
-        _new_atom(3, 0, "Start from `src/index.ts`.", 1, named=("`src/index.ts`",), file_path=str(pkg / "CLAUDE.md")),
+        _new_atom(3, 0, "Start from `src/index.ts`.", 1, named=("src/index.ts",), file_path=str(pkg / "CLAUDE.md")),
     )
     result = compare(
         snap, _new_map(new_atoms), after, score_after=6.0, environment=LocalProjectEnvironment(tmp_path, pkg)
@@ -959,7 +986,7 @@ def test_a_home_path_that_exists_is_not_invented(tmp_path, monkeypatch) -> None:
     before = "# Skill\n\nRead the user config first.\n"
     after = "# Skill\n\nRead `~/.config/tool.toml` first.\n"
     snap = _snapshot(before, (_atom(3, "Read the user config first.", 1),))
-    new_atoms = (_new_atom(3, 0, "Read `~/.config/tool.toml` first.", 1, named=("`~/.config/tool.toml`",)),)
+    new_atoms = (_new_atom(3, 0, "Read `~/.config/tool.toml` first.", 1, named=("~/.config/tool.toml",)),)
     result = compare(snap, _new_map(new_atoms), after, score_after=6.0, environment=_env(tmp_path))
     assert result["invented_named"] == []
 
@@ -984,12 +1011,12 @@ def test_a_construct_moved_in_from_a_sibling_file_of_the_location_is_not_invente
             0,
             "Run `repo-lint --fix` before you push.",
             1,
-            named=("`repo-lint --fix`",),
+            named=("repo-lint --fix",),
             file_path=str(tmp_path / "CLAUDE.md"),
         ),
     )
     alone = compare(snap, _new_map(new_atoms), after, score_after=6.0, environment=_env(tmp_path))
-    assert [e["token"] for e in alone["invented_named"]] == ["`repo-lint --fix`"]
+    assert [e["token"] for e in alone["invented_named"]] == ["repo-lint --fix"]
     result = compare(
         snap, _new_map(new_atoms), after, score_after=6.0, environment=_env(tmp_path), sibling_texts=(sibling_text,)
     )
@@ -1334,13 +1361,13 @@ def test_an_unsnapshotted_file_has_no_snapshot(tmp_path) -> None:
 @pytest.mark.subsys_server
 @pytest.mark.requires_model
 def test_compare_against_the_real_mapper(tmp_path) -> None:
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     before_text = "# Agent\n\nNever commit secrets to the repo.\n"
     target = tmp_path / "CLAUDE.md"
     target.write_text(before_text, encoding="utf-8")
-    before_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    before_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     snap = make_snapshot(
         file_path=str(target),
         text=before_text,
@@ -1354,6 +1381,10 @@ def test_compare_against_the_real_mapper(tmp_path) -> None:
                 a.embedding_int8,
                 a.heading_context,
                 a.scope_conditional,
+                a.negative_heading,
+                a.plain_text,
+                a.modality,
+                a.slots,
             )
             for a in before_map.atoms
             if a.kind != "heading"
@@ -1362,14 +1393,14 @@ def test_compare_against_the_real_mapper(tmp_path) -> None:
     )
 
     # A genuine no-op (unchanged content) must be ok.
-    same_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    same_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     result = compare(snap, same_map, before_text, None)
     assert result["ok"] is True
 
     # Replacing the prohibition with an unrelated directive must not be ok.
     after_text = "# Agent\n\nDocument every endpoint in the API reference.\n"
     target.write_text(after_text, encoding="utf-8")
-    after_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    after_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     result2 = compare(snap, after_map, after_text, None)
     assert result2["ok"] is False
     assert result2["lost_instructions"] or result2["polarity_flips"]
@@ -1410,16 +1441,16 @@ def _real_snapshot(target: Any, before_map: Any, before_text: str, score: float 
 
 
 def _compare_edit(tmp_path, before_text: str, after_text: str) -> dict[str, Any]:
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     target = tmp_path / "CLAUDE.md"
     target.write_text(before_text, encoding="utf-8")
-    before_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    before_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     snap = _real_snapshot(target, before_map, before_text, score=5.0)
 
     target.write_text(after_text, encoding="utf-8")
-    after_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    after_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     return compare(snap, after_map, after_text, 5.0, environment=LocalProjectEnvironment(tmp_path, target.parent))
 
 
@@ -1518,7 +1549,7 @@ def test_a_named_token_extended_is_not_lost(tmp_path) -> None:
     """`` `pytest` `` renamed to `` `pytest -q` `` still contains the
     word `pytest` at a word boundary (backtick, not a word character, closes it either side),
     so it is not `lost_named`."""
-    after = _ATTACK_BASE.replace("`pytest`", "`pytest -q`")
+    after = _ATTACK_BASE.replace("pytest", "`pytest -q`")
     result = _compare_edit(tmp_path, _ATTACK_BASE, after)
     assert result["lost_named"] == []
 
@@ -1791,7 +1822,7 @@ def test_a_prohibition_widened_with_a_new_forbidden_object_is_flagged() -> None:
         0,
         "Never walk the whole `docs/` corpus, by `Glob`, `Grep`, or any other sweep.",
         -1,
-        named=("`docs/`", "`Glob`", "`Grep`"),
+        named=("docs/", "Glob", "Grep"),
     )
     result = preservation_named.prohibition_scope_changes([prohibition], {id(prohibition): widened})
     assert result == [
@@ -1815,14 +1846,14 @@ def test_a_prohibition_narrowed_by_dropping_a_listed_object_is_flagged() -> None
         3,
         "Never import `OpenAIClient`, `ClaudeClient`, or `GeminiClient` directly.",
         -1,
-        named=("`OpenAIClient`", "`ClaudeClient`", "`GeminiClient`"),
+        named=("OpenAIClient", "ClaudeClient", "GeminiClient"),
     )
     narrowed = _new_atom(
         3,
         0,
         "Never import `OpenAIClient` or `ClaudeClient` directly.",
         -1,
-        named=("`OpenAIClient`", "`ClaudeClient`"),
+        named=("OpenAIClient", "ClaudeClient"),
     )
     result = preservation_named.prohibition_scope_changes([prohibition], {id(prohibition): narrowed})
     assert result == [
@@ -1843,10 +1874,10 @@ def test_a_prohibition_rephrase_keeping_its_named_objects_is_not_flagged() -> No
     """Guard against over-fire: a pure rephrase that keeps every named object and condition the
     prohibition already had must still pass."""
     prohibition = _atom(
-        3, "Never import `OpenAIClient` or `ClaudeClient` directly.", -1, named=("`OpenAIClient`", "`ClaudeClient`")
+        3, "Never import `OpenAIClient` or `ClaudeClient` directly.", -1, named=("OpenAIClient", "ClaudeClient")
     )
     reworded = _new_atom(
-        3, 0, "Do not directly import `OpenAIClient` or `ClaudeClient`.", -1, named=("`OpenAIClient`", "`ClaudeClient`")
+        3, 0, "Do not directly import `OpenAIClient` or `ClaudeClient`.", -1, named=("OpenAIClient", "ClaudeClient")
     )
     result = preservation_named.prohibition_scope_changes([prohibition], {id(prohibition): reworded})
     assert result == []
@@ -1859,7 +1890,7 @@ def test_a_backtick_added_around_a_word_the_prohibition_already_said_is_not_flag
     word the instruction already carried in plain text — must not read as a new forbidden
     object, even though the atom gained a `named_tokens` entry it did not have before."""
     prohibition = _atom(3, "Never force-push main without review.", -1)
-    formatted = _new_atom(3, 0, "*Never force-push `main` without review.*", -1, named=("`main`",))
+    formatted = _new_atom(3, 0, "*Never force-push `main` without review.*", -1, named=("main",))
     result = preservation_named.prohibition_scope_changes([prohibition], {id(prohibition): formatted})
     assert result == []
 
@@ -1956,7 +1987,7 @@ def test_a_prohibition_s_mechanical_formatting_change_stays_ok(tmp_path) -> None
 def test_a_condition_silently_added_before_a_restriction_is_not_ok(tmp_path) -> None:
     """An unconditional "only modify `X`, `Y`, `Z`" restriction gains a
     `During `/refine-rule`,` prefix — outside that command the rewrite no longer restricts
-    modification at all, exactly the "condition added" `PRESERVATION_CONTRACT` forbids."""
+    modification at all, exactly the "condition added" the preservation contract forbids."""
     before = "# Rule writer\n\n*only modify `patterns`, `message`, and `vocab.yml`.*\n"
     after = (
         "# Rule writer\n\n*During `/refine-rule`, only modify the `patterns` and `message` "
@@ -2041,11 +2072,13 @@ def test_a_like_the_x_example_below_pointer_stays_ok(tmp_path) -> None:
 
 
 def _snap_item(line: int, text: str) -> Any:
-    return SnapshotAtom(line, text, 1, (), "list", None)
+    return SnapshotAtom(line, text, 1, (), "list", None, plain_text=text)
 
 
 def _new_item(line: int, text: str) -> Any:
-    return SimpleNamespace(line=line, text=text, named_tokens=(), embedding_int8=None)
+    return SimpleNamespace(
+        line=line, text=text, plain_text=text, named_tokens=(), embedding_int8=None, slots=None, aside_spans=()
+    )
 
 
 def _moved(snap: list[Any], new: list[Any], pairs: dict[int, int], before: str, after: str) -> list[int]:
@@ -2156,15 +2189,17 @@ def test_a_near_duplicate_paired_with_its_twin_in_another_list_is_not_moved_whil
 def test_dropping_an_example_from_a_prohibition_is_not_a_scope_change() -> None:
     """A construct the original gave only as an example is not something the rewrite stopped
     forbidding: the same prohibition without its example still forbids the same thing."""
-    prohibition = _atom(5, "Never commit secrets (e.g. `.env`).", -1, named=("`.env`",))
-    rewritten = _new_atom(5, 0, "Never commit secrets.", -1, named=())
+    # The slots the mapper reads for this sentence: the object is `secrets`, the example sits outside it.
+    slots = AtomSlots(predicate_span=(0, 2), object_span=(2, 3))
+    prohibition = _atom(5, "Never commit secrets (e.g. `.env`).", -1, named=(".env",), slots=slots)
+    rewritten = _new_atom(5, 0, "Never commit secrets.", -1, named=(), slots=slots)
     assert preservation_named.prohibition_scope_changes([prohibition], {id(prohibition): rewritten}) == []
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_dropping_a_governing_construct_from_a_prohibition_is_still_flagged() -> None:
-    prohibition = _atom(6, "Never commit `.env` files.", -1, named=("`.env`",))
+    prohibition = _atom(6, "Never commit `.env` files.", -1, named=(".env",))
     rewritten = _new_atom(6, 0, "Never commit files.", -1, named=())
     result = preservation_named.prohibition_scope_changes([prohibition], {id(prohibition): rewritten})
     assert result and result[0]["dropped"] == [".env"]
@@ -2175,9 +2210,9 @@ def test_dropping_a_governing_construct_from_a_prohibition_is_still_flagged() ->
 def test_a_prohibition_whose_words_are_scattered_over_the_file_is_still_added() -> None:
     """A prohibition appended to a bullet is new when its words trace to several unrelated
     sentences of the original rather than to one sentence that already says it."""
-    snapshot_text = (
-        "# Agent\n\n- Merge the pull request into main after review.\n"
-        "- Teams push release tags from the release branch. Never skip review. CI runs directly on every branch.\n"
+    snapshot_text = _original(
+        "Merge the pull request into main after review.",
+        "Teams push release tags from the release branch. Never skip review. CI runs directly on every branch.",
     )
     added = _new_atom(3, 1, "Never push to `main` directly.", -1)
     result = preservation_match.added_instructions(snapshot_text, (added,), {}, {})
@@ -2187,7 +2222,7 @@ def test_a_prohibition_whose_words_are_scattered_over_the_file_is_still_added() 
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_a_prohibition_the_original_line_already_states_is_not_added() -> None:
-    snapshot_text = "# Agent\n\n- Never push directly to main.\n"
+    snapshot_text = _original("Never push directly to main.")
     restated = _new_atom(3, 1, "Never push to `main` directly.", -1)
     assert preservation_match.added_instructions(snapshot_text, (restated,), {}, {}) == []
 
@@ -2228,6 +2263,8 @@ def _heading_atoms(text: str) -> tuple[SimpleNamespace, ...]:
             format="heading",
             heading_context="",
             scope_conditional=False,
+            negative_heading=is_negative_heading(line.lstrip("# ").strip()),
+            slots=None,
             imported_from="",
         )
         for n, line in enumerate(text.split("\n"), start=1)

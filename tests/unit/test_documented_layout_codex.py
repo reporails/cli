@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.classify import classify_files, load_file_types
-from reporails_cli.core.discovery.agents import clear_agent_cache, detect_agents
+from reporails_cli.core.discovery.agents import detect_agents
+from reporails_cli.core.platform.config.run_context import RunContext
 
 SKILL = "---\nname: foo\ndescription: Does foo.\n---\n\n# Foo\n"
 
@@ -69,5 +70,4 @@ def test_detection_still_names_codex(tmp_path: Path) -> None:
     _write(project, "AGENTS.md", "# P\n\n- Use uv.\n")
     _write(project, ".codex/config.toml", 'model = "gpt-5"\n')
     _write(project, "docs/agents/openai.yaml")
-    clear_agent_cache()
-    assert "codex" in {a.agent_type.id for a in detect_agents(project)}
+    assert "codex" in {a.agent_type.id for a in detect_agents(RunContext(), project)}

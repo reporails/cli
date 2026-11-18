@@ -1,67 +1,68 @@
 """Wording of the matched instructions in the preservation check: a hedge made direct (listed), a
-hedge made an absolute the line never had, a restriction added without a condition word, a
-condition added, and a condition dropped.
+hedge made an absolute the line never had, words added to what an instruction covers, a condition
+added, and a condition dropped.
 
-Hedged and absolute instructions are read from the mapper's `modality`, conditions from its
-`scope_conditional`; the words that mark a condition, a restriction or an absolute come from the
-mapper's classifier.
+Each reads what the mapper recorded on the atoms: `modality` for hedged and absolute, the slots
+(`subject`, `predicate`, `object`, `scope`) for the words an instruction covers, and
+`classify.condition_text` for a condition.
 """
 
 from __future__ import annotations
 
-import difflib
-import os
-import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from collections.abc import Set as AbstractSet
+from functools import cache
 
+from reporails_cli.core.heal.preservation.coverage import (
+    Covered,
+    after_definite_modifier,
+    covered_tokens,
+    fresh_place,
+    last_index,
+    moved_before_head,
+    names_a_place,
+    quantified_insert,
+    replaced,
+    tail_after,
+    took_no_object,
+    words_of_named,
+)
+from reporails_cli.core.heal.preservation.kinds import (
+    Section,
+    heading_words,
+    lists_kinds,
+    named_beside_others,
+    sections_by_line,
+)
 from reporails_cli.core.heal.preservation.words import (
-    NEGATION_RE,
-    WORD_RE,
     AtomView,
-    blank_named,
-    content_words,
+    asides_of,
+    atom_words,
+    is_content_word,
+    is_function_word,
+    is_word_of,
     named_key,
-    prose_text,
-    prose_words,
+    slot_tokens,
+    slot_words,
+    token_words,
     word_forms,
 )
-from reporails_cli.core.mapper.classify import (
-    COVERAGE_RESTRICTORS,
-    EXCLUDING_RESTRICTORS,
-    SCOPE_RESTRICTORS,
-    absolute_cues,
-    has_hedge_cue,
-)
+from reporails_cli.core.mapper.classify import ABSOLUTE_CUES, condition_text, covers_predicate
 from reporails_cli.core.mapper.classify_lexicon import (
     CONDITION_CONJUNCTIONS,
-    CONDITION_OPENERS,
-    CONDITION_QUANTIFIERS,
     CONDITIONAL_MARKERS,
-    DETERMINERS,
-    GENERAL_QUANTIFIERS,
-    PHRASE_PREPOSITIONS,
-    SCOPE_PREPOSITIONS,
-    STOPWORDS,
+    DEFINITE_DETERMINERS,
+    INDEFINITE_ARTICLES,
+    LIMITING_RESTRICTORS,
+    SUBJECT_PRONOUNS,
+    words_of,
 )
 from reporails_cli.core.mapper.prose_split import split_prose_sentences
 from reporails_cli.core.platform.contract.json_value import JsonObject
-from reporails_cli.core.platform.dto.heal import Condition, Pair, SnapshotAtom
+from reporails_cli.core.platform.dto.heal import Pair, SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import Atom
 
-# Thresholds.
-_SCOPE_REACH = 3  # words after a scope cue that make the scope it adds
 _NEUTRAL_COVERAGE = 0.75  # share of a new instruction's words a hedged line the mapper read as prose must hold
-
-_CLAUSE_RE = re.compile(r"[,;:()—]")
-# Stands in a clause for each named construct that was there, so the words after it do not fall
-# into the reach of the word before it.
-_NAMED = "namedconstruct"
-_SEGMENT_RE = re.compile(
-    f"{_CLAUSE_RE.pattern}|\\b(?:{'|'.join(sorted(CONDITION_CONJUNCTIONS | {'then'}))})\\b", re.IGNORECASE
-)
-# What ends the phrase a scope preposition opens.
-_PHRASE_END = PHRASE_PREPOSITIONS | CONDITION_CONJUNCTIONS
 
 # Atoms of a file by line number, in file order.
 ByLine = dict[int, list[AtomView]]
@@ -86,6 +87,23 @@ def sentence_of(atoms_by_line: ByLine, atom: AtomView) -> str:
     return line
 
 
+def continuation(line_atoms: Sequence[AtomView], atom: AtomView) -> tuple[str, ...]:
+    """The words, in order, of the uncharged atoms that continue the prohibition `atom` on its line,
+    from the mapper's atoms of that line: those that follow it before the next charged one (`Do not
+    file any report —` and the `daily logs, test runs, or billing notes — into the archive.` after it,
+    while a directive after the dash, `prefer a fake`, is no part of it). Empty when `atom` is not
+    a constraint."""
+    start = next((i for i, a in enumerate(line_atoms) if a is atom), None)
+    if start is None or atom.charge_value != -1:
+        return ()
+    words: list[str] = []
+    for a in line_atoms[start + 1 :]:
+        if a.charge_value != 0:
+            break
+        words.extend(token_words(a.plain_text.split()))
+    return tuple(words)
+
+
 def pair_up(
     snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom], old_by_line: ByLine, new_by_line: ByLine
 ) -> list[Pair]:
@@ -94,14 +112,9 @@ def pair_up(
     for sa in snap_atoms:
         match = matched_new_for.get(id(sa))
         if sa.charge_value != 0 and match is not None:
-            out.append(Pair(sa, match, sentence_of(old_by_line, sa), sentence_of(new_by_line, match)))
+            more = continuation(new_by_line.get(match.line, ()), match)
+            out.append(Pair(sa, match, sentence_of(old_by_line, sa), sentence_of(new_by_line, match), more))
     return out
-
-
-def _hedged(atom: AtomView) -> bool:
-    """Whether `atom` gives its instruction as a suggestion: the mapper reads a charged atom's
-    modality; a line it read as plain prose shows a hedge word."""
-    return atom.modality == "hedged" if atom.charge_value != 0 else has_hedge_cue(atom.text)
 
 
 def made_direct(
@@ -121,7 +134,12 @@ def made_direct(
     done: set[int] = set()
     for p in pairs:
         key = (p.old.line, p.new.line)
-        if key not in seen and _hedged(p.old) and p.new.modality != "hedged" and p.old_sentence != p.new_sentence:
+        if (
+            key not in seen
+            and p.old.modality == "hedged"
+            and p.new.modality != "hedged"
+            and p.old_sentence != p.new_sentence
+        ):
             seen.add(key)
             done.add(p.old.line)
             out.append(p.entry())
@@ -137,14 +155,14 @@ def _made_direct_from_prose(
 ) -> list[JsonObject]:
     old_by_line, new_by_line = sentences
     claimed = {id(m) for m in matched_new_for.values()}
-    hedged_prose = [sa for sa in snap_atoms if sa.charge_value == 0 and not sa.heading and _hedged(sa)]
+    hedged_prose = [sa for sa in snap_atoms if sa.charge_value == 0 and not sa.heading and sa.modality == "hedged"]
     out: list[JsonObject] = []
     for na in new_atoms:
-        words = content_words(na.text)
+        words = atom_words(na)
         if na.charge_value == 0 or id(na) in claimed or not words:
             continue
         for sa in hedged_prose:
-            if sa.line in done or len(words & content_words(sa.text)) / len(words) < _NEUTRAL_COVERAGE:
+            if sa.line in done or len(words & atom_words(sa)) / len(words) < _NEUTRAL_COVERAGE:
                 continue
             done.add(sa.line)
             out.append(Pair(sa, na, sentence_of(old_by_line, sa), sentence_of(new_by_line, na)).entry())
@@ -153,126 +171,21 @@ def _made_direct_from_prose(
 
 
 def hedge_made_absolute(pairs: list[Pair], old_by_line: ByLine) -> list[JsonObject]:
-    """Each matched suggestion whose rewrite is an absolute (`Never`, `Always`) where the
-    author's line had no such word."""
-    out: list[JsonObject] = []
-    for p in pairs:
-        if not _hedged(p.old) or p.new.modality != "absolute":
-            continue
-        known = set().union(*(absolute_cues(a.plain_text) for a in old_by_line.get(p.old.line, ())))
-        if absolute_cues(p.new.plain_text) - known:
-            out.append(p.entry())
-    return out
+    """Each matched suggestion whose rewrite is an absolute (`Never`, `Always`) carrying a cue word
+    that no atom of the author's line has."""
+    return [
+        p.entry()
+        for p in pairs
+        if p.old.modality == "hedged"
+        and p.new.modality == "absolute"
+        and _absolute_cues(p.new) - {c for a in old_by_line.get(p.old.line, ()) for c in _absolute_cues(a)}
+    ]
 
 
-_PLAIN_WORD_RE = re.compile(r"\w+")
-
-
-def _known_words(old_by_line: ByLine, line: int) -> set[str]:
-    """The words the author's line has: those of every snapshot atom on it, plus a code token that
-    is one plain word (`except`); a path, a dotted name or a multi-word token adds none."""
-    known: set[str] = set()
-    for atom in old_by_line.get(line, ()):
-        blanked = [t for t in atom.named_tokens if not _PLAIN_WORD_RE.fullmatch(t.strip("`"))]
-        text = blank_named(atom.plain_text, blanked)
-        known.update(w.lower() for w in WORD_RE.findall(text))
-    return known
-
-
-def _fresh(tail: list[str], known: set[str]) -> bool:
-    """Whether `tail` holds a content word the author's line does not have."""
-    return any(len(w) > 1 and w not in STOPWORDS and w != _NAMED and not word_forms(w) & known for w in tail)
-
-
-def _placed_words(old_by_line: ByLine, pair: Pair) -> set[str]:
-    """The words the author's line already holds where a scope phrase may reuse them: those that
-    stand inside a prepositional phrase, within a few words after a preposition in the same clause
-    (clauses cut as the rewrite's are, `_clauses`). A word only used as a verb's object is not among
-    them when its sentence goes on to other clauses; the paired sentence, when it is one clause,
-    gives all its words, since its one object is what the instruction is about. A code token that
-    is one plain word (`except`) is a word of the line, as in `_known_words`."""
-    placed: set[str] = set()
-    for atom in old_by_line.get(pair.old.line, ()):
-        placed.update(t.strip("`").lower() for t in atom.named_tokens if _PLAIN_WORD_RE.fullmatch(t.strip("`")))
-        for clause in _clauses(atom):
-            for i, word in enumerate(clause):
-                if word in PHRASE_PREPOSITIONS:
-                    placed.update(clause[i + 1 : i + 1 + _SCOPE_REACH])
-    if not _SEGMENT_RE.search(pair.old_sentence):
-        placed.update(w for clause in _clauses(pair.old) for w in clause)
-    return placed | {f for w in placed for f in word_forms(w)}
-
-
-def _phrase(tail: list[str]) -> list[str]:
-    """`tail` up to the next preposition or conjunction: the words of the phrase a preposition opens."""
-    for i, word in enumerate(tail):
-        if word in _PHRASE_END:
-            return tail[:i]
-    return tail
-
-
-def _cuts_coverage(word: str, tail: list[str], known: set[str]) -> bool:
-    """Whether `word`, followed by `tail`, cuts the rule's coverage down in a way the author's line
-    (`known`) did not already carry (`classify.COVERAGE_RESTRICTORS`)."""
-    rule = COVERAGE_RESTRICTORS.get(word)
-    if rule is None or rule.already & known:
-        return False
-    return not rule.next_words or (bool(tail[:1]) and tail[0] in rule.next_words)
-
-
-def _narrows(words: list[str], known: set[str], placed: set[str]) -> bool:
-    """Whether the rewrite's `words` add a restriction the author's line did not state: a
-    restricting word it never used, a place / time / thing after a preposition that the author's
-    sentence did not already hold inside a prepositional phrase (`placed`), or a new noun phrase
-    after `for` (judged against every word of the line, `known`)."""
-    for i, word in enumerate(words):
-        tail = words[i + 1 : i + 1 + _SCOPE_REACH]
-        if word in SCOPE_RESTRICTORS and word not in known:
-            return True
-        if _cuts_coverage(word, tail, known):
-            return True
-        if word in SCOPE_PREPOSITIONS and _fresh(_phrase(tail), placed):
-            return True
-        if word == "for" and tail[:1] and tail[0] in DETERMINERS and _fresh(tail, known):
-            return True
-    return False
-
-
-def _clauses(atom: AtomView, *, named: bool = False) -> list[list[str]]:
-    """`atom`'s words, one list per comma / colon / parenthesis separated clause, each named
-    construct a placeholder word unless `named` (a condition's words read the same backticked or
-    not)."""
-    parts = _CLAUSE_RE.split(prose_text(atom, named=named, fill=f" {_NAMED} "))
-    return [w for w in ([t.lower() for t in WORD_RE.findall(part)] for part in parts) if w]
-
-
-def _line_named(old_by_line: ByLine, line: int) -> set[str]:
-    """The named constructs (lowered, backticks stripped) the author's line holds."""
-    return {named_key(t) for atom in old_by_line.get(line, ()) for t in atom.named_tokens}
-
-
-def _quantifier_before(text: str, start: int) -> str:
-    """The word that ends `text` before offset `start`, lowered; empty when there is none."""
-    words = WORD_RE.findall(text[:start])
-    return words[-1].lower() if words else ""
-
-
-def _inserted_after_quantifier(p: Pair) -> bool:
-    """Whether the rewrite names a construct the author's sentence did not, directly after a general
-    quantifier the author's sentence already had (`any file` -> `any .env file`, or `any .env` in the
-    place of `file`). A definite reference (`the gate` -> `the AskUserQuestion gate`) names its
-    referent and narrows nothing."""
-    text = p.new.plain_text
-    known = {named_key(t) for t in p.old.named_tokens}
-    old_words = {w.lower() for w in WORD_RE.findall(p.old.plain_text)}
-    for token in p.new.named_tokens:
-        if named_key(token) in known:
-            continue
-        for match in re.finditer(re.escape(token.strip("`")), text):
-            quantifier = _quantifier_before(text, match.start())
-            if quantifier in GENERAL_QUANTIFIERS & old_words:
-                return True
-    return False
+def _absolute_cues(atom: AtomView) -> frozenset[str]:
+    """The absolute cue words (`always`, `never`) the atom's plain text holds, including those the
+    mapper's hedge reading outranked (`You should always run X` reads hedged)."""
+    return ABSOLUTE_CUES & frozenset(words_of(atom.plain_text))
 
 
 def _same_sentence(p: Pair) -> bool:
@@ -280,52 +193,136 @@ def _same_sentence(p: Pair) -> bool:
     return " ".join(p.old_sentence.lower().split()) == " ".join(p.new_sentence.lower().split())
 
 
-_DEFINITE = DETERMINERS - GENERAL_QUANTIFIERS
+def _known_words(old_by_line: ByLine, p: Pair) -> set[str]:
+    """The words the author's instruction has, each with its singular and plural spelling: for a
+    prohibition its own plain text and the uncharged atoms that continue it (a word only a
+    neighbouring instruction has is not among them), for any other instruction every atom of its
+    line."""
+    atoms = old_by_line.get(p.old.line, ())
+    if p.old.charge_value < 0:
+        known = set(words_of(p.old.plain_text)) | set(continuation(atoms, p.old))
+    else:
+        known = {w for atom in atoms for w in words_of(atom.plain_text)}
+    return known | {f for w in known for f in word_forms(w)}
 
 
-def _known_qualifier(words: list[str], known: set[str]) -> bool:
-    """Whether `words` hold content words and every one of them is a word of the author's line."""
-    content = [w for w in words if len(w) > 2 and w not in STOPWORDS]
-    return bool(content) and all(w in known for w in content)
+def _heading(p: Pair, section: Section) -> list[str]:
+    """The words of the heading `p`'s original sits under: its section's heading atom, else the heading
+    the mapper gave the atom."""
+    return heading_words(section) or words_of(p.old.heading_context)
 
 
-def _qualified_general_noun(p: Pair, known: set[str]) -> bool:
-    """Whether a prohibition's rewrite puts content words into its sentence anywhere but after a
-    definite reference (`the linter` -> `the ruff linter` names what the sentence already pointed
-    at): `file plans` -> `file X or Y plans`, `present a menu` -> `present a UX recommendation as a
-    menu` restrict what the rule forbids, though those words stand elsewhere on the line (`known`)."""
-    if not NEGATION_RE.search(p.new_sentence):
+def _kind_narrows(p: Pair, kind: list[str], span: list[str], section: Section) -> bool:
+    """Whether words given to an instruction whose verb took no object narrow it: they are a list
+    (`span`, from the first to the last of them, holds an `and` / `or`), the section's heading lists
+    kinds and `kind` is one of them, or another line of the section names `kind` beside others.
+    A kind nothing else names is the referent the line left implied."""
+    if CONDITION_CONJUNCTIONS & set(span):
+        return True
+    heading = _heading(p, section)
+    forms = {f for w in heading for f in word_forms(w)}
+    if lists_kinds(heading) and all(w in forms for w in kind):
+        return True
+    return named_beside_others(section, p.old, kind)
+
+
+def _listed_heads(atom: AtomView, known: set[str]) -> set[str]:
+    """The lowered words that name the kind an aside of `atom` lists members of: the words right before
+    an aside whose own content words the author's line already has (`output field` in `any
+    output field (name, size, or date)`), back to the nearest function word."""
+    words = atom.plain_text.split()
+    heads: set[str] = set()
+    for start, end in asides_of(atom):
+        listed = {w for token in words[start:end] for w in words_of(token) if is_content_word(w)}
+        if not listed or not all(word_forms(w) & known for w in listed):
+            continue
+        k = start - 1
+        while k >= 0 and not words[k].endswith(","):
+            own = words_of(words[k])
+            if not own or is_function_word(own[0]):
+                break
+            heads.update(own)
+            k -= 1
+    return heads
+
+
+def _gained_unsafe(p: Pair, covered: Covered, known: set[str], heading: set[str]) -> list[int]:
+    """The indices of the rewrite's covered words that are content words the author's instruction lacks
+    and that no safe shape explains (a possessive, `the user's`, names the owner it points at). The words
+    themselves are in `covered`."""
+    heads = _listed_heads(p.new, known)
+    gained = [
+        i
+        for i, (w, _c, _s, prose) in enumerate(covered)
+        if is_content_word(w) and prose and not word_forms(w) & known and not w.endswith("'s") and w not in heads
+    ]
+    if not gained:
+        return []
+    old_object = slot_words(p.old, "object")
+    anchor = last_index(covered, old_object[-1]) if old_object else None
+    widened = set(tail_after(covered, anchor)) if anchor is not None else set()
+    own_named = words_of_named(p.old)
+    new_named = words_of_named(p.new) if p.old.charge_value < 0 else None
+    skip = widened | replaced(covered, p, gained)
+    pool = set(gained)
+    return [
+        i
+        for i in gained
+        if i not in skip
+        and covered[i][0] not in heading
+        and not (i > 0 and covered[i - 1][0] in own_named)
+        and not (old_object and after_definite_modifier(covered, pool, i, old_object[-1], new_named))
+        and not names_a_place(covered, i)
+    ]
+
+
+def _scope_gains_construct(p: Pair) -> bool:
+    """Whether the rewrite's scope names a target (`for src/`) the author's instruction does not name."""
+    tokens = [t.lower() for t in slot_tokens(p.new, "scope")]
+    scope = " ".join(tokens[tokens.index("for") :]) if "for" in tokens else ""
+    old = {named_key(t) for t in p.old.named_tokens}
+    return any(named_key(t) in scope and named_key(t) not in old for t in p.new.named_tokens)
+
+
+def _narrows(p: Pair, known: set[str], section: Section) -> bool:
+    """Whether the rewrite's object or scope gains a content word the author's instruction lacks that
+    is no safe shape: an alternative after the author's own object (`secrets` -> `secrets or
+    credentials`, which widens), a construct named after a general quantifier (`any file` -> `any
+    .env file`), a word of the section heading that names one referent, a word after a named
+    construct the author's instruction names (`report` -> `report document`), a modifier of the
+    referent a definite determiner points at (`the API` -> `the REST API`), the words that describe
+    a place a named construct gives (`the install notes at setup.md`), or a reword that puts new
+    words where author words left. A suggestion is not narrowed by its own wording, nor an
+    instruction whose object the author gave as a bare pronoun. An object given to a verb that took
+    none is read against the section (`_kind_narrows`). Any other shape is put back."""
+    old_object = slot_words(p.old, "object")
+    if p.new.modality == "hedged" or (old_object and all(w in SUBJECT_PRONOUNS for w in old_object)):
         return False
-    old = [w.lower() for w in WORD_RE.findall(p.old_sentence)]
-    new = [w.lower() for w in WORD_RE.findall(p.new_sentence)]
-    ops = difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes()
-    return any(
-        _known_qualifier(new[j1:j2], known)
-        for tag, _, _, j1, j2 in ops
-        if tag == "insert" and j1 > 0 and j2 < len(new) and new[j1 - 1] not in _DEFINITE
-    )
+    if quantified_insert(p) or moved_before_head(p) or _scope_gains_construct(p):
+        return True
+    heading = _heading(p, section)
+    referent = set() if lists_kinds(heading) else {f for w in heading for f in word_forms(w)}
+    covered = covered_tokens(p)
+    unsafe = _gained_unsafe(p, covered, known, referent)
+    if not unsafe:
+        return fresh_place(p, covered)
+    if took_no_object(p.old):
+        span = [w for w, _c, _s, _p in covered[unsafe[0] : unsafe[-1] + 1]]
+        return _kind_narrows(p, [covered[i][0] for i in unsafe], span, section)
+    return True
 
 
 def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonObject]:
-    """Each matched instruction whose rewrite adds words that restrict where, when or to what it
-    applies, without an if / when / before frame (which `added_conditions` already reports): a
-    restricting word the line never used, or a scope preposition whose phrase holds a word the
-    author's sentence did not already hold inside a prepositional phrase (`define WHAT to build` ->
-    `define WHAT to build in that spec`, though `spec` is elsewhere on the line); or one that
-    names a construct directly after a general quantifier the author's line already had (`every
-    gate` -> `every X gate`); or a prohibition that gains a qualifier before its noun from words
-    the line has elsewhere (`file plans` -> `file X or Y plans`)."""
-    out: list[JsonObject] = []
-    for p in pairs:
-        if _same_sentence(p):
-            continue
-        known = _known_words(old_by_line, p.old.line)
-        known |= {f for w in known for f in word_forms(w)}
-        placed = _placed_words(old_by_line, p)
-        narrows = any(_narrows(clause, known, placed) for clause in _clauses(p.new))
-        if narrows or _inserted_after_quantifier(p) or _qualified_general_noun(p, known):
-            out.append(p.entry())
-    return out
+    """Each matched instruction whose rewrite gains, in its object or scope slot (and, for a
+    prohibition, in the uncharged atoms that continue it), a content word the author's own
+    instruction does not have, unless the gain is a safe shape (`_narrows`). An unknown shape is put
+    back: the default is narrowed."""
+    sections = sections_by_line(old_by_line)
+    return [
+        p.entry()
+        for p in pairs
+        if not _same_sentence(p) and _narrows(p, _known_words(old_by_line, p), sections.get(p.old.line, []))
+    ]
 
 
 def made_specific(
@@ -333,143 +330,133 @@ def made_specific(
 ) -> list[JsonObject]:
     """Each kept instruction that gained a named construct the author's line lacked and that no
     other check flagged (`flagged` holds the `(line, new_line)` of narrowed pairs, `invented` the
-    lowered names reported as invented): allowed and listed so the report can show it."""
-    out: list[JsonObject] = []
+    lowered names reported as invented): allowed and listed so the report can show it, once per
+    sentence of the author's, with every sentence its rewrite became (a split shows all its pieces)."""
+    rewrites: dict[tuple[int, str], dict[str, None]] = {}
     for p in pairs:
-        if (p.old.line, p.new.line) in flagged:
+        rewrites.setdefault((p.old.line, p.old_sentence), {})[p.new_sentence] = None
+    out: list[JsonObject] = []
+    listed: set[tuple[int, str]] = set()
+    for p in pairs:
+        key = (p.old.line, p.old_sentence)
+        if (p.old.line, p.new.line) in flagged or key in listed:
             continue
-        known = _line_named(old_by_line, p.old.line) | invented
+        known = {named_key(t) for atom in old_by_line.get(p.old.line, ()) for t in atom.named_tokens} | invented
         if any(named_key(t) not in known for t in p.new.named_tokens):
-            out.append({"line": p.old.line, "before": p.old_sentence, "after": p.new_sentence})
+            listed.add(key)
+            out.append({"line": p.old.line, "before": p.old_sentence, "after": " ".join(rewrites[key])})
     return out
 
 
-def _marker_words(atom: AtomView, marked_before: AbstractSet[str] = frozenset()) -> set[str]:
-    """The words of `atom` that may mark a condition: its prose words (a code token such as
-    `except` marks nothing) and the code tokens the original already had as prose words."""
-    return set(prose_words(atom)) | (set(prose_words(atom, named=True)) & marked_before)
+def conditional(atom: AtomView) -> bool:
+    """Whether the mapper read a conditional frame on `atom`."""
+    return atom.scope_conditional
 
 
-def conditional(atom: AtomView, marked_before: AbstractSet[str] = frozenset()) -> bool:
-    """Whether `atom` holds a condition: the mapper reads a conditional frame, or the instruction
-    is restricted by a word like `only` / `except` in its prose."""
-    return atom.scope_conditional or bool(_marker_words(atom, marked_before) & SCOPE_RESTRICTORS)
+_ARTICLES = DEFINITE_DETERMINERS | INDEFINITE_ARTICLES
 
 
-# Words that only mark a condition or a quantifier over it: swapping one marker for another
-# ("every time" -> "whenever", "prior to" -> "before") adds no content of its own.
-_CONDITION_WORDS = frozenset(CONDITIONAL_MARKERS) | CONDITION_QUANTIFIERS
-
-_ENDING_REACH = 4  # letters an ending may add to a word and still be that word
-_CONDITION_COVERAGE = 0.5  # share of the words a condition governs that its rewrite must still hold
-
-
-def _conditions(atom: AtomView, marked_before: AbstractSet[str] = frozenset()) -> list[Condition]:
-    """The words each condition of `atom` governs, one per condition: a clause with a frame
-    marker (`if`, `unless`, `before`, `only`, ...) holds the content words after the marker, and
-    conditions joined by `and` / `or` (`When tests fail and the branch is main`) are one each.
-    A marker is a word of the prose (or one the original already had as a prose word, for a rewrite
-    that backticks it); the words a condition governs include code tokens."""
-    out: list[Condition] = []
-    prose = _marker_words(atom, marked_before)
-    for clause in _clauses(atom, named=True):
-        for i, word in enumerate(clause):
-            if word in prose and (word in CONDITION_OPENERS or word in SCOPE_RESTRICTORS):
-                conjuncts: list[list[str]] = [[]]
-                for tail_word in clause[i + 1 :]:
-                    if tail_word in CONDITION_CONJUNCTIONS:
-                        conjuncts.append([])
-                    else:
-                        conjuncts[-1].append(tail_word)
-                restriction = word in SCOPE_RESTRICTORS and word not in EXCLUDING_RESTRICTORS
-                words = (content_words(" ".join(c)) - _CONDITION_WORDS for c in conjuncts)
-                out.extend(Condition(frozenset(g), restriction) for g in words if g)
-                break
-    return out
+@cache
+def _marker_words() -> frozenset[str]:
+    """The words that only mark a condition or a quantifier over it: swapping one marker for another
+    (`every time` -> `whenever`, `prior to` -> `before`) adds no content of its own."""
+    return frozenset(w for marker in CONDITIONAL_MARKERS for w in marker.split())
 
 
-def _is_word_of(word: str, words: AbstractSet[str]) -> bool:
-    """Whether `word` is one of `words`, in a plain singular / plural form or with a short ending
-    added or dropped (`edit` / `editing`)."""
-    if word_forms(word) & words:
+def _condition_words(text: str | None) -> list[str] | None:
+    """The words of a condition (`classify.condition_text`) in order, markers and function words left
+    out; a short name (`CI`) is one. None when the atom has no condition."""
+    if text is None:
+        return None
+    markers = _marker_words()
+    return [w for w in words_of(text) if not is_function_word(w) and w not in markers]
+
+
+def _only_leading_missing(governed: list[str], rewrite: AbstractSet[str]) -> bool:
+    """Whether every word of `governed` the rewrite lacks comes before the first one it keeps: a
+    pronoun stands for the subject phrase that opens a condition (`the build` -> `it`), never for a
+    second condition that follows it."""
+    kept = next((i for i, w in enumerate(governed) if is_word_of(w, rewrite)), len(governed))
+    return all(is_word_of(w, rewrite) for w in governed[kept:])
+
+
+def _condition_dropped(p: Pair) -> bool:
+    """Whether the original's condition is no longer held by the rewrite (`dropped_conditions`)."""
+    old_text, new_text = condition_text(p.old), condition_text(p.new)
+    governed = _condition_words(old_text)
+    if governed is None:
+        return False
+    rewrite = _condition_words(new_text)
+    if rewrite is None:
         return True
-    for other in words:
-        short, long_ = sorted((word, other), key=len)
-        shared = len(os.path.commonprefix([short, long_]))
-        if shared >= max(3, len(short) - 1) and len(long_) - len(short) <= _ENDING_REACH:
-            return True
-    return False
-
-
-def _holds(governed: Condition, rewrite_conditions: list[Condition], original_conditions: list[Condition]) -> bool:
-    """Whether a condition of the rewrite stands for `governed`: it has enough of the words the
-    original condition governs and no content word the original condition lacked (`If the build
-    passes` is not `If the build fails`). Conditions joined by `and` / `or` share what follows the
-    last one (`the build or the tests fail`), so when the rewrite's conditions together use exactly
-    the words the original's do, reordering them holds. A restriction that limits the
-    instruction (`Only use on trusted machines`; not an exclusion like `except`) keeps holding when
-    the rewrite keeps every word of it and names more (`Only use remote debugging on trusted
-    machines`): the restriction is the scope, not what the verb acts on."""
-    for candidate in rewrite_conditions:
-        held = sum(1 for w in governed.words if _is_word_of(w, candidate.words))
-        if held / len(governed.words) >= _CONDITION_COVERAGE and all(
-            _is_word_of(w, governed.words) for w in candidate.words
-        ):
-            return True
-        if governed.restriction and held == len(governed.words):
-            return True
-    original_words = set().union(*(c.words for c in original_conditions))
-    rewrite_words = set().union(*(c.words for c in rewrite_conditions))
-    return (
-        len(rewrite_conditions) == len(original_conditions)
-        and all(_is_word_of(w, rewrite_words) for w in original_words)
-        and all(_is_word_of(w, original_words) for w in rewrite_words)
-    )
+    if not governed:
+        return False
+    held = set(rewrite)
+    restated = not SUBJECT_PRONOUNS.isdisjoint(words_of(new_text or ""))
+    if not (all(is_word_of(w, held) for w in governed) or (restated and _only_leading_missing(governed, held))):
+        return True
+    limiting = bool(set(words_of(old_text or "")) & LIMITING_RESTRICTORS)
+    old_set = set(governed)
+    return not limiting and not all(w in SUBJECT_PRONOUNS or is_word_of(w, old_set) for w in rewrite)
 
 
 def dropped_conditions(pairs: list[Pair]) -> list[JsonObject]:
-    """Each matched instruction whose original holds a condition (if / when / before / after /
-    unless / only ...) that its rewrite no longer holds: the rewrite has no condition at all, or no
-    condition of it stands for one of the original's (`If the build fails, run X before Y`
-    rewritten `Run X before Y` keeps `before` and loses `if the build fails`; `If the build passes`
-    changes it; `When tests fail, ...` drops the second of `When tests fail and the branch is main`).
-    A condition restated with its marker swapped, another form of its words or a pronoun is held;
-    one that brings a word the original condition lacked is not."""
+    """Each matched instruction whose original holds a condition that its rewrite no longer holds:
+    the words of the original's condition are not all in the rewrite's condition (`If the build
+    fails, run X before Y` rewritten `Run X before Y` has none of `build` and `fails`), or the
+    rewrite has no condition (whatever the length of the original's condition words: `If in CI`), or
+    the rewrite's condition names a word the original's lacks (`If the build passes` for `If the
+    build fails`; an `only` condition may name more of its limit). A condition restated with its
+    marker swapped or another form of its words is held, and a pronoun may stand for the subject
+    phrase that opens the condition."""
+    return [p.entry() for p in pairs if _condition_dropped(p)]
+
+
+def _opening_scope(line_atoms: Sequence[AtomView]) -> frozenset[str]:
+    """The words of the scope phrase the first instruction of `line_atoms` opens with (`For all,`); empty if none."""
+    first = next((a for a in line_atoms if a.charge_value != 0), None)
+    if first is None or first.slots is None or first.slots.scope_span is None or first.slots.scope_span[0] != 0:
+        return frozenset()
+    if covers_predicate(first.slots):
+        return frozenset()  # the scope holds the clause as well as its frame: a condition, read as one
+    return frozenset(w for w in slot_words(first, "scope") if w not in _ARTICLES)
+
+
+def _in_sentence(atoms_by_line: ByLine, atom: AtomView, sentence: str) -> list[AtomView]:
+    """The atoms on `atom`'s line that sit in `sentence`."""
+    return [a for a in atoms_by_line.get(atom.line, ()) if a is atom or sentence_of(atoms_by_line, a) == sentence]
+
+
+def dropped_scopes(pairs: list[Pair], sentences: tuple[ByLine, ByLine]) -> list[JsonObject]:
+    """Each matched instruction whose original sentence opens with a scope phrase (`For all, do A, do B`)
+    and whose rewrite's sentence does not hold that scope: a split that leaves a sentence outside the
+    scope the original opened with. A sentence that opens with no scope phrase has none to lose."""
+    old_by_line, new_by_line = sentences
     out = []
     for p in pairs:
-        if not conditional(p.old):
+        opening = _opening_scope(_in_sentence(old_by_line, p.old, p.old_sentence))
+        if not opening:
             continue
-        before = set(prose_words(p.old))
-        rewrite_conditions = _conditions(p.new, before)
-        original_conditions = _conditions(p.old)
-        if not conditional(p.new, before) or not all(
-            _holds(g, rewrite_conditions, original_conditions) for g in original_conditions
-        ):
+        held = frozenset(w for a in _in_sentence(new_by_line, p.new, p.new_sentence) for w in slot_words(a, "scope"))
+        if not all(is_word_of(w, held) for w in opening):
             out.append(p.entry())
     return out
 
 
-def _new_content_words(rewrite: str, original_words: set[str]) -> set[str]:
-    """Content words of `rewrite` that neither the original line nor a plain singular/plural form
-    of them has, leaving out words that only mark a condition."""
-    return {w for w in content_words(rewrite) - _CONDITION_WORDS if not word_forms(w) & original_words}
-
-
 def added_conditions(snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom]) -> list[JsonObject]:
     """Each matched instruction that was not conditional, whose rewrite is conditional and carries
-    a content word the author's line never had (every snapshot atom on that line counts as the
-    author's line; singular and plural forms are the same word, and words that only mark a
-    condition are not content). A rewrite that restates the author's own condition in other
+    a content word the author's line never had in its condition or its object (every snapshot atom on that line
+    counts as the author's line; singular and plural forms are the same word, and words that only
+    mark a condition are not content). A rewrite that restates the author's own condition in other
     words, or spreads it over several lines, is not listed."""
     out: list[JsonObject] = []
     for sa in snap_atoms:
         match = matched_new_for.get(id(sa))
-        if sa.charge_value == 0 or match is None or sa.scope_conditional or not match.scope_conditional:
+        if sa.charge_value == 0 or match is None or sa.scope_conditional:
             continue
-        original_words: set[str] = set()
-        for other in snap_atoms:
-            if other.line == sa.line:
-                original_words |= content_words(other.text)
-        if _new_content_words(match.text, original_words):
+        cond = _condition_words(condition_text(match))
+        words = None if cond is None else {w for w in (*cond, *slot_words(match, "object")) if is_content_word(w)}
+        known = {w for other in snap_atoms if other.line == sa.line for w in words_of(other.plain_text)}
+        if words and any(not word_forms(w) & known for w in words):
             out.append({"line": sa.line, "text": sa.text, "new_line": match.line, "new_text": match.text})
     return out

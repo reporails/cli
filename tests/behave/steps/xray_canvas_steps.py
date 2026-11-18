@@ -158,3 +158,13 @@ def step_rail(context):
     after = seen["after"]
     assert after["scrollY"] > seen["before"], seen
     assert 0 <= after["y"] <= after["vh"], after  # the end of the page may leave the anchor below the middle
+
+
+@then("every no-activity label sits clear of the cards, pills, spine and side track in its stripe")
+def step_break_labels(context):
+    seen = _canvas(context, "breaks")
+    if seen is None:
+        return
+    assert len(seen["labels"]) >= 2, seen["labels"]
+    for label in seen["labels"]:
+        assert not label["hits"], label

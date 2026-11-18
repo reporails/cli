@@ -126,6 +126,35 @@ class TestMainEmitsServerOutcome:
         assert env["_RESULT"] == "server-unavailable"
         assert env["_SERVER_REASON"] == "network_error"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_server_unreachable_error_object_is_server_unavailable(self, capsys, monkeypatch):
+        payload = {
+            "error": "server_unreachable",
+            "message": "Could not reach the reporails service. Run with `--offline` for local checks only.",
+        }
+        env = _run_main(capsys, monkeypatch, payload)
+        assert env == {
+            "_SCORE": "",
+            "_LEVEL": "",
+            "_VIOLATIONS": "",
+            "_RESULT": "server-unavailable",
+            "_SERVER_REASON": "server_unreachable",
+            "_CONTENT_SKIPPED": "false",
+        }
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_empty_input_is_server_unavailable_unparsed(self, capsys, monkeypatch):
+        monkeypatch.setattr("sys.stdin", __import__("io").StringIO(""))
+        main()
+        env = dict(line.split("=", 1) for line in capsys.readouterr().out.strip().splitlines())
+        assert env["_RESULT"] == "server-unavailable"
+        assert env["_SERVER_REASON"] == "unparsed_output"
+        assert env["_SCORE"] == ""
+        assert env["_LEVEL"] == ""
+        assert env["_VIOLATIONS"] == ""
+
 
 class TestContentChecksSkipped:
     @pytest.mark.unit

@@ -16,7 +16,7 @@ from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.lint.suppression import renumbered_json
 from reporails_cli.core.pipeline.mapping import resolve_agent_filters
-from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str, str_list
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.interfaces.mcp.remedy_brief import resolve_from_root
@@ -33,16 +33,18 @@ def named_files(selection: tuple[set[Path], set[Path]] | None) -> frozenset[Path
 
 
 def _resolve_one_target(
-    token: str, token_agent: str, scan_root: Path, effective_agent: str, exclusions: RunExclusions | None
+    run: RunContext, token: str, token_agent: str, scan_root: Path, *, effective_agent: str, exclusions: RunExclusions
 ) -> tuple[set[Path], set[Path]] | JsonObject:
     """One target `token` resolved to the `(files, dirs)` it contributes, or a
     `target_not_found` error payload."""
 
-    kind, target = classify_target_token(token, token_agent, scan_root, base=scan_root)
+    kind, target = classify_target_token(run, token, token_agent, scan_root, base=scan_root)
     if kind == "capability" and isinstance(target, tuple):
         capability, name = target
         try:
-            paths, _unresolved = resolve_capability_spec(capability, name, effective_agent, scan_root, exclusions)
+            paths, _unresolved = resolve_capability_spec(
+                run, capability, name, effective_agent, project_root=scan_root, exclusions=exclusions
+            )
         except TargetError as err:
             return {"error": "target_not_found", "message": err.message()}
         resolved_paths = {safe_resolve(p) for p in paths}
@@ -56,24 +58,29 @@ def _resolve_one_target(
     return set(), set()
 
 
-def resolve_validate_targets(tokens: tuple[str, ...], scan_root: Path) -> tuple[set[Path], set[Path]] | JsonObject:
+def resolve_validate_targets(
+    run: RunContext, tokens: tuple[str, ...], scan_root: Path
+) -> tuple[set[Path], set[Path]] | JsonObject:
     """The files and directories `tokens` name under `scan_root`, read the way `ails check` reads
     its targets (`skills`, `skills:<name>`, `agents:<name>`, `@main`, a path; a typed word such
     as `skill` reads as its config key). A relative path is read against `scan_root`. Returns
     `(files, dirs)` — every path resolved — or a `target_not_found` error payload."""
 
-    exclusions = load_run_exclusions(scan_root)
+    exclusions = load_run_exclusions(run, scan_root)
     effective_agent, _, _, _ = resolve_agent_filters(
-        get_project_config(scan_root).default_agent,
-        detect_agents(scan_root),
+        run,
+        run.project_config(scan_root).default_agent,
+        detect_agents(run, scan_root),
         scan_root,
         exclusions,
     )
-    token_agent = sniff_agent("", scan_root)
+    token_agent = sniff_agent(run, "", scan_root)
     files: set[Path] = set()
     dirs: set[Path] = set()
     for token in tokens:
-        result = _resolve_one_target(token, token_agent, scan_root, effective_agent, exclusions)
+        result = _resolve_one_target(
+            run, token, token_agent, scan_root, effective_agent=effective_agent, exclusions=exclusions
+        )
         if isinstance(result, dict):
             return result
         files |= result[0]

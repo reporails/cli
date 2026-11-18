@@ -40,6 +40,7 @@ _ENV_FILE = ".env"
 # is not a coincidence of shared vocabulary.
 _SHINGLE_SIZE = 8
 _WORD_RE = re.compile(r"[a-z0-9']+")
+_SHIPPED_SUFFIXES = frozenset({".py", ".md", ".yml", ".yaml", ".json"})
 _FENCE_RE = re.compile(r"```.*?```|~~~~.*?~~~~|~~~.*?~~~", re.DOTALL)
 
 
@@ -128,6 +129,9 @@ def _load_remedy_shingles(remedies_path: Path) -> set[str]:
     for section in ("levers", "relations", "families"):
         for sentence in _iter_remedy_sentences(catalog.get(section, {})):
             shingles |= _shingles(_words(sentence))
+    contract = catalog.get("preservation_contract")
+    if isinstance(contract, str):
+        shingles |= _shingles(_words(contract))
     return shingles
 
 
@@ -145,9 +149,11 @@ def find_remedy_overlap(rules_root: Path, remedies_path: Path) -> list[Path]:
 
 
 def public_doc_files(repo_root: Path) -> list[Path]:
-    """The public prose files the content check covers besides the rule pages."""
+    """The public files the content check covers besides the rule pages: the prose and every shipped source text."""
     files = [repo_root / "UNRELEASED.md", repo_root / "CHANGELOG.md", repo_root / "README.md"]
     files += sorted((repo_root / "docs").glob("*.md"))
+    src = repo_root / "src" / "reporails_cli"
+    files += sorted(p for p in src.rglob("*") if p.is_file() and p.suffix in _SHIPPED_SUFFIXES)
     return [f for f in files if f.is_file()]
 
 
@@ -194,7 +200,7 @@ def main() -> int:
     if not offenders and not content_offenders and not doc_offenders:
         print("no_public_fix_gate: OK — no fix:/## Fix in public rule files.")
         if content_checked:
-            print("no_public_fix_gate: OK — no rule or public doc restates a paid remedy's action sentence.")
+            print("no_public_fix_gate: OK — no rule, public doc or shipped source file restates a paid remedy's action sentence.")
         else:
             print("no_public_fix_gate: NOTE — the remedy catalog is not reachable locally; content check skipped.")
         return 0
@@ -208,7 +214,7 @@ def main() -> int:
         for path in content_offenders:
             print(f"  {path.relative_to(REPO_ROOT)}")
     if doc_offenders:
-        print("no_public_fix_gate: public docs or changelog restate a paid remedy's action sentence:")
+        print("no_public_fix_gate: public docs, changelog or shipped source restate a paid remedy's action sentence:")
         for path, linenos in doc_offenders:
             print(f"  {path.relative_to(REPO_ROOT)}: lines {', '.join(map(str, linenos))}")
     print(

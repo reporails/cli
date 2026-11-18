@@ -15,7 +15,11 @@ if TYPE_CHECKING:
 
 def _show_in_background(root: Path, session_id: str, picked: SessionPick, *, open_page: bool) -> None:
     """Start or reuse the project's page, print the address of `session_id` on it and return."""
+    from reporails_cli.core.platform.adapters.http_get import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        http_get,
+    )
     from reporails_cli.core.platform.adapters.programs import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        launch_detached,
         open_in_browser,
     )
     from reporails_cli.core.platform.contract.errors import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
@@ -30,7 +34,7 @@ def _show_in_background(root: Path, session_id: str, picked: SessionPick, *, ope
     )
 
     try:
-        page, _reused = start_page(root, session_id)
+        page, _reused = start_page(root, session_id, launch_detached, http_get)
     except XrayPageError as err:
         typer.echo(f"Error: {err}", err=True)
         raise typer.Exit(1) from err

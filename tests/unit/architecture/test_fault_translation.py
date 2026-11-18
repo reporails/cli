@@ -21,6 +21,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ADAPTERS = ROOT / "src" / "reporails_cli" / "core" / "platform" / "adapters"
+# Lives in `config/` and is scanned with the adapters: its fault handling is held to the same rule.
+CONFIG_API_KEY = ROOT / "src" / "reporails_cli" / "core" / "platform" / "config" / "api_key.py"
 
 _FAIL_ON_VIOLATION = True
 
@@ -28,7 +30,7 @@ _FAIL_ON_VIOLATION = True
 # is reviewed-and-allowed. Regenerate by running this module's AST walk against the adapters.
 _KNOWN_EXCEPTIONS: set[tuple[str, str, str]] = {
     # Legitimate crash-firewall — PlatformError surfaced as a WARNING, session continues anonymous.
-    ("src/reporails_cli/core/platform/adapters/api_key.py", "degrade_on_fault", "PlatformError"),
+    ("src/reporails_cli/core/platform/config/api_key.py", "degrade_on_fault", "PlatformError"),
     # Legitimate logged-isolation — network / parse faults logged at WARNING, server call degrades.
     ("src/reporails_cli/core/platform/adapters/api_client.py", "_post_payload", "httpx.TimeoutException"),
     ("src/reporails_cli/core/platform/adapters/api_client.py", "_post_payload", "httpx.HTTPStatusError"),
@@ -108,7 +110,7 @@ def test_adapters_do_not_collapse_faults_into_sentinels() -> None:
         pytest.skip(f"{ADAPTERS} does not exist yet")
     violations = [
         site
-        for py in sorted(ADAPTERS.rglob("*.py"))
+        for py in [*sorted(ADAPTERS.rglob("*.py")), CONFIG_API_KEY]
         if "__pycache__" not in py.parts
         for site in _collapsing_handlers(py)
         if site not in _KNOWN_EXCEPTIONS

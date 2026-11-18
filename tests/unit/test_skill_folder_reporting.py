@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.mapper.skills import record_skills
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem, QualityResult
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap
@@ -424,7 +426,7 @@ class TestSkillFolderCounting:
                     verbose=False,
                     summary=display._SummaryInputs(scope=scorecard.ScopeInfo(), tier="free", elapsed_ms=0),
                     project_root=tmp_path,
-                    file_type_by_path={},
+                    extras=display.TextExtras(file_type_by_path={}),
                 )
             assert ("foo:" in cap.get()) is shown
 
@@ -469,6 +471,7 @@ class TestSkillRecordConsumers:
         inp = AssembleInputs(
             m_findings=[], content_findings=[], client_findings=[], ruleset_map=rmap, scan_root=tmp_path,
             filter_agents=None, effective_agent="claude", lint_result=None,
+        project_config=RunContext().project_config(tmp_path),
         )  # fmt: skip
         typed = _local_finding_type_resolver(inp, load_registry())
         root = tmp_path.as_posix()
@@ -542,6 +545,7 @@ class TestEntryOnlyRegexCheck:
         findings = run_checks(
             [self._YML],
             root,
+            load_run_exclusions(RunContext(), root),
             instruction_files=[cf.path for cf in classified],
             skill_entries=skill_entry_paths(classified),
         )

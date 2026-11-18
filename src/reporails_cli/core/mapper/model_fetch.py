@@ -28,11 +28,10 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 
-import httpx
 from filelock import FileLock, Timeout
 
 from reporails_cli.core.mapper.model_manifest import (
@@ -44,8 +43,14 @@ from reporails_cli.core.mapper.model_manifest import (
     cache_models_dir,
     models_present,
 )
-from reporails_cli.core.platform.adapters.api_key import default_server_api_key
-from reporails_cli.core.platform.config.bootstrap import env_flag, env_text, running_in_github_actions
+from reporails_cli.core.platform.config.api_key import default_server_api_key
+from reporails_cli.core.platform.config.bootstrap import (
+    env_flag,
+    env_text,
+    offline_requested,
+    running_in_github_actions,
+)
+from reporails_cli.core.platform.contract.http_get import HttpGet, HttpReply
 
 # ─── Host ───────────────────────────────────────────────────
 
@@ -67,6 +72,7 @@ _CHUNK = 1 << 20
 # this many attempts per file.
 _RETRY_STATUSES = frozenset({429, 503})
 _MAX_ATTEMPTS = 3
+_TIMEOUT_S = 120.0
 _MAX_RETRY_WAIT_S = 60
 
 # Printed with the download banner in GitHub Actions, where every run starts
@@ -81,7 +87,18 @@ _CI_CACHE_HINT = (
 _STALE_STAGING_S = 6 * 3600
 
 
-offline_requested = functools.partial(env_flag, _ENV_OFFLINE)  # AILS_MODEL_OFFLINE: never download
+def model_downloads_off_cause() -> str:
+    """Why the model is never downloaded, worded for a message ("" when downloads are on)."""
+    if env_flag(_ENV_OFFLINE):
+        return "AILS_MODEL_OFFLINE is set"
+    if offline_requested():
+        return "local checks only were asked for (`--offline` or AILS_OFFLINE)"
+    return ""
+
+
+def model_downloads_off() -> bool:
+    """True when the model is never downloaded: `AILS_MODEL_OFFLINE` is set, or local checks only were asked for."""
+    return bool(model_downloads_off_cause())
 
 
 # One fetch at a time: concurrent first uses in one process (e.g. MCP worker threads) wait
@@ -204,7 +221,7 @@ def download_in_progress() -> bool:
     return False
 
 
-def ensure_models_present(version: str = MODEL_VERSION) -> Path:
+def ensure_models_present(fetch: HttpGet, version: str = MODEL_VERSION) -> Path:
     """Return the cache dir for *version*, fetching the set first if absent.
 
     Idempotent: a populated cache is returned untouched (silent, offline); an empty or
@@ -217,13 +234,13 @@ def ensure_models_present(version: str = MODEL_VERSION) -> Path:
     try:
         with _fetch_lock(root.parent, version):
             if not models_present(root):
-                _download_all(root, version)
+                _download_all(root, version, fetch)
     except OSError as exc:
         raise ModelFetchError(f"could not create the model cache at {root.parent}: {exc}") from exc
     return root
 
 
-def repair_cache(version: str = MODEL_VERSION) -> Path:
+def repair_cache(fetch: HttpGet, version: str = MODEL_VERSION) -> Path:
     """Re-verify every cached file for *version* against its pin and re-download any mismatch.
 
     Unlike :func:`ensure_models_present`, this never trusts presence alone — a same-size
@@ -233,16 +250,17 @@ def repair_cache(version: str = MODEL_VERSION) -> Path:
     is detected and nothing is downloaded or swapped — the one that loses the lock never
     redoes the swap. ``AILS_MODEL_OFFLINE`` means never download here either: raises first.
     """
-    if offline_requested():
+    cause = model_downloads_off_cause()
+    if cause:
         raise ModelFetchError(
-            "the model cache is damaged and AILS_MODEL_OFFLINE is set, so it cannot be repaired: "
-            "unset AILS_MODEL_OFFLINE, or restore the file yourself."
+            f"the model cache is damaged and {cause}, so it cannot be repaired: "
+            "run online, or restore the file yourself."
         )
     root = cache_models_dir(version)
     try:
         with _fetch_lock(root.parent, version):
             if _verified_files(root) != frozenset(FETCH_SHA256):
-                _download_all(root, version, force=True)
+                _download_all(root, version, fetch, force=True)
     except OSError as exc:
         raise ModelFetchError(f"could not repair the model cache at {root.parent}: {exc}") from exc
     return root
@@ -316,7 +334,7 @@ def check_response_head(rel: str, url: str, content_type: str, head: bytes) -> N
         )
 
 
-def _download_one(client: httpx.Client, base: str, rel: str, target: Path) -> None:
+def _download_one(fetch: HttpGet, headers: Mapping[str, str], base: str, rel: str, target: Path) -> None:
     """Stream one file to *target*, verifying its pinned sha256 when one is set.
 
     A busy-host answer (429 / 503) is retried after its ``Retry-After`` (capped), up to
@@ -324,15 +342,15 @@ def _download_one(client: httpx.Client, base: str, rel: str, target: Path) -> No
     url = _remote_url(base, rel)
     target.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(1, _MAX_ATTEMPTS + 1):
-        with client.stream("GET", url) as resp:
-            status = resp.status_code
+        with fetch(url, headers=headers, timeout=_TIMEOUT_S, follow_redirects=True) as resp:
+            status = resp.status
             if status == 200:
                 actual = _write_body(resp, rel, url, target)
                 break
             if status not in _RETRY_STATUSES or attempt == _MAX_ATTEMPTS:
                 busy = " — the model host is busy; try again in a minute" if status in _RETRY_STATUSES else ""
                 raise ModelFetchError(f"fetch of {rel} failed: HTTP {status} from {url}{busy}")
-            wait = _retry_wait(resp.headers.get("retry-after", ""))
+            wait = _retry_wait(resp.header("retry-after"))
         _print(f"  model host busy (HTTP {status}), retrying in {wait}s…")
         time.sleep(wait)
     expected = FETCH_SHA256.get(rel)
@@ -344,12 +362,12 @@ def _download_one(client: httpx.Client, base: str, rel: str, target: Path) -> No
         )
 
 
-def _write_body(resp: httpx.Response, rel: str, url: str, target: Path) -> str:
+def _write_body(resp: HttpReply, rel: str, url: str, target: Path) -> str:
     """Stream a 200 response body to *target*; return its sha256 hex digest."""
     digest = hashlib.sha256()
-    chunks = resp.iter_bytes(_CHUNK)
+    chunks = resp.chunks()
     head = next(chunks, b"")
-    check_response_head(rel, url, resp.headers.get("content-type", ""), head)
+    check_response_head(rel, url, resp.header("content-type"), head)
     with target.open("wb") as out:
         out.write(head)
         digest.update(head)
@@ -368,7 +386,7 @@ def _retry_wait(retry_after: str) -> int:
     return max(1, min(seconds, _MAX_RETRY_WAIT_S))
 
 
-def _download_all(root: Path, version: str, *, force: bool = False) -> None:
+def _download_all(root: Path, version: str, fetch: HttpGet, *, force: bool = False) -> None:
     """Download the set into a temp staging dir, then swap it into place.
 
     Staging into a sibling temp dir and renaming makes the swap safe: each run stages into
@@ -394,14 +412,14 @@ def _download_all(root: Path, version: str, *, force: bool = False) -> None:
         if running_in_github_actions():
             _print(_CI_CACHE_HINT)
         staging = Path(tempfile.mkdtemp(prefix=f".{version}.staging.", dir=parent))
-        with _http_client(_auth_headers(base, version)) as client:
-            for i, rel in enumerate(FETCH_RELPATHS, start=1):
-                if rel in kept:
-                    _print(f"  [{i}/{total}] {rel} (kept)")
-                    _link_or_copy(root / rel, staging / rel)
-                    continue
-                _print(f"  [{i}/{total}] {rel}")
-                _download_one(client, base, rel, staging / rel)
+        headers = _auth_headers(base, version)
+        for i, rel in enumerate(FETCH_RELPATHS, start=1):
+            if rel in kept:
+                _print(f"  [{i}/{total}] {rel} (kept)")
+                _link_or_copy(root / rel, staging / rel)
+                continue
+            _print(f"  [{i}/{total}] {rel}")
+            _download_one(fetch, headers, base, rel, staging / rel)
 
         if not models_present(staging):
             missing = [r for r in REQUIRED_RELPATHS if not (staging / r).is_file()]
@@ -506,10 +524,6 @@ def _swap_into_place(staging: Path, root: Path, *, force: bool = False) -> None:
         if not force and models_present(root):
             return
         raise
-
-
-def _http_client(headers: dict[str, str] | None = None) -> httpx.Client:
-    return httpx.Client(timeout=120.0, follow_redirects=True, headers=headers)
 
 
 def _print(msg: str) -> None:

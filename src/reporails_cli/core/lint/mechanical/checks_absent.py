@@ -78,7 +78,7 @@ def file_absent(
     if not pattern:
         return CheckResult(passed=False, message="file_absent: no pattern specified")
     match_type = match_type_arg(args)
-    exclusions = run_exclusions(args, root)
+    exclusions = run_exclusions(args)
     scope_dir = _resolve_scope_dir(match_type, classified_files)
 
     # If the rule targets a specific file type but no files of that type were

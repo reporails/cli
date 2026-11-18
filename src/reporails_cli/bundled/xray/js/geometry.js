@@ -16,6 +16,8 @@ export const lengthFor = isRoot => (isRoot ? BASE_PX_ROOT : BASE_PX_SUB);
 export const STRETCH_MARK = 1.6, TICK_GAP = 18;
 // Space an expanded fan-out group keeps above its first row of members for its header, and around its box.
 export const GROUP_HEAD = 30, GROUP_PAD = 8;
+// A compaction stripe reaches this far above and below its y.
+export const STRIPE_HALF = 8;
 const CARD_RISE = 18, KNOT_STEP_S = 0.5, ROW_ORDER = ['R1', 'R2'];
 
 // Time to y before any stretching. Idle breaks keep their linear length until the node is longer than the cap, then each
@@ -54,8 +56,11 @@ const cardSlot = (col, top) => ({ col, top, left: COLX[col], side: 1, inner: COL
 // a group, 0 for a single card). A unit's card top sits CARD_RISE above the y of its launch. When no column has room, that
 // launch time is moved down to the earliest free slot; a knot (time, y) is recorded for every unit, so a card already
 // placed never moves when a later one stretches the scale.
-// Returns y(t), the y of the node's end, the idle breaks, the stretched segments, the placement of every unit and the
-// lowest card bottom.
+// A compaction restarts the agent's context, so it is a unit too: `{ key, t, cut: true, cards: [{ key, t }] }`. Its stripe
+// is kept clear of the cards above it, the source cards that load again right after it each get a row below it, and every
+// later unit is placed below them. `cuts` maps its key to the stripe's y and each card's y.
+// Returns y(t), the y of the node's end, the idle breaks, the stretched segments, the placement of every unit, the
+// compaction stripes and the lowest card bottom.
 export function layoutTime(node, breaks, len, units) {
   const base = baseScale(node, breaks, len);
   const knots = [{ t: node.start, d: 0 }];
@@ -72,9 +77,26 @@ export function layoutTime(node, breaks, len, units) {
   const topSpans = c => COLX[c] < SPX + TOP_W / 2 && COLX[c] + CW > SPX - TOP_W / 2;
   const bottoms = Object.fromEntries(ROW_ORDER.map(c => [c, topSpans(c) ? TOP_Y + CH : -Infinity]));
   const placed = [];
+  const cuts = new Map();
   let lowest = 0;
   [...units].sort((a, b) => a.t - b.t).forEach(u => {
     const te = Math.max(u.t, knots[knots.length - 1].t + KNOT_STEP_S);
+    if (u.cut) {
+      const clear = Math.max(...Object.values(bottoms)) + LANE_GAP + STRIPE_HALF;
+      const sy = Math.max(y(te), clear);
+      knots.push({ t: te, d: sy - base.y(te) });
+      const cards = new Map();
+      let at = sy + STRIPE_HALF + SOURCE_GAP + SH / 2, tc = te;
+      for (const c of [...u.cards].sort((a, b) => a.t - b.t)) {
+        tc = Math.max(c.t, tc + KNOT_STEP_S);
+        knots.push({ t: tc, d: at - base.y(tc) });
+        cards.set(c.key, at);
+        at += (SH + SOURCE_GAP) / 2;
+      }
+      for (const c of ROW_ORDER) bottoms[c] = Math.max(bottoms[c], sy + STRIPE_HALF);
+      cuts.set(u.key, { y: sy, cards });
+      return;
+    }
     let top = y(te) - CARD_RISE;
     const pref = ROW_ORDER;
     let col = null;
@@ -111,19 +133,22 @@ export function layoutTime(node, breaks, len, units) {
     if (factor > STRETCH_MARK) stretches.push({ t0: a.t, t1: b.t, y0: y(a.t), y1: y(b.t), factor });
   }
   const marks = base.marks.map(m => ({ ...m, y0: y(m.start), y1: y(m.end) }));
-  return { y, end: y(node.end), marks, stretches, placed, lowest };
+  return { y, end: y(node.end), marks, stretches, placed, cuts, lowest };
 }
 
 // Source nodes (each { key, y }, y the load time's y) stacked in the two left columns: a node is centred on its load and
-// pushed down when no column has room. Returns { key, col, left, top, inner } per node, in load order.
-export function placeSources(items) {
+// pushed down when no column has room or when it would sit on a compaction stripe (`walls`, each { top, bottom }). Returns { key, col, left, top, inner } per node, in load order.
+export function placeSources(items, walls = []) {
   const last = { L1: -Infinity, L2: -Infinity };
   return [...items].sort((a, b) => a.y - b.y).map(it => {
     let top = it.y - SH / 2;
+    const clear = () => { for (const w of walls) if (top < w.bottom && top + SH > w.top) top = w.bottom + SOURCE_GAP; };
+    clear();
     let col = ['L1', 'L2'].find(c => last[c] + SOURCE_GAP <= top);
     if (!col) {
       col = last.L1 <= last.L2 ? 'L1' : 'L2';
       top = last[col] + SOURCE_GAP;
+      clear();
     }
     last[col] = top + SH;
     return { key: it.key, col, left: SCOLX[col], top, inner: SCOLX[col] + SW };
@@ -162,6 +187,19 @@ export function stationSide(y, width, rects) {
   if (free(SPX + STATION_EDGE, SPX + STATION_EDGE + width)) return 'right';
   if (free(SPX - STATION_EDGE - width, SPX - STATION_EDGE)) return 'left';
   return 'dot';
+}
+
+// Room a stripe's label keeps from the side track, the spine and whatever else is drawn in the stripe's rows.
+export const BRK_GAP = 8;
+
+// The first x at or right of `from` where a label `width` wide keeps BRK_GAP from every block ({ left, right }): `from`
+// itself, else just past a block's right edge; else, when nothing fits inside the canvas, the label's right edge on the canvas's
+// (the one place it may touch a block).
+export function labelLeft(from, width, blocks) {
+  const x0 = from + BRK_GAP;
+  const free = x => !blocks.some(b => b.left < x + width + BRK_GAP && b.right + BRK_GAP > x);
+  const starts = [x0, ...blocks.map(b => b.right + BRK_GAP).filter(x => x > x0)].sort((a, b) => a - b);
+  return starts.find(x => free(x) && x + width <= W) ?? Math.max(x0, W - width);
 }
 
 // The reply row at t, numbers interpolated between the two replies around t and read inside the stretch between

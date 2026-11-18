@@ -18,8 +18,11 @@ from reporails_cli.core.platform.dto.xray_cost import XrayAgentCost
 
 NodeKind = Literal["agent"]
 SourceKind = Literal["instructions", "rule", "skill", "agent", "memory", "mcp", "hook"]
-LoadTrigger = Literal["session_start", "path_match", "agent", "inherited", "hook"]
+LoadTrigger = Literal["session_start", "path_match", "agent", "inherited", "hook", "attached"]
 AgentOutcome = Literal["returned", "failed", "stopped", "no_handback", "running"]
+# Where the text a subagent handed back is read from: its hand-back message, the last reply it wrote, or the result its
+# parent received.
+OutputSource = Literal["handback", "reply", "result"]
 # What one row of an agent's "in context" list stands for.
 ContextKey = Literal[
     "task",
@@ -363,10 +366,11 @@ class XrayUsage:
 
 @dataclass(frozen=True)
 class XrayBack:
-    """What an agent handed back: its size and how many times the context peak is that."""
+    """What an agent handed back: its size, how many times the context peak is that and the source it was sized from."""
 
     tokens_est: int | None
     ratio: int | None
+    source: OutputSource | None
 
 
 @dataclass(frozen=True)
@@ -402,6 +406,7 @@ class XrayAgentDetail:
             "given": objects(item.to_json() for item in self.given),
             "prompts": objects(item.to_json() for item in self.prompts),
             "brief": self.brief,
+            "output_source": self.back.source,
             "cost": self.usage.cost.to_json(),
             "composition": self.usage.composition.to_json(),
             "in_context": None if self.in_context is None else self.in_context.to_json(),

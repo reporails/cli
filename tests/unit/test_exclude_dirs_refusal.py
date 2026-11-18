@@ -14,6 +14,7 @@ from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.interfaces.cli.completion import complete_capability, complete_target_token
 from reporails_cli.interfaces.cli.config_command import config_app
 from reporails_cli.interfaces.cli.main import app
+from tests.fake_models import no_models
 
 runner = CliRunner()
 _REFUSED = ["docs/*", "**/docs", "docs\\x", "../x", "a?b"]
@@ -126,16 +127,14 @@ def test_check_does_not_refuse_a_bracketed_exclude_dirs_flag(tmp_path: Path, glo
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_mcp_validate_and_heal_apply_name_the_refused_setting(tmp_path: Path, global_path: Path) -> None:
-    from reporails_cli.interfaces.mcp.server import _run_heal_apply, _run_validate
+def test_mcp_validate_names_the_refused_setting(tmp_path: Path, global_path: Path) -> None:
+    from reporails_cli.interfaces.mcp.server import _run_validate
 
     root = _project(tmp_path, "config.yml")
-    payload = asyncio.run(_run_validate(str(root), True, None, root))
+    payload = asyncio.run(_run_validate(str(root), True, None, root, no_models()))
     assert payload["error"] == "config_unreadable"
     message = str(payload["message"])
     assert "exclude_dirs" in message and "docs/*" in message
-    healed = asyncio.run(_run_heal_apply(str(root), None, root))
-    assert healed.startswith("heal_apply: ") and "exclude_dirs" in healed
 
 
 @pytest.mark.unit

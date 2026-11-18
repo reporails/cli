@@ -6,6 +6,8 @@ contract, and an adapter answers it.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from pathlib import Path
 from typing import Protocol
 
 
@@ -21,3 +23,7 @@ class ProjectEnvironment(Protocol):
 
     def manifest_text(self) -> str:
         """The project's own manifests and CI workflow files, concatenated."""
+
+
+# Builds the environment for a scan root and the directory of the file being judged.
+EnvironmentFor = Callable[[Path | None, Path], ProjectEnvironment]

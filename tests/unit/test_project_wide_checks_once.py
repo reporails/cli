@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.rule_runner import run_m_probes_over_pairs
+from reporails_cli.core.platform.config.run_context import RunContext
 
 
 def _two_agent_project(root: Path) -> list[tuple[str, list[Path]]]:
@@ -22,7 +24,12 @@ def _two_agent_project(root: Path) -> list[tuple[str, list[Path]]]:
 def test_modular_file_count_judges_the_whole_project(dev_rules_dir: Path, tmp_path: Path) -> None:
     """Two files across two agents satisfy the two-file minimum, so the rule does not fire."""
     pairs = _two_agent_project(tmp_path)
-    hits = [f.rule for f in run_m_probes_over_pairs(tmp_path, pairs, scoped=False)]
+    hits = [
+        f.rule
+        for f in run_m_probes_over_pairs(
+            RunContext(), tmp_path, pairs, scoped=False, exclusions=load_run_exclusions(RunContext(), tmp_path)
+        )
+    ]
     assert hits.count("CORE:S:0010") == 0
 
 
@@ -33,7 +40,12 @@ def test_single_file_project_reports_modular_once(dev_rules_dir: Path, tmp_path:
     only = tmp_path / "CLAUDE.md"
     only.write_text("# Proj\n\nUse uv.\n", encoding="utf-8")
     pairs = [("claude", [only]), ("codex", [])]
-    hits = [f.rule for f in run_m_probes_over_pairs(tmp_path, pairs, scoped=False)]
+    hits = [
+        f.rule
+        for f in run_m_probes_over_pairs(
+            RunContext(), tmp_path, pairs, scoped=False, exclusions=load_run_exclusions(RunContext(), tmp_path)
+        )
+    ]
     assert hits.count("CORE:S:0010") == 1
 
 
@@ -47,7 +59,12 @@ def test_total_size_limit_sums_every_agents_files(dev_rules_dir: Path, tmp_path:
         path = tmp_path / name
         path.write_text("# Proj\n\n" + "x" * 60_000 + "\n", encoding="utf-8")
         pairs.append((agent, [path]))
-    hits = [f.rule for f in run_m_probes_over_pairs(tmp_path, pairs, scoped=False)]
+    hits = [
+        f.rule
+        for f in run_m_probes_over_pairs(
+            RunContext(), tmp_path, pairs, scoped=False, exclusions=load_run_exclusions(RunContext(), tmp_path)
+        )
+    ]
     assert hits.count("CORE:E:0001") == 1
 
 
@@ -78,7 +95,12 @@ def test_a_size_finding_an_agent_s_rule_replaces_is_reported_once(dev_rules_dir:
     other = tmp_path / "notes.md"
     other.write_text("# Notes\n\n- Keep the changelog current.\n", encoding="utf-8")
     pairs = [("codex", [agents]), ("", [other])]
-    hits = [(f.rule, Path(f.file).name) for f in run_m_probes_over_pairs(tmp_path, pairs, scoped=False)]
+    hits = [
+        (f.rule, Path(f.file).name)
+        for f in run_m_probes_over_pairs(
+            RunContext(), tmp_path, pairs, scoped=False, exclusions=load_run_exclusions(RunContext(), tmp_path)
+        )
+    ]
     assert ("CODEX:E:0001", "AGENTS.md") in hits
     assert [h for h in hits if h[0] == "CORE:E:0001"] == []
 
@@ -91,7 +113,12 @@ def test_a_core_size_finding_still_covers_files_no_agent_rule_replaces(dev_rules
     codex = tmp_path / "AGENTS.md"
     codex.write_text("# Proj\n\n- Use uv.\n", encoding="utf-8")
     pairs = [("claude", [claude]), ("codex", [codex])]
-    hits = [(f.rule, Path(f.file).name) for f in run_m_probes_over_pairs(tmp_path, pairs, scoped=False)]
+    hits = [
+        (f.rule, Path(f.file).name)
+        for f in run_m_probes_over_pairs(
+            RunContext(), tmp_path, pairs, scoped=False, exclusions=load_run_exclusions(RunContext(), tmp_path)
+        )
+    ]
     assert [h for h in hits if h[0] == "CORE:E:0001"] == [("CORE:E:0001", "CLAUDE.md")]
 
 
@@ -101,7 +128,12 @@ def test_a_core_size_finding_still_covers_files_no_agent_rule_replaces(dev_rules
 def test_not_a_git_repository_is_reported_once_across_agents(dev_rules_dir: Path, tmp_path: Path, scoped: bool) -> None:
     """A project that is not a git repository gets one finding, whatever the number of agents, targeted or not."""
     pairs = _two_agent_project(tmp_path)
-    hits = [f.rule for f in run_m_probes_over_pairs(tmp_path, pairs, scoped=scoped)]
+    hits = [
+        f.rule
+        for f in run_m_probes_over_pairs(
+            RunContext(), tmp_path, pairs, scoped=scoped, exclusions=load_run_exclusions(RunContext(), tmp_path)
+        )
+    ]
     assert hits.count("CORE:G:0001") == 1
 
 
@@ -111,6 +143,15 @@ def test_not_a_git_repository_is_kept_on_a_targeted_single_agent_run(dev_rules_d
     """A targeted run does not skip the git finding (it is a project fact, not a project aggregate)."""
     only = tmp_path / "CLAUDE.md"
     only.write_text("# Proj\n\nUse uv.\n", encoding="utf-8")
-    hits = [f.rule for f in run_m_probes_over_pairs(tmp_path, [("claude", [only])], scoped=True)]
+    hits = [
+        f.rule
+        for f in run_m_probes_over_pairs(
+            RunContext(),
+            tmp_path,
+            [("claude", [only])],
+            scoped=True,
+            exclusions=load_run_exclusions(RunContext(), tmp_path),
+        )
+    ]
     assert hits.count("CORE:G:0001") == 1
     assert hits.count("CORE:S:0010") == 0

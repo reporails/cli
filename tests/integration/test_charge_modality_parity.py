@@ -15,6 +15,7 @@ import pytest
 
 from reporails_cli.core.mapper.multislot_frames import _decode_logits_batch, _frames_from_decoded
 from reporails_cli.core.platform.dto.mapping import AtomTuple
+from tests.fake_models import no_models
 
 # (sentence, expected signed charge, expected modality) — hand-labelled, then
 # confirmed against the real decode. Each row is an independent semantic
@@ -35,7 +36,7 @@ _CASES: list[tuple[str, int, str]] = [
 
 def tag_atom_multislot(text: str) -> AtomTuple:
     """The one frame-atom of a single-instruction sentence, decoded as the mapper decodes a batch."""
-    (decoded,) = _decode_logits_batch([text])
+    (decoded,) = _decode_logits_batch([text], no_models())
     (atom,) = _frames_from_decoded(decoded, text)
     return atom
 
@@ -115,7 +116,7 @@ def test_shipped_path_charge(text: str, charge: int, modality: str) -> None:
     from reporails_cli.core.mapper.bio_pipeline import apply_multislot
     from reporails_cli.core.mapper.parse import tokenize
 
-    atoms = apply_multislot(tokenize(text + "\n", "structure"))
+    atoms = apply_multislot(tokenize(text + "\n", "structure"), no_models())
     assert len(atoms) == 1, [a.text for a in atoms]
     assert atoms[0].charge_value == charge, f"got {atoms[0].charge} on {text!r}"
     assert atoms[0].modality == modality
@@ -143,7 +144,7 @@ def test_pipeline_reads_code_span_hedges_and_pronoun_subjects(line: str, charge:
     from reporails_cli.core.mapper.bio_pipeline import apply_multislot
     from reporails_cli.core.mapper.parse import tokenize
 
-    atoms = apply_multislot(tokenize(line + "\n", "structure-aware"))
+    atoms = apply_multislot(tokenize(line + "\n", "structure-aware"), no_models())
     assert len(atoms) == 1, [a.text for a in atoms]
     assert (atoms[0].charge_value, atoms[0].modality) == (charge, modality), (
         f"{line!r}: got {atoms[0].charge} {atoms[0].modality!r}"

@@ -321,19 +321,11 @@ CONDITIONAL_MARKERS: set[str] = set(SITUATIONAL_OPENERS) | {
     "for",
 }
 
-# Words that only join or quantify a condition (`every time`, `prior to`, `whenever`): swapping one
-# for a marker above adds no content of its own.
-CONDITION_QUANTIFIERS: frozenset[str] = frozenset(
-    {
-        "wherever", "whilst", "till", "since", "otherwise", "then", "each", "every", "time", "case",
-        "soon", "prior", "else", "only",
-    }
-)  # fmt: skip
-
 # Words that join two conditions of one frame (`If the tests fail and the branch is main, ...`).
 CONDITION_CONJUNCTIONS: frozenset[str] = frozenset({"and", "or"})
 # Words that start the next clause of a packed sentence (`Bump the version and update the docs`, `lint, then test`).
-CLAUSE_JOINERS: frozenset[str] = frozenset({"and", "then"})
+STEP_JOINER = "then"
+CLAUSE_JOINERS: frozenset[str] = frozenset({"and", STEP_JOINER})
 # The pronoun and copula of `it is` / `it's`.
 IT_IS: tuple[str, str] = ("it", "is")
 
@@ -442,6 +434,17 @@ CONTEXT_WORDS = (
 # The words that open a condition clause; a bare `for` opens none.
 CONDITION_OPENERS = CONDITIONAL_MARKERS - {"for"}
 
+# Words that restrict where, when or to what an instruction applies, whatever follows them: the
+# phrase one opens is a condition on the instruction. The excluding ones cut part of its coverage
+# out, so a word added to what they open widens the instruction; the limiting ones state the scope
+# itself, so naming more of it (`Only use remote debugging on trusted machines`) restates the limit.
+EXCLUDING_RESTRICTORS: frozenset[str] = frozenset({"except", "excluding", "outside"})
+LIMITING_RESTRICTORS: frozenset[str] = frozenset({"only", "solely", "absent"})
+SCOPE_RESTRICTORS: frozenset[str] = EXCLUDING_RESTRICTORS | LIMITING_RESTRICTORS | frozenset({"unless"})
+# What may stand before a restrictor word without making it an adjective or a correlative (`the only
+# option`, `not only X but Y`).
+RESTRICTOR_BLOCKERS: frozenset[str] = frozenset({"the", "a", "an", "not", "but", "its", "their", "our", "your"})
+
 # The people an instruction addresses or speaks for (`you must`, `we always`).
 ADDRESSEE_SUBJECTS: frozenset[str] = frozenset({"you", "we"})
 # Personal pronouns: after an ambiguous opening verb they start a clause of their own (`Fix tests you can reproduce`).
@@ -454,35 +457,19 @@ MODAL_HEDGED: frozenset[str] = frozenset({"should", "could", "might"})
 # Removed: "can" (capability), "may" (possibility) — not instructions.
 
 SCOPE_PREPOSITIONS: frozenset[str] = frozenset({"on", "in", "at", "during", "within", "inside", "across", "under"})
+# Prepositions whose phrase names where, when or to what an instruction applies (`in CI`, `on main`,
+# `for src/`); `with` / `by` / `via` name a means and are not among them.
+SCOPE_PHRASE_PREPOSITIONS: frozenset[str] = SCOPE_PREPOSITIONS | frozenset({"for"})
+# Prepositions whose phrase names the means of an instruction (`with pytest`, `by hand`, `via the API`).
+MEANS_PREPOSITIONS: frozenset[str] = frozenset({"with", "by", "via"})
 # Words that open a noun phrase (`for the api module`).
 # Words that quantify over a whole class (`every gate`, `any file`, `no exception`): naming one member
 # right after one narrows what the line covers.
 GENERAL_QUANTIFIERS: frozenset[str] = frozenset({"every", "each", "all", "any", "no", "one"})
 DEFINITE_DETERMINERS: frozenset[str] = frozenset({"the", "this", "that", "these", "those"})
+# Words that open a noun phrase of their own (`a prior briefing`).
+INDEFINITE_ARTICLES: frozenset[str] = frozenset({"a", "an"})
 DETERMINERS: frozenset[str] = DEFINITE_DETERMINERS | (GENERAL_QUANTIFIERS - {"no", "one"})
-
-# Common English function words, dropped from content-word coverage: polarity already tracks
-# negation/modality (`charge_value`), so these words would only pad an overlap between two
-# otherwise-unrelated instructions without adding topic signal.
-STOPWORDS: frozenset[str] = (
-    CONDITION_CONJUNCTIONS
-    | CLAUSE_JOINERS
-    | frozenset(IT_IS)
-    | MODAL_ABSOLUTE
-    | MODAL_HEDGED
-    | GENERAL_QUANTIFIERS
-    | DEFINITE_DETERMINERS
-    | frozenset(
-        {
-            "a", "after", "again", "also", "always", "an", "are", "as", "at", "be", "been", "before",
-            "being", "but", "by", "can", "did", "do", "does", "down", "few", "for", "from", "here", "if",
-            "in", "into", "its", "just", "may", "more", "most", "never", "nor", "not", "of", "on", "once",
-            "only", "onto", "other", "out", "over", "own", "per", "so", "some", "such", "than", "there",
-            "to", "too", "under", "up", "very", "was", "were", "when", "will", "with", "would", "you",
-            "your",
-        }
-    )
-)  # fmt: skip
 
 # scope prepositions and the prepositions above less the words that open a clause rather than a phrase
 # (`unless`, `when`, `while`, `except`, `since`; `before` / `after` stay, opening a time phrase), with a few more.
@@ -491,7 +478,6 @@ PHRASE_PREPOSITIONS: frozenset[str] = (
     | (NO_DESCRIPTIVE_PREPS - NO_CLAUSE_OPENERS)
     | frozenset({"into", "onto", "over", "through", "against", "between", "via"})
 )
-
 
 # The alphabetic words of a line.
 WORD_RE = re.compile(r"[a-zA-Z']+")

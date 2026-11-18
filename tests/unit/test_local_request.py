@@ -12,9 +12,11 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.pipeline import assemble as assemble_module
 from reporails_cli.core.pipeline.assemble import lint_request_local
 from reporails_cli.core.platform.adapters.payload import project_local
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import LocalEntry, LocalFinding
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap
@@ -29,9 +31,11 @@ def _inputs(root: Path) -> AssembleInputs:
     from reporails_cli.core.discovery.agents import get_all_instruction_files
     from reporails_cli.core.lint.rule_runner import run_m_probes
 
-    files = get_all_instruction_files(root)
+    files = get_all_instruction_files(RunContext(), root)
     return AssembleInputs(
-        m_findings=run_m_probes(root, files, agent="claude"),
+        m_findings=run_m_probes(
+            RunContext(), root, files, agent="claude", exclusions=load_run_exclusions(RunContext(), root)
+        ),
         content_findings=[],
         client_findings=[],
         ruleset_map=None,
@@ -39,6 +43,7 @@ def _inputs(root: Path) -> AssembleInputs:
         filter_agents=None,
         effective_agent="claude",
         lint_result=None,
+        project_config=RunContext().project_config(root),
     )
 
 
@@ -105,6 +110,7 @@ def test_a_locally_reported_skill_supporting_file_takes_the_skill_s_type(
         filter_agents=None,
         effective_agent="claude",
         lint_result=None,
+        project_config=RunContext().project_config(tmp_path),
     )
 
     entries, _required = lint_request_local(inp)
@@ -156,7 +162,7 @@ def test_a_main_file_without_headings_is_sent_as_a_warning(tmp_path: Path, dev_r
     )
     inputs = replace(
         _inputs(tmp_path),
-        content_findings=run_content_quality_checks(ruleset_map, tmp_path, [main], agent="claude"),
+        content_findings=run_content_quality_checks(RunContext(), ruleset_map, tmp_path, [main], agent="claude"),
     )
 
     entries, _required = lint_request_local(inputs)

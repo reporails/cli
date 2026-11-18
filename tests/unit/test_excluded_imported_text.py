@@ -11,6 +11,7 @@ import pytest
 from reporails_cli.core.discovery.exclusions import load_run_exclusions, with_named
 from reporails_cli.core.discovery.features import detect_features_filesystem
 from reporails_cli.core.pipeline.assemble import _imports_left_out
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs
 from reporails_cli.core.platform.dto.platform import CombinedResult, Omissions
 from reporails_cli.formatters import json as json_formatter
@@ -31,6 +32,7 @@ def _inputs(root: Path, imported_from: str | None) -> AssembleInputs:
         filter_agents=None,
         effective_agent="claude",
         lint_result=None,
+        project_config=RunContext().project_config(root),
     )
 
 
@@ -40,7 +42,7 @@ def _inputs(root: Path, imported_from: str | None) -> AssembleInputs:
 def test_import_into_a_left_out_folder_sets_the_flag(tmp_path: Path, config: str) -> None:
     (tmp_path / ".ails").mkdir()
     (tmp_path / ".ails" / "config.yml").write_text(config or "{}\n", encoding="utf-8")
-    left_out = load_run_exclusions(tmp_path, ["ext"], None)
+    left_out = load_run_exclusions(RunContext(), tmp_path, ["ext"], None)
     assert _imports_left_out(_inputs(tmp_path, "ext/notes.md"), left_out)
     assert not _imports_left_out(_inputs(tmp_path, "docs/notes.md"), left_out)
     assert not _imports_left_out(_inputs(tmp_path, None), left_out)
@@ -83,15 +85,15 @@ def test_feature_detection_ignores_a_flag_excluded_skills_folder(tmp_path: Path)
     skill = tmp_path / ".claude" / "skills" / "s"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text("---\nname: s\ndescription: d\n---\n\nDo it.\n", encoding="utf-8")
-    assert detect_features_filesystem(tmp_path).has_skills_dir
-    left_out = load_run_exclusions(tmp_path, ["skills"], None)
-    assert not detect_features_filesystem(tmp_path, exclusions=left_out).has_skills_dir
+    assert detect_features_filesystem(RunContext(), tmp_path).has_skills_dir
+    left_out = load_run_exclusions(RunContext(), tmp_path, ["skills"], None)
+    assert not detect_features_filesystem(RunContext(), tmp_path, exclusions=left_out).has_skills_dir
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_import_with_parent_hop_is_judged_by_where_it_lands(tmp_path: Path) -> None:
-    left_out = load_run_exclusions(tmp_path, ["sub"], None)
+    left_out = load_run_exclusions(RunContext(), tmp_path, ["sub"], None)
     atom = SimpleNamespace(file_path=str(tmp_path / "sub" / "CLAUDE.md"), imported_from="../shared/x.md")
     inp = replace(_inputs(tmp_path, None), ruleset_map=SimpleNamespace(atoms=[atom]))
     assert not _imports_left_out(inp, left_out)
@@ -116,10 +118,10 @@ def test_a_capability_left_out_by_file_glob_is_not_counted(tmp_path: Path) -> No
     skill = tmp_path / ".claude" / "skills" / "foo" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("---\nname: foo\ndescription: d\n---\nBody.\n", encoding="utf-8")
-    assert detect_features_filesystem(tmp_path).has_skills_dir
-    left_out = load_run_exclusions(tmp_path, None, [".claude/skills/*/SKILL.md"])
-    assert not detect_features_filesystem(tmp_path, exclusions=left_out).has_skills_dir
-    assert detect_features_filesystem(tmp_path, exclusions=with_named(left_out, [skill])).has_skills_dir
+    assert detect_features_filesystem(RunContext(), tmp_path).has_skills_dir
+    left_out = load_run_exclusions(RunContext(), tmp_path, None, [".claude/skills/*/SKILL.md"])
+    assert not detect_features_filesystem(RunContext(), tmp_path, exclusions=left_out).has_skills_dir
+    assert detect_features_filesystem(RunContext(), tmp_path, exclusions=with_named(left_out, [skill])).has_skills_dir
 
 
 @pytest.mark.unit
@@ -130,15 +132,15 @@ def test_a_file_named_inside_a_left_out_folder_still_counts_toward_the_level(tmp
     skill = tmp_path / ".claude" / "skills" / "foo" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("---\nname: foo\ndescription: d\n---\nBody.\n", encoding="utf-8")
-    left_out = load_run_exclusions(tmp_path, ["skills"], None)
-    assert not detect_features_filesystem(tmp_path, exclusions=left_out).has_skills_dir
-    assert detect_features_filesystem(tmp_path, exclusions=with_named(left_out, [skill])).has_skills_dir
+    left_out = load_run_exclusions(RunContext(), tmp_path, ["skills"], None)
+    assert not detect_features_filesystem(RunContext(), tmp_path, exclusions=left_out).has_skills_dir
+    assert detect_features_filesystem(RunContext(), tmp_path, exclusions=with_named(left_out, [skill])).has_skills_dir
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_an_import_that_was_itself_named_is_not_a_left_out_import(tmp_path: Path) -> None:
-    left_out = load_run_exclusions(tmp_path, ["docs", "other"], None)
+    left_out = load_run_exclusions(RunContext(), tmp_path, ["docs", "other"], None)
     atom = SimpleNamespace(file_path=str(tmp_path / "CLAUDE.md"), imported_from="docs/x.md")
     inp = replace(_inputs(tmp_path, None), ruleset_map=SimpleNamespace(atoms=[atom]))
     assert _imports_left_out(inp, left_out)

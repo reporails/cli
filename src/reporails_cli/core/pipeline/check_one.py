@@ -9,17 +9,17 @@ naming why nothing was checked, and words the reply itself; no formatter or inte
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import replace
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import get_known_agents
 from reporails_cli.core.discovery.project_root import user_level_agent_dir
-from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
+from reporails_cli.core.discovery.walk import file_under_target, own_name_spellings, safe_resolve
 from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.lint.regex.not_evaluated import not_evaluated_scope
 from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes_over_pairs
 from reporails_cli.core.mapper.model_manifest import ModelFetchError, get_models_path, models_present
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.mapper.skills import skill_membership
 from reporails_cli.core.pipeline.assemble import assemble_result, lint_request_local, with_exclusions
 from reporails_cli.core.pipeline.mapping import (
@@ -28,14 +28,16 @@ from reporails_cli.core.pipeline.mapping import (
     discover_scope,
     map_instruction_files,
 )
-from reporails_cli.core.platform.adapters.api_client import AilsClient
-from reporails_cli.core.platform.adapters.notices_seen import visible_notices
-from reporails_cli.core.platform.config.config import get_project_config, get_rules_path, is_initialized
+from reporails_cli.core.platform.config.config import get_rules_path, is_initialized
+from reporails_cli.core.platform.config.run_context import RunContext
+from reporails_cli.core.platform.contract.http_get import HttpGet
 from reporails_cli.core.platform.dto.diagnostics import FindingItem, FunnelError, LintResponse, LintResult, Notice
 from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs, CheckRun, Discovered, LeftOut, Refusal, Scope
 from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.dto.ports import DaemonTransport, LintService
+from reporails_cli.core.platform.dto.results import MapperConfig, ProjectConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
@@ -55,9 +57,6 @@ def rules_missing_message() -> str:
     )
 
 
-NOTHING_LEFT_OUT = LeftOut()
-
-
 def resolve_scan_target(target: Path, project_root: Path) -> tuple[Path, Path | None]:
     """Map a target to `(scan_root, single_file)` for a run in `project_root`.
 
@@ -69,9 +68,12 @@ def resolve_scan_target(target: Path, project_root: Path) -> tuple[Path, Path | 
     """
 
     if target.is_file() and target.is_symlink():
-        logical = Path(os.path.abspath(target))
-        in_place = logical.is_relative_to(project_root) or user_level_agent_dir(logical) is not None
-        target = logical if in_place else safe_resolve(target)
+        in_place = [
+            p
+            for p in own_name_spellings(target)
+            if p.is_relative_to(project_root) or user_level_agent_dir(p) is not None
+        ]
+        target = in_place[0] if in_place else safe_resolve(target)
     user_dir = user_level_agent_dir(target)
     if user_dir is not None:
         return user_dir, target if target.is_file() else None
@@ -81,7 +83,7 @@ def resolve_scan_target(target: Path, project_root: Path) -> tuple[Path, Path | 
 
 
 def discover_files(
-    target: Path, single_file: Path | None = None, named: frozenset[Path] = frozenset()
+    run: RunContext, target: Path, single_file: Path | None = None, named: frozenset[Path] = frozenset()
 ) -> Discovered | Refusal:
     """Detect agents and discover instruction files.
 
@@ -98,7 +100,7 @@ def discover_files(
     files the caller named, which stay in the set whatever is excluded.
     """
 
-    config = get_project_config(target)
+    config = run.project_config(target)
     normalized_agent = (config.default_agent or "").lower().strip()
     if normalized_agent and normalized_agent not in get_known_agents():
         return Refusal("unknown_agent", f"Unknown agent: {normalized_agent}", agent=normalized_agent)
@@ -108,6 +110,7 @@ def discover_files(
     # scan includes each agent's config surfaces (hooks, permissions, MCP declarations, plugin
     # manifests) alongside its instruction and rule files, matching `ails check`'s own scope.
     found = discover_scope(
+        run,
         target,
         config.default_agent,
         None,
@@ -120,7 +123,12 @@ def discover_files(
         return Refusal("empty_project", f"No instruction files found in {target}", target, found.excluded)
 
     import_extra, file_type_by_path = apply_generic_scan(
-        target, instruction_files, found.effective_agent, config.generic_scanning, found.exclusions
+        run,
+        target,
+        instruction_files,
+        found.effective_agent,
+        generic_scanning=config.generic_scanning,
+        exclusions=found.exclusions,
     )
     if import_extra:
         instruction_files = list(instruction_files) + import_extra
@@ -130,11 +138,18 @@ def discover_files(
         instruction_files,
         file_type_by_path,
         LeftOut(found.excluded, found.exclusions),
+        config,
     )
 
 
 def build_map(
-    target: Path, instruction_files: list[Path], filter_agents: list[DetectedAgent] | None = None
+    target: Path,
+    instruction_files: list[Path],
+    mapper: MapperConfig,
+    filter_agents: list[DetectedAgent] | None = None,
+    *,
+    daemon: DaemonTransport,
+    models: Models,
 ) -> tuple[RulesetMap | None, str | None]:
     """Build the ruleset map via the shared warm path, so a long-lived process reuses a warm model
     instead of loading one on every call.
@@ -153,7 +168,15 @@ def build_map(
     """
     try:
         return (
-            map_instruction_files(target, list(instruction_files), spawn_daemon=False, filtered_agents=filter_agents),
+            map_instruction_files(
+                target,
+                list(instruction_files),
+                spawn_daemon=False,
+                filtered_agents=filter_agents,
+                mapper=mapper,
+                daemon=daemon,
+                models=models,
+            ),
             None,
         )
     except (ImportError, RuntimeError) as exc:
@@ -161,7 +184,7 @@ def build_map(
         return None, f"{type(exc).__name__}: {exc}"
 
 
-def model_refusal() -> Refusal | None:
+def model_refusal(fetch: HttpGet) -> Refusal | None:
     """Make the model set available (downloading it once); a `Refusal` if it is not.
 
     While a download already runs in this process (the server's launch-time fetch), answer
@@ -183,13 +206,15 @@ def model_refusal() -> Refusal | None:
             "The model files are still downloading; try again shortly.",
         )
     try:
-        ensure_models_available()
+        ensure_models_available(fetch)
     except ModelFetchError as exc:
         return Refusal("model_unavailable", str(exc))
     return None
 
 
-def scope_for_path(path: str, project_root: Path, named: frozenset[Path] = frozenset()) -> Scope | Refusal:
+def scope_for_path(
+    path: str, project_root: Path, named: frozenset[Path] = frozenset(), *, run: RunContext, fetch: HttpGet
+) -> Scope | Refusal:
     """The files a check at `path` covers, or why there is nothing to check.
 
     A `path` inside `project_root` is checked in that folder's
@@ -205,10 +230,10 @@ def scope_for_path(path: str, project_root: Path, named: frozenset[Path] = froze
     if not target.exists():
         return Refusal("path_not_found", f"Path not found: {target}")
     scan_root, single_file = resolve_scan_target(target, project_root)
-    discovery = discover_files(scan_root, single_file=single_file, named=named)
+    discovery = discover_files(run, scan_root, single_file=single_file, named=named)
     if isinstance(discovery, Refusal):
         return discovery
-    model_error = model_refusal()
+    model_error = model_refusal(fetch)
     if model_error is not None:
         return model_error
     if single_file is None and target != scan_root and target.is_relative_to(scan_root):
@@ -218,7 +243,12 @@ def scope_for_path(path: str, project_root: Path, named: frozenset[Path] = froze
                 "empty_project", f"No instruction files found in {target}", target, discovery.left_out.record
             )
         discovery = Discovered(
-            discovery.filter_agents, discovery.effective_agent, inside, discovery.file_type_by_path, discovery.left_out
+            discovery.filter_agents,
+            discovery.effective_agent,
+            inside,
+            discovery.file_type_by_path,
+            discovery.left_out,
+            discovery.config,
         )
     return Scope(scan_root, single_file, *discovery)
 
@@ -245,13 +275,16 @@ def display_score(result: CombinedResult, target: Path | None = None, scan_root:
 
 
 def _agent_file_pairs(
-    scan_root: Path, instruction_files: list[Path], filter_agents: list[DetectedAgent], effective_agent: str
+    scan_root: Path,
+    instruction_files: list[Path],
+    filter_agents: list[DetectedAgent],
+    effective_agent: str,
+    explicit: bool,
 ) -> list[tuple[str, list[Path]]]:
     """The shared `core.pipeline.mapping.agent_file_pairs` split: whether the agent is explicit can only
     come from the project's `default_agent` (a call has no per-run `--agent`-style override the way the CLI
     has one)."""
 
-    explicit = bool(get_project_config(scan_root).default_agent)
     return agent_file_pairs(
         instruction_files, filter_agents, scan_root, explicit=explicit, effective_agent=effective_agent
     )
@@ -262,7 +295,9 @@ def _checks_over_pairs(
     pairs: list[tuple[str, list[Path]]],
     ruleset_map: RulesetMap | None,
     scoped: bool,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
+    *,
+    run: RunContext,
 ) -> LocalFindings:
     """Run M-probes + content/client checks over the `(agent, its files)` pairs, returning
     `(m_findings, content_findings, client_findings)`.
@@ -277,18 +312,20 @@ def _checks_over_pairs(
     """
 
     skills = skill_membership(ruleset_map)
-    m_findings = run_m_probes_over_pairs(scan_root, pairs, scoped=scoped, skills=skills, exclusions=exclusions)
+    m_findings = run_m_probes_over_pairs(run, scan_root, pairs, scoped=scoped, skills=skills, exclusions=exclusions)
     content_findings: list[LocalFinding] = []
     for agent_id, agent_files in pairs:
         if ruleset_map:
             content_findings.extend(
-                run_content_quality_checks(ruleset_map, scan_root, agent_files, agent=agent_id, exclusions=exclusions)
+                run_content_quality_checks(
+                    run, ruleset_map, scan_root, agent_files, agent=agent_id, exclusions=exclusions
+                )
             )
     client_findings = run_client_checks(ruleset_map) if ruleset_map else []
     return m_findings, content_findings, client_findings
 
 
-def _server_lint(inputs: AssembleInputs) -> LintResponse | None:
+def _server_lint(inputs: AssembleInputs, lint: LintService) -> LintResponse | None:
     """Send the reported local findings to the server and return the `LintResponse`.
 
     `.result` is None when offline. Returning the whole response (not just `.result`) lets the caller also
@@ -299,33 +336,34 @@ def _server_lint(inputs: AssembleInputs) -> LintResponse | None:
     if not inputs.ruleset_map:
         return None
     local, structural_required = lint_request_local(inputs)
-    return AilsClient().lint(inputs.ruleset_map, local, structural_required, root=inputs.scan_root)
+    return lint.lint(inputs.ruleset_map, local, structural_required, root=inputs.scan_root)
 
 
-def _server_lint_result(inputs: AssembleInputs) -> tuple[LintResult | None, FunnelError | None, tuple[Notice, ...]]:
+def _server_lint_result(
+    inputs: AssembleInputs, lint: LintService
+) -> tuple[LintResult | None, FunnelError | None, tuple[Notice, ...]]:
     """Run `_server_lint` and split its response into `(lint_result, funnel_error, notices)`: `(None,
     None, ())` when nothing was mapped (offline / no ruleset)."""
-    response = _server_lint(inputs)
+    response = _server_lint(inputs, lint)
     if response is None:
         return None, None, ()
-    return response.result, response.funnel_error, visible_notices(response.notices)
+    return response.result, response.funnel_error, lint.visible_notices(response.notices)
 
 
-def _assemble(
+def _assemble_inputs(
     scan_root: Path,
     effective_agent: str,
     filter_agents: list[DetectedAgent],
     ruleset_map: RulesetMap | None,
     local: LocalFindings,
     *,
+    project_config: ProjectConfig,
     rule_agents: tuple[str, ...],
     not_evaluated: tuple[tuple[str, str], ...],
-    exclusions: RunExclusions | None,
-) -> tuple[CombinedResult, FunnelError | None]:
-    """Server-lint the local findings, then run the shared assemble spine. Returns `(result, funnel_error)`."""
-
+) -> AssembleInputs:
+    """The inputs of the assemble spine for the local findings, before any server lint."""
     m_findings, content_findings, client_findings = local
-    inputs = AssembleInputs(
+    return AssembleInputs(
         m_findings=m_findings,
         content_findings=content_findings,
         client_findings=client_findings,
@@ -334,43 +372,53 @@ def _assemble(
         filter_agents=filter_agents,
         effective_agent=effective_agent,
         lint_result=None,
+        project_config=project_config,
         rule_agents=rule_agents,
         not_evaluated=not_evaluated,
     )
-    lint_result, funnel_error, notices = _server_lint_result(inputs)
-    return assemble_result(replace(inputs, lint_result=lint_result, notices=notices), exclusions), funnel_error
+
+
+def _assemble(
+    run: RunContext, inputs: AssembleInputs, exclusions: RunExclusions, lint: LintService
+) -> tuple[CombinedResult, FunnelError | None]:
+    """Server-lint the local findings, then run the shared assemble spine. Returns `(result, funnel_error)`."""
+    lint_result, funnel_error, notices = _server_lint_result(inputs, lint)
+    return assemble_result(run, replace(inputs, lint_result=lint_result, notices=notices), exclusions), funnel_error
 
 
 def check_and_assemble(
-    scan_root: Path,
-    instruction_files: list[Path],
-    effective_agent: str,
-    filter_agents: list[DetectedAgent],
-    ruleset_map: RulesetMap | None,
-    *,
-    left_out: LeftOut = NOTHING_LEFT_OUT,
-    scoped: bool = False,
+    run: RunContext, scope: Scope, ruleset_map: RulesetMap | None, *, lint: LintService
 ) -> tuple[CombinedResult, FunnelError | None]:
-    """Run the local checks, then the server lint and assemble spine; the request is resolved under the
-    agents whose rules ran."""
-    pairs = _agent_file_pairs(scan_root, instruction_files, filter_agents, effective_agent)
+    """Run the local checks over `scope` and the lint service, and return the assembled combined result
+    together with an optional `FunnelError`. A single-file scope runs its probes on that file only."""
+    scan_root, effective_agent, filter_agents, left_out = (
+        scope.scan_root,
+        scope.effective_agent,
+        scope.filter_agents,
+        scope.left_out,
+    )
+    scoped = scope.single_file is not None
+    pairs = _agent_file_pairs(
+        scan_root, scope.instruction_files, filter_agents, effective_agent, bool(scope.config.default_agent)
+    )
     with not_evaluated_scope() as unfinished:
-        local = _checks_over_pairs(scan_root, pairs, ruleset_map, scoped, left_out.exclusions)
+        local = _checks_over_pairs(scan_root, pairs, ruleset_map, scoped, left_out.exclusions, run=run)
 
-    result, funnel_error = _assemble(
+    inputs = _assemble_inputs(
         scan_root,
         effective_agent,
         filter_agents,
         ruleset_map,
         local,
+        project_config=run.project_config(scan_root),
         rule_agents=tuple(dict.fromkeys(agent_id for agent_id, _ in pairs)),
         not_evaluated=tuple(unfinished),
-        exclusions=left_out.exclusions,
     )
+    result, funnel_error = _assemble(run, inputs, left_out.exclusions, lint)
     return with_exclusions(result, left_out.record), funnel_error
 
 
-def check_scope(scope: Scope) -> CheckRun:
+def check_scope(run: RunContext, scope: Scope, lint: LintService, daemon: DaemonTransport, models: Models) -> CheckRun:
     """Run M-probes + content/client checks over a scope's files and assemble the result.
 
     Regime and surface health key against `scope.scan_root` (the checked path), not the server cwd.
@@ -382,16 +430,10 @@ def check_scope(scope: Scope) -> CheckRun:
     cause in `mapper_error`.
     """
 
-    ruleset_map, mapper_error = build_map(scope.scan_root, scope.instruction_files, scope.filter_agents)
-    result, funnel_error = check_and_assemble(
-        scope.scan_root,
-        scope.instruction_files,
-        scope.effective_agent,
-        scope.filter_agents,
-        ruleset_map,
-        left_out=scope.left_out,
-        scoped=scope.single_file is not None,
+    ruleset_map, mapper_error = build_map(
+        scope.scan_root, scope.instruction_files, scope.config.mapper, scope.filter_agents, daemon=daemon, models=models
     )
+    result, funnel_error = check_and_assemble(run, scope, ruleset_map, lint=lint)
     file_score = display_score(result, scope.single_file, scope.scan_root) if scope.single_file is not None else None
     return CheckRun(result, funnel_error, ruleset_map, mapper_error, file_score, scope)
 
@@ -402,16 +444,26 @@ def file_findings(run: CheckRun, file: Path) -> tuple[FindingItem, ...]:
     return tuple(f for f in run.result.findings if normalize_finding_path(f.file, run.scope.scan_root) == key)
 
 
-def check_path(path: str, project_root: Path, named: frozenset[Path] = frozenset()) -> CheckRun | Refusal:
+def check_path(
+    path: str,
+    project_root: Path,
+    named: frozenset[Path] = frozenset(),
+    *,
+    lint: LintService,
+    run: RunContext,
+    fetch: HttpGet,
+    daemon: DaemonTransport,
+    models: Models,
+) -> CheckRun | Refusal:
     """Check `path` (directory or file): the `CheckRun`, or the `Refusal` saying why nothing was checked.
 
     A file `path` narrows the checked set to that single file. `named` is read as in `scope_for_path`. A
     missing file, a bad value or a runtime failure while checking is a `failed` refusal carrying its text.
     """
     try:
-        scope = scope_for_path(path, project_root, named)
+        scope = scope_for_path(path, project_root, named, run=run, fetch=fetch)
         if isinstance(scope, Refusal):
             return scope
-        return check_scope(scope)
+        return check_scope(run, scope, lint, daemon, models)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return Refusal("failed", str(e) or f"The check failed ({type(e).__name__}).")

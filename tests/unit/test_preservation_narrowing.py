@@ -101,7 +101,7 @@ _RELEASER = (
     "three buckets (per `docs/triage.md`), and file or update the matching ticket in the tracker."
 )
 _ORIENT = (
-    "Load targeted orientation: read the overview at `docs/index.md` as the base, read exactly "
+    "Load targeted briefing: read the overview at `docs/index.md` as the base, read exactly "
     "the artifacts the invocation names, load a live recent-work seed, and synthesize the set "
     "into one snapshot."
 )
@@ -128,7 +128,7 @@ _ORIENT = (
         ),
         (
             _ORIENT,
-            "Load targeted orientation by reading the overview at `docs/index.md` as the base.\n\n"
+            "Load targeted briefing by reading the overview at `docs/index.md` as the base.\n\n"
             "Read exactly the artifacts the invocation names.\n\n"
             "Load a live recent-work seed.\n\n"
             "Synthesize the set into one snapshot.",
@@ -166,7 +166,7 @@ def test_a_split_that_leaves_a_fragment_behind_is_dangling(tmp_path, before, aft
         ),
         (
             _ORIENT,
-            "Load targeted orientation.\n\nRead the overview at `docs/index.md` as the base.\n\n"
+            "Load targeted briefing.\n\nRead the overview at `docs/index.md` as the base.\n\n"
             "Read exactly the artifacts the invocation names.\n\nLoad a live recent-work seed.\n\n"
             "Synthesize the set into one snapshot.",
         ),
@@ -448,6 +448,23 @@ def test_a_rest_or_remaining_cut_of_what_a_rule_covers_narrows_it(tmp_path, befo
 @pytest.mark.parametrize(
     ("before", "after"),
     [
+        ("Never modify the docs.", "Never modify the generated docs."),
+        ("*Do not modify the docs.*", "*Do not modify the generated docs.*"),
+        ("Never delete the logs.", "Never delete the old logs."),
+    ],
+)
+def test_a_plain_modifier_before_a_prohibitions_object_narrows_it(tmp_path, before, after) -> None:
+    result = _compare_edit(tmp_path, before + "\n", after + "\n")
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
         ("Run the tests before you push.", "Always run the tests before you push."),
         ("Run the tests.", "Run the tests with `pytest`."),
         ("Run the linter.", "Run the `ruff` linter."),
@@ -572,6 +589,59 @@ def test_a_qualifier_on_a_general_noun_narrows_even_when_the_line_uses_its_words
     assert result["ok"] is False
 
 
+_MEMORY_BEFORE = (
+    "Re-run `/refresh` at each session source; a prior session's briefing does not carry forward.\n"
+    "*Do not treat a recalled memory or a prior-turn summary as a substitute for the live `/refresh` load.*\n"
+)
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (_PO_BEFORE, _PO_BEFORE.replace("file plans", "file release-notes or build-work")),
+        (
+            _MEMORY_BEFORE,
+            _MEMORY_BEFORE.replace(
+                "treat a recalled memory or a prior-turn summary as",
+                "treat a prior session's briefing — a recalled memory or a prior-turn summary — as",
+            ),
+        ),
+    ],
+)
+def test_a_prohibition_given_a_narrower_object_from_its_own_file_narrows(tmp_path, before, after) -> None:
+    """A forbidden noun replaced by the kinds its line names, and a new head noun put before what a
+    prohibition forbade."""
+    ground = "\n\nThe `reviewer`, `/refresh` and `AskUserQuestion` exist.\n"
+    result = _compare_edit(tmp_path, before + ground, after + ground)
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("*Do not edit it by hand.*", "*Do not edit the config by hand.*"),
+        ("*Never write a `ticket` without `due`.*", "*Never write a `ticket` artifact without `due`.*"),
+        ("*Do not bypass `lead` on cross-cluster work.*", "*Never bypass `lead` on cross-cluster work.*"),
+        (
+            "*Do not modify any `specs/`, the dep-map, or `docs/` \u2014 "
+            "those are other-role, lead, or operator territory.*",
+            "*Do not modify other-role, lead, or operator territory: any `specs/`, the dep-map, or `docs/`.*",
+        ),
+    ],
+)
+def test_a_named_referent_or_a_kept_object_does_not_narrow(tmp_path, before, after) -> None:
+    ground = "\n\nThe `ticket`, `due`, `lead` and `CLAUDE.md` names exist.\n"
+    result = _compare_edit(tmp_path, before + ground, after + ground)
+    assert result["narrowed_instructions"] == []
+
+
 _THEN_BEFORE = (
     "*Do not silently skip an entry that fails to load \u2014 name the missing key and the paths tried, "
     "then ask the maintainer; do not add a fallback path \u2014 the loader is strict.*\n"
@@ -649,3 +719,343 @@ def test_a_then_step_with_a_comma_or_and_is_still_a_step(after: str) -> None:
 
     assert rewrite_cut("Run the tests, and then fix every failure.", after) == "step"
     assert rewrite_cut("Run the tests, then fix every failure.", after) == "step"
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_for_phrase_given_to_a_rule_that_had_none_narrows_it(tmp_path) -> None:
+    before = "Modify `src/`, add tests under `tests/`, and update the rules under `rules/`.\n"
+    after = "Modify `src/`. Add tests for `src/` under `tests/`. Update the rules under `rules/`.\n"
+    result = _compare_edit(tmp_path, before, after)
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("after", "dropped"),
+    [
+        ("For `all`, group the actions by direction. Give a count per direction, then list the open rules.", True),
+        (
+            "For `all`, group the actions by direction. "
+            "For `all`, give a count per direction, then list the open rules.",
+            False,
+        ),
+    ],
+)
+def test_a_split_keeps_the_scope_a_sentence_opens_with_on_every_piece(tmp_path, after, dropped) -> None:
+    before = "For `all`, group the actions by direction, give a count per direction, then list the open rules.\n"
+    result = _compare_edit(tmp_path, before, after + "\n")
+    assert bool(result["dropped_conditions"]) is dropped
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_split_sentence_made_specific_is_listed_with_every_piece_of_its_rewrite(tmp_path) -> None:
+    ground = "\n\nThe generator writes `.ails/backbone.yml`.\n"
+    before = "Review the generated backbone and mark uncertain entries with `# TODO: refine`." + ground
+    after = "Review the generated `.ails/backbone.yml`. Mark uncertain entries with `# TODO: refine`." + ground
+    listed = _compare_edit(tmp_path, before, after)["made_specific"]
+    assert listed
+    assert all("Mark uncertain entries" in e["after"] for e in listed)
+
+
+_PLANS = (
+    "- Hand product-direction and build-work to the `reviewer` for filing; one owner keeps the queue coherent. "
+    "*Do not file plans directly into another team's surfaces, bypassing the `reviewer`.*\n"
+)
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (_PLANS, _PLANS.replace("file plans", "file any plan — product-direction, roadmap, or build-work —")),
+        (
+            "*Never encode a repo in the `logs/` path.*\n",
+            "*Never encode a repo name or a per-repo `<repo>` segment in any `logs/` path.*\n",
+        ),
+        (
+            "*Do not assert a business bet from this `notes.md` file alone.*\n",
+            "*Do not assert a business bet (a business-model, pricing, or positioning call) "
+            "from this `notes.md` file alone.*\n",
+        ),
+    ],
+)
+def test_a_prohibition_given_a_list_of_kinds_it_did_not_name_narrows(tmp_path, before, after) -> None:
+    ground = "\n\nThe `reviewer`, `logs/`, `<repo>` and `notes.md` names exist.\n"
+    result = _compare_edit(tmp_path, before + ground, after + ground)
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (
+            "*Do not assign a `name`, `size`, or `date` to any report.*\n",
+            "*Do not assign any output field (`name`, `size`, or `date`) to any report.*\n",
+        ),
+        (
+            "*Do not commit secrets to the repo.*\n",
+            "*Do not commit secrets, such as tokens or passwords, to the repo.*\n",
+        ),
+    ],
+)
+def test_a_prohibition_listing_its_own_items_or_examples_does_not_narrow(tmp_path, before, after) -> None:
+    ground = "\n\nThe `name`, `size` and `date` fields exist.\n"
+    assert _compare_edit(tmp_path, before + ground, after + ground)["narrowed_instructions"] == []
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after", "check"),
+    [
+        ("*Do not file plans.*", "*Do not file release-notes or build-work.*", "narrowed_instructions"),
+        ("*Do not modify the docs — those are generated.*", "*Do not modify generated docs.*", "narrowed_instructions"),
+    ],
+)
+def test_a_prohibition_narrowed_at_its_end_or_by_a_moved_aside_is_caught(tmp_path, before, after, check) -> None:
+    assert _compare_edit(tmp_path, before + "\n", after + "\n")[check]
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("In a monorepo, run `ruff`.", "Run `ruff` in monorepos."),
+        ("Read the agent guide.", "Read the agent guide at `docs/for-agents.md`."),
+        ("Run lint on each file.", "For each file, run lint."),
+        (
+            "*Do not use a mock — prefer a fake for the store.*",
+            "*Do not use a mock — prefer a real in-memory fake for the store.*",
+        ),
+    ],
+)
+def test_a_kept_scope_a_code_for_or_a_change_outside_the_prohibition_is_not_flagged(tmp_path, before, after) -> None:
+    ground = "\n\nThe `ruff` linter and `docs/for-agents.md` exist.\n"
+    result = _compare_edit(tmp_path, before + ground, after + ground)
+    assert result["narrowed_instructions"] == []
+    assert result["dropped_conditions"] == []
+
+
+_CONVENTIONS = (
+    "Author `Python` under `pkg/` against `ruff`.\n"
+    "Author `Bash` hooks against `shellcheck`.\n"
+    "Author instruction surfaces (`CLAUDE.md`, `.claude/agents/`) per the style guide.\n"
+    "*Never edit linked copies.*\n"
+    "*Edit at canonical paths only.*\n"
+)
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_rule_whose_verb_had_no_object_given_a_list_of_objects_narrows(tmp_path) -> None:
+    """The rule covered every edit the section names; two of its kinds read as all it covers."""
+    after = _CONVENTIONS.replace("*Edit at", "*Edit instruction surfaces and hook scripts at")
+    result = _compare_edit(tmp_path, _CONVENTIONS, after)
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_rule_whose_verb_had_no_object_given_one_kind_its_section_names_narrows(tmp_path) -> None:
+    """The section's other lines name several kinds the rule covered; one of them reads as all it covers."""
+    after = _CONVENTIONS.replace("*Edit at", "*Edit instruction surfaces at")
+    result = _compare_edit(tmp_path, _CONVENTIONS, after)
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+_GROUND = "\n\nThe `X` and `Y` names exist. Production builds and real stores exist.\n"
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_referent_the_sections_heading_names_is_not_a_narrowing(tmp_path) -> None:
+    before = "## Remote debugging\n\nEnable remote debugging with `--inspect`.\n\nOnly use on trusted machines.\n"
+    after = before.replace("Only use on", "Only use remote debugging on")
+    result = _compare_edit(tmp_path, before + _GROUND, after + _GROUND)
+    assert result["narrowed_instructions"] == []
+    assert result["ok"] is True
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_kind_named_only_in_another_section_of_the_same_heading_is_not_a_narrowing(tmp_path) -> None:
+    before = (
+        "## Hooks\n\n### Rules\n\nKeep hook scripts small.\n\n## Code\n\n### Rules\n\nEdit at canonical paths only.\n"
+    )
+    after = before.replace("Edit at", "Edit hook scripts at")
+    result = _compare_edit(tmp_path, before + _GROUND, after + _GROUND)
+    assert result["narrowed_instructions"] == []
+    assert result["ok"] is True
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (
+            "## Tasks\n\nRun `pytest` against Python modules.\n\nRun `shellcheck` against shell scripts.\n\n"
+            "Run at night only.\n",
+            "## Tasks\n\nRun `pytest` against Python modules.\n\nRun `shellcheck` against shell scripts.\n\n"
+            "Run shell scripts at night only.\n",
+        ),
+        (
+            "## Tasks\n\nLint Python modules, shell scripts, or Dockerfiles.\n\nRun at night only.\n",
+            "## Tasks\n\nLint Python modules, shell scripts, or Dockerfiles.\n\nRun shell scripts at night only.\n",
+        ),
+    ],
+)
+def test_a_kind_named_beside_others_in_its_section_narrows(tmp_path, before, after) -> None:
+    result = _compare_edit(tmp_path, before + _GROUND, after + _GROUND)
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after", "narrowed"),
+    [
+        ("*Do not use a mock — prefer a fake.*", "*Do not use a mock — prefer a fake server or stub client.*", False),
+        # A spaced hyphen is no clause break to the mapper, so the whole line is the prohibition.
+        ("*Do not use a mock - prefer a fake.*", "*Do not use a mock - prefer a real fake.*", True),
+        ("Add tests under `tests/`.", "Add tests under `tests/` for `src/`", True),
+        ("Add tests.", "Add tests for particular modules.", True),
+        ("Add tests.", "Add tests for one module.", True),
+    ],
+)
+def test_review_shapes_of_the_prohibition_and_for_phrase_arms(tmp_path, before, after, narrowed) -> None:
+    result = _compare_edit(tmp_path, before + "\n", after + "\n")
+    assert bool(result["narrowed_instructions"]) is narrowed
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_sentence_opening_with_a_preposition_compound_has_no_fronted_scope(tmp_path) -> None:
+    result = _compare_edit(tmp_path, "In-memory caches, flush on exit.\n", "Flush in-memory caches on exit.\n")
+    assert result["dropped_conditions"] == []
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after", "narrowed"),
+    [
+        ("*Do not commit secrets.*", "*Do not commit secrets or credentials.*", False),
+        ("*Do not commit secrets.*", "*Do not commit secrets, keys or credentials.*", False),
+        ("*Do not pin Python 3.10\u20133.12 in CI.*", "*Do not pin Python 3.10\u20133.12 in production CI.*", True),
+        ("*Do not edit client\u2013server plans.*", "*Do not edit client\u2013server specs or docs.*", True),
+        ("*Do not edit shared plans.*", "*Do not edit shared specs or docs.*", True),
+        (
+            "*Do not file reports.*",
+            "*Do not file any report -- daily logs, test runs, or billing notes -- into the archive.*",
+            True,
+        ),
+        (
+            "*Do not file reports.*",
+            "*Do not file any report \u2014 daily logs, test runs, or billing notes \u2014 into the archive.*",
+            True,
+        ),
+        (
+            "*Do not use a mock \u2014 prefer a fake \u2014 it is faster.*",
+            "*Do not use a mock \u2014 prefer a real fake \u2014 it is faster.*",
+            False,
+        ),
+        ("Run the CLI.", "Run the CLI (see `ails --help` for usage).", False),
+        ("Add tests under `tests/`.", "Add tests under `tests/` for `src/`", True),
+    ],
+)
+def test_dash_cuts_dash_pairs_widening_lists_and_see_asides(tmp_path, before, after, narrowed) -> None:
+    result = _compare_edit(tmp_path, before + "\n", after + "\n")
+    assert bool(result["narrowed_instructions"]) is narrowed
+
+
+_G = "\n\nThe `X` and `Y` names exist. Production builds and real stores exist.\n"
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_referent_the_section_heading_names_is_kept_in_a_file_of_several_sections(tmp_path) -> None:
+    before = (
+        "## Remote debugging\n\nRun remote debugging, profiling, or tracing with flags.\n\n"
+        "Only use on trusted machines.\n"
+    )
+    after = before.replace("Only use on", "Only use remote debugging on")
+    result = _compare_edit(tmp_path, before + _G, after + _G)
+    assert result["narrowed_instructions"] == []
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_kind_listed_under_another_section_does_not_narrow_a_line_of_this_one(tmp_path) -> None:
+    before = "## Hooks\n\nAuthor hooks, scripts, or plans with care.\n\n## Code\n\nEdit at canonical paths only.\n"
+    after = before.replace("Edit at", "Edit hooks at")
+    result = _compare_edit(tmp_path, before + _G, after + _G)
+    assert result["narrowed_instructions"] == []
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_new_head_noun_that_takes_the_forbidden_noun_as_modifier_is_narrowed(tmp_path) -> None:
+    result = _compare_edit(tmp_path, "*Do not edit config.*\n", "*Do not edit config files or schemas.*\n")
+    assert result["narrowed_instructions"]
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_comma_elsewhere_in_the_sentence_does_not_make_a_new_head_noun_an_alternative(tmp_path) -> None:
+    before = "*Do not edit config, even in a hurry.*\n"
+    after = "*Do not edit config files or schemas, even in a hurry.*\n"
+    result = _compare_edit(tmp_path, before, after)
+    assert result["narrowed_instructions"]
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_heading_that_lists_kinds_does_not_name_one_of_them_as_the_referent(tmp_path) -> None:
+    before = "## Hooks and scripts\n\nEdit at canonical paths only.\n"
+    after = "## Hooks and scripts\n\nEdit hooks at canonical paths only.\n"
+    result = _compare_edit(tmp_path, before + _G, after + _G)
+    assert result["narrowed_instructions"]
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_an_and_that_opens_a_clause_does_not_list_the_word_before_it_as_one_kind_among_others(tmp_path) -> None:
+    siblings = "In CI, lint the docs.\n\nBuild docs and push.\n\n"
+    before = f"## Rules\n\n{siblings}Run at night only.\n"
+    after = f"## Rules\n\n{siblings}Run docs at night only.\n"
+    result = _compare_edit(tmp_path, before, after)
+    assert result["narrowed_instructions"] == []

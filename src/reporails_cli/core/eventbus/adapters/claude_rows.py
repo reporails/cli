@@ -1,13 +1,40 @@
-"""Field readers the Claude Code transcript adapter shares: a required text field, a list of strings, a meta field
-of one type, the items of a delta row sized by name, a subagent's brief and a usage object's cache-write split. Each
-refuses a field that is not the pinned shape."""
+"""Field readers the Claude Code transcript adapter shares: the files an attachment names, a required text field, a
+list of strings, a meta field of one type, the items of a delta row sized by name, a subagent's brief and a usage
+object's cache-write split. Each refuses a field that is not the pinned shape."""
 
 from __future__ import annotations
 
 from reporails_cli.core.eventbus.adapters.claude_calls import blocks_text
 from reporails_cli.core.eventbus.adapters.claude_requests import BLOCK_SEPARATOR
 from reporails_cli.core.eventbus.port import PayloadRefused
-from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, opt_str, strict_str_list
+from reporails_cli.core.platform.contract.json_value import (
+    JsonObject,
+    JsonValue,
+    as_object,
+    opt_str,
+    strict_str_list,
+)
+from reporails_cli.core.platform.dto.attachments import AttachmentKind
+
+
+def _is_compact_summary(row: JsonObject) -> bool:
+    """Whether the row is a compaction summary row: `type: "user"` with `isCompactSummary: true`."""
+    return row.get("type") == "user" and row.get("isCompactSummary") is True
+
+
+def compact_summary_text(row: JsonObject) -> str | None:
+    """The string `message.content` of a compaction summary row; None for any other row."""
+    if not _is_compact_summary(row):
+        return None
+    content = as_object(row.get("message")).get("content")
+    return content if isinstance(content, str) else None
+
+
+def compact_summary_link(row: JsonObject) -> str | None:
+    """The `parentUuid` of a compaction summary row; None for any other row or a row with no parent."""
+    if not _is_compact_summary(row):
+        return None
+    return opt_str(row.get("parentUuid")) or None
 
 
 def meta_field[Field: (str, int, bool)](meta: JsonObject, key: str, kind: type[Field]) -> Field | None:
@@ -51,6 +78,16 @@ def required_text(row: JsonObject, key: str, what: str) -> str:
     if not value:
         raise PayloadRefused(f"{what} has no {key}")
     return value
+
+
+def attached_paths(attachment: JsonObject, kind: AttachmentKind) -> list[str]:
+    """The files an attachment row of type `kind` names: its `filename`, or each recalled note's `path`."""
+    if kind != "relevant_memories":
+        return [required_text(attachment, "filename", f"{kind} attachment")]
+    memories = attachment.get("memories")
+    if not isinstance(memories, list):
+        raise PayloadRefused("relevant_memories attachment has no memories list")
+    return [required_text(as_object(note), "path", "relevant_memories note") for note in memories]
 
 
 def brief_text(first_row: JsonObject) -> str | None:

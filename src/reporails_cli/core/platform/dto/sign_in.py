@@ -60,3 +60,25 @@ class KeyCheck:
     error: str = ""
     reason: str = ""
     notices: tuple[Notice, ...] = ()
+
+
+# The command or tool asking the server about this caller.
+Surface = Literal["cli", "mcp", "xray", "ci"]
+
+HandshakeStatus = Literal["ok", "refused", "rejected", "unreachable", "no_verdict"]
+
+
+@dataclass(frozen=True)
+class Handshake:
+    """The server's answer to "will you serve this caller?".
+
+    `ok` and `refused` carry the server's verdict (`refused` names its `reason` and `message`);
+    `rejected` means the credential was refused, with the server's `error` and `message`;
+    `unreachable` means no reply came; `no_verdict` means a reply that holds no verdict.
+    """
+
+    status: HandshakeStatus
+    reason: str = ""
+    message: str = ""
+    tier: str = ""
+    error: str = ""

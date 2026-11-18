@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import functools
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,19 +21,22 @@ from reporails_cli.core.discovery.agent_config import (
 from reporails_cli.core.discovery.agent_discovery import discover_from_config
 from reporails_cli.core.discovery.agent_markers import agent_has_marker, dir_prefix_from_glob
 from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions
-from reporails_cli.core.discovery.file_aliases import clear_alias_cache, dedupe_with_aliases, store_alias_cache
+from reporails_cli.core.discovery.file_aliases import dedupe_with_aliases, store_alias_cache
 from reporails_cli.core.discovery.read_gates import reads_as_fallback
 from reporails_cli.core.discovery.surface_config import config_names_agent
-from reporails_cli.core.platform.config.config import get_project_config, get_rules_path, iter_agent_configs
-from reporails_cli.core.platform.contract.json_value import JsonObject, as_str, str_list
+from reporails_cli.core.discovery.walk import has_entries
+from reporails_cli.core.platform.config.config import get_rules_path, iter_agent_configs
+from reporails_cli.core.platform.config.run_context import RunContext
+from reporails_cli.core.platform.contract.json_value import JsonValue, as_str, str_list
 from reporails_cli.core.platform.dto.discovery import AgentType, DetectedAgent, RunExclusions
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
 if TYPE_CHECKING:
     from reporails_cli.core.platform.dto.results import ProjectConfig
 
 
-def _parse_agent_config(data: JsonObject) -> AgentType | None:
+def _parse_agent_config(data: Mapping[str, JsonValue]) -> AgentType | None:
     """Parse a single agent config.yml into an AgentType."""
     agent_id = as_str(data.get("agent"))
     agent_name = as_str(data.get("name", agent_id)) or agent_id
@@ -97,34 +100,20 @@ def _build_agent_registry() -> dict[str, AgentType]:
 
 
 @functools.cache
-def get_known_agents() -> dict[str, AgentType]:
+def get_known_agents() -> Mapping[str, AgentType]:
     """Get the agent registry, building from config.yml on first access."""
     return _build_agent_registry()
-
-
-# Module-level cache for detected agents — avoids repeated glob scanning.
-# Cache keyed on target path, cleared by clear_agent_cache().
-_agent_cache: dict[str, list[DetectedAgent]] = {}
-
-
-def clear_agent_cache() -> None:
-    """Clear the agent detection cache. Called by --refresh.
-
-    Also clears the downstream file-alias map — it is computed from the agent
-    list, so an invalidated agent list invalidates the aliases too.
-    """
-    _agent_cache.clear()
-    clear_alias_cache()
 
 
 # ─── Public API ─────────────────────────────────────────────────────────
 
 
 def _detect_agent(
+    run: RunContext,
     target: Path,
     agent_type: AgentType,
     *,
-    known: dict[str, AgentType],
+    known: Mapping[str, AgentType],
     exclusions: RunExclusions,
     project_config: ProjectConfig | None,
 ) -> DetectedAgent | None:
@@ -135,7 +124,9 @@ def _detect_agent(
         return None
 
     # Config-driven discovery from bundled config.yml
-    config_result = discover_from_config(target, agent_id, exclusions, project_config=project_config, repo_scoped=True)
+    config_result = discover_from_config(
+        run, target, agent_id, exclusions, project_config=project_config, repo_scoped=True
+    )
     if config_result is None:
         return None
     instruction_files, rule_files, config_files = config_result
@@ -147,7 +138,7 @@ def _detect_agent(
     detected_dirs: dict[str, str] = {}
     for label, dir_path in agent_type.directory_patterns:
         full_path = target / dir_path
-        if full_path.is_dir() and any(full_path.iterdir()):
+        if full_path.is_dir() and has_entries(full_path):
             detected_dirs[label] = dir_path + "/"
     return DetectedAgent(
         agent_type=agent_type,
@@ -158,23 +149,22 @@ def _detect_agent(
     )
 
 
-def detect_agents(target: Path) -> list[DetectedAgent]:
+def detect_agents(run: RunContext, target: Path) -> list[DetectedAgent]:
     """Detect coding agents in the target directory.
 
     Uses config.yml file_types from bundled framework for discovery.
     Per-surface include/exclude and Codex fallback filenames come from the
     project's `.ails/config.yml` (and `.ails/config.local.yml`).
-    Cached per target path.
+    Remembered on `run` per target path as written, so two spellings of one linked folder keep their own paths.
     """
-    cache_key = str(target)
-    cached = _agent_cache.get(cache_key)
+    cached = run.agents.get(target)
     if cached is not None:
         return cached
 
-    exclusions = load_run_exclusions(target)
+    exclusions = load_run_exclusions(run, target)
 
     # Load project config for per-surface include/exclude + fallback filenames
-    project_config = get_project_config(target)
+    project_config = run.project_config(target)
 
     known = get_known_agents()
     detected = [
@@ -182,6 +172,7 @@ def detect_agents(target: Path) -> list[DetectedAgent]:
         for agent_type in known.values()
         if (
             agent := _detect_agent(
+                run,
                 target,
                 agent_type,
                 known=known,
@@ -195,11 +186,12 @@ def detect_agents(target: Path) -> list[DetectedAgent]:
     detected = _disambiguate_codex_generic(detected, target, project_config)
     detected = _disambiguate_shared_files(detected, target)
 
-    _agent_cache[cache_key] = detected
+    run.agents[target] = detected
     return detected
 
 
 def detect_single_agent(
+    run: RunContext,
     target: Path,
     agent_id: str,
 ) -> DetectedAgent | None:
@@ -208,7 +200,14 @@ def detect_single_agent(
     if not agent_type:
         return None
 
-    config_result = discover_from_config(target, agent_id, project_config=get_project_config(target), repo_scoped=True)
+    config_result = discover_from_config(
+        run,
+        target,
+        agent_id,
+        load_run_exclusions(run, target),
+        project_config=run.project_config(target),
+        repo_scoped=True,
+    )
     if config_result is None:
         return None
     instruction_files, rule_files, config_files = config_result
@@ -256,7 +255,7 @@ def _codex_global_heuristic(target: Path) -> bool:
     if not gitignore.exists():
         return False
     try:
-        content = gitignore.read_text(encoding="utf-8")
+        content = read_file_text(gitignore)
     except OSError:
         return False
     return ".codex" in content or "AGENTS.override" in content
@@ -489,24 +488,24 @@ def filter_agents_by_exclusions(agents: list[DetectedAgent], exclusions: RunExcl
     return _drop_agent_files(agents, functools.partial(leaves_out, exclusions))
 
 
-def get_all_instruction_files(target: Path, agents: list[DetectedAgent] | None = None) -> list[Path]:
+def get_all_instruction_files(run: RunContext, target: Path, agents: list[DetectedAgent] | None = None) -> list[Path]:
     """Get deduplicated instruction + rule files for detected agents."""
     raw: list[Path] = []
-    for detected in agents if agents is not None else detect_agents(target):
+    for detected in agents if agents is not None else detect_agents(run, target):
         raw.extend(detected.instruction_files)
         raw.extend(detected.rule_files)
     canonical, aliases = dedupe_with_aliases(raw)
-    store_alias_cache(target, aliases)
+    store_alias_cache(run, target, aliases)
     return canonical
 
 
-def get_all_scannable_files(target: Path, agents: list[DetectedAgent] | None = None) -> list[Path]:
+def get_all_scannable_files(run: RunContext, target: Path, agents: list[DetectedAgent] | None = None) -> list[Path]:
     """Get all scannable files (instruction + rule + config) for detected agents."""
     raw: list[Path] = []
-    for detected in agents if agents is not None else detect_agents(target):
+    for detected in agents if agents is not None else detect_agents(run, target):
         raw.extend(detected.instruction_files)
         raw.extend(detected.rule_files)
         raw.extend(detected.config_files)
     canonical, aliases = dedupe_with_aliases(raw)
-    store_alias_cache(target, aliases)
+    store_alias_cache(run, target, aliases)
     return canonical

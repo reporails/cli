@@ -12,13 +12,16 @@ tests pin:
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from reporails_cli.core.pipeline.assemble import assemble_result
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import Level
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs
+from reporails_cli.core.platform.dto.results import ProjectConfig
 
 
 def _inputs(**overrides: object) -> AssembleInputs:
@@ -33,6 +36,10 @@ def _inputs(**overrides: object) -> AssembleInputs:
         "lint_result": None,
     }
     base.update(overrides)
+    scan_root = base["scan_root"]
+    base.setdefault(
+        "project_config", RunContext().project_config(scan_root) if isinstance(scan_root, Path) else ProjectConfig()
+    )
     return AssembleInputs(**base)  # type: ignore[arg-type]
 
 
@@ -44,7 +51,7 @@ def test_assemble_folds_memory_validation(tmp_path):
     memory_file.write_text("# Memory\n\n- [broken](does-not-exist.md)\n", encoding="utf-8")
     ruleset_map = SimpleNamespace(files=[SimpleNamespace(path=str(memory_file), type="memory")], atoms=())
 
-    result = assemble_result(_inputs(ruleset_map=ruleset_map, scan_root=tmp_path))
+    result = assemble_result(RunContext(), _inputs(ruleset_map=ruleset_map, scan_root=tmp_path))
 
     assert any("Broken memory link" in f.message for f in result.findings), (
         "memory-validation must run in the shared assemble core"
@@ -60,7 +67,7 @@ def test_assemble_threads_computed_level(tmp_path, monkeypatch):
         lambda _features: Level.L3,
     )
 
-    result = assemble_result(_inputs(scan_root=tmp_path))
+    result = assemble_result(RunContext(), _inputs(scan_root=tmp_path))
 
     assert result.level == Level.L3, "the assemble core must thread the computed level onto the result"
 
@@ -82,7 +89,7 @@ def test_assemble_unpacks_lint_result_and_attaches_workflow(tmp_path):
         workflow=sentinel_workflow,
     )
 
-    result = assemble_result(_inputs(scan_root=tmp_path, lint_result=lint_result))
+    result = assemble_result(RunContext(), _inputs(scan_root=tmp_path, lint_result=lint_result))
 
     assert result.reply.tier == "pro"
     assert result.reply.workflow is sentinel_workflow
@@ -92,7 +99,7 @@ def test_assemble_unpacks_lint_result_and_attaches_workflow(tmp_path):
 @pytest.mark.subsys_lint
 def test_assemble_leaves_workflow_none_when_lint_result_absent(tmp_path):
     """No lint result (offline) → no workflow attached, no crash on the `None` unpack."""
-    result = assemble_result(_inputs(scan_root=tmp_path, lint_result=None))
+    result = assemble_result(RunContext(), _inputs(scan_root=tmp_path, lint_result=None))
 
     assert result.reply.workflow is None
 
@@ -120,7 +127,7 @@ def test_assemble_reports_one_credential_finding_per_secret(tmp_path):
     """The generic and the subagent credential rule on one secret report it once."""
     _write_subagent(tmp_path, 'api_key = "sk-live-abc123"')
 
-    result = assemble_result(_inputs(m_findings=_subagent_credential_findings(), scan_root=tmp_path))
+    result = assemble_result(RunContext(), _inputs(m_findings=_subagent_credential_findings(), scan_root=tmp_path))
 
     assert [f.rule for f in result.findings] == ["CORE:G:0009"]
     assert result.stats.total_findings == 1
@@ -139,7 +146,7 @@ def test_assemble_ignoring_one_credential_rule_keeps_the_other(tmp_path, ignored
     other rule's finding on the same secret is still reported."""
     _write_subagent(tmp_path, f'api_key = "sk-live-abc123"  <!-- ails-disable-line {ignored} -->')
 
-    result = assemble_result(_inputs(m_findings=_subagent_credential_findings(), scan_root=tmp_path))
+    result = assemble_result(RunContext(), _inputs(m_findings=_subagent_credential_findings(), scan_root=tmp_path))
 
     assert [f.rule for f in result.findings] == [reported]
     assert result.stats.total_findings == 1
@@ -158,7 +165,7 @@ def test_assemble_keeps_two_other_rules_that_matched_the_same_text(tmp_path):
         LocalFinding("CLAUDE.md", 5, "error", "CORE:C:0050", "Second", signature="TODO"),
     ]
 
-    result = assemble_result(_inputs(m_findings=findings, scan_root=tmp_path))
+    result = assemble_result(RunContext(), _inputs(m_findings=findings, scan_root=tmp_path))
 
     assert sorted(f.rule for f in result.findings) == ["CORE:C:0049", "CORE:C:0050"]
     assert result.stats.total_findings == 2
@@ -181,7 +188,7 @@ def test_a_finding_takes_the_grade_of_the_reply_row_at_its_coordinates(tmp_path)
     )
     lint_result = SimpleNamespace(report=report, hints=(), cross_file_coordinates=(), tier="pro", workflow=None)
 
-    result = assemble_result(_inputs(scan_root=tmp_path, m_findings=findings, lint_result=lint_result))
+    result = assemble_result(RunContext(), _inputs(scan_root=tmp_path, m_findings=findings, lint_result=lint_result))
 
     assert [(f.line, f.impact_tier) for f in result.findings if f.rule == "CORE:C:0011"] == [
         (3, ""),
@@ -198,7 +205,7 @@ def test_an_offline_run_grades_no_finding(tmp_path):
     (tmp_path / "CLAUDE.md").write_text("# Project\n\nFirst line.\n", encoding="utf-8")
     findings = [LocalFinding("CLAUDE.md", 3, "error", "CORE:C:0011", "m", check_id="c")]
 
-    result = assemble_result(_inputs(scan_root=tmp_path, m_findings=findings, lint_result=None))
+    result = assemble_result(RunContext(), _inputs(scan_root=tmp_path, m_findings=findings, lint_result=None))
 
     assert {f.impact_tier for f in result.findings} == {""}
 
@@ -227,7 +234,7 @@ def test_a_finding_whose_dependency_reports_on_its_file_is_neither_shown_nor_sen
         effective_agent="claude",
     )
 
-    result = assemble_result(inputs)
+    result = assemble_result(RunContext(), inputs)
     entries, _total = lint_request_local(inputs)
 
     assert [f.rule for f in result.findings] == ["CORE:S:0002"]
@@ -248,7 +255,7 @@ def test_silencing_a_dependency_inline_does_not_bring_back_the_finding_that_depe
         effective_agent="claude",
     )
 
-    result = assemble_result(inputs)
+    result = assemble_result(RunContext(), inputs)
     entries, _total = lint_request_local(inputs)
 
     assert result.findings == ()
@@ -274,7 +281,7 @@ def _tiers(tmp_path, findings, workflow, local_tiers=()):
     report = RulesetReport(local_tiers=tuple(local_tiers))
     lint_result = SimpleNamespace(report=report, hints=(), cross_file_coordinates=(), tier="pro", workflow=workflow)
     result = assemble_result(
-        _inputs(scan_root=tmp_path, m_findings=findings, lint_result=lint_result, effective_agent="codex")
+        RunContext(), _inputs(scan_root=tmp_path, m_findings=findings, lint_result=lint_result, effective_agent="codex")
     )
     return {f.rule: f.impact_tier for f in result.findings}
 
@@ -326,7 +333,8 @@ def test_a_listed_config_file_finding_keeps_the_tier_its_row_carried(tmp_path, d
     )
 
     result = assemble_result(
-        _inputs(scan_root=tmp_path, m_findings=[finding], lint_result=lint_result, effective_agent="codex")
+        RunContext(),
+        _inputs(scan_root=tmp_path, m_findings=[finding], lint_result=lint_result, effective_agent="codex"),
     )
 
     assert [f.impact_tier for f in result.findings if f.rule == "CODEX:E:0002"] == ["gate_mover"]
@@ -378,8 +386,12 @@ def test_stamping_served_tiers_without_a_workflow_returns_the_same_result():
 @pytest.mark.subsys_lint
 def test_assemble_records_the_agents_whose_rules_ran(tmp_path):
     """The summary names the agent even when no ruleset map exists (no model on disk)."""
-    assert assemble_result(_inputs(scan_root=tmp_path, effective_agent="claude")).stats.agents == ("claude",)
-    assert assemble_result(_inputs(scan_root=tmp_path, rule_agents=("claude", "cursor"))).stats.agents == (
+    assert assemble_result(RunContext(), _inputs(scan_root=tmp_path, effective_agent="claude")).stats.agents == (
+        "claude",
+    )
+    assert assemble_result(
+        RunContext(), _inputs(scan_root=tmp_path, rule_agents=("claude", "cursor"))
+    ).stats.agents == (
         "claude",
         "cursor",
     )
@@ -411,7 +423,7 @@ def _archive_project(tmp_path, config: str, places=("AGENTS.md", "archive/AGENTS
         report=None, hints=(), cross_file_coordinates=(), tier="pro", workflow=RemediationWorkflow(locations=locations)
     )
     return assemble_result(
-        _inputs(scan_root=tmp_path, m_findings=findings, lint_result=lint_result, effective_agent="codex")
+        RunContext(), _inputs(scan_root=tmp_path, m_findings=findings, lint_result=lint_result, effective_agent="codex")
     )
 
 
@@ -481,7 +493,9 @@ def test_heal_exclude_naming_several_files_names_them_all_in_one_sentence(tmp_pa
 def test_with_exclusions_states_the_recorded_value(tmp_path):
     from reporails_cli.core.pipeline.assemble import with_exclusions
 
-    result = with_exclusions(assemble_result(_inputs(scan_root=tmp_path)), (("agents", "docs"), ("a.md",)))
+    result = with_exclusions(
+        assemble_result(RunContext(), _inputs(scan_root=tmp_path)), (("agents", "docs"), ("a.md",))
+    )
     assert result.omissions.excluded_dirs == ("agents", "docs")
     assert result.omissions.excluded_files == ("a.md",)
-    assert assemble_result(_inputs(scan_root=tmp_path)).omissions.excluded_dirs == ()
+    assert assemble_result(RunContext(), _inputs(scan_root=tmp_path)).omissions.excluded_dirs == ()

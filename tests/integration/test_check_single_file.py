@@ -156,7 +156,7 @@ def _classification(data: dict) -> tuple[list[str], list[tuple[str, int]], str, 
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
 @pytest.mark.requires_model
-@pytest.mark.parametrize("mode", ["relative", "absolute", "outside-cwd", "parent-cwd"])
+@pytest.mark.parametrize("mode", ["relative", "absolute"])
 def test_subdir_target_classifies_its_main_file_like_the_file_target(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
@@ -165,18 +165,9 @@ def test_subdir_target_classifies_its_main_file_like_the_file_target(
     `sub/` carries a `CLAUDE.md` but no `.claude/` of its own, so it is a slice of the project, not a
     root: the directory target must keep the project anchor (key `sub/CLAUDE.md`, a Nested surface,
     the nested level) instead of rerooting at `sub/` and reading its `CLAUDE.md` as the project's main file.
-    The same holds when the command runs from a folder outside the project (`outside-cwd`) or from
-    a parent folder that is no project (`parent-cwd`).
     """
     project = _nested_project(tmp_path, sub_has_config_dir=False)
-    if mode == "outside-cwd":
-        elsewhere = tmp_path / "elsewhere"
-        elsewhere.mkdir()
-        monkeypatch.chdir(elsewhere)
-    elif mode == "parent-cwd":
-        monkeypatch.chdir(tmp_path)
-    else:
-        monkeypatch.chdir(project)
+    monkeypatch.chdir(project)
     dir_target, file_target = (
         ("sub", "sub/CLAUDE.md") if mode == "relative" else (str(project / "sub"), str(project / "sub" / "CLAUDE.md"))
     )
@@ -196,13 +187,15 @@ def test_subdir_target_classifies_its_main_file_like_the_file_target(
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
 @pytest.mark.requires_model
-def test_subdir_with_its_own_config_dir_is_its_own_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Contrast: `sub/` holding `CLAUDE.md` AND `.claude/` is a project root of its own, so the
-    directory target keeps `sub/` path keys and reads its `CLAUDE.md` as the main file."""
+def test_subdir_with_its_own_config_dir_run_from_it_is_its_own_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Contrast: `sub/` holding `CLAUDE.md` AND `.claude/`, checked from its own folder, is the
+    project root of that run: `sub/` path keys and its `CLAUDE.md` as the main file."""
     project = _nested_project(tmp_path, sub_has_config_dir=True)
-    monkeypatch.chdir(project)
+    monkeypatch.chdir(project / "sub")
 
-    result = runner.invoke(app, ["check", "sub", "--agent", "claude", "-f", "json"])
+    result = runner.invoke(app, ["check", "--agent", "claude", "-f", "json"])
     assert result.exit_code == 0, result.output
 
     keys, surfaces, _level, _findings = _classification(json.loads(result.stdout))

@@ -1,4 +1,4 @@
-"""Unit tests for `core/platform/adapters/rules_query.py`."""
+"""Unit tests for `core/platform/rules/rules_query.py`."""
 
 from __future__ import annotations
 
@@ -6,8 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.adapters import rules_query
-from reporails_cli.core.platform.adapters.rules_query import (
+from reporails_cli.core.platform.dto.models import (
+    Category,
+    FileMatch,
+    Rule,
+    RuleType,
+    Severity,
+)
+from reporails_cli.core.platform.rules import rules_query
+from reporails_cli.core.platform.rules.rules_query import (
     filter_rules_by_capability,
     filter_rules_by_severity,
     find_rule_by_id,
@@ -16,13 +23,6 @@ from reporails_cli.core.platform.adapters.rules_query import (
     rule_severity,
     rules_for_capability,
     sort_rules_for_authoring,
-)
-from reporails_cli.core.platform.dto.models import (
-    Category,
-    FileMatch,
-    Rule,
-    RuleType,
-    Severity,
 )
 
 

@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.discovery.exclusions import no_exclusions, parse_run_exclusions
 from reporails_cli.core.lint.mechanical.checks_absent import file_absent
 from reporails_cli.core.lint.rule_runner import run_m_probes
 from reporails_cli.core.pipeline.mapping import discover_scope
+from reporails_cli.core.platform.config.run_context import RunContext
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_lint]
 
@@ -29,9 +29,8 @@ def _project(tmp_path: Path, config: str = "") -> tuple[Path, Path]:
 
 def test_named_skill_in_left_out_folder_is_not_reported_missing(tmp_path: Path) -> None:
     project, skill = _project(tmp_path, "exclude_dirs: [skills]\n")
-    clear_agent_cache()
-    scope = discover_scope(project, "claude", None, None, scan_files=False, named=frozenset({skill}))
-    findings = run_m_probes(project, [skill], agent="claude", scoped=True, exclusions=scope.exclusions)
+    scope = discover_scope(RunContext(), project, "claude", None, None, scan_files=False, named=frozenset({skill}))
+    findings = run_m_probes(RunContext(), project, [skill], agent="claude", scoped=True, exclusions=scope.exclusions)
     assert not [f for f in findings if "No matching files found" in f.message]
 
 
@@ -40,9 +39,8 @@ def test_flag_folder_and_config_folder_give_the_same_findings(tmp_path: Path) ->
     by_flag, _ = _project(tmp_path / "b")
     results = []
     for project, flags in ((by_config, None), (by_flag, ["skills"])):
-        clear_agent_cache()
-        scope = discover_scope(project, "claude", flags, None)
-        findings = run_m_probes(project, list(scope.files), agent="claude", exclusions=scope.exclusions)
+        scope = discover_scope(RunContext(), project, "claude", flags, None)
+        findings = run_m_probes(RunContext(), project, list(scope.files), agent="claude", exclusions=scope.exclusions)
         results.append({(f.rule, f.file, f.line, f.message) for f in findings})
     assert results[0] == results[1]
 
@@ -54,9 +52,8 @@ def test_rule_paths_glob_matches_files_inside_a_left_out_folder(tmp_path: Path) 
     rule = project / ".claude" / "rules" / "api.md"
     rule.parent.mkdir(parents=True)
     rule.write_text("---\npaths:\n  - packages/api/**\n---\n\nKeep the api small.\n", encoding="utf-8")
-    clear_agent_cache()
-    scope = discover_scope(project, "claude", None, None)
-    findings = run_m_probes(project, list(scope.files), agent="claude", exclusions=scope.exclusions)
+    scope = discover_scope(RunContext(), project, "claude", None, None)
+    findings = run_m_probes(RunContext(), project, list(scope.files), agent="claude", exclusions=scope.exclusions)
     assert not [f for f in findings if "matches no file" in f.message]
 
 

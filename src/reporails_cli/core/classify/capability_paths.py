@@ -19,24 +19,25 @@ from pathlib import Path
 from reporails_cli.core.classify import classify_files, load_file_types, location_matches_mode
 from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES, discover_from_config
 from reporails_cli.core.discovery.agents import detect_agents
-from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions, no_exclusions
+from reporails_cli.core.discovery.exclusions import leaves_out, no_exclusions
 from reporails_cli.core.discovery.memory_locator import memory_entries_for_agent
 from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.read_gates import apply_read_gate
 from reporails_cli.core.discovery.walk import Pruner, safe_resolve, walk_glob_matches
-from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import FileTypeDeclaration
+from reporails_cli.core.platform.dto.results import ProjectConfig
 from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
 
-def available_capabilities(agent: str, project_root: Path | None = None) -> list[str]:
-    """Return capability names the given agent declares in its config.yml."""
-    return [decl.name for decl in load_file_types(agent, project_root=project_root)]
+def available_capabilities(agent: str, config: ProjectConfig | None) -> list[str]:
+    """Return capability names the given agent declares in its config.yml, with the project's `config` applied."""
+    return [decl.name for decl in load_file_types(agent, config=config)]
 
 
-def canonicalize_capability(arg: str, agent: str, project_root: Path | None = None) -> str | None:
+def canonicalize_capability(arg: str, agent: str, config: ProjectConfig | None) -> str | None:
     """Map a user-facing capability keyword to the agent's config key, or None.
 
     A config key the agent declares maps to itself; a word a user may type for it (`skill`,
@@ -53,7 +54,7 @@ def canonicalize_capability(arg: str, agent: str, project_root: Path | None = No
     vocab = load_capability_vocabulary()
     if arg in vocab.virtual:
         return "referenced"
-    decls = available_capabilities(agent, project_root)
+    decls = available_capabilities(agent, config)
     if arg in decls:
         return arg
     fold = vocab.fold.get(arg)
@@ -107,7 +108,7 @@ def looks_like_windows_path(token: str) -> bool:
 
 
 def classify_target_token(
-    token: str, agent: str, project_root: Path, base: Path | None = None
+    run: RunContext, token: str, agent: str, project_root: Path, base: Path | None = None
 ) -> tuple[str, tuple[str, str] | Path]:
     """Classify one target token as a capability spec or a path.
 
@@ -128,38 +129,39 @@ def classify_target_token(
         # A linked file keeps its own path; the run's project root decides whether it is read there or at its target.
         return Path(os.path.abspath(full)) if full.is_file() and full.is_symlink() else safe_resolve(full)
 
+    config = run.project_config(project_root)
     if token.startswith("file:"):
         return "path", _path(token[len("file:") :])
     if token.startswith("@"):
         cap = token[1:]
-        canonical = canonicalize_capability(cap, agent, project_root) if agent else None
+        canonical = canonicalize_capability(cap, agent, config) if agent else None
         return "capability", (canonical if canonical is not None else cap, "")
     if ":" in token and not looks_like_windows_path(token):
         cap, name = token.split(":", 1)
-        canonical = canonicalize_capability(cap, agent, project_root) if agent else None
+        canonical = canonicalize_capability(cap, agent, config) if agent else None
         return "capability", (canonical if canonical is not None else cap, name)
-    if agent and is_capability_keyword(token, agent, project_root):
-        canonical = canonicalize_capability(token, agent, project_root)
+    if agent and is_capability_keyword(token, agent, config):
+        canonical = canonicalize_capability(token, agent, config)
         if canonical is not None:
             return "capability", (canonical, "")
     return "path", _path(token)
 
 
-def sniff_agent(agent: str, project_root: Path) -> str:
+def sniff_agent(run: RunContext, agent: str, project_root: Path) -> str:
     """The agent whose vocabulary reads target tokens: `agent` when given, else the project's
     configured default agent, else the first agent detected under `project_root` (`""` when
     none is)."""
     if agent:
         return agent
-    default_agent = get_project_config(project_root).default_agent
+    default_agent = run.project_config(project_root).default_agent
     if default_agent:
         return default_agent
-    for det in detect_agents(project_root):
+    for det in detect_agents(run, project_root):
         return det.agent_type.id
     return ""
 
 
-def capability_declared(capability: str, agent: str, project_root: Path) -> bool:
+def capability_declared(capability: str, agent: str, config: ProjectConfig) -> bool:
     """True when `capability` is declared (config) or virtual (synthesized) for the agent.
 
     Virtual capabilities — `referenced` — are agent-agnostic; they're
@@ -168,14 +170,14 @@ def capability_declared(capability: str, agent: str, project_root: Path) -> bool
     vocab = load_capability_vocabulary()
     if capability in vocab.virtual:
         return True
-    decls = available_capabilities(agent, project_root)
+    decls = available_capabilities(agent, config)
     if capability in decls:
         return True
     fold = vocab.fold.get(capability)
     return bool(fold and any(f in decls for f in fold))
 
 
-def is_capability_keyword(arg: str, agent: str, project_root: Path | None = None) -> bool:
+def is_capability_keyword(arg: str, agent: str, config: ProjectConfig | None) -> bool:
     """Sniff helper: does `arg` match a capability name for `agent`?
 
     Accepts singular (`skill`) or plural (`skills`) forms. Used by
@@ -185,20 +187,20 @@ def is_capability_keyword(arg: str, agent: str, project_root: Path | None = None
     """
     if not arg or "/" in arg or arg.startswith("."):
         return False
-    return canonicalize_capability(arg, agent, project_root) is not None
+    return canonicalize_capability(arg, agent, config) is not None
 
 
 def list_capability_targets(
+    run: RunContext,
     agent: str,
     capability: str,
     project_root: Path,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> list[Path]:
     """Enumerate files matching `capability` for `agent` under `project_root`.
 
     Globs the project-scope patterns from the agent's ``file_types:``
-    declaration, leaving out what `exclusions` leaves out (`None` reads the
-    project's config). Returns absolute paths. Returns an empty list when
+    declaration, leaving out what `exclusions` leaves out. Returns absolute paths. Returns an empty list when
     the agent has no `capability` declared.
 
     Fold-source aliases (``main``, ``memories``, ``memory``) union the
@@ -207,19 +209,18 @@ def list_capability_targets(
     `memory_locator.memory_entries_for_agent` so user-scope entries
     surface in the listing.
     """
-    if exclusions is None:
-        exclusions = load_run_exclusions(project_root)
     if capability == "referenced":
-        return _list_referenced_targets(agent, project_root, exclusions)
+        return _list_referenced_targets(run, agent, project_root, exclusions)
 
     out: list[Path] = []
     seen: set[Path] = set()
-    for ft_name in _resolve_fold(agent, capability, project_root):
-        decl = _find_declaration(agent, ft_name, project_root)
+    config = run.project_config(project_root)
+    for ft_name in _resolve_fold(agent, capability, config):
+        decl = _find_declaration(agent, ft_name, config)
         if decl is None:
             continue
         if _is_user_scope_memory(ft_name, decl.patterns):
-            paths = _user_scope_memory_paths(agent, project_root, exclusions)
+            paths = _user_scope_memory_paths(run, agent, project_root, exclusions)
             paths = [p for p in paths if not leaves_out(exclusions, p)]
         else:
             paths = _glob_patterns(decl.patterns, project_root, exclusions, decl=decl)
@@ -235,7 +236,7 @@ def list_capability_targets(
     return out
 
 
-def _list_referenced_targets(agent: str, project_root: Path, exclusions: RunExclusions) -> list[Path]:
+def _list_referenced_targets(run: RunContext, agent: str, project_root: Path, exclusions: RunExclusions) -> list[Path]:
     """Enumerate `[text](path)`-reached files via classifier output.
 
     Runs link-walker discovery (`generic_scanning: true`) against the
@@ -244,11 +245,11 @@ def _list_referenced_targets(agent: str, project_root: Path, exclusions: RunExcl
     in the project — if disabled, returns an empty list (classifier won't
     walk).
     """
-    discovered = discover_from_config(project_root, agent, exclusions=exclusions)
+    discovered = discover_from_config(run, project_root, agent, exclusions=exclusions)
     if discovered is None:
         return []
     instruction_files = [f for f in discovered[0] if not leaves_out(exclusions, f)]
-    file_types = load_file_types(agent, project_root=project_root)
+    file_types = load_file_types(agent, config=run.project_config(project_root))
     classified = classify_files(
         project_root,
         instruction_files,
@@ -259,9 +260,9 @@ def _list_referenced_targets(agent: str, project_root: Path, exclusions: RunExcl
     return [cf.path for cf in classified if cf.file_type == "referenced"]
 
 
-def _resolve_fold(agent: str, capability: str, project_root: Path) -> tuple[str, ...]:
+def _resolve_fold(agent: str, capability: str, config: ProjectConfig) -> tuple[str, ...]:
     """Return the fold tuple for `capability`, restricted to declared types."""
-    decls = available_capabilities(agent, project_root)
+    decls = available_capabilities(agent, config)
     fold = load_capability_vocabulary().fold.get(capability)
     if fold is None:
         return (capability,) if capability in decls else ()
@@ -282,12 +283,13 @@ def _is_user_scope_memory(ft_name: str, patterns: tuple[str, ...]) -> bool:
     return any(p.startswith("~/") for p in patterns)
 
 
-def _user_scope_memory_paths(agent: str, project_root: Path, exclusions: RunExclusions) -> list[Path]:
+def _user_scope_memory_paths(run: RunContext, agent: str, project_root: Path, exclusions: RunExclusions) -> list[Path]:
     """Resolve user-scope memory entries via memory_locator, not entering the folders `exclusions` skips."""
-    return [entry.path for entry in memory_entries_for_agent(agent, project_root, exclusions)]
+    return [entry.path for entry in memory_entries_for_agent(run, agent, project_root, exclusions)]
 
 
 def resolve_capability(
+    run: RunContext,
     agent: str,
     capability: str,
     name: str,
@@ -309,7 +311,7 @@ def resolve_capability(
     A named instance resolves whatever the user excludes. Returns the first match, or None when no
     candidate matches.
     """
-    candidates = list_capability_targets(agent, capability, project_root, no_exclusions(project_root))
+    candidates = list_capability_targets(run, agent, capability, project_root, no_exclusions(project_root))
     extractor = _name_extractor_for(capability)
     for candidate in candidates:
         if extractor(candidate) == name:
@@ -320,9 +322,9 @@ def resolve_capability(
 def _find_declaration(
     agent: str,
     capability: str,
-    project_root: Path,
+    config: ProjectConfig,
 ) -> FileTypeDeclaration | None:
-    for decl in load_file_types(agent, project_root=project_root):
+    for decl in load_file_types(agent, config=config):
         if decl.name == capability:
             return decl
     return None

@@ -20,7 +20,7 @@ class CapabilityVocabulary(BaseModel):  # type: ignore[explicit-any]  # pydantic
     config key it names; ``fold`` maps a display alias to the config keys it
     unions; ``virtual`` names capabilities the classifier synthesizes rather
     than any agent declaring. Shared by ``core/classify`` and the read-side
-    ``platform/adapters`` query so the vocabulary has one source, not a mirror.
+    ``platform/rules`` query so the vocabulary has one source, not a mirror.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")

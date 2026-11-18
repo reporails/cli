@@ -5,11 +5,20 @@ module words the refusal as a structured reply and formats the run as the payloa
 health and, on the paid plan, the remediation workflow). `preflight` and `explain` live in `rule_tools.py`.
 """
 
+import time
+from functools import partial
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import get_known_agents
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.pipeline.check_one import check_path, model_refusal, rules_missing_message
-from reporails_cli.core.platform.adapters.api_key import has_api_key
+from reporails_cli.core.pipeline.server_gate import server_gate
+from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
+from reporails_cli.core.platform.adapters.http_get import http_get
+from reporails_cli.core.platform.adapters.key_check import handshake
+from reporails_cli.core.platform.adapters.server_lint import ServerLint
+from reporails_cli.core.platform.config.api_key import has_api_key
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import FunnelError, tiers_unpaid
 from reporails_cli.core.platform.dto.pipeline import CheckRun, Refusal
@@ -52,7 +61,7 @@ def refusal_payload(refusal: Refusal) -> JsonObject:
             return json_formatter.empty_result_payload(refusal.target, refusal.excluded)
         case "model_downloading":
             return {"error": refusal.kind, "message": _MODEL_DOWNLOADING}
-        case "model_unavailable":
+        case "model_unavailable" | "server_refused" | "server_unreachable":
             return {"error": refusal.kind, "message": refusal.message}
         case "path_not_found" | "failed":
             return {"error": refusal.message}
@@ -60,8 +69,36 @@ def refusal_payload(refusal: Refusal) -> JsonObject:
 
 def model_not_ready_error() -> JsonObject | None:
     """The error payload when the model set is not ready (downloading it once first), else `None`."""
-    refusal = model_refusal()
+    refusal = model_refusal(http_get)
     return None if refusal is None else refusal_payload(refusal)
+
+
+# Seconds a passed handshake is reused by this server process, so a repeat or a re-validate in a heal loop
+# does not ask the service again.
+HANDSHAKE_REUSE_S = 60.0
+
+# When this process's last handshake passed (`time.monotonic`); a refusal is never stored.
+_gate_passed: dict[str, float] = {}
+
+
+def _server_refusal(run: RunContext) -> Refusal | None:
+    """The refusal when the server will not serve this caller; a handshake that passed inside
+    `HANDSHAKE_REUSE_S` is not asked again."""
+    passed_at = _gate_passed.get("at")
+    if passed_at is not None and time.monotonic() - passed_at < HANDSHAKE_REUSE_S:
+        return None
+    refusal = server_gate("mcp", partial(handshake, tier=run.tier(), fetch=http_get))
+    if refusal is None:
+        _gate_passed["at"] = time.monotonic()
+    else:
+        _gate_passed.clear()
+    return refusal
+
+
+def unserved_or_model_not_ready_error(run: RunContext) -> JsonObject | None:
+    """The error payload when the server will not serve this caller, else when the model set is not ready."""
+    refusal = _server_refusal(run)
+    return refusal_payload(refusal) if refusal is not None else model_not_ready_error()
 
 
 def with_host_hooks(payload: JsonObject, result: CombinedResult) -> JsonObject:
@@ -143,15 +180,31 @@ def format_run(run: CheckRun, *, full: bool) -> JsonObject:
 
 
 def run_pipeline_for_path(
-    path: str, full: bool = False, named: frozenset[Path] = frozenset(), *, project_root: Path
+    path: str,
+    full: bool = False,
+    named: frozenset[Path] = frozenset(),
+    *,
+    project_root: Path,
+    run: RunContext,
+    models: Models,
 ) -> tuple[JsonObject, RulesetMap | None, float | None]:
     """Check `path` (directory or file); returns `(payload, ruleset_map, file_score)`. `ruleset_map` and
     `file_score` are `None` on a structured error/needs-install payload — the caller checks `"error"` /
     `"needs_install"` in the payload. A file `path` narrows the validated set to that single file;
     `file_score` is that single file's own display score (`None` for a directory or an unscored file).
-    `named` and `project_root` are read as in `core.pipeline.check_one.scope_for_path`.
+    `project_root` roots the check, `named` holds files the caller named for a directory `path`, and `run` is
+    this tool call's own.
     """
-    run = check_path(path, project_root, named)
-    if isinstance(run, Refusal):
-        return refusal_payload(run), None, None
-    return format_run(run, full=full), run.ruleset_map, run.file_score
+    checked = check_path(
+        path,
+        project_root,
+        named,
+        lint=ServerLint(run.tier()),
+        run=run,
+        fetch=http_get,
+        daemon=UnixDaemonSocket(),
+        models=models,
+    )
+    if isinstance(checked, Refusal):
+        return refusal_payload(checked), None, None
+    return format_run(checked, full=full), checked.ruleset_map, checked.file_score

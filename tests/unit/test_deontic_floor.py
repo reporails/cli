@@ -14,13 +14,14 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.mapper.charge_floors import _apply_deontic_floor
+from reporails_cli.core.mapper.negative_headings import read_negative_headings
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 
 def _item(charge: str, cv: int, heading: str, fmt: str = "list") -> Atom:
     """A list/prose atom under `heading`, carrying its own head-assigned charge."""
-    return Atom(
+    atom = Atom(
         line=1,
         text="use the shared cache",
         kind="excitation",
@@ -31,6 +32,8 @@ def _item(charge: str, cv: int, heading: str, fmt: str = "list") -> Atom:
         format=fmt,
         heading_context=heading,
     )
+    read_negative_headings([atom])
+    return atom
 
 
 @pytest.mark.unit

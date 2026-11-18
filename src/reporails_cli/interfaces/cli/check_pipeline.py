@@ -12,13 +12,15 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from reporails_cli.core.heal.record import heal_regressions
 from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.lint.regex.not_evaluated import not_evaluated_scope
 from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes_over_pairs
 from reporails_cli.core.mapper.skills import skill_membership
 from reporails_cli.core.pipeline.assemble import assemble_result, lint_request_local, with_exclusions
 from reporails_cli.core.pipeline.mapping import agent_file_pairs, map_instruction_files
-from reporails_cli.core.platform.adapters.api_client import AilsClient
+from reporails_cli.core.platform.adapters.api_client import AilsClient, offline_reply
+from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
 from reporails_cli.core.platform.adapters.notices_seen import visible_notices
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs
 from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
@@ -83,6 +85,9 @@ def _flow_pipeline(state: CheckState) -> None:
                 state.scope.instruction_files,
                 progress=map_progress,
                 filtered_agents=state.scope.filtered,
+                mapper=state.run.project_config(state.targets.target).mapper,
+                daemon=UnixDaemonSocket(),
+                models=state.models,
             )
         except (ImportError, RuntimeError) as exc:
             logger.warning("Mapper unavailable: %s. Content checks skipped.", exc)
@@ -98,6 +103,7 @@ def _flow_pipeline(state: CheckState) -> None:
         skills = skill_membership(state.pipeline.ruleset_map)
         with not_evaluated_scope() as unfinished:
             state.pipeline.m_findings = run_m_probes_over_pairs(
+                state.run,
                 state.targets.target,
                 pairs,
                 scoped=state.scope.is_targeted,
@@ -134,7 +140,7 @@ def _run_content_checks(state: CheckState) -> None:
         finding
         for agent_id, files in _agent_file_pairs(state)
         for finding in run_content_quality_checks(
-            ruleset_map, state.targets.target, files, agent=agent_id, exclusions=state.scope.exclusions
+            state.run, ruleset_map, state.targets.target, files, agent=agent_id, exclusions=state.scope.exclusions
         )
     ]
     state.pipeline.client_findings = run_client_checks(ruleset_map)
@@ -145,10 +151,13 @@ def _flow_server_lint(state: CheckState, spinner: Status | None) -> None:
 
     if spinner is not None:
         spinner.update("[bold]Diagnosing...[/bold]")
-    response = None
-    if state.pipeline.ruleset_map is not None:
+    if state.pipeline.ruleset_map is None:
+        response = offline_reply()
+    else:
         local, structural_required = lint_request_local(_assemble_inputs(state))
-        response = AilsClient().lint(state.pipeline.ruleset_map, local, structural_required, root=state.targets.target)
+        response = AilsClient(state.run.tier()).lint(
+            state.pipeline.ruleset_map, local, structural_required, root=state.targets.target
+        )
     state.pipeline.lint_result = response.result if response else None
     state.pipeline.funnel_error = response.funnel_error if response else None
     state.pipeline.notices = visible_notices(response.notices if response else (), no_promo=state.render.no_promo)
@@ -167,6 +176,7 @@ def _assemble_inputs(state: CheckState, lint_result: LintResult | None = None) -
         filter_agents=state.scope.filtered,
         effective_agent=state.scope.effective_agent,
         lint_result=lint_result,
+        project_config=state.run.project_config(state.targets.target),
         rule_agents=state.pipeline.rule_agents,
         notices=state.pipeline.notices,
         not_evaluated=state.pipeline.not_evaluated,
@@ -182,7 +192,7 @@ def _flow_assemble(state: CheckState) -> None:
     """
 
     state.render.result = with_exclusions(
-        assemble_result(_assemble_inputs(state, state.pipeline.lint_result), state.scope.exclusions),
+        assemble_result(state.run, _assemble_inputs(state, state.pipeline.lint_result), state.scope.exclusions),
         state.render.excluded,
     )
     # `assemble_result` unpacks the lint result (report/hints/cross_file_coordinates/tier)
@@ -203,3 +213,5 @@ def _flow_assemble(state: CheckState) -> None:
     else:
         state.render.display_result = state.render.result
         state.render.display_map = state.pipeline.ruleset_map
+    shown = state.render.display_result
+    state.render.heal_regressions = heal_regressions(shown, state.targets.target)

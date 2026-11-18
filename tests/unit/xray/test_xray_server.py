@@ -18,17 +18,34 @@ import pytest
 from starlette.testclient import TestClient
 
 from reporails_cli.core.discovery.agent_discovery import claude_project_dir
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.pipeline.mapping import map_instruction_files
-from reporails_cli.core.platform.adapters.rules_query import rule_category, rule_title
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
+from reporails_cli.core.platform.config.run_context import RunContext
+from reporails_cli.core.platform.contract.environment import EnvironmentFor
+from reporails_cli.core.platform.contract.http_get import HttpGet
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.heal import HealOutcome, KeyedResult
 from reporails_cli.core.platform.dto.pipeline import Refusal
+from reporails_cli.core.platform.dto.ports import DaemonTransport, LintService
+from reporails_cli.core.platform.dto.results import MapperConfig
+from reporails_cli.core.platform.rules.rules_query import rule_category, rule_title
+from reporails_cli.formatters.mcp_view import render_heal_receipt
 from reporails_cli.formatters.text.rule_meta import rule_docs_url
 from reporails_cli.interfaces.cli import xray_launch, xray_server
-from tests.unit.test_mcp_heal_apply import DOC, _wire
+from tests.fake_daemon import FakeDaemonTransport
+from tests.fake_models import no_models
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
+
+DOC = """# Demo
+
+Always run the **linter** before you commit.
+
+Never edit **generated** files by hand.
+
+Run build.sh before every commit.
+"""
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "eventbus" / "transcript" / "2.1.308"
 TOKEN = "launch-token"
@@ -74,12 +91,31 @@ def project(tmp_path: Path) -> Path:
 def calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
     seen = Calls()
 
-    def fake_check(path: str, root: Path) -> Refusal:
+    def fake_check(
+        path: str,
+        root: Path,
+        *,
+        lint: LintService,
+        run: RunContext,
+        fetch: HttpGet,
+        daemon: DaemonTransport,
+        models: Models,
+    ) -> Refusal:
         seen.checked.append(path)
         seen.roots.append(root)
         return Refusal("failed", "fake refusal")
 
-    def fake_heal(path: str, root: Path) -> HealOutcome:
+    def fake_heal(
+        path: str,
+        root: Path,
+        *,
+        lint: LintService,
+        run: RunContext,
+        fetch: HttpGet,
+        daemon: DaemonTransport,
+        models: Models,
+        environment_for: EnvironmentFor,
+    ) -> HealOutcome:
         seen.healed.append(path)
         seen.roots.append(root)
         return HealOutcome(KeyedResult(), "", Path(path).parent)
@@ -189,7 +225,7 @@ def test_check_reports_a_refusal_as_400_and_a_file_as_its_findings(
         pass
 
     finding = FindingItem(file="CLAUDE.md", line=3, severity="warning", rule="CORE:C:0053", message="Say it plainly")
-    monkeypatch.setattr(xray_server, "check_path", lambda path, root: Run())
+    monkeypatch.setattr(xray_server, "check_path", lambda path, root, *, lint, run, fetch, daemon, models: Run())
     monkeypatch.setattr(xray_server, "file_findings", lambda run, file: (finding,))
     reply = client.post("/check", json={"path": "CLAUDE.md"}, headers={"X-Xray-Token": TOKEN, "Origin": ORIGIN})
     assert reply.json()["findings"] == 1
@@ -227,7 +263,9 @@ def test_the_launch_check_fills_every_files_tally_and_moves_the_version(
         result=SimpleNamespace(findings=[finding, other]),
         scope=SimpleNamespace(scan_root=project.resolve(), instruction_files=[project / "CLAUDE.md"]),
     )
-    monkeypatch.setattr(xray_server, "check_path", lambda path, root: run)
+    monkeypatch.setattr(
+        xray_server, "check_path", lambda path, root, *, lint, run, fetch, daemon, models, fixture=run: fixture
+    )
     app = xray_server.build_app(
         project,
         tmp_path / "session" / "session.jsonl",
@@ -260,7 +298,11 @@ def _resolutions_of_one_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, r
     older.write_text(json.dumps(TYPED_PROMPT) + "\n", encoding="utf-8")
     newer = claude_project_dir(root) / "newer.jsonl"
     shutil.copy(FIXTURES / "session.jsonl", newer)
-    monkeypatch.setattr(xray_server, "check_path", lambda path, root: Refusal("failed", "fake refusal"))
+    monkeypatch.setattr(
+        xray_server,
+        "check_path",
+        lambda path, root, *, lint, run, fetch, daemon, models: Refusal("failed", "fake refusal"),
+    )
     app = xray_server.build_app(
         root, newer, picked="newest", token=TOKEN, launch=LAUNCH, port=PORT, requests=xray_launch.RequestClock()
     )
@@ -301,7 +343,16 @@ def test_the_launch_check_starts_only_after_the_first_view_is_answered(
 ) -> None:
     started = threading.Event()
 
-    def check(path: str, root: Path) -> Refusal:
+    def check(
+        path: str,
+        root: Path,
+        *,
+        lint: LintService,
+        run: RunContext,
+        fetch: HttpGet,
+        daemon: DaemonTransport,
+        models: Models,
+    ) -> Refusal:
         started.set()
         return Refusal("failed", "no model")
 
@@ -331,9 +382,11 @@ def test_the_first_view_on_a_long_session_is_answered_in_under_two_seconds_besid
     real_check = xray_server.check_path
     checking: list[str] = []
 
-    def watched_check(path: str, root: Path) -> Any:
+    def watched_check(
+        path: str, root: Path, *, lint: LintService, run: RunContext, fetch: HttpGet, daemon: DaemonTransport
+    ) -> Any:
         checking.append(path)
-        return real_check(path, root)
+        return real_check(path, root, lint=lint, run=run, fetch=fetch, daemon=daemon)
 
     monkeypatch.setattr(xray_server, "check_path", watched_check)
     app = xray_server.build_app(
@@ -402,7 +455,16 @@ def test_the_view_says_running_until_the_launch_check_lands_and_the_version_move
 ) -> None:
     release = threading.Event()
 
-    def slow_check(path: str, root: Path) -> Refusal:
+    def slow_check(
+        path: str,
+        root: Path,
+        *,
+        lint: LintService,
+        run: RunContext,
+        fetch: HttpGet,
+        daemon: DaemonTransport,
+        models: Models,
+    ) -> Refusal:
         release.wait(5)
         return Refusal("failed", "no model")
 
@@ -430,24 +492,51 @@ def test_heal_replies_with_the_receipt_or_the_reason_nothing_was_written(
 ) -> None:
     headers = {"X-Xray-Token": TOKEN, "Origin": ORIGIN}
     reply = client.post("/heal", json={"path": "CLAUDE.md"}, headers=headers).json()
-    assert reply["receipt"][0].startswith("heal_apply: 0 fixed")
+    assert reply["receipt"][0].startswith("0 fixed")
     monkeypatch.setattr(
-        xray_server, "heal_one", lambda path, root: HealOutcome(None, "Applying fixes needs a Pro account.", Path())
+        xray_server,
+        "heal_one",
+        lambda path, root, *, lint, run, fetch, daemon, models, environment_for: HealOutcome(
+            None, "Applying fixes needs a Pro account.", Path()
+        ),
     )
     reply = client.post("/heal", json={"path": "CLAUDE.md"}, headers=headers).json()
     assert reply["receipt"] == ["Applying fixes needs a Pro account."]
+
+
+def _wire(m: Any, rows: tuple[tuple[int, str, str], ...]) -> dict[str, Any]:
+    def pi(line: int) -> int | None:
+        return next((a.position_index for a in m.atoms if a.line == line), None)
+
+    findings = [
+        {"rule": r, "file": "CLAUDE.md", "line": ln, "pi": pi(ln), "op": op, "expect": {}} for ln, op, r in rows
+    ]
+    loc = {"order": 1, "element": "CLAUDE.md", "kind": "main", "loading": "always", "files": ["CLAUDE.md"]}
+    return {"summary": "", "locations": [{**loc, "importance": "", "findings": findings, "relations": []}]}
+
+
+def test_put_back_line_names_the_failed_check_when_no_op_is_named() -> None:
+    entry = {"file": "A.md", "op": "", "rule": "", "line": 5, "check": "preservation:order"}
+    assert "put back: A.md (preservation:order line 5)" in render_heal_receipt([], [], [entry], Path("."))
+    named = {"file": "A.md", "op": "bold", "rule": "CORE:S:0001", "line": 3, "check": "conformance"}
+    assert "put back: A.md (bold CORE:S:0001 line 3)" in render_heal_receipt([], [], [named], Path("."))
 
 
 def _real_heal(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Leave `heal_one` and the keyed write real; only the server-backed check returns a fixture run."""
     path = project / "CLAUDE.md"
     path.write_text(DOC)
-    m = map_instruction_files(project, [path], spawn_daemon=False)
-    wire = _wire(project, m, ((3, "unbold", "bold"), (7, "code", "format")))
+    m = map_instruction_files(
+        project, [path], spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport(), models=no_models()
+    )
+    wire = _wire(m, ((3, "unbold", "bold"), (7, "code", "format")))
     reply = SimpleNamespace(workflow=deserialize_workflow({"workflow": wire}), tier="pro")
     result = SimpleNamespace(reply=reply, offline=False)
     run = SimpleNamespace(ruleset_map=m, result=result, funnel_error=None, scope=SimpleNamespace(scan_root=project))
-    monkeypatch.setattr("reporails_cli.core.heal.apply.check_path", lambda _path, _root: run)
+    monkeypatch.setattr(
+        "reporails_cli.core.heal.apply.check_path",
+        lambda _path, _root, *, lint, run, fetch, daemon, models, fixture=run: fixture,
+    )
 
 
 @pytest.mark.requires_model
@@ -458,7 +547,7 @@ def test_heal_button_writes_every_fix_through_the_real_heal(
     headers = {"X-Xray-Token": TOKEN, "Origin": ORIGIN}
     reply = client.post("/heal", json={"path": "CLAUDE.md"}, headers=headers).json()
     assert reply["receipt"] == [
-        "heal_apply: 2 fixed \u00b7 0 left for a decision \u00b7 0 put back",
+        "2 fixed \u00b7 0 left for a decision \u00b7 0 put back",
         "CLAUDE.md  2 fixed",
     ]
     body = (project / "CLAUDE.md").read_text()
@@ -482,7 +571,7 @@ def test_heal_button_puts_back_a_file_that_departs(
     _real_heal(project, monkeypatch)
     headers = {"X-Xray-Token": TOKEN, "Origin": ORIGIN}
     reply = client.post("/heal", json={"path": "CLAUDE.md"}, headers=headers).json()
-    assert reply["receipt"][0] == "heal_apply: 0 fixed \u00b7 0 left for a decision \u00b7 1 put back"
+    assert reply["receipt"][0] == "0 fixed \u00b7 0 left for a decision \u00b7 1 put back"
     assert "put back: CLAUDE.md (outside  line 1)" in reply["receipt"]
     assert (project / "CLAUDE.md").read_bytes() == DOC.encode()
 
@@ -653,6 +742,14 @@ def test_brief_refuses_an_unknown_subagent_and_a_missing_query(client: TestClien
     assert _get(client, "/brief", {}).status_code == 400
 
 
+def test_output_is_guarded_like_brief_and_refuses_a_subagent_with_no_recorded_output(client: TestClient) -> None:
+    assert _get(client, "/output", {"subagent": SUB_ID}, token=None).status_code == 403
+    client.get("/view", headers={"X-Xray-Token": TOKEN})
+    reply = _get(client, "/output", {"subagent": "nosuchagent"})
+    assert reply.status_code == 400 and reply.json() == {"error": "no output was recorded for that subagent"}
+    assert _get(client, "/output", {}).status_code == 400
+
+
 def test_view_still_carries_no_text(client: TestClient) -> None:
     body = client.get("/view", headers={"X-Xray-Token": TOKEN}).text
     # A subagent's task description names its node; no prompt, tool or file text is in the view.
@@ -719,13 +816,23 @@ def _server(project: Path, tmp_path: Path) -> xray_server.XrayServer:
         token=TOKEN,
         launch=LAUNCH,
         port=PORT,
+        models=no_models(),
     )
 
 
 def test_a_launch_check_that_fails_unexpectedly_lands_as_refused_with_the_error_text(
     project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    def boom(path: str, root: Path) -> None:
+    def boom(
+        path: str,
+        root: Path,
+        *,
+        lint: LintService,
+        run: RunContext,
+        fetch: HttpGet,
+        daemon: DaemonTransport,
+        models: Models,
+    ) -> None:
         raise PermissionError("no read access")
 
     monkeypatch.setattr(xray_server, "check_path", boom)
@@ -746,8 +853,16 @@ def test_a_heal_ordered_after_the_launch_check_keeps_its_dropped_tally(
         result=SimpleNamespace(findings=[]),
         scope=SimpleNamespace(scan_root=project.resolve(), instruction_files=[project / "CLAUDE.md"]),
     )
-    monkeypatch.setattr(xray_server, "check_path", lambda path, root: run)
-    monkeypatch.setattr(xray_server, "heal_one", lambda path, root: HealOutcome(KeyedResult(), "", project))
+    monkeypatch.setattr(
+        xray_server, "check_path", lambda path, root, *, lint, run, fetch, daemon, models, fixture=run: fixture
+    )
+    monkeypatch.setattr(
+        xray_server,
+        "heal_one",
+        lambda path, root, *, lint, run, fetch, daemon, models, environment_for: HealOutcome(
+            KeyedResult(), "", project
+        ),
+    )
     server = _server(project, tmp_path)
     tallies_of = xray_server.tallies_by_file
     healers: list[threading.Thread] = []

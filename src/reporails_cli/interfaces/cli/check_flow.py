@@ -15,12 +15,15 @@ capability-path resolution) stay in ``check_orchestration.py`` /
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
 
 from reporails_cli.core.classify.capability_paths import canonicalize_capability, classify_target_token
+from reporails_cli.core.discovery.exclusions import no_exclusions
+from reporails_cli.core.discovery.file_aliases import get_file_aliases
 from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
 from reporails_cli.core.heal.apply import heal_scope_files, heal_scope_outside
 from reporails_cli.core.pipeline.mapping import (
@@ -28,13 +31,19 @@ from reporails_cli.core.pipeline.mapping import (
     discover_scope,
     is_listed_file,
 )
-from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.pipeline.server_gate import server_gate
+from reporails_cli.core.platform.adapters.http_get import http_get
+from reporails_cli.core.platform.adapters.key_check import handshake
+from reporails_cli.core.platform.config.bootstrap import running_in_ci
+from reporails_cli.core.platform.config.run_context import RunContext
+from reporails_cli.core.platform.dto.heal import HealRegression
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
 from reporails_cli.interfaces.cli.check_notices import (
     _emit_empty_run,
     _emit_heal_scope_refusal,
     _emit_heal_withheld,
+    _emit_server_refusal,
     _emit_unlisted_file,
     _notify_heal_scope_skips,
 )
@@ -66,6 +75,7 @@ from reporails_cli.interfaces.cli.helpers import (
 )
 
 if TYPE_CHECKING:
+    from reporails_cli.core.mapper.models import Models
     from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResult, Notice, RemediationWorkflow
     from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
     from reporails_cli.core.platform.dto.models import LocalFinding
@@ -119,7 +129,7 @@ class CheckScope:
     assumed: bool = False
     mixed: bool = False
     filtered: list[DetectedAgent] = field(default_factory=list)
-    exclusions: RunExclusions | None = None
+    exclusions: RunExclusions = field(default_factory=lambda: no_exclusions(Path()))
     instruction_files: list[Path] = field(default_factory=list)
     upfront_paths: set[Path] = field(default_factory=set)
     is_targeted: bool = False
@@ -151,6 +161,8 @@ class CheckRender:
     result: CombinedResult = field(default_factory=CombinedResult)
     display_result: CombinedResult = field(default_factory=CombinedResult)
     display_map: RulesetMap | None = None
+    # The healed files the shown result has slipping since the heal.
+    heal_regressions: tuple[HealRegression, ...] = ()
     capability_paths: set[Path] = field(default_factory=set)
     # The `(folders, file globs)` the run left out because the user set them, recorded where scope resolves.
     excluded: tuple[tuple[str, ...], tuple[str, ...]] = ((), ())
@@ -165,6 +177,8 @@ class CheckState:
     """Per-phase sub-objects threaded through the ``ails check`` flow."""
 
     inputs: CheckInputs
+    run: RunContext
+    models: Models
     targets: CheckTargets = field(default_factory=CheckTargets)
     scope: CheckScope = field(default_factory=CheckScope)
     pipeline: CheckPipeline = field(default_factory=CheckPipeline)
@@ -176,8 +190,8 @@ def _flow_targets(state: CheckState) -> None:
     if state.inputs.targets:
         sniffed: dict[Path, str] = {}
         for token in state.inputs.targets:
-            sniff_agent = _token_agent(token, state.inputs.agent, state.inputs.project_root, sniffed)
-            kind, payload = classify_target_token(token, sniff_agent, state.inputs.project_root)
+            sniff_agent = _token_agent(state.run, token, state.inputs.agent, state.inputs.project_root, sniffed)
+            kind, payload = classify_target_token(state.run, token, sniff_agent, state.inputs.project_root)
             if kind == "capability" and isinstance(payload, tuple):
                 state.targets.capability_specs.append(payload)
             elif isinstance(payload, Path):
@@ -185,7 +199,10 @@ def _flow_targets(state: CheckState) -> None:
                     suggestion = ""
                     if (
                         sniff_agent
-                        and canonicalize_capability(token, sniff_agent, state.inputs.project_root) is not None
+                        and canonicalize_capability(
+                            token, sniff_agent, state.run.project_config(state.inputs.project_root)
+                        )
+                        is not None
                     ):
                         suggestion = (
                             f"\n[dim]'{token}' is a known capability — did you mean `ails check {token}`?[/dim]"
@@ -225,7 +242,7 @@ def _resolve_scope_at_target(state: CheckState, capability_paths: frozenset[Path
     run against it at all.
     """
 
-    config = get_project_config(state.targets.target)
+    config = state.run.project_config(state.targets.target)
     state.scope.generic_scanning = bool(config.generic_scanning)
     agent_arg = state.inputs.agent or config.default_agent
     if agent_arg:
@@ -236,7 +253,9 @@ def _resolve_scope_at_target(state: CheckState, capability_paths: frozenset[Path
         _named_paths(state, capability_paths),
     )
     scan = not state.targets.single_file
-    found = discover_scope(state.targets.target, agent_arg, *flags, scan_files=scan, named=named, narrowed=narrowed)
+    found = discover_scope(
+        state.run, state.targets.target, agent_arg, *flags, scan_files=scan, named=named, narrowed=narrowed
+    )
     state.render.excluded, state.scope.exclusions = found.excluded, found.exclusions
     state.scope.detected, state.scope.filtered = found.detected, found.filtered
     state.scope.effective_agent, state.scope.assumed, state.scope.mixed = (
@@ -257,7 +276,7 @@ def _flow_scope(state: CheckState) -> bool:
     """Detect agents, discover instruction files, narrow to scope. False = nothing in scope."""
     _resolve_scope_at_target(state)
     single = state.targets.single_file
-    if single is not None and not is_listed_file(single, state.targets.target):
+    if single is not None and not is_listed_file(state.run, single, state.targets.target):
         _emit_unlisted_file(single, state.targets.target, state.inputs.project_root, state.targets.output_format)
     # A scope-to-subtree run keeps the project scan root, so its narrowing runs here
     # with the capability/multi-path narrowing rather than through the re-root branch.
@@ -285,6 +304,7 @@ def _narrow_upfront(state: CheckState) -> bool:
         raise typer.Exit(2)
     if state.targets.capability_specs:
         cap_paths, unresolved_skills = _resolve_capability_paths(
+            state.run,
             state.targets.capability_specs,
             state.scope.effective_agent,
             state.inputs.project_root,
@@ -315,11 +335,12 @@ def _narrow_upfront(state: CheckState) -> bool:
 def _apply_generic_scan(state: CheckState) -> bool:
     """Fold @-import-reached files into the scored set and compute is_targeted. Always True."""
     import_extra, state.scope.file_type_by_path = apply_generic_scan(
+        state.run,
         state.targets.target,
         state.scope.instruction_files,
         state.scope.effective_agent,
-        state.scope.generic_scanning,
-        state.scope.exclusions,
+        generic_scanning=state.scope.generic_scanning,
+        exclusions=state.scope.exclusions,
     )
     if import_extra:
         state.scope.instruction_files = list(state.scope.instruction_files) + import_extra
@@ -349,6 +370,8 @@ def _flow_render(state: CheckState) -> None:
                 file_type_by_path=state.scope.file_type_by_path,
                 ascii_mode=state.inputs.ascii_mode,
                 verbose=state.inputs.verbose,
+                heal_regressions=state.render.heal_regressions,
+                aliases=get_file_aliases(state.run, state.targets.target),
             ),
         )
     state.pipeline.stage_timer.mark("render")
@@ -394,18 +417,27 @@ def _flow_heal(state: CheckState) -> None:
     )
     _run_heal_pass(
         state.targets.target,
-        HealScope(heal_files, state.scope.effective_agent, state.scope.exclusions),
+        HealScope(heal_files, state.scope.effective_agent, state.scope.exclusions, state.models),
         state.pipeline.ruleset_map,
         state.inputs.dry_run,
         state.targets.output_format,
+        run=state.run,
         notices=state.render.result.reply.notices,
         workflow=_heal_workflow(state),
     )
 
 
 def run_check_flow(state: CheckState) -> None:
-    """Run the ``ails check`` phases over `state`, raising ``typer.Exit`` on scoped-exit paths."""
+    """Run the ``ails check`` phases over `state`, raising ``typer.Exit`` on scoped-exit paths.
+
+    The server is asked after the targets are read and before any file is discovered:
+    a refusal ends the run with exit 1.
+    """
     _flow_targets(state)
+    refusal = server_gate("ci" if running_in_ci() else "cli", partial(handshake, tier=state.run.tier(), fetch=http_get))
+    if refusal is not None:
+        _emit_server_refusal(state.targets.output_format, refusal)
+        raise typer.Exit(1)
     if not _flow_scope(state):
         return
     # Fetch the model only once there are files to map: a mistyped path or an empty

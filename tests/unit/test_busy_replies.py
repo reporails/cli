@@ -18,6 +18,8 @@ from reporails_cli.formatters.text import display
 from reporails_cli.interfaces.mcp.tools import _attach_funnel
 from tests.conftest import ails_client
 
+pytestmark = pytest.mark.usefixtures("server_reachable")
+
 _ROOT = Path("/tmp/reporails-test-scan-root")
 
 BUSY = "The diagnostics server is busy. Try again in 5 seconds."

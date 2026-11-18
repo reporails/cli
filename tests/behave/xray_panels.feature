@@ -21,6 +21,21 @@ Feature: The x-ray Sources panel and right column list everything and describe o
     Then a source opens its text from the file route and the peak legend adds up to the whole
 
   @page @browser
+  Scenario: A selected subagent's pills open its task prompt and what it handed back
+    Given the bundled page is served over the "view_panels" fixture view
+    Then a selected subagent's down pill opens its task prompt and its up pill opens what it handed back
+
+  @page @browser
+  Scenario: A short subagent's two pills never cover one another
+    Given the bundled page is served over the "view_panels" fixture view changed so the reviewer subagent ran for only four seconds
+    Then a selected short subagent's down and up pills do not overlap and each opens its text
+
+  @page @browser
+  Scenario: A failed subagent's Failed line opens the text its parent received
+    Given the bundled page is served over the "view_panels" fixture view
+    Then a failed subagent's Failed line opens the text its parent received
+
+  @page @browser
   Scenario: The main agent's cost shows the whole session
     Given the bundled page is served over the "view_sample" fixture view
     Then the main agent's cost tile and details list the session total, the subagents' share and the costliest subagents
@@ -84,3 +99,13 @@ Feature: The x-ray Sources panel and right column list everything and describe o
     And on the real page hovering changes nothing in the right column and a click on a spine source opens its details
     And on the real page a pin survives the session file growing and the page taking the new view
     And on the real page the subagent's cost tile shows dollars and the main tile's session line is main plus subagents
+
+  @page @browser
+  Scenario: The card or row whose details are open is marked as open and loses the mark when another opens
+    Given the bundled page is served over the "view_panels" fixture view
+    Then the card and the row that opened the details are marked open and the one opened before is not
+
+  @page @browser
+  Scenario: A station pill and a scrolled Tool calls row keep the open mark and the Tool calls strip never takes it
+    Given the bundled page is served over the "view_sample" fixture view
+    Then a station pill, and a Tool calls row scrolled away and back, stay marked open and the Tool calls strip never is

@@ -13,25 +13,29 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from reporails_cli.core.classify import classify_files, load_file_types
-from reporails_cli.core.heal.apply import apply_keyed_heal
+from reporails_cli.core.heal.apply import apply_keyed_heal, heal_remap
 from reporails_cli.core.heal.fixers import suggest_missing_sections
 from reporails_cli.core.heal.keyed import put_back_line
 from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes
 from reporails_cli.core.lint.suppression import build_index, is_suppressed
 from reporails_cli.core.mapper.skills import skill_membership
-from reporails_cli.core.platform.adapters.registry import load_rules
-from reporails_cli.core.platform.adapters.rules_query import rule_title
-from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
+from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.heal import KeyedResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile, LocalFinding, Rule, Severity, Violation
+from reporails_cli.core.platform.rules.registry import load_rules
+from reporails_cli.core.platform.rules.rules_query import rule_title
 from reporails_cli.formatters.json import format_notices
 
 if TYPE_CHECKING:
     from rich.console import Console
 
+    from reporails_cli.core.mapper.models import Models
     from reporails_cli.core.platform.dto.diagnostics import Notice, RemediationWorkflow
+    from reporails_cli.core.platform.dto.results import ConfiguredRoot
     from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
 logger = logging.getLogger(__name__)
@@ -39,25 +43,29 @@ logger = logging.getLogger(__name__)
 
 def _apply_keyed_fixes(
     ruleset_map: RulesetMap | None,
-    target: Path,
+    root: ConfiguredRoot,
     workflow: RemediationWorkflow | None,
     *,
     dry_run: bool,
-    show_progress: bool,
-    console: Console,
     allowed_files: list[Path] | None = None,
     suppressed: dict[Path, set[int]] | None = None,
+    models: Models,
 ) -> KeyedResult:
     """Fix each finding at the place it names; list the places that need a decision (`apply_keyed_heal`)."""
-
-    if show_progress and ruleset_map is not None and workflow is not None:
-        console.print("[bold]Applying fixes...[/bold]")
     return apply_keyed_heal(
-        ruleset_map, target, workflow, dry_run=dry_run, allowed_files=allowed_files, suppressed=suppressed
+        ruleset_map,
+        root,
+        workflow,
+        dry_run=dry_run,
+        allowed_files=allowed_files,
+        suppressed=suppressed,
+        environment_for=LocalProjectEnvironment,
+        remap=heal_remap(root, UnixDaemonSocket(), models),
     )
 
 
 def _collect_section_suggestions(
+    run: RunContext,
     target: Path,
     instruction_files: list[Path],
     ruleset_map: RulesetMap | None,
@@ -65,7 +73,7 @@ def _collect_section_suggestions(
     *,
     show_progress: bool,
     console: Console,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> list[dict[str, str]]:
     """Run M probes + content-quality checks and collect missing-section suggestions.
 
@@ -81,6 +89,7 @@ def _collect_section_suggestions(
     if show_progress:
         console.print("[bold]Checking for missing sections...[/bold]")
     findings = run_m_probes(
+        run,
         target,
         instruction_files,
         agent=effective_agent,
@@ -88,11 +97,11 @@ def _collect_section_suggestions(
         exclusions=exclusions,
     )
     findings += run_content_quality_checks(
-        ruleset_map, target, instruction_files, agent=effective_agent, exclusions=exclusions
+        run, ruleset_map, target, instruction_files, agent=effective_agent, exclusions=exclusions
     )
     findings = _drop_suppressed(findings, target)
 
-    classified_files, rules = _classify_for_suggestions(target, instruction_files, effective_agent, exclusions)
+    classified_files, rules = _classify_for_suggestions(run, target, instruction_files, effective_agent, exclusions)
     suggestions = suggest_missing_sections(_findings_to_violations(findings), target, classified_files, rules)
     return [
         {"rule_id": s.rule_id, "file_path": s.file_path, "section": s.section, "description": s.description}
@@ -127,7 +136,7 @@ def _findings_to_violations(findings: list[LocalFinding]) -> list[Violation]:
 
 
 def _classify_for_suggestions(
-    target: Path, instruction_files: list[Path], agent: str, exclusions: RunExclusions | None = None
+    run: RunContext, target: Path, instruction_files: list[Path], agent: str, exclusions: RunExclusions
 ) -> tuple[list[ClassifiedFile], dict[str, Rule]]:
     """Classify files and load rules so a section suggestion can name the file the
     rule's own `match.type` is about, instead of wherever the underlying finding
@@ -135,12 +144,12 @@ def _classify_for_suggestions(
     file in sorted path order, which is not necessarily the project's main file).
     """
 
-    generic_scanning = get_project_config(target).generic_scanning
+    root = run.configured_root(target)
     file_types = load_file_types(agent or "generic")
     classified = classify_files(
-        target, instruction_files, file_types, generic_scanning=generic_scanning, exclusions=exclusions
+        target, instruction_files, file_types, generic_scanning=root.config.generic_scanning, exclusions=exclusions
     )
-    rules = load_rules(project_root=target, scan_root=target, agent=agent)
+    rules = load_rules(project=root, scan=root, agent=agent)
     return classified, rules
 
 

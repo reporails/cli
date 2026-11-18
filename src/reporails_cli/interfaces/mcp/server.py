@@ -1,6 +1,6 @@
 """MCP server for reporails — exposes validation tools to MCP clients.
 
-Registers `validate` / `prepare` / `remedy_brief` / `heal_apply` / `preflight` / `explain` / `xray` on the
+Registers `validate` / `prepare` / `remedy_brief` / `preflight` / `explain` / `xray` on the
 mcp 2.x high-level `MCPServer`. Tools return a pre-built `CallToolResult` (see `_result`): the wire
 payload as `structured_content` plus a compact text mirror, with no derived output schema.
 """
@@ -14,10 +14,12 @@ from pathlib import Path
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from reporails_cli.core.mapper.model_manifest import ModelFetchError
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
+from reporails_cli.core.platform.adapters.http_get import http_get
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
-from reporails_cli.core.platform.contract.json_value import JsonObject, as_list
-from reporails_cli.core.platform.dto.heal import NamedTargets
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_str
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.observability.log_levels import configure_logging
 from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
@@ -27,10 +29,10 @@ from reporails_cli.formatters.mcp import bound_validate_payload, with_rule_label
 from reporails_cli.formatters.mcp_view import has_text_view, render_text_view, unseen_notices
 from reporails_cli.interfaces.mcp import snapshots
 from reporails_cli.interfaces.mcp.feedback import file_feedback
-from reporails_cli.interfaces.mcp.heal_apply import heal_apply_message, heal_apply_write, release_written
-from reporails_cli.interfaces.mcp.idle_release import lifespan, touch_activity
+from reporails_cli.interfaces.mcp.heal_record import record_kept_files
+from reporails_cli.interfaces.mcp.idle_release import lifespan_releasing, touch_activity
 from reporails_cli.interfaces.mcp.prepare import prepare_for_path
-from reporails_cli.interfaces.mcp.preservation import with_preservation
+from reporails_cli.interfaces.mcp.preservation import breaker_reply, with_preservation
 from reporails_cli.interfaces.mcp.project_folder import ProjectFolder, ToolContext, resolve_project_folder
 from reporails_cli.interfaces.mcp.remedy_brief import build_remedy_brief
 from reporails_cli.interfaces.mcp.rule_tools import explain_tool, preflight_tool
@@ -42,9 +44,9 @@ from reporails_cli.interfaces.mcp.scan_fingerprint import (
 from reporails_cli.interfaces.mcp.strict_tool_args import StrictArgsMCPServer
 from reporails_cli.interfaces.mcp.tools import (
     is_retryable_reply,
-    model_not_ready_error,
     run_pipeline_for_path,
     unpaid_signed_in_reply,
+    unserved_or_model_not_ready_error,
 )
 from reporails_cli.interfaces.mcp.validate_state import (
     MAX_CALLS,
@@ -67,17 +69,40 @@ from reporails_cli.interfaces.mcp.xray_tool import xray_page
 
 
 def _serve_remedy_brief(
-    path: str, location: int, targets: list[str] | None = None, has_guide: bool = False, *, project_root: Path
+    path: str,
+    location: int,
+    targets: list[str] | None = None,
+    has_guide: bool = False,
+    *,
+    project_root: Path,
+    models: Models,
 ) -> JsonObject:
     """`remedy_brief`'s reply; an unreadable config file answers `config_unreadable` naming the file and line."""
     try:
-        return _remedy_brief_reply(path, location, targets, has_guide, project_root)
+        return _remedy_brief_reply(path, location, targets, has_guide, project_root, models=models)
     except ConfigUnreadableError as exc:
         return _config_unreadable(exc)
 
 
+def _unbriefable(no_location: bool, location: int, count: int) -> JsonObject:
+    """The error reply for a stored workflow a brief cannot be built from: no such location, or no
+    preservation contract (a brief without it holds the rewrite to no rules)."""
+    if no_location:
+        return {
+            "error": "location_not_found",
+            "message": f"The workflow has no location {location}; it has {count}.",
+        }
+    return {
+        "error": "contract_missing",
+        "message": (
+            "This path's last validate carried no preservation contract, so a brief would hold the rewrite "
+            "to no rules. Call validate again; if it stays missing, the server reply lacks it."
+        ),
+    }
+
+
 def _remedy_brief_reply(
-    path: str, location: int, targets: list[str] | None, has_guide: bool, project_root: Path
+    path: str, location: int, targets: list[str] | None, has_guide: bool, project_root: Path, *, models: Models
 ) -> JsonObject:
     """`remedy_brief(path, location, targets, has_guide)`'s body: a caller without the rewrite
     guide (`has_guide` false) is refused with `plugin_update_required` before anything else. Reads
@@ -120,13 +145,11 @@ def _remedy_brief_reply(
         }
     locations = as_list(workflow.get("locations"))
     loc = next((entry for entry in locations if isinstance(entry, dict) and entry.get("order") == location), None)
-    if loc is None:
-        return {
-            "error": "location_not_found",
-            "message": f"The workflow has no location {location}; it has {len(locations)}.",
-        }
+    contract = as_str(workflow.get("preservation_contract"))
+    if loc is None or not contract:
+        return _unbriefable(loc is None, location, len(locations))
     scan_root = state.scan_root or Path(path).resolve()
-    reply = build_remedy_brief(loc, scan_root, state.last_ruleset_map)
+    reply = build_remedy_brief(loc, scan_root, state.last_ruleset_map, preservation_contract=contract, models=models)
     if "error" not in reply:
         state.call_count = 0
     return reply
@@ -150,20 +173,22 @@ async def _fresh_validate_payload(
     tokens: tuple[str, ...],
     scan_root: Path,
     state: CircuitState,
-    selection: tuple[set[Path], set[Path]] | None = None,
+    models: Models,
+    *,
+    run: RunContext,
 ) -> JsonObject | tuple[JsonObject, RulesetMap | None, float | None]:
     """Run the pipeline fresh (never served from `state.full_payload`): resolve `tokens` first,
     narrow `workflow.locations` to them (`keep_target_locations`) and memoize the map/score on
-    `state`. A `selection` the caller already resolved is used as is. Returns `(payload, ruleset_map,
-    score)`, or the target-resolution error payload."""
-    if selection is None and tokens:
-        resolved = await asyncio.to_thread(resolve_validate_targets, tokens, scan_root)
+    `state`. Returns `(payload, ruleset_map, score)`, or the target-resolution error payload."""
+    selection: tuple[set[Path], set[Path]] | None = None
+    if tokens:
+        resolved = await asyncio.to_thread(resolve_validate_targets, run, tokens, scan_root)
         if isinstance(resolved, dict):
             return resolved
         selection = resolved
     # Blocking pipeline work runs off the event loop.
     payload, ruleset_map, score = await asyncio.to_thread(
-        run_pipeline_for_path, path, True, named_files(selection), project_root=scan_root
+        run_pipeline_for_path, path, True, named_files(selection), project_root=scan_root, run=run, models=models
     )
     if selection is not None and "files" in payload:
         payload = keep_target_locations(payload, *selection, scan_root, tokens)
@@ -177,7 +202,14 @@ async def _fresh_validate_payload(
 
 
 async def _begin_validate_call(
-    path: str, tokens: tuple[str, ...], full: bool, target: Path, scan_root: Path, *, project_root: Path
+    path: str,
+    tokens: tuple[str, ...],
+    full: bool,
+    target: Path,
+    scan_root: Path,
+    *,
+    project_root: Path,
+    run: RunContext,
 ) -> tuple[CircuitState, bool, str]:
     """Fingerprint the scan inputs, then count this `validate` call on its `(path, targets)` state.
     Returns `(state, unchanged, base_hash)`: whether the content matches the last call's, and the
@@ -188,7 +220,9 @@ async def _begin_validate_call(
     prior = validate_states.get(path_key)
     prior_map = prior.last_ruleset_map if prior is not None else None
     prior_reply = prior.full_payload if prior is not None else None
-    base_hash, mtime_hash = await asyncio.to_thread(compute_scan_fingerprint, scan_root, prior_map, prior_reply, target)
+    base_hash, mtime_hash = await asyncio.to_thread(
+        compute_scan_fingerprint, scan_root, prior_map, prior_reply, target, run=run
+    )
     state = validate_states.get(path_key, CircuitState())
     unchanged = bool(state.last_mtime_hash) and mtime_hash == state.last_mtime_hash
     if not unchanged:
@@ -209,15 +243,24 @@ def _config_unreadable(exc: ConfigUnreadableError) -> JsonObject:
     return {"error": "config_unreadable", "message": str(exc)}
 
 
-async def _run_validate(path: str, full: bool, targets: list[str] | None, project_root: Path) -> JsonObject:
+async def _run_validate(
+    path: str, full: bool, targets: list[str] | None, project_root: Path, models: Models
+) -> JsonObject:
     """The `validate` payload; an unreadable config file answers `config_unreadable` naming the file and line."""
     try:
-        return await _validate_reply(path, full, targets, project_root)
+        # A refusal or a model not ready yet is not a validate attempt: answer before the counters move.
+        run = RunContext()  # this call's one read of the project, shared by every step below
+        model_error = await asyncio.to_thread(unserved_or_model_not_ready_error, run)
+        if model_error is not None:
+            return model_error
+        return await _validate_reply(path, full, targets, project_root, models, run=run)
     except ConfigUnreadableError as exc:
         return _config_unreadable(exc)
 
 
-async def _validate_reply(path: str, full: bool, targets: list[str] | None, project_root: Path) -> JsonObject:
+async def _validate_reply(
+    path: str, full: bool, targets: list[str] | None, project_root: Path, models: Models, *, run: RunContext
+) -> JsonObject:
     """Compute the `validate` payload with the content-aware circuit breaker.
 
     With `targets`, the whole project is diagnosed as without them and the reply's
@@ -227,9 +270,9 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None, proj
 
     Path-existence checks emit structured errors the slash command body can branch on. The
     circuit breaker (`MAX_CALLS` total, `MAX_UNCHANGED` consecutive no-op validates per path)
-    catches a model that re-validates without applying fixes; the mtime-tracker resets on any
-    file edit. A `full=true` call for unchanged content is served from the memoized full payload,
-    not counted as another unchanged repeat.
+    catches a model that re-validates without applying fixes, and its reply for a briefed file
+    still carries `accepted`; the mtime-tracker resets on any file edit. A `full=true` call for
+    unchanged content is served from the memoized full payload, not counted as another unchanged repeat.
 
     The circuit-breaker state read-modify-write runs inline on the event loop (no `await`
     between the `validate_states` read and its write), so concurrent same-path calls serialize;
@@ -240,35 +283,17 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None, proj
     """
     target = Path(path).resolve()
 
-    # A model that is not ready yet is not a validate attempt: answer before the
-    # circuit-breaker counters move, so retries during a first download never trip it.
-    model_error = await asyncio.to_thread(model_not_ready_error)
-    if model_error is not None:
-        return model_error
-
     # The mtime hash walks the scan root the pipeline discovers from: a FILE target's root is its
     # enclosing project, never the bare file path (which reads as an empty directory and would
     # keep a same-content repeat validate from ever hitting the cached reply).
     scan_root = resolve_scan_target(target, project_root)[0]
 
-    tokens = target_tokens(targets)
     state, unchanged, base_hash = await _begin_validate_call(
-        path, tokens, full, target, scan_root, project_root=project_root
+        path, target_tokens(targets), full, target, scan_root, project_root=project_root, run=run
     )
 
     if state.call_count > MAX_CALLS or state.consecutive_unchanged >= MAX_UNCHANGED:
-        return {
-            "error": "circuit_breaker",
-            "message": (
-                "STOP — circuit breaker triggered. "
-                f"Validated this path {state.call_count} times "
-                f"({state.consecutive_unchanged} consecutive unchanged). "
-                "DO NOT call validate again for this path. Instead: "
-                "1. Report the remaining violations to the user. "
-                "2. Explain which ones you could not resolve and why. "
-                "3. Let the user decide how to proceed."
-            ),
-        }
+        return await breaker_reply(state, target, scan_root)
 
     if not target.exists():
         return {"error": "path_not_found", "message": f"Path not found: {target}"}
@@ -281,7 +306,7 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None, proj
         # Reuse the map/score the last fresh run stored rather than re-running the pipeline.
         ruleset_map, score = state.last_ruleset_map, state.last_score
     else:
-        result = await _fresh_validate_payload(path, tokens, scan_root, state)
+        result = await _fresh_validate_payload(path, target_tokens(targets), scan_root, state, models, run=run)
         if isinstance(result, dict):
             return result
         payload, ruleset_map, score = result
@@ -300,53 +325,14 @@ async def _validate_reply(path: str, full: bool, targets: list[str] | None, proj
     # `with_preservation` is CPU/IO work: run it off the event loop so it never blocks a concurrent tool call.
     payload = await asyncio.to_thread(with_preservation, payload, target, ruleset_map, score, scan_root)
     payload = await asyncio.to_thread(_with_feedback, payload, target, scan_root, project_root)
+    if target.is_dir():
+        await asyncio.to_thread(record_kept_files, payload, scan_root)
     return with_rule_labels(payload) if full else bound_validate_payload(payload)
-
-
-async def _run_heal_apply(path: str, targets: list[str] | None, project_root: Path) -> str:
-    """`heal_apply`'s reply; an unreadable config file is reported with the file and line."""
-    try:
-        return await _heal_apply_reply(path, targets, project_root)
-    except ConfigUnreadableError as exc:
-        return heal_apply_message(_config_unreadable(exc))
-
-
-async def _heal_apply_reply(path: str, targets: list[str] | None, project_root: Path) -> str:
-    """`heal_apply`'s body: the pipeline `validate` runs, then the keyed heal the CLI runs."""
-    target = Path(path).resolve()
-    model_error = await asyncio.to_thread(model_not_ready_error)
-    if model_error is not None or not target.exists():
-        return heal_apply_message(model_error or {"error": f"Path not found: {target}"})
-    scan_root = resolve_scan_target(target, project_root)[0]
-    tokens = target_tokens(targets)
-    selection: tuple[set[Path], set[Path]] | None = None
-    if tokens:
-        resolved = await asyncio.to_thread(resolve_validate_targets, tokens, scan_root)
-        if isinstance(resolved, dict):
-            return heal_apply_message(resolved)  # never write when the named targets cannot be resolved
-        selection = resolved
-    result = await _fresh_validate_payload(path, tokens, scan_root, CircuitState(), selection)
-    if isinstance(result, dict):
-        return heal_apply_message(result)
-    payload, ruleset_map, _score = result
-    workflow = payload.get("workflow")
-    if ruleset_map is None or not isinstance(workflow, dict):
-        return heal_apply_message(payload, mapped=ruleset_map is not None)
-    named = NamedTargets(frozenset(selection[0]), frozenset(selection[1])) if selection is not None else None
-    try:
-        return await asyncio.to_thread(heal_apply_write, ruleset_map, workflow, target, scan_root, named)
-    finally:
-        release_written(scan_root, validate_states)
 
 
 # ─────────────────────────────────────────────────────────────────────
 # Server + tool registration (mcp 2.x high-level).
 # ─────────────────────────────────────────────────────────────────────
-
-# `MCPServer`'s own `version` defaults to `""` when not passed, so `initialize`'s
-# `serverInfo.version` was always empty — a caller has no way to tell which server build it
-# is talking to. `StrictArgsMCPServer` also closes a related gap: an unknown tool argument.
-server = StrictArgsMCPServer("ails", version=installed_version(), lifespan=lifespan)
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True)
 
@@ -369,45 +355,44 @@ def _text_result(text: str) -> CallToolResult:
     return CallToolResult(content=[TextContent(type="text", text=text)])
 
 
-@server.tool(
-    name="validate",
-    description=(
-        "Validate AI instruction files at `path` (directory or single file)."
-        " Returns JSON with findings, per-finding fix text, a `quality` score,"
-        " tier, per-surface category breakdown, and cross-file analysis."
-        " On a Pro account the default reply is a short text view instead: its lines name the"
-        " reply's fields (`workflow.locations`, `workflow.listed`, `surface_health`, `notices`,"
-        " `preservation`, `feedback`, ...) and `full=true` returns the JSON."
-        " The default response is bounded (top findings per file plus whole"
-        " `stats` / `surface_health`). On a paid tier the response carries a"
-        " `workflow` — the ordered locations to rewrite, each without its findings — and"
-        " the per-file finding lists are withheld (each file keeps its `count`)."
-        " Call `remedy_brief(path, location)` for a location's rewrite brief, one kind at a time,"
-        " or `full=true` for every finding. `targets` narrows the locations, the per-file"
-        " findings, and the cross-file entries and pair counts to those holding the named"
-        " files, read the way `ails check` reads its targets — `skills`, `skills:<name>`,"
-        " `agents:<name>`, `@main`,"
-        " a path (the whole project is still diagnosed and its score and stats stay"
-        " whole-project; pass the same `targets` to `remedy_brief`); a targeted view carries its"
-        " locations' findings and relations in this reply when they fit, and otherwise"
-        " `truncated.hint` names `remedy_brief`, which serves them. After"
-        " rewriting a briefed location's files, call"
-        " validate again with `path` set to each rewritten file: the reply then carries a"
-        " `preservation` block saying whether the rewrite kept everything the file had and how many findings it"
-        " `introduced`, and a"
-        " `feedback` list of the file's remaining findings, with any problem the rewrite newly"
-        " introduced listed first."
-        " `notices`, when present, are short messages for the user: either about their account"
-        " (for example a failed payment) or an announcement from reporails, marked"
-        ' `kind: "promo"` (a `promo:` line in the text view). Show each one to the user,'
-        " presenting an announcement as an announcement, not as an account message."
-        " `AILS_NO_PROMO=1` in the server's environment leaves announcements out."
-        " Use when user asks to check, validate, or improve instruction files."
-    ),
-    annotations=_READ_ONLY,
+_VALIDATE_DESCRIPTION = (
+    "Validate AI instruction files at `path` (directory or single file)."
+    " Returns JSON with findings, per-finding fix text, a `quality` score,"
+    " tier, per-surface category breakdown, and cross-file analysis."
+    " On a Pro account the default reply is a short text view instead: its lines name the"
+    " reply's fields (`workflow.locations`, `workflow.listed`, `surface_health`, `notices`,"
+    " `preservation`, `feedback`, ...) and `full=true` returns the JSON."
+    " The default response is bounded (top findings per file plus whole"
+    " `stats` / `surface_health`). On a paid tier the response carries a"
+    " `workflow` — the ordered locations to rewrite, each without its findings — and"
+    " the per-file finding lists are withheld (each file keeps its `count`)."
+    " Call `remedy_brief(path, location)` for a location's rewrite brief, one kind at a time,"
+    " or `full=true` for every finding. `targets` narrows the locations, the per-file"
+    " findings, and the cross-file entries and pair counts to those holding the named"
+    " files, read the way `ails check` reads its targets — `skills`, `skills:<name>`,"
+    " `agents:<name>`, `@main`,"
+    " a path (the whole project is still diagnosed and its score and stats stay"
+    " whole-project; pass the same `targets` to `remedy_brief`); a targeted view carries its"
+    " locations' findings and relations in this reply when they fit, and otherwise"
+    " `truncated.hint` names `remedy_brief`, which serves them. After"
+    " rewriting a briefed location's files, call"
+    " validate again with `path` set to each rewritten file: the reply then carries a"
+    " `preservation` block saying whether the rewrite kept everything the file had and how many findings it"
+    " `introduced`, an `accepted` flag (true when the file is kept: it kept everything, matches its plan"
+    " and did not lower the score), and a"
+    " `feedback` list of the file's remaining findings, with any problem the rewrite newly"
+    " introduced listed first."
+    " `notices`, when present, are short messages for the user: either about their account"
+    " (for example a failed payment) or an announcement from reporails, marked"
+    ' `kind: "promo"` (a `promo:` line in the text view). Show each one to the user,'
+    " presenting an announcement as an announcement, not as an account message."
+    " `AILS_NO_PROMO=1` in the server's environment leaves announcements out."
+    " Use when user asks to check, validate, or improve instruction files."
 )
-async def validate(
-    ctx: ToolContext, path: str = ".", full: bool = False, targets: list[str] | None = None
+
+
+async def validate_reply(
+    models: Models, ctx: ToolContext, path: str, full: bool, targets: list[str] | None
 ) -> CallToolResult:
     """Validate instruction files; see the tool description for the response shape."""
     touch_activity()
@@ -416,24 +401,22 @@ async def validate(
         if not isinstance(folder, ProjectFolder):
             return _result(folder)
         key = str(folder.target)
-        payload = await _run_validate(key, bool(full), targets, folder.root)
+        payload = await _run_validate(key, bool(full), targets, folder.root, models)
         if not has_text_view(payload, full=bool(full)):
             return _result(payload)
         state = validate_states.setdefault(state_key(key, folder.root, target_tokens(targets)), CircuitState())
         return _text_result(render_text_view(unseen_notices(payload, state.shown_notices)))
 
 
-@server.tool(
-    name="prepare",
-    description=(
-        "Map the instruction files that `validate(path, targets)` checks, without checking them, so the next"
-        " `validate` with the same `path` and `targets` returns sooner. Makes no server call and returns no"
-        " findings: `files` is how many files are ready. The reporails plugin calls it in the background as"
-        " files load or change."
-    ),
-    annotations=_READ_ONLY,
+_PREPARE_DESCRIPTION = (
+    "Map the instruction files that `validate(path, targets)` checks, without checking them, so the next"
+    " `validate` with the same `path` and `targets` returns sooner. Makes no server call and returns no"
+    " findings: `files` is how many files are ready. The reporails plugin calls it in the background as"
+    " files load or change."
 )
-async def prepare(ctx: ToolContext, path: str = ".", targets: list[str] | None = None) -> CallToolResult:
+
+
+async def prepare_reply(models: Models, ctx: ToolContext, path: str, targets: list[str] | None) -> CallToolResult:
     """Map the files `validate` would check; see the tool description."""
     touch_activity()
     with get_stage_timer().run("mcp prepare"):
@@ -441,31 +424,29 @@ async def prepare(ctx: ToolContext, path: str = ".", targets: list[str] | None =
         if not isinstance(folder, ProjectFolder):
             return _result(folder)
         try:
-            return _result(await asyncio.to_thread(prepare_for_path, str(folder.target), targets, folder.root))
+            return _result(await asyncio.to_thread(prepare_for_path, str(folder.target), targets, folder.root, models))
         except ConfigUnreadableError as exc:
             return _result(_config_unreadable(exc))
 
 
-@server.tool(
-    name="remedy_brief",
-    description=(
-        "Get the rewrite brief for one location of the last `validate(path)`'s paid"
-        " `workflow` — `path` is the path last passed to `validate`, `location` is a"
-        " location's `order` from that reply, `targets` the targets that `validate` call"
-        " passed (none for a whole-project reply). Returns the exact `edits` to apply as"
-        " written (each replaces its `before` text with its `after` text), the few `slots`"
-        " (lines that need a decision) with each rule's own `guides` example and one `ops`"
-        " line per op, any `refused` ops, and the preservation contract the rewrite must keep."
-        " Call this before rewriting a location, one location at a time, one kind at a time,"
-        " then `validate(path=<file>)` for each file: its `conformance` block says whether"
-        " every listed change was made and nothing else changed. Set `has_guide` true"
-        " when your agent carries the rewrite guide (the reporails plugin 0.6.2 and later does);"
-        " without it the call returns `plugin_update_required` and no brief."
-    ),
-    annotations=_READ_ONLY,
+_REMEDY_BRIEF_DESCRIPTION = (
+    "Get the rewrite brief for one location of the last `validate(path)`'s paid"
+    " `workflow` — `path` is the path last passed to `validate`, `location` is a"
+    " location's `order` from that reply, `targets` the targets that `validate` call"
+    " passed (none for a whole-project reply). Returns the exact `edits` to apply as"
+    " written (each replaces its `before` text with its `after` text), the few `slots`"
+    " (lines that need a decision) with each rule's own `guides` example and one `ops`"
+    " line per op, any `refused` ops, and the preservation contract the rewrite must keep."
+    " Call this before rewriting a location, one location at a time, one kind at a time,"
+    " then `validate(path=<file>)` for each file: its `conformance` block says whether"
+    " every listed change was made and nothing else changed. Set `has_guide` true"
+    " when your agent carries the rewrite guide (the reporails plugin 0.6.2 and later does);"
+    " without it the call returns `plugin_update_required` and no brief."
 )
-async def remedy_brief(
-    ctx: ToolContext, path: str, location: int, targets: list[str] | None = None, has_guide: bool = False
+
+
+async def remedy_brief_reply(
+    models: Models, ctx: ToolContext, path: str, location: int, *, targets: list[str] | None, has_guide: bool
 ) -> CallToolResult:
     """Return the rewrite brief for one workflow location; see the tool description."""
     touch_activity()
@@ -480,45 +461,22 @@ async def remedy_brief(
             targets,
             bool(has_guide),
             project_root=folder.root,
+            models=models,
         )
         return _result(brief)
 
 
-@server.tool(
-    name="heal_apply",
-    description=(
-        "Make every fix that needs no judgment across the project at `path` in one call, then count what"
-        " is left for a decision (it counts them and does not list them)."
-        " Pro only: without a Pro account it changes nothing and says so."
-        " Each file it writes is checked and put back if it departs from the plan."
-        " `targets` narrows the files, read the way `validate` reads them. Run it before rewriting"
-        " locations by hand, then call `validate` again. Returns text: a count line"
-        " (`heal_apply: <n> fixed · <m> left for a decision · <k> put back`), then a line per file."
-    ),
+_PREFLIGHT_DESCRIPTION = (
+    "Return the workflow-ordered rules that govern authoring a file of the given"
+    " `capability` — its file type as the agent config names it (`main`, `rules`,"
+    " `skills`, `agents`, …; `skill`, `agent` and `rule` are read the same). Use BEFORE drafting"
+    " a new SKILL.md / agent / rule so the draft follows the rules from the"
+    " start instead of patching findings after `validate`."
+    " Returns JSON with rules sorted by category in workflow order plus"
+    " Pass / Fail examples."
 )
-async def heal_apply(ctx: ToolContext, path: str = ".", targets: list[str] | None = None) -> CallToolResult:
-    """Apply the project's deterministic fixes; see the tool description."""
-    touch_activity()
-    with get_stage_timer().run("mcp heal_apply"):
-        folder = await resolve_project_folder(path, ctx)
-        if not isinstance(folder, ProjectFolder):
-            return _text_result(heal_apply_message(folder))
-        return _text_result(await _run_heal_apply(str(folder.target), targets, folder.root))
 
 
-@server.tool(
-    name="preflight",
-    description=(
-        "Return the workflow-ordered rules that govern authoring a file of the given"
-        " `capability` — its file type as the agent config names it (`main`, `rules`,"
-        " `skills`, `agents`, …; `skill`, `agent` and `rule` are read the same). Use BEFORE drafting"
-        " a new SKILL.md / agent / rule so the draft follows the rules from the"
-        " start instead of patching findings after `validate`."
-        " Returns JSON with rules sorted by category in workflow order plus"
-        " Pass / Fail examples."
-    ),
-    annotations=_READ_ONLY,
-)
 async def preflight(capability: str, agent: str = "") -> CallToolResult:
     """Return workflow-ordered rules for authoring a file of `capability`."""
     touch_activity()
@@ -529,16 +487,13 @@ async def preflight(capability: str, agent: str = "") -> CallToolResult:
             return _result(_config_unreadable(exc))
 
 
-@server.tool(
-    name="explain",
-    description=(
-        "Get details about a specific rule by ID."
-        " Returns rule title, category, type, description, checks."
-        " Use full coordinate IDs (e.g., CORE:S:0005, CLAUDE:S:0005)."
-    ),
-    annotations=_READ_ONLY,
-    structured_output=False,
+_EXPLAIN_DESCRIPTION = (
+    "Get details about a specific rule by ID."
+    " Returns rule title, category, type, description, checks."
+    " Use full coordinate IDs (e.g., CORE:S:0005, CLAUDE:S:0005)."
 )
+
+
 async def explain(rule_id: str) -> str:
     """Explain one rule as readable text (a JSON error string for an unknown rule).
 
@@ -553,18 +508,17 @@ async def explain(rule_id: str) -> str:
     return result if isinstance(result, str) else json.dumps(result)
 
 
-@server.tool(
-    name="xray",
-    description=(
-        "Open the x-ray page of a session of this project in the background and return its address at once;"
-        " a page already running for the project is reused. Show the returned `url` to the user."
-        " With no `session` it opens the session you are running in (the newest one when this agent cannot say"
-        " which it is, marked `picked: current_unknown`, or the newest of several sessions a `/clear` of yours"
-        " started, marked `picked: current_ambiguous`: tell the user which session is shown and why); pass"
-        " `session` to open another session of the project. Returns `url`, `session`, `picked` and `reused`."
-    ),
-    annotations=ToolAnnotations(read_only_hint=False, idempotent_hint=True),
+_XRAY_DESCRIPTION = (
+    "Open the x-ray page of a session of this project in the background and return its address at once;"
+    " a page already running for the project is reused. Show the returned `url` to the user."
+    " With no `session` it opens the session you are running in (the newest one when this agent cannot say"
+    " which it is, marked `picked: current_unknown`, or the newest of several sessions a `/clear` of yours"
+    " started, marked `picked: current_ambiguous`: tell the user which session is shown and why); pass"
+    " `session` to open another session of the project. Returns `url`, `session`, `picked` and `reused`."
 )
+_XRAY_ANNOTATIONS = ToolAnnotations(read_only_hint=False, idempotent_hint=True)
+
+
 async def xray(ctx: ToolContext, path: str = ".", session: str = "") -> CallToolResult:
     """Start the project's x-ray page in the background; see the tool description."""
     touch_activity()
@@ -586,14 +540,45 @@ def _prewarm_models() -> None:
 
     # On failure `validate` retries and reports the error to the caller.
     with contextlib.suppress(ModelFetchError):
-        ensure_models_available()
+        ensure_models_available(http_get)
+
+
+def build_server(models: Models) -> StrictArgsMCPServer:
+    """The MCP server whose model-reading tools use `models`."""
+    # `MCPServer`'s own `version` defaults to `""`, so `initialize`'s `serverInfo.version` would be
+    # empty and a caller could not tell which build it talks to. `StrictArgsMCPServer` also
+    # refuses an unknown tool argument.
+    built = StrictArgsMCPServer("ails", version=installed_version(), lifespan=lifespan_releasing(models))
+
+    @built.tool(name="validate", description=_VALIDATE_DESCRIPTION, annotations=_READ_ONLY)
+    async def validate(
+        ctx: ToolContext, path: str = ".", full: bool = False, targets: list[str] | None = None
+    ) -> CallToolResult:
+        return await validate_reply(models, ctx, path, full, targets)
+
+    @built.tool(name="prepare", description=_PREPARE_DESCRIPTION, annotations=_READ_ONLY)
+    async def prepare(ctx: ToolContext, path: str = ".", targets: list[str] | None = None) -> CallToolResult:
+        return await prepare_reply(models, ctx, path, targets)
+
+    @built.tool(name="remedy_brief", description=_REMEDY_BRIEF_DESCRIPTION, annotations=_READ_ONLY)
+    async def remedy_brief(
+        ctx: ToolContext, path: str, location: int, targets: list[str] | None = None, has_guide: bool = False
+    ) -> CallToolResult:
+        return await remedy_brief_reply(models, ctx, path, location, targets=targets, has_guide=has_guide)
+
+    built.tool(name="preflight", description=_PREFLIGHT_DESCRIPTION, annotations=_READ_ONLY)(preflight)
+    built.tool(name="explain", description=_EXPLAIN_DESCRIPTION, annotations=_READ_ONLY, structured_output=False)(
+        explain
+    )
+    built.tool(name="xray", description=_XRAY_DESCRIPTION, annotations=_XRAY_ANNOTATIONS)(xray)
+    return built
 
 
 def main() -> None:
     """Entry point for the MCP server (stdio transport)."""
     configure_logging()
     threading.Thread(target=_prewarm_models, name="model-prewarm", daemon=True).start()
-    server.run("stdio")
+    build_server(Models(http_get)).run("stdio")
 
 
 if __name__ == "__main__":

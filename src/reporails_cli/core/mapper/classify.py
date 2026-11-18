@@ -10,16 +10,21 @@ Public entry point: `classify_charge(md_text, plain_text=...)`.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
+from typing import Protocol
 
 from reporails_cli.core.mapper.classify_lexicon import (
     ADDRESSEE_SUBJECTS,
     ALL_VERBS,
+    CONDITION_CONJUNCTIONS,
     CONDITION_OPENERS,
     CONDITIONAL_MARKERS,
     HEDGE_POSSIBLE_LEADS,
     IT_IS,
     MODAL_ABSOLUTE,
     MODAL_HEDGED,
+    RESTRICTOR_BLOCKERS,
+    SCOPE_RESTRICTORS,
     WORD_RE,
     words_of,
 )
@@ -31,8 +36,8 @@ from reporails_cli.core.mapper.classify_phases import (
 )
 from reporails_cli.core.mapper.markers import strip_markdown_inline, without_list_marker
 from reporails_cli.core.mapper.md_parser import leading_bold_run, replace_code_spans
-from reporails_cli.core.platform.dto.mapping import CoverageRestrictor
-from reporails_cli.core.platform.dto.ruleset import Modality
+from reporails_cli.core.mapper.word_spans import words_between
+from reporails_cli.core.platform.dto.ruleset import AtomSlots, Modality
 
 # ──────────────────────────────────────────────────────────────────
 # RULE-BASED CHARGE CLASSIFIER
@@ -62,8 +67,6 @@ DROPPABLE_LEADS: frozenset[str] = HEDGE_ADVERB_LEADS | {"please"}
 # The hedge words that, opening an instruction (after `you` / `we` / `please`), make all of it a
 # suggestion (`Prefer real objects`, `Try not to mock`, `Perhaps run the linter`).
 HEDGE_LEADS: frozenset[str] = HEDGE_ADVERB_LEADS | {"prefer", "preferably", "consider", "try"}
-# Words that make an instruction a suggestion rather than an order.
-HEDGE_WORDS: frozenset[str] = MODAL_HEDGED | HEDGE_LEADS | frozenset({"probably", "generally", "usually"})
 _HEDGE_LEAD_SKIP = ADDRESSEE_SUBJECTS | {"please"}
 # Words that give an instruction as an order that admits no exception. `must` and `shall` read as
 # absolute modality in the classifier but are not among these cues.
@@ -73,25 +76,6 @@ AFFIRMATIVE_ABSOLUTES: frozenset[str] = ABSOLUTE_CUES - {"never"}
 # Capitalised words that mark a line as a hard constraint.
 CONSTRAINT_WORDS: frozenset[str] = frozenset({"MUST", "NEVER", "ALWAYS", "IMPORTANT"})
 _ABSOLUTE_ADVERBS: frozenset[str] = AFFIRMATIVE_ABSOLUTES | {"only"}
-# Restricting words that exclude (`except`, `excluding`, `outside`): what they open is a condition
-# on its own, so an addition to it widens the instruction.
-EXCLUDING_RESTRICTORS: frozenset[str] = frozenset({"except", "excluding", "outside"})
-# Words that narrow where, when or to what an instruction applies, whatever follows them ...
-SCOPE_RESTRICTORS: frozenset[str] = (
-    EXCLUDING_RESTRICTORS | frozenset({"solely", "absent"}) | (_ABSOLUTE_ADVERBS - {"always"})
-)
-# ... and prepositions that narrow it when followed by a place, time or thing the line did not name.
-
-
-# Words that cut a rule's coverage down to part of what it named (`the rest of the output`,
-# `the remaining tests`); read only as narrowing, since they open no condition. `rest` cuts only as
-# `rest of` (`the REST API` and `rest between retries` cut nothing); `remaining` cuts unless the
-# author's line already carries the sense (`the time left` -> `the remaining time`).
-COVERAGE_RESTRICTORS: dict[str, CoverageRestrictor] = {
-    "rest": CoverageRestrictor(frozenset({"of"}), frozenset({"rest"})),
-    "remaining": CoverageRestrictor(frozenset(), frozenset({"remaining", "rest", "left"})),
-}
-# Prepositions that open a phrase naming a place, a target or a means (`to the scratch dir`): the
 
 
 def _strip_md_for_classify(text: str) -> str:
@@ -151,24 +135,152 @@ def is_conditional_frame(text: str) -> bool:
 # `Unless X, then Y`. The comma (or `then`) is what makes the opener a frame at
 # all — without it the word is the sentence's own subject or a section label
 # (`While loops must be bounded`, `Before hooks run on every commit`, `When to use`).
-_COND_CLAUSE_CLOSE_RE = re.compile(r"[,;]\s*\S|\s+then\s+\S", re.IGNORECASE)
+# A comma inside a number (`1,000`) closes nothing.
+_COND_CLAUSE_CLOSE_RE = re.compile(r"(?:,(?!\d)|;)\s*\S|\s+then\s+\S", re.IGNORECASE)
 # The governing clause is short; past that the comma belongs to the main clause.
 _COND_CLAUSE_MAX_WORDS = 12
+
+
+def conditional_clause(text: str) -> str | None:
+    """The conditional frame ``text`` opens, from its start through the word before the
+    comma or `then` that closes it; None when no frame closes before its clause.
+
+    A frame marker at the head settles nothing on its own, because the same words
+    open a noun phrase (`While loops …`) or a heading (`When to use`). A real frame
+    hands off to the clause it governs at a comma or a `then`.
+    """
+    if not is_conditional_frame(text):
+        return None
+    head = " ".join(text.split()[:_COND_CLAUSE_MAX_WORDS])
+    close = _COND_CLAUSE_CLOSE_RE.search(head)
+    return head[: close.start()] if close else None
+
+
+# A restricting phrase runs on through the commas of a list (`only modify a, b and c`); a semicolon or a `then` ends it.
+_RESTRICTOR_CLOSE_RE = re.compile(r";\s*\S|\s+then\s+\S", re.IGNORECASE)
+
+
+def _named_char_mask(text: str, named_tokens: Sequence[str]) -> list[bool]:
+    """Per character of ``text``, whether it lies inside one of the named tokens."""
+    mask = [False] * len(text)
+    for token in named_tokens:
+        start = text.find(token) if token else -1
+        while start >= 0:
+            mask[start : start + len(token)] = [True] * len(token)
+            start = text.find(token, start + len(token))
+    return mask
+
+
+def restrictor_clause(
+    plain_text: str, named_tokens: Sequence[str], aside_spans: Sequence[tuple[int, int]]
+) -> str | None:
+    """The phrase a restricting word opens (`only on main`, `except integration tests`), from the
+    word through the word before the comma that closes it; None when the text has none.
+
+    A word inside a named token (`try`/`except` in backticks) restricts nothing, nor does one
+    used as an adjective or a correlative (`the only option`, `not only X`), nor one inside an aside
+    (word spans `aside_spans`), which illustrates the instruction and restricts nothing.
+    """
+    return (restrictor_at(plain_text, named_tokens, aside_spans) or (0, None))[1]
+
+
+def restrictor_at(
+    plain_text: str, named_tokens: Sequence[str], aside_spans: Sequence[tuple[int, int]]
+) -> tuple[int, str] | None:
+    """The word index of the restricting word and its phrase, as `restrictor_clause` reads them."""
+    mask = _named_char_mask(plain_text, named_tokens)
+    tokens = [(m.start(), m.group()) for m in re.finditer(r"\S+", plain_text)]
+    previous = ""
+    for i, (start, token) in enumerate(tokens):
+        word = (WORD_RE.findall(token) or [""])[0].lower()
+        blocked = previous in RESTRICTOR_BLOCKERS
+        previous = word
+        if word not in SCOPE_RESTRICTORS or blocked or mask[start] or any(a <= i < b for a, b in aside_spans):
+            continue
+        head = " ".join(t for _s, t in tokens[i : i + _COND_CLAUSE_MAX_WORDS])
+        close = _RESTRICTOR_CLOSE_RE.search(head)
+        return i, _closed_at_comma(head[: close.start()] if close else head)
+    return None
+
+
+def _closed_at_comma(phrase: str) -> str:
+    """`phrase` cut at the first comma that does not continue a list: a comma followed by a
+    list item (`a, b and c`: a comma-ended word or a conjunction within its next two words) stays
+    inside it; any other comma hands off to the clause the phrase fronts (`Only on main, run X`)."""
+    words = phrase.split()
+    for k, word in enumerate(words[:-1]):
+        ahead = words[k + 1 : k + 3]
+        listed = ahead[0].endswith(",") or any(w.lower().strip(".,;:") in CONDITION_CONJUNCTIONS for w in ahead)
+        if word.endswith(",") and not listed:
+            return " ".join([*words[:k], word.rstrip(",")])
+    return phrase
+
+
+class ConditionRead(Protocol):
+    """The fields `condition_text` reads, shared by a mapper atom and a snapshotted one."""
+
+    @property
+    def scope_conditional(self) -> bool:
+        """Whether a conditional frame governs the atom."""
+
+    @property
+    def plain_text(self) -> str:
+        """The text with its markup read away."""
+
+    @property
+    def named_tokens(self) -> Sequence[str]:
+        """The backticked constructs it names."""
+
+    @property
+    def slots(self) -> AtomSlots | None:
+        """The slots the mapper read, as word spans of `plain_text`."""
+
+
+def covers_predicate(slots: AtomSlots) -> bool:
+    """Whether the decoded scope runs over the predicate: it then holds the clause as well as its frame."""
+    scope, predicate = slots.scope_span, slots.predicate_span
+    return scope is not None and predicate is not None and scope[0] < predicate[1] and predicate[0] < scope[1]
+
+
+def _last_frame(scope: str) -> str:
+    """`scope` from the conditional opener that follows a comma in it, when a frame already closed
+    before it (`before running X again, whenever the build fails.`): that opener's frame is the
+    condition; the phrase before it only orders the work. `scope` itself when it holds one frame."""
+    words = scope.split()
+    for i in range(1, len(words)):
+        if words[i - 1].endswith(",") and is_conditional_frame(words[i]):
+            return " ".join(words[i:])
+    return scope
+
+
+def condition_text(atom: ConditionRead, *, object_restriction: bool = True) -> str | None:
+    """The condition the mapper read on a conditional atom: its decoded scope when that scope
+    opens a conditional frame, else the frame that closes the sentence's opening; None when the
+    atom is not conditional. A phrase a restricting word (`only`, `except`) opens is part of the
+    condition too, unless `object_restriction` is False and the word sits inside the atom's object
+    (`use only the staging database`), where it limits what the instruction acts on."""
+    if not atom.scope_conditional:
+        return None
+    frame = conditional_clause(atom.plain_text)
+    slots = atom.slots
+    if slots is not None and slots.scope_span is not None and not covers_predicate(slots):
+        scope = words_between(atom.plain_text, *slots.scope_span)
+        if is_conditional_frame(scope):
+            frame = _last_frame(scope)
+    found = restrictor_at(atom.plain_text, atom.named_tokens, slots.aside_spans if slots else ())
+    obj = slots.object_span if slots is not None else None
+    inside = found and obj is not None and obj[0] <= found[0] < obj[1]
+    restriction = found[1] if found and (object_restriction or not inside) else None
+    return " ".join(part for part in (frame, restriction) if part) or None
 
 
 def opens_conditional_clause(text: str) -> bool:
     """True when ``text`` opens a conditional frame AND closes it before its clause.
 
     The stricter reading of :func:`is_conditional_frame`, for the case where the
-    whole sentence is the evidence: a frame marker at the head settles nothing on
-    its own, because the same words open a noun phrase (`While loops …`) or a
-    heading (`When to use`). A real frame hands off to the clause it governs at a
-    comma or a `then`.
+    whole sentence is the evidence (see :func:`conditional_clause`).
     """
-    if not is_conditional_frame(text):
-        return False
-    head = " ".join(text.split()[:_COND_CLAUSE_MAX_WORDS])
-    return bool(_COND_CLAUSE_CLOSE_RE.search(head))
+    return conditional_clause(text) is not None
 
 
 def _classify_phase1(
@@ -203,6 +315,8 @@ def _classify_phase1(
 
 # Words that negate the word before them (`should not`, `must never`, `would n't`, `must cannot`).
 NEGATION_WORDS: frozenset[str] = frozenset({"not", "never", "n't", "cannot"})
+# Prepositions that negate what follows them (`run it without flags`).
+NEGATING_PREPOSITIONS: frozenset[str] = frozenset({"without"})
 # Lowered words whose presence as a line's first word gives it as an order: absolute and negation
 # cues, constraint words and the modals the classifier reads as a directive.
 DIRECTIVE_CUES: frozenset[str] = (
@@ -311,6 +425,18 @@ def _classify_phase3(
     return "NEUTRAL", 0, "none", "p3_no_verb", False
 
 
+def hedge_cue_words(text: str) -> int:
+    """How many words open `text` as a hedge cue a reader can drop (`You should`, `Try to`, `Perhaps`,
+    `Please`), 0 when it opens with none. `You should` counts only when the classifier reads the text
+    as hedged with it."""
+    lowers = words_of(text)
+    if lowers[:2] == ["you", "should"]:
+        return 2 if hedges_with_should(text) else 0
+    if lowers[:2] == ["try", "to"]:
+        return 2
+    return 1 if lowers[:1] and lowers[0] in DROPPABLE_LEADS else 0
+
+
 def hedges_with_should(text: str) -> bool:
     """True when `text` gives its instruction with `should` (`You should run the linter`).
 
@@ -322,6 +448,13 @@ def hedges_with_should(text: str) -> bool:
         return False
     _charge, _cv, _mod, trace, _scope = classify_charge(text, plain_text=text)
     return trace.startswith("p2_hedged_should")
+
+
+def predicate_opens_hedge(predicate: str) -> bool:
+    """True when a predicate (`might want to run`, `consider running`) opens with a hedge: a hedged modal
+    (`should`, `could`, `might`) or one of `HEDGE_LEADS`."""
+    lowers = words_of(predicate)
+    return bool(lowers) and (lowers[0] in MODAL_HEDGED or lowers[0] in HEDGE_LEADS)
 
 
 def hedges_with_lead(text: str) -> bool:
@@ -382,11 +515,10 @@ def hedges_with_phrase(text: str) -> bool:
     return hedges_with_possible(text) or best_to_sign(text) != 0
 
 
-def has_hedge_cue(text: str) -> bool:
-    """True when any word of `text` is a hedge word — how a line the mapper read as plain prose
-    (`You might want to run the linter`) shows it was a suggestion; so is `where possible` or
-    `It's best (not) to …`. A phrase inside a code span of the markdown `text` is not read."""
-    return any(w in HEDGE_WORDS for w in words_of(text)) or hedges_with_phrase(text)
+def has_negation_cue(text: str) -> bool:
+    """True when `text` holds a negation cue: a negation word, a word ending in the `n't` contraction
+    suffix, or a negating preposition."""
+    return any(w in NEGATION_WORDS or w in NEGATING_PREPOSITIONS or w.endswith("n't") for w in words_of(text))
 
 
 def leading_prohibition(text: str) -> re.Match[str] | None:
@@ -394,11 +526,6 @@ def leading_prohibition(text: str) -> re.Match[str] | None:
     the match's `string` is the words rejoined, so `string[end():]` is what follows the marker."""
     clean = " ".join(words_of(text))
     return _NEGATION_PHRASES_RE.match(clean) or _PROHIBITION_START_RE.match(clean)
-
-
-def absolute_cues(text: str) -> set[str]:
-    """The words of `text` that give its instruction as an order without exception."""
-    return {w for w in words_of(text) if w in ABSOLUTE_CUES}
 
 
 def classify_charge(

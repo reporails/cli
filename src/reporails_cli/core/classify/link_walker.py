@@ -12,6 +12,7 @@ from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import link_targets, strip_anchor
 from reporails_cli.core.platform.dto.classify import LinkEdge
 from reporails_cli.core.platform.dto.discovery import RunExclusions
+from reporails_cli.core.platform.utils.file_read import read_file_text
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ def walk_markdown_links(
 def _outgoing_links(file_path: Path) -> list[tuple[Path, str]]:
     """Extract `(target_path, verb)` pairs for `.md` links and `@<path>` imports in `file_path`."""
     try:
-        text = file_path.read_text(encoding="utf-8", errors="replace")
+        text = read_file_text(file_path, errors="replace")
     except OSError as exc:
         logger.debug("link_walker: cannot read %s: %s", file_path, exc)
         return []

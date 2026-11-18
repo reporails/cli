@@ -16,6 +16,7 @@ from pathlib import Path
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.hooks import HookConfig, HookPath, HookSite
+from reporails_cli.core.platform.utils.file_read import read_file_text
 
 # A config file larger than this is not read.
 MAX_HOOK_CONFIG_BYTES = 1_048_576
@@ -144,7 +145,7 @@ def read_hook_config(path: Path) -> HookConfig | None:
     try:
         if path.stat().st_size > MAX_HOOK_CONFIG_BYTES:
             return None
-        text = path.read_text(encoding="utf-8-sig")
+        text = read_file_text(path, encoding="utf-8-sig")
         return HookConfig(text, tomllib.loads(text) if path.suffix == ".toml" else _load_json(text))
     except (OSError, UnicodeDecodeError, ValueError, RecursionError):
         return None

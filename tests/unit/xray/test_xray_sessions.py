@@ -9,22 +9,55 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
 from reporails_cli.core.discovery.agent_discovery import claude_project_dir
 from reporails_cli.core.eventbus.transcript import first_prompt_text, session_transcript
+from reporails_cli.core.platform.adapters.programs import launch_detached
 from reporails_cli.core.platform.config import bootstrap
-from reporails_cli.core.platform.contract.errors import XrayPageError
+from reporails_cli.core.platform.contract.errors import PlatformUnavailableError, XrayPageError
+from reporails_cli.core.platform.contract.http_get import HttpGet, HttpReply
 from reporails_cli.core.platform.dto.xray import PickedSession, XrayPage
-from reporails_cli.core.xray import pages
+from reporails_cli.core.xray import pages, sessions
 from reporails_cli.core.xray.pages import forget_page, register_page, running_page, start_page
 from reporails_cli.core.xray.sessions import pick_session, session_entries
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
+
+
+def _silent_probe(url: str, *, headers: Mapping[str, str], timeout: float, follow_redirects: bool) -> NoReturn:
+    """An `HttpGet` for a port nothing listens on."""
+    raise PlatformUnavailableError(f"nothing answers at {url}")
+
+
+class _Reply:
+    status = 200
+
+    def __init__(self, body: dict[str, object]) -> None:
+        self._body = json.dumps(body).encode()
+
+    def header(self, name: str) -> str:
+        return ""
+
+    def chunks(self) -> Iterator[bytes]:
+        yield self._body
+
+
+def _answering_probe(body: dict[str, object]) -> HttpGet:
+    """An `HttpGet` whose port answers `/launch` with `body`."""
+
+    @contextmanager
+    def probe(url: str, *, headers: Mapping[str, str], timeout: float, follow_redirects: bool) -> Iterator[HttpReply]:
+        yield _Reply(body)
+
+    return probe
+
 
 FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "eventbus" / "transcript" / "2.1.308" / "session.jsonl"
 SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
@@ -192,6 +225,40 @@ def test_current_with_two_clears_beginning_at_its_last_write_shows_the_newest_an
     assert pick_session(project, None, current=True) == PickedSession(project, newest, "current_ambiguous")
 
 
+def test_two_clears_beginning_at_the_same_moment_are_ambiguous_though_one_has_been_idle_since(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = time.time()
+    _timed_session(project, "mine", now - 600, now - 100)
+    _timed_session(project, "clear-a", now - 100, now - 100, cleared=True)
+    newest = _timed_session(project, "clear-b", now - 100, now - 10, cleared=True)
+    monkeypatch.setenv(SESSION_ENV, "mine")
+    assert pick_session(project, None, current=True) == PickedSession(project, newest, "current_ambiguous")
+
+
+def test_many_clears_beginning_at_the_same_moment_are_walked_once_each(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = time.time()
+    _timed_session(project, "mine", now - 600, now - 100)
+    for index in range(8):
+        _timed_session(project, f"clear-{index}", now - 100, now - 100, cleared=True)
+    monkeypatch.setenv(SESSION_ENV, "mine")
+    calls = 0
+    walk = sessions._replacing
+
+    def counted(session: Path, cleared: dict[Path, float]) -> list[Path]:
+        nonlocal calls
+        calls += 1
+        return walk(session, cleared)
+
+    monkeypatch.setattr(sessions, "_replacing", counted)
+    picked = pick_session(project, None, current=True)
+    assert picked is not None and picked.picked == "current_ambiguous"
+    print("replacing calls:", calls)
+    assert calls <= 9
+
+
 def test_a_subagent_written_after_the_clear_does_not_hide_the_hand_off(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -303,8 +370,18 @@ def test_a_record_whose_port_does_not_answer_is_removed(project: Path) -> None:
     record = next(bootstrap.get_xray_pages_dir().glob("*.json"))
     if sys.platform != "win32":  # Windows has no POSIX permission bits
         assert oct(record.stat().st_mode & 0o777) == "0o600"
-    assert running_page(project) is None
+    assert running_page(project, _silent_probe) is None
     assert not record.exists()
+
+
+def test_a_record_whose_port_answers_with_its_launch_id_is_kept(project: Path) -> None:
+    register_page(project, 1, "launch-a")
+    record = next(bootstrap.get_xray_pages_dir().glob("*.json"))
+    assert running_page(project, _answering_probe({"launch": "launch-b", "changed": False})) is None
+    assert not record.exists()
+    register_page(project, 1, "launch-a")
+    assert running_page(project, _answering_probe({"launch": "launch-a", "changed": False})) == XrayPage(1, "launch-a")
+    assert record.exists()
 
 
 def test_a_page_forgets_only_its_own_launch(project: Path) -> None:
@@ -319,9 +396,9 @@ def test_a_second_start_waits_for_the_page_the_first_registers(project: Path, mo
     assert pages._take_lock(project)  # pylint: disable=protected-access
     page = XrayPage(8, "launch-a")
     answers = iter([None, None, page])
-    monkeypatch.setattr(pages, "running_page", lambda _root: next(answers))
+    monkeypatch.setattr(pages, "running_page", lambda _root, _probe: next(answers))
     monkeypatch.setattr(pages, "_POLL_S", 0.01)
-    assert start_page(project, "any") == (page, True)
+    assert start_page(project, "any", launch_detached, _silent_probe) == (page, True)
 
 
 def test_the_wait_accepts_the_page_registered_under_its_launch_whatever_its_pid(
@@ -329,19 +406,19 @@ def test_the_wait_accepts_the_page_registered_under_its_launch_whatever_its_pid(
 ) -> None:
     """A Windows venv's python.exe starts the real interpreter as a child, so the page's pid is not the spawned one."""
     register_page(project, 5, "launch-a")  # records this test process's pid, never the one the start returned
-    monkeypatch.setattr(pages, "_answers", lambda _page: True)
-    assert pages._wait_for_page(project, "launch-a") == XrayPage(5, "launch-a")  # pylint: disable=protected-access
+    monkeypatch.setattr(pages, "_answers", lambda _page, _probe: True)
+    assert pages._wait_for_page(project, "launch-a", _silent_probe) == XrayPage(5, "launch-a")  # pylint: disable=protected-access
 
 
 def test_the_wait_ignores_a_page_registered_under_another_launch(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     register_page(project, 5, "launch-b")
-    monkeypatch.setattr(pages, "_answers", lambda _page: True)
+    monkeypatch.setattr(pages, "_answers", lambda _page, _probe: True)
     monkeypatch.setattr(pages, "PAGE_START_S", 0.2)
     monkeypatch.setattr(pages, "_POLL_S", 0.01)
     with pytest.raises(XrayPageError, match="did not answer"):
-        pages._wait_for_page(project, "launch-a")  # pylint: disable=protected-access
+        pages._wait_for_page(project, "launch-a", _silent_probe)  # pylint: disable=protected-access
 
 
 def test_the_start_passes_its_launch_id_to_the_page_and_waits_for_it(
@@ -349,9 +426,10 @@ def test_the_start_passes_its_launch_id_to_the_page_and_waits_for_it(
 ) -> None:
     started: list[list[str]] = []
     waited: list[str | None] = []
-    monkeypatch.setattr(pages, "launch_detached", lambda command, *, cwd: started.append(command) or 1)
-    monkeypatch.setattr(pages, "_wait_for_page", lambda _root, launch: waited.append(launch) or XrayPage(2, "x"))
-    start_page(project, "any")
+    monkeypatch.setattr(
+        pages, "_wait_for_page", lambda _root, launch, _probe: waited.append(launch) or XrayPage(2, "x")
+    )
+    start_page(project, "any", lambda command, *, cwd: started.append(command) or 1, _silent_probe)
     (command,) = started
     assert command[command.index("--launch") + 1] == waited[0]
 
@@ -363,7 +441,7 @@ def test_a_second_start_gives_up_when_no_page_answers_by_the_deadline(
     monkeypatch.setattr(pages, "PAGE_START_S", 0.2)
     monkeypatch.setattr(pages, "_POLL_S", 0.01)
     with pytest.raises(XrayPageError, match="did not answer"):
-        start_page(project, "any")
+        start_page(project, "any", launch_detached, _silent_probe)
 
 
 def test_a_stale_start_lock_is_replaced(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -388,7 +466,7 @@ def test_a_start_in_an_unwritable_settings_folder_is_a_page_error_naming_the_fol
     project: Path, read_only_pages: Path
 ) -> None:
     with pytest.raises(XrayPageError, match=re.escape(str(read_only_pages / "xray-pages"))):
-        start_page(project, "any")
+        start_page(project, "any", launch_detached, _silent_probe)
 
 
 def test_the_page_address_always_carries_how_the_session_was_chosen() -> None:
@@ -410,9 +488,8 @@ def test_the_detached_page_start_keeps_user_site_packages_and_not_the_working_fo
     (project / "folder_probe.py").write_text("VALUE = 1\n", encoding="utf-8")
     started: list[list[str]] = []
     monkeypatch.setattr(sys, "executable", base_python)
-    monkeypatch.setattr(pages, "launch_detached", lambda command, *, cwd: started.append(command) or 1)
-    monkeypatch.setattr(pages, "_wait_for_page", lambda _root, _launch: XrayPage(2, "launch-a"))
-    start_page(project, "any")
+    monkeypatch.setattr(pages, "_wait_for_page", lambda _root, _launch, _probe: XrayPage(2, "launch-a"))
+    start_page(project, "any", lambda command, *, cwd: started.append(command) or 1, _silent_probe)
     (command,) = started
     flags = command[: command.index("-m")]
     env = {**os.environ, "PYTHONUSERBASE": str(user_base), "PYTHONPATH": str(project)}

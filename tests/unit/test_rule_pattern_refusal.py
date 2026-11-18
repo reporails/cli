@@ -10,8 +10,8 @@ import pytest
 from reporails_cli.core.lint.harness_discovery import discover_rules
 from reporails_cli.core.lint.harness_quality import lint_rules
 from reporails_cli.core.lint.regex.compiler import compile_rules
-from reporails_cli.core.platform.adapters import registry
-from reporails_cli.core.platform.adapters.registry import RuleReadError, read_rule
+from reporails_cli.core.platform.rules import registry
+from reporails_cli.core.platform.rules.registry import RuleReadError, read_rule
 
 _FRONTMATTER = (
     "---\nid: {rid}\ntitle: T\ncategory: structure\ntype: deterministic\nslug: {slug}\nseverity: medium\n---\n\nbody\n"

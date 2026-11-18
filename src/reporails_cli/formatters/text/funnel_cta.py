@@ -14,8 +14,13 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from rich.markup import escape as escape_markup
 from rich.markup import render as render_markup
 
-from reporails_cli.core.platform.adapters.api_key import has_api_key
-from reporails_cli.core.platform.dto.diagnostics import DEFAULT_RETRY_AFTER_S, UNENTITLED_TIERS, FunnelError
+from reporails_cli.core.platform.config.api_key import has_api_key
+from reporails_cli.core.platform.dto.diagnostics import (
+    DEFAULT_RETRY_AFTER_S,
+    OFFLINE_REQUESTED,
+    UNENTITLED_TIERS,
+    FunnelError,
+)
 from reporails_cli.core.platform.utils.version import installed_version
 
 # URL schemes the terminal renders as a clickable link.
@@ -65,6 +70,7 @@ _REFUSAL_REASONS = {
     "file_cap_exceeded": "project over the size cap",
     "file_budget_exceeded": "hourly file budget reached",
     "scoring_limit_exceeded": "project too large to score",
+    OFFLINE_REQUESTED: "local checks only",
 }
 
 
@@ -84,15 +90,14 @@ def _has_key() -> bool:
 def _cta_tier(err: FunnelError) -> str:
     """Return the tier key for template + URL selection.
 
-    The wire tier alone cannot pick the copy: ``anonymous`` and ``free`` carry
-    identical caps, and what differs is whether the caller already holds a key.
-    A keyless caller must be told to sign in first; a keyed caller must not be
+    The copy depends on whether the caller already holds a key, not on the wire
+    label alone. A keyless caller must be told to sign in first; a keyed caller must not be
     sent to a login they already completed. So an unentitled wire tier resolves
     to ``free`` when a key is held and ``anonymous`` when none is, and every
     other wire tier (``pro``) passes through.
     """
-    # Unentitled tiers share identical caps; the copy that converts depends on whether the caller
-    # can already act on an upgrade link.
+    # For an unentitled tier the copy that converts depends on whether the caller can already act
+    # on an upgrade link.
     if err.tier in UNENTITLED_TIERS or not err.tier:
         return "free" if _has_key() else "anonymous"
     return err.tier
@@ -266,7 +271,7 @@ _CTA_TEMPLATES: dict[tuple[str, str], str] = {
         "anonymous",
     ): (
         "Anonymous limit hit ({err.limit}/hr). {err.reset_phrase}"
-        "Sign in with `ails login`, then upgrade to Pro to raise it to 1,200/hr"
+        "Sign in with `ails login` to raise it to 100/hr, then upgrade to Pro for 1,200/hr"
     ),
     ("rate_limit_exceeded", "free"): (
         "Hit the free limit ({err.limit}/hr). {err.reset_phrase}Upgrade to Pro to raise it to 1,200/hr"

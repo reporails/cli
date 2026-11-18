@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from reporails_cli.core.platform.config import config as config_mod
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.interfaces.cli.main import app
+from tests.fake_models import no_models
 
 runner = CliRunner()
 _BAD = "disabled_rules: [CORE:E:0003\n"
@@ -107,14 +108,12 @@ def test_a_tab_before_an_inline_comment_gets_one_outcome_from_check_and_config(
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_mcp_validate_returns_the_structured_error(tmp_path: Path, global_path: Path) -> None:
-    from reporails_cli.interfaces.mcp.server import _run_heal_apply, _run_validate
+    from reporails_cli.interfaces.mcp.server import _run_validate
 
     root = _project(tmp_path, "config.yml")
-    payload = asyncio.run(_run_validate(str(root), False, None, root))
+    payload = asyncio.run(_run_validate(str(root), False, None, root, no_models()))
     assert payload["error"] == "config_unreadable"
     assert str(root / ".ails" / "config.yml") in payload["message"]
-    healed = asyncio.run(_run_heal_apply(str(root), None, root))
-    assert healed.startswith("heal_apply: ") and str(root / ".ails" / "config.yml") in healed
 
 
 @pytest.mark.unit
@@ -254,15 +253,15 @@ def test_mcp_remedy_brief_returns_the_structured_error(
     root = _project(tmp_path, "config.yml")
     problem = ConfigUnreadableError(f"{root / '.ails' / 'config.yml'}: line 1")
 
-    def unreadable(*_args: object) -> None:
+    def unreadable(*_args: object, **_kwargs: object) -> None:
         raise problem
 
     monkeypatch.setattr(server, "build_remedy_brief", unreadable)
     server.validate_states.clear()
     server.validate_states[server.state_key(str(root), root, ())] = server.CircuitState(
-        full_payload={"workflow": {"locations": [{"order": 1}]}}, scan_root=root
+        full_payload={"workflow": {"preservation_contract": "x", "locations": [{"order": 1}]}}, scan_root=root
     )
-    reply = server._serve_remedy_brief(str(root), 1, None, True, project_root=root)
+    reply = server._serve_remedy_brief(str(root), 1, None, True, project_root=root, models=no_models())
     server.validate_states.clear()
     assert reply == {"error": "config_unreadable", "message": str(problem)}
 

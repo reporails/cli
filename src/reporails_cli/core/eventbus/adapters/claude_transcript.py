@@ -60,7 +60,15 @@ the adapter refuses any other shape of a row type it reads:
   `status`, a string, which is `forked` when the skill ran in a subagent of its own (`context: fork`); no other
   key of the object is read. A `success: false` run, and a `toolUseResult` that is not an object or has no
   `commandName`, yield nothing.
-- a compaction: `type: "system"` with `subtype: "compact_boundary"` and `compactMetadata.trigger`.
+- a compaction: `type: "system"` with `subtype: "compact_boundary"`, `compactMetadata.trigger` and, when present,
+  `compactMetadata.preservedMessages.uuids`, a list of the ids of the rows Claude Code kept across it.
+- a file attachment: `type: "attachment"` with `attachment.type: "file"` and `attachment.filename`, a string, which
+  holds the whole file (its `content` is never read), or `attachment.type: "compact_file_reference"` and
+  `attachment.filename`, a string, which names a file read before a compaction whose content was too large to
+  include. Both follow a `compact_boundary` row before the next assistant reply.
+- an edit snippet, `attachment.type: "edited_text_file"` with `attachment.filename`, a string (`snippet` is never
+  read), and recalled notes, `attachment.type: "relevant_memories"` with `attachment.memories`, objects each with a
+  `path` string, one file attachment per entry (`content` is never read).
 - a subagent brief: the first row of a subagent file, `type: "user"` with `message.content` a string or a
   list of blocks whose `type: "text"` blocks hold `text`.
 - every row the adapter reads (assistant, system, attachment) carries `sessionId` and `timestamp`; a row
@@ -88,7 +96,8 @@ the adapter refuses any other shape of a row type it reads:
 
 Never read, except for the sizes (a reply's text included), the brief and the prompts above: message content,
 tool output, `content`, `displayPath`. Tool input is read only for the path, the MCP server, a hand-back message's
-size and a command's hash, and a command's text on request. The meta `description` is read.
+size and a command's hash; on request, a command's text, a hand-back's message and an assistant row's text. The meta
+`description` is read.
 """
 
 from __future__ import annotations
@@ -100,8 +109,11 @@ from reporails_cli.core.eventbus.adapters.claude_calls import (
     call_command,
     call_input,
     content_blocks,
+    handback_message,
     holds_call,
     holds_result,
+    reply_blocks,
+    reply_text,
     result_text,
     tool_call,
     tool_result,
@@ -118,7 +130,10 @@ from reporails_cli.core.eventbus.adapters.claude_requests import (
     shape_system_text,
 )
 from reporails_cli.core.eventbus.adapters.claude_rows import (
+    attached_paths,
     brief_text,
+    compact_summary_link,
+    compact_summary_text,
     meta_field,
     required_text,
     sized_by_name,
@@ -134,7 +149,9 @@ from reporails_cli.core.platform.contract.json_value import (
     opt_str,
     strict_str_list,
 )
+from reporails_cli.core.platform.dto.attachments import FileAttachment, is_attachment_kind
 from reporails_cli.core.platform.dto.events import (
+    CompactionBoundary,
     EventKind,
     EventRecord,
     HarnessAttachment,
@@ -231,6 +248,14 @@ class ClaudeTranscriptAdapter:
         """The text of the result of the tool call `use_id` in a user row, for the route that shows it."""
         return result_text(row, use_id)
 
+    def resolve_handback(self, row: JsonObject) -> str | None:
+        """The message of the hand-back call an assistant row holds; None for any other row."""
+        return handback_message(row)
+
+    def resolve_reply(self, row: JsonObject) -> str | None:
+        """The text of an assistant row; None for any other row or a row with no text."""
+        return reply_text(row)
+
     def resolve_brief(self, first_row: JsonObject) -> str:
         """The brief a subagent was given, the text of its first row; refuses a first row that is not a user
         row holding text."""
@@ -264,10 +289,12 @@ class ClaudeTranscriptAdapter:
     def resolve_compact_summary(self, row: JsonObject) -> str | None:
         """The summary text of a compaction summary row (`type: "user"`, `isCompactSummary: true`, string
         `message.content`); None for any other row."""
-        if row.get("type") != "user" or row.get("isCompactSummary") is not True:
-            return None
-        content = as_object(row.get("message")).get("content")
-        return content if isinstance(content, str) else None
+        return compact_summary_text(row)
+
+    def resolve_compact_link(self, row: JsonObject) -> str | None:
+        """The `parentUuid` of a compaction summary row, the `uuid` of the boundary row it follows; None for any
+        other row or a summary row with no parent."""
+        return compact_summary_link(row)
 
     def opens_with_clear(self, row: JsonObject) -> bool | None:
         """For a user row that is not a harness note, whether it is the `/clear` command row; None for any other
@@ -303,19 +330,19 @@ class ClaudeTranscriptAdapter:
 
     def _tool_calls(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         return [
-            replace(self._record(row, "tool_call", subagent_id), tool=tool_call(block))
+            replace(
+                self._record(row, "tool_call", subagent_id),
+                tool=replace(tool_call(block), row_id=opt_str(row.get("uuid"))),
+            )
             for block in content_blocks(row, "tool_use")
         ]
 
     def _reply_text(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         """One record sizing the text blocks of an assistant row; none when the row holds no text block."""
-        blocks = content_blocks(row, "text")
-        if not blocks:
+        texts = reply_blocks(row)
+        if not texts:
             return []
-        texts = [block.get("text") for block in blocks]
-        if not all(isinstance(text, str) for text in texts):
-            raise PayloadRefused("assistant text block has no text")
-        chars = sum(len(text) for text in texts if isinstance(text, str))
+        chars = sum(len(text) for text in texts)
         synthetic = as_object(row.get("message")).get("model") == SYNTHETIC_MODEL
         return [replace(self._record(row, "assistant_text", subagent_id), item=ReplyText(chars, synthetic))]
 
@@ -331,8 +358,24 @@ class ClaudeTranscriptAdapter:
         return EventRecord(self.agent, event, session_id, time, subagent_id, opt_str(row.get("cwd")) or None)
 
     def _compaction(self, row: JsonObject, subagent_id: str | None) -> EventRecord:
-        trigger = opt_str(as_object(row.get("compactMetadata")).get("trigger"))
-        return replace(self._record(row, "post_compact", subagent_id), source=trigger)
+        metadata = as_object(row.get("compactMetadata"))
+        trigger = opt_str(metadata.get("trigger"))
+        boundary = CompactionBoundary(opt_str(row.get("uuid")) or None, self._kept_messages(metadata))
+        return replace(self._record(row, "post_compact", subagent_id), source=trigger, item=boundary)
+
+    @staticmethod
+    def _kept_messages(metadata: JsonObject) -> tuple[str, ...]:
+        """The ids of the messages a compaction kept: none when `preservedMessages` is absent; refuses one that is
+        not an object holding a list of strings under `uuids`."""
+        preserved = metadata.get("preservedMessages")
+        if preserved is None:
+            return ()
+        if not isinstance(preserved, dict):
+            raise PayloadRefused("compact_boundary row preservedMessages is not an object")
+        kept = strict_str_list(preserved.get("uuids"))
+        if kept is None:
+            raise PayloadRefused("compact_boundary row preservedMessages.uuids is not a list of strings")
+        return tuple(kept)
 
     def _typed_text(self, row: JsonObject) -> str | None:
         """The text of a row a person typed, None for any other row."""
@@ -408,14 +451,15 @@ class ClaudeTranscriptAdapter:
             ]
         if kind == "instructions":
             return self._instructions(row, attachment, subagent_id)
+        if is_attachment_kind(kind):
+            base = self._record(row, "file_attachment", subagent_id)
+            return [replace(base, item=FileAttachment(path, kind)) for path in attached_paths(attachment, kind)]
         if kind in HOOK_NOTE_ATTACHMENTS:
             return self._hook_note(row, attachment, subagent_id)
         if kind == "queued_command":
             return self._prompt(row, subagent_id)
         entry = self._harness_entry(attachment, kind)
-        if entry is None:
-            return []
-        return [self._harness(row, entry, subagent_id)]
+        return [] if entry is None else [self._harness(row, entry, subagent_id)]
 
     def _instructions(self, row: JsonObject, attachment: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         loads: list[EventRecord] = []
@@ -435,7 +479,10 @@ class ClaudeTranscriptAdapter:
         return None
 
     def _load(self, row: JsonObject, path: str, memory_type: str | None, subagent_id: str | None) -> EventRecord:
-        return replace(self._record(row, "instruction_load", subagent_id), item=InstructionLoad(path, memory_type))
+        return replace(
+            self._record(row, "instruction_load", subagent_id),
+            item=InstructionLoad(path, memory_type, opt_str(row.get("uuid")) or None),
+        )
 
     def _harness(self, row: JsonObject, entry: HarnessEntry, subagent_id: str | None) -> EventRecord:
         return replace(self._record(row, "harness", subagent_id), item=entry)

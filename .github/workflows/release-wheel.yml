@@ -103,7 +103,7 @@ jobs:
           "
         shell: bash
 
-      # `ensure_models_available()` below runs the real first-run download into
+      # `ensure_models_available(http_get)` below runs the real first-run download into
       # the user cache — the path a fresh install takes. A failed download fails
       # the release here, before publish.
       - name: Smoke check + first-run model fetch + charge model present
@@ -118,7 +118,8 @@ jobs:
           subprocess.run([str(ails), 'check', '--help'], check=True, stdout=subprocess.DEVNULL)
           subprocess.run([str(py), '-c',
               'from reporails_cli.core.mapper.model_store import ensure_models_available;'
-              'onnx = ensure_models_available() / \"minilm-l6-v2\" / \"onnx\" / \"model.onnx\";'
+              'from reporails_cli.core.platform.adapters.http_get import http_get;'
+              'onnx = ensure_models_available(http_get) / \"minilm-l6-v2\" / \"onnx\" / \"model.onnx\";'
               'assert onnx.exists(), f\"ONNX missing: {onnx}\";'
               'print(f\"ONNX OK: {onnx.stat().st_size // 1024 // 1024} MB\")'
           ], check=True)
@@ -155,7 +156,7 @@ jobs:
           result = subprocess.run(
               [str(ails), 'check', str(fixture), '-f', 'json'],
               check=True, capture_output=True, text=True,
-              env={**__import__('os').environ, 'AILS_SERVER_URL': 'http://127.0.0.1:9'},
+              env={**__import__('os').environ, 'AILS_SERVER_URL': 'http://127.0.0.1:9', 'AILS_OFFLINE': '1'},
           )
           data = json.loads(result.stdout)
           count = data.get('stats', {}).get('client_check_count', 0)

@@ -15,6 +15,7 @@ from typer.testing import CliRunner
 from reporails_cli.core.discovery.read_gates import claude_agents_md_reads
 from reporails_cli.core.pipeline.expected_loads import expected_loads
 from reporails_cli.core.platform.config import claude_settings
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
@@ -67,7 +68,7 @@ def test_agents_md_beside_claude_md_is_skipped(tmp_path: Path) -> None:
     root = _project(tmp_path)
     _write(root / "CLAUDE.md")
     _write(root / "AGENTS.md")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     assert _by_name(out["files"], root)["CLAUDE.md"]["file_type"] == "main"
     assert "AGENTS.md" not in _by_name(out["files"], root)
     skipped = _by_name(out["skipped"], root)["AGENTS.md"]
@@ -81,7 +82,7 @@ def test_agents_md_beside_claude_md_is_skipped(tmp_path: Path) -> None:
 def test_lone_agents_md_loads_at_session_start(tmp_path: Path) -> None:
     root = _project(tmp_path)
     _write(root / "AGENTS.md")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     entry = _by_name(out["files"], root)["AGENTS.md"]
     assert (entry["file_type"], entry["loading"], entry["precedence"]) == ("agents_md", "session_start", "project")
     assert out["skipped"] == []
@@ -94,7 +95,7 @@ def test_and_mode_loads_both(tmp_path: Path) -> None:
     _write(root / "CLAUDE.md")
     _write(root / "AGENTS.md")
     _mode("claude-md-and-agents-md")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     assert {"CLAUDE.md", "AGENTS.md"} <= set(_by_name(out["files"], root))
     assert out["skipped"] == []
 
@@ -105,7 +106,7 @@ def test_claude_md_mode_skips_agents_md_as_setting_off(tmp_path: Path) -> None:
     root = _project(tmp_path)
     _write(root / "AGENTS.md")
     _mode("claude-md")
-    skipped = _by_name(expected_loads(root)["skipped"], root)["AGENTS.md"]
+    skipped = _by_name(expected_loads(RunContext(), root)["skipped"], root)["AGENTS.md"]
     assert (skipped["reason"], skipped["setting"]) == ("setting_off", "claude-md")
 
 
@@ -115,7 +116,7 @@ def test_agents_dir_is_never_read(tmp_path: Path) -> None:
     root = _project(tmp_path)
     _write(root / "CLAUDE.md")
     _write(root / ".agents" / "AGENTS.md")
-    skipped = _by_name(expected_loads(root)["skipped"], root)
+    skipped = _by_name(expected_loads(RunContext(), root)["skipped"], root)
     assert skipped[".agents/AGENTS.md"]["reason"] == "never_read"
 
 
@@ -126,7 +127,7 @@ def test_nested_agents_md_beside_its_own_claude_md_is_skipped(tmp_path: Path) ->
     _write(root / "sub" / "AGENTS.md")
     _write(root / "sub" / "CLAUDE.md")
     _write(root / "other" / "AGENTS.md")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     assert _by_name(out["skipped"], root)["sub/AGENTS.md"]["reason"] == "subdir_has_claude_md"
     loaded = _by_name(out["files"], root)["other/AGENTS.md"]
     assert (loaded["file_type"], loaded["loading"]) == ("nested_context", "on_demand")
@@ -139,7 +140,7 @@ def test_config_surfaces_are_not_listed(tmp_path: Path) -> None:
     _write(root / "CLAUDE.md")
     _write(root / ".claude" / "settings.json", "{}")
     _write(root / ".claude" / "rules" / "style.md")
-    names = set(_by_name(expected_loads(root)["files"], root))
+    names = set(_by_name(expected_loads(RunContext(), root)["files"], root))
     assert names == {"CLAUDE.md", ".claude/rules/style.md"}
 
 
@@ -174,7 +175,7 @@ def test_agents_md_linked_to_claude_md_is_reported_as_that_file(tmp_path: Path) 
         (root / "sub3" / "AGENTS.md").symlink_to("notes.md")
     except OSError:
         pytest.skip("symlinks cannot be created here")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     resolved = root.resolve()
     assert out["aliases"] == [
         {"path": str(resolved / "AGENTS.md"), "same_as": str(resolved / "CLAUDE.md"), "how": "link"},
@@ -214,7 +215,7 @@ def test_claude_md_linking_to_regular_agents_md_makes_agents_md_an_alias(tmp_pat
     root = _project(tmp_path)
     _write(root / "AGENTS.md")
     _link(root / "CLAUDE.md", "AGENTS.md")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     assert _alias_names(out, root) == {"AGENTS.md": "CLAUDE.md"}
     assert out["skipped"] == []
 
@@ -225,7 +226,7 @@ def test_agents_md_linking_to_claude_local_md_is_an_alias(tmp_path: Path) -> Non
     root = _project(tmp_path)
     _write(root / "CLAUDE.local.md")
     _link(root / "AGENTS.md", "CLAUDE.local.md")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     assert _alias_names(out, root) == {"AGENTS.md": "CLAUDE.local.md"}
 
 
@@ -241,7 +242,7 @@ def test_agents_md_linking_into_agents_dir_or_excluded_folder_stays_skipped(tmp_
     _write(root / "node_modules" / "pkg" / "CLAUDE.md", "# Another\n")
     _link(root / "AGENTS.md", ".agents/CLAUDE.md")
     _link(root / "a" / "AGENTS.md", "../node_modules/pkg/CLAUDE.md")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     assert out["aliases"] == []
     assert _skipped_reasons(out, root) == {"AGENTS.md": "claude_md_present", "a/AGENTS.md": "claude_md_present"}
 
@@ -253,7 +254,7 @@ def test_links_to_one_file_are_each_reported_under_their_own_name(tmp_path: Path
     _write(root / "CLAUDE.md")
     _link(root / "AGENTS.md", "CLAUDE.md")
     _link(root / ".claude" / "AGENTS.md", "../CLAUDE.md")
-    assert _alias_names(expected_loads(root), root) == {
+    assert _alias_names(expected_loads(RunContext(), root), root) == {
         "AGENTS.md": "CLAUDE.md",
         ".claude/AGENTS.md": "CLAUDE.md",
     }
@@ -270,7 +271,7 @@ def test_agents_md_excluded_in_config_is_not_reported_as_skipped(tmp_path: Path)
         root / ".ails" / "config.yml",
         'schema_version: "0.1.0"\nsurfaces:\n  claude.agents_md:\n    exclude: ["legacy/**"]\n',
     )
-    assert set(_skipped_reasons(expected_loads(root), root)) == {"AGENTS.md"}
+    assert set(_skipped_reasons(expected_loads(RunContext(), root), root)) == {"AGENTS.md"}
 
 
 def _managed_only_project(root: Path) -> None:
@@ -292,7 +293,7 @@ def test_managed_only_leaves_out_what_claude_leaves_out_at_launch(tmp_path: Path
     root = _project(tmp_path)
     _managed_only_project(root)
     _mode("managed-only", plugin_id)
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     assert out["aliases"] == []
     files = _by_name([i for i in out["files"] if Path(i["path"]).is_relative_to(root)], root)
     assert {k: v["loading"] for k, v in files.items()} == {
@@ -320,7 +321,7 @@ def test_claude_md_mode_keeps_every_instruction_file_loaded(tmp_path: Path) -> N
     _write(root / "CLAUDE.md")
     _write(root / ".claude" / "rules" / "style.md")
     _mode("claude-md", "cc-plugin-agents-md@builtin")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     names = set(_by_name([i for i in out["files"] if Path(i["path"]).is_relative_to(root)], root))
     assert {"CLAUDE.md", ".claude/rules/style.md"} <= names
     assert out["skipped"] == []
@@ -335,7 +336,7 @@ def test_empty_files_are_not_expected_to_load(tmp_path: Path) -> None:
     (root / ".claude" / "rules" / "bom.md").write_bytes(b"\xef\xbb\xbf\n")
     _write(root / ".claude" / "rules" / "fmonly.md", "---\npaths: src/**\n---\n")
     _write(root / ".claude" / "rules" / "real.md")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     names = set(_by_name([i for i in out["files"] if Path(i["path"]).is_relative_to(root)], root))
     assert names == {".claude/rules/real.md"}
     assert not [i for i in out["skipped"] if Path(i["path"]).is_relative_to(root)]
@@ -349,7 +350,7 @@ def test_user_instruction_files_are_listed_with_their_loading(tmp_path: Path) ->
     _write(Path.home() / ".claude" / "CLAUDE.md")
     _write(Path.home() / ".claude" / "rules" / "pref.md")
     _write(Path.home() / ".claude" / "rules" / "scoped.md", "---\npaths:\n  - src/**\n---\n\nUse type hints.\n")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     home = _home_items(out["files"])
     assert {k: (v["file_type"], v["loading"], v["precedence"]) for k, v in home.items()} == {
         "CLAUDE.md": ("main", "session_start", "user"),
@@ -391,7 +392,7 @@ def test_skipped_agents_md_names_the_plain_claude_md_that_caused_it(tmp_path: Pa
     root = _project(tmp_path)
     _write(root / "CLAUDE.md")
     _write(root / "AGENTS.md")
-    assert _causes(expected_loads(root), root) == {"AGENTS.md": str(root / "CLAUDE.md")}
+    assert _causes(expected_loads(RunContext(), root), root) == {"AGENTS.md": str(root / "CLAUDE.md")}
 
 
 @pytest.mark.unit
@@ -400,7 +401,7 @@ def test_skipped_agents_md_names_a_dot_claude_claude_md(tmp_path: Path) -> None:
     root = _project(tmp_path)
     _write(root / ".claude" / "CLAUDE.md")
     _write(root / "AGENTS.md")
-    assert _causes(expected_loads(root), root) == {"AGENTS.md": str(root / ".claude" / "CLAUDE.md")}
+    assert _causes(expected_loads(RunContext(), root), root) == {"AGENTS.md": str(root / ".claude" / "CLAUDE.md")}
 
 
 @pytest.mark.unit
@@ -410,7 +411,7 @@ def test_subfolder_agents_md_names_the_claude_local_md_beside_it(tmp_path: Path)
     _write(root / "sub" / "CLAUDE.local.md")
     _write(root / "sub" / "AGENTS.md")
     _write(root / "AGENTS.md")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     assert _causes(out, root) == {"sub/AGENTS.md": str(root / "sub" / "CLAUDE.local.md")}
     assert _by_name(out["skipped"], root)["sub/AGENTS.md"]["reason"] == "subdir_has_claude_md"
 
@@ -421,7 +422,7 @@ def test_agents_md_below_a_parent_folders_claude_md_names_that_file(tmp_path: Pa
     _write(tmp_path / "CLAUDE.md")
     root = _project(tmp_path)
     _write(root / "AGENTS.md")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     assert _causes(out, root) == {"AGENTS.md": str(tmp_path / "CLAUDE.md")}
 
 
@@ -432,7 +433,7 @@ def test_skip_without_a_claude_file_has_no_cause(tmp_path: Path) -> None:
     _write(root / "AGENTS.md")
     _write(root / ".agents" / "AGENTS.md")
     _mode("claude-md")
-    assert set(_causes(expected_loads(root), root).values()) == {None}
+    assert set(_causes(expected_loads(RunContext(), root), root).values()) == {None}
 
 
 # --- event-log folder: private and pruned ---------------------------------------------------
@@ -454,7 +455,7 @@ def _xray() -> Path:
 
 
 def _answer(root: Path) -> dict:
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     return {k: v for k, v in out.items() if k != "event_log_dir"}
 
 
@@ -467,7 +468,7 @@ def test_sessions_older_than_thirty_days_are_removed_whole(tmp_path: Path) -> No
     _log(folder, "dead", 0, 31)
     _log(folder, "dead", 1, 40)
     _log(folder, "fresh", 0, 29)
-    expected_loads(_project(tmp_path))
+    expected_loads(RunContext(), _project(tmp_path))
     assert sorted(p.name.split(".")[0] for p in folder.iterdir()) == ["fresh", "stale", "stale"]
 
 
@@ -478,7 +479,7 @@ def test_cleanup_period_days_shortens_the_retention(tmp_path: Path) -> None:
     folder = _xray()
     _log(folder, "old", 0, 4)
     _log(folder, "new", 0, 2)
-    expected_loads(_project(tmp_path))
+    expected_loads(RunContext(), _project(tmp_path))
     assert [p.name.split(".")[0] for p in folder.iterdir()] == ["new"]
 
 
@@ -488,7 +489,7 @@ def test_cleanup_period_days_never_lengthens_the_retention(tmp_path: Path) -> No
     _write(Path.home() / ".claude" / "settings.json", json.dumps({"cleanupPeriodDays": 90}))
     folder = _xray()
     _log(folder, "old", 0, 40)
-    expected_loads(_project(tmp_path))
+    expected_loads(RunContext(), _project(tmp_path))
     assert list(folder.iterdir()) == []
 
 
@@ -501,7 +502,7 @@ def test_oversize_folder_loses_oldest_sessions_first(tmp_path: Path) -> None:
     _log(folder, "a", 1, 19, 10 * mb)
     _log(folder, "b", 0, 10, 40 * mb)
     _log(folder, "c", 0, 1, 40 * mb)  # 130 MB in all
-    expected_loads(_project(tmp_path))
+    expected_loads(RunContext(), _project(tmp_path))
     assert sorted(p.name.split(".")[0] for p in folder.iterdir()) == ["b", "c"]
 
 
@@ -517,7 +518,7 @@ def test_non_log_files_are_left_alone_and_logs_become_private(tmp_path: Path) ->
     log = _log(folder, "s", 0, 1)
     log.chmod(0o644)
     folder.chmod(0o755)
-    expected_loads(_project(tmp_path))
+    expected_loads(RunContext(), _project(tmp_path))
     assert other.read_text() == "mine"
     assert oddly.exists()
     assert stat.S_IMODE(log.stat().st_mode) == 0o600
@@ -528,7 +529,7 @@ def test_non_log_files_are_left_alone_and_logs_become_private(tmp_path: Path) ->
 @pytest.mark.subsys_classify
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows has no POSIX file modes")
 def test_missing_folder_is_created_private(tmp_path: Path) -> None:
-    expected_loads(_project(tmp_path))
+    expected_loads(RunContext(), _project(tmp_path))
     assert stat.S_IMODE(_xray().stat().st_mode) == 0o700
 
 
@@ -587,7 +588,7 @@ def test_agents_md_reaching_claude_through_claude_md_is_an_alias_with_how(
         _link(root / "AGENTS.md", "CLAUDE.md")
     else:
         _write(root / "AGENTS.md", agents_text)
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     assert _how_by_name(out, root) == ({} if how is None else {"AGENTS.md": how})
     assert _skipped_reasons(out, root) == skipped
 
@@ -606,7 +607,7 @@ def test_agents_md_with_the_text_of_a_read_claude_md_is_a_copy_whatever_the_skip
     _write(root / agents, claude_text if same_text else claude_text + "Also lint.\n")
     if reason == "setting_off":
         _mode("claude-md")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     if same_text:
         assert _alias_names(out, root) == {agents.as_posix(): "CLAUDE.md"}
         assert {a["how"] for a in out["aliases"]} == {"copy"}
@@ -626,7 +627,7 @@ def test_agents_md_is_not_a_copy_of_a_claude_md_that_loads_only_in_a_subfolder(t
     _write(root / "CLAUDE.md", "# Root\n\n- Use pnpm.\n")
     _write(root / "AGENTS.md", _SHARED)
     _write(root / "pkg" / "CLAUDE.md", _SHARED)
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     assert out["aliases"] == []
     assert _skipped_reasons(out, root) == {"AGENTS.md": "claude_md_present"}
     causes = {k: v["cause"] for k, v in _by_name(out["skipped"], root).items()}
@@ -639,7 +640,7 @@ def test_subfolder_agents_md_is_a_copy_of_the_claude_md_beside_it(tmp_path: Path
     root = _project(tmp_path)
     _write(root / "pkg" / "CLAUDE.md", _SHARED)
     _write(root / "pkg" / "AGENTS.md", _SHARED)
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     assert _alias_names(out, root) == {"pkg/AGENTS.md": "pkg/CLAUDE.md"}
     assert _how_by_name(out, root) == {"pkg/AGENTS.md": "copy"}
 
@@ -653,7 +654,7 @@ def test_agents_md_is_a_copy_of_a_claude_md_that_loads_wherever_it_would(tmp_pat
     if source == "user":
         _write(Path.home() / ".claude" / "CLAUDE.md", _SHARED)
     _write(root / "AGENTS.md", _SHARED)
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     assert _how_by_name(out, root) == {"AGENTS.md": "copy"}
     assert _skipped_reasons(out, root) == {}
     if source == "user":
@@ -672,7 +673,7 @@ def test_symlinked_project_root_still_prefers_the_file_that_made_the_agents_md_s
         link.symlink_to(real, target_is_directory=True)
     except OSError:
         pytest.skip("symlinks cannot be created here")
-    out = expected_loads(link)
+    out = expected_loads(RunContext(), link)
     assert [Path(a["same_as"]).name for a in out["aliases"]] == ["CLAUDE.md"]
 
 
@@ -683,7 +684,7 @@ def test_project_claude_md_a_subfolder_links_to_stays_the_main_file(tmp_path: Pa
     _write(root / "CLAUDE.md", "# Root\n- Use pnpm.\n")
     _link(root / "A" / "CLAUDE.md", "../CLAUDE.md")
     _write(root / "AGENTS.md", "# Root\n- Use pnpm.\n")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     files = _by_name(out["files"], root.resolve())
     assert (files["CLAUDE.md"]["file_type"], files["CLAUDE.md"]["loading"]) == ("main", "session_start")
     assert "A/CLAUDE.md" not in files
@@ -711,7 +712,7 @@ def test_agents_md_linked_to_an_on_demand_claude_md_stays_skipped(tmp_path: Path
     _write(root / "CLAUDE.md", "# Root\n\n- Use pnpm.\n")
     _write(root / "pkg" / "CLAUDE.md", _SHARED)
     _link(root / "AGENTS.md", "pkg/CLAUDE.md")
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     assert out["aliases"] == []
     assert _skipped_reasons(out, root) == {"AGENTS.md": "claude_md_present"}
 
@@ -722,7 +723,7 @@ def test_project_claude_md_linking_to_the_user_claude_md_stays_the_project_main_
     root = tmp_path / "deep" / "a" / "b" / "c" / "p"
     _write(Path.home() / ".claude" / "CLAUDE.md", _SHARED)
     _link(root / "CLAUDE.md", str(Path.home() / ".claude" / "CLAUDE.md"))
-    out = expected_loads(root)
+    out = expected_loads(RunContext(), root)
     files = _by_name(out["files"], root.resolve())
     assert (files["CLAUDE.md"]["file_type"], files["CLAUDE.md"]["precedence"]) == ("main", "project")
 
@@ -752,12 +753,12 @@ def test_synced_skills_of_the_signed_in_account_only_are_listed_with_their_label
     _synced("pdf", _ACCOUNT)
     _synced("chrome-browser", "x_y")
     _write(_project(tmp_path) / "CLAUDE.md")
-    items = expected_loads(_project(tmp_path), [])["invocable"]
+    items = expected_loads(RunContext(), _project(tmp_path), [])["invocable"]
     synced = {i["label"]: i for i in items if "/skills/synced/" in _posix(i["path"])}
     assert set(synced) == {"anthropic-skills:docx", "anthropic-skills:pdf"}
     assert {i["precedence"] for i in synced.values()} == {"synced"}
     assert all(f"/{_ACCOUNT}/" in _posix(i["path"]) for i in synced.values())
-    listed = expected_loads(_project(tmp_path), [])["files"]
+    listed = expected_loads(RunContext(), _project(tmp_path), [])["files"]
     assert not [i for i in listed if "/synced/x_y/" in _posix(i["path"])]
     assert [i for i in listed if f"/synced/{_ACCOUNT}/" in _posix(i["path"])]
 
@@ -767,7 +768,7 @@ def test_synced_skills_of_the_signed_in_account_only_are_listed_with_their_label
 def test_no_signed_in_account_lists_no_synced_skill(tmp_path: Path) -> None:
     _synced("docx", _ACCOUNT)
     _write(_project(tmp_path) / "CLAUDE.md")
-    items = expected_loads(_project(tmp_path), [])["invocable"]
+    items = expected_loads(RunContext(), _project(tmp_path), [])["invocable"]
     assert not [i for i in items if "/skills/synced/" in _posix(i["path"])]
 
 
@@ -784,7 +785,8 @@ def test_the_signed_in_account_is_read_again_only_when_the_file_changes(monkeypa
         return real(target)
 
     monkeypatch.setattr(claude_settings, "_read_json", counting)
-    assert [claude_settings.claude_synced_account_folder() for _ in range(3)] == ["o_a"] * 3
+    run = RunContext()
+    assert [claude_settings.claude_synced_account_folder(run) for _ in range(3)] == ["o_a"] * 3
     assert len([r for r in reads if r == path]) == 1
     _write(path, json.dumps({"oauthAccount": {"organizationUuid": "o", "accountUuid": "second"}}))
-    assert claude_settings.claude_synced_account_folder() == "o_second"
+    assert claude_settings.claude_synced_account_folder(RunContext()) == "o_second"

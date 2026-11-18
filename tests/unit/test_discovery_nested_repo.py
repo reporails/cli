@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.pipeline.mapping import discover_scope
+from reporails_cli.core.platform.config.run_context import RunContext
 
 _SKILL = "---\nname: s\ndescription: Does one thing.\n---\n\n# S\n"
 
@@ -28,8 +28,7 @@ def _repo_files(folder: Path) -> list[Path]:
 
 
 def _discovered(target: Path) -> set[Path]:
-    clear_agent_cache()
-    return {p.resolve() for p in discover_scope(target, "", [], []).files}
+    return {p.resolve() for p in discover_scope(RunContext(), target, "", [], []).files}
 
 
 def _project(root: Path) -> Path:

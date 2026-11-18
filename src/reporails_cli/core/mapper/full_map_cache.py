@@ -36,6 +36,7 @@ from reporails_cli.core.platform.dto.ruleset import (
     RulesetMap,
 )
 from reporails_cli.core.platform.utils.directives import strip_directives
+from reporails_cli.core.platform.utils.file_read import read_file_bytes, read_file_text
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ def _expanded_content_hash(path: Path, root: Path) -> str:
     `@path` import changing the expanded content changes the key.
     """
 
-    raw = path.read_text(encoding="utf-8", errors="replace")
+    raw = read_file_text(path, errors="replace")
     return content_hash(strip_directives(expand_imports(raw, path, root)))
 
 
@@ -68,7 +69,7 @@ def _registry_fingerprint() -> str:
     try:
         for config_path in sorted(get_rules_path().glob("*/config.yml")):
             digest.update(config_path.parent.name.encode("utf-8"))
-            digest.update(config_path.read_bytes())
+            digest.update(read_file_bytes(config_path))
     except OSError:
         return "unreadable"
     return digest.hexdigest()[:16]

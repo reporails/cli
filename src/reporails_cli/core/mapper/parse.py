@@ -13,6 +13,7 @@ Public entry point: `tokenize(content)`.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 from markdown_it.token import Token
 from markdown_it.utils import EnvType
@@ -22,6 +23,7 @@ from reporails_cli.core.mapper.atom_build import (
     _ends_with_colon,
     _make_inline_atom,
     _specificity_fields,
+    place_units,
 )
 from reporails_cli.core.mapper.charge_floors import TABLE_HEADER_RULE, _classify_content, is_quoted_line
 from reporails_cli.core.mapper.classify import classify_charge
@@ -45,7 +47,9 @@ from reporails_cli.core.mapper.md_parser import (
     replace_code_spans,
     tok_line,
 )
+from reporails_cli.core.mapper.negative_headings import read_negative_headings
 from reporails_cli.core.mapper.prose_split import SEGMENTATION_STRUCTURE_AWARE, carries_word, split_prose_sentences
+from reporails_cli.core.mapper.source_columns import plain_placement, token_columns
 from reporails_cli.core.platform.dto.ruleset import LIST_OBJECT_ROLE, SENTENCE_SPLIT_FORMATS, Atom, AtomFormat
 
 
@@ -155,6 +159,7 @@ def _make_heading_atom(
     atom = Atom(
         line=tok_line(tok, line_offset),
         text=heading_text,
+        plain_text=plain_heading,
         kind="heading",
         charge=charge,
         charge_value=cv,
@@ -268,6 +273,21 @@ def _segment_atom(
     return _make_inline_atom(md_text, plain_text, fmt, line, pos_idx=pos_idx, current_heading=current_heading)
 
 
+def _segment_placer(tok: Token, line_offset: int, lines: list[str]) -> Callable[[Atom, int], None]:
+    """A function recording where the segment atom on file line `seg_line` sits in the file line, from the
+    inline token's columns (read once); it records nothing when the file does not hold the token's text."""
+    first = tok_line(tok, line_offset)
+    columns = token_columns(tok, lines, first - 1, {}) if tok.map else None
+
+    def place(atom: Atom, seg_line: int) -> None:
+        if columns is None or seg_line - 1 >= len(lines):
+            return
+        atom.placement = plain_placement(tok, columns, seg_line - first, lines[seg_line - 1], atom.plain_text)
+        place_units([atom], atom, [(0, len(atom.plain_text))], [0])
+
+    return place
+
+
 def _process_inline_segments(
     tok: Token,
     line_offset: int,
@@ -276,6 +296,7 @@ def _process_inline_segments(
     pos_idx: int,
     current_heading: str,
     atoms: list[Atom],
+    place: Callable[[Atom, int], None],
     block_follows: bool = False,
 ) -> int:
     """Process inline token segments, appending atoms. Returns updated pos_idx.
@@ -295,6 +316,7 @@ def _process_inline_segments(
         )
         if atom is None:
             continue
+        place(atom, seg_line)
         atom.list_depth = list_depth
         atom.lead_in = block_follows and seg_idx == len(segments) - 1 and _ends_with_colon(atom.plain_text)
         atoms.append(atom)
@@ -334,6 +356,7 @@ def tokenize(content: str, segmentation: str = "legacy") -> list[Atom]:
     splits into whole sentences, list/numbered items stay whole.
     """
     tokens, line_offset = parse_blocks(content)
+    lines = content.split("\n")
 
     atoms: list[Atom] = []
     pos_idx = 0
@@ -392,6 +415,7 @@ def tokenize(content: str, segmentation: str = "legacy") -> list[Atom]:
                 pos_idx=pos_idx,
                 current_heading=current_heading,
                 atoms=atoms,
+                place=_segment_placer(tok, line_offset, lines),
                 block_follows=_block_follows_paragraph(tokens, i),
             )
 
@@ -402,14 +426,16 @@ def tokenize(content: str, segmentation: str = "legacy") -> list[Atom]:
     if segmentation == SEGMENTATION_STRUCTURE_AWARE:
         atoms = _segment_structure_aware(atoms)
 
+    read_negative_headings(atoms)
     _scan_neutral_for_embedded_markers(atoms)
     _scan_charged_for_compound_markers(atoms)
 
     return atoms
 
 
-def _build_scope_mask(text: str) -> list[bool]:
-    """Build a per-character mask: True where the character is inside quotes or parens.
+def _build_scope_mask(text: str, *, quotes: bool = True) -> list[bool]:
+    """Build a per-character mask: True where the character is inside quotes or parens
+    (inside parens only when ``quotes`` is False).
 
     Tracks: "..." (straight quotes toggle), \u201c...\u201d (curly), (...).
     Backtick spans are not tracked here — they're handled by inline_tokens.
@@ -419,14 +445,14 @@ def _build_scope_mask(text: str) -> list[bool]:
     in_curly_quote = False
     paren_depth = 0
     for i, ch in enumerate(text):
-        if ch == '"':
+        if quotes and ch == '"':
             if in_straight_quote:
                 # Closing — mark this char as inside, then exit
                 mask[i] = True
                 in_straight_quote = False
                 continue
             in_straight_quote = True
-        elif ch == "\u201c":
+        elif quotes and ch == "\u201c":
             in_curly_quote = True
         elif ch == "\u201d" and in_curly_quote:
             mask[i] = True

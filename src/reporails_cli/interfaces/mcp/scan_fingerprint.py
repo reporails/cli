@@ -6,23 +6,22 @@ import hashlib
 from collections.abc import Iterable
 from pathlib import Path
 
-from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.pipeline.check_one import discover_files
-from reporails_cli.core.platform.adapters.api_key import has_api_key
+from reporails_cli.core.platform.config.api_key import has_api_key
 from reporails_cli.core.platform.config.bootstrap import (
     get_global_config_path,
     get_local_config_path,
     get_project_config_path,
 )
-from reporails_cli.core.platform.config.config import get_global_config
 from reporails_cli.core.platform.config.credentials import credentials_path
 from reporails_cli.core.platform.config.endpoints import server_url
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
 
-def scan_inputs_base(scan_root: Path) -> str:
+def scan_inputs_base(scan_root: Path, *, run: RunContext) -> str:
     """The part of the change fingerprint that needs a walk of `scan_root`.
 
     Covers every file the scan reads (instruction, rule and agent config files, found the
@@ -32,11 +31,7 @@ def scan_inputs_base(scan_root: Path) -> str:
     is found.
     """
 
-    # A long-running server keeps the detected-agent list between calls, so a file added or
-    # removed (or an exclusion changed) would go unseen: detect afresh, and the run that
-    # follows reuses this fresh list.
-    clear_agent_cache()
-    discovery = discover_files(scan_root)
+    discovery = discover_files(run, scan_root)
     scanned: list[Path] = [] if isinstance(discovery, Refusal) else [Path(f) for f in discovery.instruction_files]
     if not scanned:
         return ""
@@ -47,7 +42,7 @@ def scan_inputs_base(scan_root: Path) -> str:
         credentials_path(),
     ]
     parts = _stat_parts({*scanned, *config_files})
-    tier = get_global_config().tier
+    tier = run.global_config().tier
     parts.append(f"signed_in={has_api_key()}:tier={tier}:server={server_url()}")
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()
 
@@ -93,12 +88,12 @@ def dependency_files(
 
 
 def compute_scan_fingerprint(
-    scan_root: Path, ruleset_map: RulesetMap | None, payload: JsonObject | None, target: Path
+    scan_root: Path, ruleset_map: RulesetMap | None, payload: JsonObject | None, target: Path, *, run: RunContext
 ) -> tuple[str, str]:
     """Fingerprint every input of a `validate` reply, to detect changes between calls.
 
     Returns the walk's part (reused to restamp after a fresh run, with no second walk) and the
     full fingerprint.
     """
-    base = scan_inputs_base(scan_root)
+    base = scan_inputs_base(scan_root, run=run)
     return base, combine_scan_inputs(base, dependency_files(ruleset_map, target, scan_root, payload))

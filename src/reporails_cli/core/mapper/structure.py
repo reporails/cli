@@ -29,6 +29,7 @@ from reporails_cli.core.mapper.md_parser import (
     tok_line,
 )
 from reporails_cli.core.mapper.parse import inline_line, parse_blocks
+from reporails_cli.core.mapper.source_columns import token_columns
 from reporails_cli.core.platform.dto.mapping import BlockReading, EmphasisRun, LineSpans, SourceRanges
 from reporails_cli.core.platform.dto.structure import DocumentStructure
 
@@ -232,53 +233,6 @@ def in_any_span(pos: int, spans: Sequence[tuple[int, int]]) -> bool:
     return any(start <= pos < end for start, end in spans)
 
 
-def _unescaped(line: str) -> tuple[str, list[int]]:
-    """`line` with each `\\|` reduced to `|` (a table cell's text is read that way), and for each
-    char of the result, the column in `line` it came from (one more entry marks the end)."""
-    out: list[str] = []
-    column: list[int] = []
-    i = 0
-    while i < len(line):
-        skip = line.startswith("\\|", i)
-        out.append("|" if skip else line[i])
-        column.append(i + skip)
-        i += 1 + skip
-    column.append(len(line))
-    return "".join(out), column
-
-
-def _source_columns(piece: str, line: str, after: int) -> list[int] | None:
-    """The column in the file `line` of each char of `piece` and of the char after it, where `piece`
-    is a line of an inline token's text: it ends the line, or else is the first match at or after
-    column `after`. None when the line does not hold it."""
-    plain, source_col = _unescaped(line.rstrip())
-    at = len(plain) - len(piece)
-    if at < 0 or source_col[at] < after or plain[at : at + len(piece)] != piece:
-        at = plain.find(piece, next((k for k, c in enumerate(source_col) if c >= after), len(plain)))
-    return None if at < 0 else source_col[at : at + len(piece) + 1]
-
-
-def _token_columns(tok: Token, lines: list[str], first_line: int, cursor: dict[int, int]) -> list[list[int]] | None:
-    """For each line of the inline token `tok`'s text, the column in its file line of each char and of
-    the char after it; None when a line of the file does not hold the text.
-
-    The parse places a span within the token's own text; each line of that text sits at the end of
-    its file line (a container's marker or a table's pipes come before it), which puts the text, and
-    any span in it, in the file.
-    """
-    columns: list[list[int]] = []
-    for j, text_line in enumerate(tok.content.split("\n")):
-        n = first_line + j
-        if n >= len(lines):
-            return None
-        found = _source_columns(text_line.rstrip(), lines[n], cursor.get(n, 0))
-        if found is None:
-            return None
-        columns.append(found)
-        cursor[n] = found[-1]
-    return columns
-
-
 def _text_starts(tok: Token, columns: list[list[int]], first_line: int) -> list[tuple[int, int]]:
     """`(file line, column)` where each line of the inline token `tok`'s text starts, after its
     container's markers and any indent."""
@@ -294,7 +248,7 @@ def _inline_span_ranges(
 ) -> tuple[list[tuple[int, int]], list[tuple[int, int]], list[EmphasisRun], list[tuple[int, int]]]:
     """Char ranges, in the whole file, of each code span, of each link or image and of each inline HTML
     tag the inline token `tok` holds, and its emphasis runs placed the same way (every position a file
-    char offset), given where its text sits (`_token_columns`)."""
+    char offset), given where its text sits (`token_columns`)."""
     found = recorded_spans(tok)
     if not found.code and not found.links and not found.emphasis and not found.html:
         return [], [], [], []
@@ -391,7 +345,7 @@ def _place_inline(
 ) -> SourceRanges | None:
     """Where the inline token `tok` puts its text, code spans and links in the file; None when the
     file's lines do not hold its text."""
-    columns = _token_columns(tok, lines, first, cursor)
+    columns = token_columns(tok, lines, first, cursor)
     if columns is None:
         return None
     code, links, emphasis, html = _inline_span_ranges(tok, columns, starts, first)

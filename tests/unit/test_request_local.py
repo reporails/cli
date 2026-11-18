@@ -11,15 +11,15 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.mechanical.runner import run_mechanical_checks
 from reporails_cli.core.lint.regex.compiler import display_severity
 from reporails_cli.core.platform.adapters.payload import (
     _MAX_LOCAL_ENTRIES,
     encode_msgpack,
-    local_entries,
     project_local,
 )
-from reporails_cli.core.platform.adapters.registry import registry_rule_ids, structural_rule_ids
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.models import (
     Category,
@@ -30,6 +30,8 @@ from reporails_cli.core.platform.dto.models import (
     RuleType,
     Severity,
 )
+from reporails_cli.core.platform.policy.local_entries import local_entries
+from reporails_cli.core.platform.rules.registry import registry_rule_ids, structural_rule_ids
 
 
 def _finding(rule: str, severity: str = "error", file: str = "a.md", line: int = 1, check: str = "") -> FindingItem:
@@ -123,7 +125,7 @@ class TestBroadScopeIsSent:
     @pytest.mark.subsys_diagnostic
     def test_broad_scope_finding_is_one_entry(self) -> None:
         from reporails_cli.core.lint.client_checks import run_client_checks
-        from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap, RulesetSummary
+        from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots, FileRecord, RulesetMap, RulesetSummary
 
         atom = Atom(
             line=3,
@@ -136,6 +138,8 @@ class TestBroadScopeIsSent:
             position_index=0,
             file_path="a.md",
             scope_conditional=True,
+            plain_text="When any external service fails, retry the request.",
+            slots=AtomSlots(scope_span=(0, 5)),
         )
         ruleset = RulesetMap(
             schema_version="1.0.0",
@@ -191,7 +195,9 @@ class TestCodexOverLimit:
             ],
         )
 
-        violations = run_mechanical_checks({"CODEX:E:0001": rule}, tmp_path, classified)
+        violations = run_mechanical_checks(
+            {"CODEX:E:0001": rule}, tmp_path, classified, exclusions=load_run_exclusions(RunContext(), tmp_path)
+        )
         assert len(violations) == 1
 
         findings = [
@@ -229,4 +235,9 @@ class TestCodexOverLimit:
                 )
             ],
         )
-        assert run_mechanical_checks({"CODEX:E:0001": rule}, tmp_path, classified) == []
+        assert (
+            run_mechanical_checks(
+                {"CODEX:E:0001": rule}, tmp_path, classified, exclusions=load_run_exclusions(RunContext(), tmp_path)
+            )
+            == []
+        )

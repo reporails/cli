@@ -13,6 +13,7 @@ from pathlib import Path
 
 from reporails_cli.core.mapper import model_fetch, model_manifest
 from reporails_cli.core.mapper.graph_hash import graph_content_hash
+from reporails_cli.core.platform.contract.http_get import HttpGet
 
 # `reload_after_repair` coordination: threads failing on the same damaged file at
 # the same moment share one repair (the first is the leader, the rest wait for it
@@ -57,7 +58,7 @@ _known_unrepairable: dict[str, tuple[_Fingerprint, str, float]] = {}
 _repair_generation: dict[str, int] = {}
 
 
-def ensure_models_available() -> Path | None:
+def ensure_models_available(fetch: HttpGet) -> Path | None:
     """Make the model set available on disk, downloading it once if needed.
 
     Returns the model directory, or ``None`` when ``AILS_MODEL_OFFLINE`` is set
@@ -67,14 +68,14 @@ def ensure_models_available() -> Path | None:
     path = model_manifest.get_models_path()
     if model_manifest.models_present(path):
         if not model_manifest.in_package_tree_present():
-            _repair_if_damaged(path)
+            _repair_if_damaged(path, fetch)
         return path
-    if model_fetch.offline_requested():
+    if model_fetch.model_downloads_off():
         return None
-    return model_fetch.ensure_models_present(model_manifest.MODEL_VERSION)
+    return model_fetch.ensure_models_present(fetch, model_manifest.MODEL_VERSION)
 
 
-def _repair_if_damaged(root: Path) -> None:
+def _repair_if_damaged(root: Path, fetch: HttpGet) -> None:
     """Re-fetch any file of the cached set whose content differs from its pinned digest.
 
     A file damaged in place keeps its size, so the presence check passes, and it may
@@ -86,10 +87,10 @@ def _repair_if_damaged(root: Path) -> None:
         graph_content_hash(root / rel) == model_manifest.FETCH_SHA256[rel] for rel in model_manifest.REQUIRED_RELPATHS
     ):
         return
-    model_fetch.repair_cache(model_manifest.MODEL_VERSION)
+    model_fetch.repair_cache(fetch, model_manifest.MODEL_VERSION)
 
 
-def reload_after_repair[T](load: Callable[[], T]) -> T:
+def reload_after_repair[T](load: Callable[[], T], fetch: HttpGet) -> T:
     """Call *load*; on failure, repair the persistent model cache if damaged and retry.
 
     A cached model file corrupted in place (disk error, a sync or backup tool,
@@ -120,12 +121,12 @@ def reload_after_repair[T](load: Callable[[], T]) -> T:
             raise
         if _repair_generation.get(version, 0) != seen:
             return load()  # another thread finished a repair while this load was failing
-        if not _repair_once(version):
+        if not _repair_once(version, fetch):
             raise
         return load()
 
 
-def _repair_once(version: str) -> bool:
+def _repair_once(version: str, fetch: HttpGet) -> bool:
     """Repair *version*'s persistent cache if it is damaged; share one attempt across concurrent callers.
 
     Returns whether the caller should retry its ``load()``: true only when the
@@ -143,7 +144,7 @@ def _repair_once(version: str) -> bool:
 
     retry = False
     try:
-        retry = _verify_and_repair(version)
+        retry = _verify_and_repair(version, fetch)
     finally:
         with _repair_lock:
             _repair_events.pop(version, None)
@@ -169,14 +170,14 @@ def _cache_fingerprint(version: str) -> _Fingerprint:
     return tuple(out)
 
 
-def _verify_and_repair(version: str) -> bool:
+def _verify_and_repair(version: str, fetch: HttpGet) -> bool:
     """Verify *version*'s cache and repair it when damaged; whether the caller should retry.
 
     The verdict for a given cache fingerprint is remembered: a cache that verified
     sound is not hashed again while its files are unchanged, and a repair that failed
     is not tried again until a file changes or the short wait after the failure has passed.
     """
-    if model_fetch.offline_requested():
+    if model_fetch.model_downloads_off():
         return False
     fingerprint = _cache_fingerprint(version)
     if _known_sound.get(version) == fingerprint:
@@ -189,7 +190,7 @@ def _verify_and_repair(version: str) -> bool:
             _known_sound[version] = fingerprint
         return False
     try:
-        model_fetch.repair_cache(version)
+        model_fetch.repair_cache(fetch, version)
     except Exception as exc:
         _known_unrepairable[version] = (fingerprint, str(exc), time.monotonic())
         raise

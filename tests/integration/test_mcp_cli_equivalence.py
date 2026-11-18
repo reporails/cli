@@ -30,8 +30,10 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli.main import app
 from reporails_cli.interfaces.mcp import tools, validate_targets
+from tests.fake_models import no_models
 
 runner = CliRunner()
 
@@ -81,7 +83,9 @@ def _cli_payload(project: Path) -> dict:
 
 
 def _mcp_payload(project: Path) -> dict:
-    return tools.run_pipeline_for_path(str(project), full=True, project_root=project)[0]
+    return tools.run_pipeline_for_path(
+        str(project), full=True, project_root=project, run=RunContext(), models=no_models()
+    )[0]
 
 
 @requires_model
@@ -180,7 +184,9 @@ def test_cli_and_mcp_agree_on_a_single_file_target(level2_project: Path, monkeyp
         os.chdir(cwd)
     assert result.exit_code in (0, 1), result.output
     cli_payload = json.loads(result.output)
-    mcp_payload = tools.run_pipeline_for_path(str(target_file), full=True, project_root=level2_project)[0]
+    mcp_payload = tools.run_pipeline_for_path(
+        str(target_file), full=True, project_root=level2_project, run=RunContext(), models=no_models()
+    )[0]
 
     cli_tuples = _finding_tuples(cli_payload)
     mcp_tuples = _finding_tuples(mcp_payload)
@@ -224,7 +230,9 @@ def test_agents_md_only_project_under_misconfigured_default_agent_matches_cli(tm
     (project / ".ails" / "config.yml").write_text("default_agent: claude\n", encoding="utf-8")
 
     cli_payload = _cli_payload(project)
-    mcp_payload = tools.run_pipeline_for_path(str(project), full=True, project_root=project)[0]
+    mcp_payload = tools.run_pipeline_for_path(
+        str(project), full=True, project_root=project, run=RunContext(), models=no_models()
+    )[0]
 
     assert "error" not in mcp_payload, mcp_payload
     # One envelope on BOTH surfaces: the normal-run shape over an empty finding set.
@@ -257,7 +265,9 @@ def test_typo_default_agent_surfaces_as_unknown_agent_on_both_surfaces(tmp_path,
     assert result.exit_code == 2
     assert "Unknown agent: cluade" in result.output
 
-    mcp_payload = tools.run_pipeline_for_path(str(project), full=True, project_root=project)[0]
+    mcp_payload = tools.run_pipeline_for_path(
+        str(project), full=True, project_root=project, run=RunContext(), models=no_models()
+    )[0]
     assert mcp_payload.get("error") == "Unknown agent: cluade"
     assert "known_agents" in mcp_payload
 
@@ -288,7 +298,9 @@ def test_rules_only_tree_with_no_distinctive_agent_matches_cli(tmp_path, monkeyp
     )
 
     cli_payload = _cli_payload(project)
-    mcp_payload = tools.run_pipeline_for_path(str(project), full=True, project_root=project)[0]
+    mcp_payload = tools.run_pipeline_for_path(
+        str(project), full=True, project_root=project, run=RunContext(), models=no_models()
+    )[0]
 
     assert "error" not in mcp_payload, mcp_payload
     # `elapsed_ms` is a CLI-only wall-clock echo; `funnel` is an intentional MCP-only key
@@ -334,7 +346,9 @@ def test_generic_scan_import_reached_file_set_matches_cli(tmp_path, monkeypatch)
     )
 
     cli_payload = _cli_payload(project)
-    mcp_payload = tools.run_pipeline_for_path(str(project), full=True, project_root=project)[0]
+    mcp_payload = tools.run_pipeline_for_path(
+        str(project), full=True, project_root=project, run=RunContext(), models=no_models()
+    )[0]
 
     assert set(cli_payload.get("files", {})) == set(mcp_payload.get("files", {}))
     assert "docs/arch.md" in mcp_payload.get("files", {})
@@ -346,7 +360,8 @@ def test_generic_scan_import_reached_file_set_matches_cli(tmp_path, monkeypatch)
 @pytest.mark.subsys_server
 def test_a_target_resolves_to_the_files_ails_check_checks(tmp_path: Path, monkeypatch) -> None:
     """`validate(targets=["skills"])` keeps the locations of exactly the files `ails check skills`
-    checks: both read the token through one resolver, against the same project."""
+    checks: both read the token through one resolver, against the same project. Each skill target
+    also names its whole folder."""
     monkeypatch.setattr(
         "reporails_cli.core.platform.adapters.api_client.AilsClient.lint",
         lambda self, *args, **kwargs: None,
@@ -370,10 +385,10 @@ def test_a_target_resolves_to_the_files_ails_check_checks(tmp_path: Path, monkey
     assert result.exit_code in (0, 1), result.output
     cli_files = {str((project / rel).resolve()) for rel in json.loads(result.output)["files"]}
 
-    resolved = validate_targets.resolve_validate_targets(("skills",), project.resolve())
+    resolved = validate_targets.resolve_validate_targets(RunContext(), ("skills",), project.resolve())
     assert isinstance(resolved, tuple), resolved
     files, dirs = resolved
-    assert not dirs
+    assert dirs == {(project / ".claude" / "skills" / n).resolve() for n in ("backlog", "release")}
     assert (
         {str(p) for p in files}
         == cli_files

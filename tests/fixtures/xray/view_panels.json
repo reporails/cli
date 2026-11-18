@@ -452,6 +452,7 @@
      }
     ],
     "brief": false,
+    "output_source": null,
     "back_ratio": null,
     "cost": {
      "total_usd": 1.69,
@@ -1011,6 +1012,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 58,
     "cost": {
      "total_usd": 0.65,
@@ -1418,6 +1420,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 81,
     "cost": {
      "total_usd": 0.69,
@@ -1843,6 +1846,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 39,
     "cost": {
      "total_usd": 0.59,
@@ -2258,6 +2262,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 82,
     "cost": {
      "total_usd": 0.66,
@@ -2681,6 +2686,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 154,
     "cost": {
      "total_usd": 0.83,
@@ -3073,6 +3079,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 101,
     "cost": {
      "total_usd": 0.62,
@@ -3465,6 +3472,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 77,
     "cost": {
      "total_usd": 0.58,
@@ -3870,6 +3878,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": null,
     "back_ratio": null,
     "cost": {
      "total_usd": 0.79,
@@ -4275,6 +4284,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": null,
     "back_ratio": null,
     "cost": {
      "total_usd": 0.64,
@@ -4674,6 +4684,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "handback",
     "back_ratio": 21,
     "cost": {
      "total_usd": 0.57,
@@ -5079,6 +5090,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": "result",
     "back_ratio": null,
     "cost": {
      "total_usd": 0.62,
@@ -5494,6 +5506,7 @@
     ],
     "prompts": [],
     "brief": true,
+    "output_source": null,
     "back_ratio": null,
     "cost": {
      "total_usd": 0.59,

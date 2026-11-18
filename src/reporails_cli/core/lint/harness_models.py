@@ -9,6 +9,7 @@ from __future__ import annotations
 from enum import Enum
 from pathlib import Path
 
+from reporails_cli.core.discovery.walk import list_dir
 from reporails_cli.core.platform.dto.lint import RuleInfo
 
 CASE_PREFIXES = ("pass-", "fail-")
@@ -28,13 +29,13 @@ class HarnessStatus(str, Enum):
 def has_pass_fixture(rule: RuleInfo) -> bool:
     """Whether the rule has a non-empty pass fixture directory."""
     d = rule.rule_dir / "tests" / "pass"
-    return d.is_dir() and any(d.iterdir())
+    return d.is_dir() and bool(list_dir(str(d)))
 
 
 def has_fail_fixture(rule: RuleInfo) -> bool:
     """Whether the rule has a non-empty fail fixture directory."""
     d = rule.rule_dir / "tests" / "fail"
-    return d.is_dir() and any(d.iterdir())
+    return d.is_dir() and bool(list_dir(str(d)))
 
 
 def fixture_cases(rule: RuleInfo) -> tuple[list[tuple[str, Path]], list[str]]:
@@ -48,11 +49,11 @@ def fixture_cases(rule: RuleInfo) -> tuple[list[tuple[str, Path]], list[str]]:
     not_run: list[str] = []
     if not cases_dir.is_dir():
         return runnable, not_run
-    for entry in sorted(cases_dir.iterdir()):
+    for entry in sorted(list_dir(str(cases_dir)) or (), key=lambda e: e.name):
         if entry.name in _FIXTURE_EXCLUDES:
             continue
-        if entry.is_dir() and entry.name.startswith(CASE_PREFIXES) and any(entry.iterdir()):
-            runnable.append((entry.name, entry))
+        if entry.is_dir and entry.name.startswith(CASE_PREFIXES) and list_dir(entry.path):
+            runnable.append((entry.name, Path(entry.path)))
         else:
             not_run.append(entry.name)
     return runnable, not_run

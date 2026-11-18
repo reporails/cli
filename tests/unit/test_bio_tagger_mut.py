@@ -11,7 +11,6 @@ would change, so the assertion reddens when that bug returns.
 
 from __future__ import annotations
 
-import functools
 import re
 from pathlib import Path
 
@@ -25,6 +24,7 @@ from reporails_cli.core.mapper.multislot_frames import (
     _decode_span_axis_runs,
 )
 from reporails_cli.core.platform.dto.mapping import Span
+from tests.fake_models import fresh_models, no_models
 
 _CHARGE_TAG = {"O": 0, "B-DIR": 1, "I-DIR": 2, "B-REST": 3, "I-REST": 4, "B-NEUT": 5, "I-NEUT": 6}
 
@@ -195,16 +195,17 @@ def test_multislot_available_false_when_graph_missing(monkeypatch: pytest.Monkey
 @pytest.mark.subsys_map
 def test_enc_a_repairs_cache_once_and_retries_after_a_corrupted_load(monkeypatch: pytest.MonkeyPatch) -> None:
     """REGRESSION: a same-size corrupted `charge_encoder_encA.onnx` must not
-    crash every check forever with a raw ONNX-runtime traceback. `_enc_a()` repairs
+    crash every check forever with a raw ONNX-runtime traceback. `charge_encoders()` repairs
     the persistent cache once (never the in-package dev tree) and retries the load."""
     from reporails_cli.core.mapper import model_fetch, model_manifest, model_store
 
-    bio_tagger._enc_a.cache_clear()
+    models = fresh_models()
     monkeypatch.setattr(model_manifest, "in_package_tree_present", lambda: False)
     monkeypatch.setattr(model_store, "_repair_events", {})
     # tests/conftest.py defaults AILS_MODEL_OFFLINE=1 for the whole suite; this
     # test exercises the online repair path.
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
 
     attempts = {"n": 0}
 
@@ -223,13 +224,10 @@ def test_enc_a_repairs_cache_once_and_retries_after_a_corrupted_load(monkeypatch
     repaired = {"called": False}
     monkeypatch.setattr(model_fetch, "repair_cache", lambda *a, **k: repaired.update(called=True))
 
-    try:
-        encoder = bio_tagger._enc_a()
-    finally:
-        bio_tagger._enc_a.cache_clear()
+    encoder, _ = models.charge_encoders()
 
     assert repaired["called"] is True
-    assert attempts["n"] == 2  # one failing load, one repaired retry — never a third
+    assert attempts["n"] == 3  # encA: one failing load and one repaired retry; encB: one load; never a repair loop
     assert isinstance(encoder, bio_tagger._BioEncoder)
 
 
@@ -240,7 +238,7 @@ def test_enc_a_never_repairs_the_in_package_dev_tree(monkeypatch: pytest.MonkeyP
     re-raise unchanged — a network repair could not fix a dev checkout's own files."""
     from reporails_cli.core.mapper import model_fetch, model_manifest
 
-    bio_tagger._enc_a.cache_clear()
+    models = fresh_models()
     monkeypatch.setattr(model_manifest, "in_package_tree_present", lambda: True)
 
     def always_fails(self: object, onnx_path: Path) -> None:
@@ -250,11 +248,8 @@ def test_enc_a_never_repairs_the_in_package_dev_tree(monkeypatch: pytest.MonkeyP
     repaired = {"called": False}
     monkeypatch.setattr(model_fetch, "repair_cache", lambda *a, **k: repaired.update(called=True))
 
-    try:
-        with pytest.raises(RuntimeError, match="dev tree file is broken"):
-            bio_tagger._enc_a()
-    finally:
-        bio_tagger._enc_a.cache_clear()
+    with pytest.raises(RuntimeError, match="dev tree file is broken"):
+        models.charge_encoders()
 
     assert repaired["called"] is False
 
@@ -413,12 +408,6 @@ def _use_models_dir(monkeypatch: pytest.MonkeyPatch, models_dir: Path) -> None:
     monkeypatch.setattr(bio_graphs, "get_models_path", lambda: models_dir)
 
 
-def _clear_in_memory_hash_caches(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Simulate a fresh process: no in-memory cache, no already-loaded sidecar."""
-    graph_hash._graph_hash_cache.clear()
-    monkeypatch.setattr(graph_hash, "_load_sidecar", functools.cache(graph_hash._load_sidecar.__wrapped__))
-
-
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_fingerprint_sidecar_avoids_rehash_in_a_fresh_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -436,7 +425,6 @@ def test_fingerprint_sidecar_avoids_rehash_in_a_fresh_process(tmp_path: Path, mo
     assert not (fake_models / "fingerprint.json").exists()
 
     # Second "process": in-memory state gone, sidecar file remains.
-    _clear_in_memory_hash_caches(monkeypatch)
     calls: list[Path] = []
     monkeypatch.setattr(graph_hash, "_hash_file_bytes", lambda p: calls.append(p) or "should-not-be-used")
 
@@ -455,7 +443,6 @@ def test_fingerprint_sidecar_rehashes_a_changed_file(tmp_path: Path, monkeypatch
 
     fp1 = bio_graphs.multislot_fingerprint()
 
-    _clear_in_memory_hash_caches(monkeypatch)
     (fake_models / "charge_encoder_encA.onnx").write_bytes(b"encA-v2-different-weights")
 
     fp2 = bio_graphs.multislot_fingerprint()
@@ -465,50 +452,21 @@ def test_fingerprint_sidecar_rehashes_a_changed_file(tmp_path: Path, monkeypatch
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_concurrent_cold_graph_hash_does_not_raise(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """REGRESSION: N threads racing a COLD `_graph_content_hash` (no sidecar entry yet,
-    same shared `_sidecar_data` dict) must not raise out of `_save_sidecar`.
+    """REGRESSION: N threads racing a COLD `graph_content_hash` (no sidecar entry yet) must
+    not raise and must not lose each other's entries.
 
-    Live-run defect: the MCP server dispatches one worker thread per file's pipeline
-    run. On a cold cache, every thread's `multislot_fingerprint()` call funnels into
-    `_graph_content_hash`, which read-modify-writes the process-global `_sidecar_data`
-    dict and then `json.dumps`-serializes it — unlocked. One thread's `sidecar[key] = ...`
-    mutation landing while another thread's `json.dumps` walks the same dict raises
-    `RuntimeError: dictionary changed size during iteration`; `core/pipeline/mapping.py`
-    lets that propagate out of `compute_identity` uncaught, and `interfaces/mcp/tools.py
-    ::build_map` swallows it into a bare `logger.warning` + `None` — surfaced to the
-    MCP client only as `brief_unavailable`'s generic "produced no map".
-
-    `json.dumps` is monkeypatched to walk `_sidecar_data`'s items with a small sleep
-    between each — real concurrent runs hit this same window (a dict `json.dumps` is
-    mid-iteration when another thread inserts a key), just too narrow to land reliably
-    every run; widening it makes the interleaving deterministic instead of flaky.
+    The MCP server dispatches one worker thread per file's pipeline run; each thread's
+    fingerprint call reads, extends and rewrites the one sidecar file. Without the lock a
+    thread's write overwrites another's entry, or a write lands mid-read.
     """
     import json
     import threading
-    import time
 
     fake_models = tmp_path / "models"
     fake_models.mkdir()
     _use_models_dir(monkeypatch, fake_models)
-    monkeypatch.setattr(graph_hash, "_sidecar_paths", lambda: [fake_models / "fingerprint.json"])
-    _clear_in_memory_hash_caches(monkeypatch)
-    # Pre-load once so every thread shares the SAME empty dict object (the normal
-    # steady state after a process's first sidecar touch) rather than racing the
-    # one-time `_sidecar_data = {}` initialization too.
-    graph_hash._load_sidecar()
-
-    real_dumps = json.dumps
-
-    def slow_dumps(obj: object, *args: object, **kwargs: object) -> str:
-        if obj is graph_hash._load_sidecar():
-            # Iterate the live dict view (NOT a copy) — a concurrent insert during
-            # this walk must raise, exactly as it does inside the real `json.dumps`
-            # C encoder's own live iteration over `dct.items()`.
-            for _ in obj.items():  # type: ignore[union-attr]
-                time.sleep(0.005)
-        return real_dumps(obj, *args, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(graph_hash.json, "dumps", slow_dumps)
+    sidecar_path = fake_models / "fingerprint.json"
+    monkeypatch.setattr(graph_hash, "_sidecar_paths", lambda: [sidecar_path])
 
     n = 12
     paths = []
@@ -534,6 +492,7 @@ def test_concurrent_cold_graph_hash_does_not_raise(tmp_path: Path, monkeypatch: 
         t.join()
 
     assert not errors, f"concurrent cold graph-hash raised: {errors!r}"
+    assert set(json.loads(sidecar_path.read_text(encoding="utf-8"))) == {str(p) for p in paths}
 
 
 # ── model-path guards (real bundled ONNX; skipped when absent) ───────
@@ -547,7 +506,7 @@ def test_pooled_words_each_pool_their_own_token() -> None:
     collapses every row to the shared all-token mean)."""
     if not bio_graphs.multislot_available():
         pytest.skip("encoder not bundled")
-    ((hidden, offsets),) = bio_tagger._enc_a().forward_bucket(["alpha beta"])
+    ((hidden, offsets),) = no_models().charge_encoders()[0].forward_bucket(["alpha beta"])
     feats, _word_spans, _covered = bio_tagger._pool_words(hidden, offsets, "alpha beta")
     assert feats.shape[0] == 2
     assert not np.allclose(feats[0], feats[1])

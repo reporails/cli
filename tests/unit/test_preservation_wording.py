@@ -15,7 +15,10 @@ import pytest
 
 from reporails_cli.core.heal.preservation import compare, take_snapshot
 from reporails_cli.core.heal.preservation.snapshot import is_hedge_fragment
-from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
+from reporails_cli.core.mapper.asides import aside_spans
+from reporails_cli.core.mapper.classify import restrictor_clause
+from reporails_cli.core.mapper.classify_lexicon import CONDITION_OPENERS, SCOPE_PHRASE_PREPOSITIONS, words_of
+from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots, RulesetMap
 
 _FILE = "/proj/CLAUDE.md"
 
@@ -31,7 +34,26 @@ def _atom(
     fmt: str = "prose",
 ) -> Atom:
     charge = {1: "DIRECTIVE", -1: "CONSTRAINT", 0: "NEUTRAL"}[charge_value]
+    # What the mapper reads: a predicate and an object on a clause with words after its verb, none on a
+    # lead-in (`Consider`, `You should`).
+    words = len(text.split())
+    slots = AtomSlots(predicate_span=(0, 1), object_span=(1, words)) if words > 2 or charge_value < 0 else None
+    opener = next((i for i, w in enumerate(words_of(text)) if cond and w in CONDITION_OPENERS), None)
+    if slots is not None and opener is not None:
+        # A fronted condition ends at its comma; one that follows the clause runs to the end.
+        end = next((i + 1 for i, w in enumerate(text.split()) if w.endswith(",")), words) if opener == 0 else words
+        slots = AtomSlots(predicate_span=(0, 1), object_span=(1, opener), scope_span=(opener, end))
+    asides = aside_spans(text.replace("`", ""), named)
+    place = next((i for i, w in enumerate(words_of(text)[:words]) if i > 1 and w in SCOPE_PHRASE_PREPOSITIONS), None)
+    plain = slots is not None and slots.scope_span is None and "," not in text
+    plain = plain and restrictor_clause(text, named, asides) is None
+    if plain and place is not None and "`" not in text.split()[place]:
+        # What the mapper reads: a place, time or target phrase after the object is the atom's scope.
+        slots = AtomSlots(predicate_span=(0, 1), object_span=(1, place), scope_span=(place, words))
+    if asides:
+        slots = (slots or AtomSlots()).model_copy(update={"aside_spans": asides})
     return Atom(
+        slots=slots,
         line=line,
         text=text,
         kind="excitation",
@@ -39,7 +61,8 @@ def _atom(
         charge_value=charge_value,
         modality=modality,
         specificity="named" if named else "abstract",
-        scope_conditional=cond,
+        # The mapper reads a restricting word's phrase (`only on main`) as a condition on a charged atom.
+        scope_conditional=cond or (charge_value != 0 and restrictor_clause(text, named, asides) is not None),
         format=fmt,
         named_tokens=list(named),
         plain_text=text.replace("`", ""),
@@ -69,6 +92,14 @@ def test_a_lead_in_hedge_alone_is_a_fragment_not_an_instruction() -> None:
     assert not is_hedge_fragment(_atom(3, "Consider running `ruff`.", 1, "hedged"))
     assert not is_hedge_fragment(_atom(3, "You should not", -1, "hedged"))
     assert not is_hedge_fragment(_atom(3, "Never", -1, "absolute"))
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_a_slotless_hedged_instruction_is_no_fragment_while_a_slotless_cue_alone_is() -> None:
+    whole = _atom(3, "You should run the linter before pushing", 1, "hedged").model_copy(update={"slots": None})
+    assert not is_hedge_fragment(whole)
+    assert is_hedge_fragment(_atom(3, "You should", 1, "hedged").model_copy(update={"slots": None}))
 
 
 @pytest.mark.unit
@@ -110,7 +141,7 @@ def test_a_hedge_cut_into_a_lead_in_atom_and_a_clause_is_one_sentence_made_direc
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_a_hedged_line_the_mapper_read_as_prose_is_listed_when_the_rewrite_states_it_directly() -> None:
-    old = _atom(3, "You might want to run the linter before a commit.", 0, "none")
+    old = _atom(3, "You might want to run the linter before a commit.", 0, "hedged")
     new = _atom(3, "Run the linter before a commit.", 1, "imperative")
     result = _verdict([old], [new], f"# A\n\n{old.text}\n", f"# A\n\n{new.text}\n")
     assert [e["new_text"] for e in result["made_direct"]] == [new.text]
@@ -217,3 +248,38 @@ def test_duplicates_the_original_already_had_are_not_padding() -> None:
     ]
     text = "# A\n\n- Run the tests.\n- Run the tests.\n"
     assert _verdict(atoms, atoms, text, text)["padded_lines"] == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+@pytest.mark.parametrize(
+    ("hedge", "rewrite", "failed"),
+    [
+        ("you should probably run the linter.", "Always run the linter.", True),
+        ("you should always run the linter.", "Always run the linter.", False),
+    ],
+)
+def test_an_absolute_cue_on_the_line_excuses_only_the_same_cue(hedge: str, rewrite: str, failed: bool) -> None:
+    old = [_atom(3, "Never commit secrets;", -1, "absolute"), _atom(3, hedge, 1, "hedged")]
+    new = _atom(3, rewrite, 1, "absolute")
+    result = _verdict(old, [new], f"# A\n\nNever commit secrets; {hedge}\n", f"# A\n\n{rewrite}\n")
+    assert bool(result["hedge_made_absolute"]) is failed
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_a_code_colon_in_an_atom_the_slot_model_did_not_decode_opens_no_list() -> None:
+    from reporails_cli.core.heal.preservation.fragments import dangling_fragments
+    from reporails_cli.core.mapper.bio_pipeline import read_text_spans
+    from reporails_cli.core.mapper.parse import tokenize
+
+    def prose(text: str) -> list[Any]:
+        atoms = [a for a in tokenize(text + "\n") if a.plain_text]
+        read_text_spans(atoms)
+        return atoms
+
+    before = "Read `docs:guides/install` before changing any build script, and add `docs:guides/cache` for slow builds."
+    after = "Read `docs:guides/install` before changing any build script.\n\nAdd `docs:guides/cache` for slow builds."
+    old, new = prose(before), prose(after)
+    assert all(a.slots is not None and a.slots.code_ranges and not a.slots.decoded for a in [*old, *new])
+    assert dangling_fragments(old, new) == []

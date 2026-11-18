@@ -10,6 +10,7 @@ from reporails_cli.core.lint.regex.not_evaluated import record_not_evaluated, ru
 from reporails_cli.core.platform.contract.glob_pattern import glob_matches
 from reporails_cli.core.platform.dto.lint import CompiledCheck, ScanOutcome
 from reporails_cli.core.platform.dto.models import LocalFinding
+from reporails_cli.core.platform.utils.file_read import read_file_text
 
 
 def emit_expect_findings(
@@ -145,7 +146,7 @@ def file_below_min_lines(rel_path: str, min_lines: int, scan_root: Path | None) 
         return False
     full = scan_root / rel_path
     try:
-        return len(full.read_text(encoding="utf-8-sig", errors="replace").splitlines()) < min_lines
+        return len(read_file_text(full, encoding="utf-8-sig", errors="replace").splitlines()) < min_lines
     except OSError:
         return False
 

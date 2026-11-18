@@ -8,14 +8,16 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterable
+from collections.abc import Container, Iterable
 from pathlib import Path
 
 from reporails_cli.core.heal.conformance import check_plan
 from reporails_cli.core.heal.file_io import split_lines
 from reporails_cli.core.heal.preservation import check_rewrite as judge_rewrite
 from reporails_cli.core.heal.preservation import take_snapshot
+from reporails_cli.core.heal.record import count_rules
 from reporails_cli.core.lint.content_queries import atoms_for_file
+from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object
 from reporails_cli.core.platform.dto.heal import Snapshot
 from reporails_cli.core.platform.dto.heal_plan import Plan
@@ -29,22 +31,27 @@ _snapshots: dict[str, Snapshot] = {}
 _rule_counts: dict[str, dict[str, int]] = {}
 # Per briefed file, the plan (edits and slots) its brief listed.
 _plans: dict[str, Plan] = {}
-# Briefed files whose held baseline a project `validate` released: the next brief re-snapshots them.
+# Briefed files whose baseline a project `validate` released while they were settled: the next brief re-snapshots them.
 _released: set[str] = set()
+# Per briefed file, the text a `validate` reply last judged accepted: a release counts the file settled at it.
+_accepted_text: dict[str, str] = {}
+# Files whose accepted text the heal record already holds: one acceptance is recorded once.
+_recorded: set[str] = set()
 
 
 def _key(file_path: Path | str) -> str:
     return os.path.normcase(os.path.normpath(str(file_path)))
 
 
-def file_rule_counts(payload: JsonObject) -> dict[str, int]:
-    """How many findings each rule has in a single-file run's `payload` (its per-file findings)."""
-    counts: dict[str, int] = {}
-    for entry in as_object(payload.get("files")).values():
-        for finding in as_list(as_object(entry).get("findings")):
-            rule = str(as_object(finding).get("rule") or "")
-            counts[rule] = counts.get(rule, 0) + 1
-    return counts
+def file_rule_counts(payload: JsonObject, file: str | None = None) -> dict[str, int]:
+    """How many findings each rule has in `payload`'s per-file findings: a single-file run's, or just
+    those of the project-relative `file` in a project run."""
+    return count_rules(
+        str(as_object(finding).get("rule") or "")
+        for name, entry in as_object(payload.get("files")).items()
+        if file is None or name == file
+        for finding in as_list(as_object(entry).get("findings"))
+    )
 
 
 def introduced_count(file_path: Path, payload: JsonObject) -> int:
@@ -76,23 +83,67 @@ def snapshot_file(
     _rule_counts[_key(file_path)] = dict(rule_counts or {})
     _plans[_key(file_path)] = plan or Plan()
     _released.discard(_key(file_path))
+    _accepted_text.pop(_key(file_path), None)
+    _recorded.discard(_key(file_path))
+
+
+def record_accepted(file_path: Path, text: str) -> None:
+    """Remember `text` as what a `validate` reply last judged accepted for `file_path`."""
+    _accepted_text[_key(file_path)] = text
+    _recorded.discard(_key(file_path))
+
+
+def kept_files(root: Path, covered: Container[str]) -> dict[str, str]:
+    """The briefed files under `root` still at the text a `validate` last accepted, not yet in the heal
+    record, and named by `covered`: project-relative path as the file was briefed (case kept) -> its key."""
+    base = Path(os.path.normpath(str(root)))
+    kept: dict[str, str] = {}
+    for key, text in _accepted_text.items():
+        snap = _snapshots.get(key)
+        if snap is None or key in _recorded:
+            continue
+        path = Path(os.path.normpath(snap.file_path))
+        if not path.is_relative_to(base) or path.relative_to(base).as_posix() not in covered:
+            continue
+        try:
+            current = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if current == text:
+            kept[path.relative_to(base).as_posix()] = key
+    return kept
+
+
+def mark_recorded(keys: Iterable[str]) -> None:
+    """Note that the heal record now holds the accepted text of each file under `keys`."""
+    _recorded.update(keys)
 
 
 def held_brief(file_path: Path, current_text: str) -> tuple[str, Plan] | None:
     """The original text and the plan an earlier brief of `file_path` stored, when the file has changed
     since — a repeated brief for it keeps that baseline instead of replacing it with the half-edited file.
-    `None` when the file was never briefed or has not changed."""
-    snap, plan = _snapshots.get(_key(file_path)), _plans.get(_key(file_path))
-    if snap is None or plan is None or snap.text == current_text or _key(file_path) in _released:
+    `None` when the file was never briefed, has not changed, or its baseline was released."""
+    key = _key(file_path)
+    snap, plan = _snapshots.get(key), _plans.get(key)
+    if snap is None or plan is None or snap.text == current_text or key in _released:
         return None
     return snap.text, plan
 
 
 def release_holds(root: Path) -> None:
-    """Release the held baseline of every briefed file under `root`: the project is being validated
-    afresh, so the next brief of each takes a new snapshot of the file as it is then."""
+    """Release the baseline of every briefed file under `root` that is settled: its text on disk is its
+    snapshot text or the text last judged accepted. A later brief of a released file takes a new snapshot;
+    a file in any other state, or one that cannot be read, keeps its baseline and plan."""
     base = Path(_key(root))
-    _released.update(k for k in _snapshots if Path(k).is_relative_to(base))
+    for key, snap in _snapshots.items():
+        if not Path(key).is_relative_to(base):
+            continue
+        try:
+            text = Path(key).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if text in (snap.text, _accepted_text.get(key)):
+            _released.add(key)
 
 
 def get_snapshot(file_path: Path) -> Snapshot | None:
@@ -135,6 +186,7 @@ def check_rewrite(
         new_text,
         score=score,
         scan_root=scan_root,
+        environment_for=LocalProjectEnvironment,
         siblings=sibling_texts(snapshot, scan_root),
     )
 

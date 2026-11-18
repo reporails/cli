@@ -20,11 +20,12 @@ from reporails_cli.core.mapper.bio_pipeline import _decode_plan
 from reporails_cli.core.mapper.multislot_frames import _decode_logits_batch, _frames_from_decoded
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.platform.dto.mapping import AtomTuple, SentEntry
+from tests.fake_models import no_models
 
 
 def tag_atom_multislot_frames(text: str) -> list[AtomTuple]:
     """The frame-atoms of one sentence, decoded as the mapper decodes a batch."""
-    (decoded,) = _decode_logits_batch([text])
+    (decoded,) = _decode_logits_batch([text], no_models())
     return _frames_from_decoded(decoded, text)
 
 
@@ -74,7 +75,9 @@ def test_span_offsets_index_the_atom_own_text() -> None:
 def test_frames_do_not_depend_on_the_batch_they_are_decoded_in() -> None:
     """A sentence decoded alone and inside a larger batch yields the same frame-atoms."""
     texts = [_CONSTRAINT, _DIRECTIVE, "Reporails recognizes agent files and runs the validator.", _CONSTRAINT]
-    in_batch = [_frames_from_decoded(dec, t) for t, dec in zip(texts, _decode_logits_batch(texts), strict=True)]
+    in_batch = [
+        _frames_from_decoded(dec, t) for t, dec in zip(texts, _decode_logits_batch(texts, no_models()), strict=True)
+    ]
     for text, got in zip(texts, in_batch, strict=True):
         assert got == tag_atom_multislot_frames(text), text
 

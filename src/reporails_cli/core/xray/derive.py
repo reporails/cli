@@ -126,13 +126,12 @@ def build_compactions(
         key=lambda found: found[0],
     )
     return tuple(
-        _compaction(index, moment, record, replies, frame, files=held)
-        for index, ((moment, record), held) in enumerate(zip(found, files, strict=True))
+        _compaction(moment, record, replies, frame, files=held)
+        for (moment, record), held in zip(found, files, strict=True)
     )
 
 
 def _compaction(
-    index: int,
     moment: float,
     record: EventRecord,
     replies: Replies,
@@ -140,19 +139,19 @@ def _compaction(
     *,
     files: tuple[XrayFileState, ...],
 ) -> XrayCompaction:
-    """The `index`-th compaction of a node, with its file states and the size of its summary when the transcript
-    holds one."""
+    """One compaction of a node, with its file states and the size of the summary its boundary row links to when the
+    transcript holds one."""
     node = record.subagent_id or ""
-    sizes = frame.summary_chars.get(node, ())
-    has_summary = index < len(sizes)
+    link = None if record.boundary is None else record.boundary.id
+    span = None if link is None else frame.summaries.get(node, {}).get(link)
     return XrayCompaction(
         t=moment - frame.t0,
         trigger="manual" if record.source == "manual" else "auto" if record.source == "auto" else None,
         before=replies.before(moment),
         after=replies.after(moment),
         files=files,
-        summary_id=f"{node}:{index}" if has_summary else None,
-        summary_tokens=tokens_of(sizes[index]) if has_summary else None,
+        summary_id=None if span is None else f"{node}:{span.link}",
+        summary_tokens=None if span is None else tokens_of(span.chars),
     )
 
 

@@ -4,11 +4,12 @@ import { el, svg, sync } from '../dom.js';
 import { clock, k1, range, tk } from '../format.js';
 import { callDetail } from '../api.js';
 import {
-  BAND_OPACITY, BOT_H, BOT_W, CH, COLX, CW, GROUP_TILES, SH, SPINE_HALF_MAX, SPINE_HALF_MIN, SPX, STATION_EDGE, SW, TOP_W, TOP_Y, TRACK_STEP, TRACK_X0, W, Y0,
-  bandColour, layoutTime, lengthFor, mergeStations, placeSources, replyAt, stationSide, tickMarks,
+  BAND_OPACITY, BOT_H, BOT_W, CH, COLX, CW, GROUP_TILES, SH, SPINE_HALF_MAX, SPINE_HALF_MIN, SPX, STATION_EDGE, STRIPE_HALF, SW, TOP_W, TOP_Y, TRACK_STEP, TRACK_X0, W, Y0,
+  bandColour, layoutTime, labelLeft, lengthFor, mergeStations, placeSources, replyAt, stationSide, tickMarks,
 } from '../geometry.js';
 import { groupOpen } from '../state.js';
-import { callIndex, childrenOf, kindOfSource, replyParts, typeOf } from '../views.js';
+import { markOpen } from './details.js';
+import { RESTART_S, callIndex, childrenOf, isSpine, kindOfSource, replyParts, segmentOf, sourceFirsts, startsSession, typeOf } from '../views.js';
 import { rendererFor } from './nodes/index.js';
 import * as rail from './rail.js';
 import { tile } from './nodes/agent.js';
@@ -21,6 +22,14 @@ const abs = (cls, left, top, tag = 'div') => {
   e.style.top = `${top}px`;
   return e;
 };
+
+// Makes `e` (made with the 'button' tag) a button that opens the details `peek`, named by its `label`.
+function peekButton(e, peek, label, now) {
+  e.type = 'button';
+  e.dataset.peek = peek;
+  markOpen(e, now, [peek]);
+  e.setAttribute('aria-label', `${label}: open details`);
+}
 
 const hasIt = (focus, node) => !focus || focus.had_by.includes(node.id);
 
@@ -264,39 +273,55 @@ function arches(env, kids, placedMap, scale, matchOf, groups) {
       marks.append(svg('circle', { cx: SPX, cy: ye.toFixed(1), r: on ? 4 : 2.5, fill: on && returned ? BLUE : '#8A8C92', opacity: on ? 1 : match ? 0.55 : 0.12 }));
     }
     marks.append(svg('circle', { cx: SPX, cy: ys.toFixed(1), r: on ? 4 : 2.5, fill: on ? VIOLET : '#8A8C92', opacity: on ? 1 : match ? 0.55 : 0.12 }));
-    if (on) pills.push(...selectedPills(c, p, edge, ys, ye, outcome));
+    if (on) pills.push(...selectedPills(env, c, p, edge, ys, ye, outcome));
   }
   for (const grp of groups) if (!grp.expanded) groupEdges(env, grp, placedMap.get(grp.key), scale, matchOf, g, marks);
   return { arches: g, marks, pills };
 }
 
-function selectedPills(c, p, edge, ys, ye, outcome) {
-  const pill = (cls, label, y) => {
-    const e = abs('pill-arch ' + cls + ' left', SPX, y);
+// Canvas room two stacked arch pills need between their times; a nearer pair sits above and below its times instead of centred on them.
+const PILL_PAIR_CLEAR = 24;
+
+function selectedPills(env, c, p, edge, ys, ye, outcome) {
+  const pill = (cls, label, y, peek) => {
+    const e = abs('pill-arch ' + cls + ' left', SPX, y, peek ? 'button' : 'div');
     e.textContent = label;
+    if (!peek) return e;
+    peekButton(e, peek, label, env.state.peek);
     return e;
   };
-  const out = [pill('down', `↓ ${tk(edge ? edge.down : null, true)} · ${clock(edge ? edge.out_t : c.start)}`, ys)];
-  if (outcome === 'returned' && ye !== null) out.push(pill('up', `↑ ${tk(edge.back, true)} · ${clock(edge.back_t)}`, ye));
+  const out = [pill('down', `↓ ${tk(edge ? edge.down : null, true)} · ${clock(edge ? edge.out_t : c.start)}`, ys, `task:${c.id}`)];
+  if (outcome === 'returned' && ye !== null) out.push(pill('up', `↑ ${tk(edge.back, true)} · ${clock(edge.back_t)}`, ye, c.detail.output_source ? `output:${c.id}` : null));
+  else if (outcome !== 'returned' && c.detail.output_source) out.push(pill('up', `↑ ${tk(edge ? edge.back : null, true)} · ${clock(edge && edge.back_t != null ? edge.back_t : c.end)}`, ye !== null ? ye : ys, `output:${c.id}`));
+  if (out.length === 2 && (ye === null ? 0 : ye - ys) < PILL_PAIR_CLEAR) { out[0].classList.add('above'); out[1].classList.add('below'); }
   return out;
 }
 
-// A load of a kind the vocabulary keeps on the spine is a station there.
-const isSpine = (ix, sid) => { const k = kindOfSource(ix, sid); return !!(k && k.spine); };
+// Room a station pill (a dot at its widest) needs beyond a stripe's edge.
+const STATION_CLEAR = 12;
 const shownSource = (env, sid) => { const k = kindOfSource(env.ix, sid); return !k || env.state.layers[k.key]; };
 
 // Hooks stay on the spine: a one-off hook load is a station and a repeated stretch of firings is one pill at its middle.
-function stationItems(env, cur, scale) {
+function stationItems(env, cur, scale, cutTimes) {
   const { ix } = env;
   const st = ix.stations.get(cur.id);
   if (!st) return [];
+  const stripes = [...scale.cuts.values()].map(c => c.y);
+  // A pill keeps clear of a compaction stripe's band: it sits just above or just below it.
+  const clear = (yy, load) => {
+    const seg = segmentOf(cutTimes, load.t ?? cur.start, load);
+    const sy0 = seg > 0 ? scale.cuts.get(`cut:${seg - 1}`).y : null;
+    if (sy0 !== null && yy < sy0 + STRIPE_HALF + STATION_CLEAR && startsSession(load)) yy = sy0 + STRIPE_HALF + STATION_CLEAR;
+    const s = stripes.find(sy => Math.abs(yy - sy) < STRIPE_HALF + STATION_CLEAR);
+    return s === undefined ? yy : s + (yy < s ? -1 : 1) * (STRIPE_HALF + STATION_CLEAR);
+  };
   const items = [];
   for (const l of st.loads) {
     if (!isSpine(ix, l.source) || !shownSource(env, l.source)) continue;
     const s = ix.sources.get(l.source);
     const k = kindOfSource(ix, l.source);
     items.push({
-      type: 'load', source: l.source, name: s ? s.label : l.source, when: ix.triggers.get(l.trigger) || l.trigger, y: scale.y(l.t ?? cur.start), small: l.small, letter: k ? k.letter : '?',
+      type: 'load', source: l.source, name: s ? s.label : l.source, when: ix.triggers.get(l.trigger) || l.trigger, y: clear(scale.y(l.t ?? cur.start), l), small: l.small, letter: k ? k.letter : '?',
       tokens: l.tokens_est, find: !!(s && s.findings && s.findings.count > 0),
       title: `${k ? k.label : 'Source'} · ${s ? s.label : l.source} · ${l.tokens_est == null ? 'size unknown' : tk(l.tokens_est, true) + ' loaded (estimated)'}` +
         ` · ${l.t == null ? 'time unknown, shown at the start' : 'at ' + clock(l.t)} · ${ix.triggers.get(l.trigger) || l.trigger}${l.event ? ' ' + l.event : ''}` +
@@ -308,7 +333,7 @@ function stationItems(env, cur, scale) {
     const k = kindOfSource(ix, h.source);
     const s = ix.sources.get(h.source);
     items.push({
-      type: 'hook', source: h.source, y: scale.y((h.first + h.last) / 2), letter: k ? k.letter : '?', calls: h.count, tokens: h.tokens_est,
+      type: 'hook', source: h.source, y: clear(scale.y((h.first + h.last) / 2), { t: h.first, event: (st.loads.find(l => l.source === h.source && l.t === h.first) || {}).event }), letter: k ? k.letter : '?', calls: h.count, tokens: h.tokens_est,
       name: s ? s.label : h.source,
       title: `${s ? s.label : h.source} · ${h.count} firing${h.count === 1 ? '' : 's'} ${clock(h.first)}–${clock(h.last)} · ${tk(h.tokens_est, true)} loaded (estimated)`,
     });
@@ -316,36 +341,35 @@ function stationItems(env, cur, scale) {
   return items;
 }
 
-// Source nodes: one per source at its first load into this agent's context (hooks stay on the spine), one per MCP server
-// with its round trips. An instruction file loaded with no time sits at the agent's start.
-function sourceItems(env, cur, scale) {
+// The cards that load again within RESTART_S of one another right after a compaction: the compaction's unit in the scale.
+function restartCards(firsts, cuts) {
+  return cuts.map((c, i) => {
+    const out = [];
+    let prev = c.t;
+    for (const f of firsts.filter(f => f.seg === i + 1).sort((a, b) => a.t - b.t)) {
+      if (f.t - prev > RESTART_S) break;
+      out.push({ key: f.key, t: f.t });
+      prev = f.t;
+    }
+    return out;
+  });
+}
+
+function sourceItems(env, firsts, scale) {
   const { ix } = env;
-  const st = ix.stations.get(cur.id);
-  if (!st) return [];
-  const first = new Map();
-  for (const l of st.loads) {
-    if (isSpine(ix, l.source) || !shownSource(env, l.source)) continue;
-    const t = l.t ?? cur.start;
-    const prev = first.get(l.source);
-    if (!prev || t < prev.t) first.set(l.source, { t, load: l });
-  }
-  const trips = new Map();
-  for (const m of st.mcp) {
-    if (!shownSource(env, m.server)) continue;
-    trips.set(m.server, [...(trips.get(m.server) || []), m]);
-    const prev = first.get(m.server);
-    if (!prev) first.set(m.server, { t: m.first, load: null });
-  }
-  return [...first.entries()].map(([id, f]) => {
+  const drawn = new Map();
+  for (const c of scale.cuts.values()) for (const [k, yy] of c.cards) drawn.set(k, yy);
+  return firsts.map(f => {
+    const id = f.id;
     const s = ix.sources.get(id);
     const k = kindOfSource(ix, id);
-    const clusters = trips.get(id) || [];
+    const clusters = f.clusters;
     const calls = clusters.reduce((n, m) => n + m.calls, 0);
     const tokens = f.load ? f.load.tokens_est : null;
     const find = !!(s && s.findings && s.findings.count > 0);
     const label = s ? s.label : id;
     return {
-      source: id, label, letter: k ? k.letter : '?', t: f.t, y: scale.y(f.t), tokens, find, clusters, calls,
+      key: f.key, source: id, label, letter: k ? k.letter : '?', t: f.t, y: drawn.get(f.key) ?? scale.y(f.t), tokens, find, clusters, calls,
       sub: calls ? `⇄ ${calls} call${calls === 1 ? '' : 's'}` : `↓ ${tokens == null ? 'size unknown' : tk(tokens, true)} · ${clock(f.t)}`,
       title: `${k ? k.label : 'Source'} · ${label} · ${tokens == null ? 'size unknown' : tk(tokens, true) + ' loaded (estimated)'} · ${f.load && f.load.t == null ? 'time unknown, shown at the start' : 'at ' + clock(f.t)}${f.load ? ' · ' + (ix.triggers.get(f.load.trigger) || f.load.trigger) : ''}` +
         `${calls ? ` · ${calls} call${calls === 1 ? '' : 's'}` : ''}${find ? ' · has findings' : ''}`,
@@ -358,6 +382,8 @@ function sourceNode(env, it, p) {
   const dim = env.graphFocus && !hot;
   const b = abs('snode' + (it.find ? ' find' : '') + (hot ? ' hot' : '') + (dim ? ' dim' : ''), p.left, p.top, 'button');
   b.dataset.source = it.source;
+  markOpen(b, env.state.peek, [`src:${it.source}`]);
+  b.dataset.card = it.key;
   b.title = it.title;
   b.setAttribute('aria-label', it.title);
   b.style.width = `${SW}px`;
@@ -373,7 +399,7 @@ function sourceNode(env, it, p) {
 function sourceEdges(env, items, placed, scale) {
   const g = svg('g', { class: 'srcedges' });
   for (const it of items) {
-    const p = placed.get(it.source);
+    const p = placed.get(it.key);
     const hot = env.graphFocus && env.graphFocus.id === it.source;
     const dim = env.graphFocus && !hot;
     const colour = hot ? WHITE : dim ? 'rgba(236,236,236,0.05)' : it.find ? 'rgba(242,166,110,0.55)' : 'rgba(236,236,236,0.28)';
@@ -407,6 +433,7 @@ function stationPill(env, cl) {
     + (cl.members.some(m => m.find) ? ' find' : '') + (hot ? ' hot' : '') + (dim ? ' dim' : '');
   const b = abs(cls, SPX, cl.y, 'button');
   b.dataset.source = it.source;
+  markOpen(b, env.state.peek, cl.members.map(m => `src:${m.source}`));
   b.dataset.sources = cl.members.map(m => m.source).join(' ');
   b.dataset.station = many ? 'merged' : it.type;
   if (many) {
@@ -426,46 +453,45 @@ function stationPill(env, cl) {
   return b;
 }
 
-function stations(env, cur, scale) {
-  const out = mergeStations(stationItems(env, cur, scale)).map(cl => stationPill(env, cl));
-  for (const c of (env.ix.stations.get(cur.id) || { compactions: [] }).compactions) {
-    const m = abs('compact', 0, scale.y(c.t));
-    const sizes = c.before != null && c.after != null ? ` · ${k1(c.before)} → ${k1(c.after)}` : '';
-    m.append(el('span', null, `compacted${sizes} · at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`));
-    if (c.summary_id) {
-      const b = el('button', 'compact-summary', `summary · ${tk(c.summary_tokens, true)}`);
-      b.type = 'button';
-      b.dataset.summary = c.summary_id;
-      b.dataset.summaryNode = cur.id;
-      b.title = 'Open what is left after the compaction';
-      m.firstChild.append(' · ', b);
-    }
-    out.push(m);
-    if (c.files && c.files.length) out.push(compactionFiles(env, c, scale));
-  }
+function stations(env, cur, scale, held, cuts) {
+  const out = mergeStations(stationItems(env, cur, scale, cuts)).map(cl => stationPill(env, cl));
+  held.forEach((c, i) => out.push(compactStripe(env, cur, c, i, scale.cuts.get(`cut:${i}`).y)));
   return out;
 }
 
-// What the page says of each state an instruction file can be in after a compaction, and why.
-const FILE_STATE_WORDS = {
-  kept: ['still in context', 'its read result is in the first request after the compaction'],
-  reloaded: ['loaded again', 'it was loaded again after the compaction'],
-  dropped: ['dropped', 'not in the first request after the compaction'],
-  pending: ['settles at the next request', 'no request has been sent since the compaction yet'],
-  unknown: ["can't tell", 'the transcript does not show whether it survived'],
-};
+// A compaction: a thin band across the canvas at its time that opens its details.
+function compactStripe(env, cur, c, i, y) {
+  const both = c.before != null && c.after != null;
+  const m = abs('compact', 0, y - STRIPE_HALF, 'button');
+  m.type = 'button';
+  m.dataset.peek = `compaction:${cur.id}:${i}`;
+  markOpen(m, env.state.peek, [m.dataset.peek]);
+  m.setAttribute('aria-label', `Compaction${c.trigger ? ', ' + c.trigger : ''}, at ${clock(c.t)}${both ? `, context ${k1(c.before)} to ${k1(c.after)}` : ''}: open details`);
+  m.append(el('span', null, `compacted${both ? ` · ${k1(c.before)} → ${k1(c.after)}` : ''} · at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`));
+  return m;
+}
 
-// The instruction files a compaction found loaded, each with the state the view holds for it after the compaction.
-function compactionFiles(env, c, scale) {
-  const box = abs('compact-files', 84, scale.y(c.t) + 8);
-  for (const f of c.files) {
-    const s = env.ix.sources.get(f.source);
-    const [words, why] = FILE_STATE_WORDS[f.state] || [f.state, ''];
-    const row = el('span', `fs fs-${f.state}`, `${s ? s.label : f.source} · ${words}`);
-    row.title = why;
-    box.append(row);
-  }
-  return box;
+// Moves each no-activity label clear of the cards, pills, failure-run labels, spine and side track in its stripe's rows, once
+// the page has measured the label. Every box is read first and every label written after, so the page lays out once. The
+// stripe itself stays full width, and so does a compaction stripe, which holds no place for a label to avoid.
+const BRK_BLOCKS = ':scope > :is(.card, .snode, .station, .pill-arch, .gbox, .blabel, .bracket, .nokids, .selband)';
+
+function settleBreaks(cv) {
+  const at = cv.getBoundingClientRect(), zoom = at.width / W || 1;
+  const rel = e => {
+    const r = e.getBoundingClientRect();
+    return { left: (r.left - at.left) / zoom, right: (r.right - at.left) / zoom, top: (r.top - at.top) / zoom, bottom: (r.bottom - at.top) / zoom };
+  };
+  const boxes = [...cv.querySelectorAll(BRK_BLOCKS)].map(rel);
+  const lanes = cv.querySelector(':scope > .trackg');
+  const from = lanes ? lanes.width.baseVal.value : 0;
+  const spine = { left: SPX - SPINE_HALF_MAX, right: SPX + SPINE_HALF_MAX, top: -Infinity, bottom: Infinity };
+  const placed = [...cv.querySelectorAll(':scope > .brk')].map(band => {
+    const label = band.firstElementChild, row = rel(band);
+    const here = [spine, ...boxes].filter(b => b.top < row.bottom && b.bottom > row.top);
+    return [label, labelLeft(from, label.getBoundingClientRect().width / zoom, here)];
+  });
+  for (const [label, x] of placed) label.style.marginLeft = `${x}px`;
 }
 
 // Places each drawn station pill by `stationSide` among the cards, once the page has measured its width.
@@ -600,6 +626,11 @@ export function render(box, env) {
     ...drawnKids.filter(c => !inGroup.has(c.id)).map(c => ({ key: c.id, t: c.start, members: 0, expanded: false })),
     ...groups.map(g => ({ key: g.key, t: g.burst.first_launch, members: g.members.length, expanded: g.expanded })),
   ];
+  const held = (ix.stations.get(cur.id) || { compactions: [] }).compactions;
+  const cuts = held.map(c => c.t);
+  const firsts = sourceFirsts(ix, cur, cuts);
+  const restarts = restartCards(firsts, held);
+  held.forEach((c, i) => units.push({ key: `cut:${i}`, t: c.t, cut: true, cards: restarts[i] }));
   const scale = layoutTime(cur, tr.breaks, lengthFor(isRoot), units);
   const placedMap = new Map();
   for (const p of scale.placed) {
@@ -609,13 +640,12 @@ export function render(box, env) {
   }
   const shownKids = drawnKids.filter(c => !groups.some(g => !g.expanded && g.members.includes(c)));
   const matchOf = c => (!focus || focus.had_by.includes(c.id));
-  const station = ix.stations.get(cur.id) || { compactions: [] };
-  const cuts = station.compactions.map(c => c.t);
   const sel = state.sel ? ix.nodes.get(state.sel) : null;
   const renderer = rendererFor(cur.kind);
   const hand = isRoot ? null : renderer.handback && renderer.handback(cur, env);
-  const items = sourceItems(env, cur, scale);
-  const placedSources = new Map(placeSources(items.map(it => ({ key: it.source, y: it.y }))).map(p => [p.key, p]));
+  const items = sourceItems(env, firsts.filter(f => shownSource(env, f.id)), scale);
+  const walls = [...scale.cuts.values()].map(c => ({ top: c.y - STRIPE_HALF, bottom: c.y + STRIPE_HALF }));
+  const placedSources = new Map(placeSources(items.map(it => ({ key: it.key, y: it.y })), walls).map(p => [p.key, p]));
   const sourcesBottom = Math.max(0, ...[...placedSources.values()].map(p => p.top + SH));
   const botY = Math.max(scale.end + 14, scale.lowest + 10);
   const height = Math.max(isRoot ? Math.max(scale.end + 40, scale.lowest + 30) : botY + BOT_H + 40, sourcesBottom + 30);
@@ -637,13 +667,14 @@ export function render(box, env) {
     else cv.append(groupCard(env, grp, p, grp.members.some(matchOf)));
   }
   for (const c of shownKids) cv.append(childCard(env, c, placedMap.get(c.id), matchOf(c), state.sel === c.id));
-  for (const it of items) cv.append(sourceNode(env, it, placedSources.get(it.source)));
-  cv.append(...stations(env, cur, scale), ...drawn.pills);
+  for (const it of items) cv.append(sourceNode(env, it, placedSources.get(it.key)));
+  cv.append(...stations(env, cur, scale, held, cuts), ...drawn.pills);
   if (hand) {
-    const b = abs('card bottom', SPX - BOT_W / 2, botY);
+    const b = abs('card bottom', SPX - BOT_W / 2, botY, hand.peek ? 'button' : 'div');
     b.style.width = `${BOT_W}px`;
     b.style.height = `${BOT_H}px`;
-    b.textContent = hand;
+    b.textContent = hand.text;
+    if (hand.peek) peekButton(b, hand.peek, hand.text, env.state.peek);
     cv.append(b);
   }
   if (!kids.length) {
@@ -666,6 +697,7 @@ export function render(box, env) {
   for (const p of placedSources.values()) rects.push({ left: p.left, top: p.top, width: SW, height: SH });
   if (hand) rects.push({ left: SPX - BOT_W / 2, top: botY, width: BOT_W, height: BOT_H });
   settleStations(live, rects);
+  settleBreaks(live);
   const railBox = document.getElementById('rail');
   if (railBox) rail.render(railBox, { height, ys: tr.calls.map(c => scale.y(c.t)), marks });
 }

@@ -13,10 +13,14 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from rich.markup import escape as escape_markup
+
+from reporails_cli.core.discovery.walk import own_name_spellings
 from reporails_cli.core.heal.apply import heal_withheld_for_run
 from reporails_cli.core.pipeline.assemble import with_exclusions
-from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.formatters.github import escape_workflow_data
 from reporails_cli.formatters.text.verdict import render_excluded_line
 from reporails_cli.interfaces.cli.check_orchestration import RenderContext, _dispatch_output
 from reporails_cli.interfaces.cli.helpers import _print_no_instruction_files, console
@@ -65,7 +69,9 @@ def _emit_unlisted_file(file: Path, root: Path, run_folder: Path, output_format:
     of another project is told to run the check in that project's folder.
     Under json/github the diagnosis owns stdout, so the notice goes to stderr."""
     if root == run_folder:
-        message = f"{file} is not an instruction file of this project."
+        inside = [p for p in (file, *own_name_spellings(file)) if p.is_relative_to(root)]
+        shown = inside[0].relative_to(root).as_posix() if inside else str(file)
+        message = f"{shown} is not an instruction file of this project."
     else:
         message = (
             f"{file} is not an instruction file in the project at {root}; run ails check in that project's folder."
@@ -97,12 +103,23 @@ def _emit_heal_scope_refusal(output_format: str) -> None:
     )
 
 
+def _emit_server_refusal(output_format: str, refusal: Refusal) -> None:
+    """Emit the server's refusal to serve this run in the active output format."""
+    if output_format == "json":
+        print(json.dumps({"error": refusal.kind, "message": refusal.message}))
+        return
+    if output_format == "github":
+        print(f"::error::{escape_workflow_data(refusal.message)}")
+        return
+    console.print(f"[red]\u2717[/red] {escape_markup(refusal.message)}")
+
+
 def _agent_is_pinned(state: CheckState) -> bool:
     """True when the run is set to one agent: ``--agent`` or the configured ``default_agent``."""
     if state.inputs.agent:
         return True
 
-    return bool(get_project_config(state.targets.target).default_agent)
+    return bool(state.run.project_config(state.targets.target).default_agent)
 
 
 def _emit_empty_run(state: CheckState) -> None:

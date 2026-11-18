@@ -13,6 +13,7 @@ from reporails_cli.core.discovery.walk import (
     is_under,
     safe_resolve,
 )
+from reporails_cli.core.platform.config.run_context import RunContext
 
 
 def _project_with_loop(root: Path) -> Path:
@@ -47,7 +48,7 @@ def test_a_mechanical_check_location_test_survives_a_loop(tmp_path: Path) -> Non
 @pytest.mark.subsys_lint
 def test_discovery_leaves_out_a_looping_link_and_keeps_the_real_file(tmp_path: Path) -> None:
     looping = _project_with_loop(tmp_path)
-    for files in (get_all_instruction_files(tmp_path), get_all_scannable_files(tmp_path)):
+    for files in (get_all_instruction_files(RunContext(), tmp_path), get_all_scannable_files(RunContext(), tmp_path)):
         assert looping not in files
         assert any(f.name == "CLAUDE.md" and f.parent == tmp_path for f in files)
 

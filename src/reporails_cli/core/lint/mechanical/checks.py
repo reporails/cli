@@ -5,14 +5,15 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 
-from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions
-from reporails_cli.core.discovery.walk import inside_git_repository, safe_resolve, walk_glob_matches
+from reporails_cli.core.discovery.exclusions import leaves_out
+from reporails_cli.core.discovery.walk import inside_git_repository, path_glob, safe_resolve, walk_glob_matches
 from reporails_cli.core.mapper.skills import skill_entry_paths
 from reporails_cli.core.platform.contract.json_value import JsonValue, str_list
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 from reporails_cli.core.platform.policy.matching import prop_matches
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import read_frontmatter_file
 
 # What a check reads: the check's own arguments (parsed `checks.yml` values), upstream annotations
@@ -61,22 +62,22 @@ def _safe_float(value: JsonValue, default: float = float("inf")) -> float:
         return default
 
 
-def run_exclusions(args: CheckArgs, root: Path) -> RunExclusions:
-    """What the run leaves out: the set handed in `args`, else the project's configured exclusions."""
+def run_exclusions(args: CheckArgs) -> RunExclusions:
+    """What the run leaves out: the set carried in `args["_exclusions"]`."""
     given = args.get("_exclusions")
-    return given if isinstance(given, RunExclusions) else load_run_exclusions(root)
+    if not isinstance(given, RunExclusions):
+        raise TypeError("a mechanical check runs without the run's exclusions")
+    return given
 
 
-def _resolve_glob_targets(pattern: str, root: Path, exclusions: RunExclusions | None = None) -> list[Path]:
+def _resolve_glob_targets(pattern: str, root: Path, exclusions: RunExclusions) -> list[Path]:
     """Resolve a glob pattern relative to root: the regular files it matches, not entering
-    any folder `exclusions` leaves out and dropping matches it leaves out (`None` reads the
-    project's configured exclusions).
+    any folder `exclusions` leaves out and dropping matches it leaves out.
 
     Hidden folders such as `.claude/` and `.cursor/` are walked, so `**/*.md`
     matches files under them. The intersection with `classified_files` in
     `get_target_files` bounds the result back to in-scope instruction files.
     """
-    exclusions = exclusions or load_run_exclusions(root)
     return [m for m in walk_glob_matches(root, pattern, exclusions) if not leaves_out(exclusions, m)]
 
 
@@ -119,7 +120,7 @@ def _select_targets(
     """
     path_pattern = arg_value(args, "path", "")
     if path_pattern:
-        glob_targets = _resolve_glob_targets(str(path_pattern), root, run_exclusions(args, root))
+        glob_targets = _resolve_glob_targets(str(path_pattern), root, run_exclusions(args))
         if not classified_files:
             return glob_targets
         allowed: set[Path] = set()
@@ -160,7 +161,7 @@ def target_texts(
         if not match.is_file():
             continue
         try:
-            yield match, match.read_text(encoding="utf-8", errors="replace")
+            yield match, read_file_text(match, errors="replace")
         except OSError:
             continue
 
@@ -174,7 +175,7 @@ def _get_counted_files(
     raw_pattern = str(arg_value(args, "pattern", ""))
     if raw_pattern:
         all_files: set[Path] = set()
-        all_files.update(m for m in _resolve_glob_targets(raw_pattern, root, run_exclusions(args, root)) if m.is_file())
+        all_files.update(m for m in _resolve_glob_targets(raw_pattern, root, run_exclusions(args)) if m.is_file())
         return all_files
 
     if classified_files:
@@ -220,7 +221,7 @@ def directory_contains(
     target = root / path
     if not target.is_dir():
         return CheckResult(passed=False, message=f"Directory not found: {path}")
-    matches = list(target.glob(pattern))
+    matches = path_glob(target, pattern)
     if len(matches) >= min_count:
         return CheckResult(passed=True, message=f"Found {len(matches)} file(s)")
     return CheckResult(passed=False, message=f"Found {len(matches)}, need {min_count}")
@@ -322,7 +323,7 @@ def line_count(
             continue
         try:
             rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
-            count = len(match.read_text(encoding="utf-8", errors="replace").splitlines())
+            count = len(read_file_text(match, errors="replace").splitlines())
             if count > max_lines:
                 return CheckResult(
                     passed=False,

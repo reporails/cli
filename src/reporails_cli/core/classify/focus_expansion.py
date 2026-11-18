@@ -26,11 +26,13 @@ from reporails_cli.core.classify.capability_paths import (
     list_capability_targets,
     resolve_capability,
 )
-from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions
+from reporails_cli.core.discovery.exclusions import leaves_out
 from reporails_cli.core.platform.dto.classify import UnresolvedSkill
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import read_frontmatter
 
 if TYPE_CHECKING:
+    from reporails_cli.core.platform.config.run_context import RunContext
     from reporails_cli.core.platform.dto.discovery import RunExclusions
 
 logger = logging.getLogger(__name__)
@@ -39,17 +41,17 @@ _SKILL_PRELOAD_FRONTMATTER_KEY = "skills"
 
 
 def expand_focus(
+    run: RunContext,
     focus_paths: set[Path],
     agent: str,
     project_root: Path,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> tuple[set[Path], list[UnresolvedSkill]]:
     """Expand `focus_paths` to include preloaded skills for any subagent in the set.
 
     Reads each focus path's YAML frontmatter and looks for a `skills:`
-    field listing skill names. Each declared skill is resolved through
-    `resolve_capability(agent, "skills", name, project_root)` and added
-    to the expanded set, unless the run's `exclusions` (`None` reads the project's config)
+    field listing skill names. Each declared skill is resolved to its path and added
+    to the expanded set, unless the run's `exclusions`
     leave that skill out: it is neither checked nor reported unresolved. Paths that aren't subagents (no `skills:`
     field, no frontmatter, or not a known agents file) pass through
     unchanged.
@@ -58,12 +60,11 @@ def expand_focus(
     records for declared names that did not resolve — caller surfaces
     them so silent drops do not mask missing-symlink misconfigurations.
     """
-    exclusions = exclusions if exclusions is not None else load_run_exclusions(project_root)
     expanded: set[Path] = set(focus_paths)
     unresolved: list[UnresolvedSkill] = []
     for path in focus_paths:
         for skill_name in _read_preloaded_skills(path):
-            resolved = resolve_capability(agent, "skills", skill_name, project_root)
+            resolved = resolve_capability(run, agent, "skills", skill_name, project_root)
             if resolved is not None:
                 if not leaves_out(exclusions, resolved):
                     expanded.add(resolved)
@@ -73,37 +74,40 @@ def expand_focus(
 
 
 def resolve_capability_spec(
+    run: RunContext,
     capability: str,
     name: str,
     agent: str,
+    *,
     project_root: Path,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> tuple[set[Path], list[UnresolvedSkill]]:
     """Resolve one (capability, name) spec to its file set + the skills an agent preloads that
     did not resolve. An empty `name` targets every instance the run's `exclusions` keep; a named
     instance resolves whatever is excluded, and a named subagent brings the skills it preloads
     that the exclusions keep. Raises `TargetError` when the spec names no file."""
-    if not capability_declared(capability, agent, project_root):
+    config = run.project_config(project_root)
+    if not capability_declared(capability, agent, config):
         raise TargetError(
             "undeclared",
             capability,
             agent,
             project_root,
             name=name,
-            available=tuple(available_capabilities(agent, project_root)),
+            available=tuple(available_capabilities(agent, config)),
         )
     if not name:
-        return set(list_capability_targets(agent, capability, project_root, exclusions)), []
-    resolved = resolve_capability(agent, capability, name, project_root)
+        return set(list_capability_targets(run, agent, capability, project_root, exclusions)), []
+    resolved = resolve_capability(run, agent, capability, name, project_root)
     if resolved is None:
-        available = list_capability_targets(agent, capability, project_root, exclusions)
+        available = list_capability_targets(run, agent, capability, project_root, exclusions)
         raise TargetError(
             "unnamed", capability, agent, project_root, name=name, available=tuple(str(p) for p in available)
         )
     paths = {resolved}
     unresolved: list[UnresolvedSkill] = []
     if capability == "agents":
-        paths, unresolved = expand_focus(paths, agent, project_root, exclusions)
+        paths, unresolved = expand_focus(run, paths, agent, project_root, exclusions)
     return paths, unresolved
 
 
@@ -124,7 +128,7 @@ def _read_preloaded_skills(path: Path) -> list[str]:
 def _load_frontmatter_field(path: Path, key: str) -> object:
     """Read `path`'s YAML frontmatter and return the value at `key`, or None."""
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = read_file_text(path, errors="replace")
     except OSError as exc:
         logger.debug("expand_focus: cannot read %s: %s", path, exc)
         return None

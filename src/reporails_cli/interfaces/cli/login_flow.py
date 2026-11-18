@@ -29,6 +29,7 @@ from reporails_cli.core.platform.config.credentials import (
     write_credentials_file,
 )
 from reporails_cli.core.platform.config.endpoints import platform_url
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import CredentialsUnreadableError, PlatformError, PlatformRefusedError
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
 from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, STILL_REACHING_MESSAGE, Notice, tier_label
@@ -100,11 +101,11 @@ def _note_rejected(stored_key: str) -> None:
     console.print("  Your sign-in on this machine ended; signing in again.")
 
 
-def _confirm_stored_sign_in(record: JsonObject) -> None:
+def _confirm_stored_sign_in(record: JsonObject, tier: str) -> None:
     """Check the stored sign-in with the server. Returns only when it was rejected; otherwise exits 0."""
     stored_key = as_str(record.get("api_key"))
     account = as_str(record.get("account"))
-    result = check_api_key(stored_key)
+    result = check_api_key(stored_key, tier)
     if result.status == "rejected":
         _note_rejected(stored_key)
         return
@@ -209,7 +210,7 @@ def run_login() -> None:
     """Sign this machine in to your account through the browser and save the sign-in."""
     record = read_credentials()
     if record.get("api_key"):
-        _confirm_stored_sign_in(record)
+        _confirm_stored_sign_in(record, RunContext().tier())
     signed_in = _sign_in_through_browser(platform_url())
     _save(signed_in)
     console.print(_signed_in_line(signed_in.login, signed_in.tier))

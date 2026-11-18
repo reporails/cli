@@ -20,8 +20,11 @@ from reporails_cli.core.heal.transforms import (
     unbold,
 )
 from reporails_cli.core.mapper.annotate import check_specificity
+from reporails_cli.core.mapper.instructions import joint_is_mark
+from reporails_cli.core.mapper.parse import inline_plain_text
 from reporails_cli.core.platform.dto.heal_plan import Edit, Plan, PlanOp, Slot
 from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots
+from tests.fake_models import no_models
 
 
 def _split_edit(op: PlanOp, atoms: Any, lines: Any) -> Edit | None:
@@ -38,6 +41,7 @@ def _atom(text: str, line: int = 1, charge: int = -1, fmt: str = "prose", pi: in
     return Atom(
         line=line,
         text=text,
+        plain_text=inline_plain_text(text),
         kind="excitation",
         charge={-1: "CONSTRAINT", 0: "NEUTRAL", 1: "DIRECTIVE"}[charge],
         charge_value=charge,
@@ -89,10 +93,21 @@ def _pieces(*texts: str, fmt: str = "prose", predicate: bool = True, objects: bo
     return [_atom(t, fmt=fmt, pi=i, slots=slots, **kw) for i, t in enumerate(texts)]
 
 
+def _placed(atoms: list[Atom], *columns: tuple[int, int], joints: tuple[str, ...] = ()) -> list[Atom]:
+    """`atoms` with the columns and joints the parse records for the line they were cut from (the values
+    `tokenize` + `apply_multislot` give: an atom's words, and the source between it and the atom before)."""
+    for atom, cols in zip(atoms, columns, strict=True):
+        atom.source_columns = cols
+    for atom, joint in zip(atoms[1:], joints, strict=True):
+        atom.joint = joint
+        atom.joint_mark = joint_is_mark(joint)
+    return atoms
+
+
 @pytest.mark.unit
 @pytest.mark.subsys_heal
 @pytest.mark.parametrize(
-    ("line", "texts", "after"),
+    ("line", "texts", "after", "columns", "joints"),
     [
         (
             SPLIT_1,
@@ -101,31 +116,43 @@ def _pieces(*texts: str, fmt: str = "prose", predicate: bool = True, objects: bo
                 "*never reintroduce the per-repo `<repo>` segment.*",
             ),
             "*Never file a `note` outside `notes/<team>/`.* *Never reintroduce the per-repo `<repo>` segment.*",
+            ((1, 45), (46, 94)),
+            ("; ",),
         ),
         (
             SPLIT_2,
             ("*Do not preload a fixed trinity or walk the whole corpus \u2014*", "*resolve only the named entries.*"),
             "*Do not preload a fixed trinity or walk the whole corpus.* *Resolve only the named entries.*",
+            ((1, 58), (59, 90)),
+            (" \u2014 ",),
         ),
         (
             "Run the tests; fix every failure.",
             ("Run the tests;", "fix every failure."),
             "Run the tests. Fix every failure.",
+            ((0, 14), (15, 33)),
+            ("; ",),
         ),
         (
             "- Run the tests \u2014 fix every failure.",
             ("Run the tests \u2014", "fix every failure."),
             "- Run the tests. Fix every failure.",
+            ((2, 17), (18, 36)),
+            (" \u2014 ",),
         ),
         (
             "Run the tests, and fix every failure.",
-            ("Run the tests, and", "fix every failure."),
+            ("Run the tests,", "and fix every failure."),
             "Run the tests. Fix every failure.",
+            ((0, 14), (15, 37)),
+            (", ",),
         ),
     ],
 )
-def test_split_writes_each_instruction_atom_as_its_own_sentence(line: str, texts: tuple[str, ...], after: str) -> None:
-    atoms = _pieces(*texts, fmt="list" if line.startswith("- ") else "prose")
+def test_split_writes_each_instruction_atom_as_its_own_sentence(
+    line: str, texts: tuple[str, ...], after: str, columns: tuple[tuple[int, int], ...], joints: tuple[str, ...]
+) -> None:
+    atoms = _placed(_pieces(*texts, fmt="list" if line.startswith("- ") else "prose"), *columns, joints=joints)
     edit = _split_edit(_op("split"), atoms, _lines(line))
     assert edit is not None
     assert (edit.before, edit.after) == (line, after)
@@ -134,25 +161,47 @@ def test_split_writes_each_instruction_atom_as_its_own_sentence(line: str, texts
 @pytest.mark.unit
 @pytest.mark.subsys_heal
 @pytest.mark.parametrize(
-    ("line", "texts", "flags"),
+    ("line", "texts", "flags", "columns", "joints"),
     [
-        ("Run the tests; see the guide.", ("Run the tests;", "see the guide."), {"predicate": False}),
-        ("Run the tests, then fix every failure.", ("Run the tests,", "fix every failure."), {}),
-        ("Do not push keys; or share tokens.", ("Do not push keys;", "share tokens."), {}),
-        ("Run `a; b` for the check.", ("Run `a;", "b` for the check."), {}),
+        (
+            "Run the tests; see the guide.",
+            ("Run the tests;", "see the guide."),
+            {"predicate": False},
+            ((0, 14), (15, 29)),
+            ("; ",),
+        ),
+        (
+            "Run the tests, then fix every failure.",
+            ("Run the tests,", "fix every failure."),
+            {},
+            ((0, 14), (15, 38)),
+            (", ",),
+        ),
+        (
+            "Do not push keys; or share tokens.",
+            ("Do not push keys;", "share tokens."),
+            {},
+            ((0, 17), (21, 34)),
+            (" or ",),
+        ),
+        ("Run `a; b` for the check.", ("Run `a;", "b` for the check."), {}, ((0, 7), (8, 25)), ("; ",)),
     ],
 )
 def test_split_leaves_a_piece_without_its_own_predicate_or_a_bare_joint_to_a_decision(
-    line: str, texts: tuple[str, ...], flags: dict[str, bool]
+    line: str,
+    texts: tuple[str, ...],
+    flags: dict[str, bool],
+    columns: tuple[tuple[int, int], ...],
+    joints: tuple[str, ...],
 ) -> None:
-    assert _split_edit(_op("split"), _pieces(*texts, **flags), _lines(line)) is None
+    assert _split_edit(_op("split"), _placed(_pieces(*texts, **flags), *columns, joints=joints), _lines(line)) is None
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
 def test_split_leaves_a_piece_sharing_its_siblings_object_to_a_decision() -> None:
     line = "Run the tests; fix every failure."
-    first, second = _pieces("Run the tests;", "fix every failure.")
+    first, second = _placed(_pieces("Run the tests;", "fix every failure."), (0, 14), (15, 33), joints=("; ",))
     second.slots = AtomSlots(predicate_span=(0, 1))
     assert _split_edit(_op("split"), [first, second], _lines(line)) is None
 
@@ -161,7 +210,12 @@ def test_split_leaves_a_piece_sharing_its_siblings_object_to_a_decision() -> Non
 @pytest.mark.subsys_heal
 def test_split_leaves_a_neutral_atom_of_the_sentence_to_a_decision() -> None:
     line = "Run the tests; fix every failure."
-    atoms = [_atom("Run the tests;", pi=0, slots=_pieces("x")[0].slots), _atom("fix every failure.", charge=0, pi=1)]
+    atoms = _placed(
+        [_atom("Run the tests;", pi=0, slots=_pieces("x")[0].slots), _atom("fix every failure.", charge=0, pi=1)],
+        (0, 14),
+        (15, 33),
+        joints=("; ",),
+    )
     assert _split_edit(_op("split"), atoms, _lines(line)) is None
 
 
@@ -169,7 +223,7 @@ def test_split_leaves_a_neutral_atom_of_the_sentence_to_a_decision() -> None:
 @pytest.mark.subsys_heal
 def test_split_refuses_a_lead_in() -> None:
     line = "Run the tests; fix every failure:"
-    atoms = _pieces("Run the tests;", "fix every failure:", lead_in=True)
+    atoms = _placed(_pieces("Run the tests;", "fix every failure:", lead_in=True), (0, 14), (15, 33), joints=("; ",))
     assert _split_edit(_op("split"), atoms, _lines(line)) is None
 
 
@@ -177,8 +231,11 @@ def test_split_refuses_a_lead_in() -> None:
 @pytest.mark.subsys_heal
 def test_split_keeps_a_step_that_starts_with_then_with_the_step_before_it() -> None:
     line = "Run the tests, then fix every failure."
-    assert _split_edit(_op("split"), _pieces("Run the tests,", "then fix every failure."), _lines(line)) is None
-    plan = build_plan([_op("split")], {F: _pieces("Run the tests,", "then fix every failure.")}, {F: _lines(line)})
+    pieces = lambda: _placed(  # noqa: E731
+        _pieces("Run the tests,", "then fix every failure."), (0, 14), (15, 38), joints=(", ",)
+    )
+    assert _split_edit(_op("split"), pieces(), _lines(line)) is None
+    plan = build_plan([_op("split")], {F: pieces()}, {F: _lines(line)})
     assert plan.edits == () and [s.change for s in plan.slots] == ["split-keep-sequence"]
 
 
@@ -186,7 +243,12 @@ def test_split_keeps_a_step_that_starts_with_then_with_the_step_before_it() -> N
 @pytest.mark.subsys_heal
 def test_split_still_cuts_two_independent_prohibitions_apart() -> None:
     line = "*Never commit generated files; never push to the main branch.*"
-    atoms = _pieces("*Never commit generated files;*", "*never push to the main branch.*")
+    atoms = _placed(
+        _pieces("*Never commit generated files;*", "*never push to the main branch.*"),
+        (1, 30),
+        (31, 61),
+        joints=("; ",),
+    )
     edit = _split_edit(_op("split"), atoms, _lines(line))
     assert edit is not None
     assert edit.after == "*Never commit generated files.* *Never push to the main branch.*"
@@ -209,8 +271,9 @@ def test_a_refused_split_of_a_lead_in_allows_keeping_the_lead_in() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_heal
 def test_a_refused_split_of_pieces_sharing_an_object_allows_repeating_it() -> None:
-    first, second = _pieces("Run the tests;", "fix every failure.")
+    first, second = _placed(_pieces("Run the tests;", "fix every failure."), (0, 14), (15, 33), joints=("; ",))
     first.slots = AtomSlots(predicate_span=(0, 3), object_span=(1, 3), object="the tests")
+    first.plain_text = first.text
     second.slots = AtomSlots(predicate_span=(0, 3))
     assert _slot_change([first, second], "Run the tests; fix every failure.") == "split-repeat:the tests"
 
@@ -218,7 +281,8 @@ def test_a_refused_split_of_pieces_sharing_an_object_allows_repeating_it() -> No
 @pytest.mark.unit
 @pytest.mark.subsys_heal
 def test_a_refused_split_with_an_unreadable_object_allows_no_change() -> None:
-    first, second = _pieces("Run the tests;", "fix every failure.")
+    first, second = _placed(_pieces("Run the tests;", "fix every failure."), (0, 14), (15, 33), joints=("; ",))
+    first.plain_text = ""
     second.slots = AtomSlots(predicate_span=(0, 1))
     assert _slot_change([first, second], "Run the tests; fix every failure.") == ""
 
@@ -227,7 +291,7 @@ def test_a_refused_split_with_an_unreadable_object_allows_no_change() -> None:
 @pytest.mark.subsys_heal
 def test_a_refused_split_inside_a_list_allows_giving_each_item_its_verb() -> None:
     line = "Read the file, sort it, run the tests."
-    atoms = _pieces("Read the file, sort it,", "run the tests.")
+    atoms = _placed(_pieces("Read the file, sort it,", "run the tests."), (0, 23), (24, 38), joints=(", ",))
     assert _slot_change(atoms, line) == "split-series"
 
 
@@ -235,7 +299,9 @@ def test_a_refused_split_inside_a_list_allows_giving_each_item_its_verb() -> Non
 @pytest.mark.subsys_heal
 def test_a_refused_split_that_drops_a_condition_allows_repeating_it() -> None:
     line = "When the build fails, run the tests; never push."
-    first, second = _pieces("When the build fails, run the tests;", "never push.")
+    first, second = _placed(
+        _pieces("When the build fails, run the tests;", "never push."), (0, 36), (37, 48), joints=("; ",)
+    )
     first.charge, first.charge_value, first.scope_conditional = "DIRECTIVE", 1, True
     assert _slot_change([first, second], line) == "split-keep-condition"
 
@@ -253,7 +319,13 @@ def test_a_refused_split_that_drops_only_a_scope_allows_no_change() -> None:
 @pytest.mark.subsys_heal
 def test_a_then_step_after_a_list_allows_keeping_the_step_not_repeating_verbs() -> None:
     line = "Brief each reviewer to load its notes, read the source completely, then apply its bar."
-    atoms = _pieces("Brief each reviewer to load its notes,", "read the source completely,", "then apply its bar.")
+    atoms = _placed(
+        _pieces("Brief each reviewer to load its notes,", "read the source completely,", "then apply its bar."),
+        (0, 38),
+        (39, 66),
+        (67, 86),
+        joints=(", ", ", "),
+    )
     assert _slot_change(atoms, line) == "split-keep-sequence"
 
 
@@ -283,12 +355,12 @@ def test_a_refused_real_split_names_only_the_change_that_fits(tmp_path: Path, li
 
 
 def _mapped(tmp_path: Path, text: str) -> tuple[Path, list[Atom], list[str], Any]:
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     path = tmp_path / "SKILL.md"
     path.write_text(text, encoding="utf-8")
-    ruleset = map_ruleset([path], models=get_models(), root=tmp_path, cache_dir=None)
+    ruleset = map_ruleset([path], models=no_models(), root=tmp_path, cache_dir=None)
     return path, list(ruleset.atoms), _lines(*text.split("\n")[:-1]), ruleset
 
 
@@ -366,11 +438,11 @@ def test_split_keeps_a_real_then_step_with_the_step_before_it(tmp_path: Path, li
 @pytest.mark.subsys_heal
 def test_negation_form_swaps_a_leading_never_even_inside_emphasis() -> None:
     line = "*Never bypass `reviewer` on cross-release work.*"
-    edit = negation_form(_op("negation-form"), [_atom(line)], _lines(line))
+    edit = negation_form(_op("negation-form"), _placed([_atom(line)], (1, 47)), _lines(line))
     assert edit is not None
     assert edit.after == "*Do not bypass `reviewer` on cross-release work.*"
     plain = "Do not bypass `reviewer`."
-    assert negation_form(_op("negation-form"), [_atom(plain)], _lines(plain)) is None
+    assert negation_form(_op("negation-form"), _placed([_atom(plain)], (0, 25)), _lines(plain)) is None
 
 
 @pytest.mark.unit
@@ -400,16 +472,17 @@ def test_italic_and_code_run_the_existing_fixers_on_the_one_atom() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_heal
 @pytest.mark.parametrize(
-    ("line", "after"),
+    ("line", "after", "columns", "cue"),
     [
-        ("Try to run the linter first.", "Run the linter first."),
-        ("You should run the linter first.", "Run the linter first."),
-        ("- Please run the linter first.", "- Run the linter first."),
-        ("Perhaps run the linter first.", "Run the linter first."),
+        ("Try to run the linter first.", "Run the linter first.", (0, 28), (0, 7)),
+        ("You should run the linter first.", "Run the linter first.", (0, 32), (0, 11)),
+        ("- Please run the linter first.", "- Run the linter first.", (2, 30), (2, 9)),
+        ("Perhaps run the linter first.", "Run the linter first.", (0, 29), (0, 8)),
     ],
 )
-def test_direct_drops_a_leading_hedge(line: str, after: str) -> None:
+def test_direct_drops_a_leading_hedge(line: str, after: str, columns: tuple[int, int], cue: tuple[int, int]) -> None:
     atom = _atom(line.removeprefix("- "), charge=1, fmt="list" if line.startswith("- ") else "prose")
+    atom.source_columns, atom.hedge_cue = columns, cue
     edit = direct(_op("direct"), [atom], _lines(line))
     assert edit is not None
     assert edit.after == after
@@ -458,8 +531,13 @@ def test_dedupe_deletes_a_list_line_naming_the_partners_tokens_and_no_others() -
 @pytest.mark.subsys_heal
 def test_build_plan_scripts_what_applies_and_slots_the_rest() -> None:
     lines = _lines(SPLIT_2, "Keep notes short.", "Elaborate here.")
-    first = _pieces(
-        "*Do not preload a fixed trinity or walk the whole corpus \u2014*", "*resolve only the named entries.*"
+    first = _placed(
+        _pieces(
+            "*Do not preload a fixed trinity or walk the whole corpus \u2014*", "*resolve only the named entries.*"
+        ),
+        (1, 58),
+        (59, 90),
+        joints=(" \u2014 ",),
     )
     atoms = [
         *first,
@@ -485,7 +563,7 @@ def test_build_plan_scripts_what_applies_and_slots_the_rest() -> None:
 
 def _split_plan() -> tuple[Plan, list[str], Atom]:
     lines = _lines("Run the tests; fix every failure.", "", "Keep notes short.")
-    atoms = _pieces("Run the tests;", "fix every failure.")
+    atoms = _placed(_pieces("Run the tests;", "fix every failure."), (0, 14), (15, 33), joints=("; ",))
     plan = build_plan([_op("split")], {F: atoms}, {F: lines})
     assert len(plan.edits) == 1
     return plan, lines, atoms[0]
@@ -558,7 +636,7 @@ def test_mapped_text_is_split_negated_and_conforms(tmp_path: Path) -> None:
     path = tmp_path / "CLAUDE.md"
     text = f"# Rules\n\n{SPLIT_1}\n\n{SPLIT_2}\n\n*Never bypass `reviewer` on cross-release work.*\n"
     path.write_text(text, encoding="utf-8")
-    atoms = list(map_ruleset([path]).atoms)
+    atoms = list(map_ruleset([path], models=no_models()).atoms)
     name = atoms[0].file_path
     lines = _lines(*text.split("\n")[:-1])
     ops = [_op("split", 3), _op("split", 5), _op("negation-form", 7)]
@@ -566,7 +644,7 @@ def test_mapped_text_is_split_negated_and_conforms(tmp_path: Path) -> None:
     assert [(e.line, e.op) for e in plan.edits] == [(3, "split"), (5, "split"), (7, "negation-form")]
     new_text = "".join(apply_edits(lines, plan.edits)[0][i] + "\n" for i in range(len(lines)))
     path.write_text(new_text, encoding="utf-8")
-    new_atoms = list(map_ruleset([path]).atoms)
+    new_atoms = list(map_ruleset([path], models=no_models()).atoms)
     assert check_plan(plan, {name: lines}, {name: new_text.split("\n")[:-1]}, {name: new_atoms}) == []
 
 
@@ -590,3 +668,31 @@ def test_conformance_accepts_a_dedupe_whose_kept_copy_is_in_the_same_file() -> N
     new = ["# T", "- Run `make test` first.", "- Other"]
     assert check_plan(plan, {F: _lines(*old)}, {F: new}, {F: []}) == []
     assert [d.found for d in check_plan(plan, {F: _lines(*old)}, {F: old}, {F: []})] != []
+
+
+def _hedged_pair() -> list[Atom]:
+    first = _atom("Try to lint code;", charge=1, pi=0)
+    first.source_columns, first.hedge_cue = (0, 17), (0, 7)
+    second = _atom("perhaps run tests.", charge=1, pi=1)
+    second.source_columns, second.hedge_cue = (18, 36), (18, 26)
+    return [first, second]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_two_direct_ops_on_one_line_run_the_second_at_its_shifted_columns() -> None:
+    line = "Try to lint code; perhaps run tests, then stop."
+    plan = build_plan([_op("direct", 1, 0), _op("direct", 1, 1)], {F: _hedged_pair()}, {F: _lines(line)})
+    assert [e.after for e in plan.edits] == ["Lint code; run tests, then stop."]
+    assert not plan.slots
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_a_folded_direct_whose_atom_lies_in_the_earlier_edit_becomes_a_slot() -> None:
+    line = "Try to lint code; perhaps run tests, then stop."
+    atoms = _hedged_pair()
+    atoms[1].source_columns = (3, 36)
+    plan = build_plan([_op("direct", 1, 0), _op("direct", 1, 1)], {F: atoms}, {F: _lines(line)})
+    assert [e.after for e in plan.edits] == ["Lint code; perhaps run tests, then stop."]
+    assert [s.pi for s in plan.slots] == [1]

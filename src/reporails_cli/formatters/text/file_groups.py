@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from reporails_cli.core.discovery.file_aliases import compute_same_dir_content_aliases, get_file_aliases
+from reporails_cli.core.discovery.file_aliases import compute_same_dir_content_aliases
 from reporails_cli.core.platform.dto.diagnostics import SEVERITY_RANK, FindingItem, Hint
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
@@ -124,10 +124,12 @@ def build_regime_by_file(result: CombinedResult, project_root: Path) -> dict[str
     return regimes
 
 
-def build_aliases_by_file(project_root: Path, result: CombinedResult) -> dict[str, list[str]]:
+def build_aliases_by_file(
+    project_root: Path, result: CombinedResult, discovered: dict[Path, list[Path]]
+) -> dict[str, list[str]]:
     """Combine discovery-time symlink aliases with display-time same-dir content aliases.
 
-    `get_file_aliases` returns paths the discovery layer already collapsed
+    `discovered` maps each path to the alias paths already collapsed into it
     (symlinks to one inode). `compute_same_dir_content_aliases` runs against
     the union of files referenced by findings — catches manual AGENTS.md /
     CLAUDE.md pairs that classify under different agents but should render as
@@ -136,7 +138,7 @@ def build_aliases_by_file(project_root: Path, result: CombinedResult) -> dict[st
     """
 
     out: dict[str, list[str]] = {}
-    for canonical, alias_paths in get_file_aliases(project_root).items():
+    for canonical, alias_paths in discovered.items():
         key = normalize_finding_path(str(canonical), project_root)
         values = [normalize_finding_path(str(a), project_root) for a in alias_paths]
         if values:

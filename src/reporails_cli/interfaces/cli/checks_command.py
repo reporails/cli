@@ -14,15 +14,15 @@ from collections.abc import Iterable
 import typer
 
 from reporails_cli.core.lint.rule_pages import load_rule_examples, rule_page_summary
-from reporails_cli.core.platform.adapters.rules_query import (
+from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
+from reporails_cli.core.platform.dto.models import CATEGORY_DISPLAY_ORDER, Rule, Severity
+from reporails_cli.core.platform.rules.rules_query import (
     filter_rules_by_capability,
     filter_rules_by_severity,
     list_known_agents,
     load_all_rules,
     sort_rules_for_authoring,
 )
-from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
-from reporails_cli.core.platform.dto.models import CATEGORY_DISPLAY_ORDER, Rule, Severity
 from reporails_cli.core.platform.utils.utils import strip_frontmatter
 from reporails_cli.interfaces.cli.helpers import console
 

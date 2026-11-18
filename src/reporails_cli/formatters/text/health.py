@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 
 from reporails_cli.core.platform.contract.json_value import as_int
 from reporails_cli.core.platform.dto.diagnostics import FileAnalysis
+from reporails_cli.core.platform.utils.utils import SCORE_DECIMALS
 from reporails_cli.formatters.text.display_constants import counted
 
 
@@ -51,8 +52,8 @@ def mean_display_score(analyses: Sequence[FileAnalysis | None]) -> float | None:
         return None
     total_weight = sum(w for _, w in scored)
     if total_weight <= 0:
-        return round(sum(s for s, _ in scored) / len(scored), 1)
-    return round(sum(s * w for s, w in scored) / total_weight, 1)
+        return round(sum(s for s, _ in scored) / len(scored), SCORE_DECIMALS)
+    return round(sum(s * w for s, w in scored) / total_weight, SCORE_DECIMALS)
 
 
 def count_tag(s: SurfaceHealth, count_width: int = 0) -> str:

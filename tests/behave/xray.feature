@@ -58,11 +58,18 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And the page draws a compaction marker for each of the two compactions with the sizes the view holds
 
   @e2e @browser
-  Scenario: The compaction marker's summary control opens the summary in the inspector
+  Scenario: Clicking a compaction stripe opens the details window with the trigger, the sizes, the summary and each file's state
     Given a project with a recorded Claude Code session that compacted twice
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
-    And clicking the first compaction marker's summary control opens that summary in the main agent's inspector
+    And clicking each compaction stripe opens one details window over the canvas holding what the view holds for that compaction
+
+  @e2e @browser
+  Scenario: After a compaction the canvas shows what loaded again as it shows the start, and nothing sits on the stripe
+    Given a project with a session whose root file, a note and an MCP server load again after a compaction
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the canvas draws a source card for each below the compaction stripe as well as at the start
 
   @e2e @browser
   Scenario: Each compaction shows its summary text verbatim with its size in tokens
@@ -78,6 +85,27 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And the session's PostCompact hook payload carrying the summary text is piped into "ails hook"
     Then the printed address is on 127.0.0.1
     And the summary route returns the summary text, and the view, the event log and "ails events" hold none of it
+
+  @e2e
+  Scenario: A compaction that left no summary shows none and the next compaction shows its own
+    Given a project with a recorded Claude Code session whose first compaction left no summary row
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the first compaction offers no summary and the second offers the summary its own boundary links to
+
+  @e2e
+  Scenario: The inspector lists every compaction, one with no summary included, and each opens its details window
+    Given a project with a recorded Claude Code session whose first compaction left no summary row
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the inspector lists both compactions and each row opens that compaction's details window
+
+  @e2e
+  Scenario: Opening a compaction summary reads only that summary's line of the transcript
+    Given a project with a recorded Claude Code session that compacted twice
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the second summary still opens after the first summary's line was blanked once the page had listed both
 
   @e2e
   Scenario: A hook's details show its command, its settings file and its firings, and its output only on request
@@ -391,17 +419,32 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And with the details of "CLAUDE.md" open on each tab, a session that grows redraws no panel whose content is unchanged
 
   @e2e
-  Scenario: A compaction lists each instruction file loaded before it as kept, reloaded or unknown
-    Given a project with a session that compacted after loading three instruction files, recording requests
+  Scenario: A memory note counts as loaded whether it arrived by an at-mention, an edit snippet or a recall
+    Given a project with a session whose only memory note loads are one mention, one edit snippet and one recall
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
-    And the compaction lists the root file reloaded, the file read again kept and the other nested file unknown
-    And the chart's instruction files keep the unsettled file's tokens after the compaction
+    And each of the three notes shows as loaded on the main agent and in the funnel's memory counts
 
   @e2e
-  Scenario: A compaction in a session that recorded no requests cannot settle its nested files
-    Given an older Claude Code session that compacted after loading three instruction files
+  Scenario: A compaction lists each instruction file loaded before it as reloaded, restored, named or only in the summary
+    Given a project with a session that compacted after loading four instruction files, recording requests
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
-    And the compaction lists each nested file as unknown and the root file as reloaded
-    And the chart's instruction files after the compaction still hold each nested file
+    And the compaction lists the root file reloaded, the attached file restored, the named file named and the other nested file summarized
+    And the chart's instruction files after the compaction hold only the reloaded and the restored files
+
+  @e2e
+  Scenario: A compaction in a session that recorded no requests lists the same four states
+    Given an older Claude Code session that compacted after loading four instruction files
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the compaction lists the root file reloaded, the attached file restored, the named file named and the other nested file summarized
+    And the chart's instruction files after the compaction hold only the reloaded and the restored files
+
+  @e2e
+  Scenario: A file attached after a compaction reaches no event record
+    Given a project with a session that compacted after loading four instruction files, recording requests
+    When "ails xray --no-open" is started in the project
+    And the session's PostCompact hook payload is piped into "ails hook"
+    Then the printed address is on 127.0.0.1
+    And the attached, edited and recalled files' text is in no event-log file and no "ails events" output

@@ -4,7 +4,7 @@ import { el, nk, err, sync } from '../dom.js';
 import { clock, k1 } from '../format.js';
 import { typeOf, callIndex, subtreeIds } from '../views.js';
 import { callDetail } from '../api.js';
-import { registerPeek, scrollable } from './details.js';
+import { markOpen, registerPeek, scrollable } from './details.js';
 import { keepFocus, keyFor } from '../focus.js';
 import { vlist, viewHeight, revealRow } from './vlist.js';
 
@@ -255,10 +255,10 @@ export function summaryOf(ix, c) {
 
 function callRow(env, r) {
   const { ix, state } = env, c = r.call;
-  const open = state.peek && state.peek.kind === 'call' && state.peek.id === c.use_id;
-  const b = el('button', `vl-row tb-row tb-calls${c.failed ? ' bad' : ''}${open ? ' on' : ''}`);
+  const b = el('button', `vl-row tb-row tb-calls${c.failed ? ' bad' : ''}`);
   b.type = 'button';
   b.dataset.peek = `call:${c.use_id}`;
+  markOpen(b, state.peek, [b.dataset.peek], 'on');
   const what = summaryOf(ix, c);
   b.title = `${clock(c.t)} ${c.tool} ${what}${c.failed ? ', failed' : ''}`;
   const agent = el('span', 'tb-agent');

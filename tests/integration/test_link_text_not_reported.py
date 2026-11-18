@@ -28,8 +28,8 @@ requires_model = pytest.mark.skipif(not _onnx_path.exists(), reason="Bundled ONN
 @requires_model
 def test_tool_name_in_link_text_is_not_reported_but_a_bare_one_is(tmp_path: Path) -> None:
     from reporails_cli.core.lint.client_checks import run_client_checks
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     doc = tmp_path / "CLAUDE.md"
     doc.write_text(
@@ -40,6 +40,6 @@ def test_tool_name_in_link_text_is_not_reported_but_a_bare_one_is(tmp_path: Path
         "Follow [the style guide](https://example.com/ruff/config) when editing.\n",
         encoding="utf-8",
     )
-    ruleset = map_ruleset([doc], models=get_models(), root=tmp_path, cache_dir=None)
+    ruleset = map_ruleset([doc], models=no_models(), root=tmp_path, cache_dir=None)
     reported = {f.line for f in run_client_checks(ruleset) if f.check_id == "format"}
     assert reported == {7}

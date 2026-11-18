@@ -1,9 +1,10 @@
 // The right column: one agent, always. Nothing selected shows the agent whose view this is; a selected card shows that agent.
 // Sections: header with slot chips, peak context and cost tiles, what was in context, activity, and the output of a subagent.
 import { el, svg, sync } from '../dom.js';
+import { markOpen } from './details.js';
 import { clock, k1, tk, usd, range, plural } from '../format.js';
 import { childrenOf, peakOf, typeOf } from '../views.js';
-import { promptUrl, summaryUrl } from '../api.js';
+import { promptUrl } from '../api.js';
 import { tile } from './nodes/agent.js';
 import { textBlock } from './textblock.js';
 
@@ -22,7 +23,7 @@ function chips(node, env) {
   const row = el('div', 'ix-chips');
   for (const k of env.ix.view.adapter.source_kinds) {
     const s = (node.slots && node.slots[k.key]) || { count: 0, findings: 0 };
-    const chip = el('span', 'chip' + (s.count > 0 ? (s.findings > 0 ? ' find' : ' on') : ''), k.letter);
+    const chip = el('span', 'chip' + (s.count > 0 ? (s.findings > 0 ? ' find' : ' lit') : ''), k.letter);
     const said = `${k.label}: ${s.count > 0 ? `${s.count} ${k.verb}` : 'none'}${s.findings > 0 ? ` · ${s.findings} findings` : ''}`;
     chip.setAttribute('role', 'img');
     chip.setAttribute('aria-label', said);
@@ -51,10 +52,11 @@ function header(node, env, selected, here) {
   return box;
 }
 
-function expand(peek, label) {
+function expand(peek, label, now) {
   const b = el('button', 'ix-expand');
   b.type = 'button';
   b.dataset.peek = peek;
+  markOpen(b, now, [peek]);
   b.setAttribute('aria-label', label);
   b.title = label;
   const s = svg('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
@@ -63,11 +65,11 @@ function expand(peek, label) {
   return b;
 }
 
-function stat(cls, label, value, lines, peek, open) {
+function stat(cls, label, value, lines, peek, open, now) {
   const box = el('div', `ix-tile ${cls}`);
   const top = el('div', 'ix-tl');
   top.append(el('span', 'lb', label));
-  if (peek) top.append(expand(peek, open));
+  if (peek) top.append(expand(peek, open, now));
   box.append(top, el('b', 'big mono', value));
   for (const line of [].concat(lines)) box.append(el('span', 'ix-line', line));
   return box;
@@ -91,12 +93,12 @@ function tiles(node, env) {
   const hit = peakOf(node);
   const cost = node.detail && node.detail.cost;
   box.append(hit
-    ? stat('peak', 'Peak context', k1(hit.reply[1]), `at ${clock(hit.reply[0])}`, `peak:${node.id}`, 'Open peak context details')
+    ? stat('peak', 'Peak context', k1(hit.reply[1]), `at ${clock(hit.reply[0])}`, `peak:${node.id}`, 'Open peak context details', env.state.peek)
     : stat('peak', 'Peak context', '–', 'not known here', null));
   const known = cost && cost.total_usd != null;
   const costLabel = env.ix.view.nodes.length > 1 ? 'Est. cost · this agent' : 'Est. cost';
   box.append(known
-    ? stat('cost', costLabel, usd(cost.total_usd), [[plural(cost.turns, 'turn'), cost.cache_hit_rate == null ? null : `${Math.round(cost.cache_hit_rate * 100)}% cached`].filter(Boolean).join(' · '), ...sessionLines(env.ix.view, node)], `cost:${node.id}`, 'Open est. cost details')
+    ? stat('cost', costLabel, usd(cost.total_usd), [[plural(cost.turns, 'turn'), cost.cache_hit_rate == null ? null : `${Math.round(cost.cache_hit_rate * 100)}% cached`].filter(Boolean).join(' · '), ...sessionLines(env.ix.view, node)], `cost:${node.id}`, 'Open est. cost details', env.state.peek)
     : stat('cost', costLabel, '–', 'not known here', null));
   return box;
 }
@@ -121,6 +123,7 @@ function contextRow(row, node, env, measured) {
   const go = opener(row, node, env);
   if (go && go.source) b.dataset.source = go.source;
   else if (go) b.dataset.peek = go.peek;
+  if (go) markOpen(b, env.state.peek, [go.source ? `src:${go.source}` : go.peek]);
   const rem = !measured && (row.key === 'rest' || row.key === 'builtin');
   const time = row.t != null ? clock(row.t) : rem ? 'remainder' : 'always';
   b.setAttribute('aria-label', `${row.label}, ${row.reason}${row.findings ? `, ${row.findings} findings` : ''}, ${tk(row.tokens_est, true)}${rem ? ' remainder' : ''}. Open details.`);
@@ -207,17 +210,16 @@ function activity(node, env) {
       if (env.opened.has(key)) sec.append(textBlock(env.text, key, promptUrl(p.id)));
     }
   }
-  const summarised = ((env.ix.stations.get(node.id) || { compactions: [] }).compactions).filter(c => c.summary_id);
-  if (summarised.length) {
-    sec.append(el('div', 'ix-sub', 'Compaction summaries'));
-    for (const c of summarised) {
-      const key = `summary:${c.summary_id}`;
+  const held = (env.ix.stations.get(node.id) || { compactions: [] }).compactions;
+  if (held.length) {
+    sec.append(el('div', 'ix-sub', 'Compactions'));
+    for (const c of held) {
       const b = el('button', 'ix-kid');
       b.type = 'button';
-      b.dataset.open = key;
-      b.append(el('span', 'lb', `compaction at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`), el('span', 'mono ix-s', tk(c.summary_tokens, true)));
+      b.dataset.peek = `compaction:${node.id}:${held.indexOf(c)}`;
+      markOpen(b, env.state.peek, [b.dataset.peek]);
+      b.append(el('span', 'lb', `compaction at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`), el('span', 'mono ix-s', c.summary_id ? tk(c.summary_tokens, true) : 'no summary'));
       sec.append(b);
-      if (env.opened.has(key)) sec.append(textBlock(env.text, key, summaryUrl(c.summary_id)));
     }
   }
   const kids = childrenOf(env.ix, node);

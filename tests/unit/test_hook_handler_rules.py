@@ -13,10 +13,12 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.rule_runner import run_m_probes
 from reporails_cli.core.pipeline.assemble import lint_request_local
-from reporails_cli.core.platform.adapters.registry import load_rules, structural_rule_ids
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.pipeline import AssembleInputs
+from reporails_cli.core.platform.rules.registry import load_rules, structural_rule_ids
 
 HANDLER_RULE_SLUGS = {
     "hook-command-has-field",
@@ -59,7 +61,13 @@ def _handler_findings(tmp_path: Path, agent: str, body: str, config_rel: str | N
     """(line, rule) for every per-handler hook finding on the agent's config file."""
     project, files = _project(tmp_path, agent, body, config_rel)
     wanted = _handler_rule_ids(agent)
-    return sorted((f.line, f.rule) for f in run_m_probes(project, files, agent=agent) if f.rule in wanted)
+    return sorted(
+        (f.line, f.rule)
+        for f in run_m_probes(
+            RunContext(), project, files, agent=agent, exclusions=load_run_exclusions(RunContext(), project)
+        )
+        if f.rule in wanted
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -403,7 +411,13 @@ def test_handler_findings_keep_their_message_and_severity(tmp_path: Path, dev_ru
     command_rule = next(
         rule_id for rule_id, rule in load_rules(agent=agent).items() if rule.slug == "hook-command-has-field"
     )
-    found = [f for f in run_m_probes(project, files, agent=agent) if f.rule == command_rule]
+    found = [
+        f
+        for f in run_m_probes(
+            RunContext(), project, files, agent=agent, exclusions=load_run_exclusions(RunContext(), project)
+        )
+        if f.rule == command_rule
+    ]
     expected = (
         "Command handler has no bash, powershell, command, or exec field"
         if agent == "copilot"
@@ -437,7 +451,9 @@ def test_handler_finding_is_sent_as_a_located_entry(tmp_path: Path, dev_rules_di
         body = json.dumps({"gate": {"Stop": [{"matcher": "x", "hooks": [{"type": "command"}]}]}})
     project, files = _project(tmp_path, agent, body)
     inputs = AssembleInputs(
-        m_findings=run_m_probes(project, files, agent=agent),
+        m_findings=run_m_probes(
+            RunContext(), project, files, agent=agent, exclusions=load_run_exclusions(RunContext(), project)
+        ),
         content_findings=[],
         client_findings=[],
         ruleset_map=None,
@@ -445,6 +461,7 @@ def test_handler_finding_is_sent_as_a_located_entry(tmp_path: Path, dev_rules_di
         filter_agents=None,
         effective_agent=agent,
         lint_result=None,
+        project_config=RunContext().project_config(project),
     )
     entries, structural_total = lint_request_local(inputs)
     wanted = _handler_rule_ids(agent)

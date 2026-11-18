@@ -79,6 +79,35 @@ def step_opener(context):
     assert after["source"] == seen["opener"]["source"], (after, seen["opener"])
 
 
+@then("Enter on a compaction stripe opens its details window with one click and Escape returns focus to the stripe")
+def step_stripe_keyboard(context):
+    seen = _a11y(context, "stripe")
+    if seen is None:
+        return
+    assert seen["focused"] and seen["tag"] == "BUTTON", seen
+    assert seen["clicks"] == 1, seen["clicks"]
+    assert seen["title"], seen
+    assert seen["open"]["closePeek"], seen["open"]  # focus moved into the window, onto its close button
+    assert seen["inert"] is True, seen
+    assert seen["closed"], seen
+    after = seen["afterEsc"]
+    assert after["tag"] == "BUTTON" and after["cls"].split()[0] == "compact" and after["inCanvas"], after
+    assert after["peek"].startswith("compaction:"), after
+
+
+@then("a time label, a stretch bar and the Tool calls link inside a compaction stripe's band still receive the pointer")
+def step_stripe_layers(context):
+    seen = _a11y(context, "stripe-layers")
+    if seen is None:
+        return
+    layers = seen["layers"]
+    assert layers["bandBox"][1] > 0, layers
+    assert layers["tick"] and layers["stretch"] and layers["link"], layers
+    assert layers["label"], layers  # the stripe's own label stays clickable
+    away = seen["awayFromLabel"]
+    assert away["reached"] and away["opened"], away  # the band away from its label opens the details window
+
+
 @then("Space on an agent card selects it and its accessible name carries its slot summary")
 def step_space(context):
     seen = _a11y(context, "space")
@@ -135,6 +164,15 @@ def step_borders(context):
         assert item["ratio"] >= 3, item
 
 
+@then("a loaded slot chip's fill reaches 3 to 1 on its card and a chip with nothing loaded has no fill")
+def step_chip_fill(context):
+    seen = _a11y(context, "chip-fill")
+    if seen is None:
+        return
+    assert seen["chips"]["onFill"] >= 3, seen["chips"]
+    assert seen["chips"]["offFill"] == 0, seen["chips"]  # an unloaded chip: fully transparent
+
+
 @then("at a 580 pixel graph column every canvas text renders at least 10.5 pixels")
 def step_scale_text(context):
     seen = _a11y(context, "scale-text", 1220)
@@ -173,3 +211,14 @@ def step_newline_focus(context):
         return
     assert seen["focused"], "no canvas source node carries the line-break id"
     assert seen["after"] == seen["focused"] and seen["drawn"], seen
+
+
+@then("a details window taller than the screen opened at the end of the page keeps its top bar on screen")
+def step_tall_window(context):
+    seen = _a11y(context, "tall-window")
+    if seen is None:
+        return
+    fit = seen["fit"]
+    assert fit["scrollY"] > 0 and fit["scrolls"], fit  # the page was scrolled and the window's body scrolls inside
+    assert fit["top"] >= 0 and fit["closeTop"] >= 0, fit  # the top bar, with the close button, is on screen
+    assert fit["bottom"] <= min(fit["overlayBottom"], fit["viewport"]) + 0.5, fit

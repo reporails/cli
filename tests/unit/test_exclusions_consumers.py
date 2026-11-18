@@ -12,9 +12,14 @@ from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.mechanical.checks_advanced import frontmatter_valid_glob
 from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.adapters.payload import project_payload
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import ClassifiedFile
+from reporails_cli.core.platform.dto.results import MapperConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.policy import preflight
+from tests.fake_daemon import FakeDaemonTransport
+from tests.fake_models import no_models
+from tests.unit.run_args import with_run_exclusions
 
 
 class _Console:
@@ -49,14 +54,14 @@ def test_a_glob_excluded_rule_file_gets_no_glob_finding(tmp_path: Path) -> None:
     for f in (kept, left_out):
         f.write_text('---\npaths:\n  - "nothing/**/*.zzz"\n---\n\nBody.\n', encoding="utf-8")
     args = {"path": ".claude/rules", "require_matches": True}
-    both = frontmatter_valid_glob(tmp_path, args, [])
+    both = frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, args), [])
     assert not both.passed
     assert {loc.split(":")[0] for loc, _ in both.occurrences} == {
         ".claude/rules/kept.md",
         ".claude/rules/left.md",
     }
     checked = [ClassifiedFile(path=kept, file_type="rules", properties={})]
-    only = frontmatter_valid_glob(tmp_path, args, checked)
+    only = frontmatter_valid_glob(tmp_path, with_run_exclusions(tmp_path, args), checked)
     assert {loc.split(":")[0] for loc, _ in only.occurrences} == {".claude/rules/kept.md"}
 
 
@@ -67,12 +72,13 @@ def test_section_suggestions_classify_only_the_checked_set(tmp_path: Path, monke
     from reporails_cli.interfaces.cli.heal import _collect_section_suggestions
 
     project = _gs_project(tmp_path)
-    exclusions = load_run_exclusions(project)
+    exclusions = load_run_exclusions(RunContext(), project)
     seen: list[list[ClassifiedFile]] = []
     monkeypatch.setattr(
         heal_cli, "suggest_missing_sections", lambda _v, _t, classified, _r: seen.append(classified) or []
     )
     _collect_section_suggestions(
+        RunContext(),
         project,
         [project / "CLAUDE.md"],
         RulesetMap(schema_version="1", embedding_model="m", generated_at="t", files=(), atoms=()),
@@ -90,12 +96,13 @@ def test_section_suggestions_classify_only_the_checked_set(tmp_path: Path, monke
 def test_the_heal_pass_receives_the_run_exclusions(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from reporails_cli.interfaces.cli import check_flow
 
-    exclusions = load_run_exclusions(tmp_path)
+    exclusions = load_run_exclusions(RunContext(), tmp_path)
     seen: list[Any] = []
     monkeypatch.setattr(check_flow, "_run_heal_pass", lambda *a, **k: seen.append(a[1].exclusions))
     path = tmp_path / "CLAUDE.md"
     path.write_text("# Demo\n", encoding="utf-8")
     state = SimpleNamespace(
+        models=no_models(),
         inputs=SimpleNamespace(heal=True, dry_run=True),
         pipeline=SimpleNamespace(lint_result=None, funnel_error=None, ruleset_map=None, stage_timer=None),
         render=SimpleNamespace(
@@ -103,6 +110,7 @@ def test_the_heal_pass_receives_the_run_exclusions(monkeypatch: pytest.MonkeyPat
             capability_paths=set(),
             result=SimpleNamespace(reply=SimpleNamespace(notices=(), workflow=None)),
         ),
+        run=RunContext(),
         scope=SimpleNamespace(instruction_files=[path], effective_agent="claude", exclusions=exclusions),
         targets=SimpleNamespace(single_path=None, target=tmp_path, output_format="text"),
     )
@@ -113,9 +121,16 @@ def test_the_heal_pass_receives_the_run_exclusions(monkeypatch: pytest.MonkeyPat
 @pytest.mark.unit
 @pytest.mark.requires_model
 @pytest.mark.subsys_heal
-def test_heal_apply_writes_only_files_the_run_mapped(tmp_path: Path) -> None:
+def test_a_run_maps_only_the_files_it_is_given(tmp_path: Path) -> None:
     project = _gs_project(tmp_path)
-    m = map_instruction_files(project, [project / "CLAUDE.md"], spawn_daemon=False)
+    m = map_instruction_files(
+        project,
+        [project / "CLAUDE.md"],
+        spawn_daemon=False,
+        mapper=MapperConfig(),
+        daemon=FakeDaemonTransport(),
+        models=no_models(),
+    )
     files = {Path(a.file_path).name for a in m.atoms}
     assert files == {"CLAUDE.md"}
 
@@ -123,8 +138,22 @@ def test_heal_apply_writes_only_files_the_run_mapped(tmp_path: Path) -> None:
 def _route_fixture(tmp_path: Path) -> tuple[Path, int, int]:
     """A project whose `CLAUDE.md` imports `@ext/big.md`; the atoms with and without `ext/` as its own file."""
     project = _gs_project(tmp_path, big_lines=40)
-    with_ext = map_instruction_files(project, [project / "CLAUDE.md", project / "ext" / "big.md"], spawn_daemon=False)
-    alone = map_instruction_files(project, [project / "CLAUDE.md"], spawn_daemon=False)
+    with_ext = map_instruction_files(
+        project,
+        [project / "CLAUDE.md", project / "ext" / "big.md"],
+        spawn_daemon=False,
+        mapper=MapperConfig(),
+        daemon=FakeDaemonTransport(),
+        models=no_models(),
+    )
+    alone = map_instruction_files(
+        project,
+        [project / "CLAUDE.md"],
+        spawn_daemon=False,
+        mapper=MapperConfig(),
+        daemon=FakeDaemonTransport(),
+        models=no_models(),
+    )
     return project, len(project_payload(with_ext, project)["atoms"]), len(project_payload(alone, project)["atoms"])
 
 
@@ -137,12 +166,26 @@ def test_route_names_the_folder_whose_exclusion_brings_the_next_run_under_the_ca
     project, n_with, n_alone = _route_fixture(tmp_path)
     assert n_with > n_alone
     monkeypatch.setattr(preflight, "UNIVERSAL_ATOM_CAP", n_alone)
-    both = map_instruction_files(project, [project / "CLAUDE.md", project / "ext" / "big.md"], spawn_daemon=False)
+    both = map_instruction_files(
+        project,
+        [project / "CLAUDE.md", project / "ext" / "big.md"],
+        spawn_daemon=False,
+        mapper=MapperConfig(),
+        daemon=FakeDaemonTransport(),
+        models=no_models(),
+    )
     err = preflight.preflight_oversized(project_payload(both, project), has_api_key=False)
     assert err is not None
     assert err.exclude_route == ("ext",)
     # The next run, with `ext` left out, checks CLAUDE.md alone (the import still counts inside it).
-    next_run = map_instruction_files(project, [project / "CLAUDE.md"], spawn_daemon=False)
+    next_run = map_instruction_files(
+        project,
+        [project / "CLAUDE.md"],
+        spawn_daemon=False,
+        mapper=MapperConfig(),
+        daemon=FakeDaemonTransport(),
+        models=no_models(),
+    )
     assert preflight.preflight_oversized(project_payload(next_run, project), has_api_key=False) is None
 
 
@@ -152,7 +195,14 @@ def test_route_names_the_folder_whose_exclusion_brings_the_next_run_under_the_ca
 def test_spliced_bulk_alone_over_the_cap_names_no_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project, _n_with, n_alone = _route_fixture(tmp_path)
     monkeypatch.setattr(preflight, "UNIVERSAL_ATOM_CAP", n_alone - 1)
-    alone = map_instruction_files(project, [project / "CLAUDE.md"], spawn_daemon=False)
+    alone = map_instruction_files(
+        project,
+        [project / "CLAUDE.md"],
+        spawn_daemon=False,
+        mapper=MapperConfig(),
+        daemon=FakeDaemonTransport(),
+        models=no_models(),
+    )
     err = preflight.preflight_oversized(project_payload(alone, project), has_api_key=False)
     assert err is not None
     assert err.exclude_route == ()

@@ -14,6 +14,7 @@ from pathlib import Path
 from reporails_cli.core.mapper.imports import import_refs, import_target
 from reporails_cli.core.mapper.structure import link_targets, strip_anchor
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.utils.file_read import read_file_text
 
 MAX_REACH = 50
 
@@ -49,7 +50,7 @@ def _resolve(ref: str, imp: bool, file_path: Path, root: Path, root_real: Path) 
 def file_reach(file_path: Path, root: Path, tokens: list[str]) -> tuple[str, ...]:
     """Sorted, deduped paths of existing files and folders in `root` that `file_path` points at."""
     try:
-        text = file_path.read_text(encoding="utf-8")
+        text = read_file_text(file_path)
     except (OSError, UnicodeDecodeError):
         text = ""
     root_real = root.resolve()

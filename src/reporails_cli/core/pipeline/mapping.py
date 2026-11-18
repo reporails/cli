@@ -46,12 +46,15 @@ from reporails_cli.core.mapper.daemon_client import (
     serves_this_code,
 )
 from reporails_cli.core.mapper.full_map_cache import FullMapCache, compute_identity
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.mapper.reach import record_reach
 from reporails_cli.core.mapper.skills import record_skills
 from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
-from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.config.run_context import RunContext
+from reporails_cli.core.platform.contract.http_get import HttpGet
 from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
 from reporails_cli.core.platform.dto.pipeline import ScopeDiscovery
+from reporails_cli.core.platform.dto.ports import DaemonTransport
 from reporails_cli.core.platform.dto.results import MapperConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.observability.log_levels import quiet_loggers
@@ -61,6 +64,7 @@ logger = logging.getLogger(__name__)
 
 
 def discover_scope(
+    run: RunContext,
     target: Path,
     agent: str,
     exclude_dirs: list[str] | None,
@@ -80,25 +84,26 @@ def discover_scope(
     keeps every pattern the user set. A pass that lists no files records nothing.
     """
 
-    exclusions = with_named(load_run_exclusions(target, exclude_dirs, exclude_files), named)
-    detected, resolved, files = _scan(target, agent, exclusions, scan_files)
+    exclusions = with_named(load_run_exclusions(run, target, exclude_dirs, exclude_files), named)
+    detected, resolved, files = _scan(run, target, agent, exclusions, scan_files)
     excluded = record_patterns(exclusions, narrowed=narrowed) if scan_files else ((), ())
     return ScopeDiscovery(detected, *resolved, files, excluded, exclusions)
 
 
 def _scan(
-    target: Path, agent: str, exclusions: RunExclusions, scan_files: bool
+    run: RunContext, target: Path, agent: str, exclusions: RunExclusions, scan_files: bool
 ) -> tuple[list[DetectedAgent], tuple[str, bool, bool, list[DetectedAgent]], list[Path]]:
     """Detect agents, resolve the effective agent and its filtered agents, and list the files under one dir cache."""
 
     with shared_dir_listings():
-        detected = detect_agents(target)
-        resolved = resolve_agent_filters(agent, detected, target, exclusions)
-        files = get_all_scannable_files(target, agents=resolved[3]) if scan_files else []
+        detected = detect_agents(run, target)
+        resolved = resolve_agent_filters(run, agent, detected, target, exclusions)
+        files = get_all_scannable_files(run, target, agents=resolved[3]) if scan_files else []
     return detected, resolved, files
 
 
 def resolve_agent_filters(
+    run: RunContext,
     agent: str,
     all_detected: list[DetectedAgent],
     target: Path,
@@ -123,7 +128,7 @@ def resolve_agent_filters(
     if explicit:
         filtered = filter_agents_by_id(all_detected, effective)
         if not filtered:
-            filtered = [d for d in (detect_single_agent(target, effective),) if d is not None]
+            filtered = [d for d in (detect_single_agent(run, target, effective),) if d is not None]
     else:
         filtered = list(all_detected)
     exclusions = exclusions or no_exclusions(target)
@@ -132,17 +137,20 @@ def resolve_agent_filters(
         effective,
         assumed,
         mixed,
-        _place_named(filtered, all_detected, exclusions, effective, target, explicit=explicit),
+        _place_named(
+            run, filtered, all_detected, exclusions, effective_agent=effective, target=target, explicit=explicit
+        ),
     )
 
 
 def _place_named(
+    run: RunContext,
     filtered: list[DetectedAgent],
     detected: list[DetectedAgent],
     exclusions: RunExclusions,
+    *,
     effective_agent: str,
     target: Path,
-    *,
     explicit: bool,
 ) -> list[DetectedAgent]:
     """`filtered` plus the named files that a user pattern matches yet no directory walk listed.
@@ -167,8 +175,8 @@ def _place_named(
     for path in wanted:
         found = listed.get(path)
         if found is None:
-            kind = _kind_of(path, effective_agent, target)
-            if kind is None and explicit and _claimed_by_other(path, effective_agent, target):
+            kind = _kind_of(run, path, effective_agent, target)
+            if kind is None and explicit and _claimed_by_other(run, path, effective_agent, target):
                 continue
             found = (effective_agent, kind or "instruction_files", path)
         owner, kind, listed_path = found
@@ -208,28 +216,28 @@ def _by_resolved_path(agents: list[DetectedAgent]) -> dict[Path, tuple[str, str,
 _KINDS = ("instruction_files", "rule_files", "config_files")
 
 
-def _claimed_by_other(path: Path, agent: str, target: Path) -> bool:
+def _claimed_by_other(run: RunContext, path: Path, agent: str, target: Path) -> bool:
     """True when the file types of a known agent other than `agent` classify `path`."""
 
-    return any(_claims(path, other, target) for other in get_known_agents() if other != agent)
+    return any(_claims(run, path, other, target) for other in get_known_agents() if other != agent)
 
 
-def is_listed_file(path: Path, target: Path) -> bool:
+def is_listed_file(run: RunContext, path: Path, target: Path) -> bool:
     """True when some known agent's file types classify `path` as an instruction, rule or config file under `target`."""
 
-    return any(_claims(path, agent, target) for agent in get_known_agents())
+    return any(_claims(run, path, agent, target) for agent in get_known_agents())
 
 
-def _claims(path: Path, agent: str, target: Path) -> bool:
+def _claims(run: RunContext, path: Path, agent: str, target: Path) -> bool:
     """True when the file types of `agent` classify `path`; False when they cannot be read."""
 
     try:
-        return _classified_kind(path, agent, target) is not None
+        return _classified_kind(run, path, agent, target) is not None
     except (OSError, ValueError):
         return False
 
 
-def _kind_of(path: Path, agent: str, target: Path) -> str | None:
+def _kind_of(run: RunContext, path: Path, agent: str, target: Path) -> str | None:
     """The file list (``instruction_files``, ``rule_files`` or ``config_files``) `path`'s type maps to.
 
     ``None`` when the agent's file types do not classify `path`; ``instruction_files`` when they
@@ -237,15 +245,15 @@ def _kind_of(path: Path, agent: str, target: Path) -> str | None:
     """
 
     try:
-        return _classified_kind(path, agent, target)
+        return _classified_kind(run, path, agent, target)
     except (OSError, ValueError):
         return "instruction_files"
 
 
-def _classified_kind(path: Path, agent: str, target: Path) -> str | None:
+def _classified_kind(run: RunContext, path: Path, agent: str, target: Path) -> str | None:
     """Like `_kind_of`, but raises OSError or ValueError when the agent's file types cannot be read."""
 
-    declarations = load_file_types(agent, project_root=target)
+    declarations = load_file_types(agent, config=run.project_config(target))
     classified = classify_files(target, [path], declarations)
     if not classified:
         return None
@@ -261,9 +269,11 @@ def _classified_kind(path: Path, agent: str, target: Path) -> str | None:
 
 
 def apply_generic_scan(
+    run: RunContext,
     target: Path,
     instruction_files: list[Path],
     agent: str,
+    *,
     generic_scanning: bool,
     exclusions: RunExclusions | None = None,
 ) -> tuple[list[Path], dict[str, str]]:
@@ -286,7 +296,7 @@ def apply_generic_scan(
         return [], {}
 
     try:
-        file_types = load_file_types(agent, project_root=target)
+        file_types = load_file_types(agent, config=run.project_config(target))
         with shared_dir_listings():
             classified = classify_files(
                 target, list(instruction_files), file_types, generic_scanning=True, exclusions=exclusions
@@ -379,6 +389,9 @@ def map_instruction_files(
     progress: Callable[[str], None] | None = None,
     spawn_daemon: bool = True,
     filtered_agents: list[DetectedAgent] | None = None,
+    mapper: MapperConfig,
+    daemon: DaemonTransport,
+    models: Models,
 ) -> RulesetMap | None:
     """Map instruction files via the whole-map cache, else the daemon, else in-process.
 
@@ -408,18 +421,16 @@ def map_instruction_files(
         emit = progress if progress is not None else (lambda _msg: None)
 
         full_cache = FullMapCache(get_global_cache_dir())
-        identity = compute_identity(
-            list(instruction_files), root=target, segmentation=get_project_config(target).mapper.segmentation
-        )
+        identity = compute_identity(list(instruction_files), root=target, segmentation=mapper.segmentation)
         cached = full_cache.get(identity)
         if cached is not None:
             _apply_run_context(cached, filtered_agents, target)
             return cached
 
-        daemon_status = _resolve_daemon(emit, spawn_daemon=spawn_daemon)
+        daemon_status = _resolve_daemon(daemon, emit, models.fetch, spawn_daemon=spawn_daemon)
 
         ruleset_map = _map_via_daemon_or_process(
-            daemon_status, list(instruction_files), target, get_project_config(target).mapper, emit
+            daemon, daemon_status, list(instruction_files), target, models, mapper_cfg=mapper, emit=emit
         )
         if ruleset_map is not None:
             full_cache.put(identity, ruleset_map)  # the map as mapped; a later run with other agents decides again
@@ -427,7 +438,9 @@ def map_instruction_files(
         return ruleset_map
 
 
-def _resolve_daemon(emit: Callable[[str], None], *, spawn_daemon: bool = True) -> DaemonStatus:
+def _resolve_daemon(
+    transport: DaemonTransport, emit: Callable[[str], None], fetch: HttpGet, *, spawn_daemon: bool = True
+) -> DaemonStatus:
     """Attach to (or, when allowed, start) the global mapper daemon; return its status.
 
     When ``spawn_daemon`` is False this only ever attaches to an already-running daemon
@@ -436,12 +449,12 @@ def _resolve_daemon(emit: Callable[[str], None], *, spawn_daemon: bool = True) -
     """
     if not spawn_daemon:
         try:
-            pong = ping() if is_daemon_running() else None
+            pong = ping(transport) if is_daemon_running() else None
             attached = serves_this_code(pong)
             if pong is not None and not attached and runs_older_code(pong):
                 # Left over from an older version: retire it so it does not linger; the next
                 # check that may start a daemon starts this version's.
-                retire_daemon(pong.get("pid"))
+                retire_daemon(transport, pong.get("pid"))
         except OSError:
             attached = False
         if not attached:
@@ -450,7 +463,7 @@ def _resolve_daemon(emit: Callable[[str], None], *, spawn_daemon: bool = True) -
         return DaemonStatus.ATTACHED
 
     try:
-        status = ensure_daemon(emit=emit)
+        status = ensure_daemon(transport, fetch, emit=emit)
     except (ImportError, OSError):
         return DaemonStatus.UNAVAILABLE
 
@@ -464,7 +477,14 @@ def _resolve_daemon(emit: Callable[[str], None], *, spawn_daemon: bool = True) -
 
 
 def _map_via_daemon_or_process(
-    daemon_status: DaemonStatus, files: list[Path], target: Path, mapper_cfg: MapperConfig, emit: Callable[[str], None]
+    transport: DaemonTransport,
+    daemon_status: DaemonStatus,
+    files: list[Path],
+    target: Path,
+    models: Models,
+    *,
+    mapper_cfg: MapperConfig,
+    emit: Callable[[str], None],
 ) -> RulesetMap | None:
     """Map via the daemon when attached, else in-process with sub-logger noise quieted."""
 
@@ -475,19 +495,22 @@ def _map_via_daemon_or_process(
         # second, redundant model load) while the freshly-spawned daemon warms a copy it never
         # serves for this run. In-process stays the fallback below only when the daemon is
         # UNAVAILABLE or the round-trip returns None.
-        ruleset_map: RulesetMap | None = map_ruleset_via_daemon(files, target, progress=emit)
+        ruleset_map: RulesetMap | None = map_ruleset_via_daemon(
+            transport, files, target, mapper_cfg.segmentation, progress=emit
+        )
         if ruleset_map is not None:
             return ruleset_map
         emit("Restarting Reporails...")
 
     emit("Loading tools...")
-    return _map_in_process(files, target, mapper_cfg.segmentation, progress=emit)
+    return _map_in_process(files, target, mapper_cfg.segmentation, models, progress=emit)
 
 
 def _map_in_process(
     instruction_files: list[Path],
     root: Path,
     segmentation: str,
+    models: Models,
     progress: Callable[[str], None] | None = None,
 ) -> RulesetMap | None:
     """Run the mapper in-process, quieting known-noisy loader logs. Returns RulesetMap or None.
@@ -519,6 +542,7 @@ def _map_in_process(
                 root=root,
                 cache_dir=get_global_cache_dir(),
                 segmentation=segmentation,
+                models=models,
                 progress=progress,
             )
     except (ImportError, RuntimeError) as exc:

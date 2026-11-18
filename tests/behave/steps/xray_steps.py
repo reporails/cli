@@ -446,13 +446,48 @@ def step_summaries_on_page(context):
         assert _k1(len(text) // 4) in row, (row, len(text) // 4)
 
 
-@then("clicking the first compaction marker's summary control opens that summary in the main agent's inspector")
-def step_marker_opens_summary(context):
-    seen = _layout_script(context, "summarylink")
-    if seen is None:
-        return
-    assert seen["ready"], "the page did not draw"
-    assert seen["texts"] == [SUMMARIES[0]], seen["texts"]
+FILE_STATE_WORDS = {
+    "restored": "kept in the messages the compaction preserved",
+    "pending": "settles at the next reply",
+    "named": "named only: the agent must read it again",
+    "summarized": "only in the summary",
+}
+
+
+@then(
+    "clicking each compaction stripe opens one details window over the canvas "
+    "holding what the view holds for that compaction"
+)
+def step_stripe_opens_window(context):
+    token = re.search(r'name="xray-token" content="([^"]+)"', _get(context.url)[1]).group(1)
+    view = json.loads(_get(context.url + "view", token)[1])
+    held = next(s["compactions"] for s in view["stations"] if s["node"] == "main")
+    labels = {item["id"]: item["label"] for item in view["sources"]}
+    assert any(item["files"] for item in held), held  # the window's file rows are compared against real rows
+    for index, item in enumerate(held):
+        seen = _layout_script(context, "stripe", str(index))
+        if seen is None:
+            return
+        assert seen["ready"], "the page did not draw"
+        assert [s["peek"] for s in seen["stripes"]] == [f"compaction:main:{i}" for i in range(len(held))], seen[
+            "stripes"
+        ]
+        assert item["trigger"] in seen["stripes"][index]["name"], seen["stripes"][index]
+        assert seen["dialogs"] == 1 and seen["over"], seen  # one details frame, no second dialog
+        assert item["trigger"] in seen["dialog"], seen["dialog"]
+        assert f"{_k1(item['before'])} \u2192 {_k1(item['after'])}" in seen["dialog"], seen["dialog"]
+        assert seen["summary"] == SUMMARIES[index], seen["summary"]
+        assert _k1(item["summary_tokens"]) in seen["dialog"], seen["dialog"]
+        not_loaded = [f for f in item["files"] if f["state"] != "reloaded"]  # a reloaded file has its card below
+        assert seen["files"] == [f"{labels[f['source']]} \u00b7 {FILE_STATE_WORDS[f['state']]}" for f in not_loaded]
+        assert ("Not loaded again" in seen["dialog"]) == bool(not_loaded), seen["dialog"]
+        if not not_loaded:
+            line = (
+                "Every instruction file loaded before it came back; each is drawn below the stripe."
+                if item["files"]
+                else "No instruction file was loaded before it."
+            )
+            assert line in seen["dialog"], seen["dialog"]
 
 
 @then('the summary route returns the summary text, and the view, the event log and "ails events" hold none of it')
@@ -877,7 +912,7 @@ STUB_SESSIONS = [
     {"session": "sess-ccc", "started_at": "2026-10-26T08:05:30Z", "length_s": 3725.0, "subagents": 1},
 ]
 STUB_PROMPTS = {s["session"]: f"first prompt of {s['session']}" for s in STUB_SESSIONS}
-SESSION_ROUTES = ("/view", "/peek", "/brief", "/system", "/prompt", "/call", "/sessions", "/first-prompt")
+SESSION_ROUTES = ("/view", "/peek", "/brief", "/output", "/system", "/prompt", "/call", "/sessions", "/first-prompt")
 
 
 class _FixtureHandler(BaseHTTPRequestHandler):
@@ -989,6 +1024,7 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         texts = {
             "/call": CALLS.get(key, ""),
             "/brief": f"task text of {key}",
+            "/output": f"handed-back text of {key}",
             "/prompt": f"prompt text of {key}",
             "/peek": f"text of {key}",
         }
@@ -1811,43 +1847,38 @@ def step_reduced_motion(context):
 # ---- the state each instruction file is in after a compaction ----
 
 
+ATTACHED_TEXT = "ATTACHED-FILE-TEXT: the text of a file Claude Code put back after the summary."
+
+
+def _file_attachment(project: Path, name: str) -> dict:
+    path = str(project / name)
+    content = {"type": "text", "file": {"filePath": path, "content": ATTACHED_TEXT, "numLines": 1}}
+    return {"type": "file", "filename": path, "content": content, "displayPath": name}
+
+
 def _write_compacted_session(context, *, recorded: bool) -> None:
-    """A session that loaded its root file and two nested ones, compacted, reloaded the root file, and whose first
-    request after the compaction replays the read result of one nested file (rows with request layouts only when
-    `recorded`)."""
+    """A session that loaded its root file and three nested ones, compacted, reloaded the root file, and after the
+    compaction had one nested file attached whole, one attached by name only and one not attached (rows with request
+    layouts only when `recorded`)."""
     context.project = build_project(context.tmpdir / "proj").resolve()
     project = context.project
     version = "2.1.309" if recorded else "2.1.301"
-    for name, size in (("CLAUDE.md", 400), ("sub/CLAUDE.md", 8000), ("kept/CLAUDE.md", 400)):
+    for name, size in (
+        ("CLAUDE.md", 400),
+        ("restored/CLAUDE.md", 400),
+        ("named/CLAUDE.md", 8000),
+        ("sub/CLAUDE.md", 8000),
+    ):
         target = project / name
         target.parent.mkdir(exist_ok=True)
         target.write_text("x" * size + "\n", encoding="utf-8")
-    kept = str(project / "kept" / "CLAUDE.md")
-    ask = "synthetic prompt"
-    blobs = {
-        "blob-summary": {"role": "user", "content": "synthetic summary"},
-        "blob-use": {
-            "role": "assistant",
-            "content": [{"type": "tool_use", "id": "toolu_kept", "name": "Read", "input": {"file_path": kept}}],
-        },
-        "blob-result": {
-            "role": "user",
-            "content": [{"type": "tool_result", "tool_use_id": "toolu_kept", "content": "synthetic file text"}],
-        },
-    }
     loads = {"type": "instructions", "files": [{"path": str(project / "CLAUDE.md"), "type": "Project"}]}
-    rows = [
-        _row("attachment", 1, version, project, attachment=loads),
-        _row(
-            "attachment",
-            2,
-            version,
-            project,
-            attachment={"type": "nested_memory", "path": str(project / "sub" / "CLAUDE.md")},
-        ),
-        _row("attachment", 3, version, project, attachment={"type": "nested_memory", "path": kept}),
-    ]
+    rows = [_row("attachment", 1, version, project, attachment=loads)]
+    for second, name in enumerate(("restored", "named", "sub"), start=2):
+        nested = {"type": "nested_memory", "path": str(project / name / "CLAUDE.md")}
+        rows.append(_row("attachment", second, version, project, attachment=nested))
     if recorded:
+        ask = "synthetic prompt"
         rows += [
             _shape_row("shape-main", "s" * 2000),
             _row("user", 4, version, project, message={"role": "user", "content": ask}),
@@ -1856,11 +1887,25 @@ def _write_compacted_session(context, *, recorded: bool) -> None:
     first = _reply(6, version, project, "msg_1", [{"type": "text", "text": "ok"}], _usage(9000, 100), "req-1")
     second = _reply(23, version, project, "msg_2", [{"type": "text", "text": "ok"}], _usage(900, 100), "req-2")
     boundary = _row("system", 20, version, project, subtype="compact_boundary", compactMetadata={"trigger": "manual"})
-    rows += [first, boundary, _row("attachment", 20, version, project, attachment=loads)]
+    reference = {
+        "type": "compact_file_reference",
+        "filename": str(project / "named" / "CLAUDE.md"),
+        "displayPath": "named",
+    }
+    rows += [
+        first,
+        boundary,
+        _row("attachment", 20, version, project, attachment=loads),
+        _row("attachment", 20, version, project, attachment=_file_attachment(project, "restored/CLAUDE.md")),
+        _row("attachment", 20, version, project, attachment=reference),
+        _row("attachment", 21, version, project, attachment=_edited_text_attachment(project / "edited.txt")),
+        _row("attachment", 21, version, project, attachment=_relevant_memories_attachment(project / "recalled.txt")),
+    ]
     if recorded:
-        rows += [{"type": "api-request-blob", "hash": name, "message": message} for name, message in blobs.items()]
-        tail = ["blob-summary", "blob-use", "blob-result"]
-        rows.append(_request_row("req-2", "shape-main", 0, tail, 22, project))
+        rows.append(
+            {"type": "api-request-blob", "hash": "blob-summary", "message": {"role": "user", "content": "summary"}}
+        )
+        rows.append(_request_row("req-2", "shape-main", 0, ["blob-summary"], 22, project))
     rows.append(second)
     if not recorded:
         for row in rows:
@@ -1870,12 +1915,128 @@ def _write_compacted_session(context, *, recorded: bool) -> None:
     (folder / "session.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
 
 
-@given("a project with a session that compacted after loading three instruction files, recording requests")
+EDIT_SNIPPET_TEXT = "EDIT-SNIPPET-TEXT: the lines Claude Code showed after an edit."
+RECALLED_TEXT = "RECALLED-NOTE-TEXT: a note Claude Code recalled for the turn."
+NOTE_NAMES = ("mentioned", "edited", "recalled")
+
+
+def _edited_text_attachment(path: Path) -> dict:
+    return {"type": "edited_text_file", "filename": str(path), "snippet": EDIT_SNIPPET_TEXT}
+
+
+def _relevant_memories_attachment(*paths: Path) -> dict:
+    notes = [{"path": str(path), "content": RECALLED_TEXT, "mtimeMs": 1.0e12} for path in paths]
+    return {"type": "relevant_memories", "memories": notes}
+
+
+@given("a project with a session whose only memory note loads are one mention, one edit snippet and one recall")
+def step_notes_reach_context(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    project = context.project
+    folder = context.home / ".claude" / "projects" / claude_project_folder_name(project)
+    memory = folder / "memory"
+    memory.mkdir(parents=True)
+    links = "".join(f"- [{name}]({name}.md) - a note\n" for name in NOTE_NAMES)
+    (memory / "MEMORY.md").write_text("# Memory\n" + links, encoding="utf-8")
+    for name in NOTE_NAMES:
+        (memory / f"{name}.md").write_text(f"---\ntype: feedback\n---\n{name} note\n", encoding="utf-8")
+    version = "2.1.311"
+    rows = [
+        _row("attachment", 1, version, project, attachment=_file_attachment(memory.parent, "memory/mentioned.md")),
+        _row("attachment", 2, version, project, attachment=_edited_text_attachment(memory / "edited.md")),
+        _row("attachment", 3, version, project, attachment=_relevant_memories_attachment(memory / "recalled.md")),
+        _reply(4, version, project, "msg_1", [{"type": "text", "text": "ok"}], _usage(900, 100), "req-1"),
+    ]
+    for row in rows:
+        row.pop("requestRef", None)
+    folder.joinpath("session.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+
+@then("each of the three notes shows as loaded on the main agent and in the funnel's memory counts")
+def step_notes_loaded(context):
+    view = _session_view(context)
+    by_name = {item["name"]: item for item in view["sources"] if item["kind"] == "memory"}
+    ids = {name: by_name[name]["id"] for name in NOTE_NAMES}
+    main = next(station for station in view["stations"] if station["node"] == "main")
+    loaded = {load["source"] for load in main["loads"]}
+    assert set(ids.values()) <= loaded, (ids, loaded)
+    assert all(by_name[name]["availability"] == "loaded" for name in NOTE_NAMES), by_name
+    (row,) = [item for item in view["funnel"] if item["kind"] == "memory"]
+    assert row["loaded"] == len(NOTE_NAMES) and row["used"] == len(NOTE_NAMES), row
+    card = next(node for node in view["nodes"] if node["id"] == "main")
+    assert card["slots"]["memory"]["count"] == len(NOTE_NAMES), card["slots"]
+
+
+@given("a project with a session whose root file, a note and an MCP server load again after a compaction")
+def step_reload_after_compaction(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    project = context.project
+    folder = context.home / ".claude" / "projects" / claude_project_folder_name(project)
+    memory = folder / "memory"
+    memory.mkdir(parents=True)
+    (memory / "MEMORY.md").write_text("# Memory\n- [kept](kept.md) - a note\n", encoding="utf-8")
+    (memory / "kept.md").write_text("---\ntype: feedback\n---\nkept note\n", encoding="utf-8")
+    (project / "CLAUDE.md").write_text("x" * 400 + "\n", encoding="utf-8")
+    version = "2.1.301"
+    loads = {"type": "instructions", "files": [{"path": str(project / "CLAUDE.md"), "type": "Project"}]}
+    note = _relevant_memories_attachment(memory / "kept.md")
+    boundary = _row("system", 20, version, project, subtype="compact_boundary", compactMetadata={"trigger": "manual"})
+    servers = {"type": "mcp_instructions_delta", "addedNames": ["docs"], "addedBlocks": ["use docs " * 20]}
+    hook = {
+        "type": "hook_success",
+        "hookName": "SessionStart:compact",
+        "hookEvent": "SessionStart",
+        "command": "echo restart",
+        "exitCode": 0,
+        "durationMs": 5,
+        "stdout": "",
+        "stderr": "",
+        "content": "restart note " * 10,
+    }
+    # Claude Code stamps the compaction's own session-start loads a moment before the boundary row.
+    early = {"timestamp": "2026-10-31T10:00:19.500Z"}
+    rows = [
+        _row("attachment", 1, version, project, attachment=loads),
+        _row("attachment", 1, version, project, attachment=servers),
+        _row("attachment", 2, version, project, attachment=note),
+        _reply(6, version, project, "msg_1", [{"type": "text", "text": "ok"}], _usage(9000, 100), "req-1"),
+        _row("attachment", 19, version, project, attachment=servers, **early),
+        _row("attachment", 19, version, project, attachment=hook, **early),
+        boundary,
+        _row("attachment", 20, version, project, attachment=loads),
+        _row("attachment", 21, version, project, attachment=note),
+        _reply(40, version, project, "msg_2", [{"type": "text", "text": "ok"}], _usage(900, 100), "req-2"),
+    ]
+    for row in rows:
+        row.pop("requestRef", None)
+    folder.joinpath("session.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+
+@then("the canvas draws a source card for each below the compaction stripe as well as at the start")
+def step_cards_restart(context):
+    seen = _layout_script(context, "restart")
+    if seen is None:
+        return
+    assert seen["ready"], "the page did not draw"
+    assert len(seen["stripes"]) == 1, seen["stripes"]
+    stripe = seen["stripes"][0]
+    assert len(seen["sources"]) == 3, seen["sources"]  # the root file, the note and the MCP server
+    for source in seen["sources"]:
+        above = [c for c in seen["cards"] if c["source"] == source and c["bottom"] <= stripe["top"]]
+        below = [c for c in seen["cards"] if c["source"] == source and c["top"] >= stripe["bottom"]]
+        assert above and below, (source, seen["cards"], stripe)
+    assert seen["stations"] and all(s["top"] >= stripe["bottom"] for s in seen["stations"]), (seen["stations"], stripe)
+    assert not seen["overlaps"], (seen["overlaps"], stripe)
+    assert seen["stripeBefore"] == seen["stripeHidden"], (seen["stripeBefore"], seen["stripeHidden"])
+    assert seen["belowCard"] and seen["focusedCard"] == seen["belowCard"], (seen["belowCard"], seen["focusedCard"])
+
+
+@given("a project with a session that compacted after loading four instruction files, recording requests")
 def step_compacted_recorded(context):
     _write_compacted_session(context, recorded=True)
 
 
-@given("an older Claude Code session that compacted after loading three instruction files")
+@given("an older Claude Code session that compacted after loading four instruction files")
 def step_compacted_unrecorded(context):
     _write_compacted_session(context, recorded=False)
 
@@ -1888,29 +2049,101 @@ def _file_states(context) -> dict[str, str]:
     return {by_id[item["source"]]: item["state"] for item in compaction["files"]}
 
 
-@then("the compaction lists the root file reloaded, the file read again kept and the other nested file unknown")
-def step_states_recorded(context):
+@then(
+    "the compaction lists the root file reloaded, the attached file restored, the named file named "
+    "and the other nested file summarized"
+)
+def step_states(context):
     states = _file_states(context)
-    assert states == {"CLAUDE.md": "reloaded", "kept/CLAUDE.md": "kept", "sub/CLAUDE.md": "unknown"}, states
+    assert states == {
+        "CLAUDE.md": "reloaded",
+        "restored/CLAUDE.md": "restored",
+        "named/CLAUDE.md": "named",
+        "sub/CLAUDE.md": "summarized",
+    }, states
 
 
-@then("the compaction lists each nested file as unknown and the root file as reloaded")
-def step_states_unrecorded(context):
-    states = _file_states(context)
-    assert states == {"CLAUDE.md": "reloaded", "kept/CLAUDE.md": "unknown", "sub/CLAUDE.md": "unknown"}, states
-
-
-@then("the chart's instruction files keep the unsettled file's tokens after the compaction")
-def step_chart_drops_file(context):
+@then("the chart's instruction files after the compaction hold only the reloaded and the restored files")
+def step_chart_holds_in_context_files(context):
     view = _session_view(context)
     composition = next(node for node in view["nodes"] if node["id"] == "main")["detail"]["composition"]
     before, after = (dict(zip(composition["keys"], reply[5:], strict=False)) for reply in composition["replies"])
-    assert before["instructions"] == after["instructions"], (before, after)
+    assert (before["instructions"], after["instructions"]) == (4200, 200), (before, after)
 
 
-@then("the chart's instruction files after the compaction still hold each nested file")
-def step_chart_drops_unknown(context):
-    view = _session_view(context)
-    composition = next(node for node in view["nodes"] if node["id"] == "main")["detail"]["composition"]
-    before, after = (dict(zip(composition["keys"], reply[5:], strict=False)) for reply in composition["replies"])
-    assert before["instructions"] == after["instructions"], (before, after)
+@when('the session\'s PostCompact hook payload is piped into "ails hook"')
+def step_hook_without_summary(context):
+    payload = {
+        "session_id": SESSION_ID,
+        "hook_event_name": "PostCompact",
+        "trigger": "manual",
+        "cwd": str(context.project),
+    }
+    env = {**suite_env(os.environ), "HOME": str(context.home), "USERPROFILE": str(context.home)}
+    done = subprocess.run(
+        [str(AILS_BIN), "hook", "--agent", "claude"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        env=env,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+
+
+@then('the attached, edited and recalled files\' text is in no event-log file and no "ails events" output')
+def step_attached_text_nowhere(context):
+    markers = (ATTACHED_TEXT, EDIT_SNIPPET_TEXT, RECALLED_TEXT)
+    stored = [p for p in (context.home / ".reporails").rglob("*") if p.is_file()]
+    logged = [(p, m) for p in stored for m in markers if m.encode() in p.read_bytes()]
+    assert not logged, logged
+    events = run_ails(context.tmpdir, "events", "--session", SESSION_ID, "-f", "json", home=context.home)
+    assert '"post_compact"' in events.stdout, events.stdout
+    assert not [m for m in markers if m in events.stdout + events.stderr], events.stdout
+    assert not [m for m in markers if m in json.dumps(_session_view(context))]
+
+
+@given("a project with a recorded Claude Code session whose first compaction left no summary row")
+def step_first_compaction_without_summary(context):
+    step_project_with_compactions(context)
+    path = next((context.home / ".claude" / "projects").rglob("session.jsonl"))
+    kept = [row for row in path.read_text(encoding="utf-8").splitlines() if SUMMARIES[0] not in row]
+    path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+
+@then("the first compaction offers no summary and the second offers the summary its own boundary links to")
+def step_summary_by_link(context):
+    token = re.search(r'name="xray-token" content="([^"]+)"', _get(context.url)[1]).group(1)
+    view = _get(context.url + "view", token)[1]
+    first, second = next(s["compactions"] for s in json.loads(view)["stations"] if s["node"] == "main")
+    assert first["summary_id"] is None and first["summary_tokens"] is None, first
+    assert second["summary_id"] is not None, second
+    status, body = _get(context.url + "summary?id=" + second["summary_id"], token)
+    assert status == 200 and json.loads(body)["text"] == SUMMARIES[1], (status, body)
+
+
+@then("the inspector lists both compactions and each row opens that compaction's details window")
+def step_inspector_lists_every_compaction(context):
+    seen = _layout_script(context, "compaction-rows")
+    if seen is None:
+        return
+    assert seen["ready"], "the page did not draw"
+    assert len(seen["rows"]) == 2, seen["rows"]  # the first compaction has no summary and still has its row
+    assert "no summary" in seen["rows"][0] and "no summary" not in seen["rows"][1], seen["rows"]
+    assert "holds no summary" in seen["dialogs"][0] and SUMMARIES[1] not in seen["dialogs"][0], seen["dialogs"]
+
+
+@then("the second summary still opens after the first summary's line was blanked once the page had listed both")
+def step_summary_read_by_position(context):
+    token = re.search(r'name="xray-token" content="([^"]+)"', _get(context.url)[1]).group(1)
+    view = _get(context.url + "view", token)[1]
+    first, second = next(s["compactions"] for s in json.loads(view)["stations"] if s["node"] == "main")
+    assert first["summary_id"] and second["summary_id"], (first, second)
+    path = next((context.home / ".claude" / "projects").rglob("session.jsonl"))
+    lines = path.read_bytes().split(b"\n")
+    lines = [b" " * len(line) if SUMMARIES[0].encode() in line else line for line in lines]
+    path.write_bytes(b"\n".join(lines))
+    status, body = _get(context.url + "summary?id=" + second["summary_id"], token)
+    assert status == 200 and json.loads(body)["text"] == SUMMARIES[1], (status, body)

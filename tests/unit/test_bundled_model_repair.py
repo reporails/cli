@@ -20,6 +20,7 @@ import time
 import pytest
 
 from reporails_cli.core.mapper import model_fetch, model_manifest, model_store
+from tests.fake_models import no_fetch
 
 
 @pytest.fixture(autouse=True)
@@ -37,6 +38,7 @@ def _reset_repair_state(monkeypatch):
     monkeypatch.setattr(model_store, "_known_unrepairable", {}, raising=False)
     monkeypatch.setattr(model_manifest, "in_package_tree_present", lambda: False)
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
 
 
 @pytest.mark.unit
@@ -54,7 +56,7 @@ def test_a_non_corruption_load_error_is_never_repaired(monkeypatch):
         raise ImportError("onnxruntime is not installed in this environment")
 
     with pytest.raises(ImportError, match="onnxruntime is not installed"):
-        model_store.reload_after_repair(load)
+        model_store.reload_after_repair(load, no_fetch)
 
     assert checked["called"] is True  # the cache WAS checked directly...
     assert repaired["called"] is False  # ...and found not to be the cause, so no repair ran
@@ -76,7 +78,7 @@ def test_offline_surfaces_the_real_error_not_damaged(monkeypatch):
         raise RuntimeError("the real underlying error")
 
     with pytest.raises(RuntimeError, match="the real underlying error"):
-        model_store.reload_after_repair(load)
+        model_store.reload_after_repair(load, no_fetch)
 
     assert repaired["called"] is False
     assert checked["called"] is False  # short-circuited on offline before even checking
@@ -97,7 +99,7 @@ def test_a_damaged_cache_is_repaired_once_then_the_retry_loads(monkeypatch):
             raise RuntimeError("same-size corrupted ONNX load")
         return "loaded"
 
-    assert model_store.reload_after_repair(load) == "loaded"
+    assert model_store.reload_after_repair(load, no_fetch) == "loaded"
     assert repaired["n"] == 1
     assert calls["n"] == 2
 
@@ -121,7 +123,7 @@ def test_damage_that_appears_after_a_non_damage_failure_is_still_repaired(monkey
         raise MemoryError("out of memory")
 
     with pytest.raises(MemoryError):
-        model_store.reload_after_repair(oom)
+        model_store.reload_after_repair(oom, no_fetch)
     assert repaired["n"] == 0
 
     state["damaged"] = True
@@ -133,7 +135,7 @@ def test_damage_that_appears_after_a_non_damage_failure_is_still_repaired(monkey
             raise RuntimeError("corrupted")
         return "loaded"
 
-    assert model_store.reload_after_repair(load) == "loaded"
+    assert model_store.reload_after_repair(load, no_fetch) == "loaded"
     assert repaired["n"] == 1
 
 
@@ -158,7 +160,7 @@ def test_a_repair_that_fails_midway_does_not_make_a_later_caller_retry_unrepaire
         raise RuntimeError("corrupted")
 
     with pytest.raises(OSError, match="download interrupted"):
-        model_store.reload_after_repair(bad)
+        model_store.reload_after_repair(bad, no_fetch)
 
     calls = {"n": 0}
 
@@ -168,7 +170,7 @@ def test_a_repair_that_fails_midway_does_not_make_a_later_caller_retry_unrepaire
             raise RuntimeError("corrupted")
         return "loaded"
 
-    assert model_store.reload_after_repair(load) == "loaded"
+    assert model_store.reload_after_repair(load, no_fetch) == "loaded"
     assert attempts["n"] == 2
 
 
@@ -204,7 +206,7 @@ def test_two_threads_failing_on_the_same_damaged_file_neither_raises(monkeypatch
 
     def run():
         try:
-            results.append(model_store.reload_after_repair(load))
+            results.append(model_store.reload_after_repair(load, no_fetch))
         except BaseException as exc:
             errors.append(exc)
 
@@ -268,7 +270,7 @@ def test_repeated_load_failures_over_unchanged_sound_files_hash_the_model_once(m
 
     for _ in range(3):
         with pytest.raises(RuntimeError, match="refused the model"):
-            model_store.reload_after_repair(_fails())
+            model_store.reload_after_repair(_fails(), no_fetch)
 
     assert hashed["n"] == 1
     assert repaired["n"] == 0
@@ -288,7 +290,7 @@ def test_a_file_damaged_after_a_sound_verdict_is_verified_and_repaired(monkeypat
 
     monkeypatch.setattr(model_fetch, "repair_cache", fix)
     with pytest.raises(RuntimeError):
-        model_store.reload_after_repair(_fails())
+        model_store.reload_after_repair(_fails(), no_fetch)
     assert hashed["n"] == 1
 
     stat = weights.stat()
@@ -303,7 +305,7 @@ def test_a_file_damaged_after_a_sound_verdict_is_verified_and_repaired(monkeypat
             raise RuntimeError("corrupted")
         return "loaded"
 
-    assert model_store.reload_after_repair(load) == "loaded"
+    assert model_store.reload_after_repair(load, no_fetch) == "loaded"
     assert hashed["n"] >= 2
     assert repaired["n"] == 1
 
@@ -327,14 +329,14 @@ def test_a_failed_repair_is_not_tried_again_while_the_files_are_unchanged(monkey
 
     for _ in range(3):
         with pytest.raises(model_manifest.ModelFetchError, match="no network"):
-            model_store.reload_after_repair(_fails("corrupted"))
+            model_store.reload_after_repair(_fails("corrupted"), no_fetch)
 
     assert attempts["n"] == 1
     assert hashed["n"] == 1
 
     weights.write_bytes(b"other bytes!")  # the file changes: the repair is tried again
     with pytest.raises(model_manifest.ModelFetchError):
-        model_store.reload_after_repair(_fails("corrupted"))
+        model_store.reload_after_repair(_fails("corrupted"), no_fetch)
     assert attempts["n"] == 2
 
 
@@ -378,12 +380,12 @@ def test_a_failed_repair_is_tried_again_after_the_wait_and_the_load_retried(monk
 
     monkeypatch.setattr(model_fetch, "repair_cache", repair)
     with pytest.raises(model_manifest.ModelFetchError, match="no network"):
-        model_store.reload_after_repair(_fails("corrupted"))
+        model_store.reload_after_repair(_fails("corrupted"), no_fetch)
 
     clock.now += model_store.REPAIR_RETRY_WAIT_SECONDS - 1
     hashes_before = hashed["n"]
     with pytest.raises(model_manifest.ModelFetchError, match="no network"):
-        model_store.reload_after_repair(_fails("corrupted"))
+        model_store.reload_after_repair(_fails("corrupted"), no_fetch)
     assert attempts["n"] == 1
     assert hashed["n"] == hashes_before
 
@@ -396,7 +398,7 @@ def test_a_failed_repair_is_tried_again_after_the_wait_and_the_load_retried(monk
             raise RuntimeError("corrupted")
         return "loaded"
 
-    assert model_store.reload_after_repair(load) == "loaded"
+    assert model_store.reload_after_repair(load, no_fetch) == "loaded"
     assert attempts["n"] == 2
     assert calls["n"] == 2
 
@@ -416,20 +418,20 @@ def test_a_repair_that_fails_again_after_the_wait_restarts_the_wait(monkeypatch,
     wait = model_store.REPAIR_RETRY_WAIT_SECONDS
 
     with pytest.raises(model_manifest.ModelFetchError):
-        model_store.reload_after_repair(_fails("corrupted"))
+        model_store.reload_after_repair(_fails("corrupted"), no_fetch)
     clock.now += wait + 1
     with pytest.raises(model_manifest.ModelFetchError):
-        model_store.reload_after_repair(_fails("corrupted"))
+        model_store.reload_after_repair(_fails("corrupted"), no_fetch)
     assert attempts["n"] == 2
 
     clock.now += wait - 1  # inside the restarted wait
     with pytest.raises(model_manifest.ModelFetchError):
-        model_store.reload_after_repair(_fails("corrupted"))
+        model_store.reload_after_repair(_fails("corrupted"), no_fetch)
     assert attempts["n"] == 2
 
     clock.now += 2
     with pytest.raises(model_manifest.ModelFetchError):
-        model_store.reload_after_repair(_fails("corrupted"))
+        model_store.reload_after_repair(_fails("corrupted"), no_fetch)
     assert attempts["n"] == 3
 
 
@@ -440,9 +442,44 @@ def test_sound_files_are_never_hashed_again_however_much_time_passes(monkeypatch
     monkeypatch.setattr(model_fetch, "repair_cache", lambda *a, **k: pytest.fail("repair attempted"))
 
     with pytest.raises(RuntimeError):
-        model_store.reload_after_repair(_fails())
+        model_store.reload_after_repair(_fails(), no_fetch)
     clock.now += model_store.REPAIR_RETRY_WAIT_SECONDS * 100
     with pytest.raises(RuntimeError):
-        model_store.reload_after_repair(_fails())
+        model_store.reload_after_repair(_fails(), no_fetch)
 
     assert hashed["n"] == 1
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+def test_a_damaged_head_file_is_repaired_through_the_download_port_the_handle_holds(monkeypatch, tmp_path):
+    """A head graph that fails to load in a long-lived process is re-downloaded through the port the
+    process's model handle was built with, and the load is retried once."""
+    from pathlib import Path
+
+    from reporails_cli.core.mapper import bio_tagger
+    from reporails_cli.core.mapper.models import Models
+
+    monkeypatch.setattr(model_manifest, "in_package_tree_present", lambda: False)
+    monkeypatch.setattr(model_store, "_repair_events", {})
+    monkeypatch.setattr(model_fetch, "cache_damaged", lambda *a, **k: True)
+    ports: list[object] = []
+    monkeypatch.setattr(model_fetch, "repair_cache", lambda fetch, *a, **k: ports.append(fetch))
+    attempts = {"n": 0}
+
+    def build(path: str) -> str:
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise RuntimeError("damaged head graph")
+        return "session"
+
+    monkeypatch.setattr(bio_tagger, "_build_head_session", build)
+
+    def port(url, *, headers, timeout, follow_redirects):
+        raise AssertionError("the repair is stubbed; the port is only passed through")
+
+    models = Models(port)
+
+    assert models.head_session(Path(tmp_path / "head.onnx")) == "session"
+    assert ports == [port]
+    assert attempts["n"] == 2

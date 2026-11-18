@@ -31,12 +31,14 @@ from reporails_cli.core.mapper.classify import (
 )
 from reporails_cli.core.mapper.classify_lexicon import MODAL_ABSOLUTE, words_of
 from reporails_cli.core.mapper.classify_no import starts_bare_no_status, starts_descriptive_no
+from reporails_cli.core.mapper.negative_headings import PROHIBITION_ADJECTIVES
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str, opt_str
 from reporails_cli.core.platform.dto.mapping import MapFinding
 from reporails_cli.core.platform.dto.ruleset import (
     NO_CHARGE,
     SLOT_COORD_FIELDS,
     SLOT_SPAN_FIELDS,
+    UNCHARGED_MODALITIES,
     Atom,
     AtomSlots,
     Charge,
@@ -47,7 +49,6 @@ from reporails_cli.core.platform.dto.ruleset import (
     file_record_scalars,
     int8_bytes,
 )
-from reporails_cli.core.platform.policy.negative_headings import PROHIBITION_ADJECTIVES
 
 # ──────────────────────────────────────────────────────────────────
 # SERIALIZATION
@@ -68,6 +69,10 @@ def _pack_optional_atom_fields(atom: Atom, d: JsonObject) -> None:
         d["list_depth"] = atom.list_depth
     if atom.lead_in:
         d["lead_in"] = True
+    if atom.negative_heading:
+        d["negative_heading"] = True
+    if atom.in_negative_section:
+        d["in_negative_section"] = True
     if atom.rule:
         d["rule"] = atom.rule
     if atom.ambiguous:
@@ -90,6 +95,14 @@ def _pack_granularity_and_span_fields(atom: Atom, d: JsonObject) -> None:
     if atom.imported_from:
         d["imported_from"] = atom.imported_from
         d["imported_line"] = atom.imported_line
+    if atom.source_columns is not None:
+        d["source_columns"] = [*atom.source_columns]
+    if atom.joint:
+        d["joint"] = atom.joint
+    if atom.joint_mark:
+        d["joint_mark"] = True
+    if atom.hedge_cue is not None:
+        d["hedge_cue"] = [*atom.hedge_cue]
     _pack_slot_coords(atom, d)
 
 
@@ -98,12 +111,16 @@ def _pack_slot_coords(atom: Atom, d: JsonObject) -> None:
 
     Stores `SLOT_COORD_FIELDS`: token-offset spans + per-span
     confidences only — never the slot text (subject/predicate/object/scope
-    strings). Omitted entirely when every span offset is absent.
+    strings). Omitted entirely when every span offset and code range is absent.
     """
     slots = atom.slots
     if slots is None:
         return
-    if not any(getattr(slots, f) is not None for f in SLOT_SPAN_FIELDS):
+    if (
+        not slots.code_ranges
+        and not slots.aside_spans
+        and not any(getattr(slots, f) is not None for f in SLOT_SPAN_FIELDS)
+    ):
         return
     d["slot_coords"] = {f: getattr(slots, f) for f in SLOT_COORD_FIELDS}
 
@@ -208,7 +225,12 @@ def _unpack_slot_coords(slot_coords: JsonObject | None) -> AtomSlots | None:
 def save_ruleset_map(ruleset_map: RulesetMap, path: Path) -> None:
     """Serialize a RulesetMap to JSON."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    data: JsonObject = {
+    path.write_text(json.dumps(ruleset_map_json(ruleset_map), indent=2) + "\n", encoding="utf-8")
+
+
+def ruleset_map_json(ruleset_map: RulesetMap) -> JsonObject:
+    """A RulesetMap in its JSON form."""
+    return {
         "schema_version": ruleset_map.schema_version,
         "embedding_model": ruleset_map.embedding_model,
         "generated_at": ruleset_map.generated_at,
@@ -235,7 +257,6 @@ def save_ruleset_map(ruleset_map: RulesetMap, path: Path) -> None:
             "n_neutral": ruleset_map.summary.n_neutral,
         },
     }
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def _file_record_from_dict(f: JsonObject) -> FileRecord:
@@ -247,9 +268,13 @@ def _file_record_from_dict(f: JsonObject) -> FileRecord:
 
 
 def load_ruleset_map(path: Path) -> RulesetMap:
-    """Deserialize a RulesetMap from JSON."""
+    """Deserialize a RulesetMap from the JSON file at `path`."""
     loaded: JsonValue = json.loads(path.read_text(encoding="utf-8"))
-    data = as_object(loaded)
+    return ruleset_map_from_json(as_object(loaded))
+
+
+def ruleset_map_from_json(data: JsonObject) -> RulesetMap:
+    """Deserialize a RulesetMap from its JSON form."""
 
     files = tuple(_file_record_from_dict(as_object(f)) for f in as_list(data["files"]))
     atoms = tuple(_atom_from_dict(as_object(a)) for a in as_list(data["atoms"]))
@@ -292,7 +317,7 @@ def _validate_atom_schema(a: Atom, findings: list[MapFinding]) -> None:
         (cv not in (-1, 0, 1), "schema", f"Invalid charge_value: {cv}"),
         (cv == 0 and chg not in NO_CHARGE, "consistency", f"charge_value=0 but charge={chg}"),
         (cv != 0 and chg == "NEUTRAL", "consistency", "charge_value!=0 but charge=NEUTRAL"),
-        (cv == 0 and mod != "none", "consistency", f"NEUTRAL with modality={mod}"),
+        (cv == 0 and mod not in UNCHARGED_MODALITIES, "consistency", f"NEUTRAL with modality={mod}"),
         (cv != 0 and mod == "none", "consistency", "Charged with modality=none"),
     ]
     for condition, rule, message in _checks:

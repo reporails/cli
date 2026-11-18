@@ -1,4 +1,4 @@
-// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions|summaries|summarylink|recorded|excluded|agent> [source id]
+// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions|summaries|stripe|restart|recorded|excluded|agent> [source id]
 // Drives the real `ails xray` page in headless Chrome and prints one JSON object describing what it drew.
 import { openPage, toGraph } from './xray_cdp.mjs';
 
@@ -87,20 +87,86 @@ if (mode === 'compactions' && ready) {
 
 if (mode === 'summaries' && ready) {
   await page.ev(`location.hash = '#/agent/main'; 0`);
-  await page.until(`!!document.querySelector('[data-open^="summary:"]')`);
-  for (let i = 0; i < 2; i++) {
-    await page.ev(`document.querySelectorAll('[data-open^="summary:"]')[${i}].click(); 0`);
-    await page.until(`document.querySelectorAll('pre.peek').length === ${i + 1}`);
+  await page.until(`!!document.querySelector('.ix-kid[data-peek^="compaction:"]')`);
+  out.rows = await page.ev(`[...document.querySelectorAll('.ix-kid[data-peek^="compaction:"]')].map(b => b.textContent)`);
+  out.texts = [];
+  for (let i = 0; i < out.rows.length; i++) {
+    await page.ev(`document.querySelectorAll('.ix-kid[data-peek^="compaction:"]')[${i}].click(); 0`);
+    await page.until(`!!document.querySelector('.pk-dialog pre.peek')`);
+    out.texts.push(await page.ev(`document.querySelector('.pk-dialog pre.peek').textContent`));
+    await page.ev(`document.querySelector('.pk-x').click(); 0`);
+    await page.until(`!document.querySelector('.pk-dialog')`);
   }
-  out.rows = await page.ev(`[...document.querySelectorAll('[data-open^="summary:"]')].map(b => b.textContent)`);
-  out.texts = await page.ev(`[...document.querySelectorAll('pre.peek')].map(e => e.textContent)`);
 }
 
-if (mode === 'summarylink' && ready) {
-  await page.until(`!!document.querySelector('.compact-summary')`);
-  await page.ev(`document.querySelector('.compact-summary').click(); 0`);
-  await page.until(`document.querySelectorAll('pre.peek').length === 1`);
-  out.texts = await page.ev(`[...document.querySelectorAll('pre.peek')].map(e => e.textContent)`);
+// The inspector's compaction rows, and the details window each opens.
+if (mode === 'compaction-rows' && ready) {
+  await page.ev(`location.hash = '#/agent/main'; 0`);
+  await page.until(`!!document.querySelector('#inspector .ix-sub')`);
+  const rows = `[...document.querySelectorAll('#inspector .ix-kid[data-peek^="compaction:"]')]`;
+  out.rows = await page.ev(`${rows}.map(b => b.textContent)`);
+  out.dialogs = [];
+  for (let i = 0; i < out.rows.length; i++) {
+    await page.ev(`${rows}[${i}].click(); 0`);
+    await page.until(`!!document.querySelector('.pk-dialog')`);
+    out.dialogs.push(await page.ev(`document.querySelector('.pk-dialog').textContent`));
+    await page.ev(`document.querySelector('.pk-x').click(); 0`);
+    await page.until(`!document.querySelector('.pk-dialog')`);
+  }
+}
+
+// Clicks the compaction stripe at index argv[4] and reports the one details dialog it opens.
+if (mode === 'stripe' && ready) {
+  await page.until(`!!document.querySelector('button.compact')`);
+  const i = Number(process.argv[4] || 0);
+  out.stripes = await page.ev(`[...document.querySelectorAll('button.compact')].map(b => ({ peek: b.dataset.peek, name: b.getAttribute('aria-label') }))`);
+  await page.ev(`document.querySelectorAll('button.compact')[${i}].click(); 0`);
+  await page.until(`!!document.querySelector('.pk-dialog')`);
+  await page.until(`!document.querySelector('.pk-dialog .nk') || !!document.querySelector('.pk-dialog pre.peek')`);
+  out.dialogs = await page.ev(`document.querySelectorAll('.pk-dialog, .pk-panel, [role="dialog"]').length`);
+  out.dialog = await page.ev(`document.querySelector('.pk-dialog').textContent`);
+  out.summary = await page.ev(`(document.querySelector('.pk-dialog pre.peek') || {}).textContent || null`);
+  out.files = await page.ev(`[...document.querySelectorAll('.pk-dialog .fs')].map(e => e.textContent)`);
+  out.over = await page.ev(`!!document.querySelector('.pk-dialog').closest('#overlay')`);
+}
+
+// Reports every source card with its source and rect beside the compaction stripes' rects, and what overlaps a stripe.
+if (mode === 'restart' && ready) {
+  await page.until(`!!document.querySelector('button.compact')`);
+  const r = await page.ev(`(() => {
+    const box = e => { const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom }; };
+    const stripes = [...document.querySelectorAll('button.compact')].map(box);
+    const cards = [...document.querySelectorAll('.snode')].map(e => ({ source: e.dataset.source, ...box(e) }));
+    const overlaps = [];
+    for (const e of document.querySelectorAll('.card, .station')) for (const s of stripes) { const b = box(e); if (b.top < s.bottom && b.bottom > s.top) overlaps.push({ cls: e.className, text: e.textContent.slice(0, 40), top: b.top, bottom: b.bottom }); }
+    const stations = [...document.querySelectorAll('.station')].map(box);
+    return { stripes, cards, overlaps, stations };
+  })()`);
+  Object.assign(out, r);
+  out.sources = [...new Set(r.cards.map(c => c.source))];
+  // Hiding the memory layer leaves the stripe and the canvas height where they were.
+  const stripeTop = () => page.ev(`(() => {
+    const top = document.querySelector('button.compact').getBoundingClientRect().top + scrollY;
+    return top + ' ' + document.querySelector('.cv').offsetHeight;
+  })()`);
+  out.stripeBefore = await stripeTop();
+  await page.ev(`document.querySelector('[data-eye="memory"]').click(); 0`);
+  out.stripeHidden = await stripeTop();
+  await page.ev(`document.querySelector('[data-eye="memory"]').click(); 0`);
+  // Closing the details of the card below the stripe puts focus back on that card.
+  const below = await page.ev(`(() => {
+    const s = document.querySelector('button.compact').getBoundingClientRect();
+    const e = [...document.querySelectorAll('.snode')].find(x => x.getBoundingClientRect().top >= s.bottom);
+    if (!e) return null;
+    e.click();
+    return e.dataset.card || null;
+  })()`);
+  await page.until(`!!document.querySelector('.pk-dialog')`);
+  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await page.until(`!document.querySelector('.pk-dialog')`);
+  out.belowCard = below;
+  out.focusedCard = await page.ev(`document.activeElement.dataset.card || null`);
 }
 
 console.log(JSON.stringify(out));

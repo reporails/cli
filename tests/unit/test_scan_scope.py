@@ -19,14 +19,14 @@ import pytest
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.discovery.agent_discovery import claude_project_folder_name
 from reporails_cli.core.discovery.agents import (
-    clear_agent_cache,
     detect_agents,
     filter_agents_by_exclusions,
     get_all_instruction_files,
     get_all_scannable_files,
     get_known_agents,
 )
-from reporails_cli.core.discovery.exclusions import parse_run_exclusions
+from reporails_cli.core.discovery.exclusions import load_run_exclusions, parse_run_exclusions
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.discovery import DetectedAgent, OwnAccountOnly
 
 
@@ -93,9 +93,6 @@ def _make_backbone_project(tmp_path: Path) -> Path:
 class TestDetectAgentsScope:
     """Agent detection must only find files under the given root."""
 
-    def setup_method(self) -> None:
-        clear_agent_cache()
-
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_child_does_not_see_parent_files(self, tmp_path: Path) -> None:
@@ -106,7 +103,7 @@ class TestDetectAgentsScope:
         regardless of whether a `.git` exists higher up.
         """
         child = _make_nested_project(tmp_path)
-        agents = detect_agents(child)
+        agents = detect_agents(RunContext(), child)
 
         all_files: list[Path] = []
         for a in agents:
@@ -123,7 +120,7 @@ class TestDetectAgentsScope:
     def test_parent_sees_hierarchical_files(self, tmp_path: Path) -> None:
         """Running from project root: root CLAUDE.md is main, descendant is nested."""
         _make_nested_project(tmp_path)
-        agents = detect_agents(tmp_path)
+        agents = detect_agents(RunContext(), tmp_path)
 
         all_files: list[Path] = []
         for a in agents:
@@ -138,15 +135,12 @@ class TestDetectAgentsScope:
 class TestInstructionFilesScope:
     """get_all_instruction_files returns files inside cwd's subtree only (cwd = project root)."""
 
-    def setup_method(self) -> None:
-        clear_agent_cache()
-
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_child_scope_bounded_by_target(self, tmp_path: Path) -> None:
         """From child, files outside cwd's subtree are NOT in scope."""
         child = _make_nested_project(tmp_path)
-        files = get_all_instruction_files(child)
+        files = get_all_instruction_files(RunContext(), child)
 
         # All non-external files must be under child (cwd is the project root).
         local_files = [f for f in files if not _is_external(f, child)]
@@ -158,7 +152,7 @@ class TestInstructionFilesScope:
     def test_child_finds_own_files_only(self, tmp_path: Path) -> None:
         """From child, only child's own files surface — parent files are out of scope."""
         child = _make_nested_project(tmp_path)
-        files = get_all_instruction_files(child)
+        files = get_all_instruction_files(RunContext(), child)
         paths = {f.as_posix() for f in files}
 
         assert (tmp_path / "CLAUDE.md").as_posix() not in paths, (
@@ -172,14 +166,11 @@ class TestInstructionFilesScope:
 class TestScannableFilesScope:
     """get_all_scannable_files returns ancestor + descendant files of cwd, bounded by project root."""
 
-    def setup_method(self) -> None:
-        clear_agent_cache()
-
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_child_scope_bounded_by_project_root(self, tmp_path: Path) -> None:
         child = _make_nested_project(tmp_path)
-        files = get_all_scannable_files(child)
+        files = get_all_scannable_files(RunContext(), child)
 
         # External instruction surface files (~/...) are by-design outside the repo
         local_files = [f for f in files if not _is_external(f, child)]
@@ -191,7 +182,7 @@ class TestScannableFilesScope:
     def test_child_does_not_include_parent_rules(self, tmp_path: Path) -> None:
         """parent.md lives in tmp_path/.claude/rules/ — path_scoped descendant from child, not in scope."""
         child = _make_nested_project(tmp_path)
-        files = get_all_scannable_files(child)
+        files = get_all_scannable_files(RunContext(), child)
         names = {f.name for f in files}
 
         assert "parent.md" not in names, "Parent rule file should not be in child scan"
@@ -199,9 +190,6 @@ class TestScannableFilesScope:
 
 class TestProjectRootVsScanRoot:
     """Ancestor walk is bounded by project root; descendant walk anchors at scan_root."""
-
-    def setup_method(self) -> None:
-        clear_agent_cache()
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -211,7 +199,7 @@ class TestProjectRootVsScanRoot:
 
         # Ancestor walk reaches tmp_path/CLAUDE.md (the parent main file). External
         # surface files are by-design outside; everything else stays within tmp_path.
-        files = get_all_scannable_files(child)
+        files = get_all_scannable_files(RunContext(), child)
         local_files = [f for f in files if not _is_external(f, child)]
         for f in local_files:
             assert str(f).startswith(str(tmp_path)), f"File outside project root: {f}"
@@ -225,16 +213,13 @@ class TestProjectRootVsScanRoot:
         (tmp_path / ".git").mkdir()
         (tmp_path / "CLAUDE.md").write_text("# Instructions")
 
-        files = get_all_scannable_files(tmp_path)
+        files = get_all_scannable_files(RunContext(), tmp_path)
         assert len(files) >= 1
         assert any(f.name == "CLAUDE.md" for f in files)
 
 
 class TestPreDetectedAgentsBypass:
     """Pre-detected agents from a broader scope must not leak into narrower scans."""
-
-    def setup_method(self) -> None:
-        clear_agent_cache()
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -243,11 +228,10 @@ class TestPreDetectedAgentsBypass:
         child = _make_nested_project(tmp_path)
 
         # Detect at parent scope (the old bug)
-        parent_agents = detect_agents(tmp_path)
-        clear_agent_cache()
+        parent_agents = detect_agents(RunContext(), tmp_path)
 
         # Pass parent agents to child-scoped call
-        files = get_all_scannable_files(child, agents=parent_agents)
+        files = get_all_scannable_files(RunContext(), child, agents=parent_agents)
 
         # These files come from parent-detected agents — they WILL include parent files.
         # This is the documented API gap: if you pass agents from a different scope,
@@ -262,8 +246,8 @@ class TestPreDetectedAgentsBypass:
         child = _make_backbone_project(tmp_path)
 
         scan_root = child
-        agents = detect_agents(scan_root)
-        files = get_all_scannable_files(scan_root, agents=agents)
+        agents = detect_agents(RunContext(), scan_root)
+        files = get_all_scannable_files(RunContext(), scan_root, agents=agents)
 
         # Files must be within the project root (tmp_path = backbone root).
         # External instruction surface files (~/...) are by-design outside the repo.
@@ -285,9 +269,6 @@ def _classify_for_agent(scan_root: Path, files: list[Path], agent: str) -> dict[
 class TestAncestorWalkAndClassification:
     """Discovery and classification mirror agent loading model."""
 
-    def setup_method(self) -> None:
-        clear_agent_cache()
-
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_target_files_only_no_ancestor_walk(self, tmp_path: Path) -> None:
@@ -301,7 +282,7 @@ class TestAncestorWalkAndClassification:
         b.mkdir()
 
         # Running from `b` — both ancestors are out of scope
-        files = get_all_instruction_files(b)
+        files = get_all_instruction_files(RunContext(), b)
         names = {f.as_posix() for f in files}
         assert (tmp_path / "CLAUDE.md").as_posix() not in names
         assert (a / "CLAUDE.md").as_posix() not in names
@@ -320,7 +301,7 @@ class TestAncestorWalkAndClassification:
         (a / "CLAUDE.md").write_text("# a")
 
         # Running from `a` — neither tmp_path/CLAUDE.md nor repo/CLAUDE.md surfaces
-        files = get_all_instruction_files(a)
+        files = get_all_instruction_files(RunContext(), a)
         names = {f.as_posix() for f in files}
         assert (a / "CLAUDE.md").as_posix() in names
         assert (repo / "CLAUDE.md").as_posix() not in names
@@ -340,7 +321,7 @@ class TestAncestorWalkAndClassification:
         sub.mkdir()
         (sub / "CLAUDE.md").write_text("# sub")
 
-        files = get_all_instruction_files(tmp_path)
+        files = get_all_instruction_files(RunContext(), tmp_path)
         types = _classify_for_agent(tmp_path, files, "claude")
 
         assert types[(tmp_path / "CLAUDE.md").as_posix()] == "main"
@@ -362,7 +343,7 @@ class TestAncestorWalkAndClassification:
         b.mkdir()
 
         # Running from `b` — only `b` and below are in scope
-        files = get_all_instruction_files(b)
+        files = get_all_instruction_files(RunContext(), b)
         names = {f.as_posix() for f in files}
         assert (tmp_path / "CLAUDE.md").as_posix() not in names
         assert (a / "CLAUDE.md").as_posix() not in names, "Parent CLAUDE.md must NOT surface — cwd is project root"
@@ -381,7 +362,7 @@ class TestAncestorWalkAndClassification:
         (a / "CLAUDE.local.md").write_text("# a local")
 
         # Running from `a` — only `a/CLAUDE.local.md` surfaces; tmp_path's is out of scope
-        files = get_all_instruction_files(a)
+        files = get_all_instruction_files(RunContext(), a)
         names = {f.as_posix() for f in files}
         assert (a / "CLAUDE.local.md").as_posix() in names
         assert (tmp_path / "CLAUDE.local.md").as_posix() not in names
@@ -414,7 +395,7 @@ class TestAncestorWalkAndClassification:
         engine.mkdir()
         (engine / "CLAUDE.md").write_text("# engine")
 
-        files = get_all_instruction_files(tmp_path)
+        files = get_all_instruction_files(RunContext(), tmp_path)
 
         # Codex sees AGENTS.md files: root as main, packages/server and packages/web as nested
         codex_types = _classify_for_agent(tmp_path, files, "codex")
@@ -446,7 +427,7 @@ class TestAncestorWalkAndClassification:
         (sub_gh / "copilot-instructions.md").write_text("# stray")
 
         # Running from tmp_path (the project root) — only tmp_path/.github/ surfaces
-        files = get_all_scannable_files(tmp_path)
+        files = get_all_scannable_files(RunContext(), tmp_path)
         names = {f.as_posix() for f in files}
         assert (gh / "copilot-instructions.md").as_posix() in names
         assert (sub_gh / "copilot-instructions.md").as_posix() not in names
@@ -459,9 +440,6 @@ class TestUserScopeSubagentMemoryExclusion:
     role's memory regardless of project; a repo-scoped `ails check` must not
     auto-pull it. Repo-local `.claude/agent-memory/*/` stays in scope.
     """
-
-    def setup_method(self) -> None:
-        clear_agent_cache()
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -501,7 +479,7 @@ class TestUserScopeSubagentMemoryExclusion:
         local_mem.mkdir(parents=True)
         (local_mem / "note.md").write_text("# repo-local memory")
 
-        result = discover_from_config(tmp_path, "claude")
+        result = discover_from_config(RunContext(), tmp_path, "claude", load_run_exclusions(RunContext(), tmp_path))
         assert result is not None
         instructions, _rules, _configs = result
         names = {p.as_posix() for p in instructions}
@@ -516,7 +494,7 @@ class TestUserScopeSubagentMemoryExclusion:
         (tmp_path / ".git").mkdir()
         (tmp_path / "CLAUDE.md").write_text("# root")
 
-        result = discover_from_config(tmp_path, "claude")
+        result = discover_from_config(RunContext(), tmp_path, "claude", load_run_exclusions(RunContext(), tmp_path))
         assert result is not None
         instructions, _rules, _configs = result
         leaked = [
@@ -527,9 +505,6 @@ class TestUserScopeSubagentMemoryExclusion:
 
 class TestProjectConfigSurfaceAdjustments:
     """`.ails/config.yml` surface include/exclude + Codex fallback filenames."""
-
-    def setup_method(self) -> None:
-        clear_agent_cache()
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -550,8 +525,8 @@ class TestProjectConfigSurfaceAdjustments:
             'schema_version: "0.1.0"\nagents:\n  codex:\n    fallback_filenames: ["TEAM_GUIDE.md"]\n'
         )
 
-        file_types = load_file_types("codex", project_root=tmp_path)
-        files = get_all_instruction_files(tmp_path)
+        file_types = load_file_types("codex", config=RunContext().project_config(tmp_path))
+        files = get_all_instruction_files(RunContext(), tmp_path)
         types = {cf.path.name: cf.file_type for cf in classify_files(tmp_path, files, file_types)}
         assert types.get("TEAM_GUIDE.md") == "main", "fallback filename must classify as main"
 
@@ -570,7 +545,7 @@ class TestProjectConfigSurfaceAdjustments:
             'schema_version: "0.1.0"\nsurfaces:\n  claude.child_instruction:\n    exclude: ["legacy/**"]\n'
         )
 
-        files = get_all_instruction_files(tmp_path)
+        files = get_all_instruction_files(RunContext(), tmp_path)
         names = {f.as_posix() for f in files}
         assert (tmp_path / "CLAUDE.md").as_posix() in names
         assert (legacy / "CLAUDE.md").as_posix() not in names, "exclude pattern must drop matching files"
@@ -630,7 +605,7 @@ class TestProjectConfigSurfaceAdjustments:
         # Local override: exclude drop/
         (ails / "config.local.yml").write_text('surfaces:\n  claude.child_instruction:\n    exclude: ["drop/**"]\n')
 
-        files = get_all_instruction_files(tmp_path)
+        files = get_all_instruction_files(RunContext(), tmp_path)
         names = {f.as_posix() for f in files}
         assert (keep / "CLAUDE.md").as_posix() in names
         assert (drop / "CLAUDE.md").as_posix() not in names
@@ -668,7 +643,9 @@ class TestProjectConfigSurfaceAdjustments:
         )
 
         project_config = get_project_config(tmp_path)
-        result = discover_from_config(tmp_path, "cursor", project_config=project_config)
+        result = discover_from_config(
+            RunContext(), tmp_path, "cursor", load_run_exclusions(RunContext(), tmp_path), project_config=project_config
+        )
         assert result is not None
         instructions, rules, _configs = result
         all_paths = {p.as_posix() for p in instructions + rules}
@@ -701,8 +678,7 @@ class TestRepoScopedDiscoveryIgnoresHomeConfig:
         repo.mkdir()
         (repo / "AGENTS.md").write_text("# Agents\n\nAlways do the thing.\n", encoding="utf-8")
 
-        clear_agent_cache()
-        detected_ids = {a.agent_type.id for a in detect_agents(repo)}
+        detected_ids = {a.agent_type.id for a in detect_agents(RunContext(), repo)}
 
         # Generic owns a bare cross-agent AGENTS.md. The global codex config must
         # not make codex the sole detected agent (it did before the fix).
@@ -734,8 +710,9 @@ class TestRepoScopedDiscoveryIgnoresHomeConfig:
         mem_dir.mkdir(parents=True)
         (mem_dir / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
 
-        clear_agent_cache()
-        result = discover_from_config(repo, "claude", repo_scoped=True)
+        result = discover_from_config(
+            RunContext(), repo, "claude", load_run_exclusions(RunContext(), repo), repo_scoped=True
+        )
         assert result is not None
         instructions, _rules, _configs = result
         names = {p.as_posix() for p in instructions}
@@ -761,8 +738,9 @@ class TestRepoScopedDiscoveryIgnoresHomeConfig:
         foreign_mem.mkdir(parents=True)
         (foreign_mem / "MEMORY.md").write_text("# Other\n", encoding="utf-8")
 
-        clear_agent_cache()
-        result = discover_from_config(repo, "claude", repo_scoped=True)
+        result = discover_from_config(
+            RunContext(), repo, "claude", load_run_exclusions(RunContext(), repo), repo_scoped=True
+        )
         assert result is not None
         instructions, _rules, _configs = result
         names = {p.as_posix() for p in instructions}
@@ -788,8 +766,7 @@ def test_vscode_config_surfaces_are_discovered(tmp_path: Path) -> None:
     (repo / ".vscode" / "mcp.json").write_text("{}", encoding="utf-8")
     (repo / ".vscode" / "settings.json").write_text("{}", encoding="utf-8")
 
-    clear_agent_cache()
-    detected = detect_agents(repo)
+    detected = detect_agents(RunContext(), repo)
     copilot = next((a for a in detected if a.agent_type.id == "copilot"), None)
     assert copilot is not None, "copilot should be detected from its own main file"
     config_names = {p.name for p in copilot.config_files}

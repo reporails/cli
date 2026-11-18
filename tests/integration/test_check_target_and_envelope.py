@@ -154,13 +154,11 @@ def test_single_file_target_still_scopes_to_that_file(tmp_path: Path, monkeypatc
 @pytest.mark.subsys_cli_ux
 @pytest.mark.requires_model
 def test_nested_project_directory_keeps_its_own_surfaces(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A monorepo package that is its own project root keeps its own anchoring.
+    """A monorepo package checked from its own folder is the project root of that run.
 
-    The scope-to-subtree fallback is reached only when anchoring AT the directory
-    discovers nothing. A package carrying its own `.claude/` discovers plenty, so it
-    stays a scan root: it keeps its nested surfaces (the outer scan never reaches a
-    nested `.claude/rules/`) and its target-relative path keys. This is the shape
-    `action.yml` runs for `path: ./packages/api`.
+    The folder the command runs in is the project root, so a package carrying its own `.claude/`
+    keeps its nested surfaces (the outer scan never reaches a nested `.claude/rules/`) and its
+    folder-relative path keys.
     """
     project = tmp_path / "proj"
     (project / "packages" / "api" / ".claude" / "rules").mkdir(parents=True)
@@ -171,7 +169,7 @@ def test_nested_project_directory_keeps_its_own_surfaces(tmp_path: Path, monkeyp
     (project / "packages" / "api" / ".claude" / "rules" / "style.md").write_text(
         "# Rules\n\nnever skip the tests, probably.\n", encoding="utf-8"
     )
-    _, data = _json_run(monkeypatch, project, "./packages/api")
+    _, data = _json_run(monkeypatch, project / "packages" / "api")
 
     assert sorted(data["files"]) == [".claude/rules/style.md", "CLAUDE.md"], data["files"]
 
@@ -209,12 +207,10 @@ def test_agent_config_dir_target_lists_every_surface_under_it(tmp_path: Path, mo
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
 @pytest.mark.requires_model
-def test_nested_ails_directory_makes_a_subtree_its_own_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A subtree carrying `.ails/` is a project root, so it anchors itself.
+def test_nested_ails_directory_run_from_it_is_its_own_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A subtree carrying `.ails/`, checked from its own folder, is the project root of that run.
 
-    Its path keys are relative to IT, not to the enclosing project — the proof that
-    the decision is made on the root marker and not on whether anchoring happened to
-    discover something.
+    Its path keys are relative to IT, not to the enclosing project.
     """
     project = _skills_project(tmp_path)
     nested = project / "vendor" / "toolkit"
@@ -225,7 +221,7 @@ def test_nested_ails_directory_makes_a_subtree_its_own_root(tmp_path: Path, monk
         "---\nname: gamma\ndescription: Gamma skill\n---\n\n# Gamma\n\nmaybe do the gamma thing.\n",
         encoding="utf-8",
     )
-    exit_code, data = _json_run(monkeypatch, project, "vendor/toolkit")
+    exit_code, data = _json_run(monkeypatch, nested)
 
     assert exit_code == 0, data
     assert sorted(data["files"]) == [".claude/skills/gamma/SKILL.md", "CLAUDE.md"], data["files"]

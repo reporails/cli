@@ -8,7 +8,7 @@ from typing import NamedTuple
 
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.mapping import LineSpans
-from reporails_cli.core.platform.dto.ruleset import Atom, AtomFormat, Modality
+from reporails_cli.core.platform.dto.ruleset import Atom, AtomFormat, AtomSlots, Modality
 from reporails_cli.core.platform.dto.structure import DocumentStructure
 
 
@@ -18,13 +18,6 @@ class HealOutcome(NamedTuple):
     written: KeyedResult | None
     withheld: str
     scan_root: Path
-
-
-class NamedTargets(NamedTuple):
-    """The resolved files and folders a run's targets name; heal writes what they name and nothing beside."""
-
-    files: frozenset[Path]
-    dirs: frozenset[Path]
 
 
 @dataclass(frozen=True)
@@ -90,9 +83,15 @@ class SnapshotAtom:
     embedding_int8: tuple[int, ...] | None
     heading_context: str = ""
     scope_conditional: bool = False
-    heading: bool = False
+    negative_heading: bool = False
     plain_text: str = ""
     modality: Modality = "none"
+    slots: AtomSlots | None = None
+
+    @property
+    def heading(self) -> bool:
+        """Whether the atom is a heading."""
+        return self.format == "heading"
 
 
 @dataclass(frozen=True)
@@ -106,16 +105,20 @@ class Snapshot:
     structure: DocumentStructure
     imports: tuple[str, ...]
     relation_lines: frozenset[int] = field(default_factory=frozenset)
+    list_objects: tuple[SnapshotAtom, ...] = ()
 
 
 @dataclass(frozen=True)
 class Pair:
-    """A matched instruction: the original atom and its rewrite, each with the sentence it sits in."""
+    """A matched instruction: the original atom and its rewrite, each with the sentence it sits in,
+    and the lowered words, in order, of the uncharged atoms that continue the rewrite when it is a
+    prohibition (`continued`: those that follow it on its line before the next charged atom)."""
 
     old: SnapshotAtom
     new: Atom
     old_sentence: str
     new_sentence: str
+    continued: tuple[str, ...] = ()
 
     def entry(self) -> JsonObject:
         """The pair as a report entry: each side's line and sentence."""
@@ -128,10 +131,21 @@ class Pair:
 
 
 @dataclass(frozen=True)
-class Condition:
-    """The content words a condition governs; `restriction` when a restricting word that
-    limits where or to what the instruction applies (`only`) opens it rather than a frame marker
-    or an exclusion."""
+class HealedFile:
+    """What a heal-kept file looked like in the whole-project run that followed: its score (`None` when
+    unscored), how many findings each rule had, and when."""
 
-    words: frozenset[str]
-    restriction: bool
+    score: float | None
+    rules: dict[str, int]
+    healed_at: str
+
+
+@dataclass(frozen=True)
+class HealRegression:
+    """A healed file that has slipped since: the score it had and has now (each `None` when the score did
+    not fall), and each rule whose findings came back, with the increase."""
+
+    file: str
+    score_before: float | None
+    score_after: float | None
+    rules: dict[str, int]

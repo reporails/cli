@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.mechanical.checks import (
     _resolve_glob_targets,
     get_target_files,
@@ -31,7 +32,9 @@ from reporails_cli.core.lint.mechanical.runner import (
     _classified_display,
     _first_classified_path,
 )
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import ClassifiedFile
+from tests.unit.run_args import with_run_exclusions
 
 # ── links inside code ─────────────────────────────────────────────────
 
@@ -47,7 +50,7 @@ class TestLinksInsideCode:
         f.write_text("Describes link syntax: `[text](path)` is documentation.\n\nReal link: [target](exists.md)\n")
         (tmp_path / "exists.md").write_text("# placeholder\n")
         cf = ClassifiedFile(path=f, file_type="main", properties={})
-        result = extract_markdown_links(tmp_path, {"path": "**/*.md"}, [cf])
+        result = extract_markdown_links(tmp_path, with_run_exclusions(tmp_path, {"path": "**/*.md"}), [cf])
         assert result.passed
         ann = (result.annotations or {}).get("discovered_markdown_links", [])
         # Only the real link survives; the in-backtick example is gone.
@@ -74,7 +77,7 @@ class TestResolveGlobExcludeDirs:
         (tmp_path / ".ails").mkdir()
         (tmp_path / ".ails" / "config.yml").write_text("exclude_dirs:\n  - vendor\n")
 
-        results = _resolve_glob_targets("**/*.md", tmp_path)
+        results = _resolve_glob_targets("**/*.md", tmp_path, load_run_exclusions(RunContext(), tmp_path))
         names = {p.name for p in results}
         assert "CLAUDE.md" in names
         assert "stub.md" not in names
@@ -88,7 +91,7 @@ class TestResolveGlobExcludeDirs:
         sub.mkdir()
         (sub / "nested.md").write_text("# nested\n")
 
-        results = _resolve_glob_targets("**/*.md", tmp_path)
+        results = _resolve_glob_targets("**/*.md", tmp_path, load_run_exclusions(RunContext(), tmp_path))
         names = {p.name for p in results}
         assert {"CLAUDE.md", "nested.md"} <= names
 
@@ -115,7 +118,7 @@ class TestGetTargetFilesNarrowing:
         # Caller narrowed classified_files to other.md only — CLAUDE.md must
         # drop out of the glob result even though the `**/*.md` pattern matches it.
         cf = ClassifiedFile(path=other, file_type="generic", properties={})
-        result = get_target_files({"path": "**/*.md"}, [cf], tmp_path)
+        result = get_target_files(with_run_exclusions(tmp_path, {"path": "**/*.md"}), [cf], tmp_path)
         assert result == [other]
 
     @pytest.mark.unit
@@ -130,7 +133,7 @@ class TestGetTargetFilesNarrowing:
         lead.write_text("# clean lead\n")
 
         cf = ClassifiedFile(path=lead, file_type="agents", properties={})
-        result = get_target_files({"path": "**/*.md"}, [cf], tmp_path)
+        result = get_target_files(with_run_exclusions(tmp_path, {"path": "**/*.md"}), [cf], tmp_path)
         assert result == [lead]
         assert tmp_path / "CLAUDE.md" not in result
 
@@ -141,7 +144,7 @@ class TestGetTargetFilesNarrowing:
         (tmp_path / "CLAUDE.md").write_text("# root\n")
         (tmp_path / "other.md").write_text("# other\n")
 
-        result = get_target_files({"path": "**/*.md"}, [], tmp_path)
+        result = get_target_files(with_run_exclusions(tmp_path, {"path": "**/*.md"}), [], tmp_path)
         names = {p.name for p in result}
         assert {"CLAUDE.md", "other.md"} <= names
 
@@ -158,7 +161,7 @@ class TestGetTargetFilesNarrowing:
 
         # Only CLAUDE.md is an instruction file; docs/notes.md isn't classified.
         cf = ClassifiedFile(path=claude_md, file_type="main", properties={})
-        result = get_target_files({"path": "**/*.md"}, [cf], tmp_path)
+        result = get_target_files(with_run_exclusions(tmp_path, {"path": "**/*.md"}), [cf], tmp_path)
         assert result == [claude_md]
 
 
@@ -257,5 +260,8 @@ def test_glob_targets_skip_the_built_in_excludes_and_local_config_excludes(tmp_p
         (tmp_path / folder / "note.md").write_text("# note\n")
     (tmp_path / ".ails").mkdir()
     (tmp_path / ".ails" / "config.local.yml").write_text("exclude_dirs:\n  - drafts\n")
-    found = {p.relative_to(tmp_path).as_posix() for p in _resolve_glob_targets("**/*.md", tmp_path)}
+    found = {
+        p.relative_to(tmp_path).as_posix()
+        for p in _resolve_glob_targets("**/*.md", tmp_path, load_run_exclusions(RunContext(), tmp_path))
+    }
     assert found == {"docs/note.md"}

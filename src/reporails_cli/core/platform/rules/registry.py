@@ -5,25 +5,26 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from fnmatch import fnmatch
-from functools import cache, lru_cache
+from functools import lru_cache
 from pathlib import Path
+from types import MappingProxyType
 
 import yaml
 
-from reporails_cli.core.platform.adapters.rule_builder import RuleFieldError, build_rule, load_checks
 from reporails_cli.core.platform.config.bootstrap import get_package_paths
 from reporails_cli.core.platform.config.capabilities import agent_capabilities
 from reporails_cli.core.platform.config.config import (
-    get_agent_config,
-    get_project_config,
+    bundled_agent_config,
     get_rules_path,
     iter_agent_configs,
 )
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
 from reporails_cli.core.platform.dto.models import Check, Execution, FieldProblem, Rule, RuleRead, RuleType, Severity
-from reporails_cli.core.platform.dto.results import AgentConfig, ProjectConfig
+from reporails_cli.core.platform.dto.results import AgentConfig, ConfiguredRoot
 from reporails_cli.core.platform.policy.applicability import filter_by_capability
+from reporails_cli.core.platform.policy.rule_sets import file_level_ids
+from reporails_cli.core.platform.rules.rule_builder import RuleFieldError, build_rule, load_checks
 from reporails_cli.core.platform.utils.utils import (
     load_yaml_file,
     read_frontmatter,
@@ -57,53 +58,13 @@ def registry_rule_ids(agent: str = "") -> frozenset[str]:
     return frozenset(load_rules(agent=agent))
 
 
-def _file_level_ids(rules: Mapping[str, Rule]) -> frozenset[str]:
-    """Ids of the content checks of `rules` that require something in a file."""
-    return frozenset(
-        check.id
-        for rule in rules.values()
-        for check in rule.checks
-        if check.type == "content_query" and check.expect == "present" and check.id
-    )
-
-
 @lru_cache(maxsize=8)
 def file_level_check_ids(agent: str = "") -> frozenset[str]:
     """Ids of the bundled content checks that require something in a file (bundled rules only).
 
     A finding from one of these concerns the whole file: there is no line to point at.
     """
-    return _file_level_ids(load_rules(agent=agent))
-
-
-def convention_check_ids(rules: Mapping[str, Rule]) -> frozenset[str]:
-    """Ids of the checks of `rules` flagged `convention: true`: their finding names a missing convention."""
-    return frozenset(check.id for rule in rules.values() for check in rule.checks if check.convention and check.id)
-
-
-def whole_run_check_ids(rules: Mapping[str, Rule]) -> frozenset[str]:
-    """Ids of the checks of `rules` whose finding stands for the matched files as a whole.
-
-    These are the content checks that require something in a file and the project-aggregate
-    checks: neither points at one file or line.
-    """
-    return _file_level_ids(rules) | frozenset(
-        check.id for rule in rules.values() for check in rule.checks if check.project_scope and check.id
-    )
-
-
-def rule_dependencies(rules: Mapping[str, Rule]) -> dict[str, frozenset[str]]:
-    """`{rule id: the rule ids it depends on}` across `rules`, resolved through supersession.
-
-    A dependency on a rule an agent rule supersedes names the superseding rule, which carries
-    the findings under its own id.
-    """
-    successor = {r.supersedes: rid for rid, r in rules.items() if r.supersedes}
-    return {
-        rid: frozenset(successor.get(dep, dep) for dep in rule.depends_on)
-        for rid, rule in rules.items()
-        if rule.depends_on
-    }
+    return file_level_ids(load_rules(agent=agent))
 
 
 def get_rules_dir() -> Path:
@@ -112,16 +73,22 @@ def get_rules_dir() -> Path:
 
 
 def load_rules_from_path(path: Path) -> dict[str, Rule]:
-    """Load the bundled framework rules of a single directory, returning {id: Rule}. Cached per path."""
+    """Load the rules of a single directory, returning {id: Rule}.
+
+    A folder of the bundled rules is read once per process; any other directory is scanned on each call.
+    """
     if not path.exists():
         return {}
-    return dict(_read_rules(path))
-
-
-@cache
-def _read_rules(path: Path) -> dict[str, Rule]:
-    """Read every rule under a framework `path`. Cached per path: framework rules do not change within a run."""
+    rules_root = get_rules_path()
+    if path.parent == rules_root:
+        return dict(_bundled_rules(str(rules_root), path.name))
     return _scan_rules(path)
+
+
+@lru_cache(maxsize=32)
+def _bundled_rules(rules_root: str, folder: str) -> Mapping[str, Rule]:
+    """Every rule of one folder of a rules root, cached per rules root and folder (the bundle's identity)."""
+    return MappingProxyType(_scan_rules(Path(rules_root) / folder))
 
 
 class RuleReadError(ValueError):
@@ -300,9 +267,10 @@ def _load_all_packages(roots: list[tuple[Path, list[str]]], bundled_ids: set[str
 
 def load_rules(
     rules_paths: list[Path] | None = None,
-    project_root: Path | None = None,
     agent: str = "",
-    scan_root: Path | None = None,
+    *,
+    project: ConfiguredRoot | None = None,
+    scan: ConfiguredRoot | None = None,
 ) -> dict[str, Rule]:
     """Load rules from directories, filtered by agent and project config."""
     if not rules_paths:
@@ -315,8 +283,7 @@ def load_rules(
         return {}
 
     rules: dict[str, Rule] = {}
-    config = _load_project_config(project_root)
-    scan_config = _load_project_config(scan_root) if scan_root and scan_root != project_root else ProjectConfig()
+    scan_extra = scan if scan is not None and (project is None or scan.root != project.root) else None
 
     # 1. Load framework rules from primary path (core + selected agent)
     rules.update(load_rules_from_path(primary / "core"))
@@ -331,10 +298,10 @@ def load_rules(
 
     # 2b. Load the project's rule packages after the framework rules: a package rule
     # reusing a bundled rule's ID (or another package's) stops the run.
-    if project_root is not None:
-        roots = [(project_root, config.packages)]
-        if scan_root and scan_root != project_root:
-            roots.append((scan_root, scan_config.packages))
+    if project is not None:
+        roots = [(project.root, project.config.packages)]
+        if scan_extra is not None:
+            roots.append((scan_extra.root, scan_extra.config.packages))
         rules.update(_load_all_packages(roots, set(rules)))
 
     on_disk_ids = set(rules)
@@ -357,7 +324,9 @@ def load_rules(
     _validate_depends_on(rules, superseded_by, on_disk_ids)
 
     # 5. Remove disabled rules (merge from project_root + scan_root configs)
-    disabled: set[str] = set(config.disabled_rules or []) | set(scan_config.disabled_rules or [])
+    disabled: set[str] = set(project.config.disabled_rules if project else ()) | set(
+        scan_extra.config.disabled_rules if scan_extra else ()
+    )
     if disabled:
         rules = {k: v for k, v in rules.items() if k not in disabled}
 
@@ -379,7 +348,7 @@ def _filter_by_agent(rules: dict[str, Rule], agent: str) -> dict[str, Rule]:
     agent lacks per framework/capabilities_matrix.yml (no-op for an unknown or
     empty agent — see filter_by_capability).
     """
-    agent_config = get_agent_config(agent) if agent else AgentConfig()
+    agent_config = bundled_agent_config(agent) if agent else AgentConfig()
     rules = apply_agent_excludes(rules, agent_config)
     if agent_config.overrides:
         rules = _apply_agent_overrides(rules, agent_config.overrides)
@@ -566,10 +535,3 @@ def _apply_agent_overrides(
             new_checks.append(check)
         result[rule_id] = new_rule.model_copy(update={"checks": new_checks})
     return result
-
-
-def _load_project_config(project_root: Path | None) -> ProjectConfig:
-    """Load project config, returning defaults when project_root is None."""
-    if project_root is None:
-        return ProjectConfig()
-    return get_project_config(project_root)

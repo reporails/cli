@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from reporails_cli.core.discovery.agent_discovery import claude_project_dir, claude_projects_dir
+from reporails_cli.core.eventbus.adapters.claude_calls import HANDBACK_TOOL
 from reporails_cli.core.eventbus.adapters.claude_transcript import ClaudeTranscriptAdapter
 from reporails_cli.core.eventbus.port import (
     PayloadRefused,
@@ -19,7 +20,15 @@ from reporails_cli.core.eventbus.port import (
 from reporails_cli.core.eventbus.store import UNSAFE_ID_CHARS
 from reporails_cli.core.eventbus.tail import read_appended_lines
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
-from reporails_cli.core.platform.dto.events import CallDetail, EventRecord, FileCursor, TranscriptCursor
+from reporails_cli.core.platform.dto.events import (
+    ASSISTANT_ROW_KINDS,
+    EventKind,
+    EventRecord,
+    FileCursor,
+    TranscriptCursor,
+)
+from reporails_cli.core.platform.dto.transcript import CallDetail, SummarySpan
+from reporails_cli.core.platform.dto.xray_graph import OutputSource
 
 _SUBAGENT_PREFIX = "agent-"
 # How many of a project's transcripts the session listing keeps.
@@ -205,6 +214,53 @@ def subagent_brief(agent: str, session_file: Path, subagent_id: str) -> str | No
     return None if first_row is None else adapter.resolve_brief(first_row)
 
 
+def subagent_output(
+    agent: str, session_file: Path, subagent_id: str, source: OutputSource, use_id: str | None
+) -> str | None:
+    """The text one subagent handed back, read from `source`: the first hand-back call of its file (`handback`),
+    the text of the last assistant row of its file when that row holds no tool call (`reply`), or the result of the
+    launching call `use_id` in the transcript file that holds it (`result`). None when the source holds no text.
+
+    For `reply` a row the adapter refuses is skipped, so the last readable reply counts; `handback` and `result`
+    raise `PayloadRefused` on a row that is not the shape the adapter is pinned to.
+
+    Raises `PayloadRefused` when the agent is unknown, the source is `result` and no launching call is named, or a
+    `handback` or `result` row read is not the shape the adapter is pinned to. The text is returned, never stored."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        raise PayloadRefused(f"unknown agent: {agent}")
+    path = _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
+    if source == "handback":
+        row = _find_row(path, HANDBACK_TOOL, lambda found: adapter.resolve_handback(found) is not None)
+        return None if row is None else adapter.resolve_handback(row)
+    if source == "reply":
+        return _last_reply(adapter, path, subagent_id)
+    if use_id is None:
+        raise PayloadRefused("the subagent's launching call is not named")
+    for _, file in _files(session_file):
+        row = _find_row(file, use_id, lambda found: adapter.holds_result(found, use_id))
+        if row is not None:
+            return adapter.resolve_result(row, use_id)
+    return None
+
+
+def _last_reply(adapter: TranscriptAdapter, path: Path, subagent_id: str) -> str | None:
+    """The text of the last assistant row of a subagent file that carries text or a tool call, None when that row
+    is a tool call or the file cannot be read. A row the adapter refuses is skipped."""
+
+    def last_kind(row: JsonObject) -> EventKind | None:
+        try:
+            kinds = [r.event for r in adapter.resolve_row(row, subagent_id) if r.event in ASSISTANT_ROW_KINDS]
+        except PayloadRefused:
+            return None
+        return kinds[-1] if kinds else None
+
+    row = _find_row(path, '"assistant"', lambda found: last_kind(found) is not None, latest=True)
+    if row is None or last_kind(row) != "assistant_text":
+        return None
+    return adapter.resolve_reply(row)
+
+
 def subagent_system(agent: str, session_file: Path, subagent_id: str | None) -> str | None:
     """The system prompt the first request of one subagent was sent with, or None when the session has no such
     subagent file or the file records no request with its shape. With no subagent id, the system prompt of the
@@ -244,30 +300,41 @@ def prompt_text(agent: str, session_file: Path, prompt_id: str) -> str | None:
     return None if row is None else adapter.resolve_prompt(row)
 
 
-def compact_summaries(agent: str, session_file: Path, subagent_id: str | None) -> list[str]:
-    """The compaction summary texts of the main transcript (`subagent_id` None) or that subagent's file, in the
-    order the file records them; empty when the file holds none or cannot be read.
-
-    Raises `PayloadRefused` when the agent is unknown. The texts are returned, never stored."""
-    adapter = get_transcript_adapter(agent)
-    if adapter is None:
-        raise PayloadRefused(f"unknown agent: {agent}")
-    lines, _ = read_appended_lines(_owner_path(session_file, subagent_id), 0)
-    return [text for line in lines if (text := _summary_text(adapter, line)) is not None]
-
-
-def compact_summary_sizes(
+def scan_compact_summaries(
     agent: str, session_file: Path, subagent_id: str | None, offset: int
-) -> tuple[list[int], int]:
-    """The sizes in characters of the compaction summaries in the lines of one transcript file appended since byte
-    `offset`, and the offset just past the lines read; a torn last line waits for the next read.
+) -> tuple[list[SummarySpan], int]:
+    """The compaction summaries in the lines of one transcript file appended since byte `offset`, each with the id
+    of the boundary row it follows and the byte range of its line, and the offset just past the lines read; a torn
+    last line waits for the next read. A summary row that names no boundary is left out.
 
-    Raises `PayloadRefused` when the agent is unknown. Only sizes are returned, never text."""
+    Raises `PayloadRefused` when the agent is unknown. Only sizes and positions are returned, never text."""
     adapter = get_transcript_adapter(agent)
     if adapter is None:
         raise PayloadRefused(f"unknown agent: {agent}")
     lines, end = read_appended_lines(_owner_path(session_file, subagent_id), offset)
-    return [len(text) for line in lines if (text := _summary_text(adapter, line)) is not None], end
+    spans: list[SummarySpan] = []
+    start = offset
+    for line in lines:
+        stop = start + len(line)
+        found = _summary_row(adapter, line)
+        if found is not None and found[0] is not None:
+            spans.append(SummarySpan(found[0], len(found[1]), start, stop))
+        start = stop + 1
+    return spans, end
+
+
+def compact_summary(agent: str, session_file: Path, subagent_id: str | None, span: SummarySpan) -> str | None:
+    """The text of the compaction summary at `span` of the main transcript (`subagent_id` None) or that subagent's
+    file, reading only that line; None when the file no longer holds a summary there, or one that follows another
+    boundary than `span.link`.
+
+    Raises `PayloadRefused` when the agent is unknown. The text is returned, never stored."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        raise PayloadRefused(f"unknown agent: {agent}")
+    lines, _ = read_appended_lines(_owner_path(session_file, subagent_id), span.start, span.end + 1)
+    found = _summary_row(adapter, lines[0]) if lines else None
+    return None if found is None or found[0] != span.link else found[1]
 
 
 def _owner_path(session_file: Path, subagent_id: str | None) -> Path:
@@ -277,12 +344,15 @@ def _owner_path(session_file: Path, subagent_id: str | None) -> Path:
     return _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
 
 
-def _summary_text(adapter: TranscriptAdapter, line: bytes) -> str | None:
-    """The summary text of a transcript line when it is a compaction summary row; None for any other line."""
+def _summary_row(adapter: TranscriptAdapter, line: bytes) -> tuple[str | None, str] | None:
+    """The boundary id and the text of a transcript line that is a compaction summary row; None for any other
+    line."""
     if b'"isCompactSummary"' not in line:
         return None
     with contextlib.suppress(ValueError):
-        return adapter.resolve_compact_summary(as_object(json.loads(line)))
+        row = as_object(json.loads(line))
+        text = adapter.resolve_compact_summary(row)
+        return None if text is None else (adapter.resolve_compact_link(row), text)
     return None
 
 

@@ -16,8 +16,8 @@ from reporails_cli.core.classify.stopwords import (
     _try_decompose,
     decompose,
     is_guard,
-    write_vocab,
 )
+from reporails_cli.core.classify.stopwords_sync import write_vocab
 
 
 @pytest.mark.unit

@@ -69,7 +69,7 @@ class _Site:
         if self.revoke_error:
             raise self.revoke_error
 
-    def _check(self, key: str) -> KeyCheck:
+    def _check(self, key: str, tier: str) -> KeyCheck:
         self.checked_keys.append(key)
         return self.check
 

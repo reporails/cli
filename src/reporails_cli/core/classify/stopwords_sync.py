@@ -9,7 +9,6 @@ import regex
 import yaml
 
 from reporails_cli.core.classify.stopwords import decompose, is_guard, recompose
-from reporails_cli.core.platform.adapters.registry import RuleReadError, read_checks_document
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
     JsonValue,
@@ -20,9 +19,9 @@ from reporails_cli.core.platform.contract.json_value import (
 from reporails_cli.core.platform.contract.rule_pattern import compile_rule_pattern
 from reporails_cli.core.platform.dto.classify import FieldOutcome, PatternParts, SyncResult
 from reporails_cli.core.platform.dto.models import REGEX_PATTERN_FIELDS
+from reporails_cli.core.platform.rules.registry import RuleReadError, read_checks_document
 from reporails_cli.core.platform.utils.utils import (
     fast_yaml_load,
-    forget_yaml_file,
     non_text_items,
     unreadable_file_problem,
 )
@@ -236,7 +235,6 @@ def sync_vocab(rule_dir: Path, *, dry_run: bool = False) -> SyncResult:
             yaml.dump(checks_data, default_flow_style=False, sort_keys=False, allow_unicode=True),
             encoding="utf-8",
         )
-        forget_yaml_file(checks_path)
 
     return result
 
@@ -252,3 +250,13 @@ def sync_all(rules_root: Path, *, dry_run: bool = False) -> list[SyncResult]:
         results.append(sync_vocab(rule_dir, dry_run=dry_run))
 
     return results
+
+
+def write_vocab(rule_dir: Path, vocab: JsonObject) -> Path:
+    """Write vocab.yml to a rule directory."""
+    vocab_path = rule_dir / "vocab.yml"
+    vocab_path.write_text(
+        yaml.dump(vocab, default_flow_style=False, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    return vocab_path

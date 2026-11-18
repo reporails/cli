@@ -122,7 +122,9 @@ def _mcp_env(context, session: str = "") -> dict[str, str]:
     return {**suite_env(os.environ), "HOME": str(context.home), "USERPROFILE": str(context.home), SESSION_ENV: session}
 
 
-async def _xray_calls(project: Path, env: dict[str, str], *, together: bool) -> list[tuple[dict, float]]:
+async def _xray_calls(project: Path, env: dict[str, str], *, together: bool) -> tuple[list[tuple[dict, float]], str]:
+    """The two calls' replies with their durations, and the first reply's page `/launch` answer, read while the
+    agent's MCP server still runs: on Windows the client ends the server's whole process tree, the page with it."""
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
@@ -139,12 +141,16 @@ async def _xray_calls(project: Path, env: dict[str, str], *, together: bool) -> 
         async with stdio_client(params, errlog=server_log) as (read, write), ClientSession(read, write) as session:
             await session.initialize()
             if together:
-                return list(await asyncio.gather(call(session), call(session)))
-            return [await call(session), await call(session)]
+                replies = list(await asyncio.gather(call(session), call(session)))
+            else:
+                replies = [await call(session), await call(session)]
+            first = replies[0][0]
+            launch = await asyncio.to_thread(_get, _base(first["url"]) + "launch") if "url" in first else ""
+            return replies, launch
 
 
 def _mcp_calls(context, *, together: bool, session: str = "") -> None:
-    context.mcp = asyncio.run(
+    context.mcp, context.mcp_launch = asyncio.run(
         asyncio.wait_for(
             _xray_calls(context.project, _mcp_env(context, session), together=together), timeout=PAGE_START_S * 3
         )
@@ -177,7 +183,7 @@ def step_mcp_fast(context):
 
 @then("the address's page answers as the x-ray page")
 def step_mcp_page_answers(context):
-    launch = json.loads(_get(_base(context.url) + "launch"))
+    launch = json.loads(context.mcp_launch)
     assert launch["launch"], launch
 
 
@@ -446,3 +452,72 @@ def step_fresh_page(context):
     assert _base(context.url) != context.first_page, "the stale page was handed out again"
     status, body = _view_status(context.url)
     assert status == 200 and body["nodes"], (status, body)
+
+
+def _stamp(epoch_s: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(epoch_s)) + f".{int(epoch_s % 1 * 1000):03d}Z"
+
+
+def _write_session(folder: Path, project: Path, name: str, began: float, ended: float, *, cleared: bool) -> None:
+    """A transcript whose first row is at `began`, opening with `/clear` when `cleared`, last written at `ended`."""
+    row = {"sessionId": name, "cwd": str(project)}
+    prompt = {
+        **row,
+        "type": "user",
+        "uuid": f"{name}-prompt",
+        "timestamp": _stamp(began + 1),
+        "promptSource": "typed",
+        "origin": {"kind": "human"},
+        "message": {"role": "user", "content": "a prompt"},
+    }
+    caveat = {
+        **row,
+        "type": "user",
+        "isMeta": True,
+        "timestamp": _stamp(began),
+        "uuid": f"{name}-caveat",
+        "message": {"role": "user", "content": "<local-command-caveat>run directly</local-command-caveat>"},
+    }
+    command = {
+        **row,
+        "type": "user",
+        "timestamp": _stamp(began - 0.03),
+        "uuid": f"{name}-command",
+        "message": {
+            "role": "user",
+            "content": "<command-name>/clear</command-name>\n<command-message>clear</command-message>",
+        },
+    }
+    path = folder / f"{name}.jsonl"
+    rows = [caveat, command, prompt] if cleared else [prompt]
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    os.utime(path, (ended, ended))
+
+
+@given("a project whose agent session was cleared into two sessions, one of them cleared again into a third")
+def step_double_clear(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    folder = context.home / ".claude" / "projects" / claude_project_folder_name(context.project)
+    folder.mkdir(parents=True)
+    now = time.time()
+    _write_session(folder, context.project, "first", now - 600, now - 100, cleared=False)
+    _write_session(folder, context.project, "side", now - 100, now - 60, cleared=True)
+    _write_session(folder, context.project, "middle", now - 99, now - 40, cleared=True)
+    _write_session(folder, context.project, "third", now - 40, now - 1, cleared=True)
+    context.third = "third"
+
+
+@when('"ails xray --current --background --no-open" is run in the project as the agent of the first session')
+def step_current_first(context):
+    _run_current(context, "first")
+
+
+@then("the printed address names the third session")
+def step_names_third(context):
+    assert f"?session={context.third}" in context.url, context.url
+
+
+@then("the page at that address shows the third session marked as one of several the clear could have led to")
+def step_third_ambiguous(context):
+    view = _view_of(context.url)
+    assert (view["session"], view["picked"]) == (context.third, "current_ambiguous"), view

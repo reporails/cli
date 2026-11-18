@@ -15,6 +15,7 @@ import pytest
 
 from reporails_cli.core.lint.rule_pages import serialize_match
 from reporails_cli.core.pipeline.mapping import apply_generic_scan
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch
 from reporails_cli.interfaces.cli.check_support import _arm_check_timeout
 from reporails_cli.interfaces.cli.explain_support import _resolve_rule_token
@@ -75,8 +76,8 @@ def test_generic_scan_passes_scanning_true(monkeypatch: pytest.MonkeyPatch) -> N
         return []
 
     monkeypatch.setattr("reporails_cli.core.pipeline.mapping.classify_files", fake_classify)
-    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.load_file_types", lambda agent, project_root: [])
-    apply_generic_scan(Path("/proj"), [], "claude", True)
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.load_file_types", lambda agent, config: [])
+    apply_generic_scan(RunContext(), Path("/proj"), [], "claude", generic_scanning=True)
     assert captured["generic_scanning"] is True
 
 
@@ -95,9 +96,11 @@ def test_generic_scan_import_extra_filters(monkeypatch: pytest.MonkeyPatch) -> N
         "reporails_cli.core.pipeline.mapping.classify_files",
         lambda scan_root, files, file_types, generic_scanning=False, exclusions=None: classified,
     )
-    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.load_file_types", lambda agent, project_root: [])
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.load_file_types", lambda agent, config: [])
 
-    import_extra, _ft_by_path = apply_generic_scan(target, instruction_files, "claude", True)
+    import_extra, _ft_by_path = apply_generic_scan(
+        RunContext(), target, instruction_files, "claude", generic_scanning=True
+    )
 
     assert (target / "B.md") in import_extra
     assert (target / "A.md") not in import_extra

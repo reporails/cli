@@ -7,10 +7,12 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.discovery import walk
-from reporails_cli.core.discovery.agents import clear_agent_cache, detect_agents
+from reporails_cli.core.discovery.agents import detect_agents
 from reporails_cli.core.discovery.features import detect_features_filesystem
 from reporails_cli.core.lint.rule_runner import _classify_agent_files
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import Level
+from reporails_cli.core.platform.dto.results import ProjectConfig
 from reporails_cli.core.platform.policy.levels import determine_level_from_gates
 from tests.conftest import skip_if_case_insensitive_fs
 
@@ -29,15 +31,15 @@ def _marker(root: Path, agent: str) -> None:
 
 
 def _level(root: Path) -> Level:
-    clear_agent_cache()
-    return determine_level_from_gates(detect_features_filesystem(root, agents=detect_agents(root)))
+    return determine_level_from_gates(
+        detect_features_filesystem(RunContext(), root, agents=detect_agents(RunContext(), root))
+    )
 
 
 def _files(root: Path, agent: str) -> list[str]:
-    clear_agent_cache()
     return sorted(
         p.relative_to(root).as_posix()
-        for a in detect_agents(root)
+        for a in detect_agents(RunContext(), root)
         if a.agent_type.id == agent
         for p in a.instruction_files
     )
@@ -81,7 +83,7 @@ def test_wrong_case_copy_is_discovered_and_typed_on_a_case_insensitive_filesyste
     exact_level = _level(tmp_path)
     exact_types = {
         cf.path.relative_to(tmp_path).as_posix(): cf.file_type
-        for cf in _classify_agent_files(tmp_path, [tmp_path / "docs" / "CLAUDE.md"], "claude")[0]
+        for cf in _classify_agent_files(tmp_path, [tmp_path / "docs" / "CLAUDE.md"], "claude", ProjectConfig())
     }
     (tmp_path / "docs" / "CLAUDE.md").rename(tmp_path / "docs" / "claude.md")
     monkeypatch.setattr(walk, "_same_file", lambda documented, listed: True)
@@ -89,7 +91,7 @@ def test_wrong_case_copy_is_discovered_and_typed_on_a_case_insensitive_filesyste
     found = _files(tmp_path, "claude")
     typed = {
         cf.path.relative_to(tmp_path).as_posix(): cf.file_type
-        for cf in _classify_agent_files(tmp_path, [tmp_path / "docs" / "CLAUDE.md"], "claude")[0]
+        for cf in _classify_agent_files(tmp_path, [tmp_path / "docs" / "CLAUDE.md"], "claude", ProjectConfig())
     }
 
     assert "docs/CLAUDE.md" in found
@@ -108,8 +110,8 @@ def test_lowercase_claude_md_rules_file_stays_a_rules_file_on_a_case_sensitive_f
     typed = {
         cf.path.relative_to(tmp_path).as_posix(): cf.file_type
         for cf in _classify_agent_files(
-            tmp_path, [tmp_path / "CLAUDE.md", tmp_path / ".claude/rules/claude.md"], "claude"
-        )[0]
+            tmp_path, [tmp_path / "CLAUDE.md", tmp_path / ".claude/rules/claude.md"], "claude", ProjectConfig()
+        )
     }
 
     assert typed[".claude/rules/claude.md"] == "rules"

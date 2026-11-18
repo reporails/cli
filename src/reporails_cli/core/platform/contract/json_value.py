@@ -44,6 +44,11 @@ def opt_int(value: JsonValue) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def opt_float(value: JsonValue) -> float | None:
+    """The number (not a bool) an optional field of a parsed document holds, as a float, else `None`."""
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
 def opt_str(value: JsonValue) -> str | None:
     """The string an optional field of a parsed document holds, else `None`."""
     return value if isinstance(value, str) else None

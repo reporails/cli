@@ -9,16 +9,18 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.heal.conformance import check_plan
-from reporails_cli.core.heal.file_io import read_lines
+from reporails_cli.core.heal.file_io import read_lines, write_bytes
 from reporails_cli.core.heal.plan import _touched, apply_edits, build_plan, leaving_lines
 from reporails_cli.core.heal.preservation import check_rewrite, failed_checks, take_snapshot
 from reporails_cli.core.lint.suppression import finding_surface
+from reporails_cli.core.platform.contract.environment import EnvironmentFor
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_int
 from reporails_cli.core.platform.dto.diagnostics import RemediationWorkflow, walk_findings
 from reporails_cli.core.platform.dto.heal import KeyedResult
 from reporails_cli.core.platform.dto.heal_plan import Edit, HealOp, Plan, PlanOp, is_heal_op
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+from reporails_cli.core.platform.utils.file_read import read_file_bytes, read_file_text
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +132,13 @@ def _partners(atoms_by_file: Mapping[str, list[Atom]]) -> dict[tuple[str, int], 
     return {(f, a.line): a for f, atoms in atoms_by_file.items() for a in atoms}
 
 
-def _drop_suppressed(plan: Plan, suppressed: Mapping[str, set[int]]) -> Plan:
+def drop_suppressed_ops(ops: Iterable[PlanOp], suppressed: Mapping[str, set[int]]) -> list[PlanOp]:
+    """The ops on no line its author annotated with an `ails-disable-line` directive."""
+    return [o for o in ops if o.line not in suppressed.get(o.file, set())]
+
+
+def drop_suppressed_edits(plan: Plan, suppressed: Mapping[str, set[int]]) -> Plan:
+    """The plan without any edit that touches an annotated line, so a reviewed line stays as it is."""
     kept = tuple(e for e in plan.edits if not _touched(e) & suppressed.get(e.file, set()))
     return Plan(kept, plan.slots, plan.refused)
 
@@ -144,6 +152,21 @@ def _readable(path: Path) -> tuple[list[str], list[str]] | None:
     return lines, endings
 
 
+def _plan_for(
+    ruleset_map: RulesetMap,
+    target: Path,
+    workflow: RemediationWorkflow,
+    raw: Mapping[str, tuple[list[str], list[str]]],
+    sup: Mapping[str, set[int]],
+) -> tuple[Plan, set[tuple[str, int, int | None, str]]]:
+    """The plan for the eligible files `raw` holds, and the keys of the places a decision may be asked."""
+    eligible = {f: a for f, a in _group(ruleset_map.atoms).items() if f in raw}
+    ops, workflow_keys = build_ops(workflow, eligible, target)
+    ops = drop_suppressed_ops((o for o in ops if o.file in raw), sup)
+    plan = drop_suppressed_edits(build_plan(ops, eligible, {f: r[0] for f, r in raw.items()}, _partners(eligible)), sup)
+    return plan, workflow_keys
+
+
 def keyed_heal(
     ruleset_map: RulesetMap,
     target: Path,
@@ -153,23 +176,29 @@ def keyed_heal(
     allowed_files: set[Path] | None,
     suppressed: Mapping[Path, set[int]] | None,
     remap: Callable[[list[Path]], RulesetMap | None],
+    environment_for: EnvironmentFor,
 ) -> KeyedResult:
     """Fix each finding at its own place, list the places left to a decision, and put back a file whose result
     departs from its plan (a re-map of the touched files is read; `dry_run` writes and checks nothing)."""
     result = KeyedResult()
     raw, sup = _eligible(_group(ruleset_map.atoms), allowed_files, suppressed or {})
-    eligible = {f: a for f, a in _group(ruleset_map.atoms).items() if f in raw}
-    ops, workflow_keys = build_ops(workflow, eligible, target)
-    ops = [o for o in ops if o.file in raw and o.line not in sup[o.file]]
-    plan = _drop_suppressed(build_plan(ops, eligible, {f: r[0] for f, r in raw.items()}, _partners(eligible)), sup)
+    plan, decision_keys = _plan_for(ruleset_map, target, workflow, raw, sup)
     result.decisions = [
         {"file": s.file, "line": s.line, "op": s.op, "rule": s.rule}
         for s in plan.slots
-        if (s.file, s.line, s.pi, s.op) in workflow_keys
+        if (s.file, s.line, s.pi, s.op) in decision_keys
     ]
     originals = {} if dry_run else _write(plan, raw)
     result.put_back = (
-        _put_back(plan, raw, remap=remap, originals=originals, ruleset_map=ruleset_map, target=target)
+        _put_back(
+            plan,
+            raw,
+            remap=remap,
+            originals=originals,
+            ruleset_map=ruleset_map,
+            target=target,
+            environment_for=environment_for,
+        )
         if originals
         else []
     )
@@ -203,8 +232,8 @@ def _write(plan: Plan, raw: Mapping[str, tuple[list[str], list[str]]]) -> dict[s
     for file in sorted({e.file for e in plan.edits}):
         lines, endings = raw[file]
         body, where = apply_edits(lines, [e for e in plan.edits if e.file == file])
-        originals[file] = Path(file).read_bytes()
-        Path(file).write_bytes(_text(lines, endings, body, where).encode("utf-8"))
+        originals[file] = read_file_bytes(Path(file))
+        write_bytes(Path(file), _text(lines, endings, body, where).encode("utf-8"))
     return originals
 
 
@@ -229,14 +258,23 @@ def _first_line(block: JsonObject, check: str) -> int:
 
 
 def _rewrite_failure(
-    file: str, original: bytes, *, ruleset_map: RulesetMap, fresh: RulesetMap, target: Path, deduped: Iterable[int] = ()
+    file: str,
+    original: bytes,
+    *,
+    ruleset_map: RulesetMap,
+    fresh: RulesetMap,
+    target: Path,
+    environment_for: EnvironmentFor,
+    deduped: Iterable[int] = (),
 ) -> JsonObject | None:
     """The put-back entry for `file` when the preservation check fails its written text against its original;
     the lines in `deduped` are repeats the plan removes, so their going is no loss."""
     text = original.decode("utf-8", errors="replace")
     snapshot = take_snapshot(file, text, ruleset_map, None, deduped)
-    written = Path(file).read_text(encoding="utf-8", errors="replace")
-    block = check_rewrite(snapshot, Path(file), fresh, written, score=None, scan_root=target)
+    written = read_file_text(Path(file), errors="replace")
+    block = check_rewrite(
+        snapshot, Path(file), fresh, written, score=None, scan_root=target, environment_for=environment_for
+    )
     failed = failed_checks(block)
     if not failed:
         return None
@@ -270,6 +308,7 @@ def _put_back(
     originals: Mapping[str, bytes],
     ruleset_map: RulesetMap,
     target: Path,
+    environment_for: EnvironmentFor,
 ) -> list[JsonObject]:
     """Re-map the written files, check each against its plan and with the rewrite check an agent's rewrite
     passes, and restore the original bytes of any that fail either; the entry names the check."""
@@ -278,14 +317,13 @@ def _put_back(
     out: list[JsonObject] = []
     if fresh_map is None:
         for file in touched:
-            Path(file).write_bytes(originals[file])
+            write_bytes(Path(file), originals[file])
             out.append({"file": file, "op": "", "rule": "", "line": 0, "check": REMAP_CHECK})
         return out
     fresh = _group(fresh_map.atoms)
     for file in touched:
         one = Plan(tuple(e for e in plan.edits if e.file == file), tuple(s for s in plan.slots if s.file == file))
-        written, _ = read_lines(Path(file))
-        found = check_plan(one, {file: raw[file][0]}, {file: written}, {file: fresh.get(file, ())})
+        found = check_plan(one, {file: raw[file][0]}, {file: read_lines(Path(file))[0]}, {file: fresh.get(file, ())})
         failure: JsonObject | None = (
             {"file": file, "op": found[0].op, "rule": found[0].rule, "line": found[0].line, "check": "conformance"}
             if found
@@ -295,10 +333,11 @@ def _put_back(
                 ruleset_map=ruleset_map,
                 fresh=fresh_map,
                 target=target,
+                environment_for=environment_for,
                 deduped=leaving_lines(one),
             )
         )
         if failure is not None:
-            Path(file).write_bytes(originals[file])
+            write_bytes(Path(file), originals[file])
             out.append(failure)
     return out

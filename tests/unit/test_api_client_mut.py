@@ -19,6 +19,8 @@ from reporails_cli.core.platform.adapters.api_client import (
 )
 from tests.conftest import ails_client
 
+pytestmark = pytest.mark.usefixtures("server_reachable")
+
 # --- L517: per_file diagnostic required-field guard (or -> and, 3 sites) ---
 
 
@@ -132,31 +134,6 @@ def test_lint_default_local_forwarded_as_empty(monkeypatch):
     client = ails_client("https://example.invalid")
     client.lint(_make_map(), root=Path("/tmp/reporails-test-scan-root"))
     assert list(captured["local"]) == []
-
-
-# --- L276: tier fallback chain (`tier or env or ... or "free"`, or -> and) ---
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_api
-def test_explicit_tier_wins_over_env(monkeypatch):
-    """An explicit tier arg must win; the `or` chain short-circuits to it.
-
-    With env set to a different value, `tier or env` -> tier, but the
-    `or -> and` mutant yields env — asserting the explicit tier reddens it.
-    """
-    monkeypatch.setenv("AILS_TIER", "enterprise")
-    client = ails_client("https://example.invalid", tier="pro")
-    assert client.tier == "pro"
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_api
-def test_env_tier_used_when_no_explicit_tier(monkeypatch):
-    """With no explicit tier, the env value is used (second `or` site)."""
-    monkeypatch.setenv("AILS_TIER", "enterprise")
-    client = ails_client("https://example.invalid")
-    assert client.tier == "enterprise"
 
 
 def _make_map():

@@ -7,13 +7,17 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.agent_config import load_config_file_types
 from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES, glob_file_type_patterns
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, pattern_list
 from reporails_cli.core.platform.dto.discovery import MemoryEntry, RunExclusions
+from reporails_cli.core.platform.utils.file_read import read_file_text
 
 logger = logging.getLogger(__name__)
 
 
-def memory_entries_for_agent(agent: str, project_root: Path, exclusions: RunExclusions) -> list[MemoryEntry]:
+def memory_entries_for_agent(
+    run: RunContext, agent: str, project_root: Path, exclusions: RunExclusions
+) -> list[MemoryEntry]:
     """Enumerate memory entries declared by an agent's config.
 
     Returns `[]` when the agent has no memory surface OR the surface
@@ -30,14 +34,20 @@ def memory_entries_for_agent(agent: str, project_root: Path, exclusions: RunExcl
         spec = file_types.get(capability)
         if not isinstance(spec, dict):
             continue
-        entries.extend(_entries_from_directory_globs(agent, capability, spec, project_root, exclusions))
+        entries.extend(
+            _entries_from_directory_globs(
+                run, agent, capability, spec, project_root=project_root, exclusions=exclusions
+            )
+        )
     return entries
 
 
 def _entries_from_directory_globs(
+    run: RunContext,
     agent: str,
     capability: str,
     spec: JsonObject,
+    *,
     project_root: Path,
     exclusions: RunExclusions,
 ) -> list[MemoryEntry]:
@@ -57,11 +67,11 @@ def _entries_from_directory_globs(
         return []
     # Pass empty properties — directory-glob dispatch in glob_file_type_patterns
     # only needs the patterns themselves for trailing-slash enumeration.
-    paths = glob_file_type_patterns(project_root, patterns, {}, exclusions)
+    paths = glob_file_type_patterns(run, project_root, patterns, {}, exclusions)
     entries: list[MemoryEntry] = []
     for path in paths:
         try:
-            body = path.read_text(encoding="utf-8", errors="replace")
+            body = read_file_text(path, errors="replace")
         except OSError:
             continue
         entries.append(MemoryEntry(agent=agent, path=path, body=body))

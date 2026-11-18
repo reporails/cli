@@ -7,7 +7,9 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.classify import classify_files, load_file_types
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.rule_runner import run_m_probes
+from reporails_cli.core.platform.config.run_context import RunContext
 
 LONG = "\n".join(f"line {i}" for i in range(601)) + "\n"
 SHORT = "---\nname: a\ndescription: does a thing\n---\n" + "\n".join(f"l{i}" for i in range(16)) + "\n"
@@ -21,7 +23,9 @@ def _write(root: Path, rel: str, text: str) -> Path:
 
 
 def _run(root: Path, files: list[Path], skills: dict[str, str] | None) -> list:
-    return run_m_probes(root, files, agent="claude", skills=skills)
+    return run_m_probes(
+        RunContext(), root, files, agent="claude", skills=skills, exclusions=load_run_exclusions(RunContext(), root)
+    )
 
 
 def _ids(findings: list, rel: str) -> set[str]:
@@ -32,7 +36,7 @@ def _ids(findings: list, rel: str) -> set[str]:
 @pytest.mark.subsys_lint
 def test_group_skill_md_is_not_a_skill(tmp_path: Path) -> None:
     f = _write(tmp_path, ".claude/skills/group/x/SKILL.md", LONG)
-    file_types = load_file_types("claude", project_root=tmp_path)
+    file_types = load_file_types("claude", config=RunContext().project_config(tmp_path))
     classified = classify_files(tmp_path, [f], file_types, skills={})
     assert all(cf.file_type != "skills" for cf in classified)
     ids = _ids(_run(tmp_path, [f], {}), "group/x/SKILL.md")

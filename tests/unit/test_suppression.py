@@ -12,8 +12,8 @@ from reporails_cli.core.lint.suppression import (
     build_index,
     finding_surface,
 )
-from reporails_cli.core.platform.adapters.registry import load_rules
 from reporails_cli.core.platform.dto.models import LocalFinding
+from reporails_cli.core.platform.rules.registry import load_rules
 from reporails_cli.core.platform.runtime.merger import merge_results
 from reporails_cli.core.platform.utils.directives import parse_directives
 

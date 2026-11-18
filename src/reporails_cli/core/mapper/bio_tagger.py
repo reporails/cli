@@ -8,26 +8,22 @@ on ``bio_graphs.multislot_available``.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, get_args
 
 import numpy as np
 import numpy.typing as npt
 
-from reporails_cli.core.mapper.bio_graphs import (
-    _enc_a_path,
-    _enc_b_path,
-)
 from reporails_cli.core.mapper.encode_pool import ort_intra_threads
 from reporails_cli.core.mapper.model_manifest import EMBEDDER_SUBDIR, get_models_path
-from reporails_cli.core.mapper.model_store import reload_after_repair
 from reporails_cli.core.mapper.onnx_session import _OnnxEncoderSession
 from reporails_cli.core.mapper.word_spans import word_offsets
 from reporails_cli.core.platform.dto.ruleset import Modality
 
 if TYPE_CHECKING:
     import onnxruntime as ort
+
+    from reporails_cli.core.mapper.models import Models
 
 # A model tensor: float32 hidden states, features or logits.
 type Float32Array = npt.NDArray[np.float32]
@@ -79,11 +75,6 @@ class _BioEncoder(_OnnxEncoderSession):
         return [(hidden[i, : len(t.ids)], t.offsets) for i, t in enumerate(tokens)]
 
 
-@lru_cache(maxsize=4)
-def _head_session(head_path: str) -> ort.InferenceSession:
-    return reload_after_repair(lambda: _build_head_session(head_path))
-
-
 def _build_head_session(head_path: str) -> ort.InferenceSession:
     import onnxruntime as ort  # pylint: disable=import-outside-toplevel  # ML runtime loads on first model use
 
@@ -132,16 +123,6 @@ _POLARITY: dict[HeadClass, int] = {"DIRECTIVE": 1, "RESTRICTIVE": -1, "NEUTRAL":
 _SOAS_AXES = ("subject", "predicate", "object", "scope")
 
 
-@lru_cache(maxsize=1)
-def _enc_a() -> _BioEncoder:
-    return reload_after_repair(lambda: _BioEncoder(_enc_a_path()))
-
-
-@lru_cache(maxsize=1)
-def _enc_b() -> _BioEncoder:
-    return reload_after_repair(lambda: _BioEncoder(_enc_b_path()))
-
-
 def _softmax_rows(logits: Float32Array) -> Float32Array:
     """Row-wise softmax over the last axis."""
     e = np.exp(logits - logits.max(axis=-1, keepdims=True))
@@ -150,12 +131,12 @@ def _softmax_rows(logits: Float32Array) -> Float32Array:
 
 
 def _run_head(
-    feats: Float32Array, word_spans: list[tuple[int, int]], head_path: Path, outputs: Sequence[str]
+    feats: Float32Array, word_spans: list[tuple[int, int]], head_path: Path, outputs: Sequence[str], models: Models
 ) -> tuple[dict[str, Float32Array], list[tuple[int, int]]]:
     """Run the (small) head over pooled word features → ({output_name: logits}, word_spans)."""
     if feats.shape[0] == 0:
         return {}, word_spans
-    session = _head_session(str(head_path))
+    session = models.head_session(head_path)
     feed: dict[str, Float32Array] = {"word_feats": feats[None, :, :]}
     if any(i.name == "word_mask" for i in session.get_inputs()):
         feed["word_mask"] = np.ones((1, feats.shape[0]), dtype=np.float32)
@@ -164,9 +145,15 @@ def _run_head(
 
 
 def _extract_pass_from_states(
-    hidden: Float32Array, offsets: list[tuple[int, int]], text: str, head_path: Path, outputs: Sequence[str]
+    hidden: Float32Array,
+    offsets: list[tuple[int, int]],
+    text: str,
+    head_path: Path,
+    outputs: Sequence[str],
+    *,
+    models: Models,
 ) -> tuple[dict[str, Float32Array], list[tuple[int, int]], list[bool]]:
     """Head extraction from a precomputed encoder forward — the batched path's per-text step."""
     feats, word_spans, covered = _pool_words(hidden, offsets, text)
-    out, word_spans = _run_head(feats, word_spans, head_path, outputs)
+    out, word_spans = _run_head(feats, word_spans, head_path, outputs, models)
     return out, word_spans, covered

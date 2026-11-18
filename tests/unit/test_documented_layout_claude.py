@@ -13,7 +13,9 @@ import pytest
 
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.discovery.agent_discovery import discover_from_config
-from reporails_cli.core.discovery.agents import clear_agent_cache, detect_agents
+from reporails_cli.core.discovery.agents import detect_agents
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
+from reporails_cli.core.platform.config.run_context import RunContext
 
 MANIFEST = ".claude-plugin/plugin.json"
 BODY = "---\nname: demo\ndescription: Demo file\n---\n\nRun the tests before each commit.\n"
@@ -55,7 +57,7 @@ def _project(root: Path) -> Path:
 @pytest.mark.subsys_classify
 def test_documented_project_locations_are_discovered(tmp_path: Path) -> None:
     project = _project(tmp_path / "proj")
-    discovered = discover_from_config(project, "claude")
+    discovered = discover_from_config(RunContext(), project, "claude", load_run_exclusions(RunContext(), project))
     assert discovered is not None
     found = {p.relative_to(project).as_posix() for group in discovered for p in group}
     for rel, _ in PROJECT_ROWS:
@@ -100,5 +102,4 @@ def test_managed_locations_are_declared(path: str, expected: str) -> None:
 def test_a_plain_dot_claude_project_still_names_claude(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     _write(project / ".claude/rules/a.md")
-    clear_agent_cache()
-    assert "claude" in {a.agent_type.id for a in detect_agents(project)}
+    assert "claude" in {a.agent_type.id for a in detect_agents(RunContext(), project)}

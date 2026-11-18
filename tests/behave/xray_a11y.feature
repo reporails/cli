@@ -11,6 +11,21 @@ Feature: The x-ray page works by keyboard, keeps its focus, and stays readable t
     Then Enter on an eye toggle and on a group header keeps focus on that control
 
   @page @browser
+  Scenario: A compaction stripe opens its details from the keyboard and Escape gives focus back to it
+    Given the bundled page is served over the "view_sample" fixture view
+    Then Enter on a compaction stripe opens its details window with one click and Escape returns focus to the stripe
+
+  @page @browser
+  Scenario: A compaction stripe leaves the time labels, stretch bars and Tool calls link under it reachable
+    Given the bundled page is served over the "view_sample" fixture view
+    Then a time label, a stretch bar and the Tool calls link inside a compaction stripe's band still receive the pointer
+
+  @page @browser
+  Scenario: A details window taller than the screen keeps its top bar on screen at the end of the page
+    Given the bundled page is served over the "view_sample" fixture view
+    Then a details window taller than the screen opened at the end of the page keeps its top bar on screen
+
+  @page @browser
   Scenario: Details opened from a canvas node make the canvas inert and give focus back to that node
     Given the bundled page is served over the "view_sample" fixture view
     Then Enter on a canvas source node opens details with one click, the canvas is inert, and Escape returns focus to that node
@@ -34,6 +49,7 @@ Feature: The x-ray page works by keyboard, keeps its focus, and stays readable t
   Scenario: Control borders and the selected indicator reach 3 to 1
     Given the bundled page is served over the "view_sample" fixture view
     Then segment and session switcher borders and the selected tab and segment indicators reach 3 to 1
+    And a loaded slot chip's fill reaches 3 to 1 on its card and a chip with nothing loaded has no fill
 
   @page @browser
   Scenario: At 580 pixels of graph column the canvas text still renders at 10.5 pixels

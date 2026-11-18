@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.discovery.agent_discovery import discover_from_config
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
+from reporails_cli.core.platform.config.run_context import RunContext
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_classify]
 
@@ -29,10 +31,14 @@ def _names(found: tuple[list[Path], list[Path], list[Path]] | None) -> set[str]:
 
 
 def test_check_leaves_out_the_remote_settings_cache(user_folder: Path) -> None:
-    found = discover_from_config(user_folder, "claude", repo_scoped=True)
+    found = discover_from_config(
+        RunContext(), user_folder, "claude", load_run_exclusions(RunContext(), user_folder), repo_scoped=True
+    )
     assert _names(found) == {"settings.json"}
 
 
 def test_session_loads_still_list_the_remote_settings_cache(user_folder: Path) -> None:
-    found = discover_from_config(user_folder, "claude", repo_scoped=False)
+    found = discover_from_config(
+        RunContext(), user_folder, "claude", load_run_exclusions(RunContext(), user_folder), repo_scoped=False
+    )
     assert {"settings.json", "remote-settings.json"} <= _names(found)

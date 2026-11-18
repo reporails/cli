@@ -15,10 +15,13 @@ from reporails_cli.core.eventbus.transcript import (
     CALL_INPUT_CHARS,
     CALL_RESULT_CHARS,
     call_detail,
+    compact_summary,
     opens_with_clear,
     prompt_text,
     read_transcript,
+    scan_compact_summaries,
     subagent_brief,
+    subagent_output,
     subagent_system,
 )
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object
@@ -393,6 +396,51 @@ def test_a_delta_row_counts_its_added_items_less_its_removed_ones(tmp_path: Path
 def test_a_compact_boundary_row_is_a_post_compact_record_with_its_trigger(tmp_path: Path) -> None:
     records, _ = read_transcript("claude", _copy(COMPACTION, tmp_path), TranscriptCursor())
     assert [r.source for r in _of(records, "post_compact")] == ["manual"]
+
+
+def _boundary_kept(tmp_path: Path, preserved: JsonValue | None) -> tuple[list[EventRecord], list[str]]:
+    """The compaction records of the compaction fixture whose boundary row carries `preserved` as its
+    `preservedMessages` (the key is left out for None), and the refusal reasons."""
+    session = _copy(COMPACTION, tmp_path)
+
+    def edit(row: JsonObject) -> None:
+        metadata = as_object(row["compactMetadata"])
+        if preserved is not None:
+            metadata["preservedMessages"] = preserved
+
+    _edit_row(session, lambda r: r.get("subtype") == "compact_boundary", edit)
+    records, _ = read_transcript("claude", session, TranscriptCursor())
+    return _of(records, "post_compact"), [r.refusal or "" for r in _of(records, "refusal")]
+
+
+def test_a_boundary_without_preserved_messages_keeps_nothing_and_is_not_refused(tmp_path: Path) -> None:
+    compactions, refusals = _boundary_kept(tmp_path, None)
+    assert [r.boundary.kept for r in compactions if r.boundary] == [()] and refusals == []
+
+
+def test_a_boundary_names_the_messages_it_kept(tmp_path: Path) -> None:
+    compactions, refusals = _boundary_kept(tmp_path, {"uuids": ["a", "b"]})
+    assert [r.boundary.kept for r in compactions if r.boundary] == [("a", "b")] and refusals == []
+
+
+@pytest.mark.parametrize("preserved", ["a", ["a"], {"uuids": "a"}, {"uuids": ["a", 3]}, {}])
+def test_a_boundary_whose_preserved_messages_are_malformed_is_refused(tmp_path: Path, preserved: JsonValue) -> None:
+    compactions, refusals = _boundary_kept(tmp_path, preserved)
+    assert compactions == [] and len(refusals) == 1 and "preservedMessages" in refusals[0]
+
+
+def _summary_line(link: str, text: str) -> str:
+    row = {"type": "user", "isCompactSummary": True, "parentUuid": link, "message": {"role": "user", "content": text}}
+    return json.dumps(row) + "\n"
+
+
+def test_a_summary_is_read_only_while_its_line_still_links_to_the_boundary_it_was_found_for(tmp_path: Path) -> None:
+    session = tmp_path / "session.jsonl"
+    session.write_text(_summary_line("b1", "summary one") + _summary_line("b2", "summary two"), encoding="utf-8")
+    spans, _ = scan_compact_summaries("claude", session, None, 0)
+    assert [compact_summary("claude", session, None, span) for span in spans] == ["summary one", "summary two"]
+    session.write_text(_summary_line("b2", "summary two") + _summary_line("b9", "summary tre"), encoding="utf-8")
+    assert compact_summary("claude", session, None, spans[0]) is None
 
 
 def _tool_result(result: object) -> JsonObject:
@@ -1116,3 +1164,93 @@ def test_opens_with_clear_asks_the_adapter_registered_for_the_agent(
     session.write_text(_user_row("hi"))
     assert opens_with_clear("other", session) is True
     assert asked == [{"type": "user", "message": {"content": "hi"}}]
+
+
+def _attachment_session(tmp_path: Path, *attachments: JsonObject, boundary: JsonObject | None = None) -> Path:
+    stamp = {"sessionId": "s1", "timestamp": "2026-11-03T10:00:00Z", "cwd": "/p"}
+    rows: list[JsonObject] = [{"type": "system", "subtype": "compact_boundary", **(boundary or {}), **stamp}]
+    rows += [{"type": "attachment", "attachment": item, **stamp} for item in attachments]
+    path = tmp_path / "session.jsonl"
+    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    return path
+
+
+def test_a_file_attachment_names_its_path_and_never_holds_the_file_text(tmp_path: Path) -> None:
+    whole = {"type": "file", "filename": "/p/a.md", "content": {"type": "text", "file": {"content": "SECRET-TEXT"}}}
+    named = {"type": "compact_file_reference", "filename": "/p/b.md", "displayPath": "b.md"}
+    records, _ = read_transcript("claude", _attachment_session(tmp_path, whole, named), TranscriptCursor())
+    attached = [
+        (r.attachment.path, r.attachment.kind == "file") for r in _of(records, "file_attachment") if r.attachment
+    ]
+    assert attached == [("/p/a.md", True), ("/p/b.md", False)]
+    assert "SECRET-TEXT" not in repr(records) + json.dumps([r.to_json() for r in records])
+
+
+def test_a_file_attachment_without_a_filename_is_a_refusal(tmp_path: Path) -> None:
+    records, _ = read_transcript(
+        "claude", _attachment_session(tmp_path, {"type": "file", "content": {}}), TranscriptCursor()
+    )
+    assert not _of(records, "file_attachment")
+    assert any("filename" in (r.refusal or "") for r in _of(records, "refusal"))
+
+
+def test_a_compaction_names_the_rows_it_kept(tmp_path: Path) -> None:
+    kept = {"compactMetadata": {"trigger": "manual", "preservedMessages": {"uuids": ["u1", "u2"]}}}
+    records, _ = read_transcript("claude", _attachment_session(tmp_path, boundary=kept), TranscriptCursor())
+    (compaction,) = _of(records, "post_compact")
+    assert compaction.boundary is not None and compaction.boundary.kept == ("u1", "u2")
+
+
+def _recall_row(memories: JsonValue) -> JsonObject:
+    row = _deferred_row()
+    row["attachment"] = {"type": "relevant_memories", **({} if memories is None else {"memories": memories})}
+    return row
+
+
+def test_a_recall_names_each_note_it_brought_in() -> None:
+    records = ClaudeTranscriptAdapter().resolve_row(_recall_row([{"path": "/m/a.md"}, {"path": "/m/b.md"}]), None)
+    assert [record.attachment.path for record in records if record.attachment] == ["/m/a.md", "/m/b.md"]
+
+
+@pytest.mark.parametrize(
+    "memories",
+    [None, "a.md", {"path": "a.md"}, ["a.md"], [{"path": 3}], [{}], [{"path": "a.md"}, None]],
+)
+def test_a_recall_row_without_a_list_of_notes_each_with_a_path_is_refused(memories: JsonValue) -> None:
+    with pytest.raises(PayloadRefused, match="relevant_memories"):
+        ClaudeTranscriptAdapter().resolve_row(_recall_row(memories), None)
+
+
+def test_a_subagent_output_is_read_from_the_source_it_is_asked_for_and_never_stored(tmp_path: Path) -> None:
+    session = _copy_session(tmp_path)
+    handed = subagent_output("claude", session, SUB_A, "handback", None)
+    assert handed is not None and handed.startswith("PLACEHOLDER-HANDBACK") and len(handed) == 480
+    assert subagent_output("claude", session, SUB_C, "reply", None) == "PLACEHOLDER-TEXT-30"
+    returned = subagent_output("claude", session, SUB_D, "result", "toolu_agentD")
+    assert returned is not None and returned.startswith("PLACEHOLDER-D-REPORT")
+
+
+def test_a_subagent_output_is_none_when_its_source_holds_no_text(tmp_path: Path) -> None:
+    session = _copy_session(tmp_path)
+    assert subagent_output("claude", session, SUB_C, "handback", None) is None
+    assert subagent_output("claude", session, SUB_B, "reply", None) is None
+    assert subagent_output("claude", session, "nosuchagent", "reply", None) is None
+    assert subagent_output("claude", session, SUB_D, "result", "toolu_nosuchcall") is None
+
+
+def test_a_subagent_output_from_a_result_needs_the_launching_call_and_a_known_agent(tmp_path: Path) -> None:
+    session = _copy_session(tmp_path)
+    with pytest.raises(PayloadRefused, match="launching call"):
+        subagent_output("claude", session, SUB_D, "result", None)
+    with pytest.raises(PayloadRefused, match="unknown agent"):
+        subagent_output("nosuchagent", session, SUB_A, "handback", None)
+
+
+def test_a_reply_lookup_skips_an_assistant_row_the_adapter_refuses(tmp_path: Path) -> None:
+    session = tmp_path / "session.jsonl"
+    refused = _assistant_row(content=[{"type": "text"}])
+    final = _assistant_row(content=[{"type": "text", "text": "the final reply"}])
+    folder = tmp_path / "session" / "subagents"
+    folder.mkdir(parents=True)
+    (folder / "agent-aaaa.jsonl").write_text("".join(json.dumps(row) + "\n" for row in (refused, final)))
+    assert subagent_output("claude", session, "aaaa", "reply", None) == "the final reply"

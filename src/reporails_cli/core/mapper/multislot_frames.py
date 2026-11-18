@@ -36,13 +36,12 @@ from reporails_cli.core.mapper.bio_tagger import (
     SPAN_OUTPUTS,
     Float32Array,
     HeadClass,
-    _enc_a,
-    _enc_b,
     _extract_pass_from_states,
-    _head_session,
     _softmax_rows,
 )
 from reporails_cli.core.mapper.encode_pool import run_buckets
+from reporails_cli.core.mapper.models import Models
+from reporails_cli.core.mapper.scope_phrase import record_scope_phrase
 from reporails_cli.core.platform.dto.mapping import AtomTuple, Span
 from reporails_cli.core.platform.dto.ruleset import Modality
 
@@ -224,7 +223,9 @@ def _atom_from_charge_run(
     atom_text = text[word_spans[cs][0] : word_spans[ce - 1][1]]
     mod = _atom_modality(cls, modality)
     sp = {axis: _assign_span(axis_runs[axis], cs, ce, word_spans, text) for axis in _SOAS_AXES}
-    return AtomTuple(_POLARITY[cls], mod, sp["subject"], sp["predicate"], sp["object"], sp["scope"], atom_text)
+    return record_scope_phrase(
+        AtomTuple(_POLARITY[cls], mod, sp["subject"], sp["predicate"], sp["object"], sp["scope"], atom_text)
+    )
 
 
 _Decoded = tuple[dict[str, Float32Array], list[tuple[int, int]], list[bool]]
@@ -245,7 +246,9 @@ def _merge(
     return out
 
 
-def _decode_logits_batch(texts: list[str], progress: Callable[[int, int], None] | None = None) -> list[_Decoded | None]:
+def _decode_logits_batch(
+    texts: list[str], models: Models, progress: Callable[[int, int], None] | None = None
+) -> list[_Decoded | None]:
     """The decoded outputs of each text: each distinct text is decoded once, one pool task per length bucket.
 
     A position holds `None` when its text yields no decodable output. ``progress(done, total)``
@@ -253,10 +256,10 @@ def _decode_logits_batch(texts: list[str], progress: Callable[[int, int], None] 
     """
     if not texts:
         return []
-    enc_a, enc_b = _enc_a(), _enc_b()
+    enc_a, enc_b = models.charge_encoders()
     head_a, head_b = _head_a_path(), _head_b_path()
-    _head_session(str(head_a))
-    _head_session(str(head_b))
+    models.head_session(head_a)
+    models.head_session(head_b)
     buckets, slot = enc_a.plan_buckets(texts, _BUCKET_SIZE)
 
     def _task(bucket: list[str]) -> Callable[[], list[_Decoded | None]]:
@@ -265,8 +268,10 @@ def _decode_logits_batch(texts: list[str], progress: Callable[[int, int], None] 
             for text, (ha, oa), (hb, ob) in zip(
                 bucket, enc_a.forward_bucket(bucket), enc_b.forward_bucket(bucket), strict=True
             ):
-                out, word_spans, covered = _extract_pass_from_states(ha, oa, text, head_a, CHARGE_OUTPUTS)
-                out_b, _, _ = _extract_pass_from_states(hb, ob, text, head_b, SPAN_OUTPUTS)
+                out, word_spans, covered = _extract_pass_from_states(
+                    ha, oa, text, head_a, CHARGE_OUTPUTS, models=models
+                )
+                out_b, _, _ = _extract_pass_from_states(hb, ob, text, head_b, SPAN_OUTPUTS, models=models)
                 merged = _merge(out, out_b)
                 decoded.append((merged, word_spans, covered) if merged is not None else None)
             return decoded

@@ -10,6 +10,7 @@ import pytest
 
 from reporails_cli.core.mapper import bio_pipeline
 from reporails_cli.core.mapper.parse import tokenize
+from tests.fake_models import no_models
 
 
 def _texts(atoms, fmt: str) -> list[str]:
@@ -56,7 +57,9 @@ def test_list_item_splits_at_charge_flip() -> None:
     # A list item packing a prohibition and a directive reads as the two instructions it gives,
     # so the +1 "always check…" is not swallowed by the -1 lead prohibition.
     md = "- Never commit without running the tests, and always check the output first\n"
-    atoms = [a for a in bio_pipeline.apply_multislot(tokenize(md, "structure-aware")) if a.kind != "heading"]
+    atoms = [
+        a for a in bio_pipeline.apply_multislot(tokenize(md, "structure-aware"), no_models()) if a.kind != "heading"
+    ]
     assert sorted(a.charge_value for a in atoms) == [-1, 1]
 
 
@@ -86,7 +89,7 @@ def test_charge_flip_recovered_in_both_modes() -> None:
     # Both modes read a sentence giving two instructions as two, so the prohibition is never swallowed.
     md = "Read the whole file, do not skim it."
     for mode in ("legacy", "structure-aware"):
-        atoms = [a for a in bio_pipeline.apply_multislot(tokenize(md, mode)) if a.kind != "heading"]
+        atoms = [a for a in bio_pipeline.apply_multislot(tokenize(md, mode), no_models()) if a.kind != "heading"]
         signs = sorted(a.charge_value for a in atoms)
         assert signs == [-1, 1], f"mode={mode} signs={signs}"
 

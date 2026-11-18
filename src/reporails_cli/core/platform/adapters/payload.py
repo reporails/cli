@@ -8,15 +8,14 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import msgpack
 
 from reporails_cli.core.platform.contract.json_value import WireObject, WireValue
-from reporails_cli.core.platform.dto.diagnostics import CLIENT_CHECK_KINDS, FindingItem
-from reporails_cli.core.platform.dto.models import LocalEntry, LocalFinding
+from reporails_cli.core.platform.dto.models import LocalEntry
 from reporails_cli.core.platform.dto.ruleset import (
     LIST_OBJECT_ROLE,
     Atom,
@@ -28,7 +27,7 @@ from reporails_cli.core.platform.dto.ruleset import (
     file_record_scalars,
     int8_bytes,
 )
-from reporails_cli.core.platform.policy.negative_headings import in_negative_section, is_negative_heading
+from reporails_cli.core.platform.utils.utils import relative_wire_path
 
 if TYPE_CHECKING:
     from reporails_cli.core.platform.dto.ruleset import RulesetMap
@@ -104,9 +103,7 @@ def _project_atom(a: Atom, file_idx: dict[str, int]) -> WireObject:
         d["d"] = a.depth
     if a.ambiguous:
         d["a"] = True
-    if (a.kind == "heading" and is_negative_heading(a.text)) or in_negative_section(
-        a.kind, a.format, a.heading_context
-    ):
+    if a.negative_heading or a.in_negative_section:
         d["ns"] = True  # a bare negative heading, or a list item directly under one
     if a.lead_in:
         d["li"] = True  # a line ending with a colon that introduces the list, code block or table after it
@@ -117,32 +114,6 @@ def _project_atom(a: Atom, file_idx: dict[str, int]) -> WireObject:
         if so is not None:
             d["so"] = so
     return d
-
-
-def relative_wire_path(path: str, root: Path) -> str:
-    """`path` relative to the project or the home folder, as it rides the wire. `root` is the checked
-    project's root, never a root guessed from the mapped files themselves (that guess collapses to the wrong
-    directory whenever the mapped set doesn't happen to span down from the real root —
-    a single mapped file, or a `.claude/rules/`-only project).
-
-    Three forms, decided by where `path` actually sits, each one mapping back to the
-    same local file when the response is read:
-
-    * inside `root`: the project-relative posix path.
-    * outside `root` but inside the user's home directory (a user-level
-      `~/.claude/CLAUDE.md`, an agent-memory file) — `~/`-relative, so the home
-      directory and the username never ride the wire, only the literal `~`.
-    * neither: `path` unchanged. This only reaches a file the CLI itself resolved
-      outside both the project and the home directory, which carries no home-directory
-      component to begin with.
-    """
-    p = Path(path)
-    if p.is_relative_to(root):
-        return p.relative_to(root).as_posix()
-    home = Path.home()
-    if p.is_relative_to(home):
-        return "~/" + p.relative_to(home).as_posix()
-    return path
 
 
 def _project_files(ruleset_map: RulesetMap, root: Path) -> list[WireObject]:
@@ -197,36 +168,6 @@ def _path_key(path: str) -> str:
 
 # At most this many local entries are sent per request.
 _MAX_LOCAL_ENTRIES = 10_000
-
-
-def local_entries(
-    findings: Iterable[FindingItem | LocalFinding],
-    file_level_checks: frozenset[str],
-    registry_ids: frozenset[str],
-    resolve: Callable[[str], str],
-    type_of: Callable[[str], str] = lambda _path: "generic",
-) -> list[LocalEntry]:
-    """One entry per reported local finding, in order — no message and no matched text.
-
-    `findings` are the local findings as they will be reported (suppressions applied);
-    `file_level_checks` are the check ids whose finding concerns the whole file, sent at line 0;
-    `registry_ids` are the rule ids the registry defines: a finding under any other label stays
-    in the user's output but is not sent, and so does a finding from a client check
-    (`CLIENT_CHECK_KINDS`);
-    `resolve` maps a reported path to its absolute path, and `type_of` an absolute path to its
-    file type.
-    """
-    entries: list[LocalEntry] = []
-    for f in findings:
-        check = f.check_id
-        if f.rule not in registry_ids or check in CLIENT_CHECK_KINDS:
-            continue
-        line = 0 if check in file_level_checks else max(f.line, 0)
-        file = resolve(f.file)
-        entries.append(
-            LocalEntry(rule=f.rule, file=file, line=line, severity=f.severity, check=check, type=type_of(file))
-        )
-    return entries
 
 
 def _within_bound(local: Sequence[LocalEntry]) -> list[LocalEntry]:

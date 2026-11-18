@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.heal.preservation import structure
-from reporails_cli.core.mapper.classify import absolute_cues, leading_prohibition
+from reporails_cli.core.mapper.classify import leading_prohibition
 from reporails_cli.core.mapper.structure import fragment_line_spans, line_spans, paragraph_lines, read_structure
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 
@@ -96,13 +96,6 @@ def test_a_leading_prohibition_is_read_from_the_words_not_the_markup() -> None:
     assert leading_prohibition("Always push") is None
 
 
-@pytest.mark.unit
-@pytest.mark.subsys_map
-def test_must_and_shall_are_not_absolute_cues() -> None:
-    assert absolute_cues("You must run it and shall never skip it") == {"never"}
-    assert absolute_cues("Always run it") == {"always"}
-
-
 class _FakeEnvironment:
     def __init__(self, paths: set[str], programs: set[str], manifests: str = "") -> None:
         self._paths, self._programs, self._manifests = paths, programs, manifests
@@ -124,16 +117,14 @@ def test_invented_named_asks_the_environment_instead_of_reading_the_disk() -> No
 
     from reporails_cli.core.heal.preservation.named import invented_named
 
-    atoms = [
-        SimpleNamespace(line=3, format="prose", named_tokens=["`src/app.py`", "`mytool run`", "`ghost`", "`make all`"])
-    ]
+    atoms = [SimpleNamespace(line=3, format="prose", named_tokens=["src/app.py", "mytool run", "ghost", "make all"])]
     env = _FakeEnvironment({"src/app.py"}, {"mytool"}, "all:\n\tmake all\n")
-    assert invented_named("Original text.", atoms, env) == [{"line": 3, "token": "`ghost`"}]
+    assert invented_named("Original text.", atoms, env) == [{"line": 3, "token": "ghost"}]
     assert [e["token"] for e in invented_named("Original text.", atoms, None)] == [
-        "`src/app.py`",
-        "`mytool run`",
-        "`ghost`",
-        "`make all`",
+        "src/app.py",
+        "mytool run",
+        "ghost",
+        "make all",
     ]
 
 

@@ -7,8 +7,11 @@ from path resolution (filesystem layout knowledge).
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from dataclasses import replace
+from functools import lru_cache
 from pathlib import Path
+from types import MappingProxyType
 from typing import get_type_hints
 
 import yaml
@@ -48,18 +51,15 @@ from reporails_cli.core.platform.utils.utils import (
 logger = logging.getLogger(__name__)
 
 
-def get_agent_config(agent: str, rules_root: Path | None = None) -> AgentConfig:
-    """Load agent config (excludes + overrides) from framework.
+def bundled_agent_config(agent: str) -> AgentConfig:
+    """The `config.yml` of `agent` (excludes, overrides, hooks) under the current rules root; defaults when missing."""
+    return agent_config_at(get_agent_config_path(agent, get_rules_path()))
 
-    Args:
-        agent: Agent identifier (e.g., "claude")
-        rules_root: Rules root to read from; the resolved default rules path when None
 
-    Returns:
-        AgentConfig with excludes and overrides, or defaults if missing/malformed
-    """
+def agent_config_at(config_path: Path) -> AgentConfig:
+    """The agent config in the `config.yml` at `config_path`, uncached; defaults when missing or malformed."""
 
-    data = read_agent_config(get_agent_config_path(agent, rules_root))
+    data = read_agent_config(config_path)
     if data is None:
         return AgentConfig()
     return AgentConfig(
@@ -72,27 +72,42 @@ def get_agent_config(agent: str, rules_root: Path | None = None) -> AgentConfig:
     )
 
 
-def read_agent_config(config_path: Path) -> JsonObject | None:
-    """Read an agent `config.yml` as its top-level mapping.
+@lru_cache(maxsize=32)
+def _parse_agent_config(path_text: str, mtime_ns: int, size: int) -> tuple[Mapping[str, JsonValue] | None, str]:
+    """Parse the `config.yml` at `path_text` once per file identity; a changed file is parsed again.
+
+    Returns the top-level mapping and an empty problem, or None and what is wrong with the file.
+    """
+    del mtime_ns, size  # part of the cache key only
+    try:
+        data = load_yaml_file(Path(path_text))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        return None, unreadable_file_problem(exc)
+    if not data:
+        return None, "is empty"
+    if not isinstance(data, dict):
+        return None, "is not a mapping"
+    return MappingProxyType(data), ""
+
+
+def read_agent_config(config_path: Path) -> Mapping[str, JsonValue] | None:
+    """Read an agent `config.yml` as its top-level mapping, which cannot be modified.
 
     An absent file reads as None. A file that cannot be read, is not UTF-8, is not valid YAML, is
     empty or is not a mapping is logged as a warning on each read and also reads as None.
+    An unchanged file is not parsed again; an edited one is read again.
     """
     if not config_path.exists():
         return None
     try:
-        data = load_yaml_file(config_path)
-    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-        problem = unreadable_file_problem(exc)
+        stat = config_path.stat()
+    except OSError as exc:
+        data, problem = None, unreadable_file_problem(exc)
     else:
-        if not data:
-            problem = "is empty"
-        elif not isinstance(data, dict):
-            problem = "is not a mapping"
-        else:
-            return data
-    logger.warning("Skipping agent config %s: %s", config_path, problem)
-    return None
+        data, problem = _parse_agent_config(str(config_path), stat.st_mtime_ns, stat.st_size)
+    if data is None:
+        logger.warning("Skipping agent config %s: %s", config_path, problem)
+    return data
 
 
 def _hook_fact(raw: object) -> HookFact:
@@ -184,9 +199,8 @@ def get_global_config() -> GlobalConfig:
         agents=_data_str_dict(data, "agents"),
         surfaces=_data_str_dict(data, "surfaces"),
         segmentation=_coerce_segmentation(data.get("segmentation")),
+        **{key: _data_str_list(data, key) for key in _GLOBAL_LIST_KEYS},
     )
-    for key in _GLOBAL_LIST_KEYS:
-        setattr(config, key, _data_str_list(data, key))
     return config
 
 
@@ -366,9 +380,8 @@ def get_project_config(project_root: Path) -> ProjectConfig:
         rule_thresholds=_coerce_rule_thresholds(data.get("rule_thresholds")),
         generic_scanning=bool(gs_raw) if has_gs_in_project else False,
         mapper=MapperConfig(segmentation=seg or "legacy"),
+        **{key: _data_str_list(data, key) for key in TEXT_LIST_KEYS},
     )
-    for key in TEXT_LIST_KEYS:
-        setattr(config, key, _data_str_list(data, key))
     return _apply_globals(
         config,
         global_cfg,
@@ -390,20 +403,26 @@ def _apply_globals(
     project layer. `generic_scanning` inherits from globals only when the
     project YAML didn't explicitly set it.
     """
-    if not config.default_agent:
-        config.default_agent = global_cfg.default_agent
-    config.disabled_rules = _extend_unique(config.disabled_rules, global_cfg.disabled_rules)
-    config.exclude_dirs = _extend_unique(config.exclude_dirs, global_cfg.exclude_dirs)
-    config.exclude_files = _extend_unique(config.exclude_files, global_cfg.exclude_files)
-    config.packages = _extend_unique(config.packages, global_cfg.packages)
-    config.rule_thresholds = _merge_thresholds(config.rule_thresholds, global_cfg.rule_thresholds)
-    config.agents = _merge_under(config.agents, global_cfg.agents)
-    config.surfaces = _merge_under(config.surfaces, global_cfg.surfaces)
-    if not has_project_generic_scanning and global_cfg.generic_scanning is not None:
-        config.generic_scanning = global_cfg.generic_scanning
+    mapper = config.mapper
     if not has_project_segmentation and global_cfg.segmentation is not None:
-        config.mapper.segmentation = global_cfg.segmentation
-    return config
+        mapper = replace(mapper, segmentation=global_cfg.segmentation)
+    return replace(
+        config,
+        default_agent=config.default_agent or global_cfg.default_agent,
+        disabled_rules=_extend_unique(config.disabled_rules, global_cfg.disabled_rules),
+        exclude_dirs=_extend_unique(config.exclude_dirs, global_cfg.exclude_dirs),
+        exclude_files=_extend_unique(config.exclude_files, global_cfg.exclude_files),
+        packages=_extend_unique(config.packages, global_cfg.packages),
+        rule_thresholds=_merge_thresholds(config.rule_thresholds, global_cfg.rule_thresholds),
+        agents=_merge_under(config.agents, global_cfg.agents),
+        surfaces=_merge_under(config.surfaces, global_cfg.surfaces),
+        generic_scanning=(
+            global_cfg.generic_scanning
+            if not has_project_generic_scanning and global_cfg.generic_scanning is not None
+            else config.generic_scanning
+        ),
+        mapper=mapper,
+    )
 
 
 def _extend_unique(project: list[str], globals_: list[str]) -> list[str]:
@@ -455,17 +474,43 @@ def _merge_thresholds(
     return merged
 
 
+@lru_cache(maxsize=4)
+def _framework_path_text(path_text: str, mtime_ns: int, size: int) -> str | None:
+    """The `framework_path` setting in the global config file at `path_text`, read once per file identity.
+
+    Returns None when the setting is absent or not text. A file that `read_config_file` refuses raises
+    `ConfigUnreadableError` on each call; a changed file is read again.
+    """
+    del mtime_ns, size  # part of the cache key only
+    framework_path = read_config_file(Path(path_text)).get("framework_path")
+    return framework_path if isinstance(framework_path, str) else None
+
+
+def _global_framework_path() -> Path | None:
+    """The `framework_path` override in the global config, or None when the file is absent or sets none."""
+    config_path = get_global_config_path()
+    try:
+        stat = config_path.stat()
+    except FileNotFoundError:
+        return None
+    except OSError:
+        text = _framework_path_text.__wrapped__(str(config_path), 0, 0)
+    else:
+        text = _framework_path_text(str(config_path), stat.st_mtime_ns, stat.st_size)
+    return Path(text) if text is not None else None
+
+
 def get_rules_path() -> Path:
     """Get path to rules directory.
 
     Resolution: config override → bundled (package default).
     """
-    config = get_global_config()
-    if config.framework_path and config.framework_path.is_dir():
-        rules_sub = config.framework_path / "rules"
+    framework_path = _global_framework_path()
+    if framework_path and framework_path.is_dir():
+        rules_sub = framework_path / "rules"
         if rules_sub.is_dir():
             return rules_sub
-        return config.framework_path
+        return framework_path
 
     bundled = get_bundled_rules_path()
     if bundled is not None:
@@ -480,9 +525,9 @@ def get_framework_root() -> Path:
 
     Resolution: config override → bundled package root.
     """
-    config = get_global_config()
-    if config.framework_path and config.framework_path.is_dir():
-        return config.framework_path
+    framework_path = _global_framework_path()
+    if framework_path and framework_path.is_dir():
+        return framework_path
 
     bundled_root = get_bundled_package_root()
     if bundled_root is not None:
@@ -500,7 +545,7 @@ def get_agent_config_path(agent: str, rules_root: Path | None = None) -> Path:
     return (rules_root if rules_root is not None else get_rules_path()) / dir_name / "config.yml"
 
 
-def iter_agent_configs(rules_dir: Path) -> Iterator[tuple[Path, JsonObject]]:
+def iter_agent_configs(rules_dir: Path) -> Iterator[tuple[Path, Mapping[str, JsonValue]]]:
     """Each readable `*/config.yml` under `rules_dir`, in path order, as `(folder, parsed mapping)`.
 
     A config that `read_agent_config` cannot read is skipped.

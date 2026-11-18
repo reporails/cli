@@ -29,7 +29,7 @@ def _escape_workflow_property(value: str) -> str:
     return out.replace(":", "%3A").replace(",", "%2C")
 
 
-def _escape_workflow_data(value: str) -> str:
+def escape_workflow_data(value: str) -> str:
     """Escape a value for use in workflow command data (message body).
 
     Data must escape: % \r \n
@@ -41,7 +41,7 @@ def _notice_annotations(notices: tuple[Notice, ...]) -> list[str]:
     """One `::warning` (a `warn` notice) or `::notice` line per notice; announcements get none."""
     return [
         f"::{'warning' if n.level == 'warn' else 'notice'} title=reporails::"
-        + _escape_workflow_data(f"{n.text} {n.url}".strip())
+        + escape_workflow_data(f"{n.text} {n.url}".strip())
         for n in notices
         if n.kind != "promo"
     ]
@@ -98,7 +98,7 @@ def format_combined_annotations(
     server_error = json_formatter.format_server_error(result.reply.server_error)
     if server_error is not None:
         title = _escape_workflow_property(f"reporails: server {as_str(server_error['error'])}")
-        message = _escape_workflow_data(as_str(server_error["message"]))
+        message = escape_workflow_data(as_str(server_error["message"]))
         lines.append(f"::warning title={title}::{message}")
     lines.extend(_notice_annotations(result.reply.notices))
     for f in result.findings:
@@ -106,7 +106,7 @@ def format_combined_annotations(
         # Canonical rule id, matching the trailing JSON summary's `rule` field.
         title = _escape_workflow_property(f"[{f.rule}]")
         file_val = _escape_workflow_property(f.file)
-        message = _escape_workflow_data(f.message)
+        message = escape_workflow_data(f.message)
         lines.append(_finding_annotation(command, file_val, f.line, title, message))
 
     # JSON summary

@@ -6,12 +6,18 @@ client forwards them to its callback."""
 from __future__ import annotations
 
 import json
+import sys
+import tempfile
 import threading
+from pathlib import Path
 
 import pytest
 
 from reporails_cli.core.mapper import daemon_client as dc
 from reporails_cli.core.mapper import daemon_server as d
+from reporails_cli.core.platform.adapters import daemon_socket as ds
+from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
+from tests.fake_daemon import FakeDaemonTransport
 
 
 class _FakeSock:
@@ -35,7 +41,7 @@ class _FakeSock:
         self.closed = True
 
 
-# --- client: _stream_map_response ---------------------------------------------
+# --- adapter: reading the streamed frames ---------------------------------------------
 
 
 @pytest.mark.unit
@@ -51,10 +57,9 @@ def test_stream_forwards_progress_then_returns_result() -> None:
     ).encode()
     sock = _FakeSock([stream])
     seen: list[str] = []
-    res = dc._stream_map_response(sock, {"cmd": "map_ruleset"}, seen.append, timeout=5.0)
+    res = ds._read_reply(sock, lambda frame: seen.append(str(frame["msg"])))
     assert seen == ["Mapping main: 1/1", "Mapping agents: 1/2"]
     assert res == {"ok": True, "ruleset_map": {"x": 1}}
-    assert sock.closed
 
 
 @pytest.mark.unit
@@ -65,18 +70,18 @@ def test_stream_reassembles_lines_split_across_recv_chunks() -> None:
     ).encode()
     sock = _FakeSock([payload[:12], payload[12:40], payload[40:]])
     seen: list[str] = []
-    res = dc._stream_map_response(sock, {}, seen.append, timeout=5.0)
+    res = ds._read_reply(sock, lambda frame: seen.append(str(frame["msg"])))
     assert seen == ["Mapping skills: 3/5"]
     assert res == {"ok": True}
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
-def test_stream_closed_before_result_returns_none() -> None:
+def test_stream_closed_before_result_is_unavailable() -> None:
     sock = _FakeSock([json.dumps({"type": "progress", "msg": "x"}).encode() + b"\n"])
     seen: list[str] = []
-    res = dc._stream_map_response(sock, {}, seen.append, timeout=5.0)
-    assert res is None  # stream ended before a result line -> caller falls back
+    with pytest.raises(PlatformUnavailableError):  # stream ended before a result line -> caller falls back
+        ds._read_reply(sock, lambda frame: seen.append(str(frame["msg"])))
     assert seen == ["x"]
 
 
@@ -84,7 +89,7 @@ def test_stream_closed_before_result_returns_none() -> None:
 @pytest.mark.subsys_runtime
 def test_stream_none_callback_is_safe() -> None:
     payload = (json.dumps({"type": "progress", "msg": "m"}) + "\n" + json.dumps({"ok": True}) + "\n").encode()
-    res = dc._stream_map_response(_FakeSock([payload]), {}, None, timeout=5.0)
+    res = ds._read_reply(_FakeSock([payload]), None)
     assert res == {"ok": True}
 
 
@@ -111,7 +116,7 @@ def test_dispatch_threads_progress_into_map_handler(monkeypatch) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
-def test_handle_connection_writes_progress_lines_then_result(monkeypatch) -> None:
+def test_handle_connection_writes_progress_lines_then_result() -> None:
     request = json.dumps({"cmd": "map_ruleset", "paths": [], "root": "/x"}).encode() + b"\n"
 
     class _Conn:
@@ -131,16 +136,13 @@ def test_handle_connection_writes_progress_lines_then_result(monkeypatch) -> Non
         def close(self) -> None:
             pass
 
-    def fake_dispatch(_request, _models, _warmup_done, progress=None):
-        progress("Mapping main: 1/1")
-        progress("Mapping agents: 1/1")
+    def handle(_request, send):
+        send({"type": "progress", "msg": "Mapping main: 1/1"})
+        send({"type": "progress", "msg": "Mapping agents: 1/1"})
         return {"ok": True, "ruleset_map": {}}
 
-    monkeypatch.setattr(d, "_dispatch", fake_dispatch)
-    ev = threading.Event()
-    ev.set()
     conn = _Conn()
-    d._handle_connection(conn, models=object(), warmup_done=ev)
+    ds._answer(conn, handle)
 
     lines = [json.loads(b.rstrip(b"\n")) for b in conn.sent]
     assert lines[0] == {"type": "progress", "msg": "Mapping main: 1/1"}
@@ -150,7 +152,7 @@ def test_handle_connection_writes_progress_lines_then_result(monkeypatch) -> Non
 
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
-def test_send_progress_swallows_broken_pipe(monkeypatch) -> None:
+def test_send_progress_swallows_broken_pipe() -> None:
     request = json.dumps({"cmd": "map_ruleset", "paths": [], "root": "/x"}).encode() + b"\n"
 
     class _BrokenConn:
@@ -172,34 +174,91 @@ def test_send_progress_swallows_broken_pipe(monkeypatch) -> None:
         def close(self) -> None:
             pass
 
-    def fake_dispatch(_request, _models, _warmup_done, progress=None):
-        progress("Mapping main: 1/1")  # raises inside sendall, must be swallowed
+    def handle(_request, send):
+        send({"type": "progress", "msg": "Mapping main: 1/1"})  # raises inside sendall, must be swallowed
         return {"ok": True, "ruleset_map": {}}
 
-    monkeypatch.setattr(d, "_dispatch", fake_dispatch)
-    ev = threading.Event()
-    ev.set()
     conn = _BrokenConn()
-    d._handle_connection(conn, models=object(), warmup_done=ev)  # must not raise
+    ds._answer(conn, handle)  # must not raise
     assert conn.result_sent  # result line still written after a dropped progress write
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
-def test_stream_survives_a_raising_progress_callback() -> None:
+def test_map_via_daemon_survives_a_raising_progress_callback() -> None:
     """A caller callback that raises (e.g. a spinner render error) must not abort
     the stream — progress is best-effort, the map result still returns."""
-    stream = (
-        json.dumps({"type": "progress", "msg": "Mapping main: 1/1"})
-        + "\n"
-        + json.dumps({"ok": True, "ruleset_map": {"x": 1}})
-        + "\n"
-    ).encode()
+    from reporails_cli.core.mapper.daemon import code_identity
 
     def boom(_msg: str) -> None:
         raise RuntimeError("spinner blew up")
 
-    sock = _FakeSock([stream])
-    out = dc._stream_map_response(sock, {"cmd": "map_ruleset"}, boom, timeout=5.0)
-    assert out == {"ok": True, "ruleset_map": {"x": 1}}
-    assert sock.closed
+    def answer(_request, on_message):
+        on_message({"type": "progress", "msg": "Mapping main: 1/1"})
+        return {"ok": True, "code": code_identity()}  # no map: the client answers None after the stream
+
+    transport = FakeDaemonTransport(answer=answer)
+    assert dc.map_ruleset_via_daemon(transport, [], Path("/x"), "legacy", progress=boom) is None
+    assert len(transport.exchanges) == 1  # the callback raised mid-stream and the reply was still read
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_runtime
+def test_map_handler_maps_with_the_requested_segmentation(monkeypatch, tmp_path) -> None:
+    """The daemon maps with the segmentation the request carries, never one it reads from a config itself."""
+    (tmp_path / ".ails").mkdir()
+    (tmp_path / ".ails" / "config.yml").write_text("mapper:\n  segmentation: legacy\n", encoding="utf-8")
+    seen: dict[str, object] = {}
+
+    def fake_map(_paths, **kwargs):
+        seen.update(kwargs)
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(d, "map_ruleset", fake_map)
+    res = d._handle_map_ruleset(
+        {"cmd": "map_ruleset", "paths": [], "root": str(tmp_path), "segmentation": "structure-aware"}, object()
+    )
+    assert seen["segmentation"] == "structure-aware"
+    assert res["ok"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_runtime
+@pytest.mark.skipif(sys.platform == "win32", reason="the daemon socket needs Unix domain sockets")
+def test_exchange_streams_progress_then_reply_over_a_real_socket() -> None:
+    """The client's frames and the server's framing meet on one real Unix socket: a progress frame reaches the
+    callback and the reply is returned; an address nobody listens on raises `PlatformUnavailableError`."""
+    import socket as _socket
+
+    address = Path(tempfile.mkdtemp(prefix="ails-")) / "d.sock"
+    server = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    server.bind(str(address))
+    server.listen(1)
+    seen_requests: list[dict] = []
+
+    def handle(request, send):
+        seen_requests.append(request)
+        send({"type": "progress", "msg": "Mapping main: 1/1"})
+        return {"ok": True, "echo": request["cmd"]}
+
+    def serve_one() -> None:
+        conn, _ = server.accept()
+        try:
+            ds._answer(conn, handle)
+        finally:
+            conn.close()
+
+    thread = threading.Thread(target=serve_one)
+    thread.start()
+    seen: list[str] = []
+    reply = ds.UnixDaemonSocket().exchange(
+        address, {"cmd": "map_ruleset"}, timeout=5.0, on_message=lambda f: seen.append(str(f["msg"]))
+    )
+    thread.join(5)
+    server.close()
+
+    assert reply == {"ok": True, "echo": "map_ruleset"}
+    assert seen == ["Mapping main: 1/1"]
+    assert seen_requests == [{"cmd": "map_ruleset"}]
+    with pytest.raises(PlatformUnavailableError):
+        ds.UnixDaemonSocket().exchange(address, {"cmd": "ping"}, timeout=1.0, on_message=None)

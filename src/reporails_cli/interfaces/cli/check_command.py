@@ -7,6 +7,7 @@ from pathlib import Path
 
 import typer
 
+from reporails_cli.core.platform.config.bootstrap import run_offline
 from reporails_cli.core.platform.policy.exclusion import first_folder_value_problem
 from reporails_cli.interfaces.cli.completion import complete_agent, complete_rule_token, complete_target_token
 from reporails_cli.interfaces.cli.helpers import _print_unknown_rule, console
@@ -23,8 +24,8 @@ def _checked_exclude_dirs(values: list[str] | None) -> list[str] | None:
 
 
 @dataclass
-class CheckOptions:
-    """The options of `ails check`; each default is the `typer.Option` / `typer.Argument` that declares it."""
+class CheckScopeOptions:
+    """The options of `ails check` that choose what is checked and how it is reported."""
 
     targets: list[str] = typer.Argument(  # noqa: RUF009
         None,
@@ -52,6 +53,12 @@ class CheckOptions:
     exclude_files: list[str] | None = typer.Option(  # noqa: RUF009
         None, "--exclude-files", help="File globs to exclude"
     )
+
+
+@dataclass
+class CheckOptions(CheckScopeOptions):
+    """The options of `ails check`; each default is the `typer.Option` / `typer.Argument` that declares it."""
+
     ascii_mode: bool = typer.Option(False, "--ascii", "-a", help="ASCII characters only")
     strict: bool = typer.Option(False, "--strict", help="Exit code 1 on any finding in scope, or a rejected API key")
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show details")
@@ -68,6 +75,11 @@ class CheckOptions:
     )
     dry_run: bool = typer.Option(False, "--dry-run", help="With --heal: preview fixes without writing.")
     cwd: bool = typer.Option(False, "--cwd", help="With --heal: opt into rewriting the whole project.")
+    offline: bool = typer.Option(
+        False,
+        "--offline",
+        help="Run local checks only, with no network call. Same as AILS_OFFLINE=1.",
+    )
 
 
 @app.command(rich_help_panel="Get started")
@@ -77,6 +89,15 @@ def check(options: CheckOptions) -> None:
 
     Run `ails rules capabilities` to see the capability names you can target.
     """
+    from reporails_cli.core.mapper.models import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        Models,
+    )
+    from reporails_cli.core.platform.adapters.http_get import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        http_get,
+    )
+    from reporails_cli.core.platform.config.run_context import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        RunContext,
+    )
     from reporails_cli.interfaces.cli.check_flow import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         CheckInputs,
         CheckRender,
@@ -94,6 +115,8 @@ def check(options: CheckOptions) -> None:
     _validate_output_format(options.output_format)
     _arm_check_timeout()  # wall-clock backstop against a runaway/hung check (POSIX)
     state = CheckState(
+        run=RunContext(),
+        models=Models(http_get),
         inputs=CheckInputs(
             targets=options.targets,
             format_opt=options.output_format,
@@ -110,7 +133,8 @@ def check(options: CheckOptions) -> None:
         ),
         render=CheckRender(no_promo=options.no_promo),
     )
-    run_check_flow(state)
+    with run_offline(options.offline):
+        run_check_flow(state)
 
 
 @app.command(rich_help_panel="Explore")
@@ -131,7 +155,7 @@ def explain(
     from reporails_cli.core.lint.rule_pages import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         rule_page_data,
     )
-    from reporails_cli.core.platform.adapters.registry import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+    from reporails_cli.core.platform.rules.registry import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         infer_agent_from_rule_id,
         load_rules,
     )

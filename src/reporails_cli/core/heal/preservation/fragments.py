@@ -9,11 +9,12 @@ inside a code span opens nothing, and an item that begins with `then` is a next 
 
 from __future__ import annotations
 
-import re
 from collections import Counter
 from collections.abc import Iterable, Sequence
 
-from reporails_cli.core.heal.preservation.words import WORD_RE, AtomView, content_words, word_forms
+from reporails_cli.core.heal.preservation.words import AtomView, code_ranges, is_content_word, word_forms
+from reporails_cli.core.mapper.classify_lexicon import CLAUSE_JOINERS, STEP_JOINER, words_of
+from reporails_cli.core.mapper.instructions import comma_items, list_items, sentence_openers
 from reporails_cli.core.mapper.lexical import DASH_MARKS
 from reporails_cli.core.mapper.markers import without_list_marker
 from reporails_cli.core.mapper.md_parser import replace_code_spans
@@ -21,21 +22,17 @@ from reporails_cli.core.mapper.parse import inline_plain_text
 from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark, split_prose_sentences
 from reporails_cli.core.platform.contract.json_value import JsonObject
 
-# What opens a list or a closing clause: a colon, or a dash set off by spaces.
-_OPENER_RE = re.compile(r":|\s[—\u2013-]\s")
-_TRIM = " \t.;:*_"
+_TRIM = " \t.;:"
 
 # Stand-ins for the opener marks inside a code span, so a colon or a dash there opens nothing.
-_STAND_INS = {mark: chr(0xE000 + i) for i, mark in enumerate((":", *sorted(DASH_MARKS), "-"))}
-_MASK = str.maketrans({mark: stand_in for mark, stand_in in _STAND_INS.items() if mark != "-"})
+_STAND_INS = {mark: chr(0xE000 + i) for i, mark in enumerate((":", *sorted(DASH_MARKS)))}
+_MASK = str.maketrans(_STAND_INS)
 _UNMASK = {stand_in: mark for mark, stand_in in _STAND_INS.items()}
-_LONE_DASH_STAND_IN = _STAND_INS["-"]
-_LONE_DASH_RE = re.compile(r"(?<=\s)-(?=\s)")
 
 
 def _masked(content: str) -> str:
     """`content` (a code span's text) with its opener marks replaced by stand-ins."""
-    return _LONE_DASH_RE.sub(_LONE_DASH_STAND_IN, content.translate(_MASK))
+    return content.translate(_MASK)
 
 
 def _unmasked(text: str) -> str:
@@ -51,29 +48,17 @@ def _masked_plain(text: str) -> str:
 
 
 def _plain(atom: AtomView) -> str:
-    """The atom's plain text with the opener marks inside its code spans masked: each span is masked
-    where it stands in the atom's marked-up text, then the markup is read away. An atom whose plain
-    text is not its inline reading (a heading, a fenced block) keeps its own."""
-    text: str = atom.text
-    if inline_plain_text(text) != atom.plain_text:
-        return str(atom.plain_text)
-    return _masked_plain(text)
+    """The atom's plain text with the opener marks inside its code spans masked, each span read at the
+    range the mapper recorded for it."""
+    text: str = atom.plain_text
+    for start, end in code_ranges(atom):
+        text = text[:start] + _masked(text[start:end]) + text[end:]
+    return text
 
 
 def _normal(text: str) -> str:
     """`text` lowered with its spacing collapsed and trailing marks trimmed."""
     return " ".join(text.lower().split()).strip(_TRIM)
-
-
-def _items(tail: str) -> list[str]:
-    """`tail` cut at its commas outside parentheses."""
-    depth, start, out = 0, 0, []
-    for i, ch in enumerate(tail):
-        depth += (ch == "(") - (ch == ")")
-        if ch == "," and depth <= 0:
-            out.append(tail[start:i])
-            start = i + 1
-    return [*out, tail[start:]]
 
 
 def _bare(item: str) -> str:
@@ -86,8 +71,8 @@ def _bare(item: str) -> str:
 
 def _openers(text: str) -> Iterable[tuple[str, str]]:
     """Each `(lead-in with its opener, what follows)` split of `text`."""
-    for match in _OPENER_RE.finditer(text):
-        yield text[: match.end()], text[match.end() :]
+    for _, end in sentence_openers(text):
+        yield text[:end], text[end:]
 
 
 def _items_after(old_text: str, lead: str) -> list[str]:
@@ -95,7 +80,7 @@ def _items_after(old_text: str, lead: str) -> list[str]:
     start = " ".join(old_text.lower().split()).find(" ".join(lead.lower().split()))
     if start < 0:
         return []
-    return _items(" ".join(old_text.split())[start + len(" ".join(lead.split())) :])
+    return list_items(" ".join(old_text.split())[start + len(" ".join(lead.split())) :])
 
 
 def _carries(new_sentences: list[str], lead: str, item: str) -> bool:
@@ -132,7 +117,12 @@ def _shares(words: set[str], sentence_words: set[str]) -> bool:
 
 def _words_of(text: str) -> set[str]:
     """The lowered words of `text`."""
-    return {w.lower() for w in WORD_RE.findall(text)}
+    return set(words_of(text))
+
+
+def content_words(text: str) -> set[str]:
+    """The content words of `text`: longer than two letters and not a function word."""
+    return {w for w in words_of(text) if is_content_word(w)}
 
 
 def _rephrased_cut(old_text: str, new_text: str, new_sentences: list[str]) -> bool:
@@ -141,7 +131,7 @@ def _rephrased_cut(old_text: str, new_text: str, new_sentences: list[str]) -> bo
     that holds the lead-in (the lead-in rephrased, the first item hung off it, the rest split off)."""
     mine = _words_of(new_text)
     for lead, tail in _openers(old_text):
-        first, *later = _items(tail)
+        first, *later = list_items(tail)
         if later and _next_step(later[0]):
             continue
         lead_words = content_words(lead)
@@ -187,7 +177,7 @@ def _series_cut(old_text: str, new: str, new_sentences: list[str]) -> bool:
     after a lead-in, a later item is not carried by a rewrite sentence that repeats the lead-in.
     Only a series the author closed with `and` / `or` counts: one that runs on with `then`, or has
     no closing conjunction, is no list to cut short."""
-    old_items, new_items = _items(old_text), _items(new)
+    old_items, new_items = comma_items(old_text), comma_items(new)
     k = len(new_items)
     if k < 2 or len(old_items) <= k or _bare(old_items[-1]) == _normal(old_items[-1]) or _next_step(old_items[k]):
         return False
@@ -214,23 +204,30 @@ def _lead_stands_alone(old_text: str, new: str, new_sentences: list[str]) -> boo
     (`... deliberate intent — ask, don't refactor.` -> `... deliberate intent. Ask ... Do not
     refactor ...`), which is no fragment."""
     rest = set().union(*(_words_of(n) for n in new_sentences if n is not new))
-    for match in _OPENER_RE.finditer(old_text):
-        if _normal(old_text[: match.start()]) != _normal(new):
+    for start, end in sentence_openers(old_text):
+        if _normal(old_text[:start]) != _normal(new):
             continue
-        words = [content_words(i) for i in _items(old_text[match.end() :])]
+        words = [content_words(i) for i in list_items(old_text[end:])]
         if any(words) and all(_shares(w, rest) for w in words if w):
             return True
     return False
 
 
-_STEP_RE = re.compile(r"(?:and\s+)?then,?\s+")
+_LEAD_JOINERS = CLAUSE_JOINERS - {STEP_JOINER}
+
+
+def _step_at(words: list[str], i: int) -> str | None:
+    """What the step that `words[i]` opens goes on to say: `then` or `then,` followed by a word;
+    None when `words[i]` opens none."""
+    if i >= len(words) or words[i].removesuffix(",") != STEP_JOINER or i + 1 >= len(words):
+        return None
+    return " ".join(words[i + 1 :])
 
 
 def _step_body(sentence: str) -> str | None:
     """What a sentence that opens with `then`, `then,` or `and then` goes on to say; None for any other."""
-    text = _normal(sentence).lstrip("*_- ")
-    found = _STEP_RE.match(text)
-    return text[found.end() :] if found else None
+    words = _normal(sentence).lstrip("- ").split()
+    return _step_at(words, 1 if words and words[0] in _LEAD_JOINERS else 0)
 
 
 def opens_step(text: str) -> bool:
@@ -241,9 +238,10 @@ def opens_step(text: str) -> bool:
 def _continues(whole: str, body: str) -> bool:
     """Whether the author's sentence `whole` carries on into the step `body` after something, with
     `then`, `then,` or `and then` (not at the start of a sentence)."""
-    old = _normal(whole)
-    for found in re.finditer(rf"(?<!\w)(?:and\s+)?then,?\s+{re.escape(body)}", old):
-        if found.start() > 0 and old[: found.start()].rstrip()[-1:] not in ".!?:":
+    words = _normal(whole).split()
+    for i in range(len(words)):
+        start = i - 1 if i > 0 and words[i - 1] in _LEAD_JOINERS else i
+        if (_step_at(words, i) or "").startswith(body) and start > 0 and words[start - 1][-1:] not in ".!?:":
             return True
     return False
 

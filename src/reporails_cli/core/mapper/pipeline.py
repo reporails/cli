@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from reporails_cli.core.discovery.file_tags import classify_file
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.assemble import build_ruleset_map
 from reporails_cli.core.mapper.bio_graphs import multislot_available, multislot_fingerprint
-from reporails_cli.core.mapper.bio_pipeline import apply_multislot, apply_multislot_groups
+from reporails_cli.core.mapper.bio_pipeline import apply_multislot, apply_multislot_groups, read_text_spans
 from reporails_cli.core.mapper.embed import _embed_atoms_deduped, _embed_file_descriptions
 from reporails_cli.core.mapper.granularity import audit_over_merged
 from reporails_cli.core.mapper.imports import expand_imports_with_origins
@@ -32,7 +33,7 @@ from reporails_cli.core.mapper.map_cache import (
     dicts_to_atoms,
     file_cache_key,
 )
-from reporails_cli.core.mapper.models import Models, get_models
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.mapper.prose_split import SEGMENTATION_STRUCTURE_AWARE
 from reporails_cli.core.mapper.serialize import validate_atoms
@@ -43,6 +44,7 @@ from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap
 from reporails_cli.core.platform.observability.stage_timer import StageTimer
 from reporails_cli.core.platform.observability.stage_timer import get_stage_timer as _get_stage_timer
 from reporails_cli.core.platform.utils.directives import strip_directives
+from reporails_cli.core.platform.utils.file_read import read_file_text
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +66,16 @@ def _translate_atom_lines(
     directory) and its line there, so a finding on it can name them. A no-op on
     a file with no imports, since the map is then the identity map.
     """
+    expanded = {n for n, count in Counter(line_map).items() if count > 1}
     for a in atoms:
         idx = a.line - 1
         if not 0 <= idx < len(line_map):
             continue
         a.line = line_map[idx]
         origin = origins[idx]
+        if origin is not None or a.line in expanded:  # its text is not the importing file's own line
+            a.source_columns, a.joint, a.joint_mark, a.hedge_cue = None, "", False, None
+            a.placement = None
         if origin is not None:
             a.imported_from = Path(os.path.relpath(origin[0], safe_resolve(path).parent)).as_posix()
             a.imported_line = origin[1]
@@ -112,6 +118,7 @@ def _tokenize_and_cache(
     through every step) or a fully-charged one.
     """
     atoms = tokenize(content, segmentation)
+    read_text_spans(atoms)
     _translate_atom_lines(atoms, line_map, origins, path)
     for a in atoms:
         a.file_path = path.as_posix()
@@ -134,9 +141,7 @@ def _classify_file(
     cache goes fresh through charge + embed exactly like the first copy — it is
     never short-circuited by an earlier, not-yet-charged same-run write.
     """
-    expanded, line_map, origins = expand_imports_with_origins(
-        path.read_text(encoding="utf-8", errors="replace"), path, root
-    )
+    expanded, line_map, origins = expand_imports_with_origins(read_file_text(path, errors="replace"), path, root)
     content = strip_directives(expanded)
     chash = content_hash(content)
 
@@ -340,13 +345,16 @@ def _fill_missing_embeddings(all_atoms: list[Atom], models: Models) -> None:
         _embed_atoms_deduped(unembedded, models.st)
 
 
-def _charge_applier() -> Callable[[list[Atom]], list[Atom]] | None:
+def _charge_applier() -> Callable[[list[Atom], Models], list[Atom]] | None:
     """Return the per-file charge function, or None when the bundled classification models are absent."""
     return apply_multislot if multislot_available() else None
 
 
 def _apply_charge_stage(
-    all_atoms: list[Atom], atoms_needing_embed: list[Atom], progress: Callable[[str], None] | None = None
+    all_atoms: list[Atom],
+    atoms_needing_embed: list[Atom],
+    models: Models,
+    progress: Callable[[str], None] | None = None,
 ) -> tuple[list[Atom], list[Atom]]:
     """Charge classification — classifies each atom's charge, replacing the tokenize-time
     lexical charge and prose splits when the bundled classification models are
@@ -371,7 +379,7 @@ def _apply_charge_stage(
         if progress is not None:
             progress(f"Analyzing instructions: {done}/{count}")
 
-    rebuilt_fresh = apply_multislot_groups(fresh_lists, _report) if any(fresh_lists) else []
+    rebuilt_fresh = apply_multislot_groups(fresh_lists, models, _report) if any(fresh_lists) else []
     remap = dict(zip(fresh_positions, rebuilt_fresh, strict=True))
 
     return _splice_rebuilt(groups, remap)
@@ -481,7 +489,7 @@ def _classify_charge_embed_dispatch(
 
     had_fresh = bool(atoms_needing_embed)
     if atoms_needing_embed:
-        all_atoms, atoms_needing_embed = _apply_charge_stage(all_atoms, atoms_needing_embed, progress)
+        all_atoms, atoms_needing_embed = _apply_charge_stage(all_atoms, atoms_needing_embed, models, progress)
     _embed_and_audit_fresh(
         atoms_needing_embed,
         all_atoms,
@@ -508,7 +516,7 @@ def _classify_charge_embed_dispatch(
 def map_ruleset(
     paths: list[Path],
     *,
-    models: Models | None = None,
+    models: Models,
     root: Path | None = None,
     cache_dir: Path | None = None,
     segmentation: str = "legacy",
@@ -536,8 +544,6 @@ def map_ruleset(
     timer = _get_stage_timer()
     structure_aware = segmentation == SEGMENTATION_STRUCTURE_AWARE
 
-    if models is None:
-        models = get_models()
     if root is None:
         root = paths[0].parent if paths else Path(".")
 

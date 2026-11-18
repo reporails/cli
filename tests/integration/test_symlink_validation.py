@@ -71,14 +71,14 @@ class TestSymlinkIntegration:
     def test_rule_validation_with_external_symlink(self, symlink_project: tuple[Path, Path]) -> None:
         """A CLAUDE.md symlinked to a file outside the project is checked and its violations reported."""
         from reporails_cli.core.lint.client_checks import run_client_checks
-        from reporails_cli.core.mapper.models import get_models
         from reporails_cli.core.mapper.pipeline import map_ruleset
+        from tests.fake_models import no_models
 
         project, external = symlink_project
         external.write_text("# Project\n\nRun build.sh before every commit.\n", encoding="utf-8")
 
         link = project / "CLAUDE.md"
         assert link.is_symlink()
-        ruleset = map_ruleset([link], models=get_models(), root=project, cache_dir=None)
+        ruleset = map_ruleset([link], models=no_models(), root=project, cache_dir=None)
         reported = {f.line for f in run_client_checks(ruleset) if f.check_id == "format"}
         assert reported == {3}

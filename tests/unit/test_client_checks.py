@@ -6,8 +6,10 @@ import pytest
 
 from reporails_cli.core.heal.mechanical_fixers import fix_unformatted_code
 from reporails_cli.core.lint.client_checks import _check_unformatted_code, run_client_checks, running_sentences
+from reporails_cli.core.mapper import bio_pipeline
 from reporails_cli.core.mapper.parse import tokenize
-from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap, RulesetSummary
+from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots, FileRecord, RulesetMap, RulesetSummary
+from tests.fake_models import no_models
 
 
 def _make_map(atoms: list[Atom]) -> RulesetMap:
@@ -36,6 +38,18 @@ def _atom(line: int, charge_value: int, position_index: int = 0, **kwargs: objec
         position_index=position_index,
         file_path="test.md",
         **{k: v for k, v in kwargs.items() if k != "text"},  # type: ignore[arg-type]
+    )
+
+
+def _scoped_atom(line: int, charge_value: int, text: str, condition_words: int) -> Atom:
+    """A conditional atom as the charge path reads it: its condition is the first `condition_words` words."""
+    return _atom(
+        line,
+        charge_value,
+        text=text,
+        scope_conditional=True,
+        plain_text=text,
+        slots=AtomSlots(scope_span=(0, condition_words)),
     )
 
 
@@ -158,8 +172,8 @@ class TestBroadScope:
     @pytest.mark.subsys_lint
     def test_broad_term_as_a_whole_word_is_flagged(self) -> None:
         atoms = [
-            _atom(10, +1, text="When external services fail, retry the request.", scope_conditional=True),
-            _atom(11, -1, text="If third-party integrations are unavailable, skip the sync.", scope_conditional=True),
+            _scoped_atom(10, +1, "When external services fail, retry the request.", 4),
+            _scoped_atom(11, -1, "If third-party integrations are unavailable, skip the sync.", 5),
         ]
         findings = [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
         assert len(findings) == 2, [f.message for f in findings]
@@ -169,7 +183,7 @@ class TestBroadScope:
     @pytest.mark.subsys_lint
     def test_broad_term_inside_a_longer_word_is_not_flagged(self) -> None:
         atoms = [
-            _atom(10, +1, text="If postgresql is unreachable, cache the request.", scope_conditional=True),
+            _scoped_atom(10, +1, "If postgresql is unreachable, cache the request.", 4),
         ]
         findings = [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
         assert findings == [], [f.message for f in findings]
@@ -182,6 +196,29 @@ class TestBroadScope:
         assert findings == []
 
 
+class TestBroadScopeReadsNoObjectRestriction:
+    """A restricting word the mapper records inside the object (`only the staging database`)
+    limits what the instruction acts on; it is no conditional scope."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_restrictor_inside_the_object_is_no_broad_scope(self) -> None:
+        text = "Use only the staging database,"
+        slots = AtomSlots(predicate_span=(0, 2), object_span=(1, 5))
+        atoms = [_atom(10, -1, text=text, scope_conditional=True, plain_text=text, slots=slots)]
+        findings = [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
+        assert findings == [], [f.message for f in findings]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_restrictor_after_the_object_still_scopes_the_instruction(self) -> None:
+        text = "Run all tests except external services."
+        slots = AtomSlots(predicate_span=(0, 1), object_span=(1, 3))
+        atoms = [_atom(10, +1, text=text, scope_conditional=True, plain_text=text, slots=slots)]
+        findings = [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
+        assert len(findings) == 1, [f.message for f in findings]
+
+
 class TestBroadScopeWordingsRestrictedToOpposition:
     """The scope check fires on outside systems (external services, third-party
     integrations, dependencies, database or SQL code) and stays quiet on the
@@ -190,23 +227,21 @@ class TestBroadScopeWordingsRestrictedToOpposition:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_external_services_fires(self) -> None:
-        atoms = [_atom(10, +1, text="When external services are down, queue the job.", scope_conditional=True)]
+        atoms = [_scoped_atom(10, +1, "When external services are down, queue the job.", 5)]
         findings = [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
         assert len(findings) == 1, [f.message for f in findings]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_third_party_api_integrations_fires(self) -> None:
-        atoms = [
-            _atom(10, +1, text="Before third-party API integrations run, log the payload.", scope_conditional=True)
-        ]
+        atoms = [_scoped_atom(10, +1, "Before third-party API integrations run, log the payload.", 5)]
         findings = [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
         assert len(findings) == 1, [f.message for f in findings]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_database_or_sql_code_fires(self) -> None:
-        atoms = [_atom(10, +1, text="When touching database or SQL code, add a migration.", scope_conditional=True)]
+        atoms = [_scoped_atom(10, +1, "When touching database or SQL code, add a migration.", 6)]
         findings = [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
         assert len(findings) == 1, [f.message for f in findings]
 
@@ -214,7 +249,7 @@ class TestBroadScopeWordingsRestrictedToOpposition:
     @pytest.mark.subsys_lint
     def test_scope_instruction_conflict_fail_example_fires(self) -> None:
         # CORE:C:0049's own Fail example (framework/rules/core/semantic-interference/rule.md).
-        atoms = [_atom(10, -1, text="When testing API integrations, don't use mocks.", scope_conditional=True)]
+        atoms = [_scoped_atom(10, -1, "When testing API integrations, don't use mocks.", 4)]
         findings = [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
         assert len(findings) == 1, [f.message for f in findings]
 
@@ -222,9 +257,7 @@ class TestBroadScopeWordingsRestrictedToOpposition:
     @pytest.mark.subsys_lint
     def test_external_dependency_boundaries_fires(self) -> None:
         # A dependency on an outside system is a risky scope, as the rule page's own examples say.
-        atoms = [
-            _atom(10, +1, text="When crossing external dependency boundaries, log the call.", scope_conditional=True)
-        ]
+        atoms = [_scoped_atom(10, +1, "When crossing external dependency boundaries, log the call.", 5)]
         findings = [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
         assert len(findings) == 1, [f.message for f in findings]
 
@@ -232,7 +265,7 @@ class TestBroadScopeWordingsRestrictedToOpposition:
     @pytest.mark.subsys_lint
     def test_editing_any_file_does_not_fire(self) -> None:
         # The universal case — too broad to carry any scope signal.
-        atoms = [_atom(10, +1, text="When editing any file, keep the header intact.", scope_conditional=True)]
+        atoms = [_scoped_atom(10, +1, "When editing any file, keep the header intact.", 4)]
         findings = [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
         assert findings == [], [f.message for f in findings]
 
@@ -242,10 +275,13 @@ class TestBroadScopeRiskyWording:
 
     @staticmethod
     def _scope_findings(text: str) -> list:
-        atoms = [_atom(10, +1, text=text, scope_conditional=True)]
+        atoms = [
+            a for a in bio_pipeline.apply_multislot(list(tokenize(text + "\n")), no_models()) if a.scope_conditional
+        ]
         return [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
 
     @pytest.mark.unit
+    @pytest.mark.requires_model
     @pytest.mark.subsys_lint
     @pytest.mark.parametrize(
         "text",
@@ -264,6 +300,7 @@ class TestBroadScopeRiskyWording:
         assert len(self._scope_findings(text)) == 1, text
 
     @pytest.mark.unit
+    @pytest.mark.requires_model
     @pytest.mark.subsys_lint
     @pytest.mark.parametrize(
         "text",
@@ -306,11 +343,14 @@ class TestBroadScopeOpeners:
     """The condition frame the broad-scope check reads opens with any of the mapper's condition openers."""
 
     @pytest.mark.unit
+    @pytest.mark.requires_model
     @pytest.mark.subsys_lint
     @pytest.mark.parametrize("opener", ["While", "Whenever", "Once", "Where", "Given"])
     def test_an_opener_beyond_when_and_if_is_checked(self, opener: str) -> None:
         text = f"{opener} external services are slow, retry the request."
-        atoms = [a for a in tokenize(text + "\n") if a.scope_conditional]
+        atoms = [
+            a for a in bio_pipeline.apply_multislot(list(tokenize(text + "\n")), no_models()) if a.scope_conditional
+        ]
         assert atoms, "the mapper must read the sentence as a conditional frame"
         findings = [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
         assert len(findings) == 1, [f.message for f in findings]

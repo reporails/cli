@@ -16,6 +16,7 @@ from reporails_cli.core.discovery.exclusions import (
 )
 from reporails_cli.core.discovery.plugin_roots import find_plugin_roots
 from reporails_cli.core.discovery.walk import walk_files, walk_glob, walk_glob_matches, walk_markdown
+from reporails_cli.core.platform.config.run_context import RunContext
 
 _NOISE = (".git", "node_modules", "__pycache__")
 
@@ -67,7 +68,7 @@ def test_project_config_exclude_dirs_extend_the_default_set(tmp_path: Path) -> N
     _tree(tmp_path)
     (tmp_path / ".ails").mkdir()
     (tmp_path / ".ails" / "config.yml").write_text("exclude_dirs:\n  - scratch\n", encoding="utf-8")
-    resolved = load_run_exclusions(tmp_path)
+    resolved = load_run_exclusions(RunContext(), tmp_path)
     assert resolved.prunes(str(tmp_path / "scratch"), "scratch", os.path.realpath(str(tmp_path / "scratch")))
     assert resolved.prunes(
         str(tmp_path / "node_modules"), "node_modules", os.path.realpath(str(tmp_path / "node_modules"))
@@ -102,16 +103,15 @@ def _vendored_plugin(project: Path) -> None:
 @pytest.mark.parametrize(("config", "found"), [("", True), ("exclude_dirs:\n  - pkg/vendored\n", False)])
 def test_agent_detection_skips_a_marker_under_a_config_folder_path(tmp_path: Path, config: str, found: bool) -> None:
     from reporails_cli.core.discovery.agent_markers import agent_has_marker
-    from reporails_cli.core.discovery.agents import clear_agent_cache, detect_agents, get_known_agents
+    from reporails_cli.core.discovery.agents import detect_agents, get_known_agents
 
     _vendored_plugin(tmp_path)
     if config:
         (tmp_path / ".ails").mkdir()
         (tmp_path / ".ails" / "config.yml").write_text(config, encoding="utf-8")
     known = get_known_agents()
-    assert agent_has_marker(tmp_path, known["claude"], known, load_run_exclusions(tmp_path)) is found
-    clear_agent_cache()
-    assert ("claude" in {a.agent_type.id for a in detect_agents(tmp_path)}) is found
+    assert agent_has_marker(tmp_path, known["claude"], known, load_run_exclusions(RunContext(), tmp_path)) is found
+    assert ("claude" in {a.agent_type.id for a in detect_agents(RunContext(), tmp_path)}) is found
 
 
 @pytest.mark.unit
@@ -122,10 +122,12 @@ def test_local_config_exclude_dirs_reach_the_walkers_and_agent_detection(tmp_pat
     _tree(tmp_path)
     (tmp_path / ".ails").mkdir()
     (tmp_path / ".ails" / "config.local.yml").write_text("exclude_dirs:\n  - scratch\n", encoding="utf-8")
-    resolved = load_run_exclusions(tmp_path)
+    resolved = load_run_exclusions(RunContext(), tmp_path)
     assert resolved.prunes(str(tmp_path / "scratch"), "scratch", os.path.realpath(str(tmp_path / "scratch")))
     assert _rel(tmp_path, walk_glob(tmp_path, "CLAUDE.md", resolved)) == {"CLAUDE.md", "docs/CLAUDE.md"}
-    detected = {path for agent in detect_agents(tmp_path) for path in _rel(tmp_path, agent.instruction_files)}
+    detected = {
+        path for agent in detect_agents(RunContext(), tmp_path) for path in _rel(tmp_path, agent.instruction_files)
+    }
     assert "CLAUDE.md" in detected
     assert "scratch/CLAUDE.md" not in detected
 
@@ -136,7 +138,7 @@ def test_global_config_exclude_dirs_extend_the_resolved_set(tmp_path: Path) -> N
     home = Path.home() / ".reporails"
     home.mkdir(parents=True, exist_ok=True)
     (home / "config.yml").write_text("exclude_dirs:\n  - elsewhere\n", encoding="utf-8")
-    assert load_run_exclusions(tmp_path).prunes(
+    assert load_run_exclusions(RunContext(), tmp_path).prunes(
         str(tmp_path / "elsewhere"), "elsewhere", os.path.realpath(str(tmp_path / "elsewhere"))
     )
 

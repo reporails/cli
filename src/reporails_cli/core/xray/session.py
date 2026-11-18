@@ -10,26 +10,34 @@ from reporails_cli.core.discovery.plugin_roots import installed_plugin_roots
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.eventbus.transcript import (
     call_detail,
-    compact_summaries,
-    compact_summary_sizes,
+    compact_summary,
     first_prompt_text,
     hook_output_text,
     last_write,
     prompt_text,
     read_transcript,
+    scan_compact_summaries,
     subagent_brief,
+    subagent_output,
     subagent_system,
 )
 from reporails_cli.core.pipeline.expected_loads import AGENT
-from reporails_cli.core.platform.adapters.payload import relative_wire_path
+from reporails_cli.core.platform.config.bootstrap import (
+    claude_plugins_dir,
+    get_global_config_path,
+    get_local_config_path,
+    get_project_config_path,
+)
 from reporails_cli.core.platform.config.claude_settings import (
     claude_settings_files,
     leaving_out_unreadable_cache,
     mcp_declarations,
     mcp_turned_off,
 )
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
-from reporails_cli.core.platform.dto.events import CallDetail, EventRecord, TranscriptCursor
+from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
+from reporails_cli.core.platform.dto.transcript import CallDetail, SummarySpan
 from reporails_cli.core.platform.dto.xray import (
     AdapterVocabulary,
     Graph,
@@ -42,7 +50,9 @@ from reporails_cli.core.platform.dto.xray import (
     XrayWindow,
 )
 from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
-from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayPeek
+from reporails_cli.core.platform.dto.xray_graph import OutputSource
+from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayArtifact, XrayPeek
+from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.artifacts import (
     advertised_files,
     agent_file_tokens,
@@ -71,31 +81,64 @@ _NO_WINDOW = "context window"
 # A session whose transcript was written this many seconds ago or less is taken to be still going.
 LIVE_WINDOW_S = 300.0
 
+# A listing is walked again after this many seconds even when its stamp holds, so a file added deeper in the tree
+# than the stamp looks shows within that time.
+LISTING_MAX_AGE_S = 30.0
+
 # The most characters of one hook firing's output the page is sent.
 HOOK_OUTPUT_CHARS = 20_000
 
 
+def _stat_of(path: Path) -> tuple[int, int] | None:
+    """The change time and size of `path`; None when it does not exist or cannot be read (a best-effort stamp: a
+    missing file is the stamp's own reading, and an unreadable one reads the same until it changes)."""
+    try:
+        found = path.stat()
+    except OSError:
+        return None
+    return found.st_mtime_ns, found.st_size
+
+
+def _listing_stamp(root: Path) -> tuple[tuple[int, int] | None, ...]:
+    """What the listing reads, cheaply: the change time of the three config files, the settings files, the plugin
+    record, the project folder and each `.claude` folder's own listing folders, in the project and in the home."""
+    claude = (root / ".claude", Path.home() / ".claude")
+    paths = [
+        get_project_config_path(root),
+        get_local_config_path(root),
+        get_global_config_path(),
+        claude_plugins_dir() / "installed_plugins.json",
+        *claude_settings_files(root),
+        root,
+        *(folder for base in claude for folder in (base, base / "rules", base / "skills", base / "agents")),
+    ]
+    return tuple(_stat_of(path) for path in paths)
+
+
 class _FileReads:
     """Where the reads of one session's transcript files stopped: the cursor of the record read and, per file (a
-    subagent id, None for the main one), the byte offset scanned for compaction summaries and the sizes in
-    characters found so far."""
+    subagent id, None for the main one), the byte offset scanned for compaction summaries and the summaries
+    found so far by the id of the boundary row each follows, and the source each subagent's output text is read from
+    as the last view sized it."""
 
     def __init__(self) -> None:
+        self.outputs: dict[str, OutputSource] = {}
         self._cursor = TranscriptCursor()
-        self._found: dict[str | None, tuple[int, list[int]]] = {}
+        self._found: dict[str | None, tuple[int, dict[str, SummarySpan]]] = {}
 
     def records(self, file: Path) -> list[EventRecord]:
         """The records the transcript gained since the last read."""
         records, self._cursor = read_transcript(AGENT, file, self._cursor)
         return records
 
-    def sizes(self, file: Path, owner: str | None) -> tuple[int, ...]:
-        """The sizes of every summary of the file, reading it from where the last read stopped."""
-        offset, found = self._found.get(owner, (0, []))
-        more, offset = compact_summary_sizes(AGENT, file, owner, offset)
-        found = [*found, *more]
+    def summaries(self, file: Path, owner: str | None) -> Mapping[str, SummarySpan]:
+        """Every summary of the file by the id of the boundary row it follows, reading it from where the last read
+        stopped."""
+        offset, found = self._found.get(owner, (0, {}))
+        more, offset = scan_compact_summaries(AGENT, file, owner, offset)
+        found = {**found, **{span.link: span for span in more}}
         self._found[owner] = (offset, found)
-        return tuple(found)
+        return found
 
 
 class XraySession:
@@ -106,9 +149,11 @@ class XraySession:
         self._file = session_file
         self._transcript: list[EventRecord] = []
         self._reads = _FileReads()
-        self._files: tuple[ArtifactFile, ...] | None = None
+        self._listed: tuple[tuple[ArtifactFile, ...], tuple[XrayArtifact, ...]] | None = None
         self._shown: dict[str, ArtifactFile] | None = None
-        self._problems: tuple[str, ...] = ()
+        self._walked: (
+            tuple[tuple[tuple[int, int] | None, ...], float, tuple[ArtifactFile, ...], tuple[str, ...]] | None
+        ) = None
         self._settings: tuple[Path, ...] = ()
         self._plugins: list[tuple[str, Path]] = []
         self._findings: dict[str, FindingTally] = {}
@@ -121,36 +166,40 @@ class XraySession:
         if not records:
             return False
         self._transcript.extend(records)
-        self._files = None
         self._shown = None
         self.version += 1
         return True
 
-    def _listing(self) -> tuple[ArtifactFile, ...]:
+    def _listing(self, run: RunContext) -> tuple[ArtifactFile, ...]:
         """The files the page lists; with the installed plugins' record unreadable, none of their files, and with
         the server-managed settings cache unreadable, the files as if it were absent. Every problem is kept for
-        the refusals."""
-        if self._files is None:
-            problems: list[str] = []
-            with leaving_out_unreadable_cache() as cache_problems:
-                try:
-                    plugins = installed_plugin_roots(resolve_project_root(self._root))
-                except InstalledPluginsUnreadableError as exc:
-                    plugins = []
-                    problems.append(str(exc))
-                self._plugins = plugins
-                self._files = artifact_files(self._root, plugins)
-                self._settings = claude_settings_files(self._root)
-            problems.extend(f"{problem}; {_CACHE_MAY_DIFFER}" for problem in dict.fromkeys(cache_problems))
-            self._problems = tuple(problems)
-        return self._files
+        the refusals. The files are walked again only when the config files, the settings files or the folders the
+        stamp reads changed, or after `LISTING_MAX_AGE_S`."""
+        with leaving_out_unreadable_cache():
+            stamp = _listing_stamp(self._root)
+        now = time.monotonic()
+        if self._walked is not None and self._walked[0] == stamp and now - self._walked[1] < LISTING_MAX_AGE_S:
+            return self._walked[2]
+        problems: list[str] = []
+        with leaving_out_unreadable_cache() as cache_problems:
+            try:
+                plugins = installed_plugin_roots(resolve_project_root(self._root))
+            except InstalledPluginsUnreadableError as exc:
+                plugins = []
+                problems.append(str(exc))
+            self._plugins = plugins
+            files = artifact_files(run, self._root, plugins)
+            self._settings = claude_settings_files(self._root)
+        problems.extend(f"{problem}; {_CACHE_MAY_DIFFER}" for problem in dict.fromkeys(cache_problems))
+        self._walked = (stamp, now, files, tuple(problems))
+        return files
 
-    def _shown_as(self, path: str) -> ArtifactFile | None:
+    def _shown_as(self, run: RunContext, path: str) -> ArtifactFile | None:
         """The listed file the page shows as `path`, else the instruction or memory file the transcript recorded as
         loaded that the listing leaves out and the page shows as `path`; None when the page shows none. The shown
         names are worked out once per listing and kept until the transcript grows."""
         if self._shown is None:
-            listing = self._listing()
+            listing = self._listing(run)
             known = {real_path(item.path, self._root) for item in listing}
             loads = unlisted_loads(self._transcript, known, self._root)
             self._shown = {}
@@ -158,17 +207,17 @@ class XraySession:
                 self._shown.setdefault(relative_wire_path(item.path, self._root), item)
         return self._shown.get(path)
 
-    def acts_on(self, path: str) -> bool:
+    def acts_on(self, run: RunContext, path: str) -> bool:
         """True when the page lists `path` (project-relative), or the session recorded it as loaded, as a file it may
         check or fix."""
-        item = self._shown_as(path)
+        item = self._shown_as(run, path)
         return item is not None and is_actionable(item, self._root)
 
-    def peek(self, path: str) -> XrayPeek | None:
+    def peek(self, run: RunContext, path: str) -> XrayPeek | None:
         """The text of the file shown as `path`, whether it was cut and its frontmatter split from its body; None
         unless the page lists it as an instruction, memory, skill or agent file that exists, or the session
         recorded it as loaded. The text is not kept."""
-        item = self._shown_as(path)
+        item = self._shown_as(run, path)
         return None if item is None or item.kind == "hook" else peek_text(item, self._root)
 
     def brief(self, subagent_id: str) -> str | None:
@@ -177,6 +226,18 @@ class XraySession:
         if not any(record.subagent_id == subagent_id for record in self._transcript):
             return None
         return subagent_brief(AGENT, self._file, subagent_id)
+
+    def output(self, subagent_id: str) -> str | None:
+        """The text a subagent handed back, read from the source the last view sized its hand-back from; None for
+        any other id and for a subagent the view found no output text for. For `reply` a row the adapter refuses
+        is skipped (the last readable reply counts); for `handback` and `result` an unpinned row raises
+        `PayloadRefused`. The text is not kept."""
+        source = self._reads.outputs.get(subagent_id)
+        if source is None:
+            return None
+        run = next((r for r in self._transcript if r.event == "subagent_run" and r.subagent_id == subagent_id), None)
+        use_id = None if run is None or run.launch is None else run.launch.tool_use_id
+        return subagent_output(AGENT, self._file, subagent_id, source, use_id)
 
     def system_prompt(self, agent_type: str) -> str | None:
         """The system prompt the first launch of an agent type that recorded a request was sent with; None when the
@@ -206,17 +267,18 @@ class XraySession:
         return prompt_text(AGENT, self._file, prompt_id)
 
     def summary(self, summary_id: str) -> str | None:
-        """The compaction summary a compaction record names by `<subagent id>:<index>` (the main session's subagent
-        id is empty); None for any other id. Raises `PayloadRefused` when the agent is unknown. The text is not
-        kept."""
-        node, _, position = summary_id.rpartition(":")
-        if not (position.isascii() and position.isdigit()):
-            return None
+        """The compaction summary a compaction record names by `<subagent id>:<boundary row id>` (the main
+        session's subagent id is empty); None for any other id. Reads only the summary's line. Raises
+        `PayloadRefused` when the agent is unknown. The text is not kept."""
+        node, _, link = summary_id.rpartition(":")
         owner = node or None
-        if not any(r.event == "post_compact" and r.subagent_id == owner for r in self._transcript):
+        if not any(
+            r.event == "post_compact" and r.subagent_id == owner and r.boundary and r.boundary.id == link
+            for r in self._transcript
+        ):
             return None
-        found = compact_summaries(AGENT, self._file, owner)
-        return found[int(position)] if int(position) < len(found) else None
+        span = self._reads.summaries(self._file, owner).get(link)
+        return None if span is None else compact_summary(AGENT, self._file, owner, span)
 
     def hook_output(self, row_id: str) -> tuple[str, bool] | None:
         """The text one hook firing the records name left in the transcript, cut at `HOOK_OUTPUT_CHARS`, and whether
@@ -257,21 +319,30 @@ class XraySession:
             shell=named.tool.category == "run",
         )
 
-    def view(self, findings: Mapping[str, FindingTally], check: XrayCheck, picked: SessionPick) -> XrayView:
-        """The view of the records read so far; `findings` maps a file path to its finding tally and `check` is
-        the state of the launch check; `picked` is how the session was chosen."""
-        if dict(findings) != self._findings or check != self._check:
-            self._findings = dict(findings)
-            self._check = check
-            self.version += 1
-        files = self._listing()
+    def view(
+        self, run: RunContext, findings: Mapping[str, FindingTally], check: XrayCheck, picked: SessionPick
+    ) -> XrayView:
+        """The view of the records read so far, listing the files under the config `run` read; `findings` maps a
+        file path to its finding tally and `check` is the state of the launch check; `picked` is how the session
+        was chosen. The version rises when the records, the findings, the check or the listed files change."""
+        changed = dict(findings) != self._findings or check != self._check
+        self._findings = dict(findings)
+        self._check = check
+        self._shown = None
+        files = self._listing(run)
         records = [record for record in self._transcript if record.event != "refusal"]
         frame = self._frame(files, records)
         vocabulary = vocabulary_for(AGENT, [item.label for item in files if item.kind == "agent"])
-        artifacts = build_artifacts(files, self._findings, self._root, advertised=advertised_files(files, records))
-        table = build_sources(artifacts, records, frame)
+        artifacts = build_artifacts(run, files, self._findings, self._root, advertised=advertised_files(files, records))
+        if changed or self._listed not in (None, (files, artifacts)):
+            self.version += 1
+        self._listed = (files, artifacts)
+        table = build_sources(run, artifacts, records, frame)
         prices = load_price_list()
         graph = build_graph(records, frame, table, vocabulary, prices)
+        self._reads.outputs = {
+            node.id: node.detail.back.source for node in graph.nodes if node.detail.back.source is not None
+        }
         window = window_of(replies_of(main_records(records)))
         return XrayView(
             version=self.version,
@@ -306,18 +377,14 @@ class XraySession:
             mcp_declarations(self._root, self._plugins),
             mcp_turned_off(self._root),
             self._settings,
-            self._summary_chars(records),
+            self._summaries(records),
         )
 
-    def _summary_chars(self, records: list[EventRecord]) -> dict[str, tuple[int, ...]]:
-        """The size in characters of each compaction summary of every transcript file that records a compaction,
-        by subagent id (empty for the main session); each file is read from where the last read stopped. The
-        texts are not kept."""
+    def _summaries(self, records: list[EventRecord]) -> dict[str, Mapping[str, SummarySpan]]:
+        """The compaction summaries of every transcript file that records a compaction, by subagent id (empty for
+        the main session); each file is read from where the last read stopped. The texts are not kept."""
         owners = {record.subagent_id for record in records if record.event == "post_compact"}
-        sizes: dict[str, tuple[int, ...]] = {}
-        for owner in owners:
-            sizes[owner or ""] = self._reads.sizes(self._file, owner)
-        return sizes
+        return {owner or "": self._reads.summaries(self._file, owner) for owner in owners}
 
     def _verdict(
         self, table: SourceTable, graph: Graph, records: list[EventRecord], vocabulary: AdapterVocabulary
@@ -339,7 +406,7 @@ class XraySession:
     def _gaps(self, window: XrayWindow | None) -> XrayGaps:
         """The refusals the records and the plugin listing hold, and what the view could not read."""
         refusals = [r.refusal for r in self._transcript if r.event == "refusal" and r.refusal]
-        refusals.extend(self._problems)
+        refusals.extend(() if self._walked is None else self._walked[3])
         return XrayGaps(
             refusals=tuple(dict.fromkeys(refusals)),
             not_known=(_NO_WINDOW,) if window is None else (),

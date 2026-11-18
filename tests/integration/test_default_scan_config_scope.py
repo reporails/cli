@@ -82,19 +82,22 @@ def test_whole_project_run_with_no_target_token_also_reaches_it(
 @pytest.mark.e2e
 @pytest.mark.subsys_classify
 @pytest.mark.requires_model
-def test_absolute_config_file_target_from_another_cwd_is_checked(
+def test_absolute_config_file_target_from_another_cwd_is_not_checked_there(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`ails check <absolute path to .claude/settings.json>`, run from a cwd outside
-    the project and with no `.git` (or other marker) to anchor root resolution on,
-    still finds and checks the file — it must not resolve to an empty scope."""
+    """`ails check <absolute path to .claude/settings.json>` run from a cwd outside the
+    project (no `.git`) does not check the file: it says the file is not an instruction
+    file in its own folder and points at running the check in the project folder."""
     project = _project(tmp_path)
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     settings_abs = str((project / ".claude" / "settings.json").resolve())
 
-    by_file = _findings_by_file(monkeypatch, elsewhere, settings_abs)
+    monkeypatch.chdir(elsewhere)
+    result = runner.invoke(app, ["check", settings_abs, "-f", "json"])
 
-    assert by_file, "absolute config-file target resolved to an empty scope"
-    rules = next(iter(by_file.values()))
-    assert "CLAUDE:S:0005" in rules
+    assert "run ails check in that project's folder" in result.output
+    assert json.loads(result.output[result.output.index("{") : result.output.rindex("}") + 1])["files"] == {}
+
+    by_file = _findings_by_file(monkeypatch, project, ".claude/settings.json")
+    assert "CLAUDE:S:0005" in next(iter(by_file.values()))

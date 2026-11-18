@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.mapper import model_fetch, model_manifest
+from tests.fake_models import no_fetch
 
 
 def _real_models_root() -> Path:
@@ -27,14 +28,16 @@ def _real_models_root() -> Path:
 
 
 class _Resp:
-    def __init__(self, status_code: int, content: bytes):
-        self.status_code = status_code
+    def __init__(self, status: int, content: bytes):
+        self.status = status
         self.content = content
-        self.headers = {"content-type": "application/octet-stream"}
 
-    def iter_bytes(self, chunk_size: int = 1 << 20):
-        for i in range(0, len(self.content), chunk_size):
-            yield self.content[i : i + chunk_size]
+    def header(self, name: str) -> str:
+        return "application/octet-stream" if name == "content-type" else ""
+
+    def chunks(self, size: int = 1 << 20):
+        for i in range(0, len(self.content), size):
+            yield self.content[i : i + size]
 
 
 class _RealServingClient:
@@ -45,16 +48,13 @@ class _RealServingClient:
         self._calls = calls
 
     @contextmanager
-    def stream(self, method: str, url: str):
+    def __call__(self, url: str, *, headers, timeout: float, follow_redirects: bool):
         self._calls.append(url)
         rel = url.rsplit("/", 1)[-1].replace("__", "/")
-        yield _Resp(200, (self._root / rel).read_bytes())
-
-    def __enter__(self) -> _RealServingClient:
-        return self
-
-    def __exit__(self, *a) -> None:
-        return None
+        source = self._root / rel
+        # A dev tree holds the model files; the licence texts ship with the release host only.
+        body = source.read_bytes() if source.is_file() or rel not in model_manifest.LICENSE_FILES else b"licence text"
+        yield _Resp(200, body)
 
 
 @pytest.mark.integration
@@ -78,16 +78,17 @@ def test_first_use_fetches_then_loads_from_cache(tmp_path, monkeypatch):
         functools.cache(model_manifest.in_package_tree_present.__wrapped__),
     )
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
 
     cache_root = tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION
     monkeypatch.setattr(model_fetch, "cache_models_dir", lambda version=model_fetch.MODEL_VERSION: cache_root)
     monkeypatch.setattr(model_manifest, "cache_models_dir", lambda version=model_manifest.MODEL_VERSION: cache_root)
 
     calls: list[str] = []
-    monkeypatch.setattr(model_fetch, "_http_client", lambda headers=None: _RealServingClient(real_root, calls))
+    host = _RealServingClient(real_root, calls)
 
     # First use: the tree is absent, the ensure step fetches, the cache is populated.
-    resolved = bundled.ensure_models_available()
+    resolved = bundled.ensure_models_available(host)
     assert resolved == cache_root
     assert model_fetch.models_present(cache_root)
     assert len(calls) == len(model_fetch.FETCH_RELPATHS)
@@ -95,16 +96,15 @@ def test_first_use_fetches_then_loads_from_cache(tmp_path, monkeypatch):
     # The embedder loads from the cache and produces a real embedding.
     from reporails_cli.core.mapper.onnx_embedder import OnnxEmbedder
 
-    emb = OnnxEmbedder().encode(["a short instruction line"])
+    emb = OnnxEmbedder(no_fetch).encode(["a short instruction line"])
     assert emb.shape == (1, 384)
 
     # Second run is silent + offline: make the host unreachable — a cache hit
     # must not touch it.
 
-    def _no_host(headers=None):
+    def _no_host(url, *, headers, timeout, follow_redirects):
         raise AssertionError("second run must not hit the host")
 
-    monkeypatch.setattr(model_fetch, "_http_client", _no_host)
-    assert bundled.ensure_models_available() == cache_root
+    assert bundled.ensure_models_available(_no_host) == cache_root
     assert model_manifest.get_models_path() == cache_root
-    assert OnnxEmbedder().encode(["another line"]).shape == (1, 384)
+    assert OnnxEmbedder(no_fetch).encode(["another line"]).shape == (1, 384)

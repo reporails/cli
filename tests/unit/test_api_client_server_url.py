@@ -20,7 +20,7 @@ class TestServerUrlEnvOverride:
     def test_empty_server_url_env_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A set-but-empty AILS_SERVER_URL is treated as unset, not as "no server"."""
         monkeypatch.setenv("AILS_SERVER_URL", "")
-        client = AilsClient()
+        client = AilsClient("free")
         assert client.base_url == DEFAULT_SERVER_URL
 
     @pytest.mark.unit
@@ -28,5 +28,5 @@ class TestServerUrlEnvOverride:
     def test_populated_server_url_env_is_honored(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A real override still wins over the default."""
         monkeypatch.setenv("AILS_SERVER_URL", "http://localhost:8787")
-        client = AilsClient()
+        client = AilsClient("free")
         assert client.base_url == "http://localhost:8787"

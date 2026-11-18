@@ -12,8 +12,10 @@ from collections.abc import Mapping
 CI_ENV_VARS = ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "CIRCLECI")  # mirrors running_in_ci
 
 # Tests never download the model set, and never reach a hosted service: a closed local port
-# fails fast, so a check runs its offline path.
+# fails fast, and a check asks the server nothing: it runs its offline path. A test of the server
+# client or of the server's replies takes `server_reachable` to ask it.
 SUITE_DEFAULTS = {
+    "AILS_OFFLINE": "1",
     "AILS_MODEL_OFFLINE": "1",
     "AILS_SERVER_URL": "http://127.0.0.1:9",
     "AILS_PLATFORM_URL": "http://127.0.0.1:9",

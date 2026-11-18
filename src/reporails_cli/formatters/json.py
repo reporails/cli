@@ -6,6 +6,7 @@ from dataclasses import asdict
 from enum import Enum
 from pathlib import Path
 
+from reporails_cli.core.heal.record import file_scores
 from reporails_cli.core.mapper.bio_graphs import multislot_available
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.diagnostics import (
@@ -20,6 +21,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     RemediationWorkflow,
     WorkflowLocation,
 )
+from reporails_cli.core.platform.dto.heal import HealRegression
 from reporails_cli.core.platform.dto.models import CATEGORY_CODES, Level
 from reporails_cli.core.platform.dto.platform import CombinedResult, Omissions
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
@@ -156,6 +158,8 @@ def _format_workflow(wf: RemediationWorkflow, project_root: Path) -> JsonObject:
             }
             for e in wf.listed
         ]
+    if wf.preservation_contract:
+        out["preservation_contract"] = wf.preservation_contract
     return out
 
 
@@ -301,6 +305,7 @@ def format_combined_result(
     ruleset_map: RulesetMap | _NotStated | None = _MAP_NOT_STATED,
     project_root: Path | None = None,
     file_type_by_path: dict[str, str] | None = None,
+    heal_regressions: tuple[HealRegression, ...] = (),
 ) -> JsonObject:
     """Format CombinedResult as JSON dict.
 
@@ -311,6 +316,7 @@ def format_combined_result(
         project_root: Root to relativize regime keys against (defaults to cwd)
         file_type_by_path: Generic-scan file types, so surface_health routes @-imports
             to the Imported surface consistently with the text view
+        heal_regressions: The healed files the run shows slipping, for the `heal_regressions` block
 
     Returns:
         Dict with findings, stats, compliance, tier, category info.
@@ -351,6 +357,11 @@ def format_combined_result(
         # consumer (CI, a coding agent) would otherwise read a smaller finding count
         # from a degraded run as a cleaner project than a full run produced.
         "content_checks_skipped": map_failed or not multislot_available(),
+        "heal_regressions": [
+            {"file": r.file, "score_before": r.score_before, "score_after": r.score_after, "rules": dict(r.rules)}
+            for r in heal_regressions
+        ],
+        "file_scores": dict(file_scores(result, root).items()),
         "files": {
             fp: _file_entry(findings, regime_by_file.get(fp))
             for fp, findings in sorted(by_file.items(), key=lambda x: -len(x[1]))

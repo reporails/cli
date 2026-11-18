@@ -14,6 +14,7 @@ from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.mapper.pipeline import _apply_charge_stage
 from reporails_cli.core.platform.dto.mapping import AtomTuple, Span
 from reporails_cli.core.platform.dto.ruleset import Atom
+from tests.fake_models import no_models
 
 
 def _atom(text: str, *, kind: str = "excitation", fmt: str = "prose", file_path: str = "a.md") -> Atom:
@@ -45,7 +46,7 @@ def test_charge_stage_rebuilds_fresh_files_only(monkeypatch: pytest.MonkeyPatch)
     # returns one rebuilt group per input group (only the fresh group is passed).
     monkeypatch.setattr(pipeline, "apply_multislot_groups", lambda groups, *a, **k: [[replacement] for _ in groups])
 
-    all_atoms, fresh_out = _apply_charge_stage([cached, fresh], [fresh])
+    all_atoms, fresh_out = _apply_charge_stage([cached, fresh], [fresh], no_models())
     assert all_atoms == [cached, replacement]
     assert fresh_out == [replacement]
 
@@ -56,7 +57,7 @@ def test_charge_stage_noops_when_graphs_missing(monkeypatch: pytest.MonkeyPatch)
     # No charge-classifier graphs bundled -> the stage is a no-op; atoms keep their lexical charge.
     monkeypatch.setattr(pipeline, "multislot_available", lambda: False)
     fresh = _atom("Use pytest.")
-    all_atoms, fresh_out = _apply_charge_stage([fresh], [fresh])
+    all_atoms, fresh_out = _apply_charge_stage([fresh], [fresh], no_models())
     assert all_atoms == [fresh]
     assert fresh_out == [fresh]
 
@@ -71,7 +72,7 @@ def test_multislot_head_decodes_all_seven_outputs() -> None:
     if not bio_graphs.multislot_available():
         pytest.skip("charge-classifier graphs not bundled")
     text = "Always run the tests before committing."
-    (decoded,) = multislot_frames._decode_logits_batch([text])
+    (decoded,) = multislot_frames._decode_logits_batch([text], no_models())
     (t,) = multislot_frames._frames_from_decoded(decoded, text)
     assert t.polarity in (-1, 0, 1)
     assert t.modality in {"imperative", "direct", "absolute", "hedged", "none"}
@@ -86,7 +87,7 @@ def test_multislot_per_span_confidence_in_unit_range() -> None:
     if not bio_graphs.multislot_available():
         pytest.skip("charge-classifier graphs not bundled")
     text = "Do not commit secrets to the repository."
-    (decoded,) = multislot_frames._decode_logits_batch([text])
+    (decoded,) = multislot_frames._decode_logits_batch([text], no_models())
     (t,) = multislot_frames._frames_from_decoded(decoded, text)
     for span in (t.subject, t.predicate, t.object, t.scope):
         assert 0.0 <= span.conf <= 1.0
@@ -106,12 +107,12 @@ def test_multislot_per_span_confidence_in_unit_range() -> None:
 def _multislot_neutral_stub(monkeypatch: pytest.MonkeyPatch) -> None:
     """Route every sentence through the multislot rebuild as one neutral frame."""
     monkeypatch.setattr(bio_pipeline, "multislot_available", lambda: True)
-    monkeypatch.setattr(bio_pipeline, "_decode_logits_batch", lambda texts: [None] * len(texts))
+    monkeypatch.setattr(bio_pipeline, "_decode_logits_batch", lambda texts, models: [None] * len(texts))
 
 
 def _rebuilt(md: str, monkeypatch: pytest.MonkeyPatch) -> list[Atom]:
     _multislot_neutral_stub(monkeypatch)
-    return bio_pipeline.apply_multislot(tokenize(md))
+    return bio_pipeline.apply_multislot(tokenize(md), no_models())
 
 
 @pytest.mark.unit
@@ -166,14 +167,14 @@ def test_structural_neutral_floor_survives_the_charge_head() -> None:
     # must not be re-charged to ±1 by the argmax head — `_apply_structural_neutral_floor`
     # re-imposes it after the recharge, so the neutral charge is kept.
     for text in ["No mocks.", "See: config.md", "Knowledge: the theory doc"]:
-        atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+        atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
         assert atoms and all(a.charge_value == 0 and a.modality == "none" for a in atoms), (
             text,
             [(a.charge, a.charge_value, a.modality) for a in atoms],
         )
     # Real instructions are untouched by the floor (it fires only on the structural guards).
     for text, cv in [("Always run the tests", 1), ("Never mock the client", -1)]:
-        atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+        atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
         assert any(a.charge_value == cv for a in atoms), (
             text,
             [(a.charge, a.charge_value) for a in atoms],
@@ -191,11 +192,11 @@ def test_structural_neutral_floor_keeps_a_riding_instruction() -> None:
         ("Reference: never delete the cache directory.", -1),
         ("Triggers a rebuild; always run the linter afterwards.", 1),
     ]:
-        atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+        atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
         assert any(a.charge_value == cv for a in atoms), (text, [(a.charge, a.charge_value, a.text) for a in atoms])
     # Pure label/narration/status shapes (nothing rides along) still floor to neutral.
     for text in ["See docs/configuration.md.", "Knowledge: cli/map", "No mocks."]:
-        atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+        atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
         assert atoms and all(a.charge_value == 0 and a.modality == "none" for a in atoms), (
             text,
             [(a.charge, a.charge_value, a.modality) for a in atoms],
@@ -209,7 +210,7 @@ def test_structural_floor_runs_before_deontic_floor() -> None:
     # The structural-NEUTRAL floor must run BEFORE the deontic
     # floor. A bare-negative item (`No mocks.`) matches both, and under `## Don'ts` the deontic
     # prohibition must win — so it stays CONSTRAINT, not reverted to NEUTRAL by the structural floor.
-    atoms = bio_pipeline.apply_multislot(list(tokenize("## Donts\n\n- No mocks.\n", "structure-aware")))
+    atoms = bio_pipeline.apply_multislot(list(tokenize("## Donts\n\n- No mocks.\n", "structure-aware")), no_models())
     items = [a for a in atoms if a.kind != "heading"]
     assert items and all(a.charge_value == -1 for a in items), [(a.text, a.charge_value) for a in items]
 
@@ -313,7 +314,7 @@ def test_a_run_with_no_action_stays_apart_from_an_opposite_sign_or_alone(runs: l
     ],
 )
 def test_a_subject_or_joining_word_is_not_an_instruction_of_its_own(line: str, instruction: str) -> None:
-    atoms = bio_pipeline.apply_multislot(list(tokenize(f"# Rules\n\n{line}\n")))
+    atoms = bio_pipeline.apply_multislot(list(tokenize(f"# Rules\n\n{line}\n")), no_models())
     assert [a.text for a in atoms if a.charge_value != 0] == [instruction]
 
 
@@ -324,7 +325,11 @@ def test_a_quoted_sample_line_stays_one_neutral_quotation() -> None:
     quote = (
         '"Official docs recommend X. However, we found Y works better (confirmed in 3 builds). Consider both options."'
     )
-    atoms = [a for a in bio_pipeline.apply_multislot(list(tokenize(f"# Use\n\n> {quote}\n"))) if a.kind != "heading"]
+    atoms = [
+        a
+        for a in bio_pipeline.apply_multislot(list(tokenize(f"# Use\n\n> {quote}\n")), no_models())
+        if a.kind != "heading"
+    ]
     assert [(a.text, a.charge_value) for a in atoms] == [(quote, 0)]
 
 
@@ -333,7 +338,7 @@ def test_a_quoted_sample_line_stays_one_neutral_quotation() -> None:
 @pytest.mark.requires_model
 def test_table_cell_edge_cut_becomes_one_atom() -> None:
     md = "| Step | Rule |\n| --- | --- |\n| Deploy | Never deploy on Friday |\n"
-    atoms = bio_pipeline.apply_multislot(list(tokenize(md)))
+    atoms = bio_pipeline.apply_multislot(list(tokenize(md)), no_models())
     rows = [a for a in atoms if a.kind != "heading" and a.format == "table" and "Deploy" in a.text]
     assert len(rows) == 1, [a.text for a in rows]
     assert rows[0].text == "Deploy | Never deploy on Friday"
@@ -345,7 +350,7 @@ def test_table_cell_edge_cut_becomes_one_atom() -> None:
 @pytest.mark.requires_model
 def test_table_row_two_independent_sentences_still_yields_two_atoms() -> None:
     md = "| Cell | Rule |\n| --- | --- |\n| A | Always run it. Do not skip it. |\n"
-    atoms = bio_pipeline.apply_multislot(list(tokenize(md)))
+    atoms = bio_pipeline.apply_multislot(list(tokenize(md)), no_models())
     rows = [a for a in atoms if a.kind != "heading" and a.format == "table" and a.text != "Cell | Rule"]
     assert len(rows) == 2, [a.text for a in rows]
     assert any(a.text.startswith("A |") for a in rows)
@@ -369,7 +374,7 @@ def test_table_header_row_is_a_label_row_not_an_instruction() -> None:
 @pytest.mark.requires_model
 def test_table_header_row_stays_neutral_through_the_charge_head() -> None:
     md = "| Leverage tier | Severity floor | Reading |\n| --- | --- | --- |\n| Deploy | Never deploy on Friday |\n"
-    atoms = bio_pipeline.apply_multislot(list(tokenize(md)))
+    atoms = bio_pipeline.apply_multislot(list(tokenize(md)), no_models())
     header = [a for a in atoms if a.format == "table" and a.line == 1]
     assert [(a.text, a.charge_value) for a in header] == [("Leverage tier | Severity floor | Reading", 0)]
     assert any(a.charge_value == -1 for a in atoms if a.format == "table" and a.line == 3)
@@ -391,7 +396,7 @@ def test_table_header_row_stays_neutral_through_the_charge_head() -> None:
 def test_a_table_header_with_charge_words_stays_a_neutral_label(header: str, segmentation: str) -> None:
     columns = header.count("|") - 1
     md = f"{header}\n|{'---|' * columns}\n|{' push to main |' * columns}\n"
-    atoms = bio_pipeline.apply_multislot(list(tokenize(md, segmentation)))
+    atoms = bio_pipeline.apply_multislot(list(tokenize(md, segmentation)), no_models())
     (row,) = [a for a in atoms if a.format == "table" and a.line == 1]
     assert (row.charge, row.charge_value) == ("NEUTRAL", 0)
 
@@ -412,7 +417,7 @@ def test_multislot_marks_a_conditional_frame_scope_conditional() -> None:
         "Only for TypeScript files, prefer interfaces.",
         "Keep the file unless it is empty.",
     ]:
-        atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+        atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
         assert atoms and any(a.scope_conditional for a in atoms), (
             text,
             [(a.text, a.scope_conditional) for a in atoms],
@@ -432,7 +437,7 @@ def test_multislot_leaves_an_unconditional_sentence_unconditional() -> None:
         "While loops must be bounded.",
         "Before hooks run on every commit.",
     ]:
-        atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+        atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
         assert atoms and not any(a.scope_conditional for a in atoms), (
             text,
             [(a.text, a.scope_conditional) for a in atoms],
@@ -444,7 +449,7 @@ def test_multislot_leaves_an_unconditional_sentence_unconditional() -> None:
 @pytest.mark.requires_model
 def test_multislot_leaves_a_frame_word_heading_unconditional() -> None:
     # `## When to use` is a section label, not a condition on anything.
-    atoms = bio_pipeline.apply_multislot(list(tokenize("## When to use\n\nRun the linter.\n")))
+    atoms = bio_pipeline.apply_multislot(list(tokenize("## When to use\n\nRun the linter.\n")), no_models())
     headings = [a for a in atoms if a.kind == "heading"]
     assert headings and not any(a.scope_conditional for a in headings), [
         (a.text, a.scope_conditional) for a in headings
@@ -469,7 +474,7 @@ def test_complemented_no_prohibition_charges_constraint() -> None:
         "No secrets in seed.",
         "No string formatting in log calls.",
     ]:
-        atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+        atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
         assert atoms and all(a.charge_value == -1 and a.charge == "CONSTRAINT" for a in atoms), (
             text,
             [(a.text, a.charge, a.charge_value) for a in atoms],
@@ -482,7 +487,7 @@ def test_complemented_no_prohibition_charges_constraint() -> None:
 def test_terse_no_prohibition_without_a_complement_charges_constraint() -> None:
     # A `No <thing>` line names what is forbidden; the scope complement is optional.
     for text in ["No console.log", "No hardcoded secrets", "No blank lines"]:
-        atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+        atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
         assert atoms and all(a.charge_value == -1 and a.charge == "CONSTRAINT" for a in atoms), (
             text,
             [(a.text, a.charge, a.charge_value) for a in atoms],
@@ -496,7 +501,7 @@ def test_described_absence_is_not_a_prohibition() -> None:
     # `for`/`of` name what is absent, not where a rule binds; a status adverb reports.
     # (The floor only declines to PROMOTE — a charge the head itself decoded stands.)
     for text in ["No support for Windows", "No data in this table yet"]:
-        atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+        atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
         assert atoms and all(a.charge_value == 0 for a in atoms), (
             text,
             [(a.text, a.charge, a.charge_value) for a in atoms],
@@ -515,7 +520,7 @@ def test_bare_no_status_line_stays_neutral() -> None:
         "No cloud dependencies",
         "No drift detected on the tracked dimensions",
     ]:
-        atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+        atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
         assert atoms and all(a.charge_value == 0 and a.modality == "none" for a in atoms), (
             text,
             [(a.text, a.charge, a.charge_value) for a in atoms],
@@ -534,7 +539,7 @@ def test_labelled_see_reference_stays_neutral() -> None:
         "Design: see docs/architecture.md",
         "See also: docs/architecture.md",
     ]:
-        atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+        atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
         assert atoms and all(a.charge_value == 0 and a.modality == "none" for a in atoms), (
             text,
             [(a.text, a.charge, a.charge_value) for a in atoms],
@@ -546,7 +551,7 @@ def test_labelled_see_reference_stays_neutral() -> None:
 @pytest.mark.requires_model
 def test_labelled_see_reference_keeps_a_riding_prohibition() -> None:
     text = "Knowledge: see the runbook, and never commit a credential."
-    atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+    atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
     assert any(a.charge_value == -1 for a in atoms), [(a.text, a.charge, a.charge_value) for a in atoms]
 
 
@@ -560,7 +565,7 @@ def test_instruction_fronting_a_see_pointer_keeps_its_charge() -> None:
         "Always run the linter first: see docs/lint.md",
         "Do not skip tests: see CONTRIBUTING.md",
     ]:
-        atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+        atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
         assert any(a.charge_value != 0 for a in atoms), [(a.text, a.charge, a.charge_value) for a in atoms]
 
 
@@ -570,5 +575,5 @@ def test_instruction_fronting_a_see_pointer_keeps_its_charge() -> None:
 def test_pointer_title_carrying_and_is_still_a_pointer() -> None:
     # `and` inside a reference title does not break the pointer into a second clause.
     text = "Knowledge: see the build and deploy guide"
-    atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+    atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
     assert all(a.charge_value == 0 for a in atoms), [(a.text, a.charge, a.charge_value) for a in atoms]

@@ -10,6 +10,7 @@ from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResult,
 from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.dto.results import ProjectConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
 # The `(folders, file globs)` a run left out because the user set them.
@@ -23,6 +24,8 @@ RefusalKind = Literal[
     "empty_project",
     "model_downloading",
     "model_unavailable",
+    "server_refused",
+    "server_unreachable",
     "failed",
 ]
 
@@ -50,6 +53,7 @@ class AssembleInputs:
     filter_agents: list[DetectedAgent] | None
     effective_agent: str
     lint_result: LintResult | None
+    project_config: ProjectConfig  # the config of `scan_root`
     rule_agents: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
     # `(rule id, file)` pairs whose check did not finish in time; the file is as the check reported it.
@@ -75,8 +79,8 @@ class Refusal(NamedTuple):
 class LeftOut(NamedTuple):
     """What a run left out: the `(folders, file globs)` to report and the exclusion set behind them."""
 
-    record: Excluded = ((), ())
-    exclusions: RunExclusions | None = None
+    record: Excluded
+    exclusions: RunExclusions
 
 
 class Discovered(NamedTuple):
@@ -87,6 +91,7 @@ class Discovered(NamedTuple):
     instruction_files: list[Path]
     file_type_by_path: dict[str, str]
     left_out: LeftOut
+    config: ProjectConfig
 
 
 class Scope(NamedTuple):
@@ -99,6 +104,7 @@ class Scope(NamedTuple):
     instruction_files: list[Path]
     file_type_by_path: dict[str, str]
     left_out: LeftOut
+    config: ProjectConfig
 
 
 @dataclass(frozen=True)

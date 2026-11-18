@@ -14,10 +14,13 @@ import pytest
 from typer.testing import CliRunner
 
 from reporails_cli.core.heal.apply import heal_scope_files, heal_workflow_within
+from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
-from reporails_cli.core.platform.dto.heal import NamedTargets
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.interfaces.cli.main import app
+from tests.fake_daemon import FakeDaemonTransport
+from tests.fake_models import no_models
 
 runner = CliRunner()
 
@@ -49,7 +52,7 @@ def test_heal_against_dot_is_refused(dot: str) -> None:
 @pytest.mark.subsys_heal
 def test_has_api_key_true_with_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """`--heal` is gated on auth; an env key reads as authenticated."""
-    from reporails_cli.core.platform.adapters.api_key import has_api_key
+    from reporails_cli.core.platform.config.api_key import has_api_key
 
     monkeypatch.setenv("AILS_API_KEY", "k")
     assert has_api_key() is True
@@ -59,7 +62,7 @@ def test_has_api_key_true_with_env(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.subsys_heal
 def test_has_api_key_false_when_anonymous(monkeypatch: pytest.MonkeyPatch) -> None:
     """No env key + isolated HOME (no credentials) reads as anonymous — `--heal` is gated off."""
-    from reporails_cli.core.platform.adapters.api_key import has_api_key
+    from reporails_cli.core.platform.config.api_key import has_api_key
 
     assert has_api_key() is False
 
@@ -118,6 +121,7 @@ def test_heal_leaves_files_in_heal_exclude_unchanged(tmp_path: object) -> None:
         Atom(
             line=2,
             text="Run pyproject.toml here.",
+            plain_text="Run pyproject.toml here.",
             kind="paragraph",
             charge="NEUTRAL",
             charge_value=0,
@@ -133,7 +137,13 @@ def test_heal_leaves_files_in_heal_exclude_unchanged(tmp_path: object) -> None:
     rows = tuple(LocationFinding("format", str(p), 2, 0, "code") for p in (kept, archived))
     wf = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (), "", rows),))
     fixes = _apply_keyed_fixes(
-        rmap, base, wf, dry_run=False, show_progress=False, console=None, allowed_files=[kept, archived], suppressed={}
+        rmap,
+        RunContext().configured_root(base),
+        wf,
+        dry_run=False,
+        allowed_files=[kept, archived],
+        suppressed={},
+        models=no_models(),
     ).fixes
 
     assert archived.read_bytes() == archived_before
@@ -157,7 +167,7 @@ def test_a_bare_heal_exclude_name_drops_only_the_root_file(tmp_path: object) -> 
     for f in files:
         f.write_text("# Doc\n", encoding="utf-8")
 
-    assert allowed_set(base, files) == {base / "sub" / "CLAUDE.md"}
+    assert allowed_set(base, files, RunContext().project_config(base).heal_exclude) == {base / "sub" / "CLAUDE.md"}
 
 
 @pytest.mark.unit
@@ -187,6 +197,7 @@ def _two_file_map(main: Path, imported: Path) -> tuple[RulesetMap, RemediationWo
         Atom(
             line=3,
             text="Run pyproject.toml here.",
+            plain_text="Run pyproject.toml here.",
             kind="paragraph",
             charge="NEUTRAL",
             charge_value=0,
@@ -216,7 +227,15 @@ def test_single_file_heal_writes_only_the_named_file_not_what_it_imports(tmp_pat
     imported_before = imported.read_bytes()
     rmap, wf = _two_file_map(main, imported)
 
-    fixes = heal_workflow_within(rmap, wf, main, base).fixes
+    fixes = heal_workflow_within(
+        rmap,
+        wf,
+        main,
+        RunContext().configured_root(base),
+        environment_for=LocalProjectEnvironment,
+        daemon=FakeDaemonTransport(),
+        models=no_models(),
+    ).fixes
 
     assert imported.read_bytes() == imported_before
     assert "`pyproject.toml`" in main.read_text(encoding="utf-8")
@@ -246,26 +265,6 @@ def test_heal_scope_files_names_one_file_for_a_file_scope(tmp_path: Path) -> Non
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
-@pytest.mark.requires_model
-def test_named_targets_on_a_folder_scope_write_only_the_named_file(tmp_path: Path) -> None:
-    """`heal_apply(path=<project>, targets=['CLAUDE.md'])` reaches heal with a folder scope: the named
-    file is written and the file it imports is left byte-identical."""
-    base = tmp_path.resolve()
-    (base / "docs").mkdir()
-    main, imported = base / "CLAUDE.md", base / "docs" / "rules.md"
-    main.write_text("# Doc\n@docs/rules.md\nRun pyproject.toml here.\n", encoding="utf-8")
-    imported.write_text("# Rules\n\nRun pyproject.toml here.\n", encoding="utf-8")
-    imported_before = imported.read_bytes()
-    rmap, wf = _two_file_map(main, imported)
-
-    fixes = heal_workflow_within(rmap, wf, base, base, NamedTargets(frozenset({main}), frozenset())).fixes
-
-    assert imported.read_bytes() == imported_before
-    assert {Path(f["file_path"]).resolve() for f in fixes} == {main}
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_heal
 def test_heal_scope_outside_counts_only_real_escapes_not_left_alone_imports(tmp_path: Path) -> None:
     """A named-file heal leaves an import alone without calling it outside the scope; only a file whose
     real path escapes the project is reported as outside."""
@@ -283,25 +282,3 @@ def test_heal_scope_outside_counts_only_real_escapes_not_left_alone_imports(tmp_
 
     assert heal_scope_outside([main, imported], main, project) == []
     assert heal_scope_outside([main, imported, link], project, project) == [link]
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_heal
-def test_heal_scope_files_named_file_and_directory_keep_both_not_the_files_imports(tmp_path: Path) -> None:
-    """Targets naming one file and one folder narrow to that file and every file under the folder; a file
-    the named file imports from outside the folder is left alone."""
-    from reporails_cli.core.platform.dto.heal import NamedTargets
-
-    project = (tmp_path / "proj").resolve()
-    for sub in ("docs/deep", "other"):
-        (project / sub).mkdir(parents=True)
-    main = project / "CLAUDE.md"
-    in_docs, deep = project / "docs" / "a.md", project / "docs" / "deep" / "b.md"
-    imported = project / "other" / "imp.md"
-    for f in (main, in_docs, deep, imported):
-        f.write_text("# Doc\n", encoding="utf-8")
-    named = NamedTargets(frozenset({main}), frozenset({project / "docs"}))
-
-    kept = heal_scope_files([main, in_docs, deep, imported], project, project, named)
-
-    assert kept == [main, in_docs, deep]

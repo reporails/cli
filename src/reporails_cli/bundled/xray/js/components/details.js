@@ -75,6 +75,17 @@ function content(env, side) {
   return { out, h, titleId };
 }
 
+// Caps the dialog to the part of the overlay on screen, so its top bar stays visible wherever the page is scrolled.
+function capDialog() {
+  const box = document.getElementById('overlay'), dlg = box && box.querySelector('.pk-dialog');
+  if (!dlg) return;
+  const r = box.getBoundingClientRect();
+  const visible = Math.min(innerHeight, r.bottom) - Math.max(0, r.top);
+  dlg.style.maxHeight = `${Math.max(Math.min(160, visible), visible - 24)}px`;
+}
+addEventListener('scroll', capDialog, { passive: true });
+addEventListener('resize', capDialog);
+
 // The Graph tab's overlay: a backdrop over the canvas column and the dialog on it.
 export function renderOverlay(box, env) {
   const c = env.state.peek ? content(env, false) : null;
@@ -92,6 +103,7 @@ export function renderOverlay(box, env) {
   body.append(section('pk-main', c.out.main), section('pk-side', c.out.side));
   dlg.append(c.h, body);
   sync(box, back, dlg);
+  capDialog();
 }
 
 // Another tab's details pane, beside its table: the same output in the overlay's two-column layout; empty when nothing is open.
@@ -109,6 +121,16 @@ export function renderPanel(box, env) {
 
 // Focus: it goes to the × when details open, and back to the element that opened them when they close.
 const focus = { shown: '', opener: null };
+
+// Marks an opener the page is creating as open when `peek` (the open item, `{kind, id}` or null) is one of the `keys` it opens
+// (`kind:id`, as written in data-peek; a source's is `src:<id>`): `cls` and aria-expanded. Every builder of an opener calls
+// this as it creates the opener, so a row drawn later (a list scrolled back into view) carries the mark too.
+export function markOpen(e, peek, keys, cls = 'open') {
+  if (!peek || !keys.includes(peekKey(peek))) return e;
+  e.classList.add(cls);
+  e.setAttribute('aria-expanded', 'true');
+  return e;
+}
 
 // What opened the details: an element, or the key of the element that stands for it; its region and identity find its twin after a redraw.
 export function remember(from) {

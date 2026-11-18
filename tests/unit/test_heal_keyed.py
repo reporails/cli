@@ -13,9 +13,13 @@ import pytest
 from reporails_cli.core.heal.keyed import put_back_line
 from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.pipeline.mapping import map_instruction_files
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
 from reporails_cli.core.platform.dto.heal import KeyedResult
+from reporails_cli.core.platform.dto.results import MapperConfig
 from reporails_cli.interfaces.cli.heal import _apply_keyed_fixes, _output_heal_results
+from tests.fake_daemon import FakeDaemonTransport
+from tests.fake_models import no_models
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_heal]
 
@@ -54,18 +58,19 @@ def _run(
     path = tmp_path / "CLAUDE.md"
     if not path.exists():
         path.write_bytes(text.encode())
-    m = map_instruction_files(tmp_path, [path], spawn_daemon=False)
+    m = map_instruction_files(
+        tmp_path, [path], spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport(), models=no_models()
+    )
     items = tuple(LocationFinding(rule, str(path), line, _pi(m, line), op) for line, op, rule in rows)
     wf = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (str(path),), "", items),))
     res = _apply_keyed_fixes(
         m,
-        tmp_path,
+        RunContext().configured_root(tmp_path),
         wf,
         dry_run=dry_run,
-        show_progress=False,
-        console=_Console(),
         allowed_files=[path] if allowed else [],
         suppressed=suppressed or {},
+        models=no_models(),
     )
     return res, path
 
@@ -81,7 +86,9 @@ def test_bold_on_a_directive_becomes_italic_and_is_not_reported_again(tmp_path: 
     res, path = _run(tmp_path, (3, "unbold", "bold"), (7, "code", "format"))
     assert "Always run the *linter* before" in path.read_text()
     assert {f["rule_id"] for f in res.fixes} == {"bold", "format"}
-    m = map_instruction_files(tmp_path, [path], spawn_daemon=False)
+    m = map_instruction_files(
+        tmp_path, [path], spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport(), models=no_models()
+    )
     assert not [f for f in run_client_checks(m) if f.check_id == "bold"]
 
 
@@ -112,9 +119,17 @@ def test_bold_on_a_constraint_is_fixed(tmp_path: Path) -> None:
 def test_no_workflow_writes_nothing(tmp_path: Path) -> None:
     path = tmp_path / "CLAUDE.md"
     path.write_text(DOC)
-    m = map_instruction_files(tmp_path, [path], spawn_daemon=False)
+    m = map_instruction_files(
+        tmp_path, [path], spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport(), models=no_models()
+    )
     res = _apply_keyed_fixes(
-        m, tmp_path, None, dry_run=False, show_progress=False, console=_Console(), allowed_files=[path], suppressed={}
+        m,
+        RunContext().configured_root(tmp_path),
+        None,
+        dry_run=False,
+        allowed_files=[path],
+        suppressed={},
+        models=no_models(),
     )
     assert res.fixes == [] and path.read_text() == DOC
 
@@ -195,9 +210,9 @@ def test_a_written_file_is_put_back_when_the_remap_yields_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """No mapper can check the result: every written file is restored and reported under the `remap` check."""
-    import reporails_cli.core.heal.apply as heal_apply
+    import reporails_cli.core.heal.apply as heal_apply_mod
 
-    monkeypatch.setattr(heal_apply, "map_instruction_files", lambda *_a, **_k: None)
+    monkeypatch.setattr(heal_apply_mod, "map_instruction_files", lambda *_a, **_k: None)
     path = tmp_path / "CLAUDE.md"
     path.write_bytes(DOC.encode())
     res, _ = _run(tmp_path, (7, "code", "format"))
@@ -326,6 +341,7 @@ def _hand_map(*files: Path) -> tuple[Any, RemediationWorkflow]:
         Atom(
             line=2,
             text="Run build.sh before every commit.",
+            plain_text="Run build.sh before every commit.",
             kind="paragraph",
             charge="IMPERATIVE",
             charge_value=1,
@@ -356,13 +372,12 @@ def test_a_config_surface_file_is_never_written(tmp_path: Path) -> None:
     rmap, wf = _hand_map(kept, config)
     res = _apply_keyed_fixes(
         rmap,
-        tmp_path,
+        RunContext().configured_root(tmp_path),
         wf,
         dry_run=False,
-        show_progress=False,
-        console=_Console(),
         allowed_files=[kept, config],
         suppressed={},
+        models=no_models(),
     )
     assert config.read_bytes() == before
     assert "`build.sh`" in kept.read_text()
@@ -378,7 +393,9 @@ def test_a_file_whose_imports_expand_is_fixed_on_its_own_lines_only(tmp_path: Pa
     main.write_text("@README.md\n\nRun build.sh before every commit.\n")
     imported.write_text("Open settings.json and edit it.\nKeep notes short.\n")
     before = imported.read_bytes()
-    m = map_instruction_files(tmp_path, [main], spawn_daemon=False)
+    m = map_instruction_files(
+        tmp_path, [main], spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport(), models=no_models()
+    )
     own = next(a for a in m.atoms if not a.imported_from)
     taken = next(a for a in m.atoms if a.imported_from and a.unformatted_code)
     items = (
@@ -387,7 +404,13 @@ def test_a_file_whose_imports_expand_is_fixed_on_its_own_lines_only(tmp_path: Pa
     )
     wf = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (str(main),), "", items),))
     res = _apply_keyed_fixes(
-        m, tmp_path, wf, dry_run=False, show_progress=False, console=_Console(), allowed_files=[main], suppressed={}
+        m,
+        RunContext().configured_root(tmp_path),
+        wf,
+        dry_run=False,
+        allowed_files=[main],
+        suppressed={},
+        models=no_models(),
     )
     assert main.read_text() == "@README.md\n\nRun `build.sh` before every commit.\n"
     assert imported.read_bytes() == before
@@ -414,6 +437,7 @@ def test_heal_takes_its_fixes_from_the_workflow_the_report_showed(
     seen: list[Any] = []
     monkeypatch.setattr(check_flow, "_run_heal_pass", lambda *a, **k: seen.append(k["workflow"]))
     state = SimpleNamespace(
+        models=no_models(),
         inputs=SimpleNamespace(heal=True, dry_run=False),
         pipeline=SimpleNamespace(
             lint_result=SimpleNamespace(workflow=raw), funnel_error=None, ruleset_map=None, stage_timer=None
@@ -423,6 +447,7 @@ def test_heal_takes_its_fixes_from_the_workflow_the_report_showed(
             capability_paths=set(),
             result=SimpleNamespace(reply=SimpleNamespace(notices=(), workflow=shown)),
         ),
+        run=RunContext(),
         scope=SimpleNamespace(instruction_files=[path], effective_agent="claude", exclusions=None),
         targets=SimpleNamespace(single_path=None, target=tmp_path, output_format="text"),
     )
@@ -442,11 +467,19 @@ def test_a_repeated_line_is_removed_and_the_file_is_not_put_back(tmp_path: Path)
         "# Demo\n\nRun `uv run pytest` before you commit.\n\nUse `ruff` for linting.\n\nKeep functions short.\n"
     )
     b.write_text("# Other\n\nUse `ruff` for linting.\n\nWrite tests first.\n")
-    m = map_instruction_files(tmp_path, [a, b], spawn_daemon=False)
+    m = map_instruction_files(
+        tmp_path, [a, b], spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport(), models=no_models()
+    )
     rel = LocationRelation("CORE:C:0044", str(a), 5, str(b), 3, op="dedupe", expect={})
     wf = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (str(a),), "", (), (rel,)),))
     res = _apply_keyed_fixes(
-        m, tmp_path, wf, dry_run=False, show_progress=False, console=_Console(), allowed_files=[a, b], suppressed={}
+        m,
+        RunContext().configured_root(tmp_path),
+        wf,
+        dry_run=False,
+        allowed_files=[a, b],
+        suppressed={},
+        models=no_models(),
     )
     assert res.put_back == []
     assert [f["line"] for f in res.fixes] == [5]
@@ -463,7 +496,9 @@ def test_a_fix_on_one_instruction_is_not_judged_by_another_on_its_line(tmp_path:
     path.write_text(
         "# Demo\n\nRun build.sh before every commit.\n\nTry to keep functions short. Prefer small modules.\n"
     )
-    m = map_instruction_files(tmp_path, [path], spawn_daemon=False)
+    m = map_instruction_files(
+        tmp_path, [path], spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport(), models=no_models()
+    )
     first = next(a.position_index for a in m.atoms if a.line == 5)
     items = (
         LocationFinding("CORE:C:0043", str(path), 5, first, "direct"),
@@ -471,7 +506,13 @@ def test_a_fix_on_one_instruction_is_not_judged_by_another_on_its_line(tmp_path:
     )
     wf = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (str(path),), "", items),))
     res = _apply_keyed_fixes(
-        m, tmp_path, wf, dry_run=False, show_progress=False, console=_Console(), allowed_files=[path], suppressed={}
+        m,
+        RunContext().configured_root(tmp_path),
+        wf,
+        dry_run=False,
+        allowed_files=[path],
+        suppressed={},
+        models=no_models(),
     )
     assert res.put_back == []
     text = path.read_text()
@@ -486,12 +527,20 @@ def test_two_fixes_on_one_line_are_both_applied(tmp_path: Path) -> None:
     """Bold turned to italic and a bare file name wrapped on one line need no decision."""
     path = tmp_path / "CLAUDE.md"
     path.write_text("# Demo\n\nAlways run the **linter** with build.sh before you commit.\n")
-    m = map_instruction_files(tmp_path, [path], spawn_daemon=False)
+    m = map_instruction_files(
+        tmp_path, [path], spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport(), models=no_models()
+    )
     pi = _pi(m, 3)
     items = (LocationFinding("bold", str(path), 3, pi, "unbold"), LocationFinding("format", str(path), 3, pi, "code"))
     wf = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (str(path),), "", items),))
     res = _apply_keyed_fixes(
-        m, tmp_path, wf, dry_run=False, show_progress=False, console=_Console(), allowed_files=[path], suppressed={}
+        m,
+        RunContext().configured_root(tmp_path),
+        wf,
+        dry_run=False,
+        allowed_files=[path],
+        suppressed={},
+        models=no_models(),
     )
     assert res.decisions == []
     assert res.put_back == []
@@ -505,19 +554,38 @@ def test_two_fixes_on_one_line_are_both_applied(tmp_path: Path) -> None:
 def test_a_rewrite_that_drops_an_import_line_fails_the_rewrite_check(tmp_path: Path) -> None:
     """The imported instructions are not in the file's text, but the `@import` that brings them is kept."""
     from reporails_cli.core.heal.preservation import check_rewrite, failed_checks, take_snapshot
+    from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 
     main = tmp_path / "CLAUDE.md"
     (tmp_path / "rules.md").write_text("Use `ruff` for linting.\nKeep notes short.\n")
     before = "# Doc\n\n@rules.md\n\nRun `pytest` before you commit.\n"
     main.write_text(before)
-    snap = take_snapshot(str(main), before, map_instruction_files(tmp_path, [main], spawn_daemon=False), None)
+    snap = take_snapshot(
+        str(main),
+        before,
+        map_instruction_files(
+            tmp_path,
+            [main],
+            spawn_daemon=False,
+            mapper=MapperConfig(),
+            daemon=FakeDaemonTransport(),
+            models=no_models(),
+        ),
+        None,
+    )
     after = "# Doc\n\nRun `pytest` before you commit.\n"
     main.write_text(after)
-    fresh = map_instruction_files(tmp_path, [main], spawn_daemon=False)
-    block = check_rewrite(snap, main, fresh, after, score=None, scan_root=tmp_path)
+    fresh = map_instruction_files(
+        tmp_path, [main], spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport(), models=no_models()
+    )
+    block = check_rewrite(
+        snap, main, fresh, after, score=None, scan_root=tmp_path, environment_for=LocalProjectEnvironment
+    )
     assert failed_checks(block) == ["removed_structure"]
     assert block["removed_structure"]["imports"] == 1
-    kept = check_rewrite(snap, main, fresh, before, score=None, scan_root=tmp_path)
+    kept = check_rewrite(
+        snap, main, fresh, before, score=None, scan_root=tmp_path, environment_for=LocalProjectEnvironment
+    )
     assert kept["kept"]["imports"] == 1
 
 
@@ -530,18 +598,24 @@ def test_a_repeated_line_is_not_removed_when_its_only_other_copy_is_an_import_of
     rules, main = tmp_path / "AGENTS.md", tmp_path / "CLAUDE.md"
     rules.write_text("# Rules\n\nKeep functions short.\n\nUse `ruff` for linting.\n")
     main.write_text("@AGENTS.md\n")
-    m = map_instruction_files(tmp_path, [rules, main], spawn_daemon=False)
+    m = map_instruction_files(
+        tmp_path,
+        [rules, main],
+        spawn_daemon=False,
+        mapper=MapperConfig(),
+        daemon=FakeDaemonTransport(),
+        models=no_models(),
+    )
     rel = LocationRelation("CORE:C:0044", str(rules), 5, str(main), 1, op="dedupe", expect={})
     wf = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (str(rules),), "", (), (rel,)),))
     res = _apply_keyed_fixes(
         m,
-        tmp_path,
+        RunContext().configured_root(tmp_path),
         wf,
         dry_run=False,
-        show_progress=False,
-        console=_Console(),
         allowed_files=[rules, main],
         suppressed={},
+        models=no_models(),
     )
     assert "Use `ruff`" in rules.read_text()
     assert res.fixes == []
@@ -554,13 +628,21 @@ def test_a_repeated_line_is_not_removed_when_its_only_other_copy_is_an_import_of
 def test_ops_folded_on_one_line_apply_in_any_order(tmp_path: Path, ops: tuple[str, str]) -> None:
     path = tmp_path / "CLAUDE.md"
     path.write_text("# Demo\n\nTry to run the **linter** with build.sh before you commit.\n")
-    m = map_instruction_files(tmp_path, [path], spawn_daemon=False)
+    m = map_instruction_files(
+        tmp_path, [path], spawn_daemon=False, mapper=MapperConfig(), daemon=FakeDaemonTransport(), models=no_models()
+    )
     pi = _pi(m, 3)
     rules = {"code": "format", "direct": "CORE:C:0043", "unbold": "bold"}
     items = tuple(LocationFinding(rules[o], str(path), 3, pi, o) for o in ops)
     wf = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (str(path),), "", items),))
     res = _apply_keyed_fixes(
-        m, tmp_path, wf, dry_run=False, show_progress=False, console=_Console(), allowed_files=[path], suppressed={}
+        m,
+        RunContext().configured_root(tmp_path),
+        wf,
+        dry_run=False,
+        allowed_files=[path],
+        suppressed={},
+        models=no_models(),
     )
     assert res.decisions == [] and res.put_back == []
     assert len(res.fixes) == 2

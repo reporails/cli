@@ -12,8 +12,10 @@ from typer.testing import CliRunner
 from reporails_cli.core.classify.capability_paths import list_capability_targets
 from reporails_cli.core.classify.focus_expansion import expand_focus, resolve_capability_spec
 from reporails_cli.core.discovery.exclusions import load_run_exclusions
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
+from tests.fake_models import no_models
 
 BACKLOG_GLOB = ".claude/skills/backlog/SKILL.md"
 
@@ -47,6 +49,7 @@ def _scope(
 ) -> CheckState | None:
     """Run the flow's target and scope phases; the state, or None when the run ended empty."""
     state = CheckState(
+        run=RunContext(),
         inputs=CheckInputs(
             targets=targets,
             format_opt="json",
@@ -60,7 +63,8 @@ def _scope(
             dry_run=False,
             cwd=False,
             project_root=project,
-        )
+        ),
+        models=no_models(),
     )
     check_flow._flow_targets(state)
     return state if check_flow._flow_scope(state) else None
@@ -73,10 +77,10 @@ def _names(state: CheckState) -> set[str]:
 @pytest.mark.unit
 @pytest.mark.subsys_classify
 def test_listing_leaves_out_a_flag_file_glob(project: Path) -> None:
-    exclusions = load_run_exclusions(project, None, [BACKLOG_GLOB])
-    listed = list_capability_targets("claude", "skills", project, exclusions)
+    exclusions = load_run_exclusions(RunContext(), project, None, [BACKLOG_GLOB])
+    listed = list_capability_targets(RunContext(), "claude", "skills", project, exclusions)
     assert [p.parent.name for p in listed] == ["other"]
-    spec, _ = resolve_capability_spec("skills", "", "claude", project, exclusions)
+    spec, _ = resolve_capability_spec(RunContext(), "skills", "", "claude", project_root=project, exclusions=exclusions)
     assert {p.parent.name for p in spec} == {"other"}
 
 
@@ -84,8 +88,18 @@ def test_listing_leaves_out_a_flag_file_glob(project: Path) -> None:
 @pytest.mark.subsys_classify
 def test_listing_with_no_run_args_honors_config_exclude_files(project: Path) -> None:
     _config(project, f"exclude_files:\n  - {BACKLOG_GLOB}\n")
-    assert [p.parent.name for p in list_capability_targets("claude", "skills", project)] == ["other"]
-    assert [p.parent.name for p in list_capability_targets("claude", "skills", project, None)] == ["other"]
+    assert [
+        p.parent.name
+        for p in list_capability_targets(
+            RunContext(), "claude", "skills", project, load_run_exclusions(RunContext(), project)
+        )
+    ] == ["other"]
+    assert [
+        p.parent.name
+        for p in list_capability_targets(
+            RunContext(), "claude", "skills", project, load_run_exclusions(RunContext(), project)
+        )
+    ] == ["other"]
 
 
 @pytest.mark.unit
@@ -93,10 +107,21 @@ def test_listing_with_no_run_args_honors_config_exclude_files(project: Path) -> 
 def test_listing_leaves_out_a_flag_folder_and_a_config_folder(project: Path) -> None:
     assert [
         p.parent.name
-        for p in list_capability_targets("claude", "skills", project, load_run_exclusions(project, ["backlog"]))
+        for p in list_capability_targets(
+            RunContext(),
+            "claude",
+            "skills",
+            project,
+            load_run_exclusions(RunContext(), project, ["backlog"]),
+        )
     ] == ["other"]
     _config(project, "exclude_dirs:\n  - backlog\n")
-    assert [p.parent.name for p in list_capability_targets("claude", "skills", project)] == ["other"]
+    assert [
+        p.parent.name
+        for p in list_capability_targets(
+            RunContext(), "claude", "skills", project, load_run_exclusions(RunContext(), project)
+        )
+    ] == ["other"]
 
 
 @pytest.mark.unit
@@ -189,8 +214,10 @@ def test_a_preloaded_skill_the_exclusions_leave_out_is_dropped_without_a_missing
     agent = project / ".claude" / "agents" / "writer.md"
     agent.parent.mkdir(parents=True)
     agent.write_text("---\nname: writer\ndescription: Writes.\nskills:\n  - backlog\n  - other\n---\n\n# w\n", "utf-8")
-    exclusions = load_run_exclusions(project, ["backlog"])
-    paths, unresolved = resolve_capability_spec("agents", "writer", "claude", project, exclusions)
+    exclusions = load_run_exclusions(RunContext(), project, ["backlog"])
+    paths, unresolved = resolve_capability_spec(
+        RunContext(), "agents", "writer", "claude", project_root=project, exclusions=exclusions
+    )
     assert {p.parent.name if p.name == "SKILL.md" else p.name for p in paths} == {"writer.md", "other"}
     assert unresolved == []
     state = _scope(project, ["agents:writer"], exclude_dirs=["backlog"])
@@ -198,7 +225,7 @@ def test_a_preloaded_skill_the_exclusions_leave_out_is_dropped_without_a_missing
     assert _names(state) == {"writer.md", "other"}
     assert state.render.excluded == (("backlog",), ())
     agent.write_text("---\nname: writer\ndescription: Writes.\nskills:\n  - ghost\n---\n\n# w\n", "utf-8")
-    _, unresolved = expand_focus({agent}, "claude", project, exclusions)
+    _, unresolved = expand_focus(RunContext(), {agent}, "claude", project, exclusions)
     assert [u.skill_name for u in unresolved] == ["ghost"]
 
 
@@ -209,10 +236,10 @@ def test_mcp_validate_targets_follow_the_same_rules(project: Path) -> None:
 
     _config(project, f"exclude_dirs:\n  - backlog\nexclude_files:\n  - {BACKLOG_GLOB}\n")
     root = project.resolve()
-    named = validate_targets.resolve_validate_targets(("skills:backlog",), root)
+    named = validate_targets.resolve_validate_targets(RunContext(), ("skills:backlog",), root)
     assert not isinstance(named, dict)
     assert {p.parent.name for p in named[0]} == {"backlog"}
-    listed = validate_targets.resolve_validate_targets(("skills",), root)
+    listed = validate_targets.resolve_validate_targets(RunContext(), ("skills",), root)
     assert not isinstance(listed, dict)
     assert {p.parent.name for p in listed[0]} == {"other"}
 
@@ -224,6 +251,7 @@ def test_auto_detect_gives_a_named_config_excluded_skill_to_its_native_owner(pro
 
     _config(project, "exclude_dirs:\n  - backlog\n")
     state = CheckState(
+        run=RunContext(),
         inputs=CheckInputs(
             targets=["skills:backlog"],
             format_opt="json",
@@ -237,7 +265,8 @@ def test_auto_detect_gives_a_named_config_excluded_skill_to_its_native_owner(pro
             dry_run=False,
             cwd=False,
             project_root=project,
-        )
+        ),
+        models=no_models(),
     )
     check_flow._flow_targets(state)
     assert check_flow._flow_scope(state)
@@ -257,7 +286,7 @@ def test_mcp_and_cli_name_the_same_files_under_the_same_tokens(project: Path) ->
     for token, expected in (("skills:backlog", {"backlog"}), ("skills", {"other"})):
         state = _scope(project, [token])
         assert state is not None
-        mcp = validate_targets.resolve_validate_targets((token,), root)
+        mcp = validate_targets.resolve_validate_targets(RunContext(), (token,), root)
         assert not isinstance(mcp, dict)
         assert {p.parent.name for p in mcp[0]} == expected == _names(state)
 
@@ -271,7 +300,9 @@ def test_rules_capabilities_count_matches_what_check_skills_checks(
 
     _config(project, f"exclude_files:\n  - {BACKLOG_GLOB}\n")
     monkeypatch.chdir(project)
-    listed = list_capability_targets("claude", "skills", project)
+    listed = list_capability_targets(
+        RunContext(), "claude", "skills", project, load_run_exclusions(RunContext(), project)
+    )
     state = _scope(project, ["skills"])
     assert state is not None
     assert len(listed) == len([f for f in state.scope.instruction_files if f.name == "SKILL.md"]) == 1
@@ -288,11 +319,24 @@ def test_referenced_listing_honors_a_flag_folder(project: Path) -> None:
     (project / "ext" / "x.md").write_text("# X\n", "utf-8")
     (project / "CLAUDE.md").write_text("# Project\n\nSee [x](ext/x.md).\n", "utf-8")
     _config(project, "generic_scanning: true\n")
-    kept = list_capability_targets("claude", "referenced", project, load_run_exclusions(project, ["ext"]))
+    kept = list_capability_targets(
+        RunContext(),
+        "claude",
+        "referenced",
+        project,
+        load_run_exclusions(RunContext(), project, ["ext"]),
+    )
     assert all("ext" not in p.parts for p in kept)
-    assert [p.name for p in list_capability_targets("claude", "referenced", project, load_run_exclusions(project))] == [
-        "x.md"
-    ]
+    assert [
+        p.name
+        for p in list_capability_targets(
+            RunContext(),
+            "claude",
+            "referenced",
+            project,
+            load_run_exclusions(RunContext(), project),
+        )
+    ] == ["x.md"]
 
 
 @pytest.mark.unit

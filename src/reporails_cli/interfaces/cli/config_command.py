@@ -18,7 +18,6 @@ from reporails_cli.core.platform.config.config import (
 )
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.results import GlobalConfig, ProjectConfig
-from reporails_cli.core.platform.utils.utils import forget_yaml_file
 from reporails_cli.interfaces.cli.helpers import console
 from reporails_cli.interfaces.cli.typer_app import HELP_CONTEXT_SETTINGS
 
@@ -75,7 +74,6 @@ def _save_config(path: Path, data: JsonObject) -> None:
     cp = get_project_config_path(path)
     cp.parent.mkdir(parents=True, exist_ok=True)
     cp.write_text(yaml.safe_dump(data, default_flow_style=False, sort_keys=True), encoding="utf-8")
-    forget_yaml_file(cp)
     _ensure_ails_gitignore(cp.parent)
 
 
@@ -115,7 +113,6 @@ def _save_global_config(data: JsonObject) -> None:
     cp = get_global_config_path()
     cp.parent.mkdir(parents=True, exist_ok=True)
     cp.write_text(yaml.safe_dump(data, default_flow_style=False, sort_keys=True), encoding="utf-8")
-    forget_yaml_file(cp)
 
 
 def _parse_value(expected: type, raw: str) -> JsonValue:

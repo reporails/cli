@@ -1,4 +1,4 @@
-"""Mutation-closing tests for `core/platform/adapters/rules_query.py`."""
+"""Mutation-closing tests for `core/platform/rules/rules_query.py`."""
 
 from __future__ import annotations
 
@@ -6,10 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.adapters import rules_query
-from reporails_cli.core.platform.adapters.rules_query import load_all_rules
 from reporails_cli.core.platform.dto.models import Category, Rule, RuleType, Severity
-from reporails_cli.core.platform.dto.results import AgentConfig
+from reporails_cli.core.platform.rules import rules_query
+from reporails_cli.core.platform.rules.rules_query import load_all_rules
 
 
 def _make_rule(rule_id: str) -> Rule:
@@ -25,7 +24,9 @@ def _make_rule(rule_id: str) -> Rule:
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_load_all_rules_applies_agent_excludes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_all_rules_applies_agent_excludes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, use_agent_configs
+) -> None:
     """A non-empty `excludes` list must actually drop matching rules.
 
     Kills the `excludes or [] -> excludes and []` mutant: with `and`, a truthy
@@ -38,8 +39,6 @@ def test_load_all_rules_applies_agent_excludes(tmp_path: Path, monkeypatch: pyte
         return {} if path.name == "core" else dict(agent_rules)
 
     monkeypatch.setattr(rules_query, "load_rules_from_path", fake_load)
-    monkeypatch.setattr(rules_query, "get_agent_config", lambda _agent: AgentConfig(excludes=["AGT:S:0002"]))
-
-    monkeypatch.setattr(rules_query, "get_rules_dir", lambda: tmp_path)
+    use_agent_configs({"agt": {"excludes": ["AGT:S:0002"]}}, root=tmp_path)
     out = {r.id for r in load_all_rules(agents=["agt"])}
     assert out == {"AGT:S:0001"}

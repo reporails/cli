@@ -17,8 +17,11 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.platform.config import claude_settings
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli.main import app
+from tests.fake_models import no_models
 
 runner = CliRunner()
 
@@ -97,16 +100,17 @@ def _rules_on(data: dict, rel: str) -> set[str]:
 def _resolution(project: Path) -> tuple[str, bool, dict[str, str], set[str]]:
     """(effective agent, mixed, per-file rule-running owner, claude's own discovered files)."""
     from reporails_cli.core.discovery.agent_discovery import discover_from_config
-    from reporails_cli.core.discovery.agents import clear_agent_cache, detect_agents, partition_by_native_owner
+    from reporails_cli.core.discovery.agents import detect_agents, partition_by_native_owner
     from reporails_cli.core.pipeline.mapping import resolve_agent_filters
 
-    clear_agent_cache()
-    detected = detect_agents(project)
-    effective, _assumed, mixed, filtered = resolve_agent_filters("", detected, project)
+    detected = detect_agents(RunContext(), project)
+    effective, _assumed, mixed, filtered = resolve_agent_filters(RunContext(), "", detected, project)
     owners = {
         Path(p).relative_to(project).as_posix(): o for p, o in partition_by_native_owner(filtered, project).items()
     }
-    discovered = discover_from_config(project, "claude", repo_scoped=True)
+    discovered = discover_from_config(
+        RunContext(), project, "claude", load_run_exclusions(RunContext(), project), repo_scoped=True
+    )
     claude_files = {p.relative_to(project).as_posix() for p in (discovered[0] if discovered else [])}
     return effective, mixed, owners, claude_files
 
@@ -159,7 +163,11 @@ def test_claude_as_the_projects_agent_reads_an_agents_md_only_project(
 
     _write(project, ".ails/config.yml", "default_agent: claude\n")
     cli = _json(monkeypatch, project)
-    assert _tuples(cli) == _tuples(tools.run_pipeline_for_path(str(project), full=True, project_root=project)[0])
+    assert _tuples(cli) == _tuples(
+        tools.run_pipeline_for_path(
+            str(project), full=True, project_root=project, run=RunContext(), models=no_models()
+        )[0]
+    )
 
 
 # ── 2. the same plus a CLAUDE.md ─────────────────────────────────────

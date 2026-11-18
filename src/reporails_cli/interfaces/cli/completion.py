@@ -12,8 +12,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import detect_agents
-from reporails_cli.core.platform.adapters.rules_query import list_known_agents, load_all_rules
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
+from reporails_cli.core.platform.rules.rules_query import list_known_agents, load_all_rules
 
 
 def _no_candidates_when_config_unreadable(complete: Callable[[str], list[str]]) -> Callable[[str], list[str]]:
@@ -50,11 +51,12 @@ def complete_capability(incomplete: str) -> list[str]:
     )
 
     project_root = Path.cwd()
-    detected = detect_agents(project_root)
+    run = RunContext()
+    detected = detect_agents(run, project_root)
     if not detected:
         return []
     agent_id = detected[0].agent_type.id
-    caps = available_capabilities(agent_id, project_root)
+    caps = available_capabilities(agent_id, run.project_config(project_root))
     return sorted(c for c in caps if c.startswith(incomplete))
 
 
@@ -85,14 +87,18 @@ def _complete_capability_target_name(capability: str, name_prefix: str) -> list[
     from reporails_cli.core.classify.capability_paths import (  # pylint: disable=import-outside-toplevel  # startup: loads when completing
         list_capability_targets,
     )
+    from reporails_cli.core.discovery.exclusions import (  # pylint: disable=import-outside-toplevel  # startup: loads when completing
+        load_run_exclusions,
+    )
 
     project_root = Path.cwd()
-    detected = detect_agents(project_root)
+    run = RunContext()
+    detected = detect_agents(run, project_root)
     if not detected:
         return []
     agent_id = detected[0].agent_type.id
     out: set[str] = set()
-    for p in list_capability_targets(agent_id, capability, project_root, None):
+    for p in list_capability_targets(run, agent_id, capability, project_root, load_run_exclusions(run, project_root)):
         # Take the directory or filename stem as the "name" the user types.
         stem = p.name if p.is_dir() else p.stem
         if stem.startswith(name_prefix):

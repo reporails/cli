@@ -10,9 +10,10 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.discovery.agents import clear_agent_cache
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli.main import app
 from reporails_cli.interfaces.mcp import tools
+from tests.fake_models import no_models
 
 runner = CliRunner()
 
@@ -45,7 +46,6 @@ def _offline_server(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "reporails_cli.core.platform.adapters.api_client.AilsClient.lint", lambda self, *args, **kwargs: None
     )
-    clear_agent_cache()
 
 
 def _project(tmp_path: Path, config: str) -> Path:
@@ -94,7 +94,9 @@ def test_left_out_files_are_not_checked(tmp_path: Path, case: str, config: str, 
     payload = (
         _cli(project, *flags)
         if surface == "cli"
-        else tools.run_pipeline_for_path(str(project), full=True, project_root=project)[0]
+        else tools.run_pipeline_for_path(
+            str(project), full=True, project_root=project, run=RunContext(), models=no_models()
+        )[0]
     )
     named = _named_paths(payload)
     assert "CLAUDE.md" in named

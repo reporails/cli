@@ -12,7 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.lint.harness import HarnessStatus, RuleInfo, run_rule
+from reporails_cli.core.lint.harness import HarnessStatus, RuleInfo, fixture_mapper, run_rule
+from tests.fake_models import no_models
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -89,7 +90,7 @@ def test_missing_checks_yml_is_engine_failure(tmp_path: Path) -> None:
     """No checks.yml → engine_ok=False → the pass fixture fails (kills L89 False->True)."""
     rd = _rule_dir(tmp_path, "no-yml")
     _pass(rd, "# ok\n")  # no checks.yml written
-    result = run_rule(_info(rd, [_det_check(expect="absent")]), [])
+    result = run_rule(_info(rd, [_det_check(expect="absent")]), [], fixture_mapper(no_models()))
     assert result.status == HarnessStatus.FAILED
 
 
@@ -100,7 +101,7 @@ def test_empty_checks_yml_is_engine_failure(tmp_path: Path) -> None:
     rd = _rule_dir(tmp_path, "empty-yml")
     _pass(rd, "# ok\n")
     _checks_yml(rd, "checks: []\n")
-    result = run_rule(_info(rd, [_det_check(expect="absent")]), [])
+    result = run_rule(_info(rd, [_det_check(expect="absent")]), [], fixture_mapper(no_models()))
     assert result.status == HarnessStatus.FAILED
 
 
@@ -121,7 +122,9 @@ def test_no_matching_rule_reports_no_pattern(tmp_path: Path) -> None:
         "  message: m\n  severity: medium\n"
         "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'QQQNOMATCH'\n",
     )
-    result = run_rule(_info(rd, [_det_check(check_id="CORE.S.0001.check", expect="absent")]), [])
+    result = run_rule(
+        _info(rd, [_det_check(check_id="CORE.S.0001.check", expect="absent")]), [], fixture_mapper(no_models())
+    )
     assert result.status == HarnessStatus.FAILED
 
 
@@ -134,7 +137,9 @@ def test_single_nonmatching_rule_falls_back(tmp_path: Path) -> None:
     _pass(rd, "# Commands here\n")
     _checks_yml(rd, _one_pattern("CORE.S.9990.other", "Commands"))
     # expect=present: fallback runs the rule → finding → pass; no fallback → fail
-    result = run_rule(_info(rd, [_det_check(check_id="CORE.S.0001.check", expect="present")]), [])
+    result = run_rule(
+        _info(rd, [_det_check(check_id="CORE.S.0001.check", expect="present")]), [], fixture_mapper(no_models())
+    )
     assert result.status == HarnessStatus.PASSED
 
 
@@ -154,7 +159,9 @@ def test_matching_rule_selected_by_id(tmp_path: Path) -> None:
         "  message: m\n  severity: medium\n"
         "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'Commands'\n",
     )
-    result = run_rule(_info(rd, [_det_check(check_id="CORE.S.0002.check", expect="present")]), [])
+    result = run_rule(
+        _info(rd, [_det_check(check_id="CORE.S.0002.check", expect="present")]), [], fixture_mapper(no_models())
+    )
     assert result.status == HarnessStatus.PASSED
 
 
@@ -169,7 +176,7 @@ def test_expect_present_without_finding_fails(tmp_path: Path) -> None:
     rd = _rule_dir(tmp_path, "present-nofind")
     _pass(rd, "# nothing relevant\n")
     _checks_yml(rd, _one_pattern("CORE.S.0001.check", "Commands"))
-    result = run_rule(_info(rd, [_det_check(expect="present")]), [])
+    result = run_rule(_info(rd, [_det_check(expect="present")]), [], fixture_mapper(no_models()))
     assert result.status == HarnessStatus.FAILED
 
 
@@ -181,7 +188,7 @@ def test_expect_absent_with_finding_fails(tmp_path: Path) -> None:
     rd = _rule_dir(tmp_path, "absent-find")
     _pass(rd, "# Commands appear here\n")
     _checks_yml(rd, _one_pattern("CORE.S.0001.check", "Commands"))
-    result = run_rule(_info(rd, [_det_check(expect="absent")]), [])
+    result = run_rule(_info(rd, [_det_check(expect="absent")]), [], fixture_mapper(no_models()))
     assert result.status == HarnessStatus.FAILED
 
 
@@ -203,7 +210,7 @@ def test_fail_fixture_without_violation_is_failed(tmp_path: Path) -> None:
         "check": "file_exists",
         "args": {"path": "**/*.md"},
     }
-    result = run_rule(_info(rd, [check]), [])
+    result = run_rule(_info(rd, [check]), [], fixture_mapper(no_models()))
     assert result.status == HarnessStatus.FAILED
     assert _fail_run(result).passed is True
 
@@ -215,7 +222,7 @@ def test_deterministic_fail_checkrun_is_passed_true(tmp_path: Path) -> None:
     rd = _rule_dir(tmp_path, "det-fail-run")
     _fail(rd, "# Commands here\n")
     _checks_yml(rd, _one_pattern("CORE.S.0001.check", "Commands"))
-    result = run_rule(_info(rd, [_det_check(expect="present")]), [])
+    result = run_rule(_info(rd, [_det_check(expect="present")]), [], fixture_mapper(no_models()))
     assert _fail_run(result).passed is True
 
 
@@ -230,7 +237,7 @@ def test_content_query_passes_on_pass_fixture(tmp_path: Path) -> None:
     rd = _rule_dir(tmp_path, "cq-pass")
     _pass(rd, "# ok\n")
     check = {"id": "CORE.S.0001.cq", "type": "content_query", "severity": "medium"}
-    result = run_rule(_info(rd, [check]), [])
+    result = run_rule(_info(rd, [check]), [], fixture_mapper(no_models()))
     assert result.status == HarnessStatus.PASSED
     run = _pass_run(result)
     assert run.passed is True
@@ -246,7 +253,7 @@ def test_content_query_fail_fixture_finds_no_violation(tmp_path: Path) -> None:
     rd = _rule_dir(tmp_path, "cq-fail")
     _fail(rd, "# ok\n")
     check = {"id": "CORE.S.0001.cq", "type": "content_query", "severity": "medium"}
-    result = run_rule(_info(rd, [check]), [])
+    result = run_rule(_info(rd, [check]), [], fixture_mapper(no_models()))
     assert result.status == HarnessStatus.FAILED
     assert "content_query" in _fail_run(result).message
 
@@ -274,5 +281,5 @@ def test_excluded_fixture_file_is_not_scanned(tmp_path: Path) -> None:
     )
     # expect=present: the match lives only in the excluded file, so a correctly
     # filtered scan finds nothing → FAILED; letting .gitkeep through → PASSED.
-    result = run_rule(_info(rd, [_det_check(expect="present")]), [])
+    result = run_rule(_info(rd, [_det_check(expect="present")]), [], fixture_mapper(no_models()))
     assert result.status == HarnessStatus.FAILED

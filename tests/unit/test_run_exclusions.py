@@ -9,7 +9,6 @@ import pytest
 
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.classify.link_walker import walk_markdown_links
-from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.discovery.exclusions import (
     covers,
     leaves_out,
@@ -20,10 +19,12 @@ from reporails_cli.core.discovery.exclusions import (
     with_named,
 )
 from reporails_cli.core.pipeline import check_one
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.discovery import DEFAULT_EXCLUDE_DIRS
 from reporails_cli.core.platform.dto.pipeline import Discovered
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
+from tests.fake_models import no_models
 
 
 def _write_config(project: Path, body: str) -> None:
@@ -54,7 +55,7 @@ def _gs_project(tmp_path: Path, config: str = "") -> Path:
 @pytest.mark.subsys_map
 def test_flags_join_config_for_folders_and_globs(tmp_path: Path) -> None:
     _write_config(tmp_path, "exclude_dirs: [ext]\nexclude_files: ['a/*.md']\n")
-    excl = load_run_exclusions(tmp_path, ["docs"], ["b/*.md"])
+    excl = load_run_exclusions(RunContext(), tmp_path, ["docs"], ["b/*.md"])
     assert {d.text for d in excl.dirs} == {"ext", "docs"}
     assert set(excl.files) == {"a/*.md", "b/*.md"}
     for name in (*DEFAULT_EXCLUDE_DIRS, "ext", "docs"):
@@ -65,7 +66,7 @@ def test_flags_join_config_for_folders_and_globs(tmp_path: Path) -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_leaves_out_tests_user_patterns_only(tmp_path: Path) -> None:
-    excl = load_run_exclusions(tmp_path, ["ext"], ["notes/*.md"])
+    excl = load_run_exclusions(RunContext(), tmp_path, ["ext"], ["notes/*.md"])
     assert leaves_out(excl, tmp_path / "ext" / "x.md")
     assert leaves_out(excl, tmp_path / "deep" / "ext" / "x.md")
     assert leaves_out(excl, tmp_path / "notes" / "x.md")
@@ -136,7 +137,7 @@ def test_leaves_out_exempts_named_paths_and_walks_keep_their_folders(tmp_path: P
 )
 def test_walker_never_enters_a_left_out_target(tmp_path: Path, excl) -> None:
     project = _gs_project(tmp_path)
-    file_types = load_file_types("claude", project_root=project)
+    file_types = load_file_types("claude", config=RunContext().project_config(project))
     classified = classify_files(
         project, [project / "CLAUDE.md"], file_types, generic_scanning=True, exclusions=excl(project)
     )
@@ -183,7 +184,6 @@ def _fold_names(files) -> set[str]:
 @pytest.mark.parametrize(("case", "config", "flag_dirs", "flag_files"), _CASES, ids=[c[0] for c in _CASES])
 def test_cli_scope_fold_never_checks_a_left_out_file(tmp_path, case, config, flag_dirs, flag_files) -> None:
     project = _gs_project(tmp_path, config)
-    clear_agent_cache()
     inputs = CheckInputs(
         targets=[],
         format_opt="json",
@@ -198,7 +198,7 @@ def test_cli_scope_fold_never_checks_a_left_out_file(tmp_path, case, config, fla
         cwd=False,
         project_root=project,
     )
-    state = CheckState(inputs=inputs)
+    state = CheckState(run=RunContext(), inputs=inputs, models=no_models())
     state.targets.target = project
     check_flow._resolve_scope_at_target(state)
     check_flow._apply_generic_scan(state)
@@ -214,8 +214,7 @@ def test_cli_scope_fold_never_checks_a_left_out_file(tmp_path, case, config, fla
 @pytest.mark.parametrize(("case", "config"), [(c[0], c[1]) for c in _CASES if c[1]], ids=[c[0] for c in _CASES if c[1]])
 def test_mcp_discover_files_fold_never_checks_a_left_out_file(tmp_path, case, config) -> None:
     project = _gs_project(tmp_path, config)
-    clear_agent_cache()
-    discovered = check_one.discover_files(project)
+    discovered = check_one.discover_files(RunContext(), project)
     assert isinstance(discovered, Discovered)
     names = _fold_names(discovered.instruction_files)
     assert "CLAUDE.md" in names
@@ -231,7 +230,6 @@ def test_mcp_discover_files_fold_never_checks_a_left_out_file(tmp_path, case, co
 
 
 def _scope_state(project: Path, path_targets: set[Path], specs: list[tuple[str, str]]) -> CheckState:
-    clear_agent_cache()
     inputs = CheckInputs(
         targets=[],
         format_opt="json",
@@ -246,7 +244,7 @@ def _scope_state(project: Path, path_targets: set[Path], specs: list[tuple[str, 
         cwd=False,
         project_root=project,
     )
-    state = CheckState(inputs=inputs)
+    state = CheckState(run=RunContext(), inputs=inputs, models=no_models())
     state.targets.target = project
     state.targets.path_targets = path_targets
     state.targets.capability_specs = specs

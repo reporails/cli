@@ -556,7 +556,7 @@ class TestPrintTextResultHasQuality:
                 ascii_mode=True,
                 verbose=False,
                 project_root=tmp_path,
-                file_type_by_path={"x.md": "generic"},
+                extras=display.TextExtras({"x.md": "generic"}),
             )
         out = cap.get()
         # `or -> and` at L361 makes root=cwd (key mismatch); `or -> and` at L374 passes {}
@@ -598,7 +598,7 @@ class TestItemHealthGating:
                 verbose=False,
                 summary=display._SummaryInputs(scope=ScopeInfo(), tier="free", elapsed_ms=0),
                 project_root=tmp_path,
-                file_type_by_path={},
+                extras=display.TextExtras(file_type_by_path={}),
             )
         out = cap.get()
         # Both per-item rows render only when item_health is computed (the guard holds).

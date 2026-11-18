@@ -20,26 +20,11 @@ from reporails_cli.core.heal.preservation.words import named_key
 from reporails_cli.core.lint.content_queries import own_atoms_for_file
 from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import read_structure
-from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
-from reporails_cli.core.platform.contract.environment import ProjectEnvironment
+from reporails_cli.core.platform.contract.environment import EnvironmentFor, ProjectEnvironment
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_list, as_object, as_str
 from reporails_cli.core.platform.dto.heal import Pair, Snapshot, SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.core.platform.dto.structure import DocumentStructure
-from reporails_cli.core.platform.policy.negative_headings import is_negative_heading
-
-# The fixed preservation-contract text shown in the `remedy_brief` reply. Byte-identical —
-# the plugin quotes it verbatim.
-PRESERVATION_CONTRACT = (
-    "Keep every instruction: each keeps its polarity — a prohibition stays a prohibition — its scope, "
-    "with no condition or exception added or dropped, and every construct it names. Keep every table "
-    "row, list item, heading, fenced block, example and link, each list item in its own list; delete "
-    "one only when a relation names it as a true duplicate of its partner. Keep a bare negative heading "
-    "such as `## Don'ts` exactly as it is, with its items under it. Keep each constraint "
-    "directly after the directive it limits. Add no filler and invent nothing: an instruction grows "
-    "only by a construct the file already names or that exists in the project, or a reason the file "
-    "already gives — never by repeating one it already names."
-)
 
 # Findings that are reported but never fail the rewrite.
 _LISTED_ONLY = frozenset({"removed_structure", "made_direct", "made_specific"})
@@ -51,16 +36,19 @@ def _negative_heading_texts(new_map: RulesetMap | None, file_path: str) -> list[
     """The text of each bare negative heading the mapper reads in `new_map`'s `file_path`,
     whatever its markdown style (`##`, underlined, inside a quote)."""
     atoms = own_atoms_for_file(new_map, file_path) if new_map is not None else ()
-    return [a.text for a in atoms if a.kind == "heading" and is_negative_heading(a.text)]
+    return [a.plain_text for a in atoms if a.negative_heading]
 
 
-def _pair_checks(pairs: list[Pair], old_by_line: conditions.ByLine, invented: set[str]) -> JsonObject:
+def _pair_checks(
+    pairs: list[Pair], sentences: tuple[conditions.ByLine, conditions.ByLine], invented: set[str]
+) -> JsonObject:
     """The checks that read each matched instruction against its rewrite; `invented` is the lowered
     names reported as invented."""
+    old_by_line = sentences[0]
     narrowed = conditions.narrowed_instructions(pairs, old_by_line)
     flagged = {(as_int(e["line"], 0), as_int(e["new_line"], 0)) for e in narrowed}
     return {
-        "dropped_conditions": [*conditions.dropped_conditions(pairs)],
+        "dropped_conditions": [*conditions.dropped_conditions(pairs), *conditions.dropped_scopes(pairs, sentences)],
         "narrowed_instructions": [*narrowed],
         "hedge_made_absolute": [*conditions.hedge_made_absolute(pairs, old_by_line)],
         "made_specific": [*conditions.made_specific(pairs, old_by_line, flagged, invented)],
@@ -86,7 +74,7 @@ def _run_checks(
     return {
         "lost_instructions": [*lost_instructions],
         "polarity_flips": [*polarity_flips],
-        "added_instructions": [*added_instructions(snapshot.text, new_atoms, matched_new_for, split_covering_for)],
+        "added_instructions": [*added_instructions(snapshot, new_atoms, matched_new_for, split_covering_for)],
         "lost_named": [*lost_named_tokens(snap_atoms, new_text, new_atoms)],
         "invented_named": [*invented],
         "repeated_named": [
@@ -102,12 +90,12 @@ def _run_checks(
         "detached_constraints": [*structure.detached_constraints(snap_atoms, matched_new_for, new[3])],
         "prohibition_scope_changed": [*prohibition_scope_changes(snap_atoms, matched_new_for)],
         "added_conditions": [*conditions.added_conditions(snap_atoms, matched_new_for)],
-        **_pair_checks(pairs, sentences[0], {named_key(as_str(e["token"])) for e in invented}),
+        **_pair_checks(pairs, sentences, {named_key(as_str(e["token"])) for e in invented}),
         "dangling_fragments": [*dangling_fragments(snapshot.atoms, new_all)],
         "padded_lines": [*structure.padded_lines(list(snapshot.atoms), new_atoms)],
         "made_direct": [*conditions.made_direct(pairs, snap_atoms, new_atoms, matched_new_for, sentences)],
         "relabelled_negative_headings": [*structure.relabelled_negative_headings(snapshot.text, *negative_headings)],
-        "lost_context": [*lost_context(snap_atoms, new_text)],
+        "lost_context": [*lost_context(snap_atoms, new_all)],
         "moved_list_items": [
             *structure.moved_list_items(snap_atoms, matched_new_for, snapshot.structure, new[3], new_atoms)
         ],
@@ -180,7 +168,7 @@ def compare(
     new_atoms = rewritten_atoms(new_map, snapshot.file_path)
     new_all = own_atoms_for_file(new_map, snapshot.file_path) if new_map is not None else []
     negative_headings = (
-        [a for a in live if a.heading and is_negative_heading(a.text)],
+        [a for a in live if a.negative_heading],
         _negative_heading_texts(new_map, snapshot.file_path),
     )
     checks = _run_checks(
@@ -197,6 +185,20 @@ def compare(
     return {"ok": ok, "score_before": snapshot.score, "score_after": score_after, **checks, "kept": {**kept}}
 
 
+def rewrite_accepted(preservation: JsonObject, conformance: JsonObject | None) -> bool:
+    """Whether a rewritten file is kept: its `preservation` block is ok, its `conformance` block
+    is ok when the file was briefed with a plan (`None` otherwise), and both scores are numbers
+    with the score after at least the score before. A missing score refuses."""
+    if preservation.get("ok") is not True:
+        return False
+    if conformance is not None and conformance.get("ok") is not True:
+        return False
+    before, after = preservation.get("score_before"), preservation.get("score_after")
+    if not isinstance(before, (int, float)) or not isinstance(after, (int, float)):
+        return False
+    return after >= before
+
+
 def check_rewrite(
     snapshot: Snapshot,
     file_path: Path,
@@ -205,11 +207,13 @@ def check_rewrite(
     *,
     score: float | None,
     scan_root: Path | None,
+    environment_for: EnvironmentFor,
     siblings: tuple[str, ...] = (),
 ) -> JsonObject:
     """The `preservation` block for `file_path`: its rewritten `new_text` and `ruleset_map` judged
-    against `snapshot`, with the project on disk answering which names and paths exist."""
-    environment = LocalProjectEnvironment(scan_root, file_path.parent)
+    against `snapshot`, with the environment `environment_for(scan_root, file's folder)` answering which names and
+    paths exist."""
+    environment = environment_for(scan_root, file_path.parent)
     return compare(snapshot, ruleset_map, new_text, score, environment=environment, sibling_texts=siblings)
 
 

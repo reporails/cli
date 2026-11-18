@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
@@ -67,6 +68,40 @@ def _nth(atoms: Sequence[Atom], op: PlanOp) -> int | None:
     return next((i for i, a in enumerate(on_line) if a.position_index == op.pi), None)
 
 
+def _shifted(column: int, kept: int, old_end: int, delta: int) -> int | None:
+    """`column` after an edit that rewrote the text between `kept` and `old_end` (columns of the old line) by
+    `delta` chars; None when the column falls inside the rewritten text."""
+    if column <= kept:
+        return column
+    return column + delta if column >= old_end else None
+
+
+def _shift_span(span: tuple[int, int] | None, kept: int, old_end: int, delta: int) -> tuple[int, int] | None:
+    if span is None:
+        return None
+    start, end = (_shifted(c, kept, old_end, delta) for c in span)
+    return None if start is None or end is None else (start, end)
+
+
+def _moved_atoms(atoms: Sequence[Atom], line: int, before: str, after: str) -> list[Atom]:
+    """`atoms` with the recorded columns of the atoms of `line` moved to where the text `before` became `after`
+    puts them; a column inside the rewritten text is dropped, so a transform needing it refuses."""
+    kept = len(os.path.commonprefix([before, after]))
+    tail = len(os.path.commonprefix([before[kept:][::-1], after[kept:][::-1]]))
+    old_end, delta = len(before) - tail, len(after) - len(before)
+    return [
+        a.model_copy(
+            update={
+                "source_columns": _shift_span(a.source_columns, kept, old_end, delta),
+                "hedge_cue": _shift_span(a.hedge_cue, kept, old_end, delta),
+            }
+        )
+        if a.line == line
+        else a
+        for a in atoms
+    ]
+
+
 def _fold(
     op: PlanOp,
     atoms: Sequence[Atom],
@@ -80,7 +115,8 @@ def _fold(
         return None
     edited = list(lines)
     edited[op.line - 1] = prior.after
-    nxt, _ = _scripted(op, atoms, edited, partner_atoms)
+    moved = _moved_atoms(atoms, op.line, prior.before, prior.after)
+    nxt, _ = _scripted(op, moved, edited, partner_atoms)
     if nxt is None or nxt.after is None or nxt.before != prior.after or "\n" in nxt.after:
         return None
     return replace(prior, after=nxt.after, folded=(*prior.folded, Folded(op.op, op.rule, _nth(atoms, op))))

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from reporails_cli.core.platform.adapters.rules_query import rule_slug, rule_title
+from reporails_cli.core.platform.rules.rules_query import rule_slug, rule_title
 
 _RULE_DOCS_BASE = "https://reporails.com/rules"
 

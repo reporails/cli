@@ -13,6 +13,7 @@ import pytest
 from reporails_cli.core.discovery.exclusions import no_exclusions
 from reporails_cli.core.discovery.features import _detect_auto_memory, _hooks_key_is_set, detect_features_filesystem
 from reporails_cli.core.discovery.walk import is_under
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.discovery import SurfaceScan
 
 
@@ -38,7 +39,7 @@ def test_hooks_detected_from_settings_json_alone(tmp_path: Path) -> None:
     claude = tmp_path / ".claude"
     claude.mkdir()
     (claude / "settings.json").write_text('{"hooks": {"PreToolUse": []}}')
-    feats = detect_features_filesystem(tmp_path, agents=[_claude_agent()])
+    feats = detect_features_filesystem(RunContext(), tmp_path, agents=[_claude_agent()])
     # Only settings.json carries hooks (no hooks dir, no settings.local) → True.
     assert feats.hook_files == (tmp_path / ".claude/settings.json",)  # kills L158 and L159 (both or→and)
 
@@ -49,7 +50,7 @@ def test_bare_mcp_json_with_no_detected_agent_grants_no_hooks(tmp_path: Path) ->
     """A bare `.mcp.json` with no detected agent grants no capability — the gate
     reads a detected agent's own config.yml, never a raw top-level filename."""
     (tmp_path / ".mcp.json").write_text("{}")
-    feats = detect_features_filesystem(tmp_path, agents=[])
+    feats = detect_features_filesystem(RunContext(), tmp_path, agents=[])
     assert feats.hook_files == ()
 
 
@@ -122,5 +123,5 @@ def test_a_symlink_loop_in_the_scanned_tree_is_skipped_not_fatal(tmp_path: Path)
     (loop / "CLAUDE.md").symlink_to("x")
     (loop / "x").symlink_to("CLAUDE.md")
     assert is_under(loop / "CLAUDE.md", tmp_path) is False
-    features = detect_features_filesystem(tmp_path)
+    features = detect_features_filesystem(RunContext(), tmp_path)
     assert features.has_instruction_file is True

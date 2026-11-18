@@ -9,6 +9,7 @@ import pytest
 
 from reporails_cli.core.platform.config.bootstrap import get_package_paths
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.config.run_context import RunContext
 
 
 class TestGetProjectConfig:
@@ -63,6 +64,13 @@ class TestGetProjectConfig:
         assert config.packages == []
 
 
+def _write_global_config(content: str) -> None:
+    """Write the isolated home's `~/.reporails/config.yml`."""
+    home = Path.home() / ".reporails"
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.yml").write_text(content, encoding="utf-8")
+
+
 class TestGlobalDefaultsMerged:
     """Test that get_project_config() falls back to global config for unset values."""
 
@@ -70,41 +78,26 @@ class TestGlobalDefaultsMerged:
     @pytest.mark.subsys_cli_ux
     def test_inherits_global_default_agent(self, tmp_path: Path, make_config_file) -> None:
         """Project without default_agent inherits global value."""
-        from reporails_cli.core.platform.dto.results import GlobalConfig
-
         make_config_file("packages:\n  - custom\n")
-        with patch(
-            "reporails_cli.core.platform.config.config.get_global_config",
-            return_value=GlobalConfig(default_agent="claude"),
-        ):
-            config = get_project_config(tmp_path)
+        _write_global_config("default_agent: claude\n")
+        config = get_project_config(tmp_path)
         assert config.default_agent == "claude"
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_project_overrides_global_default_agent(self, tmp_path: Path, make_config_file) -> None:
         """Project default_agent wins over global."""
-        from reporails_cli.core.platform.dto.results import GlobalConfig
-
         make_config_file("default_agent: cursor\n")
-        with patch(
-            "reporails_cli.core.platform.config.config.get_global_config",
-            return_value=GlobalConfig(default_agent="claude"),
-        ):
-            config = get_project_config(tmp_path)
+        _write_global_config("default_agent: claude\n")
+        config = get_project_config(tmp_path)
         assert config.default_agent == "cursor"
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_no_config_file_inherits_global(self, tmp_path: Path) -> None:
         """No .ails/config.yml — global defaults apply."""
-        from reporails_cli.core.platform.dto.results import GlobalConfig
-
-        with patch(
-            "reporails_cli.core.platform.config.config.get_global_config",
-            return_value=GlobalConfig(default_agent="claude"),
-        ):
-            config = get_project_config(tmp_path)
+        _write_global_config("default_agent: claude\n")
+        config = get_project_config(tmp_path)
         assert config.default_agent == "claude"
 
 
@@ -244,7 +237,7 @@ class TestLoadRulesWithPackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_additional_path_overrides_framework(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         # Create framework rules dir
         rules_dir = tmp_path / "rules"
@@ -270,7 +263,7 @@ class TestLoadRulesWithPackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_disabled_rules_excluded(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         # Create framework rules
         rules_dir = tmp_path / "rules"
@@ -291,7 +284,7 @@ class TestLoadRulesWithPackages:
 
         rules = load_rules(
             rules_paths=[rules_dir],
-            project_root=project,
+            project=RunContext().configured_root(project),
         )
         assert "CORE:S:0001" not in rules
         assert "CORE:S:0002" in rules
@@ -299,7 +292,7 @@ class TestLoadRulesWithPackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_disabled_nonexistent_rule_harmless(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = tmp_path / "rules"
         core_dir = rules_dir / "core" / "structure"
@@ -316,14 +309,14 @@ class TestLoadRulesWithPackages:
 
         rules = load_rules(
             rules_paths=[rules_dir],
-            project_root=project,
+            project=RunContext().configured_root(project),
         )
         assert "CORE:S:0001" in rules
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_no_project_root_backward_compat(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = tmp_path / "rules"
         core_dir = rules_dir / "core" / "structure"
@@ -360,40 +353,40 @@ class TestLoadRulesRulePackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_listed_package_rule_is_loaded(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = self._framework(tmp_path)
         project = self._project(tmp_path, "packages:\n  - mypack\n")
         _create_rule(project / ".ails" / "packages" / "mypack", "CORE:S:0900", "Pack Rule")
 
-        rules = load_rules(rules_paths=[rules_dir], project_root=project)
+        rules = load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
         assert rules["CORE:S:0900"].title == "Pack Rule"
         assert rules["CORE:S:0001"].title == "Bundled S1"
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_unlisted_package_rule_is_not_loaded(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = self._framework(tmp_path)
         project = self._project(tmp_path, "disabled_rules: []\n")
         _create_rule(project / ".ails" / "packages" / "mypack", "CORE:S:0900", "Pack Rule")
 
-        rules = load_rules(rules_paths=[rules_dir], project_root=project)
+        rules = load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
         assert "CORE:S:0900" not in rules
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_package_rule_with_a_bundled_id_stops_the_run_naming_both(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
         from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = self._framework(tmp_path)
         project = self._project(tmp_path, "packages:\n  - mypack\n")
         _create_rule(project / ".ails" / "packages" / "mypack", "CORE:S:0001", "Pack Replacement")
 
         with pytest.raises(ConfigUnreadableError) as excinfo:
-            load_rules(rules_paths=[rules_dir], project_root=project)
+            load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
 
         message = str(excinfo.value)
         assert "'mypack'" in message
@@ -403,8 +396,8 @@ class TestLoadRulesRulePackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_two_packages_defining_the_same_id_stop_the_run_naming_both(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
         from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = self._framework(tmp_path)
         project = self._project(tmp_path, "packages:\n  - packa\n  - packb\n")
@@ -412,7 +405,7 @@ class TestLoadRulesRulePackages:
         _create_rule(project / ".ails" / "packages" / "packb", "PACK:S:0001", "B")
 
         with pytest.raises(ConfigUnreadableError) as excinfo:
-            load_rules(rules_paths=[rules_dir], project_root=project)
+            load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
 
         message = str(excinfo.value)
         assert "'packa'" in message
@@ -422,13 +415,13 @@ class TestLoadRulesRulePackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_package_rule_with_its_own_prefix_loads_beside_the_bundled_rules(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = self._framework(tmp_path)
         project = self._project(tmp_path, "packages:\n  - mypack\n")
         _create_rule(project / ".ails" / "packages" / "mypack", "MYPACK:S:0001", "Own Prefix")
 
-        rules = load_rules(rules_paths=[rules_dir], project_root=project)
+        rules = load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
         assert rules["MYPACK:S:0001"].title == "Own Prefix"
         assert rules["CORE:S:0001"].title == "Bundled S1"
 
@@ -437,7 +430,7 @@ class TestLoadRulesRulePackages:
     def test_global_package_is_the_fallback_and_project_copy_wins(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         global_packages = tmp_path / "home" / "packages"
         monkeypatch.setattr(
@@ -451,7 +444,7 @@ class TestLoadRulesRulePackages:
         project = self._project(tmp_path, "packages:\n  - globalpack\n  - both\n")
         _create_rule(project / ".ails" / "packages" / "both", "CORE:S:0903", "Project Both")
 
-        rules = load_rules(rules_paths=[rules_dir], project_root=project)
+        rules = load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
         assert rules["CORE:S:0901"].title == "Global Rule"
         assert rules["CORE:S:0903"].title == "Project Both"
         assert "CORE:S:0902" not in rules
@@ -459,20 +452,20 @@ class TestLoadRulesRulePackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_disabled_rules_turns_a_package_rule_off(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = self._framework(tmp_path)
         project = self._project(tmp_path, 'packages:\n  - mypack\ndisabled_rules:\n  - "CORE:S:0900"\n')
         _create_rule(project / ".ails" / "packages" / "mypack", "CORE:S:0900", "Pack Rule")
 
-        rules = load_rules(rules_paths=[rules_dir], project_root=project)
+        rules = load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
         assert "CORE:S:0900" not in rules
         assert "CORE:S:0001" in rules
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_scan_root_packages_resolve_against_scan_root(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         rules_dir = self._framework(tmp_path)
         project = self._project(tmp_path, "disabled_rules: []\n")
@@ -481,7 +474,11 @@ class TestLoadRulesRulePackages:
         (scan / ".ails" / "config.yml").write_text("packages:\n  - scanpack\n")
         _create_rule(scan / ".ails" / "packages" / "scanpack", "CORE:S:0904", "Scan Rule")
 
-        rules = load_rules(rules_paths=[rules_dir], project_root=project, scan_root=scan)
+        rules = load_rules(
+            rules_paths=[rules_dir],
+            project=RunContext().configured_root(project),
+            scan=RunContext().configured_root(scan),
+        )
         assert rules["CORE:S:0904"].title == "Scan Rule"
 
     @pytest.mark.unit
@@ -489,8 +486,8 @@ class TestLoadRulesRulePackages:
     def test_missing_package_raises_naming_it_and_both_folders(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
         from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         global_packages = tmp_path / "home" / "packages"
         monkeypatch.setattr(
@@ -501,7 +498,7 @@ class TestLoadRulesRulePackages:
         project = self._project(tmp_path, "packages:\n  - ghostpack\n")
 
         with pytest.raises(ConfigUnreadableError) as excinfo:
-            load_rules(rules_paths=[rules_dir], project_root=project)
+            load_rules(rules_paths=[rules_dir], project=RunContext().configured_root(project))
 
         message = str(excinfo.value)
         assert "ghostpack" in message
@@ -522,42 +519,43 @@ class TestPackageRuleBehaviour:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_a_package_rule_keeps_its_own_id_prefix(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         project = self._project(tmp_path)
         _create_rule(project / ".ails" / "packages" / "mypack", "MYPACK:S:0001", "Own Prefix")
-        rules = load_rules(project_root=project, agent="claude")
+        rules = load_rules(project=RunContext().configured_root(project), agent="claude")
         assert "MYPACK:S:0001" in rules
         assert not any(rid.startswith(("CODEX:", "COPILOT:", "CURSOR:")) for rid in rules)
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_another_known_agents_package_rule_is_dropped(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         project = self._project(tmp_path)
         _create_rule(project / ".ails" / "packages" / "mypack", "CODEX:S:0999", "Codex Pack")
-        assert "CODEX:S:0999" not in load_rules(project_root=project, agent="claude")
-        assert "CODEX:S:0999" in load_rules(project_root=project, agent="codex")
+        assert "CODEX:S:0999" not in load_rules(project=RunContext().configured_root(project), agent="claude")
+        assert "CODEX:S:0999" in load_rules(project=RunContext().configured_root(project), agent="codex")
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_an_edited_package_rule_is_read_fresh(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         project = self._project(tmp_path)
         pack = project / ".ails" / "packages" / "mypack"
         _create_rule(pack, "MYPACK:S:0001", "Old Title")
-        assert load_rules(project_root=project)["MYPACK:S:0001"].title == "Old Title"
+        assert load_rules(project=RunContext().configured_root(project))["MYPACK:S:0001"].title == "Old Title"
         (pack / "old-title" / "rule.md").write_text(
             RULE_MD_TEMPLATE.format(rule_id="MYPACK:S:0001", title="New Title", slug="old-title")
         )
-        assert load_rules(project_root=project)["MYPACK:S:0001"].title == "New Title"
+        assert load_rules(project=RunContext().configured_root(project))["MYPACK:S:0001"].title == "New Title"
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_run_dependencies_include_package_rules(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.adapters.registry import load_rules, rule_dependencies
+        from reporails_cli.core.platform.policy.rule_sets import rule_dependencies
+        from reporails_cli.core.platform.rules.registry import load_rules
 
         project = self._project(tmp_path)
         pack = project / ".ails" / "packages" / "mypack" / "dependent"
@@ -567,7 +565,13 @@ class TestPackageRuleBehaviour:
                 "---\n\n#", "depends_on: [CORE:C:0037]\n---\n\n#", 1
             )
         )
-        deps = rule_dependencies(load_rules(project_root=project, scan_root=project, agent="claude"))
+        deps = rule_dependencies(
+            load_rules(
+                project=RunContext().configured_root(project),
+                scan=RunContext().configured_root(project),
+                agent="claude",
+            )
+        )
         assert deps["CORE:S:0952"] == frozenset({"CORE:C:0037"})
 
         from reporails_cli.core.platform.dto.models import LocalFinding

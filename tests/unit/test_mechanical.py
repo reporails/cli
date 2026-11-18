@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.exclusions import parse_run_exclusions
+from reporails_cli.core.discovery.exclusions import load_run_exclusions, parse_run_exclusions
 from reporails_cli.core.lint.mechanical.checks import (
     _safe_float,
     byte_size,
@@ -31,7 +31,9 @@ from reporails_cli.core.lint.mechanical.runner import (
     resolve_location,
     run_mechanical_checks,
 )
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import Category, Check, ClassifiedFile, FileMatch, Rule, RuleType, Severity
+from tests.unit.run_args import with_run_exclusions
 
 
 def _cf(root: Path, *rel_paths: str, file_type: str = "main") -> list[ClassifiedFile]:
@@ -49,13 +51,13 @@ class TestFileExists:
     @pytest.mark.subsys_lint
     def test_file_found(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("# Hello")
-        result = file_exists(tmp_path, {}, _cf(tmp_path, "CLAUDE.md"))
+        result = file_exists(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "CLAUDE.md"))
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_file_not_found(self, tmp_path: Path) -> None:
-        result = file_exists(tmp_path, {}, _cf(tmp_path, "CLAUDE.md"))
+        result = file_exists(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "CLAUDE.md"))
         assert not result.passed
 
 
@@ -64,13 +66,13 @@ class TestDirectoryExists:
     @pytest.mark.subsys_lint
     def test_exists(self, tmp_path: Path) -> None:
         (tmp_path / ".claude" / "rules").mkdir(parents=True)
-        result = directory_exists(tmp_path, {"path": ".claude/rules"}, [])
+        result = directory_exists(tmp_path, with_run_exclusions(tmp_path, {"path": ".claude/rules"}), [])
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_missing(self, tmp_path: Path) -> None:
-        result = directory_exists(tmp_path, {"path": ".claude/rules"}, [])
+        result = directory_exists(tmp_path, with_run_exclusions(tmp_path, {"path": ".claude/rules"}), [])
         assert not result.passed
 
 
@@ -86,7 +88,7 @@ class TestDirectoryContains:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_missing_directory_fails(self, tmp_path: Path) -> None:
-        result = directory_contains(tmp_path, {"path": "rules", "min": 1}, [])
+        result = directory_contains(tmp_path, with_run_exclusions(tmp_path, {"path": "rules", "min": 1}), [])
         assert not result.passed  # kills `passed=False -> True` on the not-found branch
 
     @pytest.mark.unit
@@ -96,7 +98,9 @@ class TestDirectoryContains:
         d.mkdir()
         (d / "a.md").write_text("x")
         (d / "b.md").write_text("y")
-        result = directory_contains(tmp_path, {"path": "rules", "pattern": "*.md", "min": 2}, [])
+        result = directory_contains(
+            tmp_path, with_run_exclusions(tmp_path, {"path": "rules", "pattern": "*.md", "min": 2}), []
+        )
         assert result.passed  # kills `passed=True -> False` on the satisfied branch
 
     @pytest.mark.unit
@@ -105,7 +109,9 @@ class TestDirectoryContains:
         d = tmp_path / "rules"
         d.mkdir()
         (d / "a.md").write_text("x")
-        result = directory_contains(tmp_path, {"path": "rules", "pattern": "*.md", "min": 2}, [])
+        result = directory_contains(
+            tmp_path, with_run_exclusions(tmp_path, {"path": "rules", "pattern": "*.md", "min": 2}), []
+        )
         assert not result.passed  # kills `passed=False -> True` on the too-few branch
 
     @pytest.mark.unit
@@ -114,7 +120,9 @@ class TestDirectoryContains:
         d = tmp_path / "rules"
         d.mkdir()
         (d / "a.md").write_text("x")
-        result = directory_contains(tmp_path, {"path": "rules", "pattern": "*.md", "min": 1}, [])
+        result = directory_contains(
+            tmp_path, with_run_exclusions(tmp_path, {"path": "rules", "pattern": "*.md", "min": 1}), []
+        )
         assert result.passed  # kills the off-by-one `len(matches) >= min_count -> >`
 
 
@@ -135,19 +143,25 @@ class TestFileCountBounds:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_count_at_min_boundary_passes(self, tmp_path: Path) -> None:
-        result = file_count(tmp_path, {"min": 2, "max": 5}, self._two_real_files(tmp_path))
+        result = file_count(
+            tmp_path, with_run_exclusions(tmp_path, {"min": 2, "max": 5}), self._two_real_files(tmp_path)
+        )
         assert result.passed  # kills `min_count <= count -> <`
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_count_at_max_boundary_passes(self, tmp_path: Path) -> None:
-        result = file_count(tmp_path, {"min": 1, "max": 2}, self._two_real_files(tmp_path))
+        result = file_count(
+            tmp_path, with_run_exclusions(tmp_path, {"min": 1, "max": 2}), self._two_real_files(tmp_path)
+        )
         assert result.passed  # kills `count <= max_count -> <`
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_below_min_fails(self, tmp_path: Path) -> None:
-        result = file_count(tmp_path, {"min": 3, "max": 5}, self._two_real_files(tmp_path))
+        result = file_count(
+            tmp_path, with_run_exclusions(tmp_path, {"min": 3, "max": 5}), self._two_real_files(tmp_path)
+        )
         assert not result.passed  # kills `passed=True -> False` when out of bounds
 
 
@@ -156,13 +170,13 @@ class TestGitTracked:
     @pytest.mark.subsys_lint
     def test_git_dir_present(self, tmp_path: Path) -> None:
         (tmp_path / ".git").mkdir()
-        result = git_tracked(tmp_path, {}, [])
+        result = git_tracked(tmp_path, with_run_exclusions(tmp_path, {}), [])
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_no_git(self, tmp_path: Path) -> None:
-        result = git_tracked(tmp_path, {}, [])
+        result = git_tracked(tmp_path, with_run_exclusions(tmp_path, {}), [])
         assert not result.passed
 
 
@@ -171,14 +185,14 @@ class TestLineCount:
     @pytest.mark.subsys_lint
     def test_within_bounds(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("line1\nline2\nline3\n")
-        result = line_count(tmp_path, {"max": 10}, _cf(tmp_path, "CLAUDE.md"))
+        result = line_count(tmp_path, with_run_exclusions(tmp_path, {"max": 10}), _cf(tmp_path, "CLAUDE.md"))
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_exceeds_max(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("\n".join(f"line{i}" for i in range(50)))
-        result = line_count(tmp_path, {"max": 10}, _cf(tmp_path, "CLAUDE.md"))
+        result = line_count(tmp_path, with_run_exclusions(tmp_path, {"max": 10}), _cf(tmp_path, "CLAUDE.md"))
         assert not result.passed
         assert result.location == "CLAUDE.md:0"
 
@@ -188,14 +202,14 @@ class TestByteSize:
     @pytest.mark.subsys_lint
     def test_within_bounds(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("small")
-        result = byte_size(tmp_path, {"max": 1000}, _cf(tmp_path, "CLAUDE.md"))
+        result = byte_size(tmp_path, with_run_exclusions(tmp_path, {"max": 1000}), _cf(tmp_path, "CLAUDE.md"))
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_exceeds_max(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("x" * 1000)
-        result = byte_size(tmp_path, {"max": 100}, _cf(tmp_path, "CLAUDE.md"))
+        result = byte_size(tmp_path, with_run_exclusions(tmp_path, {"max": 100}), _cf(tmp_path, "CLAUDE.md"))
         assert not result.passed
         assert result.location == "CLAUDE.md:0"
 
@@ -205,21 +219,27 @@ class TestContentAbsent:
     @pytest.mark.subsys_lint
     def test_pattern_absent(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("# Hello")
-        result = content_absent(tmp_path, {"pattern": "FORBIDDEN"}, _cf(tmp_path, "CLAUDE.md"))
+        result = content_absent(
+            tmp_path, with_run_exclusions(tmp_path, {"pattern": "FORBIDDEN"}), _cf(tmp_path, "CLAUDE.md")
+        )
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_pattern_present(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("# FORBIDDEN content here")
-        result = content_absent(tmp_path, {"pattern": "FORBIDDEN"}, _cf(tmp_path, "CLAUDE.md"))
+        result = content_absent(
+            tmp_path, with_run_exclusions(tmp_path, {"pattern": "FORBIDDEN"}), _cf(tmp_path, "CLAUDE.md")
+        )
         assert not result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_invalid_regex_returns_failure(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("# Hello")
-        result = content_absent(tmp_path, {"pattern": "[invalid"}, _cf(tmp_path, "CLAUDE.md"))
+        result = content_absent(
+            tmp_path, with_run_exclusions(tmp_path, {"pattern": "[invalid"}), _cf(tmp_path, "CLAUDE.md")
+        )
         assert not result.passed
         assert "invalid regex" in result.message
 
@@ -240,7 +260,7 @@ class TestContentAbsentMultiFile:
             ("CLAUDE.md", "main"),
             (".claude/rules/bad.md", "rules"),
         )
-        result = content_absent(tmp_path, {"pattern": "FORBIDDEN"}, classified)
+        result = content_absent(tmp_path, with_run_exclusions(tmp_path, {"pattern": "FORBIDDEN"}), classified)
         assert not result.passed
         assert "bad.md" in result.message
 
@@ -257,7 +277,7 @@ class TestContentAbsentMultiFile:
             ("CLAUDE.md", "main"),
             (".claude/rules/also_clean.md", "rules"),
         )
-        result = content_absent(tmp_path, {"pattern": "FORBIDDEN"}, classified)
+        result = content_absent(tmp_path, with_run_exclusions(tmp_path, {"pattern": "FORBIDDEN"}), classified)
         assert result.passed
 
     @pytest.mark.unit
@@ -273,7 +293,7 @@ class TestContentAbsentMultiFile:
             ("CLAUDE.md", "main"),
             (".claude/rules/also_bad.md", "rules"),
         )
-        result = content_absent(tmp_path, {"pattern": "FORBIDDEN"}, classified)
+        result = content_absent(tmp_path, with_run_exclusions(tmp_path, {"pattern": "FORBIDDEN"}), classified)
         assert not result.passed
         assert "CLAUDE.md" in result.message
 
@@ -290,7 +310,7 @@ class TestContentAbsentMultiFile:
             ("CLAUDE.md", "main"),
             (".claude/rules/risky.md", "rules"),
         )
-        result = content_absent(tmp_path, {"pattern": r"api_key\s*=\s*\S+"}, classified)
+        result = content_absent(tmp_path, with_run_exclusions(tmp_path, {"pattern": r"api_key\s*=\s*\S+"}), classified)
         assert not result.passed
         assert "risky.md" in result.message
 
@@ -301,7 +321,7 @@ class TestContentAbsentMultiFile:
         (tmp_path / "CLAUDE.md").write_text("")
         (tmp_path / "AGENTS.md").write_text("")
         classified = _cf(tmp_path, "CLAUDE.md", "AGENTS.md")
-        result = content_absent(tmp_path, {"pattern": "anything"}, classified)
+        result = content_absent(tmp_path, with_run_exclusions(tmp_path, {"pattern": "anything"}), classified)
         assert result.passed
 
 
@@ -332,7 +352,9 @@ class TestRunMechanicalChecks:
         (tmp_path / "CLAUDE.md").write_text("# Hello")
         rules = {"CORE:S:0001": self._rule("CORE:S:0001", "file_exists")}
         classified = _cf(tmp_path, "CLAUDE.md")
-        violations = run_mechanical_checks(rules, tmp_path, classified)
+        violations = run_mechanical_checks(
+            rules, tmp_path, classified, exclusions=load_run_exclusions(RunContext(), tmp_path)
+        )
         assert len(violations) == 0
 
     @pytest.mark.unit
@@ -340,7 +362,9 @@ class TestRunMechanicalChecks:
     def test_failing_check_produces_violation(self, tmp_path: Path) -> None:
         rules = {"CORE:S:0001": self._rule("CORE:S:0001", "file_exists")}
         classified = _cf(tmp_path, "CLAUDE.md")
-        violations = run_mechanical_checks(rules, tmp_path, classified)
+        violations = run_mechanical_checks(
+            rules, tmp_path, classified, exclusions=load_run_exclusions(RunContext(), tmp_path)
+        )
         assert len(violations) == 1
         assert violations[0].rule_id == "CORE:S:0001"
         assert violations[0].severity == Severity.CRITICAL
@@ -350,7 +374,7 @@ class TestRunMechanicalChecks:
     @pytest.mark.subsys_lint
     def test_unknown_check_skipped(self, tmp_path: Path) -> None:
         rules = {"CORE:S:0001": self._rule("CORE:S:0001", "nonexistent_check")}
-        violations = run_mechanical_checks(rules, tmp_path, [])
+        violations = run_mechanical_checks(rules, tmp_path, [], exclusions=load_run_exclusions(RunContext(), tmp_path))
         assert len(violations) == 0
 
     @pytest.mark.unit
@@ -363,7 +387,9 @@ class TestRunMechanicalChecks:
             "CORE:S:0004": self._rule("CORE:S:0004", "git_tracked"),
         }
         classified = _cf(tmp_path, "CLAUDE.md")
-        violations = run_mechanical_checks(rules, tmp_path, classified)
+        violations = run_mechanical_checks(
+            rules, tmp_path, classified, exclusions=load_run_exclusions(RunContext(), tmp_path)
+        )
         assert len(violations) == 1
         assert violations[0].rule_id == "CORE:S:0004"
 
@@ -381,7 +407,9 @@ class TestRunMechanicalChecks:
             ("CLAUDE.md", "main"),
             (".claude/rules/big.md", "rules"),
         )
-        violations = run_mechanical_checks(rules, tmp_path, classified)
+        violations = run_mechanical_checks(
+            rules, tmp_path, classified, exclusions=load_run_exclusions(RunContext(), tmp_path)
+        )
         assert len(violations) == 1
         assert violations[0].location == ".claude/rules/big.md:0"
 
@@ -406,7 +434,7 @@ class TestSkillEntrypointPresent:
         self._make_skill(tmp_path, "alpha")
         self._make_skill(tmp_path, "beta")
         classified = _cf(tmp_path, ".claude/skills/alpha/SKILL.md", ".claude/skills/beta/SKILL.md", file_type="skills")
-        result = skill_entrypoint_present(tmp_path, {}, classified)
+        result = skill_entrypoint_present(tmp_path, with_run_exclusions(tmp_path, {}), classified)
         assert result.passed
 
     @pytest.mark.unit
@@ -421,7 +449,9 @@ class TestSkillEntrypointPresent:
         self._make_skill(tmp_path, "alpha")
         (tmp_path / ".claude" / "skills" / "nofile").mkdir()
         args = {"_exclusions": parse_run_exclusions(tmp_path, left_out, ())}
-        result = skill_entrypoint_present(tmp_path, args, self._classified_alpha(tmp_path))
+        result = skill_entrypoint_present(
+            tmp_path, with_run_exclusions(tmp_path, args), self._classified_alpha(tmp_path)
+        )
         assert result.passed is not listed
         assert ("nofile" in result.message) is listed
 
@@ -434,7 +464,7 @@ class TestSkillEntrypointPresent:
         (broken / "notes.md").write_text("no entry point here\n")
         # Only the real skill is discovered/classified; the broken sibling is found by enumeration.
         classified = self._classified_alpha(tmp_path)
-        result = skill_entrypoint_present(tmp_path, {}, classified)
+        result = skill_entrypoint_present(tmp_path, with_run_exclusions(tmp_path, {}), classified)
         assert not result.passed
         assert ".claude/skills/broken" in result.message
         assert result.location == ".claude/skills/broken:0"
@@ -442,7 +472,7 @@ class TestSkillEntrypointPresent:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_no_skill_files_passes_vacuously(self, tmp_path: Path) -> None:
-        result = skill_entrypoint_present(tmp_path, {}, [])
+        result = skill_entrypoint_present(tmp_path, with_run_exclusions(tmp_path, {}), [])
         assert result.passed
 
     @pytest.mark.unit
@@ -471,8 +501,22 @@ class TestSkillEntrypointPresent:
         )
         classified = self._classified_alpha(tmp_path)
         rules = {"CORE:S:0015": rule}
-        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
-        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 0
+        assert (
+            len(
+                run_mechanical_checks(
+                    rules, tmp_path, classified, scoped=False, exclusions=load_run_exclusions(RunContext(), tmp_path)
+                )
+            )
+            == 1
+        )
+        assert (
+            len(
+                run_mechanical_checks(
+                    rules, tmp_path, classified, scoped=True, exclusions=load_run_exclusions(RunContext(), tmp_path)
+                )
+            )
+            == 0
+        )
 
 
 class TestScopedProjectChecks:
@@ -503,8 +547,22 @@ class TestScopedProjectChecks:
         (tmp_path / "CLAUDE.md").write_text("# Hello")
         rules = {"CORE:S:0010": self._rule("CORE:S:0010", "file_count", {"min": 2}, project_scope="aggregate")}
         classified = _cf(tmp_path, "CLAUDE.md")  # single file → count 1 < min 2
-        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
-        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 0
+        assert (
+            len(
+                run_mechanical_checks(
+                    rules, tmp_path, classified, scoped=False, exclusions=load_run_exclusions(RunContext(), tmp_path)
+                )
+            )
+            == 1
+        )
+        assert (
+            len(
+                run_mechanical_checks(
+                    rules, tmp_path, classified, scoped=True, exclusions=load_run_exclusions(RunContext(), tmp_path)
+                )
+            )
+            == 0
+        )
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -512,9 +570,40 @@ class TestScopedProjectChecks:
         (tmp_path / "CLAUDE.md").write_text("# Hello")
         rules = {"CORE:G:0001": self._rule("CORE:G:0001", "git_tracked", {}, project_scope="once")}
         classified = _cf(tmp_path, "CLAUDE.md")
-        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 1
-        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True, project_checks="defer")) == 0
-        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True, project_checks="only")) == 1
+        assert (
+            len(
+                run_mechanical_checks(
+                    rules, tmp_path, classified, scoped=True, exclusions=load_run_exclusions(RunContext(), tmp_path)
+                )
+            )
+            == 1
+        )
+        assert (
+            len(
+                run_mechanical_checks(
+                    rules,
+                    tmp_path,
+                    classified,
+                    scoped=True,
+                    project_checks="defer",
+                    exclusions=load_run_exclusions(RunContext(), tmp_path),
+                )
+            )
+            == 0
+        )
+        assert (
+            len(
+                run_mechanical_checks(
+                    rules,
+                    tmp_path,
+                    classified,
+                    scoped=True,
+                    project_checks="only",
+                    exclusions=load_run_exclusions(RunContext(), tmp_path),
+                )
+            )
+            == 1
+        )
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -522,8 +611,22 @@ class TestScopedProjectChecks:
         (tmp_path / "CLAUDE.md").write_text("this content is well over five bytes")
         rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 5}, project_scope="aggregate")}
         classified = _cf(tmp_path, "CLAUDE.md")
-        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
-        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 0
+        assert (
+            len(
+                run_mechanical_checks(
+                    rules, tmp_path, classified, scoped=False, exclusions=load_run_exclusions(RunContext(), tmp_path)
+                )
+            )
+            == 1
+        )
+        assert (
+            len(
+                run_mechanical_checks(
+                    rules, tmp_path, classified, scoped=True, exclusions=load_run_exclusions(RunContext(), tmp_path)
+                )
+            )
+            == 0
+        )
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -537,7 +640,14 @@ class TestScopedProjectChecks:
             ClassifiedFile(path=tmp_path / "entry.md", file_type="memory", properties={"loading": "on_demand"}),
         ]
         # The 100-byte sibling is excluded → only the 3-byte index counts → under max.
-        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 0
+        assert (
+            len(
+                run_mechanical_checks(
+                    rules, tmp_path, classified, scoped=False, exclusions=load_run_exclusions(RunContext(), tmp_path)
+                )
+            )
+            == 0
+        )
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -548,7 +658,14 @@ class TestScopedProjectChecks:
         classified = [
             ClassifiedFile(path=tmp_path / "MEMORY.md", file_type="memory", properties={"loading": "session_start"}),
         ]
-        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
+        assert (
+            len(
+                run_mechanical_checks(
+                    rules, tmp_path, classified, scoped=False, exclusions=load_run_exclusions(RunContext(), tmp_path)
+                )
+            )
+            == 1
+        )
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -559,7 +676,14 @@ class TestScopedProjectChecks:
         rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 100})}
         classified = [ClassifiedFile(path=skill, file_type="skills", properties={"loading": "on_invocation"})]
         # name(1) + description(5) = 6 bytes counted; the large body is ignored → under max.
-        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 0
+        assert (
+            len(
+                run_mechanical_checks(
+                    rules, tmp_path, classified, scoped=False, exclusions=load_run_exclusions(RunContext(), tmp_path)
+                )
+            )
+            == 0
+        )
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -569,7 +693,14 @@ class TestScopedProjectChecks:
         rule_file.write_text("x" * 500)
         rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 100})}
         classified = [ClassifiedFile(path=rule_file, file_type="rules", properties={"loading": "on_demand"})]
-        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 0
+        assert (
+            len(
+                run_mechanical_checks(
+                    rules, tmp_path, classified, scoped=False, exclusions=load_run_exclusions(RunContext(), tmp_path)
+                )
+            )
+            == 0
+        )
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -577,7 +708,14 @@ class TestScopedProjectChecks:
         """A scoped run still evaluates per-file checks (only aggregates are skipped)."""
         rules = {"CORE:S:0001": self._rule("CORE:S:0001", "file_exists", {})}
         classified = _cf(tmp_path, "CLAUDE.md")  # file does not exist on disk
-        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 1
+        assert (
+            len(
+                run_mechanical_checks(
+                    rules, tmp_path, classified, scoped=True, exclusions=load_run_exclusions(RunContext(), tmp_path)
+                )
+            )
+            == 1
+        )
 
 
 class TestSafeFloat:
@@ -626,14 +764,14 @@ class TestTypeSafetyInChecks:
     @pytest.mark.subsys_lint
     def test_byte_size_string_max(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("short")
-        result = byte_size(tmp_path, {"max": "100"}, _cf(tmp_path, "CLAUDE.md"))
+        result = byte_size(tmp_path, with_run_exclusions(tmp_path, {"max": "100"}), _cf(tmp_path, "CLAUDE.md"))
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_byte_size_invalid_max(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("short")
-        result = byte_size(tmp_path, {"max": "invalid"}, _cf(tmp_path, "CLAUDE.md"))
+        result = byte_size(tmp_path, with_run_exclusions(tmp_path, {"max": "invalid"}), _cf(tmp_path, "CLAUDE.md"))
         # invalid → float("inf"), so any file passes
         assert result.passed
 
@@ -641,14 +779,14 @@ class TestTypeSafetyInChecks:
     @pytest.mark.subsys_lint
     def test_line_count_string_max(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("line1\nline2\n")
-        result = line_count(tmp_path, {"max": "100"}, _cf(tmp_path, "CLAUDE.md"))
+        result = line_count(tmp_path, with_run_exclusions(tmp_path, {"max": "100"}), _cf(tmp_path, "CLAUDE.md"))
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_line_count_invalid_max(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("line1\nline2\n")
-        result = line_count(tmp_path, {"max": "invalid"}, _cf(tmp_path, "CLAUDE.md"))
+        result = line_count(tmp_path, with_run_exclusions(tmp_path, {"max": "invalid"}), _cf(tmp_path, "CLAUDE.md"))
         assert result.passed
 
 
@@ -728,32 +866,32 @@ class TestCountAtMost:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_within_threshold(self, tmp_path: Path) -> None:
-        result = count_at_most(tmp_path, {"threshold": 3, "items": ["a", "b"]}, [])
+        result = count_at_most(tmp_path, with_run_exclusions(tmp_path, {"threshold": 3, "items": ["a", "b"]}), [])
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_at_threshold(self, tmp_path: Path) -> None:
-        result = count_at_most(tmp_path, {"threshold": 2, "items": ["a", "b"]}, [])
+        result = count_at_most(tmp_path, with_run_exclusions(tmp_path, {"threshold": 2, "items": ["a", "b"]}), [])
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_exceeds_threshold(self, tmp_path: Path) -> None:
-        result = count_at_most(tmp_path, {"threshold": 1, "items": ["a", "b", "c"]}, [])
+        result = count_at_most(tmp_path, with_run_exclusions(tmp_path, {"threshold": 1, "items": ["a", "b", "c"]}), [])
         assert not result.passed
         assert "exceeds" in result.message
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_empty_list_passes(self, tmp_path: Path) -> None:
-        result = count_at_most(tmp_path, {"threshold": 0}, [])
+        result = count_at_most(tmp_path, with_run_exclusions(tmp_path, {"threshold": 0}), [])
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_default_threshold_zero(self, tmp_path: Path) -> None:
-        result = count_at_most(tmp_path, {"items": ["a"]}, [])
+        result = count_at_most(tmp_path, with_run_exclusions(tmp_path, {"items": ["a"]}), [])
         assert not result.passed
 
 
@@ -761,32 +899,32 @@ class TestCountAtLeast:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_meets_minimum(self, tmp_path: Path) -> None:
-        result = count_at_least(tmp_path, {"threshold": 2, "items": ["a", "b", "c"]}, [])
+        result = count_at_least(tmp_path, with_run_exclusions(tmp_path, {"threshold": 2, "items": ["a", "b", "c"]}), [])
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_at_minimum(self, tmp_path: Path) -> None:
-        result = count_at_least(tmp_path, {"threshold": 2, "items": ["a", "b"]}, [])
+        result = count_at_least(tmp_path, with_run_exclusions(tmp_path, {"threshold": 2, "items": ["a", "b"]}), [])
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_below_minimum(self, tmp_path: Path) -> None:
-        result = count_at_least(tmp_path, {"threshold": 3, "items": ["a"]}, [])
+        result = count_at_least(tmp_path, with_run_exclusions(tmp_path, {"threshold": 3, "items": ["a"]}), [])
         assert not result.passed
         assert "below" in result.message
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_empty_list_fails_default(self, tmp_path: Path) -> None:
-        result = count_at_least(tmp_path, {}, [])
+        result = count_at_least(tmp_path, with_run_exclusions(tmp_path, {}), [])
         assert not result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_default_threshold_one(self, tmp_path: Path) -> None:
-        result = count_at_least(tmp_path, {"items": ["a"]}, [])
+        result = count_at_least(tmp_path, with_run_exclusions(tmp_path, {"items": ["a"]}), [])
         assert result.passed
 
 
@@ -795,21 +933,21 @@ class TestExtractImports:
     @pytest.mark.subsys_lint
     def test_inline_code_decorator_not_an_import(self, tmp_path: Path) -> None:
         (tmp_path / "rules.md").write_text("Use `@pytest.mark.parametrize` when cases share the same shape.\n")
-        result = extract_imports(tmp_path, {}, _cf(tmp_path, "rules.md"))
+        result = extract_imports(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "rules.md"))
         assert (result.annotations or {}).get("discovered_imports", []) == []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_real_path_import_detected(self, tmp_path: Path) -> None:
         (tmp_path / "rules.md").write_text("See @docs/guide.md and @README for setup.\n")
-        result = extract_imports(tmp_path, {}, _cf(tmp_path, "rules.md"))
+        result = extract_imports(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "rules.md"))
         assert result.annotations["discovered_imports"] == ["rules.md::docs/guide.md::1", "rules.md::README::1"]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_email_not_an_import(self, tmp_path: Path) -> None:
         (tmp_path / "rules.md").write_text("Contact me@example.com for access.\n")
-        result = extract_imports(tmp_path, {}, _cf(tmp_path, "rules.md"))
+        result = extract_imports(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "rules.md"))
         assert (result.annotations or {}).get("discovered_imports", []) == []
 
 
@@ -820,7 +958,9 @@ class TestCheckImportTargetsExist:
         (tmp_path / "rules.md").write_text("# Rules")
         (tmp_path / "config.md").write_text("# Config")
         entries = ["CLAUDE.md::rules.md::1", "CLAUDE.md::config.md::2"]
-        result = check_import_targets_exist(tmp_path, {"discovered_imports": entries}, [])
+        result = check_import_targets_exist(
+            tmp_path, with_run_exclusions(tmp_path, {"discovered_imports": entries}), []
+        )
         assert result.passed
 
     @pytest.mark.unit
@@ -828,7 +968,9 @@ class TestCheckImportTargetsExist:
     def test_missing_import(self, tmp_path: Path) -> None:
         (tmp_path / "rules.md").write_text("# Rules")
         entries = ["CLAUDE.md::rules.md::1", "CLAUDE.md::missing.md::3"]
-        result = check_import_targets_exist(tmp_path, {"discovered_imports": entries}, [])
+        result = check_import_targets_exist(
+            tmp_path, with_run_exclusions(tmp_path, {"discovered_imports": entries}), []
+        )
         assert not result.passed
         assert result.occurrences == [("CLAUDE.md:3", "Unresolved imports: missing.md")]
 
@@ -838,8 +980,8 @@ class TestCheckImportTargetsExist:
         (tmp_path / "docs").mkdir()
         (tmp_path / "docs" / "CLAUDE.md").write_text("See @setup.md\n")
         (tmp_path / "docs" / "setup.md").write_text("# Setup")
-        found = extract_imports(tmp_path, {}, _cf(tmp_path, "docs/CLAUDE.md"))
-        result = check_import_targets_exist(tmp_path, found.annotations, [])
+        found = extract_imports(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "docs/CLAUDE.md"))
+        result = check_import_targets_exist(tmp_path, with_run_exclusions(tmp_path, found.annotations), [])
         assert result.passed
 
     @pytest.mark.unit
@@ -848,8 +990,8 @@ class TestCheckImportTargetsExist:
         (tmp_path / "docs").mkdir()
         (tmp_path / "docs" / "a.md").write_text("# A")
         (tmp_path / "CLAUDE.md").write_text("See @docs/a.md\n")
-        found = extract_imports(tmp_path, {}, _cf(tmp_path, "CLAUDE.md"))
-        assert check_import_targets_exist(tmp_path, found.annotations, []).passed
+        found = extract_imports(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "CLAUDE.md"))
+        assert check_import_targets_exist(tmp_path, with_run_exclusions(tmp_path, found.annotations), []).passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -858,8 +1000,10 @@ class TestCheckImportTargetsExist:
         skill.mkdir(parents=True)
         (skill / "SKILL.md").write_text("# S\n\nSee @missing.md\n")
         (tmp_path / "CLAUDE.md").write_text("# Project\n")
-        found = extract_imports(tmp_path, {}, _cf(tmp_path, "CLAUDE.md", ".claude/skills/s/SKILL.md"))
-        result = check_import_targets_exist(tmp_path, found.annotations, [])
+        found = extract_imports(
+            tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "CLAUDE.md", ".claude/skills/s/SKILL.md")
+        )
+        result = check_import_targets_exist(tmp_path, with_run_exclusions(tmp_path, found.annotations), [])
         assert not result.passed
         assert result.occurrences == [(".claude/skills/s/SKILL.md:3", "Unresolved imports: missing.md")]
 
@@ -869,8 +1013,10 @@ class TestCheckImportTargetsExist:
         (tmp_path / "docs").mkdir()
         (tmp_path / "CLAUDE.md").write_text("@one.md\n")
         (tmp_path / "docs" / "CLAUDE.md").write_text("@two.md\n")
-        found = extract_imports(tmp_path, {}, _cf(tmp_path, "CLAUDE.md", "docs/CLAUDE.md"))
-        result = check_import_targets_exist(tmp_path, found.annotations, [])
+        found = extract_imports(
+            tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "CLAUDE.md", "docs/CLAUDE.md")
+        )
+        result = check_import_targets_exist(tmp_path, with_run_exclusions(tmp_path, found.annotations), [])
         assert result.occurrences == [
             ("CLAUDE.md:1", "Unresolved imports: one.md"),
             ("docs/CLAUDE.md:1", "Unresolved imports: two.md"),
@@ -886,12 +1032,12 @@ class TestCheckImportTargetsExist:
         doc = outside / "CLAUDE.md"
         doc.write_text("See @notes.md\n")
         classified = [ClassifiedFile(path=doc, file_type="main")]
-        found = extract_imports(project, {}, classified)
-        assert check_import_targets_exist(project, found.annotations, []).occurrences == [
+        found = extract_imports(project, with_run_exclusions(project, {}), classified)
+        assert check_import_targets_exist(project, with_run_exclusions(project, found.annotations), []).occurrences == [
             (f"{doc}:1", "Unresolved imports: notes.md")
         ]
         (outside / "notes.md").write_text("# Notes")
-        assert check_import_targets_exist(project, found.annotations, []).passed
+        assert check_import_targets_exist(project, with_run_exclusions(project, found.annotations), []).passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -904,20 +1050,20 @@ class TestCheckImportTargetsExist:
         project = tmp_path / "project"
         project.mkdir()
         (project / "CLAUDE.md").write_text("See @~/x.md and @~/y.md\n")
-        found = extract_imports(project, {}, _cf(project, "CLAUDE.md"))
-        result = check_import_targets_exist(project, found.annotations, [])
+        found = extract_imports(project, with_run_exclusions(project, {}), _cf(project, "CLAUDE.md"))
+        result = check_import_targets_exist(project, with_run_exclusions(project, found.annotations), [])
         assert result.occurrences == [("CLAUDE.md:1", "Unresolved imports: ~/y.md")]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_empty_imports_pass(self, tmp_path: Path) -> None:
-        result = check_import_targets_exist(tmp_path, {}, [])
+        result = check_import_targets_exist(tmp_path, with_run_exclusions(tmp_path, {}), [])
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_no_metadata_key_pass(self, tmp_path: Path) -> None:
-        result = check_import_targets_exist(tmp_path, {"threshold": 5}, [])
+        result = check_import_targets_exist(tmp_path, with_run_exclusions(tmp_path, {"threshold": 5}), [])
         assert result.passed
 
 
@@ -926,14 +1072,18 @@ class TestFilenameMatchesPattern:
     @pytest.mark.subsys_lint
     def test_matches(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("# Hello")
-        result = filename_matches_pattern(tmp_path, {"pattern": r"^[A-Z]+\.md$"}, _cf(tmp_path, "CLAUDE.md"))
+        result = filename_matches_pattern(
+            tmp_path, with_run_exclusions(tmp_path, {"pattern": r"^[A-Z]+\.md$"}), _cf(tmp_path, "CLAUDE.md")
+        )
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_no_match(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("# Hello")
-        result = filename_matches_pattern(tmp_path, {"pattern": r"^[a-z]+\.md$"}, _cf(tmp_path, "CLAUDE.md"))
+        result = filename_matches_pattern(
+            tmp_path, with_run_exclusions(tmp_path, {"pattern": r"^[a-z]+\.md$"}), _cf(tmp_path, "CLAUDE.md")
+        )
         assert not result.passed
         assert "do not match" in result.message
         assert result.occurrences is not None
@@ -942,14 +1092,16 @@ class TestFilenameMatchesPattern:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_no_pattern_fails(self, tmp_path: Path) -> None:
-        result = filename_matches_pattern(tmp_path, {}, _cf(tmp_path, "CLAUDE.md"))
+        result = filename_matches_pattern(tmp_path, with_run_exclusions(tmp_path, {}), _cf(tmp_path, "CLAUDE.md"))
         assert not result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_invalid_regex_fails(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("# Hello")
-        result = filename_matches_pattern(tmp_path, {"pattern": "[invalid"}, _cf(tmp_path, "CLAUDE.md"))
+        result = filename_matches_pattern(
+            tmp_path, with_run_exclusions(tmp_path, {"pattern": "[invalid"}), _cf(tmp_path, "CLAUDE.md")
+        )
         assert not result.passed
         assert "invalid regex" in result.message
 
@@ -958,34 +1110,34 @@ class TestFileAbsent:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_file_not_present_passes(self, tmp_path: Path) -> None:
-        result = file_absent(tmp_path, {"pattern": "README.md"}, [])
+        result = file_absent(tmp_path, with_run_exclusions(tmp_path, {"pattern": "README.md"}), [])
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_file_present_fails(self, tmp_path: Path) -> None:
         (tmp_path / "README.md").write_text("# README")
-        result = file_absent(tmp_path, {"pattern": "README.md"}, [])
+        result = file_absent(tmp_path, with_run_exclusions(tmp_path, {"pattern": "README.md"}), [])
         assert not result.passed
         assert "Forbidden" in result.message
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_glob_pattern_no_match_passes(self, tmp_path: Path) -> None:
-        result = file_absent(tmp_path, {"pattern": "**/*.lock"}, [])
+        result = file_absent(tmp_path, with_run_exclusions(tmp_path, {"pattern": "**/*.lock"}), [])
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_glob_pattern_match_fails(self, tmp_path: Path) -> None:
         (tmp_path / "package-lock.json").write_text("{}")
-        result = file_absent(tmp_path, {"pattern": "**/*.json"}, [])
+        result = file_absent(tmp_path, with_run_exclusions(tmp_path, {"pattern": "**/*.json"}), [])
         assert not result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_no_pattern_fails(self, tmp_path: Path) -> None:
-        result = file_absent(tmp_path, {}, [])
+        result = file_absent(tmp_path, with_run_exclusions(tmp_path, {}), [])
         assert not result.passed
         assert "no pattern" in result.message
 
@@ -1007,7 +1159,7 @@ class TestMatchTypeScoping:
         )
         # With _match_type scoping to main, only CLAUDE.md is checked
         args = {"pattern": r"(?i)^(CLAUDE|AGENTS)\.md$", "_match_type": "main"}
-        result = filename_matches_pattern(tmp_path, args, classified)
+        result = filename_matches_pattern(tmp_path, with_run_exclusions(tmp_path, args), classified)
         assert result.passed
 
     @pytest.mark.unit
@@ -1024,7 +1176,7 @@ class TestMatchTypeScoping:
         )
         # Without _match_type, falls back to all classified files — core-rules.md fails regex
         args = {"pattern": r"(?i)^(CLAUDE|AGENTS)\.md$"}
-        result = filename_matches_pattern(tmp_path, args, classified)
+        result = filename_matches_pattern(tmp_path, with_run_exclusions(tmp_path, args), classified)
         assert not result.passed
         assert result.occurrences is not None
         assert any("core-rules.md" in msg for _loc, msg in result.occurrences)
@@ -1039,7 +1191,7 @@ class TestMatchTypeScoping:
         (skills / "SKILL.md").write_text("# Skill")
         args = {"pattern": "README.md", "_match_type": "skills"}
         classified = [ClassifiedFile(path=skills / "SKILL.md", file_type="skills")]
-        result = file_absent(tmp_path, args, classified)
+        result = file_absent(tmp_path, with_run_exclusions(tmp_path, args), classified)
         assert result.passed
 
     @pytest.mark.unit
@@ -1052,7 +1204,7 @@ class TestMatchTypeScoping:
         (skills / "README.md").write_text("# Bad")
         args = {"pattern": "README.md", "_match_type": "skills"}
         classified = [ClassifiedFile(path=skills / "SKILL.md", file_type="skills")]
-        result = file_absent(tmp_path, args, classified)
+        result = file_absent(tmp_path, with_run_exclusions(tmp_path, args), classified)
         assert not result.passed
         assert "README.md" in result.message
 
@@ -1066,7 +1218,7 @@ class TestMatchTypeScoping:
         (skill / "docs" / "README.md").write_text("# Bad")
         args = {"pattern": "README.md", "_match_type": "skills"}
         classified = [ClassifiedFile(path=skill / "SKILL.md", file_type="skills")]
-        result = file_absent(tmp_path, args, classified)
+        result = file_absent(tmp_path, with_run_exclusions(tmp_path, args), classified)
         assert not result.passed
         assert result.message == "Forbidden file exists: .claude/skills/foo/docs/README.md"
 
@@ -1075,7 +1227,7 @@ class TestMatchTypeScoping:
     def test_file_absent_unscoped_finds_root_readme(self, tmp_path: Path) -> None:
         """Without _match_type, file_absent searches from project root (original behavior)."""
         (tmp_path / "README.md").write_text("# Project")
-        result = file_absent(tmp_path, {"pattern": "README.md"}, [])
+        result = file_absent(tmp_path, with_run_exclusions(tmp_path, {"pattern": "README.md"}), [])
         assert not result.passed
 
     @pytest.mark.unit
@@ -1085,7 +1237,7 @@ class TestMatchTypeScoping:
         classified files of either type must render `No config/hooks files classified`,
         never the Python list repr `No ['config', 'hooks'] files classified`."""
         args = {"pattern": "forbidden.md", "_match_type": ["config", "hooks"]}
-        result = file_absent(tmp_path, args, [])
+        result = file_absent(tmp_path, with_run_exclusions(tmp_path, args), [])
         assert result.passed
         assert result.message == "No config/hooks files classified"
         assert "[" not in result.message
@@ -1110,7 +1262,7 @@ class TestMatchTypeScoping:
             ClassifiedFile(path=hooks_dir / "forbidden.md", file_type="hooks"),
             ClassifiedFile(path=config_dir / "settings.md", file_type="config"),
         ]
-        result = file_absent(tmp_path, args, classified)
+        result = file_absent(tmp_path, with_run_exclusions(tmp_path, args), classified)
         # The forbidden file lives under hooks-area, which is out of the config-anchored
         # scope, so it is not found — passed is True precisely because scope resolution
         # is deterministic (config) rather than accidental (hooks).
@@ -1137,7 +1289,7 @@ class TestMatchTypeScoping:
         # surface even though the path glob matches it.
         classified = _cf(tmp_path, "CLAUDE.md")
         args = {"pattern": r"^CLAUDE\.md$", "path": "docs/**/*.md"}
-        result = filename_matches_pattern(tmp_path, args, classified)
+        result = filename_matches_pattern(tmp_path, with_run_exclusions(tmp_path, args), classified)
         assert result.passed
 
         # When notes.md is also classified, the path glob narrows to it.
@@ -1146,7 +1298,7 @@ class TestMatchTypeScoping:
             ("CLAUDE.md", "main"),
             ("docs/notes.md", "generic"),
         )
-        result_both = filename_matches_pattern(tmp_path, args, classified_both)
+        result_both = filename_matches_pattern(tmp_path, with_run_exclusions(tmp_path, args), classified_both)
         assert not result_both.passed
         assert result_both.occurrences is not None
         assert any("notes.md" in msg for _loc, msg in result_both.occurrences)

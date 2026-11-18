@@ -13,12 +13,13 @@ import logging
 from pathlib import Path
 
 from reporails_cli.core.classify import classify_files, load_file_types
+from reporails_cli.core.discovery.walk import list_dir
 from reporails_cli.core.lint.harness_models import _FIXTURE_EXCLUDES
-from reporails_cli.core.platform.adapters.registry import RuleReadError, read_rule
-from reporails_cli.core.platform.config.config import get_agent_config, get_agent_config_path, iter_agent_configs
+from reporails_cli.core.platform.config.config import agent_config_at, get_agent_config_path, iter_agent_configs
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
 from reporails_cli.core.platform.dto.lint import RuleInfo
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, FieldProblem, FileTypeDeclaration, Rule
+from reporails_cli.core.platform.rules.registry import RuleReadError, read_rule
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ def load_agent_config(
     if not config_path.exists():
         logger.warning("Agent config not found: %s", config_path)
         return [], []
-    return load_file_types(agent, [rules_root]), get_agent_config(agent, rules_root).excludes
+    return load_file_types(agent, [rules_root]), agent_config_at(config_path).excludes
 
 
 def _classify_fixture(
@@ -48,8 +49,24 @@ def _classify_fixture(
     file_types: list[FileTypeDeclaration],
 ) -> list[ClassifiedFile]:
     """Classify files in a fixture directory against file type declarations."""
-    files = [f for f in fixture_root.rglob("*") if f.is_file() and f.name not in _FIXTURE_EXCLUDES]
-    return classify_files(fixture_root, files, file_types)
+    return classify_files(fixture_root, _fixture_files(fixture_root), file_types)
+
+
+def _fixture_files(root: Path) -> list[Path]:
+    """Every file under `root` except the excluded names; a symlinked folder is not entered."""
+    files: list[Path] = []
+    for entry in list_dir(str(root)) or ():
+        path = Path(entry.path)
+        if entry.is_dir and not entry.is_symlink:
+            files.extend(_fixture_files(path))
+        elif path.is_file() and entry.name not in _FIXTURE_EXCLUDES:
+            files.append(path)
+    return files
+
+
+def _sorted_subdirs(folder: Path) -> list[Path]:
+    """The folders directly under `folder`, by name."""
+    return [Path(e.path) for e in sorted(list_dir(str(folder)) or (), key=lambda e: e.name) if e.is_dir]
 
 
 def _build_prefix_to_agent_map(rules_root: Path) -> dict[str, str]:
@@ -93,12 +110,12 @@ def _scan_root(root: Path, agent: str | None = None) -> list[Path]:
 
     core_dir = root / "core"
     if core_dir.exists():
-        dirs.extend(d for d in sorted(core_dir.iterdir()) if d.is_dir())
+        dirs.extend(_sorted_subdirs(core_dir))
 
     for folder, _ in iter_agent_configs(root):
         if folder.name == "core" or (agent and folder.name != agent):
             continue
-        dirs.extend(d for d in sorted(folder.iterdir()) if d.is_dir() and d.name != "tests")
+        dirs.extend(d for d in _sorted_subdirs(folder) if d.name != "tests")
 
     return dirs
 

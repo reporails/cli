@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.classify import classify_files, load_file_types
-from reporails_cli.core.discovery.agents import clear_agent_cache, detect_agents
+from reporails_cli.core.discovery.agents import detect_agents
+from reporails_cli.core.platform.config.run_context import RunContext
 
 
 def _write(root: Path, rel: str, text: str = "# Notes\n\nRun `make test`.\n") -> Path:
@@ -53,5 +54,4 @@ def test_plain_md_in_cursor_rules_is_not_a_rule(tmp_path: Path) -> None:
 @pytest.mark.subsys_lint
 def test_plain_cursor_folder_still_detects_cursor(tmp_path: Path) -> None:
     _write(tmp_path, ".cursor/rules/a.mdc", "---\nalwaysApply: true\n---\n\n- Use `ruff`.\n")
-    clear_agent_cache()
-    assert "cursor" in {a.agent_type.id for a in detect_agents(tmp_path)}
+    assert "cursor" in {a.agent_type.id for a in detect_agents(RunContext(), tmp_path)}

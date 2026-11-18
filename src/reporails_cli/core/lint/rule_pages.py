@@ -9,6 +9,7 @@ from reporails_cli.core.mapper.structure import section_span
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.models import FileMatch, Rule
 from reporails_cli.core.platform.policy.matching import MATCH_PROPERTIES
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import read_frontmatter
 
 
@@ -32,7 +33,7 @@ def load_rule_examples(rule: Rule) -> dict[ExampleKind, str | None]:
     if rule.md_path is None or not rule.md_path.exists():
         return result
     try:
-        text = rule.md_path.read_text(encoding="utf-8")
+        text = read_file_text(rule.md_path)
     except OSError:
         return result
     for kind in EXAMPLE_KINDS:
@@ -48,7 +49,7 @@ def load_rule_description(rule: Rule) -> str | None:
     """
     if rule.md_path is None or not rule.md_path.exists():
         return None
-    text = rule.md_path.read_text(encoding="utf-8")
+    text = read_file_text(rule.md_path)
     read = read_frontmatter(text)
     if read.block is None or read.problem is not None:
         return None

@@ -1,4 +1,4 @@
-# Reporails CLI (v0.6.7)
+# Reporails CLI (v0.6.8)
 
 > **AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 120+ rules across six rule packs (core + per-agent). Supports Antigravity, Claude, Codex, Copilot, and Cursor.**
 > 
@@ -99,7 +99,7 @@ Puts `ails` on your PATH, installs the reporails plugin into Claude Code and Cod
 
 ## Free vs Pro
 
-Anonymous mode needs no account, and signing in is free. Anonymous and signed-in free accounts share the same rate and payload caps and the same full diagnosis — every finding, the score, and the fix text of the local checks in `-f json` and MCP — and `ails check --heal` writes fixes on a Pro account only (an anonymous or free run gets the diagnosis and no changes). `ails check` also shows messages about your account (a failed payment, Pro ending) when there are any. Pro is the paid subscription: it raises the rate and payload caps and unlocks the remedies for the findings worth fixing, the exact line of each cross-file repetition and topic overlap, and the ordered remediation workflow your coding agent runs end to end.
+Anonymous mode needs no account, and signing in is free. Signing in raises the hourly limit from 5 to 100 checks; anonymous and signed-in free accounts share the same payload cap and the same full diagnosis — every finding, the score, and the fix text of the local checks in `-f json` and MCP — and `ails check --heal` writes fixes on a Pro account only (an anonymous or free run gets the diagnosis and no changes). `ails check` also shows messages about your account (a failed payment, Pro ending) when there are any. Pro is the paid subscription: it raises the rate and payload caps and unlocks the remedies for the findings worth fixing, the exact line of each cross-file repetition and topic overlap, and the ordered remediation workflow your coding agent runs end to end.
 
 ```bash
 # Sign in through your browser; one sign-in per machine
@@ -113,7 +113,7 @@ Full breakdown: [Tiers and Limits](https://github.com/reporails/cli/blob/main/do
 Run on every PR so instruction-quality regressions (vague or buried instructions, oversized files, weak reinforcement, instructions repeated across files) get caught the same way test or lint regressions do — before merge, not after a teammate's agent has been silently misbehaving for a week.
 
 ```yaml
-- uses: reporails/cli/action@0.6.7
+- uses: reporails/cli/action@0.6.8
   with:
     api-key: ${{ secrets.REPORAILS_API_KEY }}   # optional - a Pro key unlocks the full diagnostic detail
     strict: "true"                              # exit 1 if any rule fires

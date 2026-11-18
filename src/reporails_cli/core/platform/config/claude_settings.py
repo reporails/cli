@@ -38,6 +38,7 @@ from reporails_cli.core.platform.utils.git import git_root
 from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
 if TYPE_CHECKING:  # annotation only: the hook path reads settings without loading the x-ray records
+    from reporails_cli.core.platform.config.run_context import RunContext
     from reporails_cli.core.platform.dto.xray_sources import ArtifactScope
 
 logger = logging.getLogger(__name__)
@@ -290,7 +291,7 @@ def claude_cleanup_period_days(project_root: Path | None = None) -> int | None:
     return _last_set(_precedence_files(_settings_patterns(), project_root), _cleanup_days_value)
 
 
-def claude_synced_account_folder() -> str | None:
+def claude_synced_account_folder(run: RunContext) -> str | None:
     """The name of the folder under `~/.claude/skills/synced/` that holds the skills synced from the signed-in
     claude.ai account, `<organizationUuid>_<accountUuid>`; None when `~/.claude.json` names no signed-in account.
 
@@ -300,29 +301,21 @@ def claude_synced_account_folder() -> str | None:
     the session lists.
     """
     for path in _expand(_scope_patterns("mcp").get("user", []), None):
-        folder = _account_folder(path)
+        folder = _account_folder(run, path)
         if folder is not None:
             return folder
     return None
 
 
-# The account folder each `~/.claude.json` named when last read, with the file's modification time and size then.
-_account_folders: dict[str, tuple[tuple[int, int], str | None]] = {}
-
-
-def _account_folder(path: Path) -> str | None:
-    """The account folder the file at `path` names; the file is parsed again only when its modification time or
-    size changed."""
-    stat = path.stat()
-    stamp = (stat.st_mtime_ns, stat.st_size)
-    cached = _account_folders.get(str(path))
-    if cached is not None and cached[0] == stamp:
-        return cached[1]
+def _account_folder(run: RunContext, path: Path) -> str | None:
+    """The account folder the file at `path` names; the run parses the file once per path as written."""
+    if path in run.claude_accounts:
+        return run.claude_accounts[path]
     account = as_object(_read_json(path).get("oauthAccount"))
     organization, uuid = account.get("organizationUuid"), account.get("accountUuid")
     named = isinstance(organization, str) and isinstance(uuid, str) and organization and uuid
     folder = f"{organization}_{uuid}" if named else None
-    _account_folders[str(path)] = (stamp, folder)
+    run.claude_accounts[path] = folder
     return folder
 
 

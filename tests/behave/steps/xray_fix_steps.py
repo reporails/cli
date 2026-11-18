@@ -94,7 +94,22 @@ def _fourteen_tools(view: dict) -> None:
             n += 1
 
 
+def _short_run(view: dict) -> None:
+    node = _node(view, "a4")
+    node["end"] = node["start"] + 4.0
+    edge = next(e for e in view["edges"] if e["to"] == "a4")
+    edge["out_t"], edge["back_t"] = node["start"] - 1.5, node["end"]
+
+
+def _idle_start(view: dict) -> None:
+    main = next(t for t in view["track"] if t["node"] == "main")
+    main["calls"] = [c for c in main["calls"] if c["t"] >= 60.0]
+    main["breaks"] = [{"start": 0.0, "end": 60.0}, {"start": 1250.0, "end": 1500.0}, *main["breaks"]]
+
+
 CHANGES = {
+    "the main agent was idle for its first minute": _idle_start,
+    "the reviewer subagent ran for only four seconds": _short_run,
     "its calls used fourteen tools": _fourteen_tools,
     "the first subagent has no replies": _no_replies,
     "a source id holds a line break": _line_break_id,

@@ -14,22 +14,29 @@ from pathlib import Path
 
 import httpx
 
-from reporails_cli.core.platform.adapters.api_key import diagnostics_server_api_key
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER, notices_from_header
 from reporails_cli.core.platform.adapters.payload import encode_msgpack, mapped_paths, project_local, project_payload
 from reporails_cli.core.platform.adapters.rate_cooldown import active_cooldown, record_cooldown
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
-from reporails_cli.core.platform.config.bootstrap import env_flag
-from reporails_cli.core.platform.config.config import get_global_config
+from reporails_cli.core.platform.config.api_key import diagnostics_server_api_key
+from reporails_cli.core.platform.config.bootstrap import env_flag, offline_requested
 from reporails_cli.core.platform.config.credentials import (
-    env_tier,
     refresh_stored_tier,
     signed_in_recently,
 )
 from reporails_cli.core.platform.config.endpoints import DEFAULT_SERVER_URL, server_url
-from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_int, as_object, as_str, opt_int
+from reporails_cli.core.platform.contract.json_value import (
+    JsonObject,
+    JsonValue,
+    as_int,
+    as_object,
+    as_str,
+    opt_float,
+    opt_int,
+)
 from reporails_cli.core.platform.dto.diagnostics import (
     DEFAULT_RETRY_AFTER_S,
+    OFFLINE_REQUESTED,
     STILL_REACHING_MESSAGE,
     CrossFileCoordinate,
     CrossFileFinding,
@@ -48,6 +55,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
 )
 from reporails_cli.core.platform.dto.models import LocalEntry
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.dto.sign_in import Surface
 from reporails_cli.core.platform.policy.preflight import parse_error_body, preflight_oversized
 from reporails_cli.core.platform.utils.version import installed_version
 
@@ -60,6 +68,18 @@ def _reply_notices(response: httpx.Response) -> tuple[Notice, ...]:
     """The notices a reply carries in its notices header; none when it has no headers or no header."""
     headers = getattr(response, "headers", None) or {}
     return notices_from_header(headers.get(NOTICES_HEADER))
+
+
+def offline_reply() -> LintResponse | None:
+    """The reply standing in for the server when local checks only were asked for (no request is made); else None."""
+    if not offline_requested():
+        return None
+    return LintResponse(
+        funnel_error=FunnelError(
+            error=OFFLINE_REQUESTED,
+            message="Server analysis did not run (--offline): local checks only.",
+        )
+    )
 
 
 def _user_agent() -> str:
@@ -75,15 +95,6 @@ def _user_agent() -> str:
 # ──────────────────────────────────────────────────────────────────
 
 
-def _tier_from_config() -> str:
-    """Read tier from global config (~/.reporails/config.yml).
-
-    Returns "" only for genuine absence (no config / no tier). An unreadable
-    config raises ConfigUnreadableError.
-    """
-    return get_global_config().tier
-
-
 class AilsClient:
     """Diagnostics client — HTTP to the diagnostics server, local fallback.
 
@@ -91,10 +102,10 @@ class AilsClient:
     the default server. Returns None when the server is unreachable.
     """
 
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(self, tier: str, api_key: str | None = None) -> None:
         self.base_url = server_url()
         self.api_key = api_key or diagnostics_server_api_key()
-        self.tier = env_tier() or _tier_from_config() or "free"
+        self.tier = tier
 
     def lint(
         self,
@@ -113,9 +124,10 @@ class AilsClient:
         `local` holds one entry per reported local finding, and `structural_required`
         is the count of structural rule classes the project is subject to.
         Returns LintResponse — `.result` on 2xx, `.funnel_error` on a tier-aware 4xx or
-        local preflight rejection, both None on network failure.
+        local preflight rejection, both None on network failure. When local checks only were
+        asked for, no request is made and `.funnel_error` is `offline_requested`.
         """
-        return self._lint_remote(ruleset_map, local, structural_required, root)
+        return offline_reply() or self._lint_remote(ruleset_map, local, structural_required, root)
 
     def _lint_remote(
         self,
@@ -159,11 +171,11 @@ class AilsClient:
                 funnel_err.tier,
             )
             record_cooldown(self.base_url, self.api_key, funnel_err)
-            return self._early_rejection(funnel_err)
+            return self.early_rejection(funnel_err)
         logger.warning("Remote diagnostic returned HTTP %d (no parseable body)", status)
         return FunnelError(error="http_error", status=status, message=f"Diagnostics server returned HTTP {status}")
 
-    def _early_rejection(self, err: FunnelError) -> FunnelError:
+    def early_rejection(self, err: FunnelError) -> FunnelError:
         """`err`, with a "still reaching the server" message when a key rejected right after sign-in is the cause.
 
         Applies only to `invalid_api_key`: a malformed header is not a delay in the key arriving.
@@ -184,8 +196,11 @@ class AilsClient:
         if self._sent_stored_key():
             refresh_stored_tier(self.api_key, tier)
 
-    def diagnose_request(self, content_type: str) -> tuple[str, dict[str, str]]:
-        """The diagnose URL and request headers for this client, for a body of `content_type`."""
+    def diagnose_request(self, content_type: str, surface: Surface | None = None) -> tuple[str, dict[str, str]]:
+        """The diagnose URL and request headers for this client, for a body of `content_type`.
+
+        With a `surface`, the URL is the handshake's and the headers also name that surface.
+        """
         base = self.base_url
         ua = _user_agent()
         if env_flag("AILS_DEV_MODE"):
@@ -193,7 +208,9 @@ class AilsClient:
         headers = {"Content-Type": content_type, "User-Agent": ua}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        return f"{base}/v1/diagnose", headers
+        if surface is None:
+            return f"{base}/v1/diagnose", headers
+        return f"{base}/v1/handshake", {**headers, "X-Reporails-Surface": surface}
 
     def _post_payload(self, body: bytes) -> LintResponse:
         """Execute the HTTP round-trip; isolated so _lint_remote stays within return-count budget."""
@@ -243,11 +260,6 @@ def _section(data: JsonObject, key: str) -> list[JsonValue]:
     return raw
 
 
-def _score(value: JsonValue) -> float | None:
-    """`value` when it is a number (not a bool), else None."""
-    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
-
-
 def _diagnostic(d: JsonObject, fa_file: str) -> Diagnostic | None:
     """One `diagnostics[]` row of a file; None (with a warning) when a required field is missing or mistyped."""
     d_line, d_severity, d_rule = opt_int(d.get("line")), d.get("severity"), d.get("rule")
@@ -294,7 +306,7 @@ def _deserialize_per_file(report_data: JsonObject) -> tuple[FileAnalysis, ...]:
                 file=fa_file,
                 diagnostics=tuple(diagnostics),
                 stats=as_object(fa.get("stats", {})),
-                display_score=_score(fa.get("display_score")),
+                display_score=opt_float(fa.get("display_score")),
             )
         )
     return tuple(items)
@@ -353,7 +365,7 @@ def _deserialize_quality(report_data: JsonObject) -> QualityResult | None:
     q_data = report_data.get("quality")
     if not isinstance(q_data, dict):
         return None
-    return QualityResult(display_score=_score(q_data.get("display_score")))
+    return QualityResult(display_score=opt_float(q_data.get("display_score")))
 
 
 def _hint(h: JsonObject) -> Hint | None:

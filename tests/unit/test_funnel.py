@@ -489,25 +489,26 @@ class TestFormatCta:
 
     @pytest.mark.unit
     @pytest.mark.subsys_funnel
-    def test_anonymous_cta_attributes_the_cap_raise_to_pro_not_to_login(self, no_key: None) -> None:
-        # Anonymous and free share identical caps — signing in raises nothing.
-        # Both anonymous templates must name Pro as the actor that lifts the cap,
-        # with `ails login` offered only as the account step before it.
+    def test_anonymous_cta_names_login_then_pro_with_their_limits(self, no_key: None) -> None:
+        # Signing in raises the hourly limit to 100; Pro raises it to 1,200.
+        # The anonymous rate message names both steps in that order; the payload
+        # message (the 2 MB cap is the same signed in) names Pro as the raise.
         # Reddens if the copy returns to "Run `ails login` to raise it 40x".
         rate = format_cta(FunnelError(error="rate_limit_exceeded", tier="anonymous", limit=5))
         payload = format_cta(FunnelError(error="payload_too_large", tier="anonymous", limit=2 * 1024 * 1024))
+        assert payload.endswith("Sign in with `ails login`, then upgrade to Pro to raise it to 20 MB")
         for cta in (rate, payload):
             assert "upgrade to Pro" in cta
             assert "ails login" in cta
             assert cta.index("ails login") < cta.index("upgrade to Pro")
         # A `free` wire tier with no key held renders the same keyless copy —
-        # the caps are identical, so the wire label alone must not flip it.
+        # the held key decides, so the wire label alone must not flip it.
         free_wire = format_cta(FunnelError(error="rate_limit_exceeded", tier="free", limit=5))
         assert "ails login" in free_wire
-        # The gain is named as the number Pro gives (1,200/hr), not a multiplier.
-        assert rate.endswith("upgrade to Pro to raise it to 1,200/hr")
+        # Each gain is named as a number (100/hr signed in, 1,200/hr Pro), not a multiplier.
+        assert rate.endswith("Sign in with `ails login` to raise it to 100/hr, then upgrade to Pro for 1,200/hr")
         assert "40x" not in rate
-        assert "to raise it to 1,200/hr" in free_wire
+        assert "to raise it to 100/hr" in free_wire
 
     @pytest.mark.unit
     @pytest.mark.subsys_funnel
@@ -621,7 +622,7 @@ class TestFreeTierCta:
     @pytest.mark.subsys_funnel
     def test_held_key_not_wire_tier_selects_the_cta(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # SEAM: one wire tier (`free`), two callers. The CLI keys the CTA on the
-        # key it holds, because `anonymous` and `free` carry identical caps: a
+        # key it holds: a
         # keyed caller must never be sent to a login they already completed, and
         # a keyless caller cannot act on an upgrade link. Reddens if template
         # selection goes back to reading `err.tier` alone.

@@ -42,6 +42,8 @@ Charge = Literal["CONSTRAINT", "DIRECTIVE", "IMPERATIVE", "NEUTRAL", "AMBIGUOUS"
 NO_CHARGE: frozenset[Charge] = frozenset({"NEUTRAL", "AMBIGUOUS"})
 # How firmly an atom states its instruction.
 Modality = Literal["imperative", "direct", "absolute", "hedged", "none"]
+# The modalities an uncharged atom may carry: none, or hedged prose (`You might want to run the linter`).
+UNCHARGED_MODALITIES: frozenset[Modality] = frozenset({"none", "hedged"})
 # Whether an atom names a concrete construct.
 Specificity = Literal["named", "abstract"]
 # How a word of an inline segment is set.
@@ -52,7 +54,15 @@ InlineFormat = Literal["backtick", "bold", "italic", "plain"]
 # confidence) — the only part of `slots` that is stored. Slot TEXT (the
 # subject/predicate/object/scope strings) stays local to the run.
 SLOT_SPAN_FIELDS = ("subject_span", "predicate_span", "object_span", "scope_span")
-SLOT_COORD_FIELDS = (*SLOT_SPAN_FIELDS, "subject_conf", "predicate_conf", "object_conf", "scope_conf")
+SLOT_COORD_FIELDS = (
+    *SLOT_SPAN_FIELDS,
+    "subject_conf",
+    "predicate_conf",
+    "object_conf",
+    "scope_conf",
+    "aside_spans",
+    "code_ranges",
+)
 
 
 def _as_offset(v: JsonValue) -> tuple[int, int] | None:
@@ -62,6 +72,15 @@ def _as_offset(v: JsonValue) -> tuple[int, int] | None:
     if isinstance(v, (list, tuple)) and len(v) == 2 and isinstance(v[0], int) and isinstance(v[1], int):
         return (v[0], v[1])
     raise ValueError(f"a stored token offset is a pair of integers, got {v!r}")
+
+
+def _as_offsets(v: JsonValue) -> tuple[tuple[int, int], ...]:
+    """Stored token offsets come back from JSON as a list of pairs; restore the tuples."""
+    if v is None:
+        return ()
+    if not isinstance(v, (list, tuple)):
+        raise ValueError(f"stored token offsets are a list of pairs, got {v!r}")
+    return tuple(o for o in (_as_offset(item) for item in v) if o is not None)
 
 
 def _as_conf(v: JsonValue) -> float:
@@ -92,6 +111,17 @@ class AtomSlots(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel
     predicate_conf: float = 0.0
     object_conf: float = 0.0
     scope_conf: float = 0.0
+    # The word spans [start, end) of `plain_text` that illustrate or list members of what the instruction
+    # is about: a parenthesised run, or an example a cue opens (`such as`, `e.g.`, `, like`). Empty when none.
+    aside_spans: tuple[tuple[int, int], ...] = ()
+    # The character ranges [start, end) of `plain_text` that code spans fill. Empty when it has none.
+    code_ranges: tuple[tuple[int, int], ...] = ()
+
+    @property
+    def decoded(self) -> bool:
+        """Whether the slot model read any of the four slots (an atom it left alone carries only the
+        code ranges and asides its text holds)."""
+        return any(getattr(self, f) is not None for f in SLOT_SPAN_FIELDS)
 
     @classmethod
     def from_coords(cls, coords: JsonObject) -> AtomSlots:
@@ -105,7 +135,16 @@ class AtomSlots(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel
             predicate_conf=_as_conf(coords.get("predicate_conf", 0.0)),
             object_conf=_as_conf(coords.get("object_conf", 0.0)),
             scope_conf=_as_conf(coords.get("scope_conf", 0.0)),
+            aside_spans=_as_offsets(coords.get("aside_spans")),
+            code_ranges=_as_offsets(coords.get("code_ranges")),
         )
+
+
+class PlainPlacement(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
+    """Where each char of a line's plain text sits in the file line that holds it."""
+
+    line: str  # the file line
+    columns: tuple[int, ...]  # the column in `line` of each char of the plain text
 
 
 # A list item read as the object of the instruction that introduces it: it stays a line of its file
@@ -153,6 +192,8 @@ class Atom(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__in
     # table follows that paragraph in the file
     lead_in: bool = False
     plain_text: str = ""  # AST-stripped text for NLP/embedding
+    negative_heading: bool = False  # a heading atom that is a bare negative label (`## Don'ts`)
+    in_negative_section: bool = False  # a list item directly under a bare negative heading
     rule: str = ""  # which classifier rule fired (p1_negation_phrase, p3c_verb0_use, etc.)
     ambiguous: bool = False  # True when charge depends on verb-noun interpretation
     embedded_charge_markers: list[str] = Field(default_factory=list)  # opposite-direction markers
@@ -165,6 +206,23 @@ class Atom(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__in
     slots: AtomSlots | None = (
         None  # 5-tuple slots (subject/predicate/object/scope + compound), when available (dev-preview)
     )
+    # Where each char of `plain_text` sits in the file line, kept from the parse until the atom is cut
+    # into its instructions; the instructions take their own columns from it. Not carried past the cut,
+    # and never dumped; the columns each atom took from it are its own fields.
+    placement: PlainPlacement | None = Field(default=None, exclude=True)
+    # Where the atom sits in its file line, as the file wrote it: the columns [start, end) of its words,
+    # past the emphasis marks the mapper re-wraps around each atom. None for an atom that is not one run of
+    # its own line (a table row, a fence, an imported line, a sentence cut from a longer line).
+    source_columns: tuple[int, int] | None = None
+    # The source text between the instruction before it on the line and the atom: the mark (comma, semicolon,
+    # dash) that joined them and the space around it. "" on the first atom of a line, or when not placed.
+    joint: str = ""
+    # Whether the joint is a comma, semicolon or spaced dash rather than a joining word or the text between
+    # two atoms. False on the first atom of a line, or when not placed.
+    joint_mark: bool = False
+    # The source columns [start, end) of the hedge cue the atom opens with (`try to `, `perhaps, `), with
+    # the separator up to the next word; None when it opens with none, or when not placed.
+    hedge_cue: tuple[int, int] | None = None
 
 
 class FileRecord(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any

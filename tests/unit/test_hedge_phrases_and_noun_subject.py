@@ -15,7 +15,6 @@ from reporails_cli.core.mapper.charge_floors import _apply_hedged_should_floor
 from reporails_cli.core.mapper.classify import (
     best_to_sign,
     classify_charge,
-    has_hedge_cue,
     hedges_with_possible,
 )
 from reporails_cli.core.mapper.classify_phases import starts_noun_subject
@@ -226,7 +225,6 @@ def test_an_order_whose_first_clause_ends_before_a_verb_stays_an_instruction(tex
 )
 def test_possible_hedges_only_when_it_ends_the_clause(text: str, hedged: bool) -> None:
     assert hedges_with_possible(text) is hedged
-    assert has_hedge_cue(text) is hedged
     assert (classify_charge(text)[2] == "hedged") is hedged
 
 
@@ -255,8 +253,6 @@ def test_the_hedge_floor_and_cue_read_the_markdown_that_keeps_its_code_spans() -
     atom.plain_text = "Run make where possible."
     _apply_hedged_should_floor([atom])
     assert atom.modality == "imperative"
-    assert has_hedge_cue("Run `make where possible`.") is False
-    assert has_hedge_cue("Run it where possible.") is True
 
 
 @pytest.mark.unit

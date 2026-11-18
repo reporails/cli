@@ -9,6 +9,7 @@ from pathlib import Path
 
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessEntry, HarnessKind
 from reporails_cli.core.platform.dto.mcp import McpDeclaration
+from reporails_cli.core.platform.dto.transcript import SummarySpan
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary
 from reporails_cli.core.platform.dto.xray_compaction import XrayCompaction
 from reporails_cli.core.platform.dto.xray_cost import PriceList
@@ -17,6 +18,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     CallFacts,
     LoadEvent,
     NodeKind,
+    OutputSource,
     SourceKind,
     XrayDetail,
     XrayDown,
@@ -44,9 +46,9 @@ class Frame:
     mcp_off: frozenset[str] = frozenset()
     # The settings files that exist, which can declare hooks.
     settings_files: tuple[Path, ...] = ()
-    # The size in characters of each compaction summary of a node's transcript in order, by subagent id ("" for the
-    # main session).
-    summary_chars: Mapping[str, tuple[int, ...]] = field(default_factory=dict)
+    # The compaction summaries of a node's transcript by the id of the boundary row each follows, by subagent id
+    # ("" for the main session).
+    summaries: Mapping[str, Mapping[str, SummarySpan]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -251,13 +253,15 @@ class AgentWorld:
 
 @dataclass(frozen=True)
 class Handoff:
-    """What went down to a subagent and how it ended: the sizes, the launching call's time and the outcome."""
+    """What went down to a subagent and how it ended: the sizes, the launching call's time, the outcome and the source
+    the hand-back was sized from."""
 
     down: XrayDown
     back: int | None
     out_t: float
     back_t: float | None
     outcome: AgentOutcome
+    source: OutputSource | None
 
 
 @dataclass(frozen=True)

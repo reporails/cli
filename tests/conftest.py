@@ -77,7 +77,9 @@ def _isolate_home(
         from reporails_cli.core.mapper.daemon import is_daemon_running, stop_daemon
 
         if is_daemon_running():
-            stop_daemon()
+            from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
+
+            stop_daemon(UnixDaemonSocket())
     except Exception:
         pass
 
@@ -389,20 +391,64 @@ def create_temp_rule_file(tmp_path: Path, content: str, name: str = "test-rule.y
     return rule_path
 
 
+@pytest.fixture
+def server_reachable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Lets the test's own server stand-in be asked: the suite default runs every check offline."""
+    monkeypatch.delenv("AILS_OFFLINE", raising=False)
+
+
 def ails_client(base_url: str, *, tier: str | None = None, api_key: str | None = None) -> Any:
-    """An `AilsClient` built with the server URL (and tier) set in the environment, as a user sets them."""
+    """An `AilsClient` built with the server URL set in the environment, as a user sets it."""
     from reporails_cli.core.platform.adapters.api_client import AilsClient
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv("AILS_SERVER_URL", base_url)
-        if tier is not None:
-            mp.setenv("AILS_TIER", tier)
-        return AilsClient(api_key=api_key)
+        return AilsClient(tier or "free", api_key=api_key)
 
 
 def run_rule_files(yml_paths: list[Path], target: Path, instruction_files: list[Path] | None = None) -> dict[str, Any]:
     """Compile rule files and scan `target` with them, returning the SARIF-shaped result."""
+    from reporails_cli.core.discovery.exclusions import load_run_exclusions
     from reporails_cli.core.lint.regex import scan_ruleset
     from reporails_cli.core.lint.regex.compiler import compile_rules
+    from reporails_cli.core.platform.config.run_context import RunContext
 
-    return scan_ruleset(compile_rules(yml_paths), target, instruction_files)
+    exclusions = load_run_exclusions(RunContext(), target)
+    return scan_ruleset(compile_rules(yml_paths), target, exclusions, instruction_files)
+
+
+@pytest.fixture
+def use_agent_configs(tmp_path_factory: pytest.TempPathFactory):
+    """Factory: point the global config's `framework_path` at a rules root holding real agent configs.
+
+    `use({"claude": {"excludes": [...]}})` writes `<root>/claude/config.yml` (`core/` for the generic
+    agent) and returns the root. With `keep_bundled=True` the root also carries every bundled rule
+    folder (symlinked), so a test that resolves real rules keeps them. A pre-made `root` is used as is.
+    """
+    import yaml
+
+    from reporails_cli.core.platform.config.bundled import get_bundled_rules_path
+
+    def _use(configs: dict[str, dict[str, Any]], *, keep_bundled: bool = False, root: Path | None = None) -> Path:
+        root = root if root is not None else tmp_path_factory.mktemp("rules")
+        dirs = {("core" if agent == "generic" else agent): data for agent, data in configs.items()}
+        bundled = get_bundled_rules_path()
+        if keep_bundled and bundled is not None:
+            for entry in bundled.iterdir():
+                if entry.name not in dirs:
+                    (root / entry.name).symlink_to(entry)
+            for name in dirs:
+                source = bundled / name
+                (root / name).mkdir(exist_ok=True)
+                for child in source.iterdir() if source.is_dir() else ():
+                    if child.name != "config.yml":
+                        (root / name / child.name).symlink_to(child)
+        for name, data in dirs.items():
+            (root / name).mkdir(exist_ok=True)
+            (root / name / "config.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+        home = Path.home() / ".reporails"
+        home.mkdir(parents=True, exist_ok=True)
+        (home / "config.yml").write_text(yaml.safe_dump({"framework_path": str(root)}), encoding="utf-8")
+        return root
+
+    return _use

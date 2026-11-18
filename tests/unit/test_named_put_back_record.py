@@ -6,11 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.pipeline import check_one
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.pipeline import Discovered
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
+from tests.fake_models import no_models
 
 
 def _project(tmp_path: Path) -> Path:
@@ -28,7 +29,6 @@ def test_cli_files_named_in_a_left_out_folder_are_checked_when_nothing_else_is_f
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     project = _project(tmp_path)
-    clear_agent_cache()
     emptied: list[int] = []
     monkeypatch.setattr(check_flow, "_emit_empty_run", lambda state: emptied.append(1))
     inputs = CheckInputs(
@@ -45,7 +45,7 @@ def test_cli_files_named_in_a_left_out_folder_are_checked_when_nothing_else_is_f
         cwd=False,
         project_root=project,
     )
-    state = CheckState(inputs=inputs)
+    state = CheckState(run=RunContext(), inputs=inputs, models=no_models())
     state.targets.target = project
     state.targets.path_targets = {project / "packages" / "x" / "CLAUDE.md", project / "packages" / "y" / "CLAUDE.md"}
     assert check_flow._flow_scope(state)
@@ -58,7 +58,6 @@ def test_cli_files_named_in_a_left_out_folder_are_checked_when_nothing_else_is_f
 @pytest.mark.subsys_lint
 def test_cli_nothing_named_and_nothing_found_is_an_empty_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project = _project(tmp_path)
-    clear_agent_cache()
     emptied: list[int] = []
     monkeypatch.setattr(check_flow, "_emit_empty_run", lambda state: emptied.append(1))
     inputs = CheckInputs(
@@ -75,7 +74,7 @@ def test_cli_nothing_named_and_nothing_found_is_an_empty_run(tmp_path: Path, mon
         cwd=False,
         project_root=project,
     )
-    state = CheckState(inputs=inputs)
+    state = CheckState(run=RunContext(), inputs=inputs, models=no_models())
     state.targets.target = project
     assert not check_flow._flow_scope(state)
     assert emptied
@@ -87,9 +86,8 @@ def test_whole_project_run_with_a_named_file_keeps_the_left_out_folder_in_the_re
     project = _project(tmp_path)
     (project / ".ails" / "config.yml").write_text("exclude_dirs: [packages]\n", encoding="utf-8")
     (project / "CLAUDE.md").write_text("# Root\n\nAlways run the tests.\n", encoding="utf-8")
-    clear_agent_cache()
     named = frozenset({project / "packages" / "x" / "CLAUDE.md"})
-    discovered = check_one.discover_files(project, named=named)
+    discovered = check_one.discover_files(RunContext(), project, named=named)
     assert isinstance(discovered, Discovered)
     files = {f.relative_to(project).as_posix() for f in discovered.instruction_files}
     assert "packages/x/CLAUDE.md" in files

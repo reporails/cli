@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 import regex
 
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.regex.expect import emit_expect_findings, file_below_min_lines, file_matches_path_filter
 from reporails_cli.core.lint.regex.runner import (
     _compile_ruleset,
@@ -22,6 +23,7 @@ from reporails_cli.core.lint.regex.runner import (
     _resolve_scan_targets,
     _scan_all_targets,
 )
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.lint import CompiledCheck
 from reporails_cli.core.platform.utils.utils import strip_frontmatter
 
@@ -84,7 +86,7 @@ def test_path_filter_globstar_matches_rel_not_filename() -> None:
 @pytest.mark.subsys_lint
 def test_resolve_scan_targets_skips_nonexistent_instruction(tmp_path: Path) -> None:
     """A non-existent instruction file is not a scan target (L92 `and->or`)."""
-    result = _resolve_scan_targets(tmp_path, [tmp_path / "missing.md"])
+    result = _resolve_scan_targets(tmp_path, [tmp_path / "missing.md"], load_run_exclusions(RunContext(), tmp_path))
     assert result == []
 
 

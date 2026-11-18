@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.lint.content_checker import run_content_checks
+from reporails_cli.core.mapper.negative_headings import read_negative_headings
 from reporails_cli.core.platform.dto.models import Category, Check, FileMatch, Rule, RuleType, Severity
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap, RulesetSummary
 
@@ -91,7 +92,7 @@ def test_every_non_italic_prohibition_gets_its_own_finding() -> None:
 
 
 def _heading(line: int, text: str, charge_value: int) -> Atom:
-    return Atom(
+    atom = Atom(
         line=line,
         text=text,
         kind="heading",
@@ -101,6 +102,8 @@ def _heading(line: int, text: str, charge_value: int) -> Atom:
         specificity="abstract",
         file_path="CLAUDE.md",
     )
+    read_negative_headings([atom])
+    return atom
 
 
 def _heading_rule() -> Rule:
@@ -152,9 +155,9 @@ def test_shipped_heading_rule_reports_a_mapped_file_no_file_type_claims() -> Non
     """A file the mapper read but no file type claims still gets its charged headings reported."""
     from pathlib import Path
 
-    from reporails_cli.core.platform.adapters.registry import load_rules
     from reporails_cli.core.platform.dto.models import ClassifiedFile
     from reporails_cli.core.platform.policy.matching import is_wildcard_match
+    from reporails_cli.core.platform.rules.registry import load_rules
 
     rules = load_rules(rules_paths=[Path(__file__).parents[2] / "framework" / "rules"])
     rule = rules["CORE:S:0039"]

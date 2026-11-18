@@ -9,14 +9,18 @@ covered by `tests/integration/test_mcp_cli_equivalence.py`.
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
+from reporails_cli.core.discovery.exclusions import no_exclusions
 from reporails_cli.core.pipeline import check_one
+from reporails_cli.core.platform.adapters.server_lint import ServerLint
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.pipeline import Discovered, LeftOut
 from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.dto.results import ProjectConfig
 from reporails_cli.interfaces.mcp import tools, validate_targets
+from tests.fake_models import no_models
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_server]
 
@@ -37,7 +41,14 @@ def test_run_local_checks_threads_scoped_into_m_probes(monkeypatch, scoped):
         lambda *_a, **kw: captured.update(kw) or [],
     )
 
-    check_one._checks_over_pairs(Path("/proj"), [("claude", [Path("/proj/CLAUDE.md")])], None, scoped)
+    check_one._checks_over_pairs(
+        Path("/proj"),
+        [("claude", [Path("/proj/CLAUDE.md")])],
+        None,
+        scoped,
+        no_exclusions(Path("/proj")),
+        run=RunContext(),
+    )
 
     assert captured.get("scoped") is scoped
 
@@ -53,10 +64,12 @@ def test_run_pipeline_for_path_scopes_a_single_file_target(monkeypatch, tmp_path
 
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.check_one.discover_files",
-        lambda _target, single_file=None, named=frozenset(): Discovered([], "claude", [single_file], {}, LeftOut()),
+        lambda _run, _target, single_file=None, named=frozenset(): Discovered(
+            [], "claude", [single_file], {}, LeftOut(((), ()), no_exclusions(Path("/proj"))), ProjectConfig()
+        ),
     )
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.is_initialized", lambda: True)
-    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.model_refusal", lambda: None)
+    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.model_refusal", lambda _fetch: None)
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.build_map", lambda *_a, **_k: (None, None))
     monkeypatch.setattr(
         "reporails_cli.core.lint.rule_runner.run_m_probes",
@@ -68,7 +81,9 @@ def test_run_pipeline_for_path_scopes_a_single_file_target(monkeypatch, tmp_path
     )
     monkeypatch.setattr("reporails_cli.formatters.json.format_combined_result", lambda *_a, **_k: {"files": {}})
 
-    tools.run_pipeline_for_path(str(single_file), full=True, project_root=tmp_path)
+    tools.run_pipeline_for_path(
+        str(single_file), full=True, project_root=tmp_path, run=RunContext(), models=no_models()
+    )
 
     assert captured.get("scoped") is True
 
@@ -82,10 +97,12 @@ def test_run_pipeline_for_path_does_not_scope_a_directory_target(monkeypatch, tm
 
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.check_one.discover_files",
-        lambda _target, single_file=None, named=frozenset(): Discovered([], "claude", [claude_md], {}, LeftOut()),
+        lambda _run, _target, single_file=None, named=frozenset(): Discovered(
+            [], "claude", [claude_md], {}, LeftOut(((), ()), no_exclusions(Path("/proj"))), ProjectConfig()
+        ),
     )
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.is_initialized", lambda: True)
-    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.model_refusal", lambda: None)
+    monkeypatch.setattr("reporails_cli.core.pipeline.check_one.model_refusal", lambda _fetch: None)
     monkeypatch.setattr("reporails_cli.core.pipeline.check_one.build_map", lambda *_a, **_k: (None, None))
     monkeypatch.setattr(
         "reporails_cli.core.lint.rule_runner.run_m_probes",
@@ -97,7 +114,7 @@ def test_run_pipeline_for_path_does_not_scope_a_directory_target(monkeypatch, tm
     )
     monkeypatch.setattr("reporails_cli.formatters.json.format_combined_result", lambda *_a, **_k: {"files": {}})
 
-    tools.run_pipeline_for_path(str(tmp_path), full=True, project_root=tmp_path)
+    tools.run_pipeline_for_path(str(tmp_path), full=True, project_root=tmp_path, run=RunContext(), models=no_models())
 
     assert captured.get("scoped") is False
 
@@ -261,7 +278,19 @@ def test_assemble_mcp_result_surfaces_the_funnel_error(monkeypatch, tmp_path):
     )
 
     _result, funnel_error = check_one._assemble(
-        tmp_path, "claude", [], None, ([], [], []), rule_agents=(), not_evaluated=(), exclusions=None
+        RunContext(),
+        check_one._assemble_inputs(
+            tmp_path,
+            "claude",
+            [],
+            None,
+            ([], [], []),
+            project_config=RunContext().project_config(tmp_path),
+            rule_agents=(),
+            not_evaluated=(),
+        ),
+        no_exclusions(tmp_path),
+        ServerLint("free"),
     )
 
     assert funnel_error is err
@@ -280,25 +309,23 @@ def test_discover_files_folds_generic_scanned_imports(monkeypatch, tmp_path):
     claude_md.write_text("# Claude\n", encoding="utf-8")
     arch = tmp_path / "docs" / "arch.md"
 
-    monkeypatch.setattr(
-        "reporails_cli.core.pipeline.check_one.get_project_config",
-        lambda _t: SimpleNamespace(default_agent="", exclude_dirs=[], exclude_files=[], generic_scanning=True),
-    )
-    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.detect_agents", lambda _t: [])
+    (tmp_path / ".ails").mkdir()
+    (tmp_path / ".ails" / "config.yml").write_text("generic_scanning: true\n", encoding="utf-8")
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.detect_agents", lambda _r, _t: [])
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.mapping.resolve_agent_filters",
         lambda *_a, **_k: ("claude", False, False, ["AGENT"]),
     )
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.mapping.get_all_scannable_files",
-        lambda _t, agents=None: [claude_md],
+        lambda _r, _t, agents=None: [claude_md],
     )
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.check_one.apply_generic_scan",
         lambda *_a, **_k: ([arch], {"docs/arch.md": "generic"}),
     )
 
-    result = check_one.discover_files(tmp_path)
+    result = check_one.discover_files(RunContext(), tmp_path)
 
     assert isinstance(result, Discovered), result
     files, file_type_by_path = result.instruction_files, result.file_type_by_path
@@ -313,21 +340,19 @@ def test_discover_files_skips_generic_scan_fold_when_disabled(monkeypatch, tmp_p
     claude_md = tmp_path / "CLAUDE.md"
     claude_md.write_text("# Claude\n", encoding="utf-8")
 
-    monkeypatch.setattr(
-        "reporails_cli.core.pipeline.check_one.get_project_config",
-        lambda _t: SimpleNamespace(default_agent="", exclude_dirs=[], exclude_files=[], generic_scanning=False),
-    )
-    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.detect_agents", lambda _t: [])
+    (tmp_path / ".ails").mkdir()
+    (tmp_path / ".ails" / "config.yml").write_text("generic_scanning: false\n", encoding="utf-8")
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.detect_agents", lambda _r, _t: [])
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.mapping.resolve_agent_filters",
         lambda *_a, **_k: ("claude", False, False, ["AGENT"]),
     )
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.mapping.get_all_scannable_files",
-        lambda _t, agents=None: [claude_md],
+        lambda _r, _t, agents=None: [claude_md],
     )
 
-    result = check_one.discover_files(tmp_path)
+    result = check_one.discover_files(RunContext(), tmp_path)
 
     assert isinstance(result, Discovered), result
     files, file_type_by_path = result.instruction_files, result.file_type_by_path
@@ -487,3 +512,27 @@ def test_keep_target_locations_keeps_kept_locations_other_files(tmp_path):
     assert set(out["files"]) == {"a/SKILL.md", "a/ref.md"}
     assert out["cross_file"] == [payload["cross_file"][0]]
     assert out["cross_file_coordinates"] == [payload["cross_file_coordinates"][0]]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_validate_result_names_a_rule_file_written_between_two_calls(monkeypatch, tmp_path):
+    """A rule file written after a first `validate` is in the next call's result, with nothing cleared."""
+    monkeypatch.setenv("AILS_OFFLINE", "1")
+    monkeypatch.setattr(check_one, "is_initialized", lambda: True)
+    monkeypatch.setattr(check_one, "model_refusal", lambda _fetch: None)
+    monkeypatch.setattr(check_one, "build_map", lambda *_a, **_k: (None, None))
+    (tmp_path / "CLAUDE.md").write_text("# Project\n\nmaybe you could possibly consider perhaps running tests\n")
+
+    first, *_ = tools.run_pipeline_for_path(
+        str(tmp_path), full=True, project_root=tmp_path, run=RunContext(), models=no_models()
+    )
+    rules = tmp_path / ".claude" / "rules"
+    rules.mkdir(parents=True)
+    (rules / "style.md").write_text("# Style\n\nmaybe you could possibly consider perhaps running tests sometimes\n")
+    second, *_ = tools.run_pipeline_for_path(
+        str(tmp_path), full=True, project_root=tmp_path, run=RunContext(), models=no_models()
+    )
+
+    assert ".claude/rules/style.md" not in str(first)
+    assert ".claude/rules/style.md" in str(second)

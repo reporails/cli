@@ -84,3 +84,37 @@ jobs:
       # skip cleanly on the model-free runner.
       - name: Smoke tests
         run: uv run poe test_smoke
+
+  # The model folder is gitignored, so the `qa` job skips every `requires_model` test. This job gets the model
+  # through the cli's own first-use fetch (cached between runs, keyed on the manifest that pins the files) and
+  # fails when the model is absent, so it can never pass by skipping.
+  model-backed:
+    name: Model-backed integration tests (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        with:
+          version: "0.13.4"
+
+      - name: Install dependencies
+        run: uv sync --locked --python 3.13
+
+      - name: Restore the model cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.reporails/cache/models
+          key: ails-model-${{ runner.os }}-${{ hashFiles('src/reporails_cli/core/mapper/model_manifest.py') }}
+
+      - name: Fetch the model (cache miss)
+        run: uv run python -c "from reporails_cli.core.mapper.model_fetch import ensure_models_present; from reporails_cli.core.platform.adapters.http_get import http_get; print(ensure_models_present(http_get))"
+
+      - name: Require the model on disk and serve it to the test suite
+        run: |
+          uv run python -c "from reporails_cli.core.mapper.model_fetch import cache_models_dir, models_present; import sys; d = cache_models_dir(); print(d); sys.exit(0 if models_present(d) else 'FAIL: the model is not on disk after the fetch')"
+          # tests/conftest.py looks for the model in the in-tree folder only: point that folder at the fetched copy.
+          ln -s "$(uv run python -c 'from reporails_cli.core.mapper.model_fetch import cache_models_dir; print(cache_models_dir())')" src/reporails_cli/bundled/models
+
+      - name: Model-backed integration tests
+        run: uv run pytest tests/integration -m "requires_model and not slow" -q

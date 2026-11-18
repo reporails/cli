@@ -103,6 +103,80 @@ if (mode === 'opener' && ready) {
   out.afterEsc = await active();
 }
 
+if (mode === 'stripe' && ready) {
+  await toGraph(page);
+  await page.until(`!!document.querySelector('#canvas button.compact')`);
+  out.focused = await focus('#canvas button.compact');
+  out.tag = await page.ev(`document.activeElement.tagName`);
+  await countClicks();
+  await keys.enter();
+  await page.until(`!!document.querySelector('.pk-dialog')`);
+  out.clicks = await page.ev(`window.__clicks`);
+  out.title = await page.ev(`document.querySelector('.pk-dialog').getAttribute('aria-labelledby')`);
+  out.open = await active();
+  out.inert = await page.ev(`document.querySelector('.canvaswrap').inert === true`);
+  await keys.esc();
+  await sleep(300);
+  out.closed = await page.ev(`!document.querySelector('.pk-dialog')`);
+  out.afterEsc = await page.ev(`(() => { const a = document.activeElement; return { cls: String(a.className), tag: a.tagName, peek: a.dataset.peek || null, inCanvas: !!a.closest('.canvaswrap') }; })()`);
+}
+
+// Puts a time label, a stretch bar and the Tool calls link into the first compaction stripe's band and asks the page
+// which element a pointer at each of them reaches, and at the stripe's own label.
+if (mode === 'stripe-layers' && ready) {
+  await toGraph(page);
+  await page.until(`!!document.querySelector('#canvas button.compact')`);
+  out.layers = await page.ev(`(() => {
+    const band = document.querySelector('#canvas button.compact');
+    const cv = band.parentElement, box = band.getBoundingClientRect(), origin = cv.getBoundingClientRect();
+    const place = (cls, tag, left, text) => {
+      const e = document.createElement(tag);
+      e.className = cls; e.textContent = text; e.style.left = left + 'px'; e.style.top = (box.top - origin.top + 2) + 'px';
+      if (cls === 'stretch') e.style.height = '10px';
+      cv.append(e);
+      return e;
+    };
+    const centre = e => { const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+    const topAt = e => { const [x, y] = centre(e); return document.elementFromPoint(x, y); };
+    const tick = place('tick', 'div', 2, '10:00:00'), bar = place('stretch', 'div', 40, ''), link = place('callslink', 'button', 2, 'open');
+    const label = band.querySelector('span');
+    const labelTop = topAt(label);
+    return {
+      tick: topAt(tick) === tick, stretch: topAt(bar) === bar, link: topAt(link) === link,
+      label: !!labelTop && band.contains(labelTop), bandBox: [box.width, box.height],
+    };
+  })()`);
+  // A pointer on the band to the right of its label, where no card sits over it, reaches the stripe itself.
+  out.awayFromLabel = await page.ev(`(() => {
+    const band = document.querySelector('#canvas button.compact'), r = band.getBoundingClientRect();
+    const from = band.querySelector('span').getBoundingClientRect().right + 20, y = r.top + r.height / 2;
+    let hit = null;
+    for (let x = from; x < r.right - 2 && !(hit === band); x += 6) hit = document.elementFromPoint(x, y);
+    if (hit === band) band.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return { reached: hit === band, opened: !!document.querySelector('.pk-dialog') };
+  })()`);
+}
+
+// Scrolls the page to its end, opens a compaction's details window and fills it with more text than the screen holds,
+// then reports where the window sits against the screen and the overlay.
+if (mode === 'tall-window' && ready) {
+  await toGraph(page);
+  await page.until(`!!document.querySelector('#canvas button.compact')`);
+  const toEnd = () => page.ev(`(window.scrollTo(0, document.documentElement.scrollHeight), document.scrollingElement.scrollTop)`);
+  await toEnd();
+  await page.ev(`document.querySelector('#canvas button.compact').click(); 0`);
+  await page.until(`!!document.querySelector('.pk-dialog')`);
+  await page.ev(`(() => { const d = document.createElement('div'); d.style.height = '3000px'; d.textContent = 'tall'; document.querySelector('.pk-main').append(d); })()`);
+  await sleep(200);
+  await toEnd();
+  await sleep(300);
+  out.fit = await page.ev(`(() => {
+    const d = document.querySelector('.pk-dialog').getBoundingClientRect(), o = document.querySelector('#overlay').getBoundingClientRect();
+    const x = document.querySelector('.pk-x').getBoundingClientRect(), b = document.querySelector('.pk-body');
+    return { top: d.top, bottom: d.bottom, overlayBottom: o.bottom, viewport: innerHeight, closeTop: x.top, closeBottom: x.bottom, scrollY: scrollY, scrolls: b.scrollHeight > b.clientHeight };
+  })()`);
+}
+
 if (mode === 'space' && ready) {
   await toGraph(page);
   await page.until(`!!document.querySelector('#canvas .card[data-node]:not(.top)')`);
@@ -201,6 +275,21 @@ if (mode === 'borders' && ready) {
     const sel = (name, e) => { const cs = getComputedStyle(e), sh = cs.boxShadow; const m = sh.match(/rgba?\\([^)]+\\)/); const bg = over(parse(cs.backgroundColor), backdrop(e)); return { name, shadow: sh, ratio: m && sh !== 'none' ? ratio(over(parse(m[0]), bg), bg) : 0 }; };
     res.push(sel('tab', document.querySelector('.tab[aria-selected="true"]')), sel('seg-on', document.querySelector('.seg[aria-pressed="true"]')));
     return res;
+  })()`);
+}
+
+if (mode === 'chip-fill' && ready) {
+  await toGraph(page);
+  await page.until(`!!document.querySelector('#canvas .card:not(.dim) .chip.lit')`);
+  out.chips = await page.ev(`(() => {
+    const parse = c => { const m = c.match(/rgba?\\(([^)]+)\\)/); const p = m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
+    const over = (top, under) => ({ r: top.r * top.a + under.r * (1 - top.a), g: top.g * top.a + under.g * (1 - top.a), b: top.b * top.a + under.b * (1 - top.a), a: 1 });
+    const lum = c => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); };
+    const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+    const card = document.querySelector('#canvas .card:not(.dim):not(.sel) .chip.lit').closest('.card');
+    const cardBg = over(parse(getComputedStyle(card).backgroundColor), { r: 13, g: 14, b: 16, a: 1 });
+    const on = card.querySelector('.chip.lit'), off = document.querySelector('#canvas .card:not(.dim) .chip:not(.lit):not(.find):not(.hot)');
+    return { onFill: ratio(over(parse(getComputedStyle(on).backgroundColor), cardBg), cardBg), offFill: off ? parse(getComputedStyle(off).backgroundColor).a : null };
   })()`);
 }
 

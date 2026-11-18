@@ -20,3 +20,8 @@ def read_lines(path: Path) -> tuple[list[str], list[str]]:
     """The file's lines and the ending each was written with (see `split_lines`)."""
     with path.open(encoding="utf-8", newline="") as handle:
         return split_lines(handle.read())
+
+
+def write_bytes(path: Path, data: bytes) -> None:
+    """Write `data` as the whole file."""
+    path.write_bytes(data)

@@ -10,11 +10,20 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 from rich.console import Console
 
-from reporails_cli.core.platform.adapters.api_key import has_api_key
-from reporails_cli.core.platform.dto.diagnostics import KNOWN_ERRORS, UNENTITLED_TIERS, FindingItem, FunnelError, Notice
+from reporails_cli.core.platform.config.api_key import has_api_key
+from reporails_cli.core.platform.dto.diagnostics import (
+    KNOWN_ERRORS,
+    OFFLINE_REQUESTED,
+    UNENTITLED_TIERS,
+    FindingItem,
+    FunnelError,
+    Notice,
+)
+from reporails_cli.core.platform.dto.heal import HealRegression
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
@@ -41,6 +50,7 @@ from reporails_cli.formatters.text.file_groups import (
     build_regime_by_file,
 )
 from reporails_cli.formatters.text.funnel_cta import _short_url_label, format_bug_report_url, format_cta, upgrade_link
+from reporails_cli.formatters.text.heal_regressions import heal_regression_lines, print_heal_regressions
 from reporails_cli.formatters.text.health import SurfaceHealth
 from reporails_cli.formatters.text.item_scorecard import compute_item_scores
 from reporails_cli.formatters.text.not_evaluated import not_evaluated_lines, print_not_evaluated
@@ -300,6 +310,14 @@ def _print_notices(notices: Sequence[Notice], ascii_mode: bool, *, blank_before:
     print_notices(console, notices, ascii_mode=ascii_mode)
 
 
+class TextExtras(NamedTuple):
+    """What a text run also shows: the generic-scan file types, and the healed files that slipped since the heal."""
+
+    file_type_by_path: dict[str, str] | None = None
+    heal_regressions: tuple[HealRegression, ...] = ()
+    aliases: dict[Path, list[Path]] | None = None
+
+
 def print_text_result(
     result: CombinedResult,
     elapsed_ms: float,
@@ -309,7 +327,7 @@ def print_text_result(
     ruleset_map: RulesetMap | None = None,
     funnel_error: FunnelError | None = None,
     project_root: Path | None = None,
-    file_type_by_path: dict[str, str] | None = None,
+    extras: TextExtras | None = None,
 ) -> None:
     """Print compact text output: files sorted worst-first, aggregated counts, scorecard at bottom.
 
@@ -322,6 +340,7 @@ def print_text_result(
     instead of falling back to the neutral view. Defaults to cwd.
     """
 
+    extras = extras or TextExtras()
     root = project_root or Path.cwd()
     all_files, scope = _collect_files_and_scope(result, ruleset_map, root)
     has_quality = result.quality is not None
@@ -334,6 +353,7 @@ def print_text_result(
         console.print(f"  {'ok' if ascii_mode else chr(0x2713)}  No findings.")
         render_excluded_line(result, scored=False)
         print_not_evaluated(console, result.omissions.not_evaluated)
+        print_heal_regressions(console, extras.heal_regressions, ascii_mode)
         _print_notices(result.reply.notices, ascii_mode, blank_before=not _render_funnel_cta(funnel_error))
         return
 
@@ -344,12 +364,16 @@ def print_text_result(
         verbose=verbose,
         summary=_SummaryInputs(scope=scope, tier=tier, elapsed_ms=elapsed_ms),
         project_root=root,
-        file_type_by_path=file_type_by_path or {},
+        extras=extras,
         skill_of=skill_of,
     )
     print_not_evaluated(console, result.omissions.not_evaluated)
-    # The scorecard ends on a blank line; the not-evaluated lines, when printed, end the output without one.
-    ends_blank = not not_evaluated_lines(result.omissions.not_evaluated)
+    print_heal_regressions(console, extras.heal_regressions, ascii_mode)
+    # The scorecard ends on a blank line; the lines above, when printed, end the output without one.
+    ends_blank = not (
+        not_evaluated_lines(result.omissions.not_evaluated)
+        or heal_regression_lines(extras.heal_regressions, ascii_mode)
+    )
     _print_notices(result.reply.notices, ascii_mode, blank_before=not (_render_funnel_cta(funnel_error) or ends_blank))
 
 
@@ -384,6 +408,7 @@ def _build_card_context(
     verbose: bool,
     file_type_by_path: dict[str, str],
     skill_of: dict[str, str] | None,
+    aliases: dict[Path, list[Path]],
 ) -> tuple[CardContext, list[SurfaceHealth]]:
     """The per-run card context and the per-surface scores its group headers quote."""
     element_of, partners_of = _element_lookups(result, ruleset_map, project_root)
@@ -392,7 +417,7 @@ def _build_card_context(
         if ruleset_map is not None and ruleset_map.atoms
         else {}
     )
-    aliases_by_file = build_aliases_by_file(project_root, result)
+    aliases_by_file = build_aliases_by_file(project_root, result, aliases)
     surfaces = compute_surface_scores(
         result,
         ruleset_map=ruleset_map,
@@ -425,7 +450,7 @@ def _render_findings_and_scorecard(
     verbose: bool,
     summary: _SummaryInputs,
     project_root: Path,
-    file_type_by_path: dict[str, str],
+    extras: TextExtras,
     skill_of: dict[str, str] | None = None,
 ) -> None:
     """Render file groups, cross-file coordinates, and the bottom scorecard.
@@ -437,14 +462,16 @@ def _render_findings_and_scorecard(
     """
 
     skill_of = skill_lookup(ruleset_map, project_root) if skill_of is None else skill_of
+    file_type_by_path = extras.file_type_by_path or {}
     ctx, surfaces = _build_card_context(
         result,
         ruleset_map,
         project_root,
         ascii_mode=ascii_mode,
         verbose=verbose,
-        file_type_by_path=file_type_by_path,
+        file_type_by_path=extras.file_type_by_path or {},
         skill_of=skill_of,
+        aliases=extras.aliases or {},
     )
     groups = build_file_groups(result, file_type_by_path, project_root, skill_of, ctx.aliases_by_file)
     _render_file_groups(groups, ctx)
@@ -482,6 +509,11 @@ def _render_funnel_cta(funnel_error: FunnelError | None) -> bool:
     cta = format_cta(funnel_error)
     if not cta:
         return False
+    if funnel_error.error == OFFLINE_REQUESTED:
+        console.print()
+        console.print(f"  [dim]{cta}[/dim]")
+        console.print()
+        return True
     if funnel_error.retryable:
         console.print()
         console.print(f"  [yellow]⚠[/yellow]  {cta}")

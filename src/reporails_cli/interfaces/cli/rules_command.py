@@ -15,8 +15,9 @@ from pathlib import Path
 import typer
 
 from reporails_cli.core.discovery.agents import detect_agents
-from reporails_cli.core.platform.adapters.rules_query import list_known_agents
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
+from reporails_cli.core.platform.rules.rules_query import list_known_agents
 from reporails_cli.interfaces.cli.helpers import console
 from reporails_cli.interfaces.cli.output_formats import RULES_LIST_FORMATS, RULES_PLAIN_FORMATS
 from reporails_cli.interfaces.cli.typer_app import HELP_CONTEXT_SETTINGS, app
@@ -47,12 +48,12 @@ def _require_known_capabilities(capabilities: list[str] | None, agent: str | Non
     )
 
     agents = [agent] if agent else list_known_agents()
-    unknown = [c for c in capabilities if not any(canonicalize_capability(c, a) for a in agents)]
+    unknown = [c for c in capabilities if not any(canonicalize_capability(c, a, None) for a in agents)]
     if not unknown:
         return
     known = set(load_capability_vocabulary().virtual)
     for a in agents:
-        known.update(available_capabilities(a))
+        known.update(available_capabilities(a, None))
     scope = f"agent '{agent}'" if agent else "any agent"
     names = ", ".join(repr(c) for c in unknown)
     console.print(
@@ -112,7 +113,7 @@ def _capability_agent(agent: str | None) -> str | None:
     """The agent whose capabilities to list: the one named, else the first detected in the cwd."""
     if agent:
         return agent
-    detected = detect_agents(Path.cwd())
+    detected = detect_agents(RunContext(), Path.cwd())
     return detected[0].agent_type.id if detected else None
 
 
@@ -125,11 +126,16 @@ def _capability_resolution(agent: str) -> tuple[list[str], dict[str, str], dict[
         available_capabilities,
         list_capability_targets,
     )
+    from reporails_cli.core.discovery.exclusions import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        load_run_exclusions,
+    )
 
-    caps = sorted(available_capabilities(agent, Path.cwd()))
+    run = RunContext()
+    caps = sorted(available_capabilities(agent, run.project_config(Path.cwd())))
     decls = {d.name: d for d in load_file_types(agent)}
     patterns = {c: (decls[c].patterns[0] if decls.get(c) and decls[c].patterns else "") for c in caps}
-    found = {c: len(list_capability_targets(agent, c, Path.cwd(), None)) for c in caps}
+    exclusions = load_run_exclusions(run, Path.cwd())
+    found = {c: len(list_capability_targets(run, agent, c, Path.cwd(), exclusions)) for c in caps}
     return caps, patterns, found
 
 

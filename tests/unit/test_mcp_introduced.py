@@ -15,6 +15,7 @@ import pytest
 
 from reporails_cli.interfaces.mcp import remedy_brief
 from reporails_cli.interfaces.mcp.preservation import with_preservation
+from tests.fake_models import no_models
 
 
 def _payload(*rules: str) -> dict[str, Any]:
@@ -32,7 +33,7 @@ def _brief(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *rules: str) -> Path
         "order": 1, "element": "CLAUDE.md", "kind": "main", "loading": "session_start", "files": ["CLAUDE.md"],
         "importance": "gate_mover", "findings": [], "relations": [],
     }  # fmt: skip
-    reply = remedy_brief.build_remedy_brief(location, tmp_path)
+    reply = remedy_brief.build_remedy_brief(location, tmp_path, preservation_contract="stand-in", models=no_models())
     assert "error" not in reply
     return file
 
@@ -59,3 +60,17 @@ def test_introduced_is_zero_when_the_rewrite_adds_nothing(monkeypatch, tmp_path:
     file = _brief(monkeypatch, tmp_path, "CORE:C:0042", "CORE:C:0049")
 
     assert _after(file, tmp_path, "CORE:C:0042")["introduced"] == 0
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_the_file_reply_carries_accepted_and_a_lower_score_refuses_it(monkeypatch, tmp_path: Path) -> None:
+    file = _brief(monkeypatch, tmp_path)
+    fake_map = SimpleNamespace(atoms=(), files=())
+
+    kept = with_preservation(_payload(), file, fake_map, 5.0, tmp_path)
+    lowered = with_preservation(_payload(), file, fake_map, 1.0, tmp_path)
+
+    assert kept["preservation"]["ok"] is True
+    assert kept["accepted"] is True
+    assert lowered["accepted"] is False

@@ -1,7 +1,7 @@
 // The details renderers for a source, a built-in item, a task prompt, the peak context and the estimated cost.
 import { el, nk, err } from '../dom.js';
 import { clock, costEst, exclusionNote, k1, MCP_STATES, plural, tk, usd } from '../format.js';
-import { briefUrl, hookOutputUrl, peekUrl, systemUrl } from '../api.js';
+import { briefUrl, hookOutputUrl, outputUrl, peekUrl, systemUrl } from '../api.js';
 import { textBlock } from './textblock.js';
 import { hashFor } from '../state.js';
 import { bandColour } from '../geometry.js';
@@ -215,25 +215,53 @@ registerPeek('measured', (env, id) => {
   };
 });
 
-registerPeek('task', (env, id) => {
+// A subagent's details: its parent's label, the Show-in-graph action and the side facts are shared; `build(node, parent)`
+// gives the chip, kicker, tags, main sections, side facts and side note.
+function handoffPeek(env, id, build) {
   const { ix } = env;
   const node = ix.nodes.get(id);
   if (!node || node.parent === null) return null;
   const parent = ix.nodes.get(node.parent);
-  const row = ((node.detail.in_context || {}).rows || []).find(r => r.key === 'task');
-  const body = node.detail.brief ? fetched(env.text('brief:' + id, briefUrl(id)), e => e.text) : nk('The prompt text was not recorded.');
-  const writer = parent ? nodeLabel(parent) : 'its parent';
+  const label = parent ? nodeLabel(parent) : 'its parent';
   const b = action('Show in graph', {});
   b.dataset.showInGraph = id;
+  const p = build(node, label);
+  return { chip: p.chip, kicker: p.kicker, title: node.name, tags: p.tags, main: p.main, side: [kv(p.facts), nk(p.note)], actions: [b] };
+}
+
+registerPeek('task', (env, id) => handoffPeek(env, id, (node, writer) => {
+  const row = ((node.detail.in_context || {}).rows || []).find(r => r.key === 'task');
+  const body = node.detail.brief ? fetched(env.text('brief:' + id, briefUrl(id)), e => e.text) : nk('The prompt text was not recorded.');
   return {
-    chip: '✎', kicker: `Task prompt · written by ${writer}`, title: node.name,
+    chip: '✎', kicker: `Task prompt · written by ${writer}`,
     tags: row ? [`${tk(row.tokens_est, true)} · estimated`] : [],
     main: [section('The prompt', body)],
-    side: [kv([['Written by', writer], ['Sent at', clock(node.start)], ['To', `${node.name} · ${typeOf(ix, node).label}`]]),
-      nk('What the parent asked this subagent to do. With its definition and inherited instructions this is everything it was told.')],
-    actions: [b],
+    facts: [['Written by', writer], ['Sent at', clock(node.start)], ['To', `${node.name} · ${typeOf(env.ix, node).label}`]],
+    note: 'What the parent asked this subagent to do. With its definition and inherited instructions this is everything it was told.',
   };
-});
+}));
+
+// What the page calls each source of a subagent's output text.
+const OUTPUT_SOURCES = { handback: 'Hand-back message', reply: 'Last reply', result: 'Result the parent received' };
+
+registerPeek('output', (env, id) => handoffPeek(env, id, (node, reader) => {
+  const source = node.detail.output_source;
+  const body = source ? fetched(env.text('output:' + id, outputUrl(id)), e => e.text) : nk('No output was recorded for this subagent.');
+  if (node.detail.outcome && node.detail.outcome !== 'returned') return {
+    chip: '↑', kicker: `Result the parent received · from ${node.name}`,
+    tags: node.detail.back_tokens_est != null ? [`${tk(node.detail.back_tokens_est, true)} · estimated`] : [],
+    main: [section('What the parent received', body)],
+    facts: [['Received by', reader], ['From', `${node.name} · ${typeOf(env.ix, node).label}`]],
+    note: 'The result the agent that launched it received when it failed.',
+  };
+  return {
+    chip: '↑', kicker: source ? `${OUTPUT_SOURCES[source]} · handed back to ${reader}` : `Output · handed back to ${reader}`,
+    tags: node.detail.back_tokens_est != null ? [`${tk(node.detail.back_tokens_est, true)} · estimated`] : [],
+    main: [section('What it handed back', body)],
+    facts: [['Handed back to', reader], ['From', `${node.name} · ${typeOf(env.ix, node).label}`]],
+    note: 'The text this subagent returned to the agent that launched it.',
+  };
+}));
 
 function bar(values, total) {
   const box = el('div', 'stack');

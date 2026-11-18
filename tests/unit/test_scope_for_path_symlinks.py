@@ -6,11 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.pipeline import check_one
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.pipeline import Scope
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_server]
+
+
+def _no_fetch(url: str, *, headers: object, timeout: float, follow_redirects: bool) -> object:
+    raise AssertionError(f"the model host must not be reached: {url}")
 
 
 def test_scope_for_a_folder_keeps_a_symlinked_instruction_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -24,11 +28,10 @@ def test_scope_for_a_folder_keeps_a_symlinked_instruction_file(tmp_path: Path, m
     )
     (agents / "reviewer.md").symlink_to(outside)
     (agents / "own.md").write_text("---\nname: own\ndescription: Own agent.\n---\n\nDo it.\n", encoding="utf-8")
-    clear_agent_cache()
     monkeypatch.setattr(check_one, "is_initialized", lambda: True)
-    monkeypatch.setattr(check_one, "model_refusal", lambda: None)
+    monkeypatch.setattr(check_one, "model_refusal", lambda _fetch: None)
 
-    scope = check_one.scope_for_path(str(agents), project)
+    scope = check_one.scope_for_path(str(agents), project, run=RunContext(), fetch=_no_fetch)
 
     assert isinstance(scope, Scope)
     assert {f.name for f in scope.instruction_files} == {"reviewer.md", "own.md"}
@@ -44,11 +47,10 @@ def test_scope_for_a_linked_file_named_in_the_project_stays_in_that_project(
     outside.parent.mkdir()
     outside.write_text("---\npaths: ['src/**']\n---\n\n# Style\n\nUse tabs.\n", encoding="utf-8")
     (rules / "style.md").symlink_to(outside)
-    clear_agent_cache()
     monkeypatch.setattr(check_one, "is_initialized", lambda: True)
-    monkeypatch.setattr(check_one, "model_refusal", lambda: None)
+    monkeypatch.setattr(check_one, "model_refusal", lambda _fetch: None)
 
-    scope = check_one.scope_for_path(str(rules / "style.md"), project)
+    scope = check_one.scope_for_path(str(rules / "style.md"), project, run=RunContext(), fetch=_no_fetch)
 
     assert isinstance(scope, Scope)
     assert scope.scan_root == project

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reporails_cli.core.platform.adapters.rules_query import load_all_rules
+from reporails_cli.core.platform.rules.rules_query import load_all_rules
 
 
 def _explain_rules_paths(rules: list[str] | None) -> list[Path] | None:

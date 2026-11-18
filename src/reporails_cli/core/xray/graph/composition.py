@@ -25,7 +25,7 @@ from reporails_cli.core.platform.dto.xray_build import (
     HarnessSlot,
     SourceTable,
 )
-from reporails_cli.core.platform.dto.xray_compaction import HELD_FILE_STATES, XrayCompaction
+from reporails_cli.core.platform.dto.xray_compaction import IN_CONTEXT_FILE_STATES, XrayCompaction
 from reporails_cli.core.platform.dto.xray_composition import (
     COMPOSITION_KEYS,
     ESTIMATED_KEYS,
@@ -62,13 +62,13 @@ _LOAD_CATEGORY: dict[SourceKind, CompositionKey] = {
 # (time, category, tokens, source id or None): a size that enters the context at a time and stays.
 type Added = tuple[float, CompositionKey, int, str | None]
 # (time, category, tokens, left): conversation and tool-result sizes; a category of None is a compaction, and `left`
-# holds the sources it takes out of the context (loaded files that did not survive it).
+# holds the sources it takes out of the context (loaded files it did not put back).
 type Spoken = tuple[float, CompositionKey | None, int, frozenset[str]]
 
 
 def _left(compaction: XrayCompaction) -> frozenset[str]:
-    """The sources `compaction` took out of the agent's context: its files that are dropped."""
-    return frozenset(item.source for item in compaction.files if item.state not in HELD_FILE_STATES)
+    """The sources `compaction` took out of the agent's context: its files whose content it did not put back."""
+    return frozenset(item.source for item in compaction.files if item.state not in IN_CONTEXT_FILE_STATES)
 
 
 def _left_between(own: AgentRecords, source: str, after: float, before: float) -> bool:
@@ -83,13 +83,13 @@ def _load_deltas(own: AgentRecords, sources: SourceTable) -> list[Added]:
     for load in sorted((item for item in own.loads if item.t is not None), key=lambda item: item.t or 0.0):
         entry = sources.get(load.source)
         category = None if entry is None else _LOAD_CATEGORY.get(entry.kind)
-        if category is None or load.t is None:
+        if category is None or load.t is None or load.tokens_est is None:
             continue
         if category != "hook_notes":
             if load.source in seen and not _left_between(own, load.source, seen[load.source], load.t):
                 continue
             seen[load.source] = load.t
-        found.append((load.t, category, load.tokens_est or 0, load.source))
+        found.append((load.t, category, load.tokens_est, load.source))
     return found
 
 

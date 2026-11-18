@@ -109,6 +109,12 @@ def test_rules(opts: RulesTestOptions) -> None:
     from reporails_cli.core.lint.harness import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         run_harness,
     )
+    from reporails_cli.core.mapper.models import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        Models,
+    )
+    from reporails_cli.core.platform.adapters.http_get import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        http_get,
+    )
 
     results = run_harness(
         root,
@@ -116,6 +122,7 @@ def test_rules(opts: RulesTestOptions) -> None:
         filter_rule=opts.rule,
         package_roots=package_roots,
         agent=opts.agent,
+        models=Models(http_get),
     )
 
     if not results:
@@ -138,12 +145,17 @@ def test_rules(opts: RulesTestOptions) -> None:
 
 def _require_model() -> None:
     """Fetch the model the way `ails check` does; exit 2 with a short error when it cannot be had."""
+    from reporails_cli.core.mapper.model_fetch import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        model_downloads_off_cause,
+    )
     from reporails_cli.interfaces.cli.check_support import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         _ensure_model_or_exit,
     )
 
     if not _ensure_model_or_exit():
-        console.print("[red]Error:[/red] `ails test` needs the reporails model; unset AILS_MODEL_OFFLINE to fetch it.")
+        cause = model_downloads_off_cause()
+        reason = f"; downloads are off ({cause}), turn that off to fetch it" if cause else ""
+        console.print(f"[red]Error:[/red] `ails test` needs the reporails model{reason}.")
         raise typer.Exit(2)
 
 

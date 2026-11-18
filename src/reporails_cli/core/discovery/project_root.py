@@ -11,7 +11,7 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.agent_config import bundled_file_types
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, pattern_list
-from reporails_cli.core.platform.utils.utils import is_rooted_pattern
+from reporails_cli.core.platform.utils.utils import home_folder, is_rooted_pattern
 
 
 def resolve_project_root(target: Path) -> Path:
@@ -26,14 +26,6 @@ def resolve_project_root(target: Path) -> Path:
     surrounding repo into a fixture/subdirectory check.
     """
     return target if target.is_dir() else target.parent
-
-
-def home_folder() -> Path | None:
-    """The user's home folder, resolved; None when it cannot be determined."""
-    try:
-        return Path.home().resolve()
-    except (RuntimeError, OSError):
-        return None
 
 
 @functools.lru_cache(maxsize=1)

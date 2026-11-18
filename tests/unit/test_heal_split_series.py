@@ -30,12 +30,12 @@ F = "a.md"
 
 
 def _mapped(tmp_path: Path, text: str) -> tuple[list[Atom], list[str]]:
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     path = tmp_path / "SKILL.md"
     path.write_text(text, encoding="utf-8")
-    ruleset = map_ruleset([path], models=get_models(), root=tmp_path, cache_dir=None)
+    ruleset = map_ruleset([path], models=no_models(), root=tmp_path, cache_dir=None)
     return list(ruleset.atoms), [t + "\n" for t in text.split("\n")[:-1]]
 
 
@@ -72,6 +72,8 @@ def _piece(text: str, pi: int, charge: int = 1, slots: AtomSlots | None = None, 
 @pytest.mark.subsys_heal
 def test_split_drops_the_joining_and_of_a_two_item_compound() -> None:
     atoms = [_piece("Run the tests,", 0), _piece("and fix every failure.", 1)]
+    atoms[0].source_columns, atoms[1].source_columns, atoms[1].joint = (0, 14), (15, 37), ", "
+    atoms[1].joint_mark = True
     edit = _split_edit(
         PlanOp("CORE:C:0058", F, 1, None, "split", {}), atoms, ["Run the tests, and fix every failure.\n"]
     )
@@ -84,6 +86,10 @@ def test_split_drops_the_joining_and_of_a_two_item_compound() -> None:
 def test_split_cuts_a_series_when_every_item_is_its_own_sentence() -> None:
     line = "Read the file, run the tests, and tag the release."
     atoms = [_piece("Read the file,", 0), _piece("run the tests,", 1), _piece("and tag the release.", 2)]
+    for atom, columns in zip(atoms, [(0, 14), (15, 29), (30, 50)], strict=True):
+        atom.source_columns = columns
+    atoms[1].joint = atoms[2].joint = ", "
+    atoms[1].joint_mark = atoms[2].joint_mark = True
     edit = _split_edit(PlanOp("CORE:C:0058", F, 1, None, "split", {}), atoms, [line + "\n"])
     assert edit is not None
     assert edit.after == "Read the file. Run the tests. Tag the release."
@@ -94,6 +100,8 @@ def test_split_cuts_a_series_when_every_item_is_its_own_sentence() -> None:
 def test_split_refuses_a_series_with_two_items_on_one_lead_verb() -> None:
     line = "Read the file, classify it, and tag the release."
     atoms = [_piece("Read the file, classify it,", 0), _piece("and tag the release.", 1)]
+    atoms[0].source_columns, atoms[1].source_columns, atoms[1].joint = (0, 27), (28, 48), ", "
+    atoms[1].joint_mark = True
     assert _split_edit(PlanOp("CORE:C:0058", F, 1, None, "split", {}), atoms, [line + "\n"]) is None
 
 
@@ -103,4 +111,6 @@ def test_split_refuses_a_piece_cut_off_the_scope_the_sentence_before_it_sets() -
     line = "Never claim fit; mark it outside the circle."
     scoped = AtomSlots(predicate_span=(0, 1), object_span=(1, 3), scope_span=(3, 5))
     atoms = [_piece("Never claim fit;", 0, -1, slots=scoped), _piece("mark it outside the circle.", 1)]
+    atoms[0].source_columns, atoms[1].source_columns, atoms[1].joint = (0, 16), (17, 44), "; "
+    atoms[1].joint_mark = True
     assert _split_edit(PlanOp("CORE:C:0058", F, 1, None, "split", {}), atoms, [line + "\n"]) is None

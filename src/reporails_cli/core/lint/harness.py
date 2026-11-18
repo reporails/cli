@@ -15,11 +15,12 @@ Uses the same check engines as production validation (ails check):
 
 from __future__ import annotations
 
-import functools
 import logging
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
+from reporails_cli.core.discovery.exclusions import no_exclusions
 from reporails_cli.core.lint.content_checker import _evaluate_check
 from reporails_cli.core.lint.harness_discovery import (
     _build_prefix_to_agent_map,
@@ -45,14 +46,15 @@ from reporails_cli.core.lint.rule_scaffold import (
     _scaffold_main_filename,
     _scaffold_scoped_rule_file,
 )
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.mapper.pipeline import map_ruleset
-from reporails_cli.core.platform.adapters.registry import RuleReadError, load_rules_from_path, read_checks_document
-from reporails_cli.core.platform.adapters.rule_builder import load_checks
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.lint import CheckRun, CompiledCheck, CompiledRuleSet, HarnessResult, RuleInfo
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, FileTypeDeclaration, Rule
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.rules.registry import RuleReadError, load_rules_from_path, read_checks_document
+from reporails_cli.core.platform.rules.rule_builder import load_checks
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +76,9 @@ def _run_mechanical_check(
     always win over upstream annotations.
     """
     try:
-        result = run_mechanical_check(check, fixture_root, classified_files, extra_args=extra_args)
+        result = run_mechanical_check(
+            check, fixture_root, classified_files, extra_args=extra_args, exclusions=no_exclusions(fixture_root)
+        )
     except UnknownCheckError:
         logger.warning("Unknown mechanical check: %s", check.check)
         return CheckResult(passed=False, message=f"Unknown mechanical check: {check.check}")
@@ -134,6 +138,7 @@ def _run_deterministic_check(
         sarif = scan_ruleset(
             CompiledRuleSet(checks=[compiled]),
             fixture_root,
+            no_exclusions(fixture_root),
             instruction_files=fixture_files if fixture_files else None,
         )
         findings = 0
@@ -157,15 +162,21 @@ def _build_platform_rule(rule: RuleInfo) -> Rule | None:
     return rules.get(rule.rule_id)
 
 
-@functools.cache
-def _map_fixture(fixture_root: Path) -> RulesetMap:
-    """Map a fixture directory with the real mapper.
+def fixture_mapper(models: Models) -> Callable[[Path], RulesetMap]:
+    """A map of a fixture directory with the real mapper, made with `models`.
 
-    Cached per fixture directory so a rule with more than one
-    content_query check maps its fixture once, not once per check.
+    A rule with more than one content_query check maps its fixture once, not once per check.
     """
-    files = [f for f in fixture_root.rglob("*") if f.is_file() and f.name not in _FIXTURE_EXCLUDES]
-    return map_ruleset(files, root=fixture_root, cache_dir=None)
+    maps: dict[Path, RulesetMap] = {}
+
+    def map_fixture(fixture_root: Path) -> RulesetMap:
+        mapped = maps.get(fixture_root)
+        if mapped is None:
+            files = [f for f in fixture_root.rglob("*") if f.is_file() and f.name not in _FIXTURE_EXCLUDES]
+            mapped = maps[fixture_root] = map_ruleset(files, models=models, root=fixture_root, cache_dir=None)
+        return mapped
+
+    return map_fixture
 
 
 def _run_content_query_check(
@@ -173,6 +184,7 @@ def _run_content_query_check(
     fixture_root: Path,
     rule: RuleInfo,
     file_types: list[FileTypeDeclaration],
+    map_fixture: Callable[[Path], RulesetMap],
 ) -> tuple[bool, str]:
     """Evaluate one content_query check against a fixture.
 
@@ -185,7 +197,7 @@ def _run_content_query_check(
     if platform_rule is None:
         return False, f"content_query — could not load rule {rule.rule_id} for evaluation"
 
-    ruleset_map = _map_fixture(fixture_root)
+    ruleset_map = map_fixture(fixture_root)
     if not ruleset_map.files:
         return False, "content_query — no fixture files"
 
@@ -250,6 +262,7 @@ def _fixtures_of(rule: RuleInfo) -> list[tuple[str, str, Path]]:
 def run_rule(
     rule: RuleInfo,
     file_types: list[FileTypeDeclaration],
+    map_fixture: Callable[[Path], RulesetMap],
 ) -> HarnessResult:
     """Run all checks for a rule against its fixtures.
 
@@ -289,7 +302,7 @@ def run_rule(
         cleanup, effective_dir = _prepare_fixture(fixture_dir, kind, rule, file_types)
         try:
             violation_found = _run_fixture_checks(
-                rule, file_types, kind=kind, label=label, effective_dir=effective_dir, result=result
+                rule, file_types, map_fixture, kind=kind, label=label, effective_dir=effective_dir, result=result
             )
         finally:
             for scaffolded_dir in cleanup:
@@ -307,6 +320,7 @@ def run_rule(
 def _run_fixture_checks(
     rule: RuleInfo,
     file_types: list[FileTypeDeclaration],
+    map_fixture: Callable[[Path], RulesetMap],
     *,
     kind: str,
     label: str,
@@ -325,11 +339,15 @@ def _run_fixture_checks(
     extra: JsonObject = {}
     for check in rule.checks:
         if kind == "pass":
-            passed, run, raw = _check_fixture(check, effective_dir, rule, file_types, label, extra_args=extra)
+            passed, run, raw = _check_fixture(
+                check, effective_dir, rule, file_types, label, map_fixture=map_fixture, extra_args=extra
+            )
             if not passed:
                 result.status = HarnessStatus.FAILED
         else:
-            violation, run, raw = _check_fixture_for_violation(check, effective_dir, rule, file_types, extra_args=extra)
+            violation, run, raw = _check_fixture_for_violation(
+                check, effective_dir, rule, file_types, map_fixture, extra_args=extra
+            )
             run.fixture = label
             violation_found = violation_found or violation
         result.check_runs.append(run)
@@ -345,6 +363,7 @@ def _check_fixture(
     file_types: list[FileTypeDeclaration],
     fixture_name: str,
     *,
+    map_fixture: Callable[[Path], RulesetMap],
     extra_args: JsonObject | None = None,
 ) -> tuple[bool, CheckRun, CheckResult | None]:
     """Run a check against a pass fixture. Returns (passed, CheckRun, raw_result).
@@ -353,7 +372,7 @@ def _check_fixture(
     or None for non-mechanical paths; the caller threads annotations into
     subsequent checks via the `extra_args` parameter.
     """
-    check_id, check_type, expect = check.id, check.type, check.expect
+    check_id, check_type = check.id, check.type
     if check_type == "mechanical":
         classified = _classify_fixture(fixture_root, file_types)
         cr = _run_mechanical_check(check, fixture_root, classified, extra_args=extra_args)
@@ -363,10 +382,10 @@ def _check_fixture(
         ok, count, msg = _run_deterministic_check(
             rule.inherited_checks_yml.get(check_id, rule.checks_yml), check, fixture_root
         )
-        passed = (ok and count > 0) if expect == "present" else (ok and count == 0)
+        passed = (ok and count > 0) if check.expect == "present" else (ok and count == 0)
         return passed, CheckRun(check_id, check_type, fixture_name, passed, msg), None
 
-    ok, msg = _run_content_query_check(check, fixture_root, rule, file_types)
+    ok, msg = _run_content_query_check(check, fixture_root, rule, file_types, map_fixture)
     passed = not ok
     return passed, CheckRun(check_id, check_type, fixture_name, passed, msg), None
 
@@ -376,6 +395,7 @@ def _check_fixture_for_violation(
     fixture_root: Path,
     rule: RuleInfo,
     file_types: list[FileTypeDeclaration],
+    map_fixture: Callable[[Path], RulesetMap],
     *,
     extra_args: JsonObject | None = None,
 ) -> tuple[bool, CheckRun, CheckResult | None]:
@@ -398,7 +418,7 @@ def _check_fixture_for_violation(
         violation = (ok and count == 0) if expect == "present" else (ok and count > 0)
         return violation, CheckRun(check_id, check_type, "fail", True, msg), None
 
-    violation, msg = _run_content_query_check(check, fixture_root, rule, file_types)
+    violation, msg = _run_content_query_check(check, fixture_root, rule, file_types, map_fixture)
     return violation, CheckRun(check_id, check_type, "fail", True, msg), None
 
 
@@ -435,6 +455,7 @@ def run_harness(
     filter_rule: str | None = None,
     package_roots: list[Path] | None = None,
     agent: str = "claude",
+    models: Models,
 ) -> list[HarnessResult]:
     """Discover and run all rules, returning per-rule results.
 
@@ -448,6 +469,7 @@ def run_harness(
         filter_rule: Optional rule coordinate filter.
         package_roots: Additional package roots to scan.
         agent: Default agent config for CORE/RRAILS rules.
+        models: The models the fixtures are mapped with.
     """
     # Build prefix→agent mapping and per-agent config cache
     prefix_map = _build_prefix_to_agent_map(rules_root)
@@ -469,7 +491,19 @@ def run_harness(
     # never sees this merge (see `apply_check_inheritance`'s docstring).
     apply_check_inheritance(rules)
 
+    return _run_rules(rules, prefix_map, agent_cache, default_file_types, models)
+
+
+def _run_rules(
+    rules: list[RuleInfo],
+    prefix_map: dict[str, str],
+    agent_cache: dict[str, tuple[list[FileTypeDeclaration], list[str]]],
+    default_file_types: list[FileTypeDeclaration],
+    models: Models,
+) -> list[HarnessResult]:
+    """Run each rule with its agent's file types, skipping the rules its agent config excludes."""
     results: list[HarnessResult] = []
+    map_fixture = fixture_mapper(models)
     for rule in rules:
         rule_agent = _get_rule_agent(rule.rule_id, prefix_map)
         if rule_agent and rule_agent in agent_cache:
@@ -480,6 +514,6 @@ def run_harness(
         else:
             # CORE/RRAILS rules use default agent file_types
             rule_file_types = default_file_types
-        results.append(run_rule(rule, rule_file_types))
+        results.append(run_rule(rule, rule_file_types, map_fixture))
 
     return results

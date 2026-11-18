@@ -16,8 +16,10 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli.main import app
 from reporails_cli.interfaces.mcp import tools
+from tests.fake_models import no_models
 
 runner = CliRunner()
 
@@ -83,7 +85,9 @@ def _cli_payload(project: Path, *args: str) -> dict:
 
 
 def _mcp_payload(project: Path) -> dict:
-    return tools.run_pipeline_for_path(str(project), full=True, project_root=project)[0]
+    return tools.run_pipeline_for_path(
+        str(project), full=True, project_root=project, run=RunContext(), models=no_models()
+    )[0]
 
 
 @requires_model
@@ -127,7 +131,11 @@ def test_cli_and_mcp_agree_on_a_single_config_file_target(tmp_path: Path, monkey
     settings_file = project / ".claude" / "settings.json"
 
     cli_tuples = _finding_tuples(_cli_payload(project, ".claude/settings.json"))
-    mcp_tuples = _finding_tuples(tools.run_pipeline_for_path(str(settings_file), full=True)[0])
+    mcp_tuples = _finding_tuples(
+        tools.run_pipeline_for_path(
+            str(settings_file), full=True, project_root=project, run=RunContext(), models=no_models()
+        )[0]
+    )
 
     assert cli_tuples, "fixture must produce at least one finding for the gate to be meaningful"
     assert cli_tuples == mcp_tuples, (

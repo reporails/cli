@@ -20,6 +20,9 @@ from unittest.mock import patch
 
 import pytest
 
+from reporails_cli.core.platform.config.run_context import RunContext
+from tests.fake_models import no_models
+
 # ---------------------------------------------------------------------------
 # Skip markers
 # ---------------------------------------------------------------------------
@@ -63,7 +66,9 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
     from mcp.server.mcpserver.exceptions import ToolError
     from mcp.types import CallToolResult, TextContent
 
-    from reporails_cli.interfaces.mcp.server import server as mcp_server
+    from reporails_cli.interfaces.mcp.server import build_server
+
+    mcp_server = build_server(no_models())
 
     try:
         result = _run_async(mcp_server.call_tool(name, arguments or {}))
@@ -80,7 +85,7 @@ def _bounded_reply(path: Path) -> dict[str, Any]:
     the text view, so the wiring tests read the payload the view is rendered from."""
     from reporails_cli.interfaces.mcp.server import _run_validate
 
-    return _run_async(_run_validate(str(path), False, None, path if path.is_dir() else path.parent))
+    return _run_async(_run_validate(str(path), False, None, path if path.is_dir() else path.parent, no_models()))
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +115,7 @@ class TestStructuredOutput:
             lambda path, full=False, named=frozenset(), **_k: (dict(payload), None, None),
         )
 
-        result = _run_async(server.server.call_tool("validate", {"path": str(tmp_path)}))
+        result = _run_async(server.build_server(no_models()).call_tool("validate", {"path": str(tmp_path)}))
 
         assert result.is_error is False
         assert isinstance(result.structured_content, dict)
@@ -126,7 +131,9 @@ class TestStructuredOutput:
     @pytest.mark.subsys_server
     def test_all_tools_are_read_only(self) -> None:
         """All three tools carry the read-only annotation for clients that read hints."""
-        from reporails_cli.interfaces.mcp.server import server as mcp_server
+        from reporails_cli.interfaces.mcp.server import build_server
+
+        mcp_server = build_server(no_models())
 
         tools = {t.name: t for t in _run_async(mcp_server.list_tools())}
         for name in ("validate", "prepare", "remedy_brief", "preflight", "explain"):
@@ -145,18 +152,22 @@ class TestListTools:
     @pytest.mark.subsys_api
     def test_all_tools_present(self) -> None:
         """list_tools returns the current surface, `xray` included."""
-        from reporails_cli.interfaces.mcp.server import server as mcp_server
+        from reporails_cli.interfaces.mcp.server import build_server
+
+        mcp_server = build_server(no_models())
 
         tools = _run_async(mcp_server.list_tools())
         names = {t.name for t in tools}
-        assert names == {"validate", "prepare", "remedy_brief", "heal_apply", "preflight", "explain", "xray"}
+        assert names == {"validate", "prepare", "remedy_brief", "preflight", "explain", "xray"}
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @pytest.mark.subsys_api
     def test_validate_tool_path_optional(self) -> None:
         """validate tool should not require path (has default)."""
-        from reporails_cli.interfaces.mcp.server import server as mcp_server
+        from reporails_cli.interfaces.mcp.server import build_server
+
+        mcp_server = build_server(no_models())
 
         tools = _run_async(mcp_server.list_tools())
         validate = next(t for t in tools if t.name == "validate")
@@ -169,7 +180,9 @@ class TestListTools:
         """The `validate` description promised a `compliance band` in its JSON — no
         such field reaches the JSON/MCP envelope (`formatters/json.py`'s `quality` key is a
         bare float score); the claim is stale."""
-        from reporails_cli.interfaces.mcp.server import server as mcp_server
+        from reporails_cli.interfaces.mcp.server import build_server
+
+        mcp_server = build_server(no_models())
 
         tools = _run_async(mcp_server.list_tools())
         validate = next(t for t in tools if t.name == "validate")
@@ -183,7 +196,9 @@ class TestListTools:
         never passed its own `version`, and the SDK defaults it to `""`. A caller has no way to
         tell which server build it is talking to without it."""
         from reporails_cli.core.platform.utils.version import installed_version
-        from reporails_cli.interfaces.mcp.server import server
+        from reporails_cli.interfaces.mcp.server import build_server
+
+        server = build_server(no_models())
 
         assert server.version == installed_version()
         assert server.version != ""
@@ -351,6 +366,7 @@ class TestValidateTargets:
         "stats": {"score": 6.0},
         "files": {"CLAUDE.md": {"count": 1, "findings": []}},
         "workflow": {
+            "preservation_contract": "stand-in contract",
             "summary": "4 locations to rewrite, by kind: 1 main, 1 agents, 2 skills.",
             "escape": "e",
             "listed": [{"rule": "CORE:C:0005", "reason": "no_remedy", "count": 1, "why": ""}],
@@ -381,7 +397,7 @@ class TestValidateTargets:
     def test_a_capability_target_keeps_only_its_locations(self, project: Path) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        data = _run_async(server._run_validate(str(project), True, ["skills"], project))
+        data = _run_async(server._run_validate(str(project), True, ["skills"], project, no_models()))
         wf = data["workflow"]
         assert [(loc["order"], loc["element"]) for loc in wf["locations"]] == [
             (1, "the `backlog` skill"),
@@ -397,9 +413,9 @@ class TestValidateTargets:
     def test_one_element_and_a_typed_word_read_like_ails_check(self, project: Path) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        one = _run_async(server._run_validate(str(project), True, ["skill:release"], project))
+        one = _run_async(server._run_validate(str(project), True, ["skill:release"], project, no_models()))
         assert [loc["element"] for loc in one["workflow"]["locations"]] == ["the `release` skill"]
-        path = _run_async(server._run_validate(str(project), True, [".claude/agents"], project))
+        path = _run_async(server._run_validate(str(project), True, [".claude/agents"], project, no_models()))
         assert [loc["element"] for loc in path["workflow"]["locations"]] == ["the `reviewer` agent"]
 
     @pytest.mark.e2e
@@ -409,21 +425,28 @@ class TestValidateTargets:
     def test_remedy_brief_reads_the_targeted_view_and_the_whole_view_keeps_its_numbering(self, project: Path) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        _run_async(server._run_validate(str(project), True, ["skills"], project))
-        brief = server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True, project_root=project)
+        _run_async(server._run_validate(str(project), True, ["skills"], project, no_models()))
+        brief = server._serve_remedy_brief(
+            str(project), 1, ["skills"], has_guide=True, project_root=project, models=no_models()
+        )
         assert brief["location"]["element"] == "the `backlog` skill"
         assert (
-            server._serve_remedy_brief(str(project), 1, has_guide=True, project_root=project)["error"] == "no_workflow"
+            server._serve_remedy_brief(str(project), 1, has_guide=True, project_root=project, models=no_models())[
+                "error"
+            ]
+            == "no_workflow"
         )
-        _run_async(server._run_validate(str(project), True, None, project))
+        _run_async(server._run_validate(str(project), True, None, project, no_models()))
         assert (
-            server._serve_remedy_brief(str(project), 1, has_guide=True, project_root=project)["location"]["element"]
+            server._serve_remedy_brief(str(project), 1, has_guide=True, project_root=project, models=no_models())[
+                "location"
+            ]["element"]
             == "CLAUDE.md"
         )
         assert (
-            server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True, project_root=project)["location"][
-                "element"
-            ]
+            server._serve_remedy_brief(
+                str(project), 1, ["skills"], has_guide=True, project_root=project, models=no_models()
+            )["location"]["element"]
             == "the `backlog` skill"
         )
 
@@ -433,7 +456,7 @@ class TestValidateTargets:
     def test_a_target_that_names_nothing_is_a_structured_error(self, project: Path) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        missing = _run_async(server._run_validate(str(project), True, ["skills:nope"], project))
+        missing = _run_async(server._run_validate(str(project), True, ["skills:nope"], project, no_models()))
         assert missing["error"] == "target_not_found"
         assert "nope" in missing["message"]
 
@@ -561,7 +584,7 @@ class TestExplainTool:
         """Explaining a known rule should return readable text with rule ID and title."""
         from reporails_cli.interfaces.mcp.rule_tools import explain_tool
 
-        monkeypatch.setattr("reporails_cli.core.platform.adapters.registry.get_rules_dir", lambda: dev_rules_dir)
+        monkeypatch.setattr("reporails_cli.core.platform.rules.registry.get_rules_dir", lambda: dev_rules_dir)
         result = explain_tool("CORE:S:0002")
         assert isinstance(result, str)
         assert "CORE:S:0002" in result
@@ -626,7 +649,9 @@ class TestUnknownArgument:
         own `call_tool` convenience shim."""
         from mcp.server.mcpserver.exceptions import ToolError
 
-        from reporails_cli.interfaces.mcp.server import server
+        from reporails_cli.interfaces.mcp.server import build_server
+
+        server = build_server(no_models())
 
         with pytest.raises(ToolError, match="bogus_extra_arg"):
             _run_async(server.call_tool("preflight", {"capability": "skills", "bogus_extra_arg": "x"}))
@@ -806,6 +831,7 @@ class TestCircuitBreaker:
             "stats": {},
             "files": {"CLAUDE.md": {"count": 1, "findings": []}},
             "workflow": {
+                "preservation_contract": "stand-in contract",
                 "summary": "s",
                 "escape": "e",
                 "locations": [
@@ -829,7 +855,7 @@ class TestCircuitBreaker:
         claude_md.write_text("# Project\n")
 
         def validate() -> dict:
-            return _run_async(server._run_validate(str(tmp_path), False, None, tmp_path))
+            return _run_async(server._run_validate(str(tmp_path), False, None, tmp_path, no_models()))
 
         # Round 1: 6 validate calls, each with a file edit so no unchanged-repeat trips first.
         for i in range(6):
@@ -838,7 +864,7 @@ class TestCircuitBreaker:
             assert data.get("error") != "circuit_breaker", data
 
         # A served remedy_brief resets call_count for this path before the next tier's round.
-        brief = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True, project_root=tmp_path)
+        brief = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True, project_root=tmp_path, models=no_models())
         assert "error" not in brief, brief
 
         # Round 2: 5 more validate calls (11 total across the run) must not trip.
@@ -960,7 +986,7 @@ class TestPreflightToolHelper:
         own rules on top of the universal ones, never the universal rules alone. The universal
         count is measured directly (`preflight("no-such-type")` no longer stands in
         for it — that capability now errors as `unknown_capability`, not a plausible universal set)."""
-        from reporails_cli.core.platform.adapters.rules_query import load_all_rules
+        from reporails_cli.core.platform.rules.rules_query import load_all_rules
         from reporails_cli.interfaces.mcp.rule_tools import preflight_tool
 
         universal = sum(1 for r in load_all_rules() if r.match is None or r.match.type is None)
@@ -1075,6 +1101,7 @@ class TestRemedyBrief:
             "stats": {},
             "files": {"CLAUDE.md": {"count": 1, "findings": []}},
             "workflow": {
+                "preservation_contract": "stand-in contract",
                 "summary": "s",
                 "escape": "e",
                 "locations": [
@@ -1184,7 +1211,7 @@ class TestRemedyBrief:
         assert "findings" not in reply and "files" not in reply
         assert reply["location"]["root"] == str(tmp_path)
         assert reply["edits"] == [] and reply["slots"] == []
-        assert "Keep every instruction" in reply["preservation_contract"]
+        assert reply["preservation_contract"] == "stand-in contract"
         assert reply["next"]
 
 
@@ -1210,7 +1237,9 @@ class TestPreservationWiring:
     @pytest.mark.subsys_server
     @requires_model
     @requires_rules
-    def test_a_snapshotted_file_carries_preservation_on_both_bounded_and_full_replies(self, tmp_path: Path) -> None:
+    def test_a_snapshotted_file_carries_preservation_on_both_bounded_and_full_replies(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from reporails_cli.interfaces.mcp import snapshots, tools
 
         target = tmp_path / "CLAUDE.md"
@@ -1219,7 +1248,9 @@ class TestPreservationWiring:
         bounded_before = _bounded_reply(target)
         assert "preservation" not in bounded_before, "not yet briefed"
 
-        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True)
+        _payload, ruleset_map, score = tools.run_pipeline_for_path(
+            str(target), True, project_root=tmp_path, run=RunContext(), models=no_models()
+        )
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
         bounded_after = _bounded_reply(target)
@@ -1227,6 +1258,7 @@ class TestPreservationWiring:
         assert bounded_after["preservation"]["ok"] is True, "nothing changed since the snapshot"
         assert bounded_after["preservation"]["score_before"] == score
 
+        monkeypatch.setenv("AILS_PROJECT_DIR", str(tmp_path))
         full = json.loads(_call_tool("validate", {"path": str(target), "full": True}))
         assert "preservation" in full
 
@@ -1239,7 +1271,9 @@ class TestPreservationWiring:
 
         target = tmp_path / "CLAUDE.md"
         target.write_text("## Don'ts\n\n- Use mock objects in tests.\n- Use test doubles in the test suite.\n")
-        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True)
+        _payload, ruleset_map, score = tools.run_pipeline_for_path(
+            str(target), True, project_root=tmp_path, run=RunContext(), models=no_models()
+        )
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
         target.write_text(
@@ -1263,7 +1297,9 @@ class TestPreservationWiring:
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Project\n\nNever commit secrets.\n")
 
-        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True)
+        _payload, ruleset_map, score = tools.run_pipeline_for_path(
+            str(target), True, project_root=tmp_path, run=RunContext(), models=no_models()
+        )
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
         calls = {"n": 0}
@@ -1366,7 +1402,10 @@ class TestFileFeedback:
                     ],
                 }
             },
-            "workflow": {"locations": [{"order": 1, "files": ["CLAUDE.md"], "findings": []}]},
+            "workflow": {
+                "preservation_contract": "stand-in contract",
+                "locations": [{"order": 1, "files": ["CLAUDE.md"], "findings": []}],
+            },
         }
         feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"), None)
         # No `impact_tier`, so weight ties and the line number decides.
@@ -1552,7 +1591,9 @@ class TestFeedbackWiring:
     @pytest.mark.subsys_server
     @requires_model
     @requires_rules
-    def test_a_snapshotted_file_carries_feedback_on_both_bounded_and_full_replies(self, tmp_path: Path) -> None:
+    def test_a_snapshotted_file_carries_feedback_on_both_bounded_and_full_replies(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from reporails_cli.interfaces.mcp import snapshots, tools
 
         target = tmp_path / "CLAUDE.md"
@@ -1561,13 +1602,16 @@ class TestFeedbackWiring:
         bounded_before = _bounded_reply(target)
         assert "feedback" not in bounded_before, "not yet briefed"
 
-        _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True)
+        _payload, ruleset_map, score = tools.run_pipeline_for_path(
+            str(target), True, project_root=tmp_path, run=RunContext(), models=no_models()
+        )
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
         bounded_after = _bounded_reply(target)
         assert "feedback" in bounded_after
         assert isinstance(bounded_after["feedback"], list)
 
+        monkeypatch.setenv("AILS_PROJECT_DIR", str(tmp_path))
         full = json.loads(_call_tool("validate", {"path": str(target), "full": True}))
         assert "feedback" in full
 
@@ -1637,7 +1681,7 @@ class TestFeedbackNewKinds:
             },
         }
         replies = iter([(project_payload, None, 5.0), (file_payload, None, 5.0)])
-        monkeypatch.setattr(server, "model_not_ready_error", lambda: None)
+        monkeypatch.setattr(server, "unserved_or_model_not_ready_error", lambda _run: None)
         monkeypatch.setattr(
             server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(), **_k: next(replies)
         )
@@ -1724,7 +1768,7 @@ class TestFeedbackFiredBefore:
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Project\n\nNever commit secrets.\n")
         replies = iter([(project_payload, None, 5.0), (file_payload, None, 5.0)])
-        monkeypatch.setattr(server, "model_not_ready_error", lambda: None)
+        monkeypatch.setattr(server, "unserved_or_model_not_ready_error", lambda _run: None)
         monkeypatch.setattr(
             server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(), **_k: next(replies)
         )
@@ -1808,16 +1852,13 @@ class TestProjectFolder:
 
     @pytest.mark.e2e
     @pytest.mark.subsys_server
-    @pytest.mark.parametrize("tool", ["validate", "prepare", "heal_apply", "xray"])
+    @pytest.mark.parametrize("tool", ["validate", "prepare", "xray"])
     def test_a_call_that_names_no_folder_is_refused(self, tool: str, tmp_path: Path, monkeypatch) -> None:
         monkeypatch.delenv("AILS_PROJECT_DIR", raising=False)
         monkeypatch.chdir(tmp_path)
         (tmp_path / "CLAUDE.md").write_text("# P\n\nRun tests.\n")
         for arguments in ({}, {"path": "."}, {"path": "CLAUDE.md"}):
             text = _call_tool(tool, arguments)
-            if tool == "heal_apply":  # a text reply, like every `heal_apply` refusal
-                assert "Pass the project folder as path" in text, (arguments, text)
-                continue
             data = json.loads(text)
             assert data["error"] == "no_project", (tool, arguments, data)
 
@@ -1841,7 +1882,7 @@ class TestProjectFolder:
             return {"files": {}}, None, None
 
         monkeypatch.setenv("AILS_PROJECT_DIR", str(tmp_path))
-        monkeypatch.setattr(server, "model_not_ready_error", lambda: None)
+        monkeypatch.setattr(server, "unserved_or_model_not_ready_error", lambda _run: None)
         monkeypatch.setattr(server, "run_pipeline_for_path", fake)
         _call_tool("validate", {})
         assert seen == [str(tmp_path.resolve())]

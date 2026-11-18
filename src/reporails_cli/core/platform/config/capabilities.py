@@ -8,7 +8,9 @@ lacks is dropped before it can fire.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from functools import lru_cache
+from types import MappingProxyType
 
 from reporails_cli.core.platform.config.config import get_framework_root
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
@@ -26,33 +28,37 @@ def _matrix_section(name: str) -> JsonObject:
 
 
 @lru_cache(maxsize=1)
-def legacy_main_files() -> dict[str, frozenset[str]]:
+def legacy_main_files() -> Mapping[str, frozenset[str]]:
     """Return ``{agent_id: frozenset(file_names)}`` of root instruction files the matrix lists
     for cataloged agents that no implemented agent config declares.
 
     Returns an empty dict when the matrix file or the section is absent.
     """
     files = _matrix_section("legacy_main_files")
-    return {
-        agent: frozenset(name for name in names if isinstance(name, str))
-        for agent, names in files.items()
-        if isinstance(names, list)
-    }
+    return MappingProxyType(
+        {
+            agent: frozenset(name for name in names if isinstance(name, str))
+            for agent, names in files.items()
+            if isinstance(names, list)
+        }
+    )
 
 
 @lru_cache(maxsize=1)
-def load_capability_matrix() -> dict[str, frozenset[str]]:
+def load_capability_matrix() -> Mapping[str, frozenset[str]]:
     """Return ``{agent_id: frozenset(capability_ids)}`` from the matrix file.
 
     Returns an empty dict when the matrix file is absent, so a missing file
     degrades to no gating rather than an error.
     """
     agents = _matrix_section("agents")
-    return {
-        agent: frozenset(cap for cap in caps if isinstance(cap, str))
-        for agent, caps in agents.items()
-        if isinstance(caps, list)
-    }
+    return MappingProxyType(
+        {
+            agent: frozenset(cap for cap in caps if isinstance(cap, str))
+            for agent, caps in agents.items()
+            if isinstance(caps, list)
+        }
+    )
 
 
 def agent_capabilities(agent: str) -> frozenset[str] | None:

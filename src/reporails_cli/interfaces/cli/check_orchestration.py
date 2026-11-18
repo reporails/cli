@@ -24,16 +24,18 @@ from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
 from reporails_cli.core.heal.apply import suppressed_by_path
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.platform.adapters.notices_seen import due_notices
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.classify import UnresolvedSkill
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, FunnelError
 from reporails_cli.core.platform.dto.discovery import RunExclusions
+from reporails_cli.core.platform.dto.heal import HealRegression
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.observability.log_levels import quiet_loggers
 from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.formatters import github as github_formatter
 from reporails_cli.formatters import json as json_formatter
-from reporails_cli.formatters.text.display import print_text_result
+from reporails_cli.formatters.text.display import TextExtras, print_text_result
 from reporails_cli.interfaces.cli.heal import (
     _apply_keyed_fixes,
     _collect_section_suggestions,
@@ -43,6 +45,7 @@ from reporails_cli.interfaces.cli.helpers import console
 from reporails_cli.interfaces.cli.output_formats import CHECK_FORMATS
 
 if TYPE_CHECKING:
+    from reporails_cli.core.mapper.models import Models
     from reporails_cli.core.platform.dto.diagnostics import Notice, RemediationWorkflow
     from reporails_cli.core.platform.dto.ruleset import RulesetMap
     from reporails_cli.core.platform.observability.stage_timer import StageTimer
@@ -52,17 +55,21 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_capability_paths_one(
+    run: RunContext,
     capability: str,
     capability_name: str,
     effective_agent: str,
+    *,
     project_root: Path,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> tuple[set[Path], list[UnresolvedSkill]]:
     """Resolve one (capability, name) spec to its file set + unresolved-skill list; a spec that
     names no file prints why and exits 2."""
 
     try:
-        return resolve_capability_spec(capability, capability_name, effective_agent, project_root, exclusions)
+        return resolve_capability_spec(
+            run, capability, capability_name, effective_agent, project_root=project_root, exclusions=exclusions
+        )
     except TargetError as err:
         if err.reason == "undeclared":
             console.print(
@@ -83,17 +90,18 @@ def _resolve_capability_paths_one(
 
 
 def _resolve_capability_paths(
+    run: RunContext,
     specs: list[tuple[str, str]],
     effective_agent: str,
     project_root: Path,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
 ) -> tuple[set[Path], list[UnresolvedSkill]]:
     """Union of every (capability, name) spec resolved against the agent's vocabulary."""
     paths: set[Path] = set()
     unresolved: list[UnresolvedSkill] = []
     for capability, capability_name in specs:
         one_paths, one_unresolved = _resolve_capability_paths_one(
-            capability, capability_name, effective_agent, project_root, exclusions
+            run, capability, capability_name, effective_agent, project_root=project_root, exclusions=exclusions
         )
         paths |= one_paths
         unresolved.extend(one_unresolved)
@@ -146,13 +154,13 @@ def _existing_target_root(token: str, project_root: Path) -> Path | None:
         return None
 
 
-def _token_agent(token: str, agent: str, project_root: Path, sniffed: dict[Path, str]) -> str:
+def _token_agent(run: RunContext, token: str, agent: str, project_root: Path, sniffed: dict[Path, str]) -> str:
     """The agent whose vocabulary reads `token`: sniffed under the project of an existing path
     target, under the current folder's project for anything else (`sniffed` caches per root)."""
 
     root = _existing_target_root(token, project_root) or project_root
     if root not in sniffed:
-        sniffed[root] = sniff_agent(agent, root)
+        sniffed[root] = sniff_agent(run, agent, root)
     return sniffed[root]
 
 
@@ -181,6 +189,8 @@ class RenderContext(NamedTuple):
     file_type_by_path: dict[str, str] | None = None
     ascii_mode: bool = False
     verbose: bool = False
+    heal_regressions: tuple[HealRegression, ...] = ()
+    aliases: dict[Path, list[Path]] | None = None
 
 
 def _emit_json(
@@ -192,6 +202,7 @@ def _emit_json(
         ruleset_map=ruleset_map,
         project_root=context.project_root,
         file_type_by_path=context.file_type_by_path,
+        heal_regressions=context.heal_regressions,
     )
     data["elapsed_ms"] = round(elapsed_ms, 1)
     timer = get_stage_timer()
@@ -248,7 +259,7 @@ def _dispatch_output(
         ruleset_map=ruleset_map,
         funnel_error=funnel_error,
         project_root=context.project_root,
-        file_type_by_path=context.file_type_by_path,
+        extras=TextExtras(context.file_type_by_path, context.heal_regressions, context.aliases),
     )
 
 
@@ -266,11 +277,12 @@ def _emit_stage_timing(stage_timer: StageTimer, output_format: str) -> None:
 
 
 class HealScope(NamedTuple):
-    """The files a heal pass may touch, the agent they are checked under, and what the run left out."""
+    """The files a heal pass may touch, their agent, what the run left out, and the models it re-maps with."""
 
     instruction_files: list[Path]
     effective_agent: str
-    exclusions: RunExclusions | None = None
+    exclusions: RunExclusions
+    models: Models
 
 
 def _run_heal_pass(
@@ -280,6 +292,7 @@ def _run_heal_pass(
     dry_run: bool,
     output_format: str,
     *,
+    run: RunContext,
     notices: tuple[Notice, ...] = (),
     workflow: RemediationWorkflow | None = None,
 ) -> None:
@@ -296,17 +309,19 @@ def _run_heal_pass(
         suppressed = suppressed_by_path(scope.instruction_files, target)
         # The mechanical pass writes only within the scoped `instruction_files` set — it
         # cannot rewrite a mapped file outside scope. Section suggestions never write.
+        if show and ruleset_map is not None and workflow is not None:
+            console.print("[bold]Applying fixes...[/bold]")
         keyed = _apply_keyed_fixes(
             ruleset_map,
-            target,
+            run.configured_root(target),
             workflow,
             dry_run=dry_run,
-            show_progress=show,
-            console=console,
             allowed_files=scope.instruction_files,
             suppressed=suppressed,
+            models=scope.models,
         )
         suggested = _collect_section_suggestions(
+            run,
             target,
             scope.instruction_files,
             ruleset_map,

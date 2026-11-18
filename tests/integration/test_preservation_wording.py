@@ -15,17 +15,17 @@ from reporails_cli.core.platform.dto.heal import Snapshot
 
 
 def _verdict(tmp_path, original: str, rewrite: str) -> dict[str, Any]:
-    from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
+    from tests.fake_models import no_models
 
     target = tmp_path / "CLAUDE.md"
     before_text, after_text = f"# Agent\n\n{original}\n", f"# Agent\n\n{rewrite}\n"
     target.write_text(before_text, encoding="utf-8")
-    before_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    before_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     snap = take_snapshot(str(target), before_text, before_map, 5.0)
     assert isinstance(snap, Snapshot)
     target.write_text(after_text, encoding="utf-8")
-    after_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    after_map = map_ruleset([target], models=no_models(), root=tmp_path, cache_dir=None)
     return compare(snap, after_map, after_text, 5.0, environment=LocalProjectEnvironment(tmp_path))
 
 
@@ -220,3 +220,59 @@ def test_a_hedge_made_direct_never_fails_the_rewrite_by_itself(tmp_path) -> None
     assert result["made_direct"] == [
         {"line": 3, "text": "Consider avoiding global state.", "new_line": 3, "new_text": "Avoid global state."}
     ]
+
+
+@pytest.mark.subsys_server
+@pytest.mark.integration
+@pytest.mark.requires_model
+def test_a_dropped_context_line_is_lost_even_when_the_rewrite_keeps_its_function_words(tmp_path) -> None:
+    result = _verdict(
+        tmp_path,
+        "The cache is rebuilt on the next run.\nRun the linter.",
+        "Run the linter.\nIt is on the day.",
+    )
+    assert [c["text"] for c in result["lost_context"]] == ["The cache is rebuilt on the next run."]
+
+
+_SCOPED_LINE = (
+    "For every other form, `Read` the base first: `docs/overview.md` and `docs/capabilities.md`. "
+    "Do not treat the base-load as targeted substrate."
+)
+_SEED_LINE = (
+    "After saving the backbone, add this to the detected main instruction file. "
+    "If `## Structure` already exists, replace it. Do not skip this step."
+)
+_PRINCIPLES_BEFORE = (
+    "1. Read `docs/principles.md` — the project invariants (stage order, deps, error handling, lazy ML, "
+    "testing pyramid, IP boundary, tier authority, module size); for a touched subsystem, also read its "
+    "`docs/<subsystem>.md`"
+)
+_PRINCIPLES_AFTER = _PRINCIPLES_BEFORE.replace("size); for", "size). For")
+
+
+@pytest.mark.subsys_server
+@pytest.mark.integration
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("original", "rewrite", "check"),
+    [
+        # a neighbouring edit leaves the later sentences of a line that opens with a scope phrase unchanged
+        (
+            _SCOPED_LINE + "\n\nSplit this, and then that.",
+            _SCOPED_LINE + "\n\nSplit this. Then that.",
+            "dropped_conditions",
+        ),
+        (
+            _SEED_LINE + "\n\nSplit this, and then that.",
+            _SEED_LINE + "\n\nSplit this. Then that.",
+            "dropped_conditions",
+        ),
+        # a pure split at a semicolon keeps every item
+        (_PRINCIPLES_BEFORE, _PRINCIPLES_AFTER, "dangling_fragments"),
+    ],
+    ids=["scoped-line", "seed-line", "semicolon-split"],
+)
+def test_an_unchanged_sentence_and_a_pure_split_fire_no_dropped_condition_or_cut(
+    tmp_path, original: str, rewrite: str, check: str
+) -> None:
+    assert _verdict(tmp_path, original, rewrite)[check] == []

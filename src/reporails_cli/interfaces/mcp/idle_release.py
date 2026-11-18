@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
-from reporails_cli.core.mapper.models import get_models
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.core.platform.config.bootstrap import parse_idle_timeout_env
 
 if TYPE_CHECKING:
@@ -27,7 +27,7 @@ def _parse_idle_timeout() -> int | None:
     return parse_idle_timeout_env("AILS_MCP_IDLE_S", _DEFAULT_IDLE_S)
 
 
-async def _idle_watchdog() -> None:
+async def _idle_watchdog(models: Models) -> None:
     """Unload resident models once after an idle window; re-arm on new activity."""
     idle_s = _parse_idle_timeout()
     if idle_s is None:
@@ -39,20 +39,24 @@ async def _idle_watchdog() -> None:
         await asyncio.sleep(poll)
         is_idle = time.monotonic() - _activity.last > idle_s
         if is_idle and not unloaded:
-            get_models().unload()
+            models.unload()
             unloaded = True
         elif not is_idle:
             unloaded = False
 
 
-@asynccontextmanager
-async def lifespan(_server: MCPServer[None]) -> AsyncIterator[None]:
-    """Run the idle-unload watchdog for the server's lifetime."""
-    watchdog = asyncio.create_task(_idle_watchdog())
-    try:
-        yield
-    finally:
-        watchdog.cancel()
+def lifespan_releasing(models: Models) -> Callable[[MCPServer[None]], AbstractAsyncContextManager[None]]:
+    """The server lifespan that unloads `models` after an idle window, for the server's lifetime."""
+
+    @asynccontextmanager
+    async def lifespan(_server: MCPServer[None]) -> AsyncIterator[None]:
+        watchdog = asyncio.create_task(_idle_watchdog(models))
+        try:
+            yield
+        finally:
+            watchdog.cancel()
+
+    return lifespan
 
 
 def touch_activity() -> None:

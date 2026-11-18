@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.discovery.agents import clear_agent_cache, get_known_agents
+from reporails_cli.core.discovery.agents import get_known_agents
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
@@ -53,7 +53,6 @@ requires_model = pytest.mark.skipif(not _has_onnx_model, reason="Bundled ONNX mo
 @pytest.fixture(autouse=True)
 def _clear_caches() -> None:
     """Clear module-level caches between tests."""
-    clear_agent_cache()
 
 
 @pytest.fixture
@@ -544,7 +543,6 @@ class TestCheckConfig:
         (config_dir / "config.yml").write_text(f"disabled_rules:\n  - {rule_to_disable}\n")
 
         # Run with config — that rule should not fire
-        clear_agent_cache()
         r2 = runner.invoke(app, ["check", str(p), "-f", "json"])
         d2 = json.loads(r2.output)
 

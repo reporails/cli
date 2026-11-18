@@ -20,15 +20,12 @@ def deterministic_ort(monkeypatch: pytest.MonkeyPatch) -> None:
     runs the encoders single intra-op (the encode thread pool carries the parallelism).
     """
     monkeypatch.setenv("AILS_ORT_THREADS", "1")
-    from reporails_cli.core.mapper import bio_tagger
-    from reporails_cli.core.mapper.models import get_models
+    from tests.fake_models import reset_models
 
     def _reset() -> None:
-        for cached in (bio_tagger._enc_a, bio_tagger._enc_b, bio_tagger._head_session):
-            cached.cache_clear()
         # The embedder is a process-wide singleton created once at whatever intra-op
         # the first access set; drop it so it reloads single intra-op too.
-        get_models().unload()
+        reset_models()
 
     _reset()
     yield

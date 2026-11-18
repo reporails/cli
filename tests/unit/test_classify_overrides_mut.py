@@ -12,33 +12,30 @@ changes — left undecorated.
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from reporails_cli.core.classify import _apply_project_overrides, classify_files
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.models import FileTypeDeclaration
+from reporails_cli.core.platform.dto.results import ProjectConfig
 
 
-def _patch_project_config(monkeypatch: pytest.MonkeyPatch, **attrs: object) -> None:
-    cfg = SimpleNamespace(**attrs)
-    monkeypatch.setattr(
-        "reporails_cli.core.classify.get_project_config",
-        lambda _root: cfg,
-    )
+def _project_config(root: Path, **sections: object) -> ProjectConfig:
+    """The config a real `.ails/config.yml` under `root` holds, as one run reads it."""
+    (root / ".ails").mkdir(exist_ok=True)
+    (root / ".ails" / "config.yml").write_text(yaml.safe_dump(sections), encoding="utf-8")
+    return RunContext().project_config(root)
 
 
 # --- _apply_project_overrides: surfaces getattr-or (L91) ------------------
 @pytest.mark.unit
 @pytest.mark.subsys_classify
 def test_surface_include_patterns_are_merged(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    _patch_project_config(
-        monkeypatch,
-        surfaces={"claude.main": {"include": ["EXTRA.md"]}},
-        agents={},
-    )
+    config = _project_config(tmp_path, surfaces={"claude.main": {"include": ["EXTRA.md"]}})
     decls = [FileTypeDeclaration(name="main", patterns=("CLAUDE.md",))]
-    out = _apply_project_overrides(decls, "claude", tmp_path)
+    out = _apply_project_overrides(decls, "claude", config)
     # `or`->`and` collapses a truthy surfaces dict to {} and drops the include.
     assert "EXTRA.md" in out[0].patterns
 
@@ -47,13 +44,9 @@ def test_surface_include_patterns_are_merged(monkeypatch: pytest.MonkeyPatch, tm
 @pytest.mark.unit
 @pytest.mark.subsys_classify
 def test_main_fallback_filenames_are_merged(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    _patch_project_config(
-        monkeypatch,
-        surfaces={},
-        agents={"claude": {"fallback_filenames": ["FALLBACK.md"]}},
-    )
+    config = _project_config(tmp_path, agents={"claude": {"fallback_filenames": ["FALLBACK.md"]}})
     decls = [FileTypeDeclaration(name="main", patterns=("CLAUDE.md",))]
-    out = _apply_project_overrides(decls, "claude", tmp_path)
+    out = _apply_project_overrides(decls, "claude", config)
     # `or`->`and` drops the agents dict; `==`->`!=` skips the main declaration.
     assert "**/FALLBACK.md" in out[0].patterns
 
@@ -61,13 +54,9 @@ def test_main_fallback_filenames_are_merged(monkeypatch: pytest.MonkeyPatch, tmp
 @pytest.mark.unit
 @pytest.mark.subsys_classify
 def test_non_main_declaration_gets_no_fallback(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    _patch_project_config(
-        monkeypatch,
-        surfaces={},
-        agents={"claude": {"fallback_filenames": ["FALLBACK.md"]}},
-    )
+    config = _project_config(tmp_path, agents={"claude": {"fallback_filenames": ["FALLBACK.md"]}})
     decls = [FileTypeDeclaration(name="skills", patterns=("SKILL.md",))]
-    out = _apply_project_overrides(decls, "claude", tmp_path)
+    out = _apply_project_overrides(decls, "claude", config)
     # `==`->`!=` would apply the main fallback to this non-main declaration.
     assert "**/FALLBACK.md" not in out[0].patterns
     assert out[0].patterns == ("SKILL.md",)

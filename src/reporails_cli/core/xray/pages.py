@@ -11,14 +11,13 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-import httpx
-
 from reporails_cli.core.cache.hashing import content_hash
 from reporails_cli.core.discovery.walk import safe_resolve
-from reporails_cli.core.platform.adapters.programs import launch_detached
 from reporails_cli.core.platform.config.bootstrap import get_xray_pages_dir
-from reporails_cli.core.platform.contract.errors import XrayPageError
+from reporails_cli.core.platform.contract.errors import PlatformUnavailableError, XrayPageError
+from reporails_cli.core.platform.contract.http_get import HttpGet
 from reporails_cli.core.platform.contract.json_value import JsonValue, as_object, as_str, opt_int
+from reporails_cli.core.platform.contract.launcher import Launcher
 from reporails_cli.core.platform.dto.xray import SessionPick, XrayPage
 from reporails_cli.core.platform.utils.utils import write_json_atomic
 from reporails_cli.core.platform.utils.version import installed_code_stamp
@@ -68,23 +67,25 @@ def forget_page(root: Path, launch: str) -> None:
             _record_path(root).unlink()
 
 
-def _answers(page: XrayPage) -> bool:
+def _answers(page: XrayPage, probe: HttpGet) -> bool:
     """Whether the process on the page's port reports the page's own launch id and the installed code it started
     with."""
     try:
-        reply = httpx.get(f"http://{HOST}:{page.port}/launch", timeout=_PROBE_TIMEOUT_S)
-        body = as_object(reply.json())
+        with probe(
+            f"http://{HOST}:{page.port}/launch", headers={}, timeout=_PROBE_TIMEOUT_S, follow_redirects=True
+        ) as reply:
+            body = as_object(json.loads(b"".join(reply.chunks())))
         return as_str(body.get("launch")) == page.launch and body.get("changed") is False
-    except (httpx.HTTPError, ValueError):
+    except (PlatformUnavailableError, ValueError):
         return False
 
 
-def running_page(root: Path) -> XrayPage | None:
+def running_page(root: Path, probe: HttpGet) -> XrayPage | None:
     """The page running for the project, or None; a record whose page does not answer is removed."""
     page = _read_record(root)
     if page is None:
         return None
-    if _answers(page):
+    if _answers(page, probe):
         return page
     with contextlib.suppress(OSError):
         _record_path(root).unlink()
@@ -109,14 +110,14 @@ def _take_lock(root: Path) -> bool:
     return False
 
 
-def _wait_for_page(root: Path, launch: str | None) -> XrayPage:
+def _wait_for_page(root: Path, launch: str | None, probe: HttpGet) -> XrayPage:
     """The page that answers for the project, the one registered under `launch` when given; raises `XrayPageError`
     when none answers within `PAGE_START_S`. The launch id names the page, not a pid: a Windows virtual
     environment's `python.exe` starts the real interpreter as a child, so the page's own pid is not the one the
     start returned."""
     deadline = time.monotonic() + PAGE_START_S
     while time.monotonic() < deadline:
-        page = running_page(root)
+        page = running_page(root, probe)
         if page is not None and (launch is None or page.launch == launch):
             return page
         time.sleep(_POLL_S)
@@ -128,13 +129,13 @@ def _unwritable(exc: OSError) -> XrayPageError:
     return XrayPageError(f"the x-ray page could not start; its folder is {get_xray_pages_dir()}: {exc}")
 
 
-def start_page(root: Path, session_id: str) -> tuple[XrayPage, bool]:
+def start_page(root: Path, session_id: str, launcher: Launcher, probe: HttpGet) -> tuple[XrayPage, bool]:
     """The project's page and whether it was already running; with none running, start one on `session_id`,
     detached, and wait for it to answer.
 
     While another start of the project's page is in progress, wait for the page it registers. Raises
     `XrayPageError` when the page cannot be started or when none answers in time."""
-    page = running_page(root)
+    page = running_page(root, probe)
     if page is not None:
         return page, True
     try:
@@ -142,9 +143,9 @@ def start_page(root: Path, session_id: str) -> tuple[XrayPage, bool]:
     except OSError as exc:
         raise _unwritable(exc) from exc
     if not locked:
-        return _wait_for_page(root, None), True
+        return _wait_for_page(root, None, probe), True
     try:
-        page = running_page(root)
+        page = running_page(root, probe)
         if page is not None:
             return page, True
         # `-P` keeps the working folder off the import path and `-E` ignores PYTHONPATH and PYTHONHOME; the user
@@ -153,10 +154,10 @@ def start_page(root: Path, session_id: str) -> tuple[XrayPage, bool]:
         command = [sys.executable, "-E", "-P", "-m", "reporails_cli", "xray", "--no-open", "--session", session_id]
         command += ["--launch", launch]
         try:
-            launch_detached(command, cwd=root)
+            launcher(command, cwd=root)
         except OSError as exc:
             raise _unwritable(exc) from exc
-        return _wait_for_page(root, launch), False
+        return _wait_for_page(root, launch, probe), False
     finally:
         with contextlib.suppress(OSError):
             _lock_path(root).unlink()

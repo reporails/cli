@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
@@ -64,6 +65,7 @@ def test_two_distinctive_agents_each_run_their_own_rules_never_generic(
     real_content_checks = rule_runner.run_content_quality_checks
 
     def _spy_m_probes(
+        run: RunContext,
         project_dir: Path,
         instruction_files: list[Path],
         agent: str = "",
@@ -76,6 +78,7 @@ def test_two_distinctive_agents_each_run_their_own_rules_never_generic(
         if project_checks != "only":
             m_probe_calls.append((agent, tuple(sorted(f.name for f in instruction_files))))
         return real_m_probes(
+            run,
             project_dir,
             instruction_files,
             agent=agent,
@@ -86,6 +89,7 @@ def test_two_distinctive_agents_each_run_their_own_rules_never_generic(
         )
 
     def _spy_content_checks(
+        run: RunContext,
         ruleset_map: object,
         project_dir: Path,
         instruction_files: list[Path] | None = None,
@@ -93,7 +97,7 @@ def test_two_distinctive_agents_each_run_their_own_rules_never_generic(
         exclusions: object = None,
     ):
         content_calls.append((agent, tuple(sorted(f.name for f in (instruction_files or [])))))
-        return real_content_checks(ruleset_map, project_dir, instruction_files, agent=agent, exclusions=exclusions)
+        return real_content_checks(run, ruleset_map, project_dir, instruction_files, agent=agent, exclusions=exclusions)
 
     monkeypatch.setattr(rule_runner, "run_m_probes", _spy_m_probes)
     monkeypatch.setattr(check_pipeline, "run_content_quality_checks", _spy_content_checks)

@@ -10,8 +10,11 @@ import re
 from collections import Counter
 from collections.abc import Sequence
 
-from reporails_cli.core.heal.preservation.words import AtomView, content_words, named_key
+from reporails_cli.core.heal.preservation.words import AtomView, named_key, slot_words
+from reporails_cli.core.mapper.classify import condition_text
+from reporails_cli.core.mapper.classify_lexicon import DEFINITE_DETERMINERS, words_of
 from reporails_cli.core.platform.contract.environment import ProjectEnvironment
+from reporails_cli.core.platform.contract.glob_pattern import GLOB_CHARS
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.heal import SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import Atom
@@ -39,8 +42,8 @@ def _span_present(inner: str, text: str, *, fold: bool = False) -> bool:
 
 
 def _token_inners(atoms: Sequence[AtomView]) -> set[str]:
-    """The inner text (backticks stripped) of every named token of `atoms`."""
-    return {tok.strip("`") for a in atoms for tok in a.named_tokens}
+    """The inner text of every named token of `atoms`."""
+    return {tok for a in atoms for tok in a.named_tokens}
 
 
 def lost_named_tokens(snap_atoms: list[SnapshotAtom], new_text: str, new_atoms: Sequence[Atom] = ()) -> list[str]:
@@ -51,8 +54,7 @@ def lost_named_tokens(snap_atoms: list[SnapshotAtom], new_text: str, new_atoms: 
     lost: list[str] = []
     for sa in snap_atoms:
         for tok in sa.named_tokens:
-            inner = tok.strip("`")
-            if inner and inner not in new_inners and not _span_present(inner, new_text) and tok not in lost:
+            if tok and tok not in new_inners and not _span_present(tok, new_text) and tok not in lost:
                 lost.append(tok)
     return lost
 
@@ -73,12 +75,20 @@ def mentions(inner: str, text: str) -> int:
 
 
 def _unnamed_counterparts(
-    snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom], split_covering_for: dict[int, list[Atom]]
+    snap_atoms: list[SnapshotAtom],
+    new_atoms: Sequence[Atom],
+    matched_new_for: dict[int, Atom],
+    split_covering_for: dict[int, list[Atom]],
 ) -> set[int]:
     """`id()`s of every new atom that stands in for an originally-unnamed snapshot instruction
-    — its direct match, or every atom in the split window that covers it — `repeated_named`'s
+    — its direct match, every atom in the split window that covers it, and every atom the mapper
+    cut from the same line as its direct match that no instruction claimed — `repeated_named`'s
     credit-eligible set for the vague-instruction-concretized allowance."""
-    was_unnamed = {id(match) for sa in snap_atoms if not sa.named_tokens if (match := matched_new_for.get(id(sa)))}
+    matches = [match for sa in snap_atoms if not sa.named_tokens if (match := matched_new_for.get(id(sa)))]
+    was_unnamed = {id(match) for match in matches}
+    claimed = {id(m) for m in matched_new_for.values()}
+    lines = {match.line for match in matches}
+    was_unnamed.update(id(na) for na in new_atoms if na.line in lines and id(na) not in claimed)
     for sa in snap_atoms:
         if not sa.named_tokens:
             was_unnamed.update(id(na) for na in split_covering_for.get(id(sa), ()))
@@ -116,20 +126,17 @@ def repeated_named(
     allowance: Counter[str] = Counter()
     order: list[str] = []
     for sa in snap_atoms:
-        for inner in dict.fromkeys(t.strip("`") for t in sa.named_tokens):
+        for inner in dict.fromkeys(sa.named_tokens):
             if inner and not wordless(inner):
                 allowance[inner] += sa.charge_value != 0
                 order.append(inner)
-    was_unnamed = _unnamed_counterparts(snap_atoms, matched_new_for, split_covering_for)
+    was_unnamed = _unnamed_counterparts(snap_atoms, new_atoms, matched_new_for, split_covering_for)
     for na in new_atoms:
-        for inner in dict.fromkeys(t.strip("`") for t in na.named_tokens):
+        for inner in dict.fromkeys(na.named_tokens):
             if inner and not wordless(inner) and token_present(inner, original_text):
                 order.append(inner)
                 allowance[inner] += id(na) in was_unnamed and na.charge_value != 0
     return _flag_overruns(order, allowance, original_text, new_text)
-
-
-_GLOB_CHARS = frozenset("*?[]")
 
 
 def token_present_ci(inner: str, text: str) -> bool:
@@ -143,7 +150,7 @@ def _is_existing_path(inner: str, environment: ProjectEnvironment) -> bool:
     reference), and a path carrying a glob character never counts (a glob pattern is not itself a
     path that "exists")."""
     candidate = inner.rstrip("/")
-    if not candidate or any(c in _GLOB_CHARS for c in candidate):
+    if not candidate or any(c in GLOB_CHARS for c in candidate):
         return False
     return environment.path_exists(candidate)
 
@@ -180,8 +187,7 @@ def invented_named(
     for na in new_atoms:
         if na.format == "code_block":
             continue
-        for tok in na.named_tokens:
-            inner = tok.strip("`")
+        for inner in na.named_tokens:
             key = inner.lower()
             if not inner or key in seen or key in snap_inners:
                 continue
@@ -191,19 +197,15 @@ def invented_named(
             ):
                 continue
             seen.add(key)
-            out.append({"line": na.line, "token": tok})
+            out.append({"line": na.line, "token": inner})
     return out
 
 
-_SUBWORD_RE = re.compile(r"[a-zA-Z0-9]+")
-
-
 def _subwords(text: str) -> set[str]:
-    """`text` split into its own alphanumeric sub-words, three-plus letters, lowered —
-    underscores, slashes, dots and backticks are all boundaries here (unlike `content_words`,
-    which keeps `snake_case` and `dotted.paths` joined), the finer split a path segment or an
-    identifier needs to expose the plain word it carries."""
-    return {w.lower() for w in _SUBWORD_RE.findall(text) if len(w) > 2}
+    """The three-plus letter words of `text`, lowered — underscores, slashes, dots and backticks
+    are all boundaries here, the split a path segment or an identifier needs to expose the plain
+    word it carries."""
+    return {w for w in words_of(text) if len(w) > 2}
 
 
 def _names_an_existing_referent(token_key: str, old_text: str) -> bool:
@@ -219,40 +221,28 @@ def _names_an_existing_referent(token_key: str, old_text: str) -> bool:
     token_words = _subwords(token_key)
     if not token_words:
         return False
-    old_words = content_words(old_text)
-    return bool(token_words & old_words)
+    return bool(token_words & _subwords(old_text))
 
 
-# An example marker — `e.g.`, `for example`, `such as`, `like`, `for instance`, bare or opening a
-# parenthetical — or a reason-clause marker — `because`, `since`, `so that`, `to avoid`,
-# `otherwise`, or a `,`/`—` before a clause-opening `so`. Once one of these opens, the rest of
-# the instruction's own text is an illustration or a justification, not more of what the
-# instruction itself forbids or permits.
-_EXAMPLE_OR_REASON_RE = re.compile(
-    r"\((?:e\.g\.|for example|such as|like|for instance)(?!\w)"
-    r"|\b(?:e\.g\.|for example|such as|like|for instance)(?!\w)"
-    r"|\b(?:because|since|so that|to avoid|otherwise)\b"
-    r"|[,—-]\s*so\b",
-    re.IGNORECASE,
-)
+def _names_the_definite_object(old: AtomView, new: AtomView, token_key: str) -> bool:
+    """Whether `token_key` is the whole object of `new` and `old`'s object is a definite reference
+    (`the linter`): the rewrite names the one thing the original already pointed to, where a bare
+    category (`secrets`) or a construct added beside other object words widens what is forbidden."""
+    old_object = slot_words(old, "object")
+    new_object = slot_words(new, "object")
+    return bool(old_object and new_object and old_object[0] in DEFINITE_DETERMINERS) and set(new_object) <= set(
+        words_of(token_key)
+    )
 
 
-def _governing_clause_end(text: str) -> int | None:
-    """The position in `text` where an example or reason-clause marker opens, or `None` when
-    none does — a named token at or past this position sits outside the instruction's own
-    governing clause."""
-    starts = [m.start() for m in _EXAMPLE_OR_REASON_RE.finditer(text)]
-    return min(starts) if starts else None
-
-
-def _in_trailing_illustration(token: str, text: str, clause_end: int | None) -> bool:
-    """Whether `token` (its own backtick-quoted span) first occurs in `text` at or after
-    `clause_end` — an example or a reason the rewrite tacked on, not part of what the
-    instruction's governing clause itself forbids or permits."""
-    if clause_end is None:
-        return False
-    pos = text.find(token)
-    return pos != -1 and pos >= clause_end
+def _governed(atom: AtomView) -> set[str]:
+    """The lowered named constructs of `atom` that sit in the object, the scope or the condition the
+    mapper read: a construct outside all three (an example or a reason tacked on) illustrates or justifies the
+    instruction and is no part of what it forbids. An atom with no slots read governs all of them."""
+    if atom.slots is None or not atom.slots.decoded:
+        return {named_key(t) for t in atom.named_tokens}
+    words = set(slot_words(atom, "object", "scope")) | set(words_of(condition_text(atom) or ""))
+    return {named_key(t) for t in atom.named_tokens if not (own := words_of(t)) or set(own) <= words}
 
 
 def prohibition_scope_changes(snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom]) -> list[JsonObject]:
@@ -268,12 +258,9 @@ def prohibition_scope_changes(snap_atoms: list[SnapshotAtom], matched_new_for: d
     a scope change — AND (on the added side only) the token neither merely spells out a referent
     the old instruction's own words already carried (`_names_an_existing_referent`: "per the
     template" naming itself as a file path is concretizing a referent already in the sentence,
-    not banning something new) NOR sits inside a trailing example or reason clause the rewrite
-    tacked onto the instruction's own governing clause (`_in_trailing_illustration`: "such as
-    `X`" or "— because `X`" illustrates or justifies the SAME prohibition, it does not widen
-    what the instruction itself forbids). The dropped side reads the original the same way: a
-    construct the original only gave as an example or a reason is not something the rewrite
-    dropped from what is forbidden. Each entry is `{line, text, new_line, new_text, added,
+    not banning something new). Only the constructs in the object or scope the mapper read count
+    (`_governed`): one outside both illustrates or justifies the SAME prohibition and does not
+    change what it forbids. Each entry is `{line, text, new_line, new_text, added,
     dropped}` (`added`/`dropped` are lowercased construct keys); `line` names the original
     prohibition so a caller can quote it."""
     out: list[JsonObject] = []
@@ -283,18 +270,14 @@ def prohibition_scope_changes(snap_atoms: list[SnapshotAtom], matched_new_for: d
         match = matched_new_for.get(id(sa))
         if match is None:
             continue
-        old_clause_end = _governing_clause_end(sa.text)
-        old_named = {named_key(t) for t in sa.named_tokens if not _in_trailing_illustration(t, sa.text, old_clause_end)}
-        new_tokens = match.named_tokens
-        new_named = {named_key(t) for t in new_tokens}
-        clause_end = _governing_clause_end(match.text)
-        illustrated = {named_key(t) for t in new_tokens if _in_trailing_illustration(t, match.text, clause_end)}
         added = sorted(
             t
-            for t in new_named
-            if not token_present_ci(t, sa.text) and not _names_an_existing_referent(t, sa.text) and t not in illustrated
+            for t in _governed(match)
+            if not token_present_ci(t, sa.plain_text)
+            and not _names_an_existing_referent(t, sa.plain_text)
+            and not _names_the_definite_object(sa, match, t)
         )
-        dropped = sorted(t for t in old_named if not token_present_ci(t, match.text))
+        dropped = sorted(t for t in _governed(sa) if not token_present_ci(t, match.plain_text))
         if added or dropped:
             out.append(
                 {

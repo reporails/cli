@@ -107,6 +107,43 @@ def step_column(context):
         assert shown["tools"] == [{"tool": t["tool"], "n": t["calls"]} for t in node["tools"]], shown["tools"]
 
 
+@then("a selected subagent's down pill opens its task prompt and its up pill opens what it handed back")
+def step_handoff(context):
+    seen = _panels(context, "handoff")
+    if seen is None:
+        return
+    assert seen["down"]["text"] == "task text of a4" and seen["down"]["kicker"].startswith("Task prompt"), seen["down"]
+    assert seen["up"]["text"] == "handed-back text of a4", seen["up"]
+    assert seen["up"]["kicker"].startswith("Hand-back message"), seen["up"]
+    assert seen["down"]["tag"] == seen["up"]["tag"] == "BUTTON", seen
+
+
+@then("a selected short subagent's down and up pills do not overlap and each opens its text")
+def step_short_pills(context):
+    seen = _panels(context, "short_pills")
+    if seen is None:
+        return
+    d, u = seen["down"]["rect"], seen["up"]["rect"]
+    apart = d["right"] <= u["left"] or u["right"] <= d["left"] or d["bottom"] <= u["top"] or u["bottom"] <= d["top"]
+    assert apart, seen
+    assert seen["down"]["top"] == "down" and seen["up"]["top"] == "up", seen
+    assert seen["down"]["kicker"].startswith("Task prompt"), seen["down"]
+    assert seen["up"]["kicker"].startswith("Hand-back message"), seen["up"]
+
+
+@then("a failed subagent's Failed line opens the text its parent received")
+def step_failed_handback(context):
+    seen = _panels(context, "failed_handback")
+    if seen is None:
+        return
+    assert seen["failed"]["line"] == "Failed", seen["failed"]
+    assert seen["failed"]["kicker"].startswith("Result the parent received"), seen["failed"]
+    assert seen["failed"]["text"] == "handed-back text of a9", seen["failed"]
+    assert seen["pill"]["kicker"].startswith("Result the parent received"), seen["pill"]
+    assert "What the parent received" in seen["pill"]["title"], seen["pill"]
+    assert seen["pill"]["text"] == "handed-back text of a9", seen["pill"]
+
+
 @then("a source opens its text from the file route and the peak legend adds up to the whole")
 def step_details(context):
     seen = _panels(context, "details")
@@ -236,3 +273,30 @@ def step_real_pin(context):
 @then("on the real page the subagent's cost tile shows dollars and the main tile's session line is main plus subagents")
 def step_real_cost(context):
     assert _agent_costs(_panels(context, "sub_cost")) is not None or context.scenario.status == "skipped"
+
+
+@then("the card and the row that opened the details are marked open and the one opened before is not")
+def step_open_mark(context):
+    seen = _panels(context, "open_mark")
+    if seen is None:
+        return
+    card = seen["card"]
+    assert card and seen["none"] == [], seen
+    on_card = [m for m in seen["afterCard"] if m["source"] == card and m["tag"] == "BUTTON"]
+    assert on_card and all(m["expanded"] == "true" for m in seen["afterCard"]), seen["afterCard"]
+    assert seen["afterClose"] == [], seen["afterClose"]
+    assert seen["afterRow"] and all(m["peek"] == "peak:main" and m["expanded"] == "true" for m in seen["afterRow"]), (
+        seen["afterRow"]
+    )
+
+
+@then("a station pill, and a Tool calls row scrolled away and back, stay marked open and the Tool calls strip never is")
+def step_open_more(context):
+    seen = _panels(context, "open_more")
+    if seen is None:
+        return
+    assert seen["stationKey"] and seen["station"] == {"expanded": "true", "on": True}, seen
+    assert seen["row"] == {"expanded": "true", "on": True}, seen
+    assert seen["away"] is None, ("the row must have left the page while scrolled away", seen)
+    assert seen["back"] == {"expanded": "true", "on": True}, seen
+    assert seen["strip"] == {"expanded": None, "open": False}, seen

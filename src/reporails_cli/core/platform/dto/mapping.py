@@ -62,13 +62,22 @@ class HeadEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class InstructionUnit:
+    """One instruction cut from a sentence: its text, and how many chars before it the cut that started it
+    matched (0 for the first of a sentence)."""
+
+    text: str
+    lead: int
+
+
+@dataclass(frozen=True, slots=True)
 class SentEntry:
     """An instruction atom split into `units`, decoded from the texts from `start`."""
 
     atom: Atom
     plain: bool
     start: int
-    units: list[str]
+    units: list[InstructionUnit]
 
 
 type PlanEntry = PassEntry | HeadEntry | SentEntry
@@ -108,14 +117,6 @@ class AtomTuple:
     object: Span
     scope: Span
     text: str
-
-
-class CoverageRestrictor(NamedTuple):
-    """When a word cuts a rule's coverage down: it must be followed by one of `next_words` (any word
-    when empty), and the author's line must hold none of `already` (the senses it already carries)."""
-
-    next_words: frozenset[str]
-    already: frozenset[str]
 
 
 class FileTypeSpec(NamedTuple):

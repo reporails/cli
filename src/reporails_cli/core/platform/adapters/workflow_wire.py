@@ -6,7 +6,7 @@ location, or an empty field, never an error.
 
 from __future__ import annotations
 
-from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_int, as_object, opt_int
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_int, as_object, as_str, opt_int
 from reporails_cli.core.platform.dto.diagnostics import (
     ListedFinding,
     LocationFinding,
@@ -124,4 +124,5 @@ def deserialize_workflow(data: JsonObject) -> RemediationWorkflow | None:
         locations=tuple(locations),
         listed=listed,
         summary=str(wf.get("summary", "")),
+        preservation_contract=as_str(wf.get("preservation_contract")),
     )

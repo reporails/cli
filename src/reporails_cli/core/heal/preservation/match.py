@@ -6,13 +6,27 @@ rewrite added with no basis in the original, and which prose it dropped.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 
-from reporails_cli.core.heal.preservation.words import NEGATION_RE, content_words, named_key
-from reporails_cli.core.mapper.classify import AFFIRMATIVE_ABSOLUTES, leading_prohibition
+from reporails_cli.core.heal.preservation.words import (
+    AtomView,
+    atom_words,
+    core_words,
+    is_content_word,
+    is_word_of,
+    named_key,
+    prose_text,
+)
+from reporails_cli.core.mapper.classify import (
+    AFFIRMATIVE_ABSOLUTES,
+    condition_text,
+    has_negation_cue,
+    leading_prohibition,
+)
 from reporails_cli.core.mapper.classify_lexicon import words_of
-from reporails_cli.core.mapper.prose_split import sentence_spans
+from reporails_cli.core.mapper.prose_split import split_prose_sentences
 from reporails_cli.core.platform.contract.json_value import JsonObject
-from reporails_cli.core.platform.dto.heal import SnapshotAtom
+from reporails_cli.core.platform.dto.heal import Snapshot, SnapshotAtom
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 # Matching thresholds, pinned by tests.
@@ -77,19 +91,23 @@ def _mixed_polarity_restated(sa_text: str, na_text: str) -> bool:
     already paired as one instruction; negation symmetry alone is too weak a signal to pair on."""
     if (_leading_polarity_sign(sa_text) == -1) != (_leading_polarity_sign(na_text) == -1):
         return False
-    return bool(NEGATION_RE.search(_without_leading_marker(sa_text))) and bool(
-        NEGATION_RE.search(_without_leading_marker(na_text))
-    )
+    return has_negation_cue(_without_leading_marker(sa_text)) and has_negation_cue(_without_leading_marker(na_text))
 
 
-def _content_coverage(sa_text: str, na_text: str) -> float:
-    """The fraction of `sa_text`'s content words (stopwords removed) present in `na_text` —
-    of the SNAPSHOT side only, never normalized by the shorter of the two word sets, so a
-    short survivor sharing one word with a long lost instruction cannot pass the threshold."""
-    wa = content_words(sa_text)
+def _content_coverage(sa: AtomView, na: AtomView) -> float:
+    """The fraction of `sa`'s core words (its subject, predicate and object, not the condition that
+    restricts it) present in `na` — of the SNAPSHOT side only, never normalized by the shorter of
+    the two word sets, so a short survivor sharing one word with a long lost instruction cannot
+    pass the threshold. A rewrite that only drops or adds a condition still pairs, and the
+    condition checks report it."""
+    wa = {w for w in core_words(sa) if is_content_word(w)}
+    condition = condition_text(sa)
+    if condition is not None:
+        wa = wa - set(words_of(condition)) or wa
     if not wa:
         return 0.0
-    return len(wa & content_words(na_text)) / len(wa)
+    have = atom_words(na) | set(words_of(prose_text(na)))
+    return len({w for w in wa if w in have or is_word_of(w, have)}) / len(wa)
 
 
 def pair_score(sa: SnapshotAtom, na: Atom) -> float | None:
@@ -97,7 +115,7 @@ def pair_score(sa: SnapshotAtom, na: Atom) -> float | None:
     content-word coverage of the snapshot instruction, or embedding cosine. A shared named
     token raises the score but never qualifies a pair by itself."""
     cos = _cosine(sa.embedding_int8, na.embedding_int8)
-    coverage = _content_coverage(sa.text, na.text)
+    coverage = _content_coverage(sa, na)
     if coverage < OVERLAP_THRESHOLD and (cos is None or cos < COSINE_THRESHOLD):
         return None
     score = max(coverage, cos or 0.0)
@@ -151,7 +169,7 @@ def _split_window(sa: SnapshotAtom, new_atoms: list[Atom]) -> list[Atom] | None:
     atoms are never part of the window. Returns the covering window (`sa`'s counterparts for
     `repeated_named`'s vague-instruction-concretized credit), or `None` when no window clears
     the coverage threshold."""
-    words = content_words(sa.text)
+    words = atom_words(sa)
     if not words:
         return None
     charged = [na for na in new_atoms if na.charge_value != 0]
@@ -161,7 +179,7 @@ def _split_window(sa: SnapshotAtom, new_atoms: list[Atom]) -> list[Atom] | None:
         for j in range(i, min(i + SPLIT_WINDOW, len(charged))):
             na = charged[j]
             has_polarity = has_polarity or na.charge_value == sa.charge_value
-            union |= content_words(na.text)
+            union |= atom_words(na)
             if has_polarity and len(words & union) / len(words) >= SPLIT_COVERAGE:
                 return charged[i : j + 1]
     return None
@@ -203,8 +221,24 @@ def instruction_diffs(
     return lost, flips, matched_new_for, split_covering_for
 
 
+def _sentence_words(atoms: Iterable[SnapshotAtom]) -> list[set[str]]:
+    """The words of each sentence of `atoms`' plain text: each line's atoms joined and cut by the
+    mapper's sentence splitter."""
+    by_line: dict[int, list[SnapshotAtom]] = {}
+    for atom in atoms:
+        by_line.setdefault(atom.line, []).append(atom)
+    return [
+        words
+        for line_atoms in by_line.values()
+        for sentence in split_prose_sentences(
+            " ".join(a.plain_text for a in line_atoms), [t for a in line_atoms for t in a.named_tokens]
+        )
+        if (words := set(words_of(sentence)))
+    ]
+
+
 def added_instructions(
-    snapshot_text: str,
+    snapshot: Snapshot,
     new_atoms: list[Atom],
     matched_new_for: dict[int, Atom],
     split_covering_for: dict[int, list[Atom]],
@@ -212,7 +246,8 @@ def added_instructions(
     """Every charged new atom the rewrite carries with no snapshot counterpart at all — not a
     direct or flipped match (`matched_new_for`'s values), not part of a packed-sentence split's
     covering window (`split_covering_for`'s values) — and whose content words are mostly absent
-    from every single sentence of `snapshot_text`: an instruction (a prohibition or a directive)
+    from every single sentence of the snapshot's atoms (list items included): an instruction (a
+    prohibition or a directive)
     the rewrite added that the original gave it no basis for. Words scattered over unrelated
     sentences of the original do not make a new instruction a restatement. A reworded, split, or
     reheaded instruction still traces most of its words to one original sentence and clears the
@@ -228,17 +263,12 @@ def added_instructions(
     miss a genuinely added instruction instead."""
     claimed_na = {id(m) for m in matched_new_for.values()}
     used_in_split = {id(x) for window in split_covering_for.values() for x in window}
-    orig_sentences = [
-        w
-        for line in snapshot_text.split("\n")
-        for w in (content_words(line[a:b]) for a, b in sentence_spans(line))
-        if w
-    ]
+    orig_sentences = _sentence_words((*snapshot.atoms, *snapshot.list_objects))
     out: list[JsonObject] = []
     for na in new_atoms:
         if na.charge_value == 0 or id(na) in claimed_na or id(na) in used_in_split:
             continue
-        words = content_words(na.text)
+        words = atom_words(na)
         if not words:
             continue
         coverage = max((len(words & sentence) / len(words) for sentence in orig_sentences), default=0.0)
@@ -247,17 +277,17 @@ def added_instructions(
     return out
 
 
-def lost_context(snap_atoms: list[SnapshotAtom], new_text: str) -> list[JsonObject]:
+def lost_context(snap_atoms: list[SnapshotAtom], new_atoms: Iterable[AtomView]) -> list[JsonObject]:
     """Snapshot neutral prose atoms (charge 0, format `prose`) whose content words are less
-    than half present in the new file's text — factual context a rewrite silently dropped.
+    than half present in the new file's atoms — factual context a rewrite silently dropped.
     Relation-allowed lines are already excluded from `snap_atoms` by the caller, the same as
     every other check."""
-    new_words = content_words(new_text)
+    new_words = {w for a in new_atoms for w in words_of(a.plain_text)}
     out: list[JsonObject] = []
     for a in snap_atoms:
         if a.charge_value != 0 or a.format != "prose":
             continue
-        words = content_words(a.text)
+        words = atom_words(a)
         if not words:
             continue
         if len(words & new_words) / len(words) < OVERLAP_THRESHOLD:

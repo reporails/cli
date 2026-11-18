@@ -5,6 +5,7 @@ All functions are pure (no I/O) except where noted.
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import math
@@ -21,8 +22,18 @@ from yaml.resolver import Resolver
 from reporails_cli.core.platform.contract.glob_pattern import glob_matches
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.frontmatter import Frontmatter, FrontmatterBlock, FrontmatterProblem
+from reporails_cli.core.platform.utils.file_read import read_file_text
 
 logger = logging.getLogger(__name__)
+
+# Scores are shown to one decimal; a change smaller than that is not a change.
+SCORE_DECIMALS = 1
+
+
+def format_score(score: float) -> str:
+    """A 0-10 score as shown: `8.4`."""
+    return f"{score:.{SCORE_DECIMALS}f}"
+
 
 _TIMESTAMP_TAG = "tag:yaml.org,2002:timestamp"
 # Explicit tags whose constructors build values JSON cannot hold (bytes, sets, tuples, dates).
@@ -72,28 +83,9 @@ def fast_yaml_load(content: str) -> JsonValue:
     return loaded
 
 
-# File-level YAML cache — avoids re-parsing the same file from multiple call sites
-# (e.g., registry loads checks.yml for Rule construction, compiler re-reads for regex).
-_yaml_file_cache: dict[str, tuple[tuple[int, int], JsonValue]] = {}
-
-
 def load_yaml_file(path: Path) -> JsonValue:
-    """Load and cache a YAML file using the fastest available loader; a cached read is reused only
-    while the file's modification time and size are unchanged, so an edited file is read again."""
-    key = str(path)
-    stat = path.stat()
-    stamp = (stat.st_mtime_ns, stat.st_size)
-    cached = _yaml_file_cache.get(key)
-    if cached is not None and cached[0] == stamp and cached[1] is not None:
-        return cached[1]
-    data = fast_yaml_load(path.read_text(encoding="utf-8"))
-    _yaml_file_cache[key] = (stamp, data)
-    return data
-
-
-def forget_yaml_file(path: Path) -> None:
-    """Drop the cached read of a YAML file this process just rewrote, so the next read parses the new content."""
-    _yaml_file_cache.pop(str(path), None)
+    """Load a YAML file using the fastest available loader; every call reads the file as it is now."""
+    return fast_yaml_load(read_file_text(path))
 
 
 def yaml_error_line(exc: Exception) -> str:
@@ -250,19 +242,86 @@ def read_frontmatter(content: str, *, lenient: bool = False) -> Frontmatter:
 def read_frontmatter_file(path: Path, *, lenient: bool = False) -> Frontmatter | None:
     """`read_frontmatter` of the file at `path`, or None when the file cannot be read. I/O function."""
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = read_file_text(path, errors="replace")
     except OSError:
         return None
     return read_frontmatter(text, lenient=lenient)
 
 
-def expand_home_pattern(pattern: str) -> str:
-    """A `~`-rooted glob pattern with `~` resolved to the user's home directory.
+@functools.lru_cache(maxsize=8)
+def _home_spellings(written: str) -> tuple[Path, ...]:
+    home = Path(written)
+    try:
+        resolved = home.resolve()
+    except (RuntimeError, OSError):
+        return (home,)
+    return (resolved,) if resolved == home else (resolved, home)
 
-    Lets a pattern be compared against a file outside the scan root, whose relative path falls
-    back to its absolute path string. A pattern with no leading `~` is returned unchanged.
+
+def home_spellings() -> tuple[Path, ...]:
+    """The user's home folder as it resolves, then as the environment spells it when that differs (a Windows
+    short `RUNNER~1` folder name, a symlinked home); empty when no home folder can be determined."""
+    try:
+        written = Path.home()
+    except RuntimeError:
+        return ()
+    return _home_spellings(str(written))
+
+
+def home_folder() -> Path | None:
+    """The user's home folder, resolved where it can be; None when it cannot be determined."""
+    spellings = home_spellings()
+    return spellings[0] if spellings else None
+
+
+def home_relative(path: Path) -> str | None:
+    """`path` relative to the user's home folder, `/`-separated, whichever way the home is spelled in it;
+    None when it is not under it."""
+    for home in home_spellings():
+        if path.is_relative_to(home):
+            return path.relative_to(home).as_posix()
+    return None
+
+
+def relative_wire_path(path: str, root: Path) -> str:
+    """`path` relative to the project or the home folder, as it rides the wire. `root` is the checked
+    project's root, never a root guessed from the mapped files themselves (that guess collapses to the wrong
+    directory whenever the mapped set doesn't happen to span down from the real root —
+    a single mapped file, or a `.claude/rules/`-only project).
+
+    Three forms, decided by where `path` actually sits, each one mapping back to the
+    same local file when the response is read:
+
+    * inside `root`: the project-relative posix path.
+    * outside `root` but inside the user's home directory (a user-level
+      `~/.claude/CLAUDE.md`, an agent-memory file) — `~/`-relative, so the home
+      directory and the username never ride the wire, only the literal `~`.
+    * neither: `path` unchanged. This only reaches a file the CLI itself resolved
+      outside both the project and the home directory, which carries no home-directory
+      component to begin with.
     """
-    return Path(pattern).expanduser().as_posix() if pattern.startswith("~") else pattern
+    p = Path(path)
+    if p.is_relative_to(root):
+        return p.relative_to(root).as_posix()
+    under_home = home_relative(p)
+    if under_home is not None:
+        return "~/" + under_home
+    return path
+
+
+def expand_home_pattern(pattern: str) -> tuple[str, ...]:
+    """A glob pattern with a leading `~` written out once per spelling of the home folder, the resolved one first.
+
+    Lets a pattern be compared against a file outside the scan root, whose relative path falls back to
+    its absolute path string, however that path spells the home folder. A pattern with no leading `~`
+    is its own only spelling; a `~user` pattern expands as the system does.
+    """
+    if not pattern.startswith("~"):
+        return (pattern,)
+    homes = home_spellings()
+    if not homes or pattern[1:2] not in ("", "/"):
+        return (Path(pattern).expanduser().as_posix(),)
+    return tuple((home / pattern[2:]).as_posix() if pattern[2:] else home.as_posix() for home in homes)
 
 
 def is_rooted_pattern(pattern: str) -> bool:
@@ -301,11 +360,14 @@ def config_pattern_matches(
     `ignore_case` lower-cases both sides.
     """
     clean = pattern.removeprefix("./")
-    expanded = expand_home_pattern(clean + "**/*.md" if clean.endswith("/") else clean)
     subject = full_path if full_path is not None and clean.startswith("~") else rel
-    if ignore_case:
-        subject, expanded = subject.lower(), expanded.lower()
-    return glob_matches(subject, expanded, anchored=anchor_loose_leaf or not is_loose_leaf_pattern(clean))
+    anchored = anchor_loose_leaf or not is_loose_leaf_pattern(clean)
+    for expanded in expand_home_pattern(clean + "**/*.md" if clean.endswith("/") else clean):
+        if ignore_case:
+            subject, expanded = subject.lower(), expanded.lower()
+        if glob_matches(subject, expanded, anchored=anchored):
+            return True
+    return False
 
 
 def matches_any_glob(path: Path, patterns: list[str], target: Path, *, root_anchored: bool = False) -> bool:

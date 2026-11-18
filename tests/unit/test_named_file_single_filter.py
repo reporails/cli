@@ -7,14 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.discovery.exclusions import leaves_out, record_patterns
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.pipeline import check_one
 from reporails_cli.core.pipeline.mapping import agent_file_pairs, discover_scope
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.pipeline import Discovered
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
+from tests.fake_models import no_models
 
 RULE = "---\npaths:\n  - 'src/**'\n---\n\n# A\n\nUse type hints on every function.\n"
 SKILL = "---\nname: foo\ndescription: Does foo.\n---\n\nRun foo.\n"
@@ -25,7 +26,6 @@ def _fresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     (tmp_path / "home").mkdir()
-    clear_agent_cache()
 
 
 def _project(tmp_path: Path, config: str | None = None) -> Path:
@@ -46,6 +46,7 @@ def _state(
     project: Path, targets: list[str], dirs: list[str] | None = None, files: list[str] | None = None
 ) -> CheckState:
     state = CheckState(
+        run=RunContext(),
         inputs=CheckInputs(
             targets=targets,
             format_opt="json",
@@ -59,7 +60,8 @@ def _state(
             dry_run=False,
             cwd=False,
             project_root=project,
-        )
+        ),
+        models=no_models(),
     )
     check_flow._flow_targets(state)
     assert check_flow._flow_scope(state)
@@ -104,7 +106,7 @@ def test_single_file_in_a_config_left_out_folder_lands_in_rule_files(tmp_path: P
 def test_mcp_single_file_in_a_left_out_folder_lands_in_rule_files(tmp_path: Path) -> None:
     project = _project(tmp_path, "exclude_dirs: [rules]\n")
     rule = project / ".claude" / "rules" / "a.md"
-    result = check_one.discover_files(project, single_file=rule)
+    result = check_one.discover_files(RunContext(), project, single_file=rule)
     assert isinstance(result, Discovered)
     filter_agents, files = result.filter_agents, result.instruction_files
     assert safe_resolve(rule) in _rule_files(filter_agents)
@@ -131,10 +133,10 @@ def _listed(found) -> set[Path]:
 @pytest.mark.subsys_lint
 def test_symlinked_folder_left_out_by_its_real_name_is_not_discovered(tmp_path: Path) -> None:
     project, skill = _symlinked(tmp_path)
-    assert safe_resolve(skill) in _listed(discover_scope(project, "", None, None))
-    found = discover_scope(project, "", [".agents"], None)
+    assert safe_resolve(skill) in _listed(discover_scope(RunContext(), project, "", None, None))
+    found = discover_scope(RunContext(), project, "", [".agents"], None)
     assert safe_resolve(skill) not in _listed(found)
-    kept = discover_scope(project, "", [".agents"], None, named=frozenset({skill}))
+    kept = discover_scope(RunContext(), project, "", [".agents"], None, named=frozenset({skill}))
     assert safe_resolve(skill) in _listed(kept)
 
 
@@ -157,7 +159,7 @@ def test_nothing_discovered_is_left_out(
     if config:
         (project / ".ails").mkdir()
         (project / ".ails" / "config.yml").write_text(config, encoding="utf-8")
-    found = discover_scope(project, "", flag_dirs, flag_files)
+    found = discover_scope(RunContext(), project, "", flag_dirs, flag_files)
     assert found.exclusions is not None
     assert found.files
     assert not any(leaves_out(found.exclusions, f) for f in found.files)
@@ -169,8 +171,8 @@ def test_nothing_discovered_is_left_out(
 def test_config_surface_in_a_left_out_folder_is_not_checked(tmp_path: Path) -> None:
     project = _project(tmp_path)
     settings = project / ".claude" / "settings.json"
-    assert safe_resolve(settings) in _listed(discover_scope(project, "", None, None))
-    found = discover_scope(project, "", [".claude"], None)
+    assert safe_resolve(settings) in _listed(discover_scope(RunContext(), project, "", None, None))
+    found = discover_scope(RunContext(), project, "", [".claude"], None)
     assert safe_resolve(settings) not in _listed(found)
 
 

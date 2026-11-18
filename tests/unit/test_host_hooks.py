@@ -10,7 +10,8 @@ import pytest
 
 from reporails_cli.core.discovery.agents import detect_agents
 from reporails_cli.core.discovery.features import detect_features_filesystem
-from reporails_cli.core.platform.config.config import get_agent_config
+from reporails_cli.core.platform.config.config import bundled_agent_config
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.results import HookEntry
 from reporails_cli.core.platform.policy.host_hooks import intercepted_tools
@@ -37,7 +38,7 @@ def _write(root: Path, rel: str, body: Any) -> None:
 
 
 def _hooks(root: Path) -> tuple[HookEntry, ...]:
-    return detect_features_filesystem(root, agents=detect_agents(root)).hooks
+    return detect_features_filesystem(RunContext(), root, agents=detect_agents(RunContext(), root)).hooks
 
 
 def _entry(agent: str, event: str, matcher: str) -> HookEntry:
@@ -70,7 +71,7 @@ def _entry(agent: str, event: str, matcher: str) -> HookEntry:
     ],
 )
 def test_intercepted_tools(agent: str, event: str, matcher: str, tools: tuple[str, ...]) -> None:
-    assert intercepted_tools(_entry(agent, event, matcher), get_agent_config(agent)) == tools
+    assert intercepted_tools(_entry(agent, event, matcher), bundled_agent_config(agent)) == tools
 
 
 @pytest.mark.unit
@@ -115,7 +116,7 @@ def test_a_claude_user_level_hook_is_listed_but_does_not_raise_the_level(
     monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
     project = tmp_path / "proj"
     _write(project, "CLAUDE.md", "# Project\n")
-    features = detect_features_filesystem(project, agents=detect_agents(project))
+    features = detect_features_filesystem(RunContext(), project, agents=detect_agents(RunContext(), project))
     data = host_hooks_field(features.hooks)
     assert [(h["agent"], h["scope"], h["file"], h["tools"]) for h in data["host_hooks"]] == [
         ("claude", "user", "~/.claude/settings.json", ["Edit"])
@@ -129,7 +130,7 @@ def test_a_claude_user_level_hook_is_listed_but_does_not_raise_the_level(
 def test_settings_without_hooks_gives_no_entries_and_no_hook_file(tmp_path: Path) -> None:
     _write(tmp_path, "CLAUDE.md", "# Project\n")
     _write(tmp_path, ".claude/settings.json", {"permissions": {}})
-    features = detect_features_filesystem(tmp_path, agents=detect_agents(tmp_path))
+    features = detect_features_filesystem(RunContext(), tmp_path, agents=detect_agents(RunContext(), tmp_path))
     assert (features.hooks, features.hook_files) == ((), ())
 
 
@@ -138,7 +139,7 @@ def test_settings_without_hooks_gives_no_entries_and_no_hook_file(tmp_path: Path
 def test_a_dedicated_hooks_file_with_no_entries_still_counts_for_the_level(tmp_path: Path) -> None:
     _write(tmp_path, "AGENTS.md", "# Project\n")
     _write(tmp_path, ".codex/hooks.json", {"hooks": {}})
-    features = detect_features_filesystem(tmp_path, agents=detect_agents(tmp_path))
+    features = detect_features_filesystem(RunContext(), tmp_path, agents=detect_agents(RunContext(), tmp_path))
     assert features.hooks == ()
     assert features.hook_files == (tmp_path / ".codex/hooks.json",)
 
@@ -213,8 +214,8 @@ def test_facts_are_unconfirmed_when_the_agent_config_has_none(tmp_path: Path) ->
 
 @pytest.mark.unit
 @pytest.mark.subsys_gates
-def test_get_agent_config_reads_subagent_hook_facts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from reporails_cli.core.platform.config.config import get_agent_config
+def test_agent_config_at_reads_subagent_hook_facts(tmp_path: Path) -> None:
+    from reporails_cli.core.platform.config.config import agent_config_at
 
     config = tmp_path / "config.yml"
     config.write_text(
@@ -224,10 +225,7 @@ def test_get_agent_config_reads_subagent_hook_facts(tmp_path: Path, monkeypatch:
         "  identifies_agent: {value: 'yes', fields: [agent_id, agent_type], source: https://example.test/b}\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(
-        "reporails_cli.core.platform.config.config.get_agent_config_path", lambda _agent, _root=None: config
-    )
-    facts = get_agent_config("claude").subagent_hooks
+    facts = agent_config_at(config).subagent_hooks
     assert (facts.fire_in_subagents.value, facts.fire_in_subagents.source) == ("yes", "https://example.test/a")
     assert facts.identifies_agent.fields == ("agent_id", "agent_type")
     assert facts.extension_opt_out.value == "unconfirmed"
@@ -235,10 +233,10 @@ def test_get_agent_config_reads_subagent_hook_facts(tmp_path: Path, monkeypatch:
 
 @pytest.mark.unit
 @pytest.mark.subsys_gates
-def test_get_agent_config_without_the_key_reads_unconfirmed() -> None:
-    from reporails_cli.core.platform.config.config import get_agent_config
+def test_bundled_agent_config_without_the_key_reads_unconfirmed() -> None:
+    from reporails_cli.core.platform.config.config import bundled_agent_config
 
-    facts = get_agent_config("cursor").subagent_hooks
+    facts = bundled_agent_config("cursor").subagent_hooks
     assert (facts.fire_in_subagents.value, facts.identifies_agent.value, facts.extension_opt_out.value) == (
         "unconfirmed",
     ) * 3
@@ -326,17 +324,24 @@ def test_a_cursor_before_read_file_hook_is_listed_with_the_read_tool(tmp_path: P
 
 @pytest.mark.unit
 @pytest.mark.subsys_gates
-def test_the_agent_config_is_read_once_per_agent_for_many_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_agent_config_is_read_once_per_agent_for_many_hooks(
+    monkeypatch: pytest.MonkeyPatch, use_agent_configs
+) -> None:
+    from reporails_cli.core.platform.utils import utils
+
+    use_agent_configs({"claude": {"prefix": "CLAUDEX"}, "codex": {"prefix": "CODEXX"}})
+    parsed: list[str] = []
+    real = utils.fast_yaml_load
+
+    def counting(text: str) -> object:
+        parsed.append(text)
+        return real(text)
+
+    monkeypatch.setattr(utils, "fast_yaml_load", counting)
+    hooks = [_entry(agent, "PreToolUse", m) for agent in ("claude", "codex") for m in ("Read", "Edit", "Write")]
     from reporails_cli.formatters import host_hooks
 
-    calls: list[str] = []
-    real = host_hooks.get_agent_config
-
-    def counting(agent: str) -> object:
-        calls.append(agent)
-        return real(agent)
-
-    monkeypatch.setattr(host_hooks, "get_agent_config", counting)
-    hooks = [_entry("claude", "PreToolUse", m) for m in ("Read", "Edit", "Write")]
-    assert len(host_hooks.host_hooks_field(hooks)["host_hooks"]) == 3
-    assert calls == ["claude"]
+    host_hooks.host_hooks_field(hooks)
+    assert sorted(t for t in parsed if "CLAUDEX" in t or "CODEXX" in t) == sorted(
+        ["prefix: CLAUDEX\n", "prefix: CODEXX\n"]
+    )

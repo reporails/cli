@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME
-from reporails_cli.core.platform.adapters.payload import relative_wire_path
+from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.events import EventRecord
 from reporails_cli.core.platform.dto.exclusion import FileLeftOut
 from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
@@ -19,6 +19,7 @@ from reporails_cli.core.platform.dto.xray_sources import (
     SourceEntry,
     XrayArtifact,
 )
+from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.artifacts import is_actionable, left_out_files, unlisted_loads, winners
 from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path
 from reporails_cli.core.xray.graph.hook_sources import hook_sources
@@ -56,11 +57,13 @@ def for_path(table: SourceTable, path: str) -> str | None:
     return table.by_real.get(real_path(path, table.root))
 
 
-def _unlisted_loads(records: Sequence[EventRecord], known: Mapping[str, str], frame: Frame) -> list[SourceEntry]:
+def _unlisted_loads(
+    run: RunContext, records: Sequence[EventRecord], known: Mapping[str, str], frame: Frame
+) -> list[SourceEntry]:
     """A source for each loaded instruction file the listing does not hold; one inside the project can be checked,
     and carries the config values that keep it out of a project-wide check."""
     items = unlisted_loads(records, known, frame.root)
-    left_out = left_out_files(items, frame.root)
+    left_out = left_out_files(run, items, frame.root)
     return [
         SourceEntry(
             wire := relative_wire_path(item.path, frame.root),
@@ -84,7 +87,9 @@ def _unrecorded_kinds(records: Sequence[EventRecord]) -> frozenset[SourceKind]:
     return frozenset() if any(record.event == "instruction_load" for record in records) else frozenset({"instructions"})
 
 
-def build_sources(artifacts: Sequence[XrayArtifact], records: Sequence[EventRecord], frame: Frame) -> SourceTable:
+def build_sources(
+    run: RunContext, artifacts: Sequence[XrayArtifact], records: Sequence[EventRecord], frame: Frame
+) -> SourceTable:
     """The session's sources: each listed file that can enter a context, each loaded file the listing misses, each
     MCP server seen and each hook note label."""
     # Of two agent definitions sharing a type name only the one the harness resolves to is a source.
@@ -112,7 +117,7 @@ def build_sources(artifacts: Sequence[XrayArtifact], records: Sequence[EventReco
         for item in listed
     ]
     by_real = {real_path(item.path, frame.root): item.path for item in listed}
-    entries.extend(_unlisted_loads(records, by_real, frame))
+    entries.extend(_unlisted_loads(run, records, by_real, frame))
     by_real.update({real_path(entry.path, frame.root): entry.id for entry in entries if entry.path is not None})
     by_run = {
         name: by_real[real_path(path, frame.root)]

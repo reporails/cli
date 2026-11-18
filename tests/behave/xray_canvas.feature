@@ -39,3 +39,8 @@ Feature: The x-ray graph draws agents right of the spine, what entered context l
   Scenario: The link to Tool calls opens the agent on screen
     Given the bundled page is served over the "view_sample" fixture view
     Then the link to Tool calls opens it for the agent on screen only
+
+  @page @browser
+  Scenario: A no-activity stripe's label sits clear of the instruction cards and the tool lanes
+    Given the bundled page is served over the "view_sample" fixture view changed so the main agent was idle for its first minute
+    Then every no-activity label sits clear of the cards, pills, spine and side track in its stripe

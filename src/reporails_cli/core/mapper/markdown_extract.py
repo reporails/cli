@@ -13,7 +13,13 @@ import re
 from markdown_it.token import Token
 
 from reporails_cli.core.mapper.lexicon import load_markdown_tokens
-from reporails_cli.core.mapper.md_parser import CODE_BLOCK_TOKENS, LINE_BREAK_TOKENS, md_parser
+from reporails_cli.core.mapper.md_parser import (
+    CODE_BLOCK_TOKENS,
+    LINE_BREAK_TOKENS,
+    code_spans,
+    md_parser,
+    replace_spans,
+)
 from reporails_cli.core.platform.dto.ruleset import AtomFormat
 from reporails_cli.core.platform.utils.utils import frontmatter_block, strip_frontmatter
 
@@ -303,6 +309,38 @@ def _extract_texts(segment: list[Token]) -> tuple[str, str]:
     md_text = _strip_decoration("".join(md_parts).strip())
     plain_text = _strip_decoration("".join(plain_parts).strip())
     return md_text, plain_text
+
+
+# Marks that stand beside a code span while its markdown is read, so its place in the plain text shows.
+_SPAN_OPEN, _SPAN_CLOSE = "\ue000", "\ue001"
+
+
+def plain_code_ranges(md_text: str, plain_text: str) -> tuple[tuple[int, int], ...]:
+    """The character ranges `[start, end)` of `plain_text` that each code span of `md_text` fills.
+
+    Each span is read where it stands in the inline markdown; when that reading does not hold
+    `plain_text` (a heading, a fenced line, text the parse reshaped), no range is recorded.
+    """
+    spans = code_spans(md_text)
+    if not spans:
+        return ()
+    marked = replace_spans(md_text, spans, lambda span: f"{_SPAN_OPEN}{md_text[span.start : span.end]}{_SPAN_CLOSE}")
+    blocks = md_parser.parseInline(marked)
+    reading = _extract_texts(blocks[0].children or [])[1] if blocks else ""
+    lead = reading.replace(_SPAN_OPEN, "").replace(_SPAN_CLOSE, "").find(plain_text) if plain_text else -1
+    if lead < 0:
+        return ()
+    ranges: list[tuple[int, int]] = []
+    removed = start = 0
+    for at, ch in enumerate(reading):
+        if ch not in (_SPAN_OPEN, _SPAN_CLOSE):
+            continue
+        if ch == _SPAN_OPEN:
+            start = at - removed
+        else:
+            ranges.append((start - lead, at - removed - lead))
+        removed += 1
+    return tuple(r for r in ranges if 0 <= r[0] < r[1] <= len(plain_text))
 
 
 def _determine_format(block_stack: list[str]) -> AtomFormat:

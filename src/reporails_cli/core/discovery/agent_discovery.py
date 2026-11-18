@@ -5,7 +5,6 @@ All functions here are internal to the agent subsystem.
 
 from __future__ import annotations
 
-import glob
 import os
 import re
 from collections.abc import Mapping, Sequence
@@ -20,7 +19,7 @@ from reporails_cli.core.discovery.agent_config import (
     extract_properties,
     load_config_file_types,
 )
-from reporails_cli.core.discovery.exclusions import covers, load_run_exclusions
+from reporails_cli.core.discovery.exclusions import covers
 from reporails_cli.core.discovery.external_patterns import external_anchor, resolve_external_pattern
 from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.project_root import resolve_project_root, user_level_agent_dir
@@ -33,6 +32,7 @@ from reporails_cli.core.discovery.surface_config import (
 from reporails_cli.core.discovery.walk import (
     Pruner,
     documented_path,
+    glob_folders,
     inside_git_repository,
     list_dir,
     walk_glob,
@@ -42,9 +42,11 @@ from reporails_cli.core.discovery.walk import (
 from reporails_cli.core.platform.config.claude_settings import claude_synced_account_folder
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.discovery import AgentScope, OwnAccountOnly, RunExclusions
+from reporails_cli.core.platform.utils.file_read import read_file_text
 from reporails_cli.core.platform.utils.utils import config_pattern_matches, is_rooted_pattern, matches_any_glob
 
 if TYPE_CHECKING:
+    from reporails_cli.core.platform.config.run_context import RunContext
     from reporails_cli.core.platform.dto.results import ProjectConfig
 
 # Capabilities whose user-scope (home / absolute) patterns are NOT auto-pulled
@@ -160,7 +162,7 @@ def _is_separate_repository(folder: Path, cache: dict[Path, bool]) -> bool:
         separate = True
     elif marker.is_file():
         try:
-            text = marker.read_text(encoding="utf-8", errors="replace")
+            text = read_file_text(marker, errors="replace")
         except OSError:
             text = ""
         for line in text.splitlines():
@@ -233,6 +235,7 @@ def _run_descendant_recursive(
 
 
 def glob_file_type_patterns(
+    run: RunContext,
     target: Path,
     patterns: list[str],
     properties: Mapping[str, str | list[str]] | None,
@@ -256,18 +259,17 @@ def glob_file_type_patterns(
     eager_global = is_eager_global(props)
     nested = is_nested(props)
     project_root: Path | None = None
-    repo_cache: dict[Path, bool] = {}
-    cache = repo_cache if inside_git_repository(target) else None
+    cache: dict[Path, bool] | None = {} if inside_git_repository(target) else None
 
     found: list[Path] = []
     for pattern in patterns:
         if pattern.endswith("/"):
             # Directory glob (`.claude/agent-memory/*/`, `~/.claude/projects/*/memory/`)
             # -> enumerate `*.md` files inside the matched directories.
-            _glob_directory_entries(pattern, target, found, exclusions)
+            _glob_directory_entries(run, pattern, target, found, exclusions)
             continue
         if is_rooted_pattern(pattern):
-            _glob_external(pattern, target, found, exclusions)
+            _glob_external(run, pattern, target, found, exclusions)
             continue
 
         filename = Path(pattern).parts[-1] if Path(pattern).parts else ""
@@ -294,18 +296,21 @@ def glob_file_type_patterns(
     return found
 
 
-def _glob_external(pattern: str, target: Path, found: list[Path], exclusions: RunExclusions) -> None:
+def _glob_external(run: RunContext, pattern: str, target: Path, found: list[Path], exclusions: RunExclusions) -> None:
     """Resolve an external path pattern (~/... or /absolute/...), walking only below its literal folders
     and skipping the run's excluded folders."""
-    resolved = resolve_external_pattern(pattern, claude_project_folder_name(target))
+    resolved = resolve_external_pattern(run, pattern, claude_project_folder_name(target))
     if resolved is None:
         return
     anchor, glob_below = external_anchor(resolved)
     if glob_below:
-        found.extend(walk_glob_matches(anchor, glob_below, OwnAccountOnly(exclusions, claude_synced_account_folder())))
+        found.extend(
+            walk_glob_matches(anchor, glob_below, OwnAccountOnly(exclusions, claude_synced_account_folder(run)))
+        )
 
 
 def _glob_directory_entries(
+    run: RunContext,
     pattern: str,
     target: Path,
     found: list[Path],
@@ -325,10 +330,10 @@ def _glob_directory_entries(
     """
     dir_pattern = pattern.rstrip("/")
     if is_rooted_pattern(dir_pattern):
-        resolved = resolve_external_pattern(dir_pattern, claude_project_folder_name(target))
+        resolved = resolve_external_pattern(run, dir_pattern, claude_project_folder_name(target))
         if resolved is None:
             return
-        for d in glob.glob(Path(resolved).expanduser().as_posix()):
+        for d in glob_folders(Path(resolved).expanduser().as_posix()):
             base = Path(d)
             if base.is_dir():
                 found.extend(walk_markdown(base, exclusions))
@@ -345,7 +350,7 @@ def _resolve_in_tree_dirs(
     exclusions: RunExclusions,
 ) -> list[Path]:
     """Resolve an in-tree directory glob (no trailing slash) to existing directories."""
-    candidates = [Path(p) for p in glob.glob(str(target / dir_pattern))]
+    candidates = [Path(p) for p in glob_folders(str(target / dir_pattern))]
     return [p for p in candidates if p.is_dir() and not covers(exclusions, p)]
 
 
@@ -381,7 +386,7 @@ def _repo_scoped_patterns(
 
 
 def _discover_surface(
-    scope: AgentScope, ft_name: str, spec: JsonObject, *, gated: bool = True
+    run: RunContext, scope: AgentScope, ft_name: str, spec: JsonObject, *, gated: bool = True
 ) -> tuple[SurfaceBucket, list[Path]] | None:
     """The bucket and files of one file type, None when the file type contributes nothing.
     With `gated` false the agent's read gate leaves the files unnarrowed."""
@@ -402,7 +407,7 @@ def _discover_surface(
     # Inject per-surface include patterns from .ails/config.yml
     patterns = patterns + surface_include_patterns(scope.agent_id, ft_name, scope.project_config)
 
-    found = glob_file_type_patterns(target, patterns, properties, scope.exclusions)
+    found = glob_file_type_patterns(run, target, patterns, properties, scope.exclusions)
 
     if scope.exclude_globs:
         found = [p for p in found if not matches_any_glob(p, scope.exclude_globs, target)]
@@ -416,7 +421,7 @@ def _agent_scope(
     target: Path,
     agent_id: str,
     file_types: JsonObject,
-    exclusions: RunExclusions | None,
+    exclusions: RunExclusions,
     *,
     project_config: ProjectConfig | None,
     repo_scoped: bool,
@@ -433,7 +438,7 @@ def _agent_scope(
         target=target,
         agent_id=agent_id,
         project_config=project_config,
-        exclusions=exclusions if exclusions is not None else load_run_exclusions(target),
+        exclusions=exclusions,
         repo_scoped=repo_scoped,
         user_dir=target if repo_scoped and user_level_agent_dir(target) == target else None,
         exclude_globs=[
@@ -444,6 +449,7 @@ def _agent_scope(
 
 
 def discover_ungated(
+    run: RunContext,
     target: Path,
     agent_id: str,
     file_type_names: tuple[str, ...],
@@ -470,16 +476,17 @@ def discover_ungated(
     found: set[Path] = set()
     for name in file_type_names:
         spec = file_types.get(name)
-        surface = _discover_surface(scope, name, spec, gated=False) if isinstance(spec, dict) else None
+        surface = _discover_surface(run, scope, name, spec, gated=False) if isinstance(spec, dict) else None
         if surface is not None:
             found.update(surface[1])
     return sorted(found)
 
 
 def discover_from_config(
+    run: RunContext,
     target: Path,
     agent_id: str,
-    exclusions: RunExclusions | None = None,
+    exclusions: RunExclusions,
     *,
     project_config: ProjectConfig | None = None,
     repo_scoped: bool = False,
@@ -504,7 +511,7 @@ def discover_from_config(
     for ft_name, spec in file_types.items():
         if not isinstance(spec, dict):
             continue
-        surface = _discover_surface(scope, ft_name, spec)
+        surface = _discover_surface(run, scope, ft_name, spec)
         if surface is not None:
             buckets[surface[0]].extend(surface[1])
 

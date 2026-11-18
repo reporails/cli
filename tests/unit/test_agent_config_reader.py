@@ -11,8 +11,14 @@ import pytest
 
 from reporails_cli.core.discovery.agent_config import load_config_file_types
 from reporails_cli.core.platform.config.claude_settings import _settings_patterns
-from reporails_cli.core.platform.config.config import get_agent_config, iter_agent_configs, read_agent_config
+from reporails_cli.core.platform.config.config import (
+    agent_config_at,
+    get_agent_config_path,
+    iter_agent_configs,
+    read_agent_config,
+)
 from reporails_cli.core.platform.dto.results import AgentConfig
+from reporails_cli.core.platform.utils.utils import fast_yaml_load
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_lint]
 
@@ -57,7 +63,7 @@ def _readers(rules_root: Path, path: Path) -> list[tuple[Callable[[], object], o
         return _run
 
     return [
-        (_guarded(lambda: get_agent_config("claude", rules_root)), AgentConfig()),
+        (_guarded(lambda: agent_config_at(get_agent_config_path("claude", rules_root))), AgentConfig()),
         (_guarded(lambda: list(iter_agent_configs(rules_root))), []),
         (_guarded(lambda: load_config_file_types("claude", [rules_root])), None),
         (_guarded(_settings_patterns), {}),
@@ -106,3 +112,38 @@ def test_a_good_agent_config_reads_in_every_reader(tmp_path: Path, caplog: pytes
     assert file_types == {"config": {"scopes": {"user": {"patterns": ["~/.claude/settings.json"]}}}}
     assert settings == {"user": ["~/.claude/settings.json"]}
     assert _skips(caplog) == []
+
+
+def test_an_unchanged_agent_config_is_parsed_once(tmp_path: Path) -> None:
+    path = _write(tmp_path, GOOD.encode())
+    with patch("reporails_cli.core.platform.utils.utils.fast_yaml_load", wraps=fast_yaml_load) as parse:
+        first = read_agent_config(path)
+        second = read_agent_config(path)
+    assert first is second
+    assert parse.call_count == 1
+
+
+def test_an_edited_agent_config_is_read_again(tmp_path: Path) -> None:
+    path = _write(tmp_path, GOOD.encode())
+    before = read_agent_config(path)
+    assert before is not None
+    assert before["prefix"] == "CLA"
+    path.write_text(GOOD.replace("CLA", "CLAUDE"), encoding="utf-8")
+    after = read_agent_config(path)
+    assert after is not None
+    assert after["prefix"] == "CLAUDE"
+
+
+def test_a_broken_agent_config_warns_on_every_read(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    path = _write(tmp_path, b"- a\n- b\n")
+    with caplog.at_level(logging.WARNING):
+        assert read_agent_config(path) is None
+        assert read_agent_config(path) is None
+    assert len(_skips(caplog)) == 2
+
+
+def test_the_agent_config_mapping_cannot_be_modified(tmp_path: Path) -> None:
+    data = read_agent_config(_write(tmp_path, GOOD.encode()))
+    assert data is not None
+    with pytest.raises(TypeError):
+        data["prefix"] = "X"  # type: ignore[index]

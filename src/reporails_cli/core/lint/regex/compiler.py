@@ -5,12 +5,12 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from reporails_cli.core.platform.adapters.registry import RuleReadError, read_checks_document
-from reporails_cli.core.platform.adapters.rule_builder import load_checks
 from reporails_cli.core.platform.contract.rule_pattern import compile_rule_pattern
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
 from reporails_cli.core.platform.dto.lint import CompiledCheck, CompiledRuleSet
 from reporails_cli.core.platform.dto.models import Check, Severity
+from reporails_cli.core.platform.rules.registry import RuleReadError, read_checks_document
+from reporails_cli.core.platform.rules.rule_builder import load_checks
 
 logger = logging.getLogger(__name__)
 

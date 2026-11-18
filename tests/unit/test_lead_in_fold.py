@@ -18,6 +18,7 @@ from reporails_cli.core.mapper.instructions import fold_lead_ins
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.platform.adapters.payload import project_payload
 from reporails_cli.core.platform.dto.ruleset import LIST_OBJECT_ROLE, Atom, FileRecord, RulesetMap
+from tests.fake_models import no_models
 
 _CHARGE = {1: "DIRECTIVE", -1: "CONSTRAINT", 0: "NEUTRAL"}
 
@@ -150,7 +151,7 @@ def test_an_unhyphenated_lead_in_is_still_an_instruction_and_folds_its_list() ->
     zeroing regex actually catches.
     """
     text = "Audit these files:\n\n- `CLAUDE.md`\n- `AGENTS.md`\n\nNever skip the version check.\n"
-    atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+    atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
     lead, *items, last = atoms
     assert lead.line == 1 and lead.charge_value == 1
     assert items and all(a.role == LIST_OBJECT_ROLE for a in items)
@@ -170,7 +171,7 @@ def test_the_charge_stage_reads_a_lead_in_and_its_list_as_one_instruction() -> N
         "\n"
         "Never skip the version check.\n"
     )
-    atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
+    atoms = bio_pipeline.apply_multislot(list(tokenize(text)), no_models())
     lead, *items, last = atoms
     assert lead.line == 1 and lead.charge_value == 1 and lead.specificity == "named"
     assert items and all(a.role == LIST_OBJECT_ROLE and a.position_index == -1 for a in items)
