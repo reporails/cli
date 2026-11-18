@@ -86,6 +86,7 @@
 - The folder-target check tests run each target from the folder its project roots at, and name a nested root by running from it.
 - Docstring and test-fixture examples use neutral text.
 - Heal reads a file through the one file reader.
+- The regex scan reads the config exclusions only, as its test guards.
 
 ## 0.6.7
 
