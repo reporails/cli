@@ -70,7 +70,7 @@ def ensure_models_available(fetch: HttpGet) -> Path | None:
         if not model_manifest.in_package_tree_present():
             _repair_if_damaged(path, fetch)
         return path
-    if model_fetch.offline_requested():
+    if model_fetch.model_downloads_off():
         return None
     return model_fetch.ensure_models_present(fetch, model_manifest.MODEL_VERSION)
 
@@ -177,7 +177,7 @@ def _verify_and_repair(version: str, fetch: HttpGet) -> bool:
     sound is not hashed again while its files are unchanged, and a repair that failed
     is not tried again until a file changes or the short wait after the failure has passed.
     """
-    if model_fetch.offline_requested():
+    if model_fetch.model_downloads_off():
         return False
     fingerprint = _cache_fingerprint(version)
     if _known_sound.get(version) == fingerprint:

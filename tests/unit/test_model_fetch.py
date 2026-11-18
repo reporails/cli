@@ -1207,3 +1207,18 @@ def test_licence_names_agree_across_fetch_manifest_package_metadata_and_release_
     assert tuple(release_names) == model_manifest.LICENSE_FILES
     for name in metadata:
         assert (repo / name).is_file()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+def test_repair_refusal_names_offline_flag_when_that_is_the_cause(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
+    monkeypatch.setenv("AILS_OFFLINE", "1")
+    _cache_at(monkeypatch, tmp_path / "models" / model_fetch.MODEL_VERSION)
+    with pytest.raises(ModelFetchError) as exc_info:
+        model_fetch.repair_cache(lambda *a, **k: pytest.fail("no network"))
+    message = str(exc_info.value)
+    assert "--offline" in message
+    assert "AILS_MODEL_OFFLINE" not in message

@@ -47,9 +47,9 @@ from reporails_cli.core.platform.config.api_key import default_server_api_key
 from reporails_cli.core.platform.config.bootstrap import (
     env_flag,
     env_text,
+    offline_requested,
     running_in_github_actions,
 )
-from reporails_cli.core.platform.config.bootstrap import offline_requested as run_offline_requested
 from reporails_cli.core.platform.contract.http_get import HttpGet, HttpReply
 
 # ─── Host ───────────────────────────────────────────────────
@@ -87,9 +87,18 @@ _CI_CACHE_HINT = (
 _STALE_STAGING_S = 6 * 3600
 
 
-def offline_requested() -> bool:
+def model_downloads_off_cause() -> str:
+    """Why the model is never downloaded, worded for a message ("" when downloads are on)."""
+    if env_flag(_ENV_OFFLINE):
+        return "AILS_MODEL_OFFLINE is set"
+    if offline_requested():
+        return "local checks only were asked for (`--offline` or AILS_OFFLINE)"
+    return ""
+
+
+def model_downloads_off() -> bool:
     """True when the model is never downloaded: `AILS_MODEL_OFFLINE` is set, or local checks only were asked for."""
-    return env_flag(_ENV_OFFLINE) or run_offline_requested()
+    return bool(model_downloads_off_cause())
 
 
 # One fetch at a time: concurrent first uses in one process (e.g. MCP worker threads) wait
@@ -241,10 +250,11 @@ def repair_cache(fetch: HttpGet, version: str = MODEL_VERSION) -> Path:
     is detected and nothing is downloaded or swapped — the one that loses the lock never
     redoes the swap. ``AILS_MODEL_OFFLINE`` means never download here either: raises first.
     """
-    if offline_requested():
+    cause = model_downloads_off_cause()
+    if cause:
         raise ModelFetchError(
-            "the model cache is damaged and AILS_MODEL_OFFLINE is set, so it cannot be repaired: "
-            "unset AILS_MODEL_OFFLINE, or restore the file yourself."
+            f"the model cache is damaged and {cause}, so it cannot be repaired: "
+            "run online, or restore the file yourself."
         )
     root = cache_models_dir(version)
     try:
