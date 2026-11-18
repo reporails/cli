@@ -13,7 +13,7 @@
 - Signing in with `ails login` raises your hourly limit from 5 to 100 checks; without an account the limit stays at 5 an hour. The 1,000 files an hour without Pro stays the same, so a project of more than 10 instruction files reaches it before the 100th check.
 - Checking a rewritten file with the MCP `validate` tool now answers `accepted`: whether the rewrite is kept, so the agent no longer weighs the preservation, plan and score results itself. A rewrite whose score is missing is not accepted, and a repeated check of an unchanged file that stops at the repeat limit still answers `accepted`.
 - Heal in your agent now makes every change through your agent's own edits, so your edit approvals and hooks see each one.
-- `ails check`, the MCP `validate` tool and opening `ails xray` now ask the reporails service first, before reading your files or downloading the model. When this hour's allowance is used up, or your version is no longer supported, the run stops right away and names the next step: signing up, when the allowance resets, or `ails update`.
+- `ails check` and opening `ails xray` now ask the reporails service first, before reading your files or downloading the model, and the MCP `validate` tool asks before it checks a file. When this hour's allowance is used up, or your version is no longer supported, the run stops right away and names the next step: signing up, when the allowance resets, or `ails update`.
 - When the reporails service cannot be reached, `ails check` stops and tells you to run with `--offline` for local checks only.
 - Heal's rewrite rules now come from the reporails service, so a rewrite is always held to the current rules without a cli update.
 - After a compaction, `ails xray` names each instruction file loaded before it that did not come back, as named only (the agent must read it again) or only in the summary, and the chart keeps only the files whose content is back in context, whether loaded again, attached whole, recalled or kept in the messages the compaction preserved; this works on sessions from earlier Claude Code versions too.
@@ -42,7 +42,7 @@
 - On Windows, `ails check` names a file relative to its project, finds the files of a `~/.claude` folder and keeps a linked rule inside its project when the folder is spelled with a short (8.3) name; a file in the folder the command runs in is named with `/`, not its full path.
 - With a home folder reached through a link, `ails check` on a `~/.claude` folder reports that folder's findings instead of none.
 - Heal in your agent leaves a line marked with `ails-disable-line` exactly as it is: the agent is given no fix and no decision on it.
-- Heal puts back a rewrite that narrows what a prohibition forbids: the forbidden thing swapped for the kinds the same line names (`Do not file plans` → `Do not file X or Y`), or a new noun put in front of it (`Do not treat a recalled memory …` → `Do not treat a prior orientation — a recalled memory …`).
+- Heal puts back a rewrite that narrows what a prohibition forbids: the forbidden thing swapped for the kinds the same line names (`Do not file plans` → `Do not file X or Y`), or a new noun put in front of it (`Do not delete a cached file …` → `Do not delete a build output — a cached file …`).
 - Heal puts back a rewrite that gives a rule a `for` phrase it never had (`add tests` → `add tests for src/`), and a split that leaves part of a sentence outside the scope it opened with (`For all, group X, count Y` → `For all, group X. Count Y.`).
 - Heal puts back a rewrite that adds a trailing place or time to an instruction (`Run pytest before every commit` → `Run pytest before every commit on this branch`), and one that narrows a verb that took no object (`Run at night only` → `Run shell scripts at night only`); a condition restated after another phrase (`…, whenever the build fails`) is held.
 - Heal keeps a rewrite that only reorders a prohibition's words (`Do not modify X — those are Y` → `Do not modify Y: X`).
@@ -68,11 +68,11 @@
 - The Windows type check passes again: starting the mapper daemon's server on Windows stops with a clear error, as reaching it already did.
 - The MCP and `ails check` target test expects a skill target to name its whole folder, as `validate` does.
 - The architecture tests catch more spellings of each pattern they guard, and each one lists the spellings it still cannot see, including the ones another architecture test catches; source comments describe only the code they sit on.
-- An architecture test fails on any core module that imports a driven adapter, in any import form; core declares the port and the command line, MCP server and x-ray page pass the adapter in.
+- An architecture test guards the boundary between the checking core and the command line, MCP server and x-ray page, in every import form.
 - CI now runs the model-backed integration tests on a fetched model.
 - The Windows check scenarios and the MCP x-ray two-call scenario lose their skip tag. The two-call scenario reads the page while the agent's MCP server still runs, because on Windows the test client ends the server's process tree, the page with it.
 - The rewrite-check tests build named constructs, plain text and the rewrite's map as a real run produces them.
-- Heal's rewrite check reads each instruction from the map, and a test suite holds rewrites that keep the words but change the meaning.
+- A test suite holds heal rewrites that keep the words but change the meaning.
 - Three check scenarios guard linked folders: a `.claude/rules` folder linked to a dotfiles folder stays part of `ails check .claude`, a linked file under a `~/.claude` linked to a dotfiles folder keeps its user-level root, and a `~/.claude` folder keeps its findings when the home folder is reached through a link.
 - The map records a place, time or target phrase (`In CI,` before the clause, `in staging` or `for src/` after its object) as the instruction's scope, and heal's rewrite check reads it.
 - The folder-target check tests run each target from the folder its project roots at, and name a nested root by running from it.
