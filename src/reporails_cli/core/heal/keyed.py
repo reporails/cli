@@ -9,7 +9,7 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.heal.conformance import check_plan
-from reporails_cli.core.heal.file_io import read_lines, read_original, read_written, write_bytes
+from reporails_cli.core.heal.file_io import read_lines, write_bytes
 from reporails_cli.core.heal.plan import _touched, apply_edits, build_plan, leaving_lines
 from reporails_cli.core.heal.preservation import check_rewrite, failed_checks, take_snapshot
 from reporails_cli.core.lint.suppression import finding_surface
@@ -20,6 +20,7 @@ from reporails_cli.core.platform.dto.heal import KeyedResult
 from reporails_cli.core.platform.dto.heal_plan import Edit, HealOp, Plan, PlanOp, is_heal_op
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+from reporails_cli.core.platform.utils.file_read import read_file_bytes, read_file_text
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +232,7 @@ def _write(plan: Plan, raw: Mapping[str, tuple[list[str], list[str]]]) -> dict[s
     for file in sorted({e.file for e in plan.edits}):
         lines, endings = raw[file]
         body, where = apply_edits(lines, [e for e in plan.edits if e.file == file])
-        originals[file] = read_original(Path(file))
+        originals[file] = read_file_bytes(Path(file))
         write_bytes(Path(file), _text(lines, endings, body, where).encode("utf-8"))
     return originals
 
@@ -270,7 +271,7 @@ def _rewrite_failure(
     the lines in `deduped` are repeats the plan removes, so their going is no loss."""
     text = original.decode("utf-8", errors="replace")
     snapshot = take_snapshot(file, text, ruleset_map, None, deduped)
-    written = read_written(Path(file))
+    written = read_file_text(Path(file), errors="replace")
     block = check_rewrite(
         snapshot, Path(file), fresh, written, score=None, scan_root=target, environment_for=environment_for
     )

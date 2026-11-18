@@ -13,3 +13,4 @@
 
 ### Internal
 - Docstring and test-fixture examples use neutral text.
+- Heal reads a file through the one file reader.
