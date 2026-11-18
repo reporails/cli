@@ -86,7 +86,6 @@
 - The folder-target check tests run each target from the folder its project roots at, and name a nested root by running from it.
 - Docstring and test-fixture examples use neutral text.
 - Heal reads a file through the one file reader.
-- The deterministic checks use the run's exclusions.
 
 ## 0.6.7
 

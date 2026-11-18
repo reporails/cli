@@ -16,6 +16,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from reporails_cli.core.classify import classify_files, load_file_types
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.content_checker import run_content_checks
 from reporails_cli.core.lint.mechanical.runner import run_mechanical_checks
 from reporails_cli.core.lint.regex import run_checks
@@ -218,7 +219,7 @@ def run_m_probes(
                 project_dir,
                 effective_files,
                 classified,
-                exclusions=exclusions,
+                exclusions=load_run_exclusions(run, project_dir),
                 thresholds=project.config.rule_thresholds,
             )
         )
