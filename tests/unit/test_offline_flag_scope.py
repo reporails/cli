@@ -37,6 +37,7 @@ def test_a_preset_offline_value_is_put_back(monkeypatch: pytest.MonkeyPatch) -> 
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="the mapper daemon runs only where processes fork")
 def test_a_daemon_forked_during_an_offline_run_is_not_offline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AILS_OFFLINE", raising=False)
     seen: list[str | None] = []
