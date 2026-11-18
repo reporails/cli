@@ -101,7 +101,7 @@ _RELEASER = (
     "three buckets (per `docs/triage.md`), and file or update the matching ticket in the tracker."
 )
 _ORIENT = (
-    "Load targeted orientation: read the overview at `docs/index.md` as the base, read exactly "
+    "Load targeted briefing: read the overview at `docs/index.md` as the base, read exactly "
     "the artifacts the invocation names, load a live recent-work seed, and synthesize the set "
     "into one snapshot."
 )
@@ -128,7 +128,7 @@ _ORIENT = (
         ),
         (
             _ORIENT,
-            "Load targeted orientation by reading the overview at `docs/index.md` as the base.\n\n"
+            "Load targeted briefing by reading the overview at `docs/index.md` as the base.\n\n"
             "Read exactly the artifacts the invocation names.\n\n"
             "Load a live recent-work seed.\n\n"
             "Synthesize the set into one snapshot.",
@@ -166,7 +166,7 @@ def test_a_split_that_leaves_a_fragment_behind_is_dangling(tmp_path, before, aft
         ),
         (
             _ORIENT,
-            "Load targeted orientation.\n\nRead the overview at `docs/index.md` as the base.\n\n"
+            "Load targeted briefing.\n\nRead the overview at `docs/index.md` as the base.\n\n"
             "Read exactly the artifacts the invocation names.\n\nLoad a live recent-work seed.\n\n"
             "Synthesize the set into one snapshot.",
         ),
@@ -590,8 +590,8 @@ def test_a_qualifier_on_a_general_noun_narrows_even_when_the_line_uses_its_words
 
 
 _MEMORY_BEFORE = (
-    "Re-run `/orient` at each session source; a prior session's orientation does not carry forward.\n"
-    "*Do not treat a recalled memory or a prior-turn summary as a substitute for the live `/orient` load.*\n"
+    "Re-run `/refresh` at each session source; a prior session's briefing does not carry forward.\n"
+    "*Do not treat a recalled memory or a prior-turn summary as a substitute for the live `/refresh` load.*\n"
 )
 
 
@@ -606,7 +606,7 @@ _MEMORY_BEFORE = (
             _MEMORY_BEFORE,
             _MEMORY_BEFORE.replace(
                 "treat a recalled memory or a prior-turn summary as",
-                "treat a prior session's orientation — a recalled memory or a prior-turn summary — as",
+                "treat a prior session's briefing — a recalled memory or a prior-turn summary — as",
             ),
         ),
     ],
@@ -614,7 +614,7 @@ _MEMORY_BEFORE = (
 def test_a_prohibition_given_a_narrower_object_from_its_own_file_narrows(tmp_path, before, after) -> None:
     """A forbidden noun replaced by the kinds its line names, and a new head noun put before what a
     prohibition forbade."""
-    ground = "\n\nThe `reviewer`, `/orient` and `AskUserQuestion` exist.\n"
+    ground = "\n\nThe `reviewer`, `/refresh` and `AskUserQuestion` exist.\n"
     result = _compare_edit(tmp_path, before + ground, after + ground)
     assert result["narrowed_instructions"]
     assert result["ok"] is False
@@ -627,7 +627,7 @@ def test_a_prohibition_given_a_narrower_object_from_its_own_file_narrows(tmp_pat
     ("before", "after"),
     [
         ("*Do not edit it by hand.*", "*Do not edit the config by hand.*"),
-        ("*Never write a `signal` without `due`.*", "*Never write a `signal` artifact without `due`.*"),
+        ("*Never write a `ticket` without `due`.*", "*Never write a `ticket` artifact without `due`.*"),
         ("*Do not bypass `lead` on cross-cluster work.*", "*Never bypass `lead` on cross-cluster work.*"),
         (
             "*Do not modify any `specs/`, the dep-map, or `docs/` \u2014 "
@@ -637,7 +637,7 @@ def test_a_prohibition_given_a_narrower_object_from_its_own_file_narrows(tmp_pat
     ],
 )
 def test_a_named_referent_or_a_kept_object_does_not_narrow(tmp_path, before, after) -> None:
-    ground = "\n\nThe `signal`, `due`, `lead` and `CLAUDE.md` names exist.\n"
+    ground = "\n\nThe `ticket`, `due`, `lead` and `CLAUDE.md` names exist.\n"
     result = _compare_edit(tmp_path, before + ground, after + ground)
     assert result["narrowed_instructions"] == []
 
@@ -802,8 +802,8 @@ def test_a_prohibition_given_a_list_of_kinds_it_did_not_name_narrows(tmp_path, b
     ("before", "after"),
     [
         (
-            "*Do not assign a `cluster`, `type`, or `location` to any signal.*\n",
-            "*Do not assign any placement field (`cluster`, `type`, or `location`) to any signal.*\n",
+            "*Do not assign a `name`, `size`, or `date` to any report.*\n",
+            "*Do not assign any output field (`name`, `size`, or `date`) to any report.*\n",
         ),
         (
             "*Do not commit secrets to the repo.*\n",
@@ -812,7 +812,7 @@ def test_a_prohibition_given_a_list_of_kinds_it_did_not_name_narrows(tmp_path, b
     ],
 )
 def test_a_prohibition_listing_its_own_items_or_examples_does_not_narrow(tmp_path, before, after) -> None:
-    ground = "\n\nThe `cluster`, `type` and `location` fields exist.\n"
+    ground = "\n\nThe `name`, `size` and `date` fields exist.\n"
     assert _compare_edit(tmp_path, before + ground, after + ground)["narrowed_instructions"] == []
 
 
@@ -973,13 +973,13 @@ def test_a_sentence_opening_with_a_preposition_compound_has_no_fronted_scope(tmp
         ("*Do not edit client\u2013server plans.*", "*Do not edit client\u2013server specs or docs.*", True),
         ("*Do not edit shared plans.*", "*Do not edit shared specs or docs.*", True),
         (
-            "*Do not file plans.*",
-            "*Do not file any plan -- release notes, build work, or hub notes -- into the hub.*",
+            "*Do not file reports.*",
+            "*Do not file any report -- daily logs, test runs, or billing notes -- into the archive.*",
             True,
         ),
         (
-            "*Do not file plans.*",
-            "*Do not file any plan \u2014 release notes, build work, or hub notes \u2014 into the hub.*",
+            "*Do not file reports.*",
+            "*Do not file any report \u2014 daily logs, test runs, or billing notes \u2014 into the archive.*",
             True,
         ),
         (

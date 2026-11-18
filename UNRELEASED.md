@@ -12,3 +12,4 @@
 ### Removed
 
 ### Internal
+- Docstring and test-fixture examples use neutral text.

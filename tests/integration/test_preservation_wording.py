@@ -235,7 +235,7 @@ def test_a_dropped_context_line_is_lost_even_when_the_rewrite_keeps_its_function
 
 
 _SCOPED_LINE = (
-    "For every other form, `Read` the base first: `canon/CLAUDE.md` and `canon/capabilities.md`. "
+    "For every other form, `Read` the base first: `docs/overview.md` and `docs/capabilities.md`. "
     "Do not treat the base-load as targeted substrate."
 )
 _SEED_LINE = (
@@ -243,9 +243,9 @@ _SEED_LINE = (
     "If `## Structure` already exists, replace it. Do not skip this step."
 )
 _PRINCIPLES_BEFORE = (
-    "1. Read `hub/canon/cli_principles.md` — the cli invariants (stage order, deps, error handling, lazy ML, "
+    "1. Read `docs/principles.md` — the project invariants (stage order, deps, error handling, lazy ML, "
     "testing pyramid, IP boundary, tier authority, module size); for a touched subsystem, also read its "
-    "`hub/canon/<subsystem>.md`"
+    "`docs/<subsystem>.md`"
 )
 _PRINCIPLES_AFTER = _PRINCIPLES_BEFORE.replace("size); for", "size). For")
 

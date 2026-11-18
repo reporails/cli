@@ -90,7 +90,7 @@ def sentence_of(atoms_by_line: ByLine, atom: AtomView) -> str:
 def continuation(line_atoms: Sequence[AtomView], atom: AtomView) -> tuple[str, ...]:
     """The words, in order, of the uncharged atoms that continue the prohibition `atom` on its line,
     from the mapper's atoms of that line: those that follow it before the next charged one (`Do not
-    file any plan —` and the `release notes, build work, or hub notes — into the hub.` after it,
+    file any report —` and the `daily logs, test runs, or billing notes — into the archive.` after it,
     while a directive after the dash, `prefer a fake`, is no part of it). Empty when `atom` is not
     a constraint."""
     start = next((i for i, a in enumerate(line_atoms) if a is atom), None)
@@ -228,8 +228,8 @@ def _kind_narrows(p: Pair, kind: list[str], span: list[str], section: Section) -
 
 def _listed_heads(atom: AtomView, known: set[str]) -> set[str]:
     """The lowered words that name the kind an aside of `atom` lists members of: the words right before
-    an aside whose own content words the author's line already has (`placement field` in `any
-    placement field (cluster, type, or location)`), back to the nearest function word."""
+    an aside whose own content words the author's line already has (`output field` in `any
+    output field (name, size, or date)`), back to the nearest function word."""
     words = atom.plain_text.split()
     heads: set[str] = set()
     for start, end in asides_of(atom):
@@ -289,7 +289,7 @@ def _narrows(p: Pair, known: set[str], section: Section) -> bool:
     is no safe shape: an alternative after the author's own object (`secrets` -> `secrets or
     credentials`, which widens), a construct named after a general quantifier (`any file` -> `any
     .env file`), a word of the section heading that names one referent, a word after a named
-    construct the author's instruction names (`signal` -> `signal artifact`), a modifier of the
+    construct the author's instruction names (`report` -> `report document`), a modifier of the
     referent a definite determiner points at (`the API` -> `the REST API`), the words that describe
     a place a named construct gives (`the install notes at setup.md`), or a reword that puts new
     words where author words left. A suggestion is not narrowed by its own wording, nor an

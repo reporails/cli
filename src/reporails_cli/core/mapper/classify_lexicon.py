@@ -467,7 +467,7 @@ MEANS_PREPOSITIONS: frozenset[str] = frozenset({"with", "by", "via"})
 # right after one narrows what the line covers.
 GENERAL_QUANTIFIERS: frozenset[str] = frozenset({"every", "each", "all", "any", "no", "one"})
 DEFINITE_DETERMINERS: frozenset[str] = frozenset({"the", "this", "that", "these", "those"})
-# Words that open a noun phrase of their own (`a prior orientation`).
+# Words that open a noun phrase of their own (`a prior briefing`).
 INDEFINITE_ARTICLES: frozenset[str] = frozenset({"a", "an"})
 DETERMINERS: frozenset[str] = DEFINITE_DETERMINERS | (GENERAL_QUANTIFIERS - {"no", "one"})
 
