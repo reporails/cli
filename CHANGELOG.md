@@ -26,7 +26,7 @@
 - On the `ails xray` page, the card, pill or row whose details are open in the middle window stays marked as open, including a Tool calls row scrolled out of view and back.
 - On the `ails xray` page, a no-activity stripe's label sits clear of the instruction-file cards, the pills, the failure-run labels and the tool lanes.
 - The GitHub Action fails with the service's own message when the reporails service cannot be reached, instead of a Python error; set `AILS_OFFLINE: "1"` on the step for local checks only.
-- With the `ails xray` page open, an instruction or rule file added to the project is checked by the page's next check, without the page restarting.
+- With the `ails xray` page open, an instruction or rule file added to the project is checked without the page restarting: at the next check when it sits in the project root or a `.claude`, rules, skills or agents folder, otherwise within 30 seconds.
 - With the `ails xray` page open, an `exclude_dirs` edit shows on the page's next view.
 - The x-ray counts a memory note as loaded when it arrives by an `@` mention, an edit, a recall or a restore after a compaction, and notes loaded that way are listed by the next compaction; an edit adds no more than a snippet to the chart. The loads show as attached by Claude Code, and a recall row that names no notes is refused. A loaded slot chip on an agent card is clearly lit.
 - The x-ray shows each compaction's summary by the transcript's own link between a compaction and its summary: a compaction that left no summary shows none, and the next compaction no longer shows its summary.
@@ -57,6 +57,14 @@
 - Heal keeps a rewrite that names an object another line of its section mentions only before an `and` that starts a new clause (`Build docs and push`): that `and` does not make the object one kind among several.
 - A `(see …)` or `(e.g. …)` aside, an example led by `such as`, `e.g.` or `, like`, and a `(`a`, `b`, `c`)` list of constructs no longer count as a restriction on an instruction; a `You might want to …` line reads as hedged prose, and a packed `Maybe run X, and never skip Y` sentence is read as two instructions.
 - In `ails xray`, a details window taller than the screen keeps its title bar and close button on screen wherever the page is scrolled, and its text scrolls inside it.
+- The x-ray page shows every instruction file a kept message loaded as restored after a compaction, not only the last one.
+- The x-ray page no longer re-walks the project and `~/.claude` on every refresh; it lists the files again when a config or settings file or an instruction folder changes.
+- After a rate-limit reply, repeated `ails check` runs (hooks, watchers) no longer ask the service every time: they show the local "Try again in ~N min" until the limit resets.
+- MCP `validate` no longer asks the service before every call: a passed check is reused for 60 seconds, and the unreachable reply tells you to set `AILS_OFFLINE=1` in the MCP server's environment instead of naming a CLI flag.
+- `ails check --offline` no longer leaves offline mode on after the run, and a background mapper started by that run no longer refuses model repairs for later online runs.
+- A model that cannot be fetched or repaired offline now names the real cause (`--offline` or `AILS_OFFLINE`, or `AILS_MODEL_OFFLINE`) instead of always blaming `AILS_MODEL_OFFLINE`.
+- A refused `--format github` run escapes `%` and carriage returns in the error annotation.
+- The configuration reference documents what a refused or unreachable `--format json` run prints and that it exits 1 before any check runs.
 
 ### Removed
 
@@ -76,6 +84,9 @@
 - Three check scenarios guard linked folders: a `.claude/rules` folder linked to a dotfiles folder stays part of `ails check .claude`, a linked file under a `~/.claude` linked to a dotfiles folder keeps its user-level root, and a `~/.claude` folder keeps its findings when the home folder is reached through a link.
 - The map records a place, time or target phrase (`In CI,` before the clause, `in staging` or `for src/` after its object) as the instruction's scope, and heal's rewrite check reads it.
 - The folder-target check tests run each target from the folder its project roots at, and name a nested root by running from it.
+- Docstring and test-fixture examples use neutral text.
+- Heal reads a file through the one file reader.
+- The deterministic checks use the run's exclusions.
 
 ## 0.6.7
 
