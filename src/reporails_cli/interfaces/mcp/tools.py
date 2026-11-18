@@ -5,6 +5,7 @@ module words the refusal as a structured reply and formats the run as the payloa
 health and, on the paid plan, the remediation workflow). `preflight` and `explain` live in `rule_tools.py`.
 """
 
+import time
 from functools import partial
 from pathlib import Path
 
@@ -72,9 +73,31 @@ def model_not_ready_error() -> JsonObject | None:
     return None if refusal is None else refusal_payload(refusal)
 
 
+# Seconds a passed handshake is reused by this server process, so a repeat or a re-validate in a heal loop
+# does not ask the service again.
+HANDSHAKE_REUSE_S = 60.0
+
+# When this process's last handshake passed (`time.monotonic`); a refusal is never stored.
+_gate_passed: dict[str, float] = {}
+
+
+def _server_refusal(run: RunContext) -> Refusal | None:
+    """The refusal when the server will not serve this caller; a handshake that passed inside
+    `HANDSHAKE_REUSE_S` is not asked again."""
+    passed_at = _gate_passed.get("at")
+    if passed_at is not None and time.monotonic() - passed_at < HANDSHAKE_REUSE_S:
+        return None
+    refusal = server_gate("mcp", partial(handshake, tier=run.tier(), fetch=http_get))
+    if refusal is None:
+        _gate_passed["at"] = time.monotonic()
+    else:
+        _gate_passed.clear()
+    return refusal
+
+
 def unserved_or_model_not_ready_error(run: RunContext) -> JsonObject | None:
     """The error payload when the server will not serve this caller, else when the model set is not ready."""
-    refusal = server_gate("mcp", partial(handshake, tier=run.tier(), fetch=http_get))
+    refusal = _server_refusal(run)
     return refusal_payload(refusal) if refusal is not None else model_not_ready_error()
 
 

@@ -13,6 +13,12 @@ _UNREACHABLE_MESSAGE = (
     "or run with `--offline` (or `AILS_OFFLINE=1`) for local checks only."
 )
 
+# An MCP caller passes no flag: the setting belongs to the environment the server was started in.
+_UNREACHABLE_MCP_MESSAGE = (
+    "Could not reach the reporails service. Check your connection, "
+    "or set `AILS_OFFLINE=1` in the MCP server's environment for local checks only."
+)
+
 _DECLINED_MESSAGE = "The reporails service declined this request."
 
 _REJECTED_MESSAGE = (
@@ -38,6 +44,6 @@ def server_gate(surface: Surface, handshake: Handshaker) -> Refusal | None:
                 return None
             return Refusal("server_refused", _REJECTED_MESSAGE)
         case "unreachable":
-            return Refusal("server_unreachable", _UNREACHABLE_MESSAGE)
+            return Refusal("server_unreachable", _UNREACHABLE_MCP_MESSAGE if surface == "mcp" else _UNREACHABLE_MESSAGE)
         case "ok" | "no_verdict":
             return None
