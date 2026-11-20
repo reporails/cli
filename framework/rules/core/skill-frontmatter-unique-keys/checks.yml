@@ -1,0 +1,13 @@
+checks:
+- id: CORE.S.0062.skill-file-exists
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0062.unique-keys
+  type: mechanical
+  check: content_absent
+  args:
+    path: "**/SKILL.md"
+    entry_only: true
+    pattern: |-
+      \A﻿?---[ \t]*\r?\n(?:(?!---[ \t]*\r?\n)[^\n]*\n)*?([A-Za-z_][\w-]*)[ \t]*:[^\n]*\n(?:(?!---[ \t]*\r?\n)[^\n]*\n)*?\1[ \t]*:
+  message: "Skill frontmatter repeats a top-level key -- Codex, Copilot CLI and OpenCode drop the skill"

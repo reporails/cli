@@ -20,9 +20,11 @@ The check reports every line that holds a secret, in prose and in code blocks, i
 
 - a `password`, `api_key` or `secret_key` assigned a literal value, with `=` or `:`
 - a well-known key written anywhere in a line: an `sk-` API key (`sk-live-…`, `sk-proj-…`, `sk-ant-…`), a GitHub token (`ghp_…`, `github_pat_…`), an AWS access key id (`AKIA…`), a Slack token (`xoxb-…`)
+- a connection string with a password written in it (`postgres://user:secret@host`; schemes `postgres`, `postgresql`, `mysql`, `mongodb`, `mongodb+srv`, `redis`, `rediss`, `amqp`)
+- a JSON Web Token (`eyJ….eyJ….signature`), a Google API key (`AIza…`), a Stripe live or restricted key (`sk_live_…`, `rk_live_…`), an npm token (`npm_…`), a Slack incoming-webhook URL (`https://hooks.slack.com/services/T…/B…/…`)
 - a private key or certificate header (`-----BEGIN RSA PRIVATE KEY-----`)
 
-A reference to a secret is not a secret. The check reports a literal value and leaves these alone: an environment-variable reference (`$NAME`, `${NAME}`, `%NAME%`, `{{ name }}`), an angle-bracket or all-caps placeholder (`<ask the lead>`, `YOUR_PASSWORD`), emphasis (`*ever*`), a YAML block marker (`|`, `>`), and a parameter or field declared with a type and no value (`password: string`, `password?: str`, `String password`). A key shape followed by a placeholder word (`sk-live-<your-key>`, `xoxb-your-token`) or written as `sk-...` is not reported.
+A reference to a secret is not a secret. The check reports a literal value and leaves these alone: an environment-variable reference (`$NAME`, `${NAME}`, `%NAME%`, `{{ name }}`), an angle-bracket or all-caps placeholder (`<ask the lead>`, `YOUR_PASSWORD`), emphasis (`*ever*`), a YAML block marker (`|`, `>`), and a parameter or field declared with a type and no value (`password: string`, `password?: str`, `String password`). A key shape followed by a placeholder word (`sk-live-<your-key>`, `xoxb-your-token`, `npm_YOUR_TOKEN_HERE`) or written as `sk-...` is not reported. A connection string whose password is an environment reference or placeholder (`postgres://user:$DB_PASS@host`, `mysql://user:${PASS}@host`, `mongodb://user:<password>@host`, `redis://user:PASSWORD@host`, `amqp://user:***@host`, `postgres://user:pass@host`), a connection string with no password (`postgres://user@host`, `postgres://localhost/db`) and a Stripe test key (`sk_test_…`) are not reported.
 
 ## Antipatterns
 
@@ -39,6 +41,7 @@ A reference to a secret is not a secret. The check reports a literal value and l
 
 Set `API_KEY` in your `.env` file (not tracked by git).
 Use `$DATABASE_PASSWORD` environment variable for DB access.
+Connect with `postgres://app:$DB_PASS@db.internal/app` or `postgres://localhost/app`.
 ~~~~
 
 ### Fail
@@ -48,6 +51,7 @@ Use `$DATABASE_PASSWORD` environment variable for DB access.
 
 api_key = "sk-live-abc123def456"
 password: "hunter2"
+DATABASE_URL=postgres://app:s3cr3tpw9@db.internal/app
 -----BEGIN RSA PRIVATE KEY-----
 ~~~~
 

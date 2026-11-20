@@ -1,0 +1,13 @@
+checks:
+- id: CORE.S.0063.skill-file-exists
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0063.no-tabs
+  type: mechanical
+  check: content_absent
+  args:
+    path: "**/SKILL.md"
+    entry_only: true
+    pattern: |-
+      \A﻿?---[ \t]*\r?\n(?:(?!---[ \t]*\r?\n)[^\n]*\n)*?[ ]*\t
+  message: "Skill frontmatter is indented with a tab -- Codex and Copilot CLI fail to parse it"

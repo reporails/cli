@@ -1,0 +1,10 @@
+checks:
+- id: CORE.G.0010.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.G.0010.pattern_check
+  type: deterministic
+  follow_imports: true
+  pattern-regex: '[\U000E0000-\U000E001F]|(?<!\U0001F3F4[\U000E0020-\U000E007E]*)[\U000E0020-\U000E007E]|(?<!\U0001F3F4[\U000E0020-\U000E007E]+)\U000E007F|[\U000E0020-\U000E007E](?![\U000E0020-\U000E007E]*\U000E007F)|[\u202A-\u202E\u2066-\u2069\u200E\u200F\u061C\u200B\u2060\u180E\u2061-\u2064\u034F\u206A-\u206F]|(?<!\p{Extended_Pictographic}[\U0001F3FB-\U0001F3FF]?\uFE0F?)(?<!(?=[\p{L}\p{M}])[\p{Arabic}\p{Devanagari}\p{Bengali}\p{Gurmukhi}\p{Gujarati}\p{Oriya}\p{Tamil}\p{Telugu}\p{Kannada}\p{Malayalam}\p{Sinhala}])\u200D|(?<!\p{Extended_Pictographic}[\U0001F3FB-\U0001F3FF]?\uFE0F?)\u200D(?!(?=[\p{L}\p{M}])[\p{Arabic}\p{Devanagari}\p{Bengali}\p{Gurmukhi}\p{Gujarati}\p{Oriya}\p{Tamil}\p{Telugu}\p{Kannada}\p{Malayalam}\p{Sinhala}])|(?<!(?=[\p{L}\p{M}])[\p{Arabic}\p{Devanagari}\p{Bengali}\p{Gurmukhi}\p{Gujarati}\p{Oriya}\p{Tamil}\p{Telugu}\p{Kannada}\p{Malayalam}\p{Sinhala}])\u200D(?!\p{Extended_Pictographic})|\u200D(?!\p{Extended_Pictographic})(?!(?=[\p{L}\p{M}])[\p{Arabic}\p{Devanagari}\p{Bengali}\p{Gurmukhi}\p{Gujarati}\p{Oriya}\p{Tamil}\p{Telugu}\p{Kannada}\p{Malayalam}\p{Sinhala}])|(?<!(?=[\p{L}\p{M}])[\p{Arabic}\p{Devanagari}\p{Bengali}\p{Gurmukhi}\p{Gujarati}\p{Oriya}\p{Tamil}\p{Telugu}\p{Kannada}\p{Malayalam}\p{Sinhala}])\u200C|\u200C(?!(?=[\p{L}\p{M}])[\p{Arabic}\p{Devanagari}\p{Bengali}\p{Gurmukhi}\p{Gujarati}\p{Oriya}\p{Tamil}\p{Telugu}\p{Kannada}\p{Malayalam}\p{Sinhala}])|(?<!\A)\uFEFF'
+  expect: absent
+  message: "Hidden Unicode character detected - invisible characters can carry instructions a reviewer cannot see"

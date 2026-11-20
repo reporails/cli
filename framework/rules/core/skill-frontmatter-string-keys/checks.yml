@@ -1,0 +1,13 @@
+checks:
+- id: CORE.S.0064.skill-file-exists
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0064.string-keys
+  type: mechanical
+  check: content_absent
+  args:
+    path: "**/SKILL.md"
+    entry_only: true
+    pattern: |-
+      \A﻿?---[ \t]*\r?\n(?:(?!---[ \t]*\r?\n)[^\n]*\n)*?(?i:yes|no|on|off|true|false|null|~|[-+]?\d+(?:\.\d+)?|\d{4}-\d{2}-\d{2})[ \t]*:(?:[ \t]|\r?\n)
+  message: "Skill frontmatter has a top-level key that YAML reads as a boolean, null, number or date -- quote it or rename it"

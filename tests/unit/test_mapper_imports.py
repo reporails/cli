@@ -174,3 +174,19 @@ def test_inline_code_mask_does_not_change_line_map(tmp_path: Path) -> None:
     expanded, line_map, _origins = expand_imports_with_origins(content, src, src.parent)
     assert expanded == content  # neither reference resolves to a real file -> unexpanded
     assert line_map == [1, 2, 3]
+
+
+# --- a byte order mark at the start of an imported file ------------------
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+def test_bom_at_imported_file_start_is_not_inlined(tmp_path: Path) -> None:
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "a.md").write_bytes(b"\xef\xbb\xbf# Notes\n\nPlain text.\n")
+    src = tmp_path / "CLAUDE.md"
+    content = "# Style\n\nSee @docs/a.md\n"
+    assert "﻿" not in expand_imports(content, src, tmp_path)
+    expanded, _line_map, _origins = expand_imports_with_origins(content, src, tmp_path)
+    assert "﻿" not in expanded
+    assert "Plain text." in expanded
