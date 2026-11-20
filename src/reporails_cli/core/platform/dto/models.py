@@ -126,6 +126,7 @@ class FileTypeDeclaration(BaseModel):  # type: ignore[explicit-any]  # pydantic:
     required: bool = False
     properties: dict[str, str | list[str]] = Field(default_factory=dict)
     entry_patterns: tuple[str, ...] = ()  # where an instance's entry file sits (a skill's SKILL.md)
+    pattern_vcs: dict[str, str] = Field(default_factory=dict)  # vcs of the scope holding each pattern
 
 
 class ClassifiedFile(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any

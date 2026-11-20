@@ -13,7 +13,13 @@ from pathlib import Path
 from reporails_cli.core.classify.content_format import detect_content_format
 from reporails_cli.core.classify.generic_type import make_generic_classified
 from reporails_cli.core.classify.link_walker import walk_markdown_links
-from reporails_cli.core.discovery.agent_config import extract_patterns, extract_properties, load_config_file_types
+from reporails_cli.core.classify.vcs import with_default_vcs
+from reporails_cli.core.discovery.agent_config import (
+    extract_patterns,
+    extract_properties,
+    extract_scope_vcs,
+    load_config_file_types,
+)
 from reporails_cli.core.discovery.agent_discovery import is_memory_recall_entry
 from reporails_cli.core.discovery.plugin_roots import config_pattern_hits
 from reporails_cli.core.discovery.project_root import resolve_project_root
@@ -76,6 +82,8 @@ def _apply_project_overrides(
                     patterns=decl.patterns + tuple(extra),
                     required=decl.required,
                     properties=decl.properties,
+                    entry_patterns=decl.entry_patterns,
+                    pattern_vcs=decl.pattern_vcs,
                 )
             )
         else:
@@ -103,6 +111,7 @@ def _parse_file_types(data: JsonObject) -> list[FileTypeDeclaration]:
                 required=spec.get("required", False) is True,
                 properties=props,
                 entry_patterns=tuple(str(p) for p in extract_patterns(spec, "entry_patterns")),
+                pattern_vcs=extract_scope_vcs(spec),
             )
         )
     return declarations
@@ -165,10 +174,13 @@ def location_matches_mode(
 
 
 def _with_skill_folder(
-    ft: FileTypeDeclaration, file_path: Path, skills: Mapping[str, str] | None
+    ft: FileTypeDeclaration, file_path: Path, skills: Mapping[str, str] | None, matched_pattern: str
 ) -> dict[str, str | list[str]]:
-    """The declaration's properties; a `skills` file also carries its skill folder as `skill`."""
+    """The declaration's properties, `vcs` taken from the scope holding the matched pattern; a `skills` file adds
+    its folder as `skill`."""
     props = dict(ft.properties)
+    if matched_pattern in ft.pattern_vcs:
+        props["vcs"] = ft.pattern_vcs[matched_pattern]
     if ft.name == "skills" and skills is not None:
         props["skill"] = skills[file_path.as_posix()]
         props["skill_entry_patterns"] = list(ft.entry_patterns)
@@ -206,7 +218,7 @@ def _classify_one(
             continue
         if ft.name == "skills" and skills is not None and file_path.as_posix() not in skills:
             continue
-        props = _with_skill_folder(ft, file_path, skills)
+        props = _with_skill_folder(ft, file_path, skills, matched_pattern)
         # Per-entry memory loading: only MEMORY.md is the eager index;
         # sibling entries are recalled on-demand.
         if is_memory_recall_entry(ft.name, file_path.name):
@@ -221,7 +233,9 @@ def _classify_one(
                     props["content_format"] = cf
             except OSError:
                 pass
-        return ClassifiedFile(path=file_path, file_type=ft.name, properties=props)  # first valid match wins
+        return ClassifiedFile(
+            path=file_path, file_type=ft.name, properties=with_default_vcs(props, file_path, scan_root)
+        )  # first valid match wins
     return None
 
 

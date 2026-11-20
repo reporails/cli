@@ -28,7 +28,7 @@ from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import ClassifiedFile, Execution, LocalFinding, Rule, RuleType
 from reporails_cli.core.platform.dto.results import ConfiguredRoot, ProjectConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.core.platform.policy.matching import match_files
+from reporails_cli.core.platform.policy.matching import deterministic_targets
 from reporails_cli.core.platform.rules.registry import load_rules
 
 logger = logging.getLogger(__name__)
@@ -85,13 +85,6 @@ def _min_lines_overrides(thresholds: Mapping[str, Mapping[str, int]]) -> dict[st
     return overrides
 
 
-def _deterministic_targets(rule: Rule, instruction_files: list[Path], classified: list[ClassifiedFile]) -> list[Path]:
-    """The files a deterministic rule runs on: those its `match` criteria select, else every instruction file."""
-    if rule.match:
-        return [cf.path for cf in match_files(classified, rule.match)]
-    return instruction_files
-
-
 def _collect_deterministic_findings(
     rules: dict[str, Rule],
     project_dir: Path,
@@ -103,7 +96,7 @@ def _collect_deterministic_findings(
 ) -> list[LocalFinding]:
     """Run deterministic checks against matched target files.
 
-    Uses property-based matching (match_files) so rules targeting specific
+    Uses property-based matching (deterministic_targets) so rules targeting specific
     scopes, formats, or other properties get the correct file set.
     Rules of any type are included if they contain deterministic checks.
     """
@@ -115,7 +108,7 @@ def _collect_deterministic_findings(
             continue
         if not rule.yml_path or not rule.yml_path.exists():
             continue
-        target_files = _deterministic_targets(rule, instruction_files, classified)
+        target_files = deterministic_targets(rule.match, instruction_files, classified)
         if not target_files:
             continue
 

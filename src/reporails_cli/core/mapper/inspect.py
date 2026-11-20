@@ -15,11 +15,11 @@ import logging
 from collections.abc import Sequence
 from pathlib import Path
 
-from reporails_cli.core.discovery.agent_config import extract_patterns, extract_properties
+from reporails_cli.core.discovery.agent_config import extract_patterns, extract_properties, scope_holding_pattern
 from reporails_cli.core.discovery.agent_discovery import is_eager_global, is_memory_recall_entry, is_nested
 from reporails_cli.core.discovery.plugin_roots import PLUGIN_SCOPE, matches_plugin_pattern, split_plugin_pattern
 from reporails_cli.core.platform.config.config import get_rules_path, iter_agent_configs
-from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, pattern_list
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object
 from reporails_cli.core.platform.dto.mapping import FileRead, FileTypeSpec, RegistryMatch, RegistryPicks, RegistryQuery
 from reporails_cli.core.platform.utils.utils import config_pattern_matches, read_frontmatter_file
 
@@ -134,10 +134,10 @@ def _scope_activation(ft: JsonValue, pattern: str) -> JsonObject:
     type's own (Copilot reads `paths`, not `applyTo`, in the `.claude/rules` scope)."""
     if not isinstance(ft, dict):
         return {}
-    for scope_spec in as_object(ft.get("scopes")).values():
-        if isinstance(scope_spec, dict) and pattern in pattern_list(scope_spec.get("patterns")):
-            return {k: scope_spec[k] for k in _ACTIVATION_KEYS if k in scope_spec}
-    return {}
+    scope_spec = scope_holding_pattern(ft, pattern)
+    if scope_spec is None:
+        return {}
+    return {k: scope_spec[k] for k in _ACTIVATION_KEYS if k in scope_spec}
 
 
 def _match_lower(rel: str, pattern: str) -> bool:

@@ -5,7 +5,7 @@ title: No Personal Paths
 category: governance
 type: deterministic
 severity: low
-match: {format: [freeform, frontmatter, schema_validated]}
+match: {format: [freeform, frontmatter, schema_validated], vcs: committed}
 ---
 
 # No Personal Paths

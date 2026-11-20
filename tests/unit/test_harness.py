@@ -334,8 +334,7 @@ class TestDeterministicChecks:
             tmp_path,
             "det-rule",
             "id: CORE:S:0003\nslug: det-rule\ntitle: Det Rule\n"
-            "category: structure\ntype: deterministic\nlevel: L1\nmatch: {}\n"
-            "checks:\n- id: CORE.S.0003.check\n  type: deterministic\n  severity: medium\n  name: wall-of-prose",
+            "category: structure\ntype: deterministic\nlevel: L1\nmatch: {}\n",
         )
         _make_checks_yml(
             rule_dir,
@@ -385,9 +384,7 @@ class TestDeterministicChecks:
             tmp_path,
             "evidence-rule",
             "id: CORE:C:0001\nslug: evidence-rule\ntitle: Evidence Rule\n"
-            "category: content\ntype: deterministic\nlevel: L1\nmatch: {}\n"
-            "checks:\n- id: CORE.C.0001.check\n  type: deterministic\n"
-            "  severity: medium\n  expect: present\n  name: has-context",
+            "category: coherence\ntype: deterministic\nseverity: medium\nbacked_by: [x]\nmatch: {}\n",
         )
         _make_checks_yml(
             rule_dir,
@@ -503,8 +500,7 @@ class TestFixtureDiscovery:
             tmp_path,
             "json-rule",
             "id: CORE:S:0099\nslug: json-rule\ntitle: JSON Rule\n"
-            "category: structure\ntype: deterministic\nlevel: L1\nmatch: {type: config}\n"
-            "checks:\n- id: CORE.S.0099.check\n  type: deterministic\n  severity: medium\n  name: json-check",
+            "category: structure\ntype: deterministic\nlevel: L1\nmatch: {type: config}\n",
         )
         _make_checks_yml(
             rule_dir,
@@ -516,11 +512,11 @@ class TestFixtureDiscovery:
             "  pattern-regex: 'dangerous_setting'\n",
         )
         # Pass fixture: .json file without violation
-        pass_dir = rule_dir / "tests" / "pass"
+        pass_dir = rule_dir / "tests" / "pass" / ".claude"
         pass_dir.mkdir(parents=True)
         (pass_dir / "settings.json").write_text('{"safe": true}')
         # Fail fixture: .json file with violation
-        fail_dir = rule_dir / "tests" / "fail"
+        fail_dir = rule_dir / "tests" / "fail" / ".claude"
         fail_dir.mkdir(parents=True)
         (fail_dir / "settings.json").write_text('{"dangerous_setting": true}')
 

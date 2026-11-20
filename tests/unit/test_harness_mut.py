@@ -13,15 +13,26 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.lint.harness import HarnessStatus, RuleInfo, fixture_mapper, run_rule
+from reporails_cli.core.platform.dto.models import FileTypeDeclaration
 from tests.fake_models import no_models
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
+_MAIN = [FileTypeDeclaration(name="main", patterns=("**/CLAUDE.md",), required=True, properties={})]
 
 
 def _rule_dir(tmp_path: Path, slug: str) -> Path:
     d = tmp_path / "core" / slug
     d.mkdir(parents=True)
     return d
+
+
+def _rule_md(rule_dir: Path, rule_id: str = "CORE:S:0001") -> None:
+    """A registry-loadable rule.md; checks live only in checks.yml, as in the real rules."""
+    (rule_dir / "rule.md").write_text(
+        f"---\nid: {rule_id}\nslug: {rule_dir.name}\ntitle: T\ncategory: structure\n"
+        "type: deterministic\nseverity: medium\nbacked_by: [x]\nmatch: {type: main}\n---\n# T\n\nBody.\n"
+    )
 
 
 def _pass(rule_dir: Path, content: str, name: str = "CLAUDE.md") -> None:
@@ -134,11 +145,12 @@ def test_single_nonmatching_rule_falls_back(tmp_path: Path) -> None:
     """A single rule with a non-matching id is still used via fallback
     (kills L109 == -> != so the single-rule fallback survives)."""
     rd = _rule_dir(tmp_path, "fallback")
+    _rule_md(rd)
     _pass(rd, "# Commands here\n")
-    _checks_yml(rd, _one_pattern("CORE.S.9990.other", "Commands"))
+    _checks_yml(rd, _one_pattern("CORE.S.0001.other", "Commands"))
     # expect=present: fallback runs the rule → finding → pass; no fallback → fail
     result = run_rule(
-        _info(rd, [_det_check(check_id="CORE.S.0001.check", expect="present")]), [], fixture_mapper(no_models())
+        _info(rd, [_det_check(check_id="CORE.S.0001.check", expect="present")]), _MAIN, fixture_mapper(no_models())
     )
     assert result.status == HarnessStatus.PASSED
 
@@ -148,19 +160,20 @@ def test_single_nonmatching_rule_falls_back(tmp_path: Path) -> None:
 def test_matching_rule_selected_by_id(tmp_path: Path) -> None:
     """The rule whose id equals the check id is the one run (kills L105 == -> !=)."""
     rd = _rule_dir(tmp_path, "by-id")
+    _rule_md(rd, "CORE:S:0001")
     _pass(rd, "# Commands here\n")
     _checks_yml(
         rd,
         "checks:\n"
-        "- id: CORE.S.0001.check\n"  # WRONG rule: pattern would not fire
+        "- id: CORE.S.0001.wrong\n"  # WRONG rule: pattern would not fire
         "  message: m\n  severity: medium\n"
         "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'ZZZNOMATCH'\n"
-        "- id: CORE.S.0002.check\n"  # RIGHT rule: matches the check id + fixture
+        "- id: CORE.S.0001.right\n"  # RIGHT rule: matches the check id + fixture
         "  message: m\n  severity: medium\n"
         "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'Commands'\n",
     )
     result = run_rule(
-        _info(rd, [_det_check(check_id="CORE.S.0002.check", expect="present")]), [], fixture_mapper(no_models())
+        _info(rd, [_det_check(check_id="CORE.S.0001.right", expect="present")]), _MAIN, fixture_mapper(no_models())
     )
     assert result.status == HarnessStatus.PASSED
 

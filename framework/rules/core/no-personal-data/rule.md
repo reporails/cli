@@ -5,7 +5,7 @@ title: No Personal Data
 category: governance
 type: deterministic
 severity: medium
-match: {format: [freeform, frontmatter, schema_validated]}
+match: {format: [freeform, frontmatter, schema_validated], vcs: committed}
 ---
 
 # No Personal Data

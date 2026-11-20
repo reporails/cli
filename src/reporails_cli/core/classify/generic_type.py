@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from reporails_cli.core.classify.vcs import with_default_vcs
 from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES
 from reporails_cli.core.platform.dto.classify import LinkEdge
 from reporails_cli.core.platform.dto.models import ClassifiedFile
@@ -34,7 +35,7 @@ _EAGER_SOURCES: frozenset[str] = frozenset({"main"}) | MEMORY_SURFACES
 def make_generic_classified(
     path: Path,
     edges: list[LinkEdge],
-    project_root: Path | None = None,
+    project_root: Path,
 ) -> ClassifiedFile:
     """Build a `ClassifiedFile` for `path` with `link_*` properties aggregated from `edges`.
 
@@ -73,15 +74,13 @@ def make_generic_classified(
     return ClassifiedFile(
         path=path,
         file_type=file_type,
-        properties=properties,
+        properties=with_default_vcs(properties, path, project_root),
     )
 
 
-def _rel_or_str(source: Path, project_root: Path | None) -> str:
+def _rel_or_str(source: Path, project_root: Path) -> str:
     """Project-relative POSIX string when possible, absolute POSIX otherwise."""
-    if project_root is not None:
-        try:
-            return source.relative_to(project_root.resolve()).as_posix()
-        except ValueError:
-            pass
-    return source.as_posix()
+    try:
+        return source.relative_to(project_root.resolve()).as_posix()
+    except ValueError:
+        return source.as_posix()

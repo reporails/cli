@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import shutil
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 from reporails_cli.core.discovery.exclusions import no_exclusions
@@ -25,18 +26,13 @@ from reporails_cli.core.lint.content_checker import _evaluate_check
 from reporails_cli.core.lint.harness_discovery import (
     _build_prefix_to_agent_map,
     _classify_fixture,
+    _fixture_files,
     _rule_matches_exclude,
     apply_check_inheritance,
     discover_rules,
     load_agent_config,
 )
-from reporails_cli.core.lint.harness_models import (
-    _FIXTURE_EXCLUDES,
-    HarnessStatus,
-    fixture_cases,
-    has_fail_fixture,
-    has_pass_fixture,
-)
+from reporails_cli.core.lint.harness_models import HarnessStatus, fixture_cases, has_fail_fixture, has_pass_fixture
 from reporails_cli.core.lint.mechanical.runner import UnknownCheckError, run_mechanical_check
 from reporails_cli.core.lint.regex import scan_ruleset
 from reporails_cli.core.lint.regex.compiler import compile_rules
@@ -53,7 +49,8 @@ from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.lint import CheckRun, CompiledCheck, CompiledRuleSet, HarnessResult, RuleInfo
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, FileTypeDeclaration, Rule
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.core.platform.rules.registry import RuleReadError, load_rules_from_path, read_checks_document
+from reporails_cli.core.platform.policy.matching import deterministic_targets
+from reporails_cli.core.platform.rules.registry import RuleReadError, read_checks_document, read_rule
 from reporails_cli.core.platform.rules.rule_builder import load_checks
 
 logger = logging.getLogger(__name__)
@@ -115,8 +112,13 @@ def _run_deterministic_check(
     checks_yml: Path,
     check: Check,
     fixture_root: Path,
+    platform_rule: Rule | str,
+    targets: list[Path],
 ) -> tuple[bool, int, str]:
     """Run a deterministic check via the CLI regex engine against fixtures.
+
+    `targets` are the fixture files the rule's `match` selects, as in `ails check`.
+    `platform_rule` is the loaded rule, or the message saying why it did not load.
 
     Returns:
         Tuple of (engine_ok, findings_count, message).
@@ -132,34 +134,46 @@ def _run_deterministic_check(
     if compiled is None:
         return False, 0, f"No pattern for check {check.id} in checks.yml"
 
+    if isinstance(platform_rule, str):
+        return False, 0, platform_rule
+
     try:
-        # Discover all files in fixture for path filtering
-        fixture_files = [f for f in fixture_root.rglob("*") if f.is_file() and f.name not in _FIXTURE_EXCLUDES]
-        sarif = scan_ruleset(
-            CompiledRuleSet(checks=[compiled]),
-            fixture_root,
-            no_exclusions(fixture_root),
-            instruction_files=fixture_files if fixture_files else None,
-        )
-        findings = 0
-        for run in as_list(sarif.get("runs")):
-            findings += len(as_list(as_object(run).get("results")))
+        findings = _count_findings(compiled, fixture_root, targets)
         return True, findings, f"{findings} finding(s)"
     except Exception as exc:  # pylint: disable=broad-exception-caught  # the harness reports an engine failure as a result instead of aborting the batch
         logger.warning("Regex engine error for check %s: %s", check.id, exc)
         return False, 0, f"Regex engine error: {exc}"
 
 
-def _build_platform_rule(rule: RuleInfo) -> Rule | None:
-    """Build the `Rule` object content_checker's shared dispatch expects.
+def _count_findings(compiled: CompiledCheck, fixture_root: Path, targets: list[Path]) -> int:
+    """How many findings the compiled check reports on `targets`; none when there is no target."""
+    if not targets:
+        return 0
+    sarif = scan_ruleset(
+        CompiledRuleSet(checks=[compiled]),
+        fixture_root,
+        no_exclusions(fixture_root),
+        instruction_files=targets,
+    )
+    return sum(len(as_list(as_object(run).get("results"))) for run in as_list(sarif.get("runs")))
+
+
+def _build_platform_rule(rule: RuleInfo) -> Rule | str:
+    """Build the `Rule` object content_checker's shared dispatch expects, or say why it did not load.
 
     Loads `rule.md` + `checks.yml` through the same registry loader `ails
     check` loads rules through, so a content_query check's severity, fix
     text, and match targeting come from the identical construction path
     instead of a harness-only rebuild.
     """
-    rules = load_rules_from_path(rule.rule_dir)
-    return rules.get(rule.rule_id)
+    try:
+        read = read_rule(rule.rule_dir / "rule.md")
+    except RuleReadError as exc:
+        return f"could not load rule {rule.rule_id}: {exc}"
+    if read is None or read.rule.id != rule.rule_id:
+        return f"could not load rule {rule.rule_id} for evaluation"
+    platform_rule = read.rule
+    return platform_rule
 
 
 def fixture_mapper(models: Models) -> Callable[[Path], RulesetMap]:
@@ -172,8 +186,9 @@ def fixture_mapper(models: Models) -> Callable[[Path], RulesetMap]:
     def map_fixture(fixture_root: Path) -> RulesetMap:
         mapped = maps.get(fixture_root)
         if mapped is None:
-            files = [f for f in fixture_root.rglob("*") if f.is_file() and f.name not in _FIXTURE_EXCLUDES]
-            mapped = maps[fixture_root] = map_ruleset(files, models=models, root=fixture_root, cache_dir=None)
+            mapped = maps[fixture_root] = map_ruleset(
+                _fixture_files(fixture_root), models=models, root=fixture_root, cache_dir=None
+            )
         return mapped
 
     return map_fixture
@@ -182,8 +197,8 @@ def fixture_mapper(models: Models) -> Callable[[Path], RulesetMap]:
 def _run_content_query_check(
     check: Check,
     fixture_root: Path,
-    rule: RuleInfo,
-    file_types: list[FileTypeDeclaration],
+    platform_rule: Rule | str,
+    classified: list[ClassifiedFile],
     map_fixture: Callable[[Path], RulesetMap],
 ) -> tuple[bool, str]:
     """Evaluate one content_query check against a fixture.
@@ -193,15 +208,13 @@ def _run_content_query_check(
     content_query checks — one evaluation path, not a second harness-only
     implementation. Returns (violation_found, message).
     """
-    platform_rule = _build_platform_rule(rule)
-    if platform_rule is None:
-        return False, f"content_query — could not load rule {rule.rule_id} for evaluation"
+    if isinstance(platform_rule, str):
+        return False, f"content_query — {platform_rule}"
 
     ruleset_map = map_fixture(fixture_root)
     if not ruleset_map.files:
         return False, "content_query — no fixture files"
 
-    classified = _classify_fixture(fixture_root, file_types)
     findings = _evaluate_check(ruleset_map, check, platform_rule, classified)
     if findings:
         return True, findings[0].message
@@ -298,11 +311,19 @@ def run_rule(
         result.messages.append("No test fixtures (tests/pass/, tests/fail/ or tests/cases/ empty)")
         return result
 
+    platform_rule = _build_platform_rule(rule)
     for label, kind, fixture_dir in fixtures:
         cleanup, effective_dir = _prepare_fixture(fixture_dir, kind, rule, file_types)
         try:
             violation_found = _run_fixture_checks(
-                rule, file_types, map_fixture, kind=kind, label=label, effective_dir=effective_dir, result=result
+                rule,
+                platform_rule,
+                file_types,
+                map_fixture,
+                kind=kind,
+                label=label,
+                effective_dir=effective_dir,
+                result=result,
             )
         finally:
             for scaffolded_dir in cleanup:
@@ -319,6 +340,7 @@ def run_rule(
 
 def _run_fixture_checks(
     rule: RuleInfo,
+    platform_rule: Rule | str,
     file_types: list[FileTypeDeclaration],
     map_fixture: Callable[[Path], RulesetMap],
     *,
@@ -335,90 +357,117 @@ def _run_fixture_checks(
     annotation never bleeds from one fixture into another.
     Returns whether a fail fixture saw at least one violation.
     """
+    run_check = _fixture_check_runner(
+        rule, platform_rule, file_types, map_fixture, kind=kind, fixture_root=effective_dir
+    )
     violation_found = False
     extra: JsonObject = {}
     for check in rule.checks:
-        if kind == "pass":
-            passed, run, raw = _check_fixture(
-                check, effective_dir, rule, file_types, label, map_fixture=map_fixture, extra_args=extra
-            )
-            if not passed:
-                result.status = HarnessStatus.FAILED
-        else:
-            violation, run, raw = _check_fixture_for_violation(
-                check, effective_dir, rule, file_types, map_fixture, extra_args=extra
-            )
-            run.fixture = label
-            violation_found = violation_found or violation
+        ok, run, raw = run_check(check, extra)
+        if kind == "pass" and not ok:
+            result.status = HarnessStatus.FAILED
+        violation_found = violation_found or (kind != "pass" and ok)
+        run.fixture = label
         result.check_runs.append(run)
         if raw is not None and raw.annotations:
             extra.update(raw.annotations)
     return violation_found
 
 
+def _fixture_check_runner(
+    rule: RuleInfo,
+    platform_rule: Rule | str,
+    file_types: list[FileTypeDeclaration],
+    map_fixture: Callable[[Path], RulesetMap],
+    *,
+    kind: str,
+    fixture_root: Path,
+) -> Callable[[Check, JsonObject | None], tuple[bool, CheckRun, CheckResult | None]]:
+    """The check runner of one fixture directory, bound to what its checks share.
+
+    The fixture is classified once, and the files the rule's `match` selects are
+    worked out once, for all of the rule's checks.
+    """
+    classified = _classify_fixture(fixture_root, file_types)
+    targets = (
+        []
+        if isinstance(platform_rule, str)
+        else deterministic_targets(platform_rule.match, _fixture_files(fixture_root), classified)
+    )
+    return partial(
+        _check_fixture if kind == "pass" else _check_fixture_for_violation,
+        fixture_root=fixture_root,
+        classified=classified,
+        platform_rule=platform_rule,
+        targets=targets,
+        rule=rule,
+        map_fixture=map_fixture,
+    )
+
+
 def _check_fixture(
     check: Check,
-    fixture_root: Path,
-    rule: RuleInfo,
-    file_types: list[FileTypeDeclaration],
-    fixture_name: str,
+    extra_args: JsonObject | None,
     *,
+    fixture_root: Path,
+    classified: list[ClassifiedFile],
+    platform_rule: Rule | str,
+    targets: list[Path],
+    rule: RuleInfo,
     map_fixture: Callable[[Path], RulesetMap],
-    extra_args: JsonObject | None = None,
 ) -> tuple[bool, CheckRun, CheckResult | None]:
     """Run a check against a pass fixture. Returns (passed, CheckRun, raw_result).
 
     `raw_result` is the mechanical-check `CheckResult` (with annotations),
     or None for non-mechanical paths; the caller threads annotations into
-    subsequent checks via the `extra_args` parameter.
+    subsequent checks via the `extra_args` parameter and names the fixture on the run.
     """
     check_id, check_type = check.id, check.type
     if check_type == "mechanical":
-        classified = _classify_fixture(fixture_root, file_types)
         cr = _run_mechanical_check(check, fixture_root, classified, extra_args=extra_args)
-        return cr.passed, CheckRun(check_id, check_type, fixture_name, cr.passed, cr.message), cr
+        return cr.passed, CheckRun(check_id, check_type, "pass", cr.passed, cr.message), cr
 
     if check_type == "deterministic":
         ok, count, msg = _run_deterministic_check(
-            rule.inherited_checks_yml.get(check_id, rule.checks_yml), check, fixture_root
+            rule.inherited_checks_yml.get(check_id, rule.checks_yml), check, fixture_root, platform_rule, targets
         )
         passed = (ok and count > 0) if check.expect == "present" else (ok and count == 0)
-        return passed, CheckRun(check_id, check_type, fixture_name, passed, msg), None
+        return passed, CheckRun(check_id, check_type, "pass", passed, msg), None
 
-    ok, msg = _run_content_query_check(check, fixture_root, rule, file_types, map_fixture)
+    ok, msg = _run_content_query_check(check, fixture_root, platform_rule, classified, map_fixture)
     passed = not ok
-    return passed, CheckRun(check_id, check_type, fixture_name, passed, msg), None
+    return passed, CheckRun(check_id, check_type, "pass", passed, msg), None
 
 
 def _check_fixture_for_violation(
     check: Check,
-    fixture_root: Path,
-    rule: RuleInfo,
-    file_types: list[FileTypeDeclaration],
-    map_fixture: Callable[[Path], RulesetMap],
+    extra_args: JsonObject | None,
     *,
-    extra_args: JsonObject | None = None,
+    fixture_root: Path,
+    classified: list[ClassifiedFile],
+    platform_rule: Rule | str,
+    targets: list[Path],
+    rule: RuleInfo,
+    map_fixture: Callable[[Path], RulesetMap],
 ) -> tuple[bool, CheckRun, CheckResult | None]:
     """Run a check against a fail fixture. Returns (violation_found, CheckRun, raw_result).
 
     Same annotation-threading contract as `_check_fixture`: the raw
     `CheckResult` propagates so accumulator state survives chained checks.
     """
-    check_id, check_type, expect = check.id, check.type, check.expect
+    check_id, check_type = check.id, check.type
     if check_type == "mechanical":
-        classified = _classify_fixture(fixture_root, file_types)
         cr = _run_mechanical_check(check, fixture_root, classified, extra_args=extra_args)
-        violation = not cr.passed
-        return violation, CheckRun(check_id, check_type, "fail", True, cr.message), cr
+        return not cr.passed, CheckRun(check_id, check_type, "fail", True, cr.message), cr
 
     if check_type == "deterministic":
         ok, count, msg = _run_deterministic_check(
-            rule.inherited_checks_yml.get(check_id, rule.checks_yml), check, fixture_root
+            rule.inherited_checks_yml.get(check_id, rule.checks_yml), check, fixture_root, platform_rule, targets
         )
-        violation = (ok and count == 0) if expect == "present" else (ok and count > 0)
+        violation = (ok and count == 0) if check.expect == "present" else (ok and count > 0)
         return violation, CheckRun(check_id, check_type, "fail", True, msg), None
 
-    violation, msg = _run_content_query_check(check, fixture_root, rule, file_types, map_fixture)
+    violation, msg = _run_content_query_check(check, fixture_root, platform_rule, classified, map_fixture)
     return violation, CheckRun(check_id, check_type, "fail", True, msg), None
 
 
