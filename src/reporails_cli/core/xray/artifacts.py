@@ -33,7 +33,7 @@ from reporails_cli.core.platform.utils.utils import (
     relative_wire_path,
     strip_frontmatter,
 )
-from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path
+from reporails_cli.core.xray.derive import count_for, file_size, real_path, tokens_est_of
 
 # The most characters of a file the page may ask for.
 PEEK_LIMIT = 200_000
@@ -136,12 +136,11 @@ def runnable_paths(files: Sequence[ArtifactFile]) -> dict[str, str]:
     return {label: item.path for label, item in winners(files, RUNNABLE_ARTIFACT_KINDS).items()}
 
 
-def agent_file_tokens(files: Sequence[ArtifactFile], root: Path) -> dict[str, int]:
-    """The size in tokens of the definition file each listed agent type stands for; a type whose file is unreadable
+def agent_file_sizes(files: Sequence[ArtifactFile], root: Path) -> dict[str, int]:
+    """The size in bytes of the definition file each listed agent type stands for; a type whose file is unreadable
     is left out."""
     sizes = {
-        label: file_tokens_est(real_path(item.path, root))
-        for label, item in winners(files, AGENT_ARTIFACT_KINDS).items()
+        label: file_size(real_path(item.path, root)) for label, item in winners(files, AGENT_ARTIFACT_KINDS).items()
     }
     return {label: size for label, size in sizes.items() if size is not None}
 
@@ -235,10 +234,11 @@ def build_artifacts(
             linked=item.linked,
             findings=count_for(findings, item.path, root),
             actionable=is_actionable(item, root),
-            tokens_est=file_tokens_est(real_path(item.path, root)),
+            tokens_est=tokens_est_of(size := file_size(real_path(item.path, root))),
             advertised=advertised.get(item.path),
             scopes=rule_scopes(item, root),
             excluded=left_out.get(item.path, FileLeftOut()),
+            chars=size,
         )
         for item in files
     )

@@ -150,7 +150,35 @@ _CLAUDE_CONTEXT_TEXTS = (
     ),
     XrayContextText("tool_io", "Tool calls and results", "a measured share of the request Claude Code recorded"),
     XrayContextText(
-        "skill_listing", "Skills listing", "an estimate from the listing's size, not part of the measured request"
+        "skill_listing",
+        "Skills listing",
+        "the listing's size at the request's tokens per character",
+    ),
+    XrayContextText(
+        "agent_listing",
+        "Agent listing",
+        "a measured share of the request Claude Code recorded: the agent types listed to the model",
+    ),
+    XrayContextText(
+        "deferred_tools",
+        "Deferred tools",
+        "a measured share of the request Claude Code recorded: the names of the tools loaded on demand",
+    ),
+    XrayContextText(
+        "session_context",
+        "Session context",
+        "a measured share of the request Claude Code recorded: the working folder, git state and date",
+    ),
+    XrayContextText(
+        "thinking",
+        "Thinking",
+        "a measured share of the request Claude Code recorded: the agent's earlier thinking sent back",
+    ),
+    XrayContextText(
+        "harness_other",
+        "Other Claude Code messages",
+        "a measured share of the request Claude Code recorded: its own messages not itemised above ({kinds})",
+        reason_none="a measured share of the request Claude Code recorded: its own messages not itemised above",
     ),
     XrayContextText(
         "conversation",

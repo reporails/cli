@@ -46,12 +46,14 @@ class XrayCheck:
 
 @dataclass(frozen=True)
 class XrayHarnessItem:
-    """One piece of the harness's own context at an agent's start, sized by an estimate."""
+    """One piece of the harness's own context at an agent's start, sized by an estimate: `tokens_est` from its
+    `chars` characters."""
 
     kind: HarnessKind
     label: str
     count: int | None
     tokens_est: int | None
+    chars: int
 
 
 @dataclass(frozen=True)

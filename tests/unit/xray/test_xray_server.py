@@ -1085,14 +1085,23 @@ def _record_request(tmp_path: Path, system: list[str]) -> None:
 def test_system_replies_with_the_system_prompt_a_launched_agent_type_was_sent(
     client: TestClient, tmp_path: Path
 ) -> None:
-    _record_request(tmp_path, ["SYSTEM_ONE", "SYSTEM_TWO"])
+    _record_request(tmp_path, ["Intro\n# One\nbody", "## inner\n# Two"])
     view = client.get("/view", headers={"X-Xray-Token": TOKEN})
-    assert "SYSTEM_ONE" not in view.text
+    assert "Intro" not in view.text
     (source,) = [item for item in view.json()["sources"] if item["agent_type"] == "general-purpose"]
     assert source["launch_tools"] == [["Read", 1]] and source["system_tokens_est"] is not None
     reply = _get(client, "/system", {"type": "general-purpose"})
     assert reply.status_code == 200 and reply.headers["Cache-Control"] == "no-store"
-    assert reply.json() == {"id": "general-purpose", "text": "SYSTEM_ONE\n\nSYSTEM_TWO"}
+    text = "Intro\n# One\nbody\n\n## inner\n# Two"
+    assert reply.json() == {
+        "id": "general-purpose",
+        "text": text,
+        "sections": [
+            {"heading": "Opening", "chars": 6},
+            {"heading": "One", "chars": 21},
+            {"heading": "Two", "chars": 5},
+        ],
+    }
 
 
 def test_system_refuses_a_type_no_launch_recorded_a_request_for_and_a_missing_query(client: TestClient) -> None:

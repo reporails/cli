@@ -19,6 +19,9 @@ from reporails_cli.core.platform.dto.xray_cost import XrayAgentCost
 NodeKind = Literal["agent"]
 SourceKind = Literal["instructions", "rule", "skill", "agent", "memory", "mcp", "hook"]
 LoadTrigger = Literal["session_start", "path_match", "agent", "inherited", "hook", "attached"]
+# The triggers of a loaded file whose text Claude Code sends as a message of its own; a file loaded `agent` came
+# through a tool read or a skill run.
+INJECTED_TRIGGERS: frozenset[LoadTrigger] = frozenset({"session_start", "inherited", "path_match", "attached"})
 AgentOutcome = Literal["returned", "failed", "stopped", "no_handback", "running"]
 # Where the text a subagent handed back is read from: its hand-back message, the last reply it wrote, or the result its
 # parent received.
@@ -36,6 +39,11 @@ ContextKey = Literal[
     "skill_listing",
     "estimated",
     "conversation",
+    "agent_listing",
+    "deferred_tools",
+    "session_context",
+    "harness_other",
+    "thinking",
 ]
 # The outcomes in which an agent's parent received something back.
 HANDED_BACK_OUTCOMES: frozenset[AgentOutcome] = frozenset({"returned", "failed"})
@@ -55,13 +63,15 @@ def series_json(series: Iterable[tuple[float, int]]) -> JsonValue:
 
 @dataclass(frozen=True)
 class LoadEvent:
-    """A source entering a node's context: when, how big, what brought it there and the hook event behind it."""
+    """A source entering a node's context: when, its size in estimated tokens (`tokens_est`, shown on the spine) and
+    in characters (`chars`, None when unsized), what brought it there and the hook event behind it."""
 
     source: str
     t: float | None
     tokens_est: int | None
     trigger: LoadTrigger
     event: str | None
+    chars: int | None
 
 
 @dataclass(frozen=True)

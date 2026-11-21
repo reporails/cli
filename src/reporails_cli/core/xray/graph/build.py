@@ -88,7 +88,7 @@ def _load(load: LoadEvent, sources: SourceTable, small_kinds: set[SourceKind]) -
         if load.tokens_est is not None
         else entry is not None and entry.kind in small_kinds
     )
-    return XrayLoad(load.source, load.t, load.tokens_est, load.trigger, load.event, small)
+    return XrayLoad(load.source, load.t, load.tokens_est, load.trigger, load.event, load.chars, small)
 
 
 def _availability(entry: SourceEntry, had_by: Sequence[str], unrecorded: frozenset[SourceKind]) -> Availability:

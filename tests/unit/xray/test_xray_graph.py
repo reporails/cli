@@ -635,7 +635,7 @@ class _Widget:
             XrayUsage(_NO_COST, XrayComposition((), None)),
             None,
         )
-        loads = () if self.source is None else (LoadEvent(self.source, 1.0, None, "agent", None),)
+        loads = () if self.source is None else (LoadEvent(self.source, 1.0, None, "agent", None, None),)
         spine = ProducedSpine((), loads, (), (), (1.0,))
         node = ProducedNode("w1", self.kind, self.parent, "a widget", None, 1.0, 2.0, detail, spine)
         return Produced((node,), (XrayEdge(self.parent, "w1", 0, None, 1.0, None, None),))
@@ -889,7 +889,7 @@ def test_a_custom_agents_definition_file_is_given_to_it_right_after_the_task_pro
     run = launch(6, "X", None, "tuX", brief_chars=400)
     run = EventRecord(**{**run.__dict__, "subagent_type": "reviewer"})
     session = [reply(1), call(5, "tuX", "agent"), run, reply(7, "X")]
-    graph = _graph(tmp_path, session, agent_files={"reviewer": 625})
+    graph = _graph(tmp_path, session, agent_files={"reviewer": 2500})
     detail = _agent(_node(graph, "X"))
     assert [(item.label, item.tokens_est, item.source) for item in detail.given] == [
         ("task prompt", 100, None),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from reporails_cli.core.mapper.structure import top_level_sections
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.xray.session import XraySession
 
@@ -16,6 +17,14 @@ def text_fields(lookup: Callable[[XraySession, str], str | None]) -> Callable[[X
         return None if text is None else {"text": text}
 
     return fields
+
+
+def system_fields(session: XraySession, agent_type: str) -> JsonObject | None:
+    """The reply fields of a system prompt the session names: its text and its top-level sections with their sizes."""
+    text = session.system_prompt(agent_type)
+    if text is None:
+        return None
+    return {"text": text, "sections": [section.to_json() for section in top_level_sections(text)]}
 
 
 def hook_output_fields(session: XraySession, key: str) -> JsonObject | None:

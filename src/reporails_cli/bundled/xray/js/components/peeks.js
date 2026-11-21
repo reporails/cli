@@ -22,6 +22,16 @@ const kv = pairs => {
   return box;
 };
 
+// A system prompt's top-level sections, one row each with its share of the prompt's tokens (its characters when the
+// prompt's tokens are not known): read from the reply the text block above the rows fetched, never a second request.
+const promptSections = (env, key, url, rowTokens) => {
+  const sections = env.text(key, url).sections;
+  if (!sections || !sections.length) return [];
+  const total = sections.reduce((n, s) => n + s.chars, 0);
+  const size = s => rowTokens == null || !total ? plural(s.chars, 'char') : tk(Math.round(rowTokens * s.chars / total), true);
+  return [kv(sections.map(s => [s.heading, size(s)]))];
+};
+
 const pre = text => el('pre', 'pk-pre', text);
 const action = (label, attrs, primary) => {
   const b = el('button', 'pk-act' + (primary ? ' primary' : ''), label);
@@ -120,7 +130,7 @@ registerPeek('src', (env, id) => {
   if (entry) main.push(section('Its text', fetched(entry, e => e.body ?? e.text)));
   else if (s.system_tokens_est == null && !s.hook) main.push(section('Its text', nk(s.builtin ? 'Comes from the coding agent; there is no file.' : 'No file behind this source.')));
   if (s.kind === 'agent' && s.system_tokens_est != null) {
-    main.push(section(`System prompt · ${tk(s.system_tokens_est, true)} · recorded at launch`, textBlock(env.text, 'system:' + s.agent_type, systemUrl(s.agent_type))));
+    main.push(section(`System prompt · ${tk(s.system_tokens_est, true)} · recorded at launch`, ...promptSections(env, 'system:' + s.agent_type, systemUrl(s.agent_type), s.system_tokens_est), textBlock(env.text, 'system:' + s.agent_type, systemUrl(s.agent_type))));
   }
   if (s.kind === 'agent') {
     if (s.launch_tools.length) main.push(section('Tools its launches had', pre(s.launch_tools.map(([t, n]) => `${t} · ${plural(n, 'launch', 'launches')}`).join('\n'))));
@@ -171,7 +181,7 @@ const builtinContains = item => section('What it contains', pre(item.note || '')
 const mainSystemText = (env, item) => {
   if (item.key !== 'system_prompt' || !item.system_shapes) return [];
   const many = item.system_shapes > 1;
-  const body = [textBlock(env.text, 'main-system', systemUrl(''))];
+  const body = [...promptSections(env, 'main-system', systemUrl(''), item.tokens_est), textBlock(env.text, 'main-system', systemUrl(''))];
   if (many) body.unshift(nk(`The requests were sent with ${item.system_shapes} different system prompts; this is the latest.`));
   return [section(`System prompt · recorded request${many ? ` · latest of ${item.system_shapes}` : ''}`, ...body)];
 };

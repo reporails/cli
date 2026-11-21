@@ -7,7 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.dto.events import EventRecord, ImageTokens, MessageSize, RequestSize, TokenUsage
+from reporails_cli.core.platform.dto.events import (
+    EventRecord,
+    HarnessEntry,
+    ImageTokens,
+    MessageSize,
+    RequestSize,
+    TokenUsage,
+)
 from reporails_cli.core.platform.dto.xray_composition import COMPOSITION_KEYS, REMAINDER_KEY
 from reporails_cli.core.platform.dto.xray_graph import XrayInContext, XrayRowMeasure
 from tests.unit.xray.test_xray_composition import _files, _rows
@@ -65,7 +72,7 @@ def test_a_measured_peak_splits_the_total_by_the_request_with_no_remainder(tmp_p
     (row,) = _rows(tmp_path, records)
     assert row["measured"] is True and row["over_estimate"] is False
     assert sum(int(str(row[key])) for key in COMPOSITION_KEYS) == 17200
-    assert row[REMAINDER_KEY] == 12000 and row["tool_results"] == 4000 and row["instructions"] == 100
+    assert row[REMAINDER_KEY] == 12000 and row["tool_results"] == 4000 and row["instructions"] == 400
     ic = _context(tmp_path, records)
     assert ic.measured and ic.note is None and not ic.over
     assert sum(r.tokens_est for r in ic.rows) == ic.total == 17200
@@ -157,7 +164,7 @@ def test_the_builtin_items_read_the_request_of_the_peak_reply_not_one_with_the_s
 
 
 def test_a_measured_peak_lists_the_skills_listing_apart_from_the_conversation(tmp_path: Path) -> None:
-    records = [harness(0.2, "skill_list", "skills", 4000), _request(0.5, _size()), _answer(1, 17200, "req")]
+    records = [harness(0.2, "skill_list", "skills", 1000), _request(0.5, _size()), _answer(1, 17200, "req")]
     ic = _context(tmp_path, records)
     keys = [row.key for row in ic.rows]
     assert keys[-2:] == ["skill_listing", "rest"] and ic.measured and not ic.over
@@ -257,3 +264,96 @@ def test_a_peak_is_never_sized_by_a_request_recorded_after_it(tmp_path: Path) ->
     assert ic.total == 20000 and ic.request_id == "a" and _by_key(ic)["system_prompt"] == 4000
     items = {item.key: item for item in _graph(tmp_path, records, _files(tmp_path)).builtin}
     assert items["system_prompt"].tokens_est == 4000
+
+
+def _hook(seconds: float, chars: int) -> EventRecord:
+    return rec("harness", seconds, item=HarnessEntry("hook_note", "h", None, chars, event="PreToolUse"))
+
+
+def _unsized(seconds: float, label: str) -> EventRecord:
+    return rec("harness", seconds, item=HarnessEntry("unsized", label, None, 0))
+
+
+def _half(*extra: EventRecord, **parts: int) -> list[EventRecord]:
+    """A request of scale 0.5: a reply of half as many tokens as the request has characters."""
+    return [*extra, _request(0.5, _size(**parts)), _answer(1, (17200 + sum(parts.values())) // 2, "req")]
+
+
+def test_a_hook_is_sized_at_the_measured_scale_and_an_unmeasured_reply_keeps_four_characters_a_token(
+    tmp_path: Path,
+) -> None:
+    rows = {row.key: row for row in _context(tmp_path, _half(_hook(0.2, 1000))).rows}
+    assert rows["hooks"].tokens_est == 500
+    plain = _context(tmp_path, [_hook(0.2, 1000), _answer(1, 8600, None)])
+    assert next(row.tokens_est for row in plain.rows if row.key == "hooks") == 250
+
+
+def test_a_measured_peak_lists_the_agents_thinking(tmp_path: Path) -> None:
+    ic = _context(tmp_path, _half(thinking=600))
+    row = next(row for row in ic.rows if row.key == "thinking")
+    assert row.tokens_est == 300 and row.measure == XrayRowMeasure(600, 0, 0) and row.label == "Thinking"
+    assert not any(r.key == "thinking" for r in _context(tmp_path, _half()).rows)
+
+
+@pytest.mark.parametrize(
+    ("kind", "key"),
+    [("agent_list", "agent_listing"), ("deferred_tools", "deferred_tools"), ("session_context", "session_context")],
+)
+def test_a_measured_peak_lists_each_harness_listing_at_the_measured_scale(tmp_path: Path, kind: str, key: str) -> None:
+    ic = _context(tmp_path, _half(harness(0.2, kind, "x", 400)))  # type: ignore[arg-type]
+    assert _by_key(ic)[key] == 200
+    assert not any(r.key == key for r in _context(tmp_path, _half()).rows)
+
+
+def test_other_claude_code_messages_are_the_notes_share_less_the_rows_listed_above(tmp_path: Path) -> None:
+    records = _half(_hook(0.2, 200), harness(0.3, "agent_list", "x", 400), _unsized(0.4, "task_reminder"), notes=2000)
+    ic = _context(tmp_path, records)
+    row = next(row for row in ic.rows if row.key == "harness_other")
+    assert row.tokens_est == 1000 - 100 - 200 and row.measure == XrayRowMeasure(2000, 0, 300)
+    assert "task reminder" in row.reason
+    assert next(r for r in _context(tmp_path, _half(notes=2000)).rows if r.key == "harness_other").tokens_est == 1000
+    floored = _context(tmp_path, _half(_hook(0.2, 4000), notes=200))
+    assert not any(r.key == "harness_other" and r.tokens_est for r in floored.rows)
+
+
+def test_the_rows_sum_to_the_total_and_the_conversation_holds_only_typed_and_assistant_text(tmp_path: Path) -> None:
+    ic = _context(tmp_path, _half(_hook(0.2, 200), harness(0.3, "session_context", "x", 400), thinking=100, notes=1000))
+    assert sum(r.tokens_est for r in ic.rows) == ic.total and not ic.over
+    values = _by_key(ic)
+    assert values["rest"] == (800 + 400) // 2 == 600
+
+
+def test_an_mcp_servers_tokens_leave_the_other_messages_and_not_the_tool_definitions(tmp_path: Path) -> None:
+    mcp = rec("harness", 0.2, item=HarnessEntry("mcp_instructions", "m", 1, 400, added=(("srv", 400),)))
+    ic = _context(tmp_path, _half(mcp, notes=1000))
+    values = _by_key(ic)
+    assert values["tool_definitions"] == 4000
+    other = next(row for row in ic.rows if row.key == "harness_other")
+    assert other.tokens_est == 1000 // 2 - 200 and other.measure is not None and other.measure.listed_above == 200
+    assert next(r for r in ic.rows if r.key == "tool_definitions").measure == XrayRowMeasure(8000, 0, 0)
+
+
+def test_the_builtin_listings_are_sized_at_the_request_scale_when_a_request_sizes_the_peak(tmp_path: Path) -> None:
+    items = {
+        item.key: item
+        for item in _graph(tmp_path, _half(harness(0.2, "agent_list", "agents", 400)), _files(tmp_path)).builtin
+    }
+    assert items["agent_list"].tokens_est == 200
+    plain = _graph(tmp_path, [harness(0.2, "agent_list", "agents", 400), reply(1, context=8600)], _files(tmp_path))
+    assert next(item.tokens_est for item in plain.builtin if item.key == "agent_list") == 100
+
+
+def test_a_subagents_task_prompt_is_sized_at_the_measured_scale(tmp_path: Path) -> None:
+    sub_size = _size(
+        "sub-req", system_chars=1000, tools_chars=1000, user_text=0, assistant_text=0, tool_calls=0, tool_results=0
+    )
+    records = [
+        _request(0.5, _size("main-req")),
+        _answer(1, 17200, "main-req"),
+        launch(4, "A", None, "tuA", brief_chars=800),
+        _request(4.5, sub_size, "A"),
+        _answer(5, 1000, "sub-req", "A"),
+    ]
+    sub = _context(tmp_path, records, "A")
+    assert sub.measured and sub.total == 1000
+    assert _by_key(sub)["task"] == 400

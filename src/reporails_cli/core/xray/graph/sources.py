@@ -21,7 +21,7 @@ from reporails_cli.core.platform.dto.xray_sources import (
 )
 from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.artifacts import is_actionable, left_out_files, unlisted_loads, winners
-from reporails_cli.core.xray.derive import count_for, file_tokens_est, real_path
+from reporails_cli.core.xray.derive import count_for, file_size, real_path, tokens_est_of
 from reporails_cli.core.xray.graph.hook_sources import hook_sources
 from reporails_cli.core.xray.graph.mcp_sources import mcp_sources
 
@@ -70,12 +70,13 @@ def _unlisted_loads(
             SOURCE_KIND_OF_ARTIFACT[item.kind],
             wire,
             wire,
-            file_tokens_est(item.path),
+            tokens_est_of(size := file_size(item.path)),
             count_for(frame.findings, item.path, frame.root),
             is_actionable(item, frame.root),
             None,
             None,
             excluded=left_out.get(item.path, FileLeftOut()),
+            chars=size,
         )
         for item in items
     ]
@@ -113,6 +114,7 @@ def build_sources(
             item.linked,
             item.scopes,
             excluded=item.excluded,
+            chars=item.chars,
         )
         for item in listed
     ]

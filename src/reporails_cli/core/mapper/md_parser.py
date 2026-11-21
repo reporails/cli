@@ -9,6 +9,7 @@ takes the positions from the parse instead of matching backticks, brackets or as
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from functools import lru_cache
 
@@ -222,6 +223,15 @@ def line_offsets(lines: list[str]) -> list[int]:
         starts.append(pos)
         pos += len(line) + 1
     return starts
+
+
+LINE_BREAK = re.compile(r"(\r\n|\r|\n)")
+
+
+def parser_line_starts(text: str) -> list[int]:
+    """Char offset in `text` where each line starts, the lines counted as the parser counts them: a
+    `\\r\\n` or a lone `\\r` breaks a line like `\\n` does."""
+    return [0, *(m.end() for m in LINE_BREAK.finditer(text))]
 
 
 def definition_ranges(env: EnvType, starts: list[int], offset: int) -> tuple[tuple[int, int], ...]:

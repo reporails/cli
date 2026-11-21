@@ -51,8 +51,9 @@ from reporails_cli.core.xray.derive import (
     tokens_of,
 )
 from reporails_cli.core.xray.graph.compaction_files import file_states
-from reporails_cli.core.xray.graph.composition import build_in_context, composition_series
+from reporails_cli.core.xray.graph.composition import composition_series
 from reporails_cli.core.xray.graph.hook_sources import hook_id
+from reporails_cli.core.xray.graph.in_context import build_in_context
 from reporails_cli.core.xray.graph.mcp_sources import mcp_id
 from reporails_cli.core.xray.graph.port import register
 from reporails_cli.core.xray.graph.sources import for_path
@@ -115,7 +116,7 @@ def _at_start(reading: LoadReading, record: EventRecord) -> bool:
 def _source_load(sid: str | None, t: float | None, reading: LoadReading) -> list[LoadEvent]:
     """A load by the agent's own doing (a run, a read) of the source `sid`; none when `sid` is no source."""
     entry = reading.sources.get(sid) if sid else None
-    return [] if entry is None else [LoadEvent(entry.id, t, entry.tokens_est, "agent", None)]
+    return [] if entry is None else [LoadEvent(entry.id, t, entry.tokens_est, "agent", None, entry.chars)]
 
 
 def _attachment_loads(record: EventRecord, t: float | None, reading: LoadReading) -> list[LoadEvent]:
@@ -129,9 +130,9 @@ def _attachment_loads(record: EventRecord, t: float | None, reading: LoadReading
     if entry is None:
         return []
     if attached.kind in WHOLE_FILE_ATTACHMENT_KINDS:
-        return [LoadEvent(entry.id, t, entry.tokens_est, "attached", None)]
+        return [LoadEvent(entry.id, t, entry.tokens_est, "attached", None, entry.chars)]
     if attached.kind == "edited_text_file":
-        return [LoadEvent(entry.id, t, None, "attached", None)]
+        return [LoadEvent(entry.id, t, None, "attached", None, None)]
     return []
 
 
@@ -143,9 +144,9 @@ def _harness_loads(record: EventRecord, reading: LoadReading) -> list[LoadEvent]
     t = frame_time(reading.frame, record)
     if entry.kind == "mcp_instructions":
         trigger: LoadTrigger = "session_start" if reading.is_main else "inherited"
-        return [LoadEvent(mcp_id(name), t, tokens_of(chars), trigger, None) for name, chars in entry.added]
+        return [LoadEvent(mcp_id(name), t, tokens_of(chars), trigger, None, chars) for name, chars in entry.added]
     if is_note_kind(entry.kind) and entry.event is not None:
-        return [LoadEvent(hook_id(entry.label), t, tokens_of(entry.chars), "hook", entry.event)]
+        return [LoadEvent(hook_id(entry.label), t, tokens_of(entry.chars), "hook", entry.event, entry.chars)]
     return []
 
 
@@ -173,10 +174,10 @@ def _instruction_load(record: EventRecord, reading: LoadReading) -> list[LoadEve
         return []
     t = frame_time(reading.frame, record)
     if load.memory_type == "nested":
-        return [LoadEvent(entry.id, t, entry.tokens_est, "path_match", None)]
+        return [LoadEvent(entry.id, t, entry.tokens_est, "path_match", None, entry.chars)]
     early = _at_start(reading, record)
     trigger: LoadTrigger = "session_start" if reading.is_main else "inherited" if early else "agent"
-    return [LoadEvent(entry.id, t, entry.tokens_est, trigger, None)]
+    return [LoadEvent(entry.id, t, entry.tokens_est, trigger, None, entry.chars)]
 
 
 def _final_reply(group: Sequence[EventRecord], frame: Frame) -> AgentReply | None:
@@ -256,7 +257,7 @@ def _detail(
             agent_cost(own.records, world.context.prices, frame.t0, carried, world.context.sources),
             composition,
         ),
-        in_context=build_in_context(own, run_type, down, series_of, world),
+        in_context=build_in_context(own, run_type, series_of, world, _brief_chars(own)),
     )
 
 
@@ -372,7 +373,11 @@ def _subagent_given(
     harness, loaded = _given(own, world.context.sources)
     task = None if meta is None or meta.brief_chars is None else tokens_of(meta.brief_chars)
     definition = world.frame.agent_files.get(run_type or "")
-    inherited = [*([] if definition is None else [XrayGiven(run_type or "", definition, None)]), *loaded, *harness]
+    inherited = [
+        *([] if definition is None else [XrayGiven(run_type or "", tokens_of(definition), None)]),
+        *loaded,
+        *harness,
+    ]
     given = [*([] if task is None else [XrayGiven("task prompt", task, None)]), *inherited]
     return task, given, XrayDown(task, sum(item.tokens_est or 0 for item in inherited))
 

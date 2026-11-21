@@ -77,6 +77,7 @@ HarnessKind = (
         "deferred_tools",
         "tool_definitions",
         "session_context",
+        "unsized",
     ]
     | NoteKind
 )

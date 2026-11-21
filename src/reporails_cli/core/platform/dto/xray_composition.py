@@ -49,9 +49,11 @@ class RequestMeasure:
 
 @dataclass(frozen=True)
 class CarriedReply:
-    """One reply's usage and the estimated tokens each source (by source id) carried in its context."""
+    """One reply's usage, the request it was measured from (None when none was) and the characters each source
+    (by source id) carried in its context."""
 
     usage: TokenUsage
+    measured: RequestMeasure | None
     by_source: dict[str, int]
 
 

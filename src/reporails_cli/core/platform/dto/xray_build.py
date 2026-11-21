@@ -37,7 +37,7 @@ class Frame:
     findings: Mapping[str, FindingTally]
     # Absolute path of the skill or command file each run name stands for.
     runnable: Mapping[str, str]
-    # The size in tokens of the definition file of each agent type found on disk, by type.
+    # The size in bytes of the definition file of each agent type found on disk, by type.
     agent_files: Mapping[str, int]
     # Whether the session's transcript was written recently enough that the session is still going.
     live: bool

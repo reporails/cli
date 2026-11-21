@@ -1254,3 +1254,16 @@ def test_a_reply_lookup_skips_an_assistant_row_the_adapter_refuses(tmp_path: Pat
     folder.mkdir(parents=True)
     (folder / "agent-aaaa.jsonl").write_text("".join(json.dumps(row) + "\n" for row in (refused, final)))
     assert subagent_output("claude", session, "aaaa", "reply", None) == "the final reply"
+
+
+def test_a_name_only_attachment_is_a_harness_record_of_size_zero(tmp_path: Path) -> None:
+    attachment: JsonObject = {"type": "environment", "content": "SECRET-TEXT"}
+    records, _ = read_transcript("claude", _attachment_session(tmp_path, attachment), TranscriptCursor())
+    entries = [r.harness for r in _of(records, "harness") if r.harness]
+    assert [(e.kind, e.label, e.count, e.chars) for e in entries] == [("unsized", "environment", None, 0)]
+    assert "SECRET-TEXT" not in repr(records)
+
+
+def test_an_unknown_attachment_type_is_still_dropped(tmp_path: Path) -> None:
+    records, _ = read_transcript("claude", _attachment_session(tmp_path, {"type": "zzz_unknown"}), TranscriptCursor())
+    assert _of(records, "harness") == []

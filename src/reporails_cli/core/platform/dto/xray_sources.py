@@ -227,6 +227,8 @@ class SourceEntry(SourceFacts):
     excluded: FileLeftOut = field(default_factory=FileLeftOut)
     # An MCP server's configuration and state, or a hook's commands and firings.
     detail: McpDetail | HookDetail | None = None
+    # A file's size in bytes, which `tokens_est` is counted from; None for a source with no file.
+    chars: int | None = None
 
 
 @dataclass(frozen=True)
@@ -333,6 +335,8 @@ class XrayArtifact(ArtifactFile):
     advertised: bool | None
     scopes: tuple[str, ...]
     excluded: FileLeftOut
+    # The file's size in bytes, which `tokens_est` is counted from; None when it is not a readable file.
+    chars: int | None = None
 
 
 @dataclass(frozen=True)
@@ -367,10 +371,12 @@ class XrayBuiltinInfo:
 class XrayContextText:
     """The label and reason the coding agent words one kind of "in context" row with; a reason may hold the
     fire count as `{count}`; `reason_once` words a count of one; `reason_earlier` words a row measured from the
-    latest complete request before its reply."""
+    latest complete request before its reply; a reason with `{kinds}` takes the names the row lists, and
+    `reason_none` words the row when it has none."""
 
     key: ContextKey
     label: str
     reason: str
     reason_once: str | None = None
     reason_earlier: str | None = None
+    reason_none: str | None = None

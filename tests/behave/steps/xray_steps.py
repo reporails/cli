@@ -533,7 +533,7 @@ def step_main_measured(context):
     keys = [row["key"] for row in main["rows"]]
     assert main["total"] == context.peaks["main"], (main["total"], context.peaks)
     assert sum(row["tokens_est"] for row in main["rows"]) == context.peaks["main"], main["rows"]
-    assert main["measured"] is True, main
+    assert main["measured"] is True and main["over"] is False, main
     assert {"system_prompt", "tool_definitions"} <= set(keys) and keys[-1] == "rest", keys
 
 
@@ -2068,7 +2068,9 @@ def step_chart_holds_in_context_files(context):
     view = _session_view(context)
     composition = next(node for node in view["nodes"] if node["id"] == "main")["detail"]["composition"]
     before, after = (dict(zip(composition["keys"], reply[5:], strict=False)) for reply in composition["replies"])
-    assert (before["instructions"], after["instructions"]) == (4200, 200), (before, after)
+    # The files are sized in tokens at each reply's own request scale when it was recorded, else four bytes a token;
+    # after the compaction only the reloaded root file and the restored file are left.
+    assert after["instructions"] > 0 and after["instructions"] * 10 < before["instructions"], (before, after)
 
 
 @when('the session\'s PostCompact hook payload is piped into "ails hook"')

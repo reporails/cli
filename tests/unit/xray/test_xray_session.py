@@ -17,7 +17,7 @@ from reporails_cli.core.platform.dto.events import InstructionLoad
 from reporails_cli.core.platform.dto.xray import XrayCheck, XrayView
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally
 from reporails_cli.core.platform.utils.utils import relative_wire_path
-from reporails_cli.core.xray.artifacts import PEEK_LIMIT, agent_file_tokens, artifact_files, build_artifacts
+from reporails_cli.core.xray.artifacts import PEEK_LIMIT, agent_file_sizes, artifact_files, build_artifacts
 from reporails_cli.core.xray.derive import BYTES_PER_TOKEN
 from reporails_cli.core.xray.session import XraySession
 from tests.unit.xray.test_xray_graph import rec
@@ -448,8 +448,8 @@ def test_a_kind_absent_fact_targets_a_source_kind_of_the_adapter_never_an_artifa
 
 def test_the_size_of_each_listed_agent_definition_is_found_by_its_type(tmp_path: Path) -> None:
     root = _project(tmp_path)
-    sizes = agent_file_tokens(artifact_files(RunContext(), root, []), root)
-    assert sizes["helper"] == (root / ".claude" / "agents" / "helper.md").stat().st_size // BYTES_PER_TOKEN > 0
+    sizes = agent_file_sizes(artifact_files(RunContext(), root, []), root)
+    assert sizes["helper"] == (root / ".claude" / "agents" / "helper.md").stat().st_size > 0
 
 
 def test_a_peek_splits_the_frontmatter_block_from_the_body(tmp_path: Path) -> None:

@@ -18,6 +18,9 @@ no ASCII escaping. A `user` row's message is known under that hash, and under th
 written as one text block. The rows of one assistant response share `message.id`, one row per content block; the
 response as it stands after each row is known under its hash, and under the hash of the same response with the
 `caller` key taken off every block.
+
+A text counts as notes when its role is `system`, or when its role is `user` and it opens, after any leading
+whitespace, with `<system-reminder>`; as assistant text for `assistant`; as user text otherwise.
 """
 
 from __future__ import annotations
@@ -52,6 +55,8 @@ _MERGE_CLOSE = b'],"role":"assistant"}'
 _CALLER = "caller"
 # Block types that carry no characters of their own: priced in tokens, or counted as unpriced.
 _PICTURE_BLOCKS = ("image", "document")
+# The tag Claude Code opens its own injected text with.
+_REMINDER_TAG = "<system-reminder>"
 # The field that holds the characters of each kind of thinking block.
 _THINKING_FIELDS = {"thinking": "signature", "redacted_thinking": "data"}
 
@@ -70,10 +75,13 @@ def message_hash(role: JsonValue, content: JsonValue) -> str:
     return hashlib.sha256(_encode(_canonical({"role": role, "content": content}))).hexdigest()
 
 
-def _text_part(role: str, chars: int) -> MessageSize:
+def _text_part(role: str, text: str) -> MessageSize:
+    """The size of a text by part: assistant text for the assistant, notes for a `system` text or a `user` text
+    that opens with a `<system-reminder>` tag, user text otherwise."""
+    chars = len(text)
     if role == "assistant":
         return MessageSize(assistant_text=chars)
-    if role == "system":
+    if role == "system" or (role == "user" and text.lstrip().startswith(_REMINDER_TAG)):
         return MessageSize(notes=chars)
     return MessageSize(user_text=chars)
 
@@ -127,7 +135,7 @@ def _block_size(role: str, block: JsonValue, what: str) -> MessageSize:
         raise PayloadRefused(f"{what} content has a block that is not an object")
     kind = block.get("type")
     if kind == "text":
-        return _text_part(role, len(_string_field(block, "text", what)))
+        return _text_part(role, _string_field(block, "text", what))
     if kind == "tool_use":
         return _tool_use_size(block, what)
     if kind == "tool_result":
@@ -144,10 +152,11 @@ def _block_size(role: str, block: JsonValue, what: str) -> MessageSize:
 
 
 def content_size(role: str, content: JsonValue, what: str) -> MessageSize:
-    """The size of a message's content by part: a string counts as text of the role, a list by block. Refuses
+    """The size of a message's content by part: a string counts as text of the role (a `user` text opening with
+    `<system-reminder>` counts as notes), a list by block. Refuses
     content that is neither, naming the row type `what`."""
     if isinstance(content, str):
-        return _text_part(role, len(content))
+        return _text_part(role, content)
     if not isinstance(content, list):
         raise PayloadRefused(f"{what} message content is neither a string nor a list")
     total = MessageSize()

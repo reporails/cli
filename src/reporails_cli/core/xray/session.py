@@ -55,7 +55,7 @@ from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTa
 from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.artifacts import (
     advertised_files,
-    agent_file_tokens,
+    agent_file_sizes,
     artifact_files,
     build_artifacts,
     is_actionable,
@@ -372,7 +372,7 @@ class XraySession:
             self._root,
             self._findings,
             runnable_paths(files),
-            agent_file_tokens(files, self._root),
+            agent_file_sizes(files, self._root),
             live,
             mcp_declarations(self._root, self._plugins),
             mcp_turned_off(self._root),

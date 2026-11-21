@@ -1,5 +1,6 @@
 """The coding agent's own built-in context items: the system prompt, the tool definitions and the harness items
-whose sizes sit in the remainder category of its replies."""
+whose sizes sit in the remainder category of its replies, each sized from the recorded request's tokens per
+character when a request sizes the peak reply."""
 
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ from reporails_cli.core.platform.dto.xray_composition import (
 )
 from reporails_cli.core.platform.dto.xray_sources import XrayBuiltin, XrayBuiltinInfo
 from reporails_cli.core.xray.derive import build_harness, replies_of
-from reporails_cli.core.xray.graph.composition import count_text, share
+from reporails_cli.core.xray.graph.composition import count_text, share, tokens_at
 
 # The one harness kind a composition estimates as its own category; every other builtin kind is inside the remainder.
 _LISTED_KIND: HarnessKind = "skill_list"
@@ -55,7 +56,9 @@ def _sized_note(own: str | None, info: XrayBuiltinInfo, reply: ReplyComposition,
 def builtin_items(
     main: ProducedNode, records: Sequence[EventRecord], vocabulary: AdapterVocabulary
 ) -> tuple[XrayBuiltin, ...]:
-    """The coding agent's own context in the vocabulary's order. A harness item's size is read from its records.
+    """The coding agent's own context in the vocabulary's order. A harness item's size is read from its records: its
+    characters at the tokens per character of the request the peak reply is sized from, or four characters to a
+    token when no request sizes it.
     The system prompt and the tool definitions are in no record: they are shares of the request the main agent's peak
     reply is sized from (its own recorded request, else the latest complete one before it, which the note names);
     with none, the system prompt is what the main agent's remainder category holds at its peak reply after the
@@ -84,5 +87,5 @@ def builtin_items(
                 found.append(XrayBuiltin(info.key, info.label, tokens, note, info.visible, False))
         elif item is not None:
             note = count_text(info.note, info.note_once, item.count)
-            found.append(XrayBuiltin(info.key, info.label, item.tokens_est or 0, note, info.visible, False))
+            found.append(XrayBuiltin(info.key, info.label, tokens_at(item.chars, sized), note, info.visible, False))
     return tuple(found)

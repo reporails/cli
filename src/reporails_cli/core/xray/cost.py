@@ -23,6 +23,7 @@ from reporails_cli.core.platform.dto.xray_cost import (
 )
 from reporails_cli.core.platform.utils.utils import load_yaml_file
 from reporails_cli.core.xray.derive import context_of, epoch
+from reporails_cli.core.xray.graph.composition import tokens_at
 
 _PRICED_AGENT = "claude"
 _PER_TOKENS = 1_000_000
@@ -153,8 +154,9 @@ def attributed_cost(
     carried: Sequence[CarriedReply], sources: SourceTable, prices: PriceList
 ) -> tuple[float | None, tuple[tuple[str, float], ...]]:
     """What the sources carried across the replies cost: the instruction files' total (None when no reply is
-    priced) and each source's own sum. A source's cost in a reply is the tokens it carried times the reply's rate;
-    an unpriced reply adds nothing."""
+    priced) and each source's own sum. A source's cost in a reply is the tokens its carried characters stand for
+    (at the reply's measured request, else four characters to a token) times the reply's rate; an unpriced reply
+    adds nothing."""
     per_source: dict[str, float] = {}
     instructions = 0.0
     priced = False
@@ -163,8 +165,8 @@ def attributed_cost(
         if rate is None:
             continue
         priced = True
-        for source, tokens in reply.by_source.items():
-            usd = tokens * rate
+        for source, chars in reply.by_source.items():
+            usd = tokens_at(chars, reply.measured) * rate
             per_source[source] = per_source.get(source, 0.0) + usd
             entry = sources.get(source)
             if entry is not None and entry.kind == "instructions":

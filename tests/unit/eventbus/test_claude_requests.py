@@ -13,7 +13,7 @@ import pytest
 from reporails_cli.core.eventbus.adapters.claude_requests import content_size, feed_row, message_hash, shape_system_text
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.eventbus.transcript import read_transcript
-from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.events import (
     EventRecord,
     ImageTokens,
@@ -375,3 +375,23 @@ def test_a_shape_that_is_not_an_object_refuses_its_system_text() -> None:
     row = {"type": "api-request-shape", "shapeHash": "s", "shape": []}
     with pytest.raises(PayloadRefused, match="shape is not an object"):
         shape_system_text(row, "s")
+
+
+_REMINDER = "<system-reminder>\nas you know\n</system-reminder>"
+
+
+@pytest.mark.parametrize(
+    ("role", "content", "expected"),
+    [
+        ("user", [{"type": "text", "text": _REMINDER}], MessageSize(notes=len(_REMINDER))),
+        ("user", [{"type": "text", "text": "\n  " + _REMINDER}], MessageSize(notes=len(_REMINDER) + 3)),
+        ("user", [{"type": "text", "text": "hi " + _REMINDER}], MessageSize(user_text=len(_REMINDER) + 3)),
+        ("user", _REMINDER, MessageSize(notes=len(_REMINDER))),
+        ("assistant", [{"type": "text", "text": _REMINDER}], MessageSize(assistant_text=len(_REMINDER))),
+    ],
+    ids=["block", "leading whitespace", "reminder later", "string content", "assistant stays assistant"],
+)
+def test_a_user_text_opening_with_a_reminder_tag_counts_as_notes(
+    role: str, content: JsonValue, expected: MessageSize
+) -> None:
+    assert content_size(role, content, "x") == expected

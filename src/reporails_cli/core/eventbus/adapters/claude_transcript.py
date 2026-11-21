@@ -33,13 +33,14 @@ the adapter refuses any other shape of a row type it reads:
   (`addedNames` and `addedBlocks`, lists of strings), `deferred_tools_delta`
   (`addedNames` and `addedLines`, lists of strings, or in a subagent file `content`, a string; and optionally
   `pendingMcpServers`, a list of strings, and `failedMcpServers`, a list of objects each with a string
-  `name` and optionally string `errorCode` and `error`),
-  `session_context` (`context`, an object of strings). The three delta rows may also carry `removedTypes` or
-  `removedNames`, lists of strings, counted off their item count; a deferred-tools delta row whose
-  added items list is empty names tools re-added by name: `readdedNames`, a list of strings, must name every
-  added name, and each counts with size 0 and is recorded as re-added; any other row whose added names and
-  items differ in length, empty items included, is refused; each added item's size is kept under its
+  `name` and optionally string `errorCode` and `error`), `session_context` (`context`, an object of strings). The three
+  delta rows may also carry `removedTypes` or `removedNames`, lists of strings, counted off their item count; a
+  deferred-tools delta row whose added items list is empty names tools re-added by name: `readdedNames`, a list of
+  strings, must name every added name, and each counts with size 0 and is recorded as re-added; any other row whose
+  added names and items differ in length, empty items included, is refused; each added item's size is kept under its
   name (never its text) and each removed name is kept, so a later removal takes its size off too.
+- a name-only harness record: `type: "attachment"` with an `attachment.type` of `environment`, `auto_mode`,
+  `plan_mode`, `task_reminder`, `silent_turn_reminder`, `credential_org` or `date`: kind `unsized`, size 0.
 - a hook note: `type: "attachment"` with `hookEvent` and `hookName` strings and one of `attachment.type`
   `hook_additional_context` (`content`, a list of strings), `hook_success` (`content`, a string, read only when
   it is not empty and its `hookEvent` is one of `UserPromptSubmit`, `UserPromptExpansion`, `SessionStart` or
@@ -184,6 +185,9 @@ _HARNESS: dict[str, HarnessAttachment] = {
     ),
 }
 
+_UNSIZED = frozenset(
+    {"environment", "auto_mode", "plan_mode", "task_reminder", "silent_turn_reminder", "credential_org", "date"}
+)
 
 # The command row a `/clear` opens the new session's transcript with.
 _CLEAR_COMMAND = "<command-name>/clear</command-name>"
@@ -476,7 +480,7 @@ class ClaudeTranscriptAdapter:
             return self._deferred_tools(attachment)
         if isinstance(kind, str) and kind in _HARNESS:
             return self._listing(attachment, kind)
-        return None
+        return HarnessEntry("unsized", kind, None, 0) if isinstance(kind, str) and kind in _UNSIZED else None
 
     def _load(self, row: JsonObject, path: str, memory_type: str | None, subagent_id: str | None) -> EventRecord:
         return replace(

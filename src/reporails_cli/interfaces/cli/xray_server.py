@@ -61,7 +61,7 @@ from reporails_cli.core.xray.sessions import session_entries
 from reporails_cli.core.xray.tally import tallies_by_file, tally_of
 from reporails_cli.formatters.mcp_view import render_heal_receipt
 from reporails_cli.formatters.text.rule_meta import rule_docs_url
-from reporails_cli.interfaces.cli.xray_fields import call_fields, hook_output_fields, text_fields
+from reporails_cli.interfaces.cli.xray_fields import call_fields, hook_output_fields, system_fields, text_fields
 from reporails_cli.interfaces.cli.xray_launch import RequestClock, bound_socket, mark_requests, run_until_idle, span
 from reporails_cli.interfaces.cli.xray_line import xray_line
 
@@ -326,7 +326,7 @@ class XrayServer:
             _TextRoute(
                 "type",
                 "the query is ?type=<agent type>, empty for the main agent",
-                text_fields(XraySession.system_prompt),
+                system_fields,
                 "not an agent type this session launched with a recorded request, and no recorded main request",
             ),
         )
