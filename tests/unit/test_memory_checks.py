@@ -144,6 +144,22 @@ def test_empty_memory_frontmatter_block_reports_the_missing_fields(tmp_path: Pat
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
+def test_memory_type_nested_under_metadata_counts_as_present(tmp_path: Path) -> None:
+    nested = "---\nname: n\ndescription: d\nmetadata:\n  type: feedback\n---\nBody.\n"
+
+    assert _frontmatter_findings(tmp_path, nested) == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_memory_metadata_without_type_still_reports_type_missing(tmp_path: Path) -> None:
+    messages = _frontmatter_findings(tmp_path, "---\nname: n\ndescription: d\nmetadata:\n  node_type: memory\n---\n")
+
+    assert messages == ["`note.md` missing frontmatter: type."]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
 def test_memory_frontmatter_holding_a_list_is_not_called_invalid_yaml(tmp_path: Path) -> None:
     messages = _frontmatter_findings(tmp_path, "---\n- a\n- b\n---\nBody.\n")
 

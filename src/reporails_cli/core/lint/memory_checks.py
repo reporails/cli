@@ -118,7 +118,13 @@ def _check_frontmatter(
             )
         ]
 
-    missing = _FRONTMATTER_REQUIRED - set(read.data or {})
+    data = read.data or {}
+    present = set(data)
+    # Claude Code writes `type` nested under `metadata:`; older memory files carry it at the top level.
+    metadata = data.get("metadata")
+    if isinstance(metadata, dict):
+        present |= set(metadata)
+    missing = _FRONTMATTER_REQUIRED - present
     if missing:
         return [
             LocalFinding(
