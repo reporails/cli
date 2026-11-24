@@ -7,9 +7,9 @@ from typing import Literal
 
 # The state of a workflow run: `running` (no record file yet, or the record says so), a state a record file names, or
 # `unreadable` (the record file is not JSON or not the shape the adapter is pinned to).
-WorkflowStatus = Literal["running", "completed", "failed", "cancelled", "unreadable"]
+WorkflowStatus = Literal["running", "completed", "failed", "killed", "unreadable"]
 # The states a record file may name.
-RECORDED_STATUSES: tuple[WorkflowStatus, ...] = ("running", "completed", "failed", "cancelled")
+RECORDED_STATUSES: tuple[WorkflowStatus, ...] = ("running", "completed", "failed", "killed")
 
 
 @dataclass(frozen=True)

@@ -90,7 +90,7 @@ WORKFLOW_STATUS_TEXT: dict[WorkflowStatus, str] = {
     "running": "running",
     "completed": "completed",
     "failed": "failed",
-    "cancelled": "cancelled",
+    "killed": "stopped",
     "unreadable": "not readable",
 }
 

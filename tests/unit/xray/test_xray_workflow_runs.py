@@ -75,3 +75,10 @@ def test_a_record_file_that_is_not_json_shows_the_run_as_not_readable_not_as_run
     assert (run.status, run.status_text) == ("unreadable", "not readable")
     assert run.refusal is not None and "wf_test01.json" in run.refusal
     assert run.agent_count == 2
+
+
+def test_a_record_with_status_killed_shows_the_run_as_stopped_not_as_not_readable(tmp_path: Path) -> None:
+    session, record = _setup(tmp_path)
+    _edited(record, status="killed")
+    run = _run(_view(session))
+    assert (run.status, run.status_text, run.refusal) == ("killed", "stopped", None)
