@@ -41,6 +41,19 @@ _FAULTS = [
         id="not-regex-no-compile",
     ),
     pytest.param("patterns: []", "patterns", "at least 1 item", id="empty-patterns"),
+    pytest.param("pattern-either: []", "pattern-either", "at least 1 item", id="empty-either"),
+    pytest.param(
+        "pattern-either:\n    - pattern-regex: '[bad'",
+        "pattern-either.0.pattern-regex",
+        "does not compile",
+        id="either-item-no-compile",
+    ),
+    pytest.param(
+        "pattern-either:\n    - pattern-metavar: x\n    - metavariable-regex: y",
+        "pattern-either.0",
+        "holds `pattern-metavar`; an item of `pattern-either` holds one of `pattern-regex`",
+        id="either-all-unsupported",
+    ),
 ]
 
 _EXACT_FAULTS = [
@@ -223,6 +236,15 @@ def test_an_invalid_pattern_operator_refuses_the_rule(tmp_path: Path, body: str,
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
+def test_a_check_without_an_id_is_refused_by_the_loader() -> None:
+    from reporails_cli.core.platform.rules.rule_builder import load_checks
+
+    with pytest.raises(ValueError, match=r"check 1: id: Field required"):
+        load_checks({"checks": [{"pattern-regex": "x"}]})
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
 @pytest.mark.parametrize(("body", "field", "problem"), _EXACT_FAULTS)
 def test_a_refused_check_reports_exactly_its_problem(tmp_path: Path, body: str, field: str, problem: str) -> None:
     md = _write_rule(tmp_path, "r", "CORE:S:0001", body)
@@ -358,7 +380,6 @@ def test_ails_test_reports_a_rule_that_does_not_load_as_a_load_failure_not_a_reg
         category="structure",
         checks=[check],
         rule_dir=md.parent,
-        checks_yml=md.parent / "checks.yml",
     )
 
     result = run_rule(info, [], fixture_mapper(no_models()))
