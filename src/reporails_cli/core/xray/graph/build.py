@@ -14,6 +14,7 @@ from reporails_cli.core.platform.dto.xray_build import (
     ProducedNode,
     ProducerContext,
     SourceTable,
+    WorkflowReading,
 )
 from reporails_cli.core.platform.dto.xray_cost import PriceList
 from reporails_cli.core.platform.dto.xray_graph import (
@@ -37,6 +38,7 @@ from reporails_cli.core.xray.graph.bursts import bursts
 from reporails_cli.core.xray.graph.port import PRODUCERS
 from reporails_cli.core.xray.graph.shapes import first_requests, launch_metas, launched_with
 from reporails_cli.core.xray.graph.sources import builtin_agent_id, memory_role, source_label
+from reporails_cli.core.xray.graph.workflows import workflow_nodes
 
 # A load smaller than this many tokens is small.
 SMALL_TOKENS = 1000
@@ -67,14 +69,16 @@ def _layout(nodes: Sequence[ProducedNode]) -> NodeLayout:
 def _station(node: ProducedNode, sources: SourceTable, vocabulary: AdapterVocabulary) -> XrayStation:
     small_kinds = {kind.key for kind in vocabulary.source_kinds if kind.small}
     hooks, stretched = spine.hook_stretches(node, sources)
+    instructions = frozenset(kind.key for kind in vocabulary.source_kinds if kind.instructions)
+    groups, grouped = spine.load_groups(node, sources, instructions)
+    taken = stretched | grouped
     return XrayStation(
         node.id,
-        tuple(
-            _load(load, sources, small_kinds) for number, load in enumerate(node.spine.loads) if number not in stretched
-        ),
+        tuple(_load(load, sources, small_kinds) for number, load in enumerate(node.spine.loads) if number not in taken),
         spine.mcp_clusters(node),
         node.spine.compactions,
         hooks,
+        groups,
     )
 
 
@@ -140,8 +144,10 @@ def build_graph(
     sources: SourceTable,
     vocabulary: AdapterVocabulary,
     prices: PriceList,
+    workflows: WorkflowReading,
 ) -> Graph:
-    """The graph of `records`: the nodes and edges of every registered producer, linked by parent."""
+    """The graph of `records`: the nodes and edges of every registered producer, linked by parent, and the
+    session's workflow runs."""
     context = ProducerContext(sources, vocabulary, prices)
     produced = [producer.produce(records, frame, context) for producer in PRODUCERS]
     pnodes = [node for item in produced for node in item.nodes]
@@ -165,6 +171,7 @@ def build_graph(
             XrayTrack(node.id, spine.track_calls(node), spine.failure_runs(node), spine.breaks(node)) for node in spined
         ),
         session_cost([(node.id, node.detail.usage.cost) for node in pnodes]),
+        workflow_nodes(workflows, records, pnodes, frame),
     )
 
 

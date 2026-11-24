@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -29,6 +30,7 @@ from reporails_cli.core.eventbus.transcript import (
 )
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object
 from reporails_cli.core.platform.dto.events import EventRecord, ReplyText, TranscriptCursor
+from reporails_cli.core.platform.dto.workflows import WorkflowRefused, WorkflowRun
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_eventbus]
 
@@ -1388,12 +1390,19 @@ def test_a_run_with_no_record_file_yet_is_running_with_phases_from_its_agents(tm
         ("workflowProgress", [{"agentId": WF_A}], "phaseIndex"),
     ],
 )
-def test_a_malformed_run_record_is_refused(key: str, value: object, reason: str, tmp_path: Path) -> None:
+def test_a_malformed_run_record_is_refused_for_that_run_only(
+    key: str, value: object, reason: str, tmp_path: Path
+) -> None:
     session = _workflow_session(tmp_path)
     record = session.with_suffix("") / "workflows" / f"{WF_RUN}.json"
-    record.write_text(json.dumps({**json.loads(record.read_text()), key: value}))
-    with pytest.raises(PayloadRefused, match=reason):
-        workflow_runs("claude", session)
+    original = json.loads(record.read_text())
+    record.write_text(json.dumps({**original, key: value}))
+    good = original | {"runId": "wf_good", "workflowProgress": [], "phases": []}
+    (record.parent / "wf_good.json").write_text(json.dumps(good))
+    found = {run.run_id: run for run in workflow_runs("claude", session)}
+    refused, readable = found[WF_RUN], found["wf_good"]
+    assert isinstance(refused, WorkflowRefused) and re.search(reason, refused.reason)
+    assert isinstance(readable, WorkflowRun)
 
 
 def test_a_session_with_no_workflow_has_no_runs(tmp_path: Path) -> None:

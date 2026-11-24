@@ -118,6 +118,91 @@ class XrayHookStretch:
 
 
 @dataclass(frozen=True)
+class XrayGroupFile:
+    """One file of a load group: the source, when it was first loaded, how many times and the size of those loads
+    together."""
+
+    source: str
+    first: float
+    count: int
+    tokens_est: int
+
+    def to_json(self) -> JsonObject:
+        """The file as a JSON object."""
+        return {"source": self.source, "first": self.first, "count": self.count, "tokens_est": self.tokens_est}
+
+
+@dataclass(frozen=True)
+class XrayLoadGroup:
+    """Instruction loads that came close together in time, drawn as one card: the loads a hook's firing caused (its
+    source id is `hook`), or, with `hook` None, one file loaded again and again. When they began and ended, how many
+    loads they hold and their size together. A load is counted once, here or among the station's loads."""
+
+    hook: str | None
+    first: float
+    last: float
+    count: int
+    tokens_est: int
+    files: tuple[XrayGroupFile, ...]
+
+    def to_json(self) -> JsonObject:
+        """The group as a JSON object."""
+        return {
+            "hook": self.hook,
+            "first": self.first,
+            "last": self.last,
+            "count": self.count,
+            "tokens_est": self.tokens_est,
+            "files": objects(item.to_json() for item in self.files),
+        }
+
+
+@dataclass(frozen=True)
+class XrayWorkflowPhase:
+    """One phase of a workflow run: its title and the nodes of the agents that ran in it."""
+
+    title: str
+    agents: tuple[str, ...]
+
+    def to_json(self) -> JsonObject:
+        """The phase as a JSON object."""
+        return {"title": self.title, "agents": list(self.agents)}
+
+
+@dataclass(frozen=True)
+class XrayWorkflow:
+    """One workflow run of a session: its id, name (None while the run has no record file or when the record is not
+    readable), status, phases with their agents, how many agents it has, when its first agent started in seconds on the
+    session's clock (None when the run has no agent and no start time), its duration and its token total. A run whose
+    record file is not the shape the adapter is pinned to has `refusal` set to what was wrong and no name, duration
+    or token total."""
+
+    run_id: str
+    name: str | None
+    status: str
+    phases: tuple[XrayWorkflowPhase, ...]
+    agent_count: int
+    start: float | None
+    duration_ms: int | None
+    total_tokens: int | None
+    refusal: str | None
+
+    def to_json(self) -> JsonObject:
+        """The run as a JSON object."""
+        return {
+            "run_id": self.run_id,
+            "name": self.name,
+            "status": self.status,
+            "phases": objects(phase.to_json() for phase in self.phases),
+            "agent_count": self.agent_count,
+            "start": self.start,
+            "duration_ms": self.duration_ms,
+            "total_tokens": self.total_tokens,
+            "refusal": self.refusal,
+        }
+
+
+@dataclass(frozen=True)
 class XrayStation:
     """What happened on one node's spine: its loads, its MCP clusters and its compactions."""
 
@@ -126,6 +211,7 @@ class XrayStation:
     mcp: tuple[XrayMcpCluster, ...]
     compactions: tuple[XrayCompaction, ...]
     hooks: tuple[XrayHookStretch, ...]
+    groups: tuple[XrayLoadGroup, ...]
 
     def to_json(self) -> JsonObject:
         """The station as a JSON object."""
@@ -135,6 +221,7 @@ class XrayStation:
             "mcp": objects(cluster.to_json() for cluster in self.mcp),
             "compactions": objects(item.to_json() for item in self.compactions),
             "hooks": objects(item.to_json() for item in self.hooks),
+            "groups": objects(item.to_json() for item in self.groups),
         }
 
 

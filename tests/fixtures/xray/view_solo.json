@@ -1121,6 +1121,7 @@
      "after": 53000
     }
    ],
+   "groups": [],
    "hooks": [
     {
      "source": "hook:PreToolUse:Edit",
@@ -2292,6 +2293,7 @@
   "unit": "usd_per_mtok",
   "source_method": "A source's cost is the tokens it carried in each reply times that reply's input-side price per context token, summed over every reply."
  },
+ "workflows": [],
  "session_cost": {
   "total_usd": 1.69,
   "unpriced": 0,

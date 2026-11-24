@@ -46,6 +46,7 @@ from reporails_cli.core.platform.dto.xray_build import (
     ProducedSpine,
     ProducerContext,
     SourceTable,
+    WorkflowReading,
 )
 from reporails_cli.core.platform.dto.xray_compaction import XrayCompaction
 from reporails_cli.core.platform.dto.xray_composition import XrayComposition
@@ -168,7 +169,12 @@ def _graph(
     artifacts = build_artifacts(RunContext(), files, findings or {}, root, advertised=advertised or {})
     vocab = vocabulary or vocabulary_for("claude", [])
     return build_graph(
-        list(records), frame, build_sources(RunContext(), artifacts, records, frame), vocab, load_price_list()
+        list(records),
+        frame,
+        build_sources(RunContext(), artifacts, records, frame),
+        vocab,
+        load_price_list(),
+        WorkflowReading(()),
     )
 
 
@@ -637,7 +643,7 @@ class _Widget:
             None,
         )
         loads = () if self.source is None else (LoadEvent(self.source, 1.0, None, "agent", None, None),)
-        spine = ProducedSpine((), loads, (), (), (1.0,))
+        spine = ProducedSpine((), loads, (), (), (1.0,), ())
         node = ProducedNode("w1", self.kind, self.parent, "a widget", None, 1.0, 2.0, detail, spine)
         return Produced((node,), (XrayEdge(self.parent, "w1", 0, None, 1.0, None, None),))
 
@@ -728,6 +734,7 @@ def test_the_built_views_key_structure_matches_the_sample_the_page_is_built_agai
         stations=graph.stations,
         tracks=graph.tracks,
         session_cost=graph.session_cost,
+        workflows=graph.workflows,
         version=1,
         info=XraySessionInfo("s", "p", at(0), 20.0, "newest"),
         model=None,
@@ -761,7 +768,9 @@ def test_a_skill_that_ran_is_used_a_forked_one_is_used_but_not_loaded_and_a_comm
     table = build_sources(
         RunContext(), build_artifacts(RunContext(), files, {}, tmp_path, advertised={}), records, frame
     )
-    graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
+    graph = build_graph(
+        records, frame, table, vocabulary_for("claude", []), load_price_list(), WorkflowReading(())
+    )
     (row,) = build_funnel(table, graph.sources, ["skill"], ran_sources(records, table))
     assert (row.kind, row.on_disk, row.loaded, row.used) == ("skill", 4, 2, 3)
 
@@ -1425,7 +1434,9 @@ def test_the_funnel_does_not_count_an_unrecorded_kind_as_zero_loaded(tmp_path: P
     table = build_sources(
         RunContext(), build_artifacts(RunContext(), [claude], {}, tmp_path, advertised={}), records, frame
     )
-    graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
+    graph = build_graph(
+        records, frame, table, vocabulary_for("claude", []), load_price_list(), WorkflowReading(())
+    )
     (row,) = build_funnel(table, graph.sources, ["instructions"], set())
     assert (row.on_disk, row.loaded, row.used) == (1, None, None)
 
@@ -1437,7 +1448,9 @@ def test_the_funnel_takes_the_unrecorded_kinds_from_the_source_table(tmp_path: P
     table = build_sources(
         RunContext(), build_artifacts(RunContext(), [claude], {}, tmp_path, advertised={}), records, frame
     )
-    graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
+    graph = build_graph(
+        records, frame, table, vocabulary_for("claude", []), load_price_list(), WorkflowReading(())
+    )
     (row,) = build_funnel(table, graph.sources, ["instructions"], set())
     assert row.loaded == 1
     (row,) = build_funnel(
@@ -1453,6 +1466,8 @@ def test_the_agents_funnel_row_counts_the_built_in_agent_types_a_session_launche
     table = build_sources(
         RunContext(), build_artifacts(RunContext(), [definition], {}, tmp_path, advertised={}), records, frame
     )
-    graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
+    graph = build_graph(
+        records, frame, table, vocabulary_for("claude", []), load_price_list(), WorkflowReading(())
+    )
     (row,) = build_funnel(table, graph.sources, ["agent"], set())
     assert (row.on_disk, row.loaded) == (2, 1)

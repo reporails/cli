@@ -5781,6 +5781,7 @@
      "after": 53000
     }
    ],
+   "groups": [],
    "hooks": [
     {
      "source": "hook:PreToolUse:Edit",
@@ -5829,6 +5830,7 @@
     }
    ],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -5877,6 +5879,7 @@
     }
    ],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -5901,6 +5904,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -5925,6 +5929,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -5949,6 +5954,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -5981,6 +5987,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6005,6 +6012,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6029,6 +6037,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6053,6 +6062,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6077,6 +6087,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6101,6 +6112,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6125,6 +6137,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   }
  ],
@@ -9867,6 +9880,7 @@
   "source": "https://platform.claude.com/docs/en/about-claude/pricing",
   "unit": "usd_per_mtok"
  },
+ "workflows": [],
  "session_cost": {
   "total_usd": 10.17,
   "unpriced": 3,

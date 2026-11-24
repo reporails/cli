@@ -12,6 +12,8 @@ import { FILE_STATE_WORDS } from './compaction.js';
 import { markOpen } from './details.js';
 import { RESTART_S, callIndex, childrenOf, isSpine, kindOfSource, replyParts, segmentOf, sourceFirsts, startsSession, typeOf } from '../views.js';
 import { rendererFor } from './nodes/index.js';
+import './loadgroups.js';
+import { workflowCard } from './workflows.js';
 import * as rail from './rail.js';
 import { tile } from './nodes/agent.js';
 
@@ -378,12 +380,44 @@ function sourceItems(env, firsts, scale) {
   }).sort((a, b) => a.y - b.y);
 }
 
+// The instruction loads the view grouped (a hook's firing caused them, or one file loaded again and again) as source nodes: a
+// hook's group is one card named by the hook with its file and token counts that opens the loads; a file's repeats are its own
+// card carrying the count. Every number is the view's.
+function groupItems(env, cur, cutTimes, folded, scale) {
+  const { ix } = env;
+  const st = ix.stations.get(cur.id);
+  const out = [];
+  ((st && st.groups) || []).forEach((g, i) => {
+    const sid = g.hook || g.files[0].source;
+    if (!shownSource(env, sid) || folded.has(segmentOf(cutTimes, g.first))) return;
+    const s = ix.sources.get(sid);
+    const k = kindOfSource(ix, sid);
+    const label = s ? s.label : sid;
+    const hooked = !!g.hook;
+    const sub = hooked
+      ? `${g.files.length} file${g.files.length === 1 ? '' : 's'} · ${tk(g.tokens_est, true)}`
+      : `×${g.count} · ${tk(g.tokens_est, true)}`;
+    out.push({
+      key: `lg:${cur.id}:${i}`, source: sid, label, letter: k ? k.letter : '?', t: g.first, y: scale.y(g.first), tokens: g.tokens_est, find: false, clusters: [], calls: 0,
+      group: hooked ? `${cur.id}:${i}` : null, sub,
+      title: `${label} · ${hooked ? `caused ${g.count} instruction load${g.count === 1 ? '' : 's'} of ${g.files.length} file${g.files.length === 1 ? '' : 's'}` : `loaded ${g.count} times`} · ${tk(g.tokens_est, true)} (estimated) · ${clock(g.first)}–${clock(g.last)}`,
+    });
+  });
+  return out;
+}
+
 function sourceNode(env, it, p) {
   const hot = env.graphFocus && env.graphFocus.id === it.source;
   const dim = env.graphFocus && !hot;
   const b = abs('snode' + (it.find ? ' find' : '') + (hot ? ' hot' : '') + (dim ? ' dim' : ''), p.left, p.top, 'button');
-  b.dataset.source = it.source;
-  markOpen(b, env.state.peek, [`src:${it.source}`]);
+  if (it.group) {
+    b.dataset.peek = `loadgroup:${it.group}`;
+    b.classList.add('lgroup');
+    markOpen(b, env.state.peek, [b.dataset.peek]);
+  } else {
+    b.dataset.source = it.source;
+    markOpen(b, env.state.peek, [`src:${it.source}`]);
+  }
   b.dataset.card = it.key;
   b.title = it.title;
   b.setAttribute('aria-label', it.title);
@@ -636,7 +670,9 @@ function foldBand(env, cur, f, scale, held, kids, segAt) {
   const cuts = held.map(c => c.t);
   const c = held[f.seg];
   const top = scale.folds.find(x => x.key === f.key).top;
-  const loads = ((ix.stations.get(cur.id) || { loads: [] }).loads).filter(l => segmentOf(cuts, l.t ?? cur.start, l) === f.seg).length;
+  const station = ix.stations.get(cur.id) || { loads: [], groups: [] };
+  const loads = station.loads.filter(l => segmentOf(cuts, l.t ?? cur.start, l) === f.seg).length
+    + (station.groups || []).filter(g => segmentOf(cuts, g.first) === f.seg).reduce((n, g) => n + g.count, 0);
   const agents = kids.filter(k => segAt(k.start) === f.seg).length;
   const both = c.before != null && c.after != null;
   const from = f.seg ? cuts[f.seg - 1] : cur.start;
@@ -700,6 +736,8 @@ export function render(box, env) {
     ...drawnKids.filter(c => !inGroup.has(c.id)).map(c => ({ key: c.id, t: c.start, members: 0, expanded: false })),
     ...groups.map(g => ({ key: g.key, t: g.burst.first_launch, members: g.members.length, expanded: g.expanded })),
   ];
+  const runs = isRoot ? (ix.view.workflows || []).filter(w => !folded.has(segAt(w.start ?? cur.start))) : [];
+  units.push(...runs.map(w => ({ key: `wf:${w.run_id}`, t: w.start ?? cur.start, members: 0, expanded: false })));
   const firsts = sourceFirsts(ix, cur, cuts);
   const restarts = restartCards(firsts, held);
   held.forEach((c, i) => units.push({ key: `cut:${i}`, t: c.t, cut: true, cards: folded.has(i + 1) ? [] : restarts[i] }));
@@ -716,7 +754,7 @@ export function render(box, env) {
   const sel = state.sel ? ix.nodes.get(state.sel) : null;
   const renderer = rendererFor(cur.kind);
   const hand = isRoot ? null : renderer.handback && renderer.handback(cur, env);
-  const items = sourceItems(env, firsts.filter(f => shownSource(env, f.id) && !folded.has(f.seg)), scale);
+  const items = [...sourceItems(env, firsts.filter(f => shownSource(env, f.id) && !folded.has(f.seg)), scale), ...groupItems(env, cur, cuts, folded, scale)].sort((a, b) => a.y - b.y);
   const walls = [...scale.cuts.values()].map(c => ({ top: c.y - STRIPE_HALF, bottom: c.y + STRIPE_HALF }));
   const placedSources = new Map(placeSources(items.map(it => ({ key: it.key, y: it.y })), walls).map(p => [p.key, p]));
   const sourcesBottom = Math.max(0, ...[...placedSources.values()].map(p => p.top + SH));
@@ -739,6 +777,7 @@ export function render(box, env) {
     if (grp.expanded) cv.append(...groupBox(grp, p));
     else cv.append(groupCard(env, grp, p, grp.members.some(matchOf)));
   }
+  for (const w of runs) cv.append(workflowCard(env, w, placedMap.get(`wf:${w.run_id}`), abs));
   for (const c of shownKids) cv.append(childCard(env, c, placedMap.get(c.id), matchOf(c), state.sel === c.id));
   for (const it of items) cv.append(sourceNode(env, it, placedSources.get(it.key)));
   cv.append(...stations(env, cur, scale, held, cuts, folded), ...drawn.pills);

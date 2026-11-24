@@ -10,6 +10,7 @@ from pathlib import Path
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessEntry, HarnessKind
 from reporails_cli.core.platform.dto.mcp import McpDeclaration
 from reporails_cli.core.platform.dto.transcript import SummarySpan
+from reporails_cli.core.platform.dto.workflows import WorkflowRefused, WorkflowRun
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary
 from reporails_cli.core.platform.dto.xray_compaction import XrayCompaction
 from reporails_cli.core.platform.dto.xray_cost import PriceList
@@ -49,6 +50,14 @@ class Frame:
     # The compaction summaries of a node's transcript by the id of the boundary row each follows, by subagent id
     # ("" for the main session).
     summaries: Mapping[str, Mapping[str, SummarySpan]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class WorkflowReading:
+    """What the adapter read of the session's workflow runs: each run, or the refusal of a run whose record it could
+    not read."""
+
+    runs: tuple[WorkflowRun | WorkflowRefused, ...]
 
 
 @dataclass(frozen=True)
@@ -137,6 +146,8 @@ class ProducedSpine:
     calls: tuple[ProducedCall, ...]
     compactions: tuple[XrayCompaction, ...]
     activity: tuple[float, ...]
+    # Each hook firing of the node: its moment and the hook's source id.
+    firings: tuple[tuple[float, str], ...]
 
 
 @dataclass(frozen=True)
@@ -214,6 +225,7 @@ class AgentRecords:
     compactions: tuple[XrayCompaction, ...]
     times: tuple[float, ...]
     reply: AgentReply | None
+    firings: tuple[tuple[float, str], ...]
 
     @property
     def start(self) -> float:

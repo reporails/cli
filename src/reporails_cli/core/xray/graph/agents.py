@@ -192,6 +192,19 @@ def _final_reply(group: Sequence[EventRecord], frame: Frame) -> AgentReply | Non
     return AgentReply(frame_time(frame, last) or 0.0, last.reply.chars, last.reply.synthetic)
 
 
+def _firings(group: Sequence[EventRecord], frame: Frame) -> tuple[tuple[float, str], ...]:
+    """Each hook firing among `group` that blocked or added text, as its moment and the hook's source id, in time
+    order: a firing that did neither causes no load."""
+    found = [
+        (moment, hook_id(record.hook.label))
+        for record in group
+        if record.hook is not None
+        and (record.hook.decision == "blocked" or record.hook.chars > 0)
+        and (moment := frame_time(frame, record)) is not None
+    ]
+    return tuple(sorted(found))
+
+
 def _own(key: str, group: list[EventRecord], frame: Frame, sources: SourceTable) -> AgentRecords:
     replies = replies_of(group)
     results = _results(group, frame)
@@ -206,6 +219,7 @@ def _own(key: str, group: list[EventRecord], frame: Frame, sources: SourceTable)
         compactions=build_compactions(group, replies, frame, file_states(group, sources)),
         times=tuple(sorted(moment for record in group if (moment := frame_time(frame, record)) is not None)),
         reply=_final_reply(group, frame),
+        firings=_firings(group, frame),
     )
 
 
@@ -335,7 +349,7 @@ def main_records(records: Sequence[EventRecord]) -> list[EventRecord]:
 
 
 def _spine(own: AgentRecords, detail: XrayAgentDetail) -> ProducedSpine:
-    return ProducedSpine(detail.series, own.loads, own.calls, own.compactions, own.times)
+    return ProducedSpine(detail.series, own.loads, own.calls, own.compactions, own.times, own.firings)
 
 
 def _main_node(own: AgentRecords, world: AgentWorld) -> ProducedNode:

@@ -32,3 +32,11 @@ class WorkflowRun:
     total_tokens: int | None
     start_time: int | None
     agents: tuple[WorkflowAgent, ...]
+
+
+@dataclass(frozen=True)
+class WorkflowRefused:
+    """A workflow run whose record file is not the shape the adapter is pinned to: its id and what was wrong."""
+
+    run_id: str
+    reason: str

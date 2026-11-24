@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections.abc import Sequence
 from itertools import pairwise
 
@@ -16,7 +17,9 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayBreak,
     XrayCall,
     XrayFailureRun,
+    XrayGroupFile,
     XrayHookStretch,
+    XrayLoadGroup,
     XrayMcpCluster,
     XraySlot,
     XrayToolCount,
@@ -27,6 +30,10 @@ from reporails_cli.core.platform.dto.xray_graph import (
 # MCP calls to one server merge into one cluster while the gap to the one before is at most this share of the
 # node's span.
 CLUSTER_GAP_SHARE = 0.09
+
+# Instruction loads of one agent close together make a group when each is at most this many seconds after the one
+# before; a hook's firing causes a group when it came at most this many seconds before the group's first load.
+LOAD_GROUP_GAP_S = 30.0
 
 # Loads of one hook in a run that make a stretch rather than separate loads.
 HOOK_STRETCH_MIN = 2
@@ -105,10 +112,15 @@ def track_calls(node: ProducedNode) -> tuple[XrayCall, ...]:
     )
 
 
-def _runs(items: Sequence[ClusterItem], node: ProducedNode) -> list[list[ClusterItem]]:
+def _gap(node: ProducedNode) -> float:
+    """The most seconds between two items of one run: `CLUSTER_GAP_SHARE` of the node's span."""
+    return CLUSTER_GAP_SHARE * (node.end - node.start)
+
+
+def _runs(items: Sequence[ClusterItem], node: ProducedNode, cap: float | None = None) -> list[list[ClusterItem]]:
     """`items` grouped by key, each group split into runs of items close together in time: the gap to the item
-    before is at most `CLUSTER_GAP_SHARE` of the node's span."""
-    limit = CLUSTER_GAP_SHARE * (node.end - node.start)
+    before is at most `CLUSTER_GAP_SHARE` of the node's span, and at most `cap` seconds when one is given."""
+    limit = _gap(node) if cap is None else min(_gap(node), cap)
     groups: dict[str, list[list[ClusterItem]]] = {}
     for item in sorted(items, key=lambda entry: entry.t):
         runs = groups.setdefault(item.key, [])
@@ -148,6 +160,63 @@ def hook_stretches(node: ProducedNode, sources: SourceTable) -> tuple[tuple[Xray
     ]
     stretches.sort(key=lambda found: found[0].first)
     return tuple(found for found, _ in stretches), frozenset(item.position for _, run in stretches for item in run)
+
+
+def _group(hook: str | None, run: Sequence[ClusterItem]) -> XrayLoadGroup:
+    """The loads of `run` as one group, its files in the order they were first loaded."""
+    files: dict[str, list[float | int]] = {}
+    for item in run:
+        entry = files.setdefault(item.key, [item.t, 0, 0])
+        entry[1] += 1
+        entry[2] += item.tokens
+    return XrayLoadGroup(
+        hook,
+        run[0].t,
+        run[-1].t,
+        len(run),
+        sum(item.tokens for item in run),
+        tuple(
+            XrayGroupFile(source, float(first), int(count), int(tokens))
+            for source, (first, count, tokens) in files.items()
+        ),
+    )
+
+
+def _caused_by(run: Sequence[ClusterItem], firings: Sequence[tuple[float, str]]) -> str | None:
+    """The hook whose firing the run began right after: the latest firing of the node at or before the run's first
+    load, when that load came within `LOAD_GROUP_GAP_S` seconds of it."""
+    at = bisect_right([moment for moment, _ in firings], run[0].t)
+    if at == 0 or run[0].t - firings[at - 1][0] > LOAD_GROUP_GAP_S:
+        return None
+    return firings[at - 1][1]
+
+
+def load_groups(
+    node: ProducedNode, sources: SourceTable, instruction_kinds: frozenset[SourceKind]
+) -> tuple[tuple[XrayLoadGroup, ...], frozenset[int]]:
+    """The node's instruction loads that came close together, as groups, and the positions in `node.spine.loads` of
+    the loads that went into a group. A run of two or more loads, whatever files, that began right after a firing
+    that blocked or added text is that hook's group; of the rest, a file loaded two or more times in a run is a
+    group of its own."""
+    items = [
+        ClusterItem(load.source, load.t, load.tokens_est or 0, number)
+        for number, load in enumerate(node.spine.loads)
+        if load.t is not None and (entry := sources.get(load.source)) is not None and entry.kind in instruction_kinds
+    ]
+    by_position = {item.position: item for item in items}
+    found: list[tuple[XrayLoadGroup, Sequence[ClusterItem]]] = []
+    rest: list[ClusterItem] = []
+    for run in _runs([item._replace(key="") for item in items], node, LOAD_GROUP_GAP_S):
+        hook = _caused_by(run, node.spine.firings) if len(run) >= HOOK_STRETCH_MIN else None
+        members = [by_position[item.position] for item in run]
+        if hook is None:
+            rest.extend(members)
+        else:
+            found.append((_group(hook, members), members))
+    stacks = _runs(rest, node, LOAD_GROUP_GAP_S)
+    found.extend((_group(None, run), run) for run in stacks if len(run) >= HOOK_STRETCH_MIN)
+    found.sort(key=lambda pair: pair[0].first)
+    return tuple(group for group, _ in found), frozenset(item.position for _, run in found for item in run)
 
 
 def failure_runs(node: ProducedNode) -> tuple[XrayFailureRun, ...]:

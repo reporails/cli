@@ -6217,6 +6217,7 @@
  },
  "refusals": [],
  "not_known": [],
+ "workflows": [],
  "session_cost": {
   "total_usd": null,
   "unpriced": 13,

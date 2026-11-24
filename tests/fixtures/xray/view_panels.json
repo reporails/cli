@@ -6649,6 +6649,7 @@
      "after": 53000
     }
    ],
+   "groups": [],
    "hooks": [
     {
      "source": "hook:PreToolUse:Edit",
@@ -6697,6 +6698,7 @@
     }
    ],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6745,6 +6747,7 @@
     }
    ],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6769,6 +6772,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6793,6 +6797,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6817,6 +6822,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6849,6 +6855,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6873,6 +6880,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6897,6 +6905,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6921,6 +6930,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6945,6 +6955,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6969,6 +6980,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   },
   {
@@ -6993,6 +7005,7 @@
    ],
    "mcp": [],
    "compactions": [],
+   "groups": [],
    "hooks": []
   }
  ],
@@ -10736,6 +10749,7 @@
   "unit": "usd_per_mtok",
   "source_method": "A source's cost is the tokens it carried in each reply times that reply's input-side price per context token, summed over every reply."
  },
+ "workflows": [],
  "session_cost": {
   "total_usd": 9.52,
   "unpriced": 0,

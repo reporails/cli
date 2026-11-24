@@ -55,8 +55,8 @@ PORT = 8765
 ORIGIN = f"http://127.0.0.1:{PORT}"
 TOP_KEYS = {
     "version", "session", "project", "started_at", "length_s", "picked", "model", "window", "adapter", "price_list",
-    "nodes", "edges", "sources", "stations", "track", "session_cost", "funnel", "facts", "check", "refusals",
-    "not_known",
+    "nodes", "edges", "sources", "stations", "track", "session_cost", "workflows", "funnel", "facts", "check",
+    "refusals", "not_known",
 }  # fmt: skip
 # The transcript of a long session (megabytes of rows, many subagent files), named by this variable.
 LONG_SESSION_ENV = "XRAY_TEST_LONG_SESSION"

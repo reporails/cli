@@ -39,7 +39,7 @@ from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
 from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
 from reporails_cli.core.platform.dto.transcript import CallDetail, SummarySpan
-from reporails_cli.core.platform.dto.workflows import WorkflowRun
+from reporails_cli.core.platform.dto.workflows import WorkflowRefused, WorkflowRun
 from reporails_cli.core.platform.dto.xray import (
     AdapterVocabulary,
     Graph,
@@ -51,7 +51,7 @@ from reporails_cli.core.platform.dto.xray import (
     XrayView,
     XrayWindow,
 )
-from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
+from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable, WorkflowReading
 from reporails_cli.core.platform.dto.xray_graph import OutputSource
 from reporails_cli.core.platform.dto.xray_own import ContextKey, XrayOwnContext
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayArtifact, XrayPeek
@@ -242,9 +242,9 @@ class XraySession:
         use_id = None if run is None or run.launch is None else run.launch.tool_use_id
         return subagent_output(AGENT, self._file, subagent_id, source, use_id)
 
-    def workflows(self) -> tuple[WorkflowRun, ...]:
-        """The session's workflow runs. Raises `PayloadRefused` when a run's record file is not the shape the adapter
-        is pinned to."""
+    def workflows(self) -> tuple[WorkflowRun | WorkflowRefused, ...]:
+        """The session's workflow runs; a run whose record file is not the shape the adapter is pinned to is a
+        refusal naming what was wrong, and the other runs are still read."""
         return workflow_runs(AGENT, self._file)
 
     def context_text(self, agent: str, item: ContextKey) -> list[str] | None:
@@ -340,7 +340,7 @@ class XraySession:
         self._listed = (files, artifacts)
         table = build_sources(run, artifacts, records, frame)
         prices = load_price_list()
-        graph = build_graph(records, frame, table, vocabulary, prices)
+        graph = build_graph(records, frame, table, vocabulary, prices, WorkflowReading(self.workflows()))
         self._reads.outputs = {
             node.id: node.detail.back.source for node in graph.nodes if node.detail.back.source is not None
         }
@@ -356,6 +356,7 @@ class XraySession:
             adapter=vocabulary,
             price_list=prices.info,
             nodes=graph.nodes,
+            workflows=graph.workflows,
             edges=graph.edges,
             sources=graph.sources,
             stations=graph.stations,

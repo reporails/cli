@@ -23,6 +23,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayNode,
     XrayStation,
     XrayTrack,
+    XrayWorkflow,
     objects,
 )
 from reporails_cli.core.platform.dto.xray_sources import XrayBasisLabel, XrayBuiltinInfo, XrayContextText, XraySource
@@ -383,6 +384,7 @@ class Graph:
     stations: tuple[XrayStation, ...]
     tracks: tuple[XrayTrack, ...]
     session_cost: XraySessionCost
+    workflows: tuple[XrayWorkflow, ...]
 
 
 @dataclass(frozen=True)
@@ -418,6 +420,7 @@ class XrayView(Graph):
             "stations": objects(station.to_json() for station in self.stations),
             "track": objects(track.to_json() for track in self.tracks),
             "session_cost": self.session_cost.to_json(),
+            "workflows": objects(run.to_json() for run in self.workflows),
             "funnel": objects(row.to_json() for row in self.verdict.funnel),
             "facts": objects(fact.to_json() for fact in self.verdict.facts),
             "check": self.verdict.check.to_json(),

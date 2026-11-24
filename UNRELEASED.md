@@ -12,6 +12,8 @@
 - New skill checks report a skill that some agents drop or degrade: a name over 64 characters or containing `anthropic` or `claude` (`CORE:S:0059`), a description over 1,024 characters (`CORE:S:0060`), Cursor rule fields `alwaysApply` or `globs` (`CORE:S:0061`), a duplicate frontmatter key (`CORE:S:0062`), tab indentation in the frontmatter (`CORE:S:0063`), and a frontmatter key that YAML reads as a non-string (`CORE:S:0064`).
 - `ails xray` reads the agents a Claude Code Workflow run starts, with their loads and hand-backs, and a live page keeps refreshing while a run's agents work.
 - `ails xray` folds every segment before the newest compaction into one band showing its loads, its agents and the context size before and after the compaction, so a long session opens at what the agent holds now. The compaction stripe still lists the files that came back and the files that did not. Selecting an agent or a call in an earlier segment opens it.
+- `ails xray` draws the instruction files that one hook made Claude Code load within a quick run as one card named after that hook, with its file count and size; opening the card lists the loads. A file loaded again and again within a quick run is one card that counts the loads (for example ×21).
+- `ails xray` shows a Workflow run as a node naming the workflow, its phases, status, agent count and tokens, with the run's agents under their phases; a run whose record cannot be read shows as "not readable" while the other runs and the page still load.
 
 ### Changed
 
@@ -35,6 +37,7 @@
 - `ails check prompts/review.md` on a markdown file no agent loads now checks it as a referenced file, with the same findings, the `Referenced` panel and no score, as when a link reaches it. `ails check ./prompts` checks the markdown files under the folder instead of printing "Create a CLAUDE.md". A folder with no markdown, a file that is not markdown, or a capability the agent does not have is reported by name and not checked. When a word names both a capability and a folder, the output says which one it checked.
 - A check-level `disabled: true` override in an agent config now drops that check; before, it still ran and reported.
 - A settings file without hooks is no longer reported by a rule that another rule supersedes.
+- The x-ray compaction stripe's one-line text stays inside the stripe at 1280 and 1920 px instead of running past it.
 
 ### Removed
 

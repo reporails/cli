@@ -5353,6 +5353,7 @@
         }
       ],
       "compactions": [],
+      "groups": [],
       "hooks": [
         {
           "source": "hook:PreToolUse:Edit",
@@ -5906,6 +5907,7 @@
     "source": "https://platform.claude.com/docs/en/about-claude/pricing",
     "unit": "usd_per_mtok"
   },
+  "workflows": [],
   "session_cost": {
     "total_usd": 9.49,
     "unpriced": 0,

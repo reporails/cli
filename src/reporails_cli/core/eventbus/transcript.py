@@ -28,7 +28,7 @@ from reporails_cli.core.platform.dto.events import (
     TranscriptCursor,
 )
 from reporails_cli.core.platform.dto.transcript import CallDetail, SummarySpan
-from reporails_cli.core.platform.dto.workflows import WorkflowRun
+from reporails_cli.core.platform.dto.workflows import WorkflowRefused, WorkflowRun
 from reporails_cli.core.platform.dto.xray_graph import OutputSource
 
 _SUBAGENT_PREFIX = "agent-"
@@ -397,16 +397,17 @@ def call_detail(
     return CallDetail(tool, text, full_input[:CALL_INPUT_CHARS], shown_result, cut)
 
 
-def workflow_runs(agent: str, session_file: Path) -> tuple[WorkflowRun, ...]:
+def workflow_runs(agent: str, session_file: Path) -> tuple[WorkflowRun | WorkflowRefused, ...]:
     """The workflow runs of the session, by run id: each run its record file holds, and each run that has an agent
     folder but no record file yet as a running run built from its journal and its agents' meta files.
 
-    Raises `PayloadRefused` when the agent is unknown or a record file is not the shape the adapter is pinned
-    to; a record file that is not yet whole JSON counts as absent."""
+    A run whose record file is not the shape the adapter is pinned to comes back as a `WorkflowRefused` naming what
+    was wrong; the other runs are still read. A record file that is not yet whole JSON counts as absent. Raises
+    `PayloadRefused` when the agent is unknown."""
     adapter = adapter_for(agent)
     records = {path.stem: _json_object(path) for path in _run_records(session_file)}
     folders = {folder.name: folder for folder in _run_dirs(session_file)}
-    runs: list[WorkflowRun] = []
+    runs: list[WorkflowRun | WorkflowRefused] = []
     for run_id in sorted({*records, *folders}):
         folder = folders.get(run_id)
         journal = [] if folder is None else _rows(read_appended_lines(folder / _JOURNAL, 0)[0])
@@ -419,7 +420,10 @@ def workflow_runs(agent: str, session_file: Path) -> tuple[WorkflowRun, ...]:
             }
         )
         metas = {agent_id: meta for agent_id, path in agents.items() if (meta := _meta(path)) is not None}
-        runs.append(adapter.resolve_workflow_run(run_id, records.get(run_id), journal, metas))
+        try:
+            runs.append(adapter.resolve_workflow_run(run_id, records.get(run_id), journal, metas))
+        except PayloadRefused as refused:
+            runs.append(WorkflowRefused(run_id, str(refused)))
     return tuple(runs)
 
 
