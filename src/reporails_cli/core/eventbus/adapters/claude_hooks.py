@@ -103,3 +103,17 @@ def hook_output(attachment: JsonObject) -> str:
     if kind == "hook_system_message" and isinstance(content, str):
         return content
     raise PayloadRefused("row is not a hook row")
+
+
+def stop_summary_firings(row: JsonObject) -> list[HookFiring]:
+    """The firings a `stop_hook_summary` row records: one for each entry of its `hookInfos`, with the command and
+    duration the entry holds."""
+    infos = row.get("hookInfos")
+    if not isinstance(infos, list):
+        raise PayloadRefused("stop_hook_summary hookInfos is not a list")
+    firings: list[HookFiring] = []
+    for info in infos:
+        entry = as_object(info)
+        command = opt_str(entry.get("command"))
+        firings.append(HookFiring("Stop", "Stop", None, command, None, opt_int(entry.get("durationMs")), "ran", 0))
+    return firings

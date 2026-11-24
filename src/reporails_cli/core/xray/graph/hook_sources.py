@@ -114,10 +114,9 @@ def _fits(event: str, matcher: str, command: str, firing: HookFiring) -> bool:
 
 
 def _declared_for(declared: Sequence[DeclaredHook], firing: HookFiring) -> list[int]:
-    """The positions of the declared handlers a firing ran. A firing that names no command ran a handler only when
-    exactly one declaration could have produced it."""
-    found = [at for at, item in enumerate(declared) if _fits(item.event, item.matcher, item.command, firing)]
-    return found if firing.command is not None or len(found) == 1 else []
+    """The positions of the declared handlers a firing ran: Claude Code runs every handler of the event whose matcher
+    selects the tool, so a firing marks each declaration that fits it (and, when it names its command, ran it)."""
+    return [at for at, item in enumerate(declared) if _fits(item.event, item.matcher, item.command, firing)]
 
 
 def _recovery(item: DeclaredHook, reason: CannotFire | None, frame: Frame) -> str | None:
@@ -265,11 +264,7 @@ def _earlier_firing(detail: HookDetail, earlier: EarlierFirings) -> HookEarlier 
         return None
     command = detail.commands[0].command
     latest = max(
-        (
-            item
-            for item in earlier.firings
-            if item.firing.command is not None and _fits(detail.event, detail.matcher, command, item.firing)
-        ),
+        (item for item in earlier.firings if _fits(detail.event, detail.matcher, command, item.firing)),
         key=lambda item: item.moment,
         default=None,
     )

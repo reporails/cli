@@ -61,6 +61,8 @@ the adapter refuses any other shape of a row type it reads:
   `status`, a string, which is `forked` when the skill ran in a subagent of its own (`context: fork`); no other
   key of the object is read. A `success: false` run, and a `toolUseResult` that is not an object or has no
   `commandName`, yield nothing.
+- a stop hook summary: `type: "system"` with `subtype: "stop_hook_summary"` and `hookInfos`, a list of objects
+  with the `command` that ran and its `durationMs` where it has one; each entry yields one `Stop` firing.
 - a compaction: `type: "system"` with `subtype: "compact_boundary"`, `compactMetadata.trigger` and, when present,
   `compactMetadata.preservedMessages.uuids`, a list of the ids of the rows Claude Code kept across it.
 - a file attachment: `type: "attachment"` with `attachment.type: "file"` and `attachment.filename`, a string, which
@@ -127,6 +129,7 @@ from reporails_cli.core.eventbus.adapters.claude_hooks import (
     hook_firing,
     hook_note,
     hook_output,
+    stop_summary_firings,
 )
 from reporails_cli.core.eventbus.adapters.claude_launch import subagent_launch
 from reporails_cli.core.eventbus.adapters.claude_requests import (
@@ -217,6 +220,11 @@ class ClaudeTranscriptAdapter:
             return [self._record(row, "turn_end", subagent_id)]
         if subtype == "compact_boundary":
             return [self._compaction(row, subagent_id)]
+        if subtype == "stop_hook_summary":
+            return [
+                replace(self._record(row, "hook_firing", subagent_id), item=firing)
+                for firing in stop_summary_firings(row)
+            ]
         return []
 
     def resolve_call(self, row: JsonObject, use_id: str) -> str:

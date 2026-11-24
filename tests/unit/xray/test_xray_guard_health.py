@@ -143,12 +143,12 @@ def test_a_hook_whose_output_names_no_command_is_marked_run_when_one_declaration
     assert hooks["UserPromptSubmit"].firing_count == 1
 
 
-def test_a_hook_whose_output_names_no_command_is_not_guessed_among_several_declarations(tmp_path: Path) -> None:
+def test_a_hook_whose_output_names_no_command_marks_every_declaration_of_its_event_fired(tmp_path: Path) -> None:
     root = _project(tmp_path)
     _settings(root, {"UserPromptSubmit": [_guard(), _guard()]})
     session = _session(tmp_path, HANDOFFS, root)
     _fire(tmp_path / HANDOFFS / "session.jsonl", None, "UserPromptSubmit", "UserPromptSubmit")
-    assert _never_fired(_hooks(_view(session))) == {"UserPromptSubmit \u00b7 guard.sh"}
+    assert _never_fired(_hooks(_view(session))) == set()
 
 
 def test_a_hook_reports_when_it_last_fired_in_seconds_from_the_session_start_with_its_time_left_to_the_page(
