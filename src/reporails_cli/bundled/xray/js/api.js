@@ -44,7 +44,7 @@ export function text(key, url, keep = false) {
   xrayFetch(url).then(res => {
     let now;
     if (!res) now = { error: 'The x-ray server did not answer.' };
-    else if (res.ok && res.j && typeof res.j.text === 'string') now = { text: res.j.text, truncated: !!res.j.truncated, frontmatter: res.j.frontmatter ?? null, body: typeof res.j.body === 'string' ? res.j.body : res.j.text, sections: Array.isArray(res.j.sections) ? res.j.sections : null };
+    else if (res.ok && res.j && typeof res.j.text === 'string') now = { text: res.j.text, truncated: !!res.j.truncated, frontmatter: res.j.frontmatter ?? null, body: typeof res.j.body === 'string' ? res.j.body : res.j.text, sections: Array.isArray(res.j.sections) ? res.j.sections : null, unreadable: !!res.j.unreadable };
     else now = { error: (res.j && res.j.error) || `request refused (${res.status})` };
     const same = before && now.text === before.text && now.truncated === before.truncated && now.body === before.body;
     fetched.set(key, same ? before : now);
@@ -77,7 +77,8 @@ export function callDetail(id) {
   }).then(redraw);
   return e;
 }
-export const systemUrl = type => sessionUrl('system', { type });
+// The recorded text of one item of an agent's own context (`agent` is empty for the main agent).
+export const contextTextUrl = (agent, item) => sessionUrl('context-text', { agent, item });
 export const briefUrl = id => sessionUrl('brief', { subagent: id });
 export const outputUrl = id => sessionUrl('output', { subagent: id });
 export const promptUrl = id => sessionUrl('prompt', { id });

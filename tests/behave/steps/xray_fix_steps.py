@@ -158,10 +158,7 @@ def step_findings_column(context):
         row = rows[source_id]
         assert row["finds"] == (str(count) if count else "\u2013"), (source_id, row)
         assert ("tb-find" in row["findsClass"]) == bool(count), (source_id, row)
-    hidden = [b for b in view["builtin"] if b["visible"] == "hidden"]
-    assert hidden, "the fixture has no hidden built-in item"
-    for b in view["builtin"]:
-        assert ("not visible" in rows[f"builtin:{b['key']}"]["who"]) == (b["visible"] == "hidden"), b
+    assert not any(key.startswith("builtin:") for key in rows), list(rows)
 
 
 @then("the Sources table says the memory files were not recorded in this session, not that they were never loaded")

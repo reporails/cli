@@ -25,7 +25,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayTrack,
     objects,
 )
-from reporails_cli.core.platform.dto.xray_sources import XrayBuiltin, XrayBuiltinInfo, XrayContextText, XraySource
+from reporails_cli.core.platform.dto.xray_sources import XrayBasisLabel, XrayBuiltinInfo, XrayContextText, XraySource
 
 CheckState = Literal["running", "done", "refused"]
 FactKind = Literal["memory_unlinked", "repeated_instructions", "kind_absent"]
@@ -292,11 +292,12 @@ class XrayCompositionVocabulary:
 
 @dataclass(frozen=True)
 class XrayContextVocabulary:
-    """The built-in items of the coding agent's context in display order, and the words of the "in context" rows
-    that are no source."""
+    """The items of the coding agent's own context in display order, the words of the "in context" rows that are no
+    source, and the words for each basis of the size of the coding agent's own context."""
 
     builtin: tuple[XrayBuiltinInfo, ...]
     texts: tuple[XrayContextText, ...]
+    basis: tuple[XrayBasisLabel, ...]
 
 
 @dataclass(frozen=True)
@@ -362,6 +363,7 @@ class AdapterVocabulary:
             "fact_notes": notes,
             "composition": objects({"key": item.key, "label": item.label} for item in self.composition.labels),
             "composition_remainder": self.composition.remainder,
+            "context": {"basis": objects({"key": item.key, "label": item.label} for item in self.context.basis)},
             "burst": {
                 "window_s": self.burst.window_s,
                 "window_share": self.burst.window_share,
@@ -380,7 +382,6 @@ class Graph:
     sources: tuple[XraySource, ...]
     stations: tuple[XrayStation, ...]
     tracks: tuple[XrayTrack, ...]
-    builtin: tuple[XrayBuiltin, ...]
     session_cost: XraySessionCost
 
 
@@ -416,7 +417,6 @@ class XrayView(Graph):
             "sources": objects(source.to_json() for source in self.sources),
             "stations": objects(station.to_json() for station in self.stations),
             "track": objects(track.to_json() for track in self.tracks),
-            "builtin": objects(item.to_json() for item in self.builtin),
             "session_cost": self.session_cost.to_json(),
             "funnel": objects(row.to_json() for row in self.verdict.funnel),
             "facts": objects(fact.to_json() for fact in self.verdict.facts),

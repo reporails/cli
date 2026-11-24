@@ -191,17 +191,17 @@ def step_virtual(context):
     assert seen["lastPeek"] == context.big_last, seen["lastPeek"]
 
 
-@then("the Sources table lists every source and every built-in item")
+@then("the Sources table lists every source and nothing of the coding agent's own context")
 def step_sources(context):
     view = context.fixture
     seen = _drive(context, "sources")
     if seen is None:
         return
-    total = len(view["sources"]) + len(view["builtin"])
+    total = len(view["sources"])
     assert seen["height"] == total * 36, (seen["height"], total)
     assert len(seen["rows"]) == total, (len(seen["rows"]), total)
     assert {r["source"] for r in seen["rows"] if r["source"]} == {s["id"] for s in view["sources"]}
-    assert {r["peek"] for r in seen["rows"] if r["peek"]} == {f"builtin:{b['key']}" for b in view["builtin"]}
+    assert not any(r["peek"] for r in seen["rows"]), seen["rows"]
     assert any("agents" in r["text"] or "never" in r["text"] for r in seen["rows"])
 
 

@@ -1,4 +1,4 @@
-// The Sources panel: an inventory of everything the session had, whatever the graph shows. Built in first, then one group
+// The Sources panel: an inventory of the files, servers and hooks the session had, whatever the graph shows. One group
 // per source kind the adapter declares; each header says how many were used and carries the kind's eye for the graph.
 import { el, svg, sync } from '../dom.js';
 import { markOpen } from './details.js';
@@ -6,7 +6,6 @@ import { costEst, fill, tk, plural, MCP_STATES } from '../format.js';
 import { SOURCES_SHOWN } from '../geometry.js';
 import { UNRECORDED, revealedSource } from '../views.js';
 
-const BUILTIN = 'builtin';
 const EYE = 'M2 12s4-7 10-7s10 7 10 7s-4 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z';
 
 // Used of total from the funnel row (loaded of on disk); a kind with no funnel row counts its own list.
@@ -74,22 +73,6 @@ function row(env, s) {
   return r;
 }
 
-function builtinRow(env, item) {
-  const r = el('div', 'sr');
-  r.dataset.peek = `${BUILTIN}:${item.key}`;
-  markOpen(r, env.state.peek, [r.dataset.peek]);
-  r.tabIndex = 0;
-  r.setAttribute('role', 'button');
-  r.setAttribute('aria-label', `${item.label}. Open details.`);
-  r.append(el('span', 'sdot'));
-  const text = el('span', 'stx');
-  const top = el('span', 'sline');
-  top.append(el('b', 'sn', item.label));
-  text.append(top, el('span', 'sw', [`${tk(item.tokens_est, true)} tok`, item.remainder ? 'remainder' : null, item.visible === 'hidden' ? 'not in transcript' : null].filter(Boolean).join(' · ')));
-  r.append(text);
-  return r;
-}
-
 // A kind whose sources carry a role (the memory index, items read on demand) is split under one label per role.
 const roleRank = s => (s.memory_role === 'index' ? 0 : s.memory_role === 'item' ? 1 : 2);
 const ROLES = { index: 'Index', item: 'Read on demand' };
@@ -138,7 +121,7 @@ export function click(t, env) {
   if (more) { if (!state.more.delete(more.dataset.more)) state.more.add(more.dataset.more); return true; }
   const all = t.closest('[data-groups]');
   if (all) {
-    for (const key of [BUILTIN, ...ix.view.adapter.source_kinds.map(k => k.key)]) state.sourceGroups[key] = all.dataset.groups === 'open';
+    for (const key of ix.view.adapter.source_kinds.map(k => k.key)) state.sourceGroups[key] = all.dataset.groups === 'open';
     return true;
   }
   return false;
@@ -219,13 +202,6 @@ export function render(box, env) {
   const lists = new Map(ix.view.adapter.source_kinds.map(k => [k.key, ix.view.sources.filter(s => s.kind === k.key).sort((a, b) => roleRank(a) - roleRank(b) || (a.availability !== 'loaded') - (b.availability !== 'loaded'))]));
   reveal(env, lists);
   const parts = [controls()];
-  const builtin = ix.view.builtin || [];
-  if (builtin.length) {
-    parts.push(group(env, {
-      key: BUILTIN, label: 'Built in', letter: '·', used: builtin.length, total: null, usage: plural(builtin.length, 'item'),
-      finds: 0, rows: builtin.map(item => builtinRow(env, item)),
-    }));
-  }
   for (const k of ix.view.adapter.source_kinds) {
     const list = lists.get(k.key);
     const { used, total } = counts(ix, k.key, list);

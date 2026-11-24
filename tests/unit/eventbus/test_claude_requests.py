@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.eventbus.adapters.claude_requests import content_size, feed_row, message_hash, shape_system_text
+from reporails_cli.core.eventbus.adapters.claude_requests import content_size, feed_row, message_hash, shape_text
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.eventbus.transcript import read_transcript
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
@@ -374,7 +374,7 @@ def test_a_tool_with_no_string_name_refuses_its_shape() -> None:
 def test_a_shape_that_is_not_an_object_refuses_its_system_text() -> None:
     row = {"type": "api-request-shape", "shapeHash": "s", "shape": []}
     with pytest.raises(PayloadRefused, match="shape is not an object"):
-        shape_system_text(row, "s")
+        shape_text(row, "s", "system_prompt")
 
 
 _REMINDER = "<system-reminder>\nas you know\n</system-reminder>"

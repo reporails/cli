@@ -268,6 +268,22 @@
    "window_s": 90.0,
    "window_share": 0.013,
    "min_size": 3
+  },
+  "context": {
+   "basis": [
+    {
+     "key": "measured",
+     "label": "measured"
+    },
+    {
+     "key": "measured_earlier",
+     "label": "measured · earlier request"
+    },
+    {
+     "key": "estimate",
+     "label": "estimate"
+    }
+   ]
   }
  },
  "nodes": [
@@ -741,7 +757,16 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 0,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": []
+     }
     }
    },
    "child_sources": {},
@@ -752,7 +777,10 @@
  "sources": [
   {
    "id": "CLAUDE.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "mcp": null,
    "hook": null,
@@ -784,7 +812,10 @@
   },
   {
    "id": "~/.claude/CLAUDE.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "mcp": null,
    "hook": null,
@@ -809,7 +840,10 @@
   },
   {
    "id": ".claude/rules/rules-engine.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "mcp": null,
    "hook": null,
@@ -843,7 +877,10 @@
   },
   {
    "id": ".claude/skills/orient/SKILL.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "mcp": null,
    "hook": null,
@@ -868,7 +905,10 @@
   },
   {
    "id": ".claude/skills/agents-sdk/SKILL.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "mcp": null,
    "hook": null,
@@ -893,7 +933,10 @@
   },
   {
    "id": "~/.claude/projects/-work-demo/memory/MEMORY.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "mcp": null,
    "hook": null,
@@ -925,7 +968,10 @@
   },
   {
    "id": "mcp:docs-server",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "mcp": null,
    "hook": null,
@@ -955,7 +1001,10 @@
   },
   {
    "id": "hook:PreToolUse:Edit",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "mcp": null,
    "hook": null,
@@ -2243,24 +2292,6 @@
   "unit": "usd_per_mtok",
   "source_method": "A source's cost is the tokens it carried in each reply times that reply's input-side price per context token, summed over every reply."
  },
- "builtin": [
-  {
-   "key": "system_prompt",
-   "label": "System prompt",
-   "tokens_est": 2800,
-   "note": "Not in the transcript; its size is what the reply total leaves.",
-   "visible": "hidden",
-   "remainder": true
-  },
-  {
-   "key": "skill_list",
-   "label": "Skills listing",
-   "tokens_est": 5100,
-   "note": "49 skill descriptions",
-   "visible": "shown",
-   "remainder": false
-  }
- ],
  "session_cost": {
   "total_usd": 1.69,
   "unpriced": 0,

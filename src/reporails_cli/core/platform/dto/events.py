@@ -376,6 +376,10 @@ class RequestSize:
     system_digest: str = ""
 
 
+# One piece of a request a reader may show: its kind (`notes`, `thinking` or the listing item it is) and its text.
+MessageText = tuple[str, str]
+
+
 @dataclass
 class AssistantMerge:
     """The assistant message being merged from its rows: its id, the running hashes of its content with and without
@@ -386,14 +390,16 @@ class AssistantMerge:
     without_caller: _Hash | None = None
     size: MessageSize = field(default_factory=MessageSize)
     blocks: int = 0
+    texts: list[MessageText] = field(default_factory=list)
 
 
 @dataclass
 class RequestChain:
     """What a read of one transcript file knows to size its API requests: each recorded shape as its system
     characters, tool characters and tool count, each known message's size under its hash, the running sums of the
-    previous request's messages (`prefix[i]` is the size of its first `i` messages) and
-    the assistant message being merged from its rows (`merge`). Sizes only, no message text."""
+    previous request's messages (`prefix[i]` is the size of its first `i` messages) and the assistant message being
+    merged from its rows (`merge`). Sizes only, no message text, unless `texts` is set: it then keeps each known
+    message's notes and thinking by hash, the previous request's message hashes (`trail`) and the file's listings."""
 
     shapes: dict[str, tuple[int, int, int]] = field(default_factory=dict)
     tool_names: dict[str, tuple[str, ...]] = field(default_factory=dict)
@@ -402,6 +408,9 @@ class RequestChain:
     pool: dict[str, MessageSize] = field(default_factory=dict)
     prefix: list[MessageSize] = field(default_factory=lambda: [MessageSize()])
     merge: AssistantMerge = field(default_factory=AssistantMerge)
+    texts: dict[str, tuple[MessageText, ...]] | None = None
+    trail: list[str] = field(default_factory=list)
+    listed: list[MessageText] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

@@ -29,13 +29,10 @@ from reporails_cli.core.platform.dto.xray_sources import (
     Availability,
     HookDetail,
     SourceEntry,
-    XrayBuiltin,
     XraySource,
 )
 from reporails_cli.core.xray.cost import session_cost
 from reporails_cli.core.xray.graph import spine
-from reporails_cli.core.xray.graph.agents import MAIN_ID, main_records
-from reporails_cli.core.xray.graph.builtin import builtin_items
 from reporails_cli.core.xray.graph.bursts import bursts
 from reporails_cli.core.xray.graph.port import PRODUCERS
 from reporails_cli.core.xray.graph.shapes import first_requests, launch_metas, launched_with
@@ -167,17 +164,8 @@ def build_graph(
         tuple(
             XrayTrack(node.id, spine.track_calls(node), spine.failure_runs(node), spine.breaks(node)) for node in spined
         ),
-        _builtin(pnodes, records, vocabulary),
         session_cost([(node.id, node.detail.usage.cost) for node in pnodes]),
     )
-
-
-def _builtin(
-    nodes: Sequence[ProducedNode], records: Sequence[EventRecord], vocabulary: AdapterVocabulary
-) -> tuple[XrayBuiltin, ...]:
-    """The coding agent's own context, read from the main agent's records; none when the graph has no main agent."""
-    main = next((node for node in nodes if node.id == MAIN_ID), None)
-    return () if main is None else builtin_items(main, main_records(records), vocabulary)
 
 
 def _had_by(

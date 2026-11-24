@@ -60,6 +60,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayNode,
     XrayUsage,
 )
+from reporails_cli.core.platform.dto.xray_own import XrayOwnItem
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, ArtifactKind, FindingTally
 from reporails_cli.core.xray.artifacts import build_artifacts
 from reporails_cli.core.xray.cost import agent_cost, load_price_list
@@ -726,7 +727,6 @@ def test_the_built_views_key_structure_matches_the_sample_the_page_is_built_agai
         sources=graph.sources,
         stations=graph.stations,
         tracks=graph.tracks,
-        builtin=graph.builtin,
         session_cost=graph.session_cost,
         version=1,
         info=XraySessionInfo("s", "p", at(0), 20.0, "newest"),
@@ -1084,7 +1084,14 @@ def _entry(kind: HarnessKind, label: str, count: int | None, chars: int, seconds
     return rec("harness", seconds, item=HarnessEntry(kind, label, count, chars))
 
 
-def test_the_builtin_items_follow_the_vocabulary_order_and_the_system_prompt_carries_the_remainder(
+def _own_items(graph: Graph, node: str = "main") -> list[XrayOwnItem]:
+    """The items of an agent's own context in display order."""
+    shown = _agent(_node(graph, node)).in_context
+    assert shown is not None
+    return list(shown.own.rows)
+
+
+def test_the_own_context_items_follow_the_vocabulary_order_and_the_system_prompt_carries_the_remainder(
     tmp_path: Path,
 ) -> None:
     claude = _file(tmp_path, "CLAUDE.md", 400)
@@ -1097,31 +1104,33 @@ def test_the_builtin_items_follow_the_vocabulary_order_and_the_system_prompt_car
         reply(1, context=20_000),
     ]
     graph = _graph(tmp_path, records, [claude])
-    assert [(item.key, item.remainder) for item in graph.builtin] == [
-        ("system_prompt", True),
-        ("deferred_tools", False),
-        ("agent_list", False),
-        ("skill_list", False),
-        ("session_context", False),
+    items = _own_items(graph)
+    assert [item.key for item in items] == [
+        "system_prompt",
+        "agent_listing",
+        "skill_listing",
+        "deferred_tools",
+        "session_context",
     ]
-    sizes = {item.key: item.tokens_est for item in graph.builtin}
     # The reply total less the estimated instruction file (100) and skills listing (1000), the tool definitions
     # (200), the agent listing (100) and the session context (10).
-    assert sizes == {
+    assert {item.key: item.tokens_est for item in items} == {
         "system_prompt": 20_000 - 100 - 1000 - 200 - 100 - 10,
         "deferred_tools": 200,
-        "agent_list": 100,
-        "skill_list": 1000,
+        "agent_listing": 100,
+        "skill_listing": 1000,
         "session_context": 10,
     }
-    notes = {item.key: item.note for item in graph.builtin}
-    assert notes["agent_list"] == "3 agent descriptions" and notes["session_context"] is not None
-    assert [item.visible for item in graph.builtin][:2] == ["hidden", "partial"]
+    shown = _agent(_node(graph, "main")).in_context
+    assert shown is not None and shown.own.basis == "estimate" and not any(item.has_text for item in items)
+    notes = {item.key: item.description for item in items}
+    assert notes["agent_listing"] == "3 agent descriptions" and notes["session_context"] is not None
+    assert [item.visible for item in items][:2] == ["hidden", "shown"]
 
 
 def test_a_system_prompt_is_never_negative_when_the_estimates_overshoot_the_reply(tmp_path: Path) -> None:
     records = [_entry("skill_list", "skills", 5, 40_000), reply(1, context=500)]
-    system = next(item for item in _graph(tmp_path, records).builtin if item.remainder)
+    system = next(item for item in _own_items(_graph(tmp_path, records)) if item.key == "system_prompt")
     assert system.tokens_est == 0
 
 
@@ -1225,14 +1234,14 @@ def test_in_context_adds_up_to_the_peak_on_every_node_and_orders_the_rows(tmp_pa
         shown = _agent(node).in_context
         assert shown is not None and not shown.over
         assert shown.total == _agent(node).peak
-        assert sum(row.tokens_est for row in shown.rows) == shown.total
+        assert sum(row.tokens_est for row in shown.rows) + shown.own.tokens_est == shown.total
     main = _agent(_node(graph, "main")).in_context
     assert main is not None
     assert [(row.key, row.label) for row in main.rows if row.key != "source"] == [
         ("hooks", "PreToolUse:hook"),
-        ("builtin", "System prompt, tools and listings"),
         ("rest", "Conversation and tool results"),
     ]
+    assert main.own.label == "Claude Code's own context"
     sources = [(row.label, row.kind, row.reason) for row in main.rows if row.key == "source"]
     assert sources == [
         ("CLAUDE.md", "instructions", "loaded with the session's instructions"),
@@ -1242,7 +1251,8 @@ def test_in_context_adds_up_to_the_peak_on_every_node_and_orders_the_rows(tmp_pa
     assert (hook.reason, hook.tokens_est) == ("fired 2 times", 100)
     sub = _agent(_node(graph, "A")).in_context
     assert sub is not None
-    assert [row.key for row in sub.rows] == ["task", "source", "builtin", "rest"]
+    assert [row.key for row in sub.rows] == ["task", "source", "rest"] and sub.own.rows
+    assert sum(row.tokens_est for row in sub.rows) + sub.own.tokens_est == sub.total
     assert sub.rows[1].reason == "handed down at launch"
 
 
@@ -1351,7 +1361,7 @@ def test_the_system_prompt_size_leaves_out_the_mcp_instructions_and_hook_notes_t
         rec("harness", 0.4, item=HarnessEntry("hook_note", "SessionStart:startup", None, 120, event="SessionStart")),
         reply(1, context=1000),
     ]
-    sizes = {item.key: item.tokens_est for item in _graph(tmp_path, records).builtin}
+    sizes = {item.key: item.tokens_est for item in _own_items(_graph(tmp_path, records))}
     # The total less the hook note (30, counted as a hook note), the tool definitions (100) and the MCP servers'
     # instructions (200, once).
     assert sizes["system_prompt"] == 1000 - 30 - 100 - 200

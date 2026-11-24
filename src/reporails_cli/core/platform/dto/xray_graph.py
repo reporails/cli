@@ -15,6 +15,7 @@ from reporails_cli.core.platform.dto.events import ToolCategory
 from reporails_cli.core.platform.dto.xray_compaction import XrayCompaction
 from reporails_cli.core.platform.dto.xray_composition import XrayComposition
 from reporails_cli.core.platform.dto.xray_cost import XrayAgentCost
+from reporails_cli.core.platform.dto.xray_own import ContextKey, XrayOwnContext, XrayRowMeasure
 
 NodeKind = Literal["agent"]
 SourceKind = Literal["instructions", "rule", "skill", "agent", "memory", "mcp", "hook"]
@@ -26,25 +27,6 @@ AgentOutcome = Literal["returned", "failed", "stopped", "no_handback", "running"
 # Where the text a subagent handed back is read from: its hand-back message, the last reply it wrote, or the result its
 # parent received.
 OutputSource = Literal["handback", "reply", "result"]
-# What one row of an agent's "in context" list stands for.
-ContextKey = Literal[
-    "task",
-    "source",
-    "hooks",
-    "builtin",
-    "rest",
-    "system_prompt",
-    "tool_definitions",
-    "tool_io",
-    "skill_listing",
-    "estimated",
-    "conversation",
-    "agent_listing",
-    "deferred_tools",
-    "session_context",
-    "harness_other",
-    "thinking",
-]
 # The outcomes in which an agent's parent received something back.
 HANDED_BACK_OUTCOMES: frozenset[AgentOutcome] = frozenset({"returned", "failed"})
 
@@ -280,20 +262,6 @@ class XrayGiven:
 
 
 @dataclass(frozen=True)
-class XrayRowMeasure:
-    """How a measured row's share was worked out: the characters of the recorded request it comes from, the image
-    tokens added to it and the tokens already shown in an earlier row and taken off."""
-
-    chars: int
-    images: int
-    listed_above: int
-
-    def to_json(self) -> JsonObject:
-        """The measure as a JSON object."""
-        return {"chars": self.chars, "images": self.images, "listed_above": self.listed_above}
-
-
-@dataclass(frozen=True)
 class XrayContextRow:
     """One row of an agent's "in context" list: what it stands for, the source it is (None for a row that is no
     source) and that source's kind, its label and the reason it is there as the coding agent words it, its
@@ -328,10 +296,12 @@ class XrayContextRow:
 @dataclass(frozen=True)
 class XrayInContext:
     """What an agent's context held at its peak reply: the measured total, the rows that make it up (the last row
-    takes what the estimates leave) and whether the estimates overshoot the total, which leaves that row at 0."""
+    takes what the estimates leave), the coding agent's own context as one group beside them, and whether the
+    estimates overshoot the total, which leaves that row at 0."""
 
     total: int
     rows: tuple[XrayContextRow, ...]
+    own: XrayOwnContext
     over: bool
     # Whether the rows are shares of the request Claude Code recorded, not estimates.
     measured: bool
@@ -346,6 +316,7 @@ class XrayInContext:
         return {
             "total": self.total,
             "rows": objects(row.to_json() for row in self.rows),
+            "own": self.own.to_json(),
             "over": self.over,
             "measured": self.measured,
             "note": self.note,

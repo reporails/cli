@@ -75,10 +75,15 @@ if (mode === 'agent' && ready) {
   await page.ev(`document.querySelector('[data-groups="open"]').click(); 0`);
   await page.until(`!!document.querySelector('#sources .ssec[data-kind="agent"] .sr')`);
   out.row = await openRow('general');
-  out.text = out.row ? await peekText() : '';
   out.tools = out.row ? await page.ev(`(document.querySelector('.pk-pre') || {}).textContent || ''`) : '';
   out.pres = out.row ? await page.ev(`[...document.querySelectorAll('.pk-pre')].map(e => e.textContent)`) : [];
   out.dialog = await page.ev(`(document.querySelector('.pk-dialog') || {}).textContent || ''`);
+  out.action = await page.ev(`(([...document.querySelectorAll('.pk-dialog .pk-act')].find(b => b.dataset.peek) || {}).textContent) || null`);
+  if (out.action) {
+    await page.ev(`[...document.querySelectorAll('.pk-dialog .pk-act')].find(b => b.dataset.peek).click(); 0`);
+    out.text = await peekText();
+    out.opened = await page.ev(`document.querySelector('.pk-title').textContent`);
+  }
 }
 
 if (mode === 'compactions' && ready) {

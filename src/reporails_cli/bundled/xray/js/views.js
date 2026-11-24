@@ -93,7 +93,7 @@ export function tabCounts(ix) {
   return {
     graph: v.nodes.length,
     calls: v.track.reduce((n, t) => n + t.calls.length, 0),
-    sources: v.sources.length + (v.builtin || []).length,
+    sources: v.sources.length,
   };
 }
 

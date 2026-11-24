@@ -144,7 +144,7 @@ if (mode === 'hover_calm' && ready) {
   const spine = await page.ev(`[...document.querySelectorAll('#canvas [data-source]')].filter(e => e.tagName !== 'path').map(e => e.tagName.toLowerCase() + '[data-source="' + e.dataset.source + '"]')`);
   out.hovered = 0;
   for (const sel of spine.slice(0, 8)) { await hoverOn(sel); out.hovered++; }
-  await hoverOn('#sources .sh[data-source-group]:last-of-type');
+  await hoverOn('#sources .ssec .sh[data-source-group]');
   await hoverOn('#sources .ssec:last-child .sh');
   out.columnAfter = await column();
   out.openAfter = await open();

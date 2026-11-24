@@ -8,6 +8,7 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.plugin_roots import installed_plugin_roots
 from reporails_cli.core.discovery.project_root import resolve_project_root
+from reporails_cli.core.eventbus.context_text import context_text
 from reporails_cli.core.eventbus.transcript import (
     call_detail,
     compact_summary,
@@ -19,7 +20,6 @@ from reporails_cli.core.eventbus.transcript import (
     scan_compact_summaries,
     subagent_brief,
     subagent_output,
-    subagent_system,
     workflow_runs,
 )
 from reporails_cli.core.pipeline.expected_loads import AGENT
@@ -53,6 +53,7 @@ from reporails_cli.core.platform.dto.xray import (
 )
 from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
 from reporails_cli.core.platform.dto.xray_graph import OutputSource
+from reporails_cli.core.platform.dto.xray_own import ContextKey, XrayOwnContext
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayArtifact, XrayPeek
 from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.artifacts import (
@@ -69,9 +70,8 @@ from reporails_cli.core.xray.cost import load_price_list
 from reporails_cli.core.xray.derive import epoch, latest_model, real_path, replies_of, window_of
 from reporails_cli.core.xray.facts import build_facts
 from reporails_cli.core.xray.funnel import build_funnel
-from reporails_cli.core.xray.graph.agents import main_records
+from reporails_cli.core.xray.graph.agents import MAIN_ID, main_records
 from reporails_cli.core.xray.graph.build import build_graph
-from reporails_cli.core.xray.graph.shapes import first_launch, first_requests
 from reporails_cli.core.xray.graph.sources import build_sources, ran_sources
 from reporails_cli.core.xray.vocabulary import vocabulary_for
 
@@ -121,10 +121,11 @@ class _FileReads:
     """Where the reads of one session's transcript files stopped: the cursor of the record read and, per file (a
     subagent id, None for the main one), the byte offset scanned for compaction summaries and the summaries
     found so far by the id of the boundary row each follows, and the source each subagent's output text is read from
-    as the last view sized it."""
+    as the last view sized it, and each agent's own context as the last view held it."""
 
     def __init__(self) -> None:
         self.outputs: dict[str, OutputSource] = {}
+        self.own: dict[str, XrayOwnContext] = {}
         self._cursor = TranscriptCursor()
         self._found: dict[str | None, tuple[int, dict[str, SummarySpan]]] = {}
 
@@ -246,22 +247,15 @@ class XraySession:
         is pinned to."""
         return workflow_runs(AGENT, self._file)
 
-    def system_prompt(self, agent_type: str) -> str | None:
-        """The system prompt the first launch of an agent type that recorded a request was sent with; None when the
-        session launched no such type or none of its launches recorded one. Raises `PayloadRefused` when the
-        subagent file does not record it as the adapter is pinned to. The text is not kept.
-
-        The empty type is the main agent: the system prompt of the last request the main transcript recorded, None
-        when it recorded none."""
-        if not agent_type:
-            return subagent_system(AGENT, self._file, None)
-        launched = {
-            record.subagent_id
-            for record in self._transcript
-            if record.event == "subagent_run" and record.subagent_type == agent_type and record.subagent_id
-        }
-        chosen = first_launch(launched, first_requests(self._transcript))
-        return None if chosen is None else subagent_system(AGENT, self._file, chosen)
+    def context_text(self, agent: str, item: ContextKey) -> list[str] | None:
+        """The texts of one item of an agent's own context, read from the request the last view sized the item from:
+        `agent` is a node id, empty for the main agent. None for an agent or item the last view holds no recorded
+        request for. Raises `PayloadRefused` when a row read is not the shape the adapter is pinned to. The text is
+        not kept."""
+        own = self._reads.own.get(agent or MAIN_ID)
+        if own is None or own.request_id is None or not any(row.key == item for row in own.rows):
+            return None
+        return context_text(AGENT, self._file, agent or None, own.request_id, item)
 
     def prompt(self, prompt_id: str) -> str | None:
         """The text of a typed prompt the records name; None for any other id. Raises `PayloadRefused` when the
@@ -350,6 +344,9 @@ class XraySession:
         self._reads.outputs = {
             node.id: node.detail.back.source for node in graph.nodes if node.detail.back.source is not None
         }
+        self._reads.own = {
+            node.id: node.detail.in_context.own for node in graph.nodes if node.detail.in_context is not None
+        }
         window = window_of(replies_of(main_records(records)))
         return XrayView(
             version=self.version,
@@ -363,7 +360,6 @@ class XraySession:
             sources=graph.sources,
             stations=graph.stations,
             tracks=graph.tracks,
-            builtin=graph.builtin,
             session_cost=graph.session_cost,
             gaps=self._gaps(window),
             verdict=self._verdict(table, graph, records, vocabulary),

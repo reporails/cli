@@ -281,12 +281,12 @@ def test_a_built_in_note_words_a_count_of_one_in_the_singular(tmp_path: Path) ->
             rec("harness", 0.4, item=HarnessEntry("deferred_tools", "tools", count, 400)),
             _peak(5),
         ]
-        return [
-            item.note for item in _graph(tmp_path, records, _files(tmp_path)).builtin if item.key != "system_prompt"
-        ]
+        shown = _agent(_node(_graph(tmp_path, records, _files(tmp_path)), "main")).in_context
+        assert shown is not None
+        return [item.description for item in shown.own.rows if item.key != "system_prompt"]
 
-    assert notes(1) == ["1 tool loaded on demand", "1 agent description", "1 skill description"]
-    assert notes(2) == ["2 tools loaded on demand", "2 agent descriptions", "2 skill descriptions"]
+    assert notes(1) == ["1 agent description", "1 skill description", "1 tool loaded on demand"]
+    assert notes(2) == ["2 agent descriptions", "2 skill descriptions", "2 tools loaded on demand"]
 
 
 def test_only_the_shell_category_carries_a_command_to_fetch() -> None:

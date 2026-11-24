@@ -268,6 +268,22 @@
       "window_s": 90.0,
       "window_share": 0.013,
       "min_size": 3
+    },
+    "context": {
+      "basis": [
+        {
+          "key": "measured",
+          "label": "measured"
+        },
+        {
+          "key": "measured_earlier",
+          "label": "measured · earlier request"
+        },
+        {
+          "key": "estimate",
+          "label": "estimate"
+        }
+      ]
     }
   },
   "nodes": [
@@ -755,7 +771,16 @@
           "measured": false,
           "note": null,
           "request_id": null,
-          "tokens_per_char": null
+          "tokens_per_char": null,
+          "own": {
+            "label": "Claude Code's own context",
+            "reason": "sent by Claude Code itself, not from your files",
+            "tokens_est": 0,
+            "basis": "estimate",
+            "request_id": null,
+            "tokens_per_char": null,
+            "rows": []
+          }
         }
       },
       "child_sources": {
@@ -1136,7 +1161,16 @@
           "measured": false,
           "note": null,
           "request_id": null,
-          "tokens_per_char": null
+          "tokens_per_char": null,
+          "own": {
+            "label": "Claude Code's own context",
+            "reason": "sent by Claude Code itself, not from your files",
+            "tokens_est": 0,
+            "basis": "estimate",
+            "request_id": null,
+            "tokens_per_char": null,
+            "rows": []
+          }
         }
       },
       "child_sources": {},
@@ -1497,7 +1531,16 @@
           "measured": false,
           "note": null,
           "request_id": null,
-          "tokens_per_char": null
+          "tokens_per_char": null,
+          "own": {
+            "label": "Claude Code's own context",
+            "reason": "sent by Claude Code itself, not from your files",
+            "tokens_est": 0,
+            "basis": "estimate",
+            "request_id": null,
+            "tokens_per_char": null,
+            "rows": []
+          }
         }
       },
       "child_sources": {},
@@ -1866,7 +1909,16 @@
           "measured": false,
           "note": null,
           "request_id": null,
-          "tokens_per_char": null
+          "tokens_per_char": null,
+          "own": {
+            "label": "Claude Code's own context",
+            "reason": "sent by Claude Code itself, not from your files",
+            "tokens_est": 0,
+            "basis": "estimate",
+            "request_id": null,
+            "tokens_per_char": null,
+            "rows": []
+          }
         }
       },
       "child_sources": {},
@@ -2235,7 +2287,16 @@
           "measured": false,
           "note": null,
           "request_id": null,
-          "tokens_per_char": null
+          "tokens_per_char": null,
+          "own": {
+            "label": "Claude Code's own context",
+            "reason": "sent by Claude Code itself, not from your files",
+            "tokens_est": 0,
+            "basis": "estimate",
+            "request_id": null,
+            "tokens_per_char": null,
+            "rows": []
+          }
         }
       },
       "child_sources": {},
@@ -2612,7 +2673,16 @@
           "measured": false,
           "note": null,
           "request_id": null,
-          "tokens_per_char": null
+          "tokens_per_char": null,
+          "own": {
+            "label": "Claude Code's own context",
+            "reason": "sent by Claude Code itself, not from your files",
+            "tokens_est": 0,
+            "basis": "estimate",
+            "request_id": null,
+            "tokens_per_char": null,
+            "rows": []
+          }
         }
       },
       "child_sources": {
@@ -2968,7 +3038,16 @@
           "measured": false,
           "note": null,
           "request_id": null,
-          "tokens_per_char": null
+          "tokens_per_char": null,
+          "own": {
+            "label": "Claude Code's own context",
+            "reason": "sent by Claude Code itself, not from your files",
+            "tokens_est": 0,
+            "basis": "estimate",
+            "request_id": null,
+            "tokens_per_char": null,
+            "rows": []
+          }
         }
       },
       "child_sources": {
@@ -3314,7 +3393,16 @@
           "measured": false,
           "note": null,
           "request_id": null,
-          "tokens_per_char": null
+          "tokens_per_char": null,
+          "own": {
+            "label": "Claude Code's own context",
+            "reason": "sent by Claude Code itself, not from your files",
+            "tokens_est": 0,
+            "basis": "estimate",
+            "request_id": null,
+            "tokens_per_char": null,
+            "rows": []
+          }
         }
       },
       "child_sources": {},
@@ -3683,7 +3771,16 @@
           "measured": false,
           "note": null,
           "request_id": null,
-          "tokens_per_char": null
+          "tokens_per_char": null,
+          "own": {
+            "label": "Claude Code's own context",
+            "reason": "sent by Claude Code itself, not from your files",
+            "tokens_est": 0,
+            "basis": "estimate",
+            "request_id": null,
+            "tokens_per_char": null,
+            "rows": []
+          }
         }
       },
       "child_sources": {},
@@ -4052,7 +4149,16 @@
           "measured": false,
           "note": null,
           "request_id": null,
-          "tokens_per_char": null
+          "tokens_per_char": null,
+          "own": {
+            "label": "Claude Code's own context",
+            "reason": "sent by Claude Code itself, not from your files",
+            "tokens_est": 0,
+            "basis": "estimate",
+            "request_id": null,
+            "tokens_per_char": null,
+            "rows": []
+          }
         }
       },
       "child_sources": {},
@@ -4415,7 +4521,16 @@
           "measured": false,
           "note": null,
           "request_id": null,
-          "tokens_per_char": null
+          "tokens_per_char": null,
+          "own": {
+            "label": "Claude Code's own context",
+            "reason": "sent by Claude Code itself, not from your files",
+            "tokens_est": 0,
+            "basis": "estimate",
+            "request_id": null,
+            "tokens_per_char": null,
+            "rows": []
+          }
         }
       },
       "child_sources": {},
@@ -4784,7 +4899,16 @@
           "measured": false,
           "note": null,
           "request_id": null,
-          "tokens_per_char": null
+          "tokens_per_char": null,
+          "own": {
+            "label": "Claude Code's own context",
+            "reason": "sent by Claude Code itself, not from your files",
+            "tokens_est": 0,
+            "basis": "estimate",
+            "request_id": null,
+            "tokens_per_char": null,
+            "rows": []
+          }
         }
       },
       "child_sources": {},
@@ -5153,7 +5277,16 @@
           "measured": false,
           "note": null,
           "request_id": null,
-          "tokens_per_char": null
+          "tokens_per_char": null,
+          "own": {
+            "label": "Claude Code's own context",
+            "reason": "sent by Claude Code itself, not from your files",
+            "tokens_est": 0,
+            "basis": "estimate",
+            "request_id": null,
+            "tokens_per_char": null,
+            "rows": []
+          }
         }
       },
       "child_sources": {},
@@ -5314,7 +5447,10 @@
         "a10"
       ],
       "actionable": true,
-      "excluded": {"hits": [], "outside": null},
+      "excluded": {
+        "hits": [],
+        "outside": null
+      },
       "launches": null,
       "cost_usd_est": 0.0123,
       "label": "CLAUDE.md",
@@ -5323,7 +5459,6 @@
       "agent_type": null,
       "builtin": false,
       "memory_role": null,
-      "system_tokens_est": null,
       "launch_tools": [],
       "launch_settings": [],
       "mcp": null,
@@ -5353,7 +5488,10 @@
         "a10"
       ],
       "actionable": false,
-      "excluded": {"hits": [], "outside": null},
+      "excluded": {
+        "hits": [],
+        "outside": null
+      },
       "launches": null,
       "cost_usd_est": 0.0123,
       "label": "~/.claude/CLAUDE.md",
@@ -5362,7 +5500,6 @@
       "agent_type": null,
       "builtin": false,
       "memory_role": null,
-      "system_tokens_est": null,
       "launch_tools": [],
       "launch_settings": [],
       "mcp": null,
@@ -5385,7 +5522,10 @@
       "availability": "on_disk",
       "had_by": [],
       "actionable": true,
-      "excluded": {"hits": [], "outside": null},
+      "excluded": {
+        "hits": [],
+        "outside": null
+      },
       "launches": null,
       "cost_usd_est": 0.0123,
       "label": "packages/cli/CLAUDE.md",
@@ -5394,7 +5534,6 @@
       "agent_type": null,
       "builtin": false,
       "memory_role": null,
-      "system_tokens_est": null,
       "launch_tools": [],
       "launch_settings": [],
       "mcp": null,
@@ -5420,7 +5559,10 @@
         "a2"
       ],
       "actionable": true,
-      "excluded": {"hits": [], "outside": null},
+      "excluded": {
+        "hits": [],
+        "outside": null
+      },
       "launches": null,
       "cost_usd_est": null,
       "label": ".claude/rules/rules-engine.md",
@@ -5431,7 +5573,6 @@
       "agent_type": null,
       "builtin": false,
       "memory_role": null,
-      "system_tokens_est": null,
       "launch_tools": [],
       "launch_settings": [],
       "mcp": null,
@@ -5454,7 +5595,10 @@
       "availability": "on_disk",
       "had_by": [],
       "actionable": true,
-      "excluded": {"hits": [], "outside": null},
+      "excluded": {
+        "hits": [],
+        "outside": null
+      },
       "launches": null,
       "cost_usd_est": null,
       "label": ".claude/rules/style.md",
@@ -5465,7 +5609,6 @@
       "agent_type": null,
       "builtin": false,
       "memory_role": null,
-      "system_tokens_est": null,
       "launch_tools": [],
       "launch_settings": [],
       "mcp": null,
@@ -5483,7 +5626,10 @@
         "main"
       ],
       "actionable": true,
-      "excluded": {"hits": [], "outside": null},
+      "excluded": {
+        "hits": [],
+        "outside": null
+      },
       "launches": null,
       "cost_usd_est": null,
       "label": "orient",
@@ -5492,7 +5638,6 @@
       "agent_type": null,
       "builtin": false,
       "memory_role": null,
-      "system_tokens_est": null,
       "launch_tools": [],
       "launch_settings": [],
       "mcp": null,
@@ -5510,7 +5655,10 @@
         "main"
       ],
       "actionable": true,
-      "excluded": {"hits": [], "outside": null},
+      "excluded": {
+        "hits": [],
+        "outside": null
+      },
       "launches": null,
       "cost_usd_est": null,
       "label": "agents-sdk",
@@ -5519,7 +5667,6 @@
       "agent_type": null,
       "builtin": false,
       "memory_role": null,
-      "system_tokens_est": null,
       "launch_tools": [],
       "launch_settings": [],
       "mcp": null,
@@ -5535,7 +5682,10 @@
       "availability": "listed",
       "had_by": [],
       "actionable": true,
-      "excluded": {"hits": [], "outside": null},
+      "excluded": {
+        "hits": [],
+        "outside": null
+      },
       "launches": null,
       "cost_usd_est": null,
       "label": "cloudflare",
@@ -5544,7 +5694,6 @@
       "agent_type": null,
       "builtin": false,
       "memory_role": null,
-      "system_tokens_est": null,
       "launch_tools": [],
       "launch_settings": [],
       "mcp": null,
@@ -5569,7 +5718,10 @@
         "main"
       ],
       "actionable": true,
-      "excluded": {"hits": [], "outside": null},
+      "excluded": {
+        "hits": [],
+        "outside": null
+      },
       "launches": null,
       "cost_usd_est": null,
       "label": "MEMORY.md",
@@ -5578,7 +5730,6 @@
       "agent_type": null,
       "builtin": false,
       "memory_role": "index",
-      "system_tokens_est": null,
       "launch_tools": [],
       "launch_settings": [],
       "mcp": null,
@@ -5594,7 +5745,10 @@
       "availability": "on_disk",
       "had_by": [],
       "actionable": false,
-      "excluded": {"hits": [], "outside": null},
+      "excluded": {
+        "hits": [],
+        "outside": null
+      },
       "launches": null,
       "cost_usd_est": null,
       "label": "feedback_orphan.md",
@@ -5603,7 +5757,6 @@
       "agent_type": null,
       "builtin": false,
       "memory_role": "item",
-      "system_tokens_est": null,
       "launch_tools": [],
       "launch_settings": [],
       "mcp": null,
@@ -5624,7 +5777,10 @@
         "a5b"
       ],
       "actionable": false,
-      "excluded": {"hits": [], "outside": null},
+      "excluded": {
+        "hits": [],
+        "outside": null
+      },
       "launches": null,
       "cost_usd_est": null,
       "label": "docs-server",
@@ -5638,7 +5794,6 @@
       "agent_type": null,
       "builtin": false,
       "memory_role": null,
-      "system_tokens_est": null,
       "launch_tools": [],
       "launch_settings": [],
       "mcp": null,
@@ -5656,7 +5811,10 @@
         "main"
       ],
       "actionable": false,
-      "excluded": {"hits": [], "outside": null},
+      "excluded": {
+        "hits": [],
+        "outside": null
+      },
       "launches": null,
       "cost_usd_est": null,
       "label": "PreToolUse:Edit",
@@ -5665,7 +5823,6 @@
       "agent_type": null,
       "builtin": false,
       "memory_role": null,
-      "system_tokens_est": null,
       "launch_tools": [],
       "launch_settings": [],
       "mcp": null,
@@ -5691,7 +5848,10 @@
         "a9"
       ],
       "actionable": true,
-      "excluded": {"hits": [], "outside": null},
+      "excluded": {
+        "hits": [],
+        "outside": null
+      },
       "launches": 2,
       "cost_usd_est": null,
       "label": "test-runner",
@@ -5700,7 +5860,6 @@
       "agent_type": "test-runner",
       "builtin": false,
       "memory_role": null,
-      "system_tokens_est": null,
       "launch_tools": [],
       "launch_settings": [],
       "mcp": null,
@@ -5726,7 +5885,10 @@
         "a10"
       ],
       "actionable": true,
-      "excluded": {"hits": [], "outside": null},
+      "excluded": {
+        "hits": [],
+        "outside": null
+      },
       "launches": 2,
       "cost_usd_est": null,
       "label": "reviewer",
@@ -5735,7 +5897,6 @@
       "agent_type": "reviewer",
       "builtin": false,
       "memory_role": null,
-      "system_tokens_est": null,
       "launch_tools": [],
       "launch_settings": [],
       "mcp": null,
@@ -5753,7 +5914,10 @@
         "a1"
       ],
       "actionable": false,
-      "excluded": {"hits": [], "outside": null},
+      "excluded": {
+        "hits": [],
+        "outside": null
+      },
       "launches": 1,
       "cost_usd_est": null,
       "label": "explore",
@@ -5762,7 +5926,6 @@
       "agent_type": "Explore",
       "builtin": true,
       "memory_role": null,
-      "system_tokens_est": null,
       "launch_tools": [],
       "launch_settings": [],
       "mcp": null,
@@ -10093,26 +10256,6 @@
     "unit": "usd_per_mtok",
     "source_method": "A source's cost is the tokens it carried in each reply times that reply's input-side price per context token, summed over every reply."
   },
-  "builtin": [
-    {
-      "key": "system_prompt",
-      "label": "System prompt",
-      "tokens_est": 2800,
-      "note": "Not in the transcript; its size is what the reply total leaves.",
-      "visible": "hidden",
-      "remainder": true,
-      "system_shapes": 0
-    },
-    {
-      "key": "skill_list",
-      "label": "Skills listing",
-      "tokens_est": 5100,
-      "note": "49 skill descriptions",
-      "visible": "shown",
-      "remainder": false,
-      "system_shapes": 0
-    }
-  ],
   "session_cost": {
     "total_usd": 9.52,
     "unpriced": 0,

@@ -3,6 +3,7 @@ recorded keeps the estimated split and its remainder."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,8 @@ from reporails_cli.core.platform.dto.events import (
     TokenUsage,
 )
 from reporails_cli.core.platform.dto.xray_composition import COMPOSITION_KEYS, REMAINDER_KEY
-from reporails_cli.core.platform.dto.xray_graph import XrayInContext, XrayRowMeasure
+from reporails_cli.core.platform.dto.xray_graph import XrayContextRow, XrayInContext
+from reporails_cli.core.platform.dto.xray_own import XrayOwnItem, XrayRowMeasure
 from tests.unit.xray.test_xray_composition import _files, _rows
 from tests.unit.xray.test_xray_graph import _agent, _graph, _node, harness, launch, load, rec, reply
 
@@ -56,10 +58,25 @@ def _answer(seconds: float, context: int, ref: str | None, sub: str | None = Non
     return rec("assistant_usage", seconds, sub, usage=usage)
 
 
-def _context(root: Path, records: list[EventRecord], node: str = "main") -> XrayInContext:
+def _raw(root: Path, records: list[EventRecord], node: str = "main") -> XrayInContext:
     ic = _agent(_node(_graph(root, records, _files(root)), node)).in_context
     assert ic is not None
     return ic
+
+
+def _context(root: Path, records: list[EventRecord], node: str = "main") -> XrayInContext:
+    """The agent's context with the items of its own context listed as rows after the opening ones, so the sum of
+    the rows is the total the group and the rows make up together."""
+    ic = _raw(root, records, node)
+    opening = [row for row in ic.rows if row.key in ("task", "source", "hooks")]
+    own = [XrayContextRow(i.key, None, None, i.label, "", i.tokens_est, None, None, i.measure) for i in ic.own.rows]
+    rest = [row for row in ic.rows if row not in opening]
+    return replace(ic, rows=(*opening, *own, *rest))
+
+
+def _items(root: Path, records: list[EventRecord]) -> dict[str, XrayOwnItem]:
+    """The items of the main agent's own context by key."""
+    return {item.key: item for item in _raw(root, records).own.rows}
 
 
 def _by_key(ic: XrayInContext) -> dict[str, int]:
@@ -79,12 +96,12 @@ def test_a_measured_peak_splits_the_total_by_the_request_with_no_remainder(tmp_p
     assert not any(r.key == "builtin" for r in ic.rows)
     values = _by_key(ic)
     assert values["system_prompt"] == 4000 and values["tool_definitions"] == 8000 and values["tool_io"] == 4000
-    items = {item.key: item for item in _graph(tmp_path, records, _files(tmp_path)).builtin}
-    assert not any(item.remainder for item in items.values())
-    assert items["system_prompt"].tokens_est == 4000
-    assert items["system_prompt"].note == "Measured from the request Claude Code recorded."
+    own = _raw(tmp_path, records).own
+    assert own.basis == "measured" and own.request_id == "req" and own.tokens_est == 12000
+    items = _items(tmp_path, records)
+    assert items["system_prompt"].tokens_est == 4000 and items["system_prompt"].has_text
     assert items["tool_definitions"].tokens_est == 8000
-    assert items["tool_definitions"].note == "12 tools sent with every request"
+    assert items["tool_definitions"].description == "12 tools sent with every request"
 
 
 def test_the_measured_shares_are_scaled_to_the_exact_total(tmp_path: Path) -> None:
@@ -102,10 +119,10 @@ def test_a_reply_with_no_recorded_request_keeps_the_estimated_split(
     ic = _context(tmp_path, measured)
     assert not ic.measured and ic.note == NOT_RECORDED
     assert [r.key for r in ic.rows] == [r.key for r in _context(tmp_path, plain).rows]
-    assert any(r.key == "builtin" for r in ic.rows)
-    builtin = _graph(tmp_path, measured, _files(tmp_path)).builtin
-    assert any(item.remainder for item in builtin)
-    assert not any(item.key == "tool_definitions" for item in builtin)
+    own = _raw(tmp_path, measured).own
+    assert own.basis == "estimate" and own.request_id is None and own.tokens_est > 0
+    assert not any(item.has_text for item in own.rows)
+    assert not any(item.key == "tool_definitions" for item in own.rows)
 
 
 def test_load_estimates_over_the_measured_conversation_share_clamp_the_last_row(tmp_path: Path) -> None:
@@ -147,7 +164,7 @@ def test_a_request_with_unresolved_messages_is_not_measured(tmp_path: Path) -> N
     assert not ic.measured and ic.note == NOT_RECORDED
     (row,) = _rows(tmp_path, records)
     assert row["measured"] is False
-    assert not any(item.key == "tool_definitions" for item in _graph(tmp_path, records, _files(tmp_path)).builtin)
+    assert not any(item.key == "tool_definitions" for item in _raw(tmp_path, records).own.rows)
 
 
 def test_the_builtin_items_read_the_request_of_the_peak_reply_not_one_with_the_same_total(tmp_path: Path) -> None:
@@ -158,7 +175,7 @@ def test_the_builtin_items_read_the_request_of_the_peak_reply_not_one_with_the_s
         _request(0.4, peak_request),
         _answer(1, 17200, "a"),
     ]
-    items = {item.key: item for item in _graph(tmp_path, records, _files(tmp_path)).builtin}
+    items = _items(tmp_path, records)
     assert items["system_prompt"].tokens_est == 4000 and items["tool_definitions"].tokens_est == 8000
     assert _by_key(_context(tmp_path, records))["system_prompt"] == 4000
 
@@ -167,7 +184,7 @@ def test_a_measured_peak_lists_the_skills_listing_apart_from_the_conversation(tm
     records = [harness(0.2, "skill_list", "skills", 1000), _request(0.5, _size()), _answer(1, 17200, "req")]
     ic = _context(tmp_path, records)
     keys = [row.key for row in ic.rows]
-    assert keys[-2:] == ["skill_listing", "rest"] and ic.measured and not ic.over
+    assert keys[-3:] == ["skill_listing", "tool_io", "rest"] and ic.measured and not ic.over
     values = _by_key(ic)
     assert values["skill_listing"] == 1000 and values["tool_io"] == 4000
     assert values["rest"] == 17200 - 4000 - 8000 - 4000 - 1000 == 200
@@ -243,15 +260,9 @@ def test_a_peak_with_no_complete_request_is_sized_by_the_latest_complete_one_bef
     assert values["system_prompt"] == 4000 and values["tool_definitions"] == 8000 and "tool_io" not in values
     assert sum(values.values()) == 20000
     assert ic.request_id == "a" and ic.tokens_per_char == pytest.approx(1.0)
-    for row in ic.rows:
-        if row.key in ("system_prompt", "tool_definitions"):
-            assert "before this reply" in row.reason and "request" in row.reason
-    items = {item.key: item for item in _graph(tmp_path, records, _files(tmp_path)).builtin}
-    assert items["system_prompt"].tokens_est == 4000 and not items["system_prompt"].remainder
-    assert "request a" in (items["system_prompt"].note or "") and "Measured from the request" not in str(
-        items["system_prompt"].note
-    )
-    assert items["tool_definitions"].tokens_est == 8000 and "request a" in (items["tool_definitions"].note or "")
+    assert _raw(tmp_path, records).own.basis == "measured_earlier"
+    items = _items(tmp_path, records)
+    assert items["system_prompt"].tokens_est == 4000 and items["tool_definitions"].tokens_est == 8000
     (_, row) = _rows(tmp_path, records)
     assert row["measured"] is False and row[REMAINDER_KEY] == 12000
     assert sum(int(str(row[key])) for key in COMPOSITION_KEYS) == 20000
@@ -262,7 +273,7 @@ def test_a_peak_is_never_sized_by_a_request_recorded_after_it(tmp_path: Path) ->
     records = [*_pending_peak("missing"), _request(2.5, later), _answer(3, 10000, "b")]
     ic = _context(tmp_path, records)
     assert ic.total == 20000 and ic.request_id == "a" and _by_key(ic)["system_prompt"] == 4000
-    items = {item.key: item for item in _graph(tmp_path, records, _files(tmp_path)).builtin}
+    items = _items(tmp_path, records)
     assert items["system_prompt"].tokens_est == 4000
 
 
@@ -310,7 +321,8 @@ def test_other_claude_code_messages_are_the_notes_share_less_the_rows_listed_abo
     ic = _context(tmp_path, records)
     row = next(row for row in ic.rows if row.key == "harness_other")
     assert row.tokens_est == 1000 - 100 - 200 and row.measure == XrayRowMeasure(2000, 0, 300)
-    assert "task reminder" in row.reason
+    other = next(item for item in _raw(tmp_path, records).own.rows if item.key == "harness_other")
+    assert "task reminder" in (other.description or "")
     assert next(r for r in _context(tmp_path, _half(notes=2000)).rows if r.key == "harness_other").tokens_est == 1000
     floored = _context(tmp_path, _half(_hook(0.2, 4000), notes=200))
     assert not any(r.key == "harness_other" and r.tokens_est for r in floored.rows)
@@ -334,13 +346,10 @@ def test_an_mcp_servers_tokens_leave_the_other_messages_and_not_the_tool_definit
 
 
 def test_the_builtin_listings_are_sized_at_the_request_scale_when_a_request_sizes_the_peak(tmp_path: Path) -> None:
-    items = {
-        item.key: item
-        for item in _graph(tmp_path, _half(harness(0.2, "agent_list", "agents", 400)), _files(tmp_path)).builtin
-    }
-    assert items["agent_list"].tokens_est == 200
-    plain = _graph(tmp_path, [harness(0.2, "agent_list", "agents", 400), reply(1, context=8600)], _files(tmp_path))
-    assert next(item.tokens_est for item in plain.builtin if item.key == "agent_list") == 100
+    items = _items(tmp_path, _half(harness(0.2, "agent_list", "agents", 400)))
+    assert items["agent_listing"].tokens_est == 200
+    plain = _items(tmp_path, [harness(0.2, "agent_list", "agents", 400), reply(1, context=8600)])
+    assert plain["agent_listing"].tokens_est == 100
 
 
 def test_a_subagents_task_prompt_is_sized_at_the_measured_scale(tmp_path: Path) -> None:

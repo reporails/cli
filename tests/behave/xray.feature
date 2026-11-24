@@ -338,11 +338,11 @@ Feature: ails xray serves a session's context window on the loopback address thr
     And the main agent's System prompt and tools show the sizes of its earlier request, not the reply's remainder
 
   @e2e @browser
-  Scenario: A measured row opens its own agent's figure and request
+  Scenario: An own-context item opens its own agent's figure and request
     Given a project with a session whose Claude Code recorded each request it made, with a subagent
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
-    And each agent's measured System prompt row opens that agent's own figure and request
+    And each agent's System prompt item opens that agent's own figure and request
 
   @e2e @browser
   Scenario: A built-in agent type shows the system prompt and tools its launch recorded
@@ -350,7 +350,7 @@ Feature: ails xray serves a session's context window on the loopback address thr
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
     And the general-purpose agent type's details show its recorded system prompt and its tools with launch counts
-    And the system prompt route returns that text only for a type the session launched
+    And the context text route returns that text only for an agent the session recorded a request for
 
   @e2e @browser
   Scenario: The main agent's System prompt details show the text its recorded request was sent with

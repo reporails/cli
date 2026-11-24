@@ -8,9 +8,10 @@ from typing import Literal, TypeGuard, get_args
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
-from reporails_cli.core.platform.dto.events import HarnessKind, HookDecision
+from reporails_cli.core.platform.dto.events import HookDecision
 from reporails_cli.core.platform.dto.exclusion import FileLeftOut
-from reporails_cli.core.platform.dto.xray_graph import ContextKey, SourceKind
+from reporails_cli.core.platform.dto.xray_graph import SourceKind
+from reporails_cli.core.platform.dto.xray_own import ContextKey, OwnBasis, Visibility
 
 ArtifactKind = Literal["instructions", "rule", "memory", "skill", "agent", "command", "hook"]
 
@@ -26,7 +27,6 @@ MemoryRole = Literal["index", "item"]
 
 
 # Whether a built-in context item's text can be read in the transcript.
-Visibility = Literal["hidden", "partial", "shown"]
 
 
 # Where an MCP server stands in a session: connected, still connecting, failed to connect, turned off for the
@@ -103,34 +103,6 @@ class FindingTally:
 
 def _tally_json(tally: FindingTally | None) -> JsonValue:
     return None if tally is None else tally.to_json()
-
-
-@dataclass(frozen=True)
-class XrayBuiltin:
-    """One item of the coding agent's own context: its key, label, estimated size, a note on what it holds, whether
-    its text can be read in the transcript and whether its size carries what the estimates leave of the total. For
-    the system prompt, `system_shapes` is how many different system prompts the main agent's requests were sent
-    with (0 when no request was recorded)."""
-
-    key: HarnessKind
-    label: str
-    tokens_est: int
-    note: str | None
-    visible: Visibility
-    remainder: bool
-    system_shapes: int = 0
-
-    def to_json(self) -> JsonObject:
-        """The item as a JSON object."""
-        return {
-            "key": self.key,
-            "label": self.label,
-            "tokens_est": self.tokens_est,
-            "note": self.note,
-            "visible": self.visible,
-            "remainder": self.remainder,
-            "system_shapes": self.system_shapes,
-        }
 
 
 @dataclass(frozen=True)
@@ -233,11 +205,9 @@ class SourceEntry(SourceFacts):
 
 @dataclass(frozen=True)
 class AgentLaunch:
-    """What the launches of an agent type were sent with: the system prompt size in tokens of the first that recorded
-    a request (None when none did), each tool the launches were sent with and how many launches had it, and the
-    settings they were set up with."""
+    """What the launches of an agent type were sent with: each tool the launches were sent with and how many launches
+    had it, and the settings they were set up with."""
 
-    system_tokens_est: int | None
     tools: tuple[tuple[str, int], ...]
     # What the launches were set up with, as (label, value) lines the page lists as written.
     settings: tuple[tuple[str, str], ...] = ()
@@ -302,7 +272,6 @@ class XraySource(SourceFacts):
             "agent_type": self.agent_type,
             "builtin": self.builtin,
             "memory_role": self.memory_role,
-            "system_tokens_est": self.launch.system_tokens_est if self.launch else None,
             "launch_settings": [[label, value] for label, value in (self.launch.settings if self.launch else ())],
             "mcp": self.detail.to_json() if isinstance(self.detail, McpDetail) else None,
             "hook": self.detail.to_json() if isinstance(self.detail, HookDetail) else None,
@@ -352,31 +321,33 @@ class XrayPeek:
 
 @dataclass(frozen=True)
 class XrayBuiltinInfo:
-    """One built-in context item of the coding agent: its harness kind, label, whether its text can be read in the
-    transcript and a note template filled from the item's count (`{count}`); a template that needs a count the
-    item lacks gives no note; `note_once` words a count of one."""
+    """One item of the coding agent's own context: its row key, label, whether its text can be read in the
+    transcript and what it holds, as a template filled from the item's count (`{count}`); a template that needs a
+    count the item lacks gives no description; `note_once` words a count of one. A template with `{kinds}` takes the
+    names the item lists, and `note_none` words the item when it has none."""
 
-    key: HarnessKind
+    key: ContextKey
     label: str
     visible: Visibility
     note: str | None
     note_once: str | None = None
-    # The note when the size is measured from the recorded request.
-    measured_note: str | None = None
-    # The note when the size is measured from the latest complete request before the reply; `{request}` is its id.
-    earlier_note: str | None = None
+    note_none: str | None = None
+
+
+@dataclass(frozen=True)
+class XrayBasisLabel:
+    """The words the coding agent uses for one basis of the size of its own context."""
+
+    key: OwnBasis
+    label: str
 
 
 @dataclass(frozen=True)
 class XrayContextText:
     """The label and reason the coding agent words one kind of "in context" row with; a reason may hold the
-    fire count as `{count}`; `reason_once` words a count of one; `reason_earlier` words a row measured from the
-    latest complete request before its reply; a reason with `{kinds}` takes the names the row lists, and
-    `reason_none` words the row when it has none."""
+    fire count as `{count}`, and `reason_once` words a count of one."""
 
     key: ContextKey
     label: str
     reason: str
     reason_once: str | None = None
-    reason_earlier: str | None = None
-    reason_none: str | None = None

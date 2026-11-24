@@ -129,8 +129,9 @@ from reporails_cli.core.eventbus.adapters.claude_hooks import (
 from reporails_cli.core.eventbus.adapters.claude_launch import subagent_launch
 from reporails_cli.core.eventbus.adapters.claude_requests import (
     feed_row,
-    request_shape_hash,
-    shape_system_text,
+    request_blocks,
+    request_shape_ref,
+    shape_text,
 )
 from reporails_cli.core.eventbus.adapters.claude_rows import (
     attached_paths,
@@ -160,6 +161,7 @@ from reporails_cli.core.platform.dto.events import (
     HarnessAttachment,
     HarnessEntry,
     InstructionLoad,
+    MessageText,
     PromptEntry,
     ReplyText,
     RequestChain,
@@ -270,14 +272,17 @@ class ClaudeTranscriptAdapter:
             raise PayloadRefused("subagent first row holds no text content")
         return text
 
-    def resolve_request_shape(self, row: JsonObject) -> str | None:
-        """The hash of the request shape an `api-request` row names; None for any other row."""
-        return request_shape_hash(row)
+    def resolve_request(self, row: JsonObject) -> tuple[str, str] | None:
+        """The id and the request shape hash of an `api-request` row; None for any other row."""
+        return request_shape_ref(row)
 
-    def resolve_system(self, row: JsonObject, shape_hash: str) -> str | None:
-        """The system prompt of the `api-request-shape` row recorded under `shape_hash`, for the route that shows
-        it; None for any other row."""
-        return shape_system_text(row, shape_hash)
+    def resolve_shape_text(self, row: JsonObject, shape_hash: str, item: str) -> str | None:
+        """The system prompt or tool definitions of the shape row recorded under `shape_hash`; None for any other."""
+        return shape_text(row, shape_hash, item)
+
+    def request_blocks(self, chain: RequestChain) -> list[MessageText]:
+        """The listings recorded before the request `chain` last took, then its notes and thinking in order."""
+        return request_blocks(chain)
 
     def holds_call(self, row: JsonObject, use_id: str) -> bool:
         """Whether `row` is an assistant row holding the tool call `use_id`."""

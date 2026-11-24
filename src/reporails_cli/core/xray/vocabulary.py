@@ -19,7 +19,7 @@ from reporails_cli.core.platform.dto.xray import (
     XrayTriggerInfo,
 )
 from reporails_cli.core.platform.dto.xray_composition import REMAINDER_KEY, XrayCompositionLabel
-from reporails_cli.core.platform.dto.xray_sources import XrayBuiltinInfo, XrayContextText
+from reporails_cli.core.platform.dto.xray_sources import XrayBasisLabel, XrayBuiltinInfo, XrayContextText
 
 # Colours handed to the agent types found on disk, in order, cycling.
 DISK_TYPE_COLOURS = ("#7FD4A8", "#E8C27A", "#5FC4E8", "#C9A0F0", "#D4B483", "#8FB8A8", "#E89AB8", "#B8C77F")
@@ -85,19 +85,11 @@ _CLAUDE_COMPOSITION = (
 )
 
 
-# The coding agent's own context in display order; the system prompt and the tool definitions are not in the
-# transcript, so each is sized from the request Claude Code recorded, else the system prompt is what the reply total
-# leaves.
+# The coding agent's own context in display order: what each item holds, and whether its text can be read in the
+# transcript.
 _CLAUDE_BUILTIN = (
     XrayBuiltinInfo(
-        "system_prompt",
-        "System prompt",
-        "hidden",
-        "Not in the transcript; its size is what the reply total leaves.",
-        measured_note="Measured from the request Claude Code recorded.",
-        earlier_note=(
-            "Measured from request {request}, the latest complete request Claude Code recorded before this reply."
-        ),
+        "system_prompt", "System prompt", "hidden", "The instructions Claude Code sends before the conversation"
     ),
     XrayBuiltinInfo(
         "tool_definitions",
@@ -105,81 +97,43 @@ _CLAUDE_BUILTIN = (
         "hidden",
         "{count} tools sent with every request",
         "{count} tool sent with every request",
-        earlier_note=(
-            "Tools sent with every request, measured from request {request}, the latest complete request Claude Code "
-            "recorded before this reply."
-        ),
     ),
     XrayBuiltinInfo(
-        "deferred_tools",
-        "Deferred tools",
-        "partial",
-        "{count} tools loaded on demand",
-        "{count} tool loaded on demand",
+        "agent_listing", "Agent listing", "shown", "{count} agent descriptions", "{count} agent description"
     ),
-    XrayBuiltinInfo("agent_list", "Agent listing", "shown", "{count} agent descriptions", "{count} agent description"),
-    XrayBuiltinInfo("skill_list", "Skills listing", "shown", "{count} skill descriptions", "{count} skill description"),
+    XrayBuiltinInfo(
+        "skill_listing", "Skills listing", "shown", "{count} skill descriptions", "{count} skill description"
+    ),
+    XrayBuiltinInfo(
+        "deferred_tools", "Deferred tools", "partial", "{count} tools loaded on demand", "{count} tool loaded on demand"
+    ),
     XrayBuiltinInfo("session_context", "Session context", "shown", "Working folder, git state and date"),
+    XrayBuiltinInfo("thinking", "Thinking", "partial", "The agent's earlier thinking sent back"),
+    XrayBuiltinInfo(
+        "harness_other",
+        "Other Claude Code messages",
+        "partial",
+        "Claude Code messages not listed above: {kinds}",
+        note_none="Claude Code messages not listed above",
+    ),
+)
+
+_CLAUDE_BASIS = (
+    XrayBasisLabel("measured", "measured"),
+    XrayBasisLabel("measured_earlier", "measured · earlier request"),
+    XrayBasisLabel("estimate", "estimate"),
 )
 
 _CLAUDE_CONTEXT_TEXTS = (
     XrayContextText("task", "Task prompt", "written by the parent"),
     XrayContextText("hooks", "Hook", "fired {count} times", "fired once"),
-    XrayContextText("builtin", "System prompt, tools and listings", "from the coding agent"),
+    XrayContextText("builtin", "Claude Code's own context", "sent by Claude Code itself, not from your files"),
     XrayContextText(
         "rest",
         "Conversation and tool results",
         "the remainder of the exact total: conversation, tool results and anything not itemised",
     ),
-    XrayContextText(
-        "system_prompt",
-        "System prompt",
-        "a measured share of the request Claude Code recorded, sent every turn",
-        reason_earlier=(
-            "a measured share of the latest complete request Claude Code recorded before this reply, sent every turn"
-        ),
-    ),
-    XrayContextText(
-        "tool_definitions",
-        "Tool definitions",
-        "a measured share of the request Claude Code recorded: the tools sent every turn",
-        reason_earlier=(
-            "a measured share of the latest complete request Claude Code recorded before this reply: "
-            "the tools sent every turn"
-        ),
-    ),
     XrayContextText("tool_io", "Tool calls and results", "a measured share of the request Claude Code recorded"),
-    XrayContextText(
-        "skill_listing",
-        "Skills listing",
-        "the listing's size at the request's tokens per character",
-    ),
-    XrayContextText(
-        "agent_listing",
-        "Agent listing",
-        "a measured share of the request Claude Code recorded: the agent types listed to the model",
-    ),
-    XrayContextText(
-        "deferred_tools",
-        "Deferred tools",
-        "a measured share of the request Claude Code recorded: the names of the tools loaded on demand",
-    ),
-    XrayContextText(
-        "session_context",
-        "Session context",
-        "a measured share of the request Claude Code recorded: the working folder, git state and date",
-    ),
-    XrayContextText(
-        "thinking",
-        "Thinking",
-        "a measured share of the request Claude Code recorded: the agent's earlier thinking sent back",
-    ),
-    XrayContextText(
-        "harness_other",
-        "Other Claude Code messages",
-        "a measured share of the request Claude Code recorded: its own messages not itemised above ({kinds})",
-        reason_none="a measured share of the request Claude Code recorded: its own messages not itemised above",
-    ),
     XrayContextText(
         "conversation",
         "Conversation",
@@ -211,7 +165,7 @@ def _claude(disk_types: Sequence[str]) -> AdapterVocabulary:
         fact_notes=_CLAUDE_FACT_NOTES,
         composition=XrayCompositionVocabulary(_CLAUDE_COMPOSITION, REMAINDER_KEY),
         burst=_CLAUDE_BURST,
-        context=XrayContextVocabulary(_CLAUDE_BUILTIN, _CLAUDE_CONTEXT_TEXTS),
+        context=XrayContextVocabulary(_CLAUDE_BUILTIN, _CLAUDE_CONTEXT_TEXTS, _CLAUDE_BASIS),
     )
 
 

@@ -1,91 +1,150 @@
-"""The coding agent's own built-in context items: the system prompt, the tool definitions and the harness items
-whose sizes sit in the remainder category of its replies, each sized from the recorded request's tokens per
-character when a request sizes the peak reply."""
+"""The coding agent's own context as one group: the system prompt, the tool definitions, the listings, the
+thinking and the other messages the coding agent sent, split off the rows of an agent's "in context" list."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from reporails_cli.core.platform.dto.events import EventRecord, HarnessKind, is_note_kind
+from reporails_cli.core.platform.dto.events import HarnessKind
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary, XrayHarnessItem
-from reporails_cli.core.platform.dto.xray_build import ProducedNode
-from reporails_cli.core.platform.dto.xray_composition import (
-    COMPOSITION_KEYS,
-    REMAINDER_KEY,
-    ReplyComposition,
-    RequestMeasure,
-    XrayComposition,
+from reporails_cli.core.platform.dto.xray_build import AgentRecords, Frame
+from reporails_cli.core.platform.dto.xray_composition import COMPOSITION_KEYS, ReplyComposition, RequestMeasure
+from reporails_cli.core.platform.dto.xray_graph import XrayContextRow
+from reporails_cli.core.platform.dto.xray_own import (
+    LISTING_KEYS,
+    OWN_KEYS,
+    ContextKey,
+    OwnBasis,
+    XrayOwnContext,
+    XrayOwnItem,
+    XrayRowMeasure,
 )
-from reporails_cli.core.platform.dto.xray_sources import XrayBuiltin, XrayBuiltinInfo
-from reporails_cli.core.xray.derive import build_harness, replies_of
-from reporails_cli.core.xray.graph.composition import count_text, share, tokens_at
+from reporails_cli.core.platform.dto.xray_sources import XrayBuiltinInfo
+from reporails_cli.core.xray.derive import build_harness, frame_time, replies_of
+from reporails_cli.core.xray.graph.composition import count_text, listing_chars, tokens_at
 
-# The one harness kind a composition estimates as its own category; every other builtin kind is inside the remainder.
-_LISTED_KIND: HarnessKind = "skill_list"
+# The harness kind each listed item of the coding agent's own context is recorded as.
+LISTED: dict[ContextKey, HarnessKind] = {
+    "agent_listing": "agent_list",
+    "skill_listing": "skill_list",
+    "deferred_tools": "deferred_tools",
+    "session_context": "session_context",
+}
 
-
-def _in_remainder(kind: HarnessKind) -> bool:
-    """Whether a harness item's size sits in the remainder category: every kind except the skills listing and the
-    hook notes, which have categories of their own, and the system prompt itself."""
-    return kind not in (_LISTED_KIND, "system_prompt") and not is_note_kind(kind)
-
-
-def _main_system_shapes(records: Sequence[EventRecord]) -> int:
-    """How many different system prompts the main agent's recorded requests were sent with."""
-    return len({record.request.system_digest for record in records if record.subagent_id is None and record.request})
+Share = tuple[ContextKey, int, XrayRowMeasure | None]
 
 
-def _estimated_system(composition: XrayComposition, held: Mapping[HarnessKind, XrayHarnessItem]) -> int | None:
-    """The system prompt's estimated size: what the peak reply's remainder category holds after the other harness
-    items inside it, never below 0; None when no reply was recorded."""
-    if composition.peak is None:
-        return None
-    reply = composition.replies[composition.peak]
-    inside = sum((item.tokens_est or 0) for kind, item in held.items() if _in_remainder(kind))
-    return max(0, reply.parts[COMPOSITION_KEYS.index(REMAINDER_KEY)] - inside)
+def _unsized_kinds(own: AgentRecords, frame: Frame, reply_t: float) -> list[str]:
+    """The names of the attachment kinds that only named themselves by `reply_t`, in the order first seen."""
+    found: dict[str, None] = {}
+    for record in own.records:
+        entry = record.harness
+        moment = frame_time(frame, record)
+        if record.event != "harness" or entry is None or entry.kind != "unsized":
+            continue
+        if moment is not None and moment <= reply_t:
+            found[entry.label.replace("_", " ")] = None
+    return list(found)
 
 
-def _sized_note(own: str | None, info: XrayBuiltinInfo, reply: ReplyComposition, sized: RequestMeasure) -> str | None:
-    """The note of a size measured from `sized`: `own` when it is the reply's own request, else the item's note that
-    names the earlier request it was measured from."""
-    if reply.measured or info.earlier_note is None:
-        return own
-    return info.earlier_note.replace("{request}", sized.size.request_id)
+def _described(info: XrayBuiltinInfo, count: int | None, kinds: Sequence[str]) -> str | None:
+    """What an item holds, in the vocabulary's words for its count, or for the kinds of message it lists."""
+    if info.note_none is None:
+        return count_text(info.note, info.note_once, count)
+    return info.note.format(kinds=", ".join(kinds)) if kinds and info.note else info.note_none
 
 
-def builtin_items(
-    main: ProducedNode, records: Sequence[EventRecord], vocabulary: AdapterVocabulary
-) -> tuple[XrayBuiltin, ...]:
-    """The coding agent's own context in the vocabulary's order. A harness item's size is read from its records: its
-    characters at the tokens per character of the request the peak reply is sized from, or four characters to a
-    token when no request sizes it.
-    The system prompt and the tool definitions are in no record: they are shares of the request the main agent's peak
-    reply is sized from (its own recorded request, else the latest complete one before it, which the note names);
-    with none, the system prompt is what the main agent's remainder category holds at its peak reply after the
-    other harness items inside that category, never below 0, and there is no tool definitions item."""
-    composition = main.detail.usage.composition
-    held = {item.kind: item for item in build_harness(records, replies_of(records)) or ()}
-    reply = None if composition.peak is None else composition.replies[composition.peak]
-    sized = None if reply is None else reply.sized
-    system = _estimated_system(composition, held) if sized is None else None
-    shapes = _main_system_shapes(records)
-    found: list[XrayBuiltin] = []
-    for info in vocabulary.context.builtin:
-        item = held.get(info.key)
-        if info.key == "system_prompt" and reply is not None and sized is not None:
-            note = _sized_note(info.measured_note, info, reply, sized) or info.note
-            tokens = share(sized.size.system_chars, sized.scale)
-            found.append(XrayBuiltin(info.key, info.label, tokens, note, info.visible, False, shapes))
-        elif info.key == "system_prompt":
-            if system is not None:
-                found.append(XrayBuiltin(info.key, info.label, system, info.note, info.visible, True, shapes))
-        elif info.key == "tool_definitions":
-            if reply is not None and sized is not None:
-                counted = count_text(info.note, info.note_once, sized.size.tool_count)
-                tokens = share(sized.size.tools_chars, sized.scale)
-                note = _sized_note(counted, info, reply, sized)
-                found.append(XrayBuiltin(info.key, info.label, tokens, note, info.visible, False))
-        elif item is not None:
-            note = count_text(info.note, info.note_once, item.count)
-            found.append(XrayBuiltin(info.key, info.label, tokens_at(item.chars, sized), note, info.visible, False))
-    return tuple(found)
+def _count(key: ContextKey, sized: RequestMeasure | None, held: Mapping[HarnessKind, XrayHarnessItem]) -> int | None:
+    """How many things an item lists: the tools of the request, or the entries of its recorded listing."""
+    if key == "tool_definitions":
+        return None if sized is None else sized.size.tool_count
+    item = held.get(LISTED[key]) if key in LISTED else None
+    return None if item is None else item.count
+
+
+def _basis(reply: ReplyComposition) -> OwnBasis:
+    if reply.measure is not None:
+        return "measured"
+    return "estimate" if reply.sized is None else "measured_earlier"
+
+
+def _estimated(group: XrayContextRow | None, own: AgentRecords, frame: Frame, reply: ReplyComposition) -> list[Share]:
+    """The items of a context no recorded request sizes: each listing at four characters to a token, the skills
+    listing from the reply's categories, and the system prompt as what the group row leaves of them, never below
+    0."""
+    listed: list[Share] = []
+    for key in LISTING_KEYS:
+        chars = listing_chars(own, frame, LISTED[key], reply.t)
+        if chars > 0:
+            listed.append((key, tokens_at(chars, None), None))
+    skills = reply.parts[COMPOSITION_KEYS.index("skill_listing")]
+    if skills > 0:
+        listed.append(("skill_listing", skills, None))
+    system = max(0, (0 if group is None else group.tokens_est) - sum(tokens for _, tokens, _ in listed))
+    return [("system_prompt", system, None), *listed]
+
+
+def _items(
+    shares: list[Share],
+    infos: Mapping[ContextKey, XrayBuiltinInfo],
+    own: AgentRecords,
+    frame: Frame,
+    reply: ReplyComposition,
+) -> tuple[XrayOwnItem, ...]:
+    """The items of the own context, one per share in display order, each with what it holds and whether a recorded
+    request holds its text."""
+    sized = reply.sized
+    held = {item.kind: item for item in build_harness(own.records, replies_of(own.records)) or ()}
+    kinds = _unsized_kinds(own, frame, reply.t)
+    shapes = len({record.request.system_digest for record in own.records if record.request})
+    return tuple(
+        XrayOwnItem(
+            key,
+            infos[key].label,
+            _described(infos[key], _count(key, sized, held), kinds),
+            tokens,
+            measure,
+            infos[key].visible,
+            sized is not None,
+            shapes if key == "system_prompt" else 0,
+        )
+        for key, tokens, measure in sorted(shares, key=lambda share: OWN_KEYS.index(share[0]))
+    )
+
+
+def own_context(
+    tail: Sequence[XrayContextRow],
+    own: AgentRecords,
+    frame: Frame,
+    reply: ReplyComposition,
+    vocabulary: AdapterVocabulary,
+) -> tuple[XrayOwnContext, list[XrayContextRow]]:
+    """The coding agent's own context taken out of `tail`, the rows after the opening ones, and the rows that stay.
+    A reply whose request was recorded (its own, else the latest complete one before it) holds the items as
+    measured shares of that request; with none, the group's single row is split into items estimated from the
+    recorded listings. The group's size is the sum of its items, or the group row's size for an estimate."""
+    infos = {item.key: item for item in vocabulary.context.builtin}
+    text = next(item for item in vocabulary.context.texts if item.key == "builtin")
+    group = next((row for row in tail if row.key == "builtin"), None)
+    taken = {row.key: row for row in tail if row.key in OWN_KEYS}
+    kept = [row for row in tail if row.key not in OWN_KEYS and row.key != "builtin"]
+    sized = reply.sized
+    shares: list[Share] = (
+        _estimated(group, own, frame, reply)
+        if sized is None
+        else [(key, taken[key].tokens_est, taken[key].measure) for key in OWN_KEYS if key in taken]
+    )
+    items = _items(shares, infos, own, frame, reply)
+    total = sum(item.tokens_est for item in items) if sized is not None or group is None else group.tokens_est
+    return (
+        XrayOwnContext(
+            text.label,
+            text.reason,
+            total,
+            _basis(reply),
+            None if sized is None else sized.size.request_id,
+            None if sized is None else sized.scale,
+            items,
+        ),
+        kept,
+    )

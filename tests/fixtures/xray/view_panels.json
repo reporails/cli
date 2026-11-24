@@ -268,6 +268,22 @@
    "window_s": 90.0,
    "window_share": 0.013,
    "min_size": 3
+  },
+  "context": {
+   "basis": [
+    {
+     "key": "measured",
+     "label": "measured"
+    },
+    {
+     "key": "measured_earlier",
+     "label": "measured · earlier request"
+    },
+    {
+     "key": "estimate",
+     "label": "estimate"
+    }
+   ]
   }
  },
  "nodes": [
@@ -810,16 +826,6 @@
        "findings": null
       },
       {
-       "key": "builtin",
-       "source": null,
-       "kind": null,
-       "label": "System prompt, tools and listings",
-       "reason": "from the coding agent",
-       "tokens_est": 8000,
-       "t": null,
-       "findings": null
-      },
-      {
        "key": "rest",
        "source": null,
        "kind": null,
@@ -832,7 +838,37 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 8000,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": [
+       {
+        "key": "system_prompt",
+        "label": "System prompt",
+        "description": "The instructions Claude Code sends before the conversation",
+        "tokens_est": 2900,
+        "measure": null,
+        "visible": "hidden",
+        "has_text": false,
+        "shapes": 0
+       },
+       {
+        "key": "skill_listing",
+        "label": "Skills listing",
+        "description": "49 skill descriptions",
+        "tokens_est": 5100,
+        "measure": null,
+        "visible": "shown",
+        "has_text": false,
+        "shapes": 0
+       }
+      ]
+     }
     }
    },
    "child_sources": {
@@ -1238,16 +1274,6 @@
        "findings": null
       },
       {
-       "key": "builtin",
-       "source": null,
-       "kind": null,
-       "label": "System prompt, tools and listings",
-       "reason": "from the coding agent",
-       "tokens_est": 8000,
-       "t": null,
-       "findings": null
-      },
-      {
        "key": "rest",
        "source": null,
        "kind": null,
@@ -1260,7 +1286,27 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 8000,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": [
+       {
+        "key": "system_prompt",
+        "label": "System prompt",
+        "description": "The instructions Claude Code sends before the conversation",
+        "tokens_est": 8000,
+        "measure": null,
+        "visible": "hidden",
+        "has_text": false,
+        "shapes": 0
+       }
+      ]
+     }
     }
    },
    "child_sources": {},
@@ -1656,16 +1702,6 @@
        "findings": null
       },
       {
-       "key": "builtin",
-       "source": null,
-       "kind": null,
-       "label": "System prompt, tools and listings",
-       "reason": "from the coding agent",
-       "tokens_est": 8000,
-       "t": null,
-       "findings": null
-      },
-      {
        "key": "rest",
        "source": null,
        "kind": null,
@@ -1678,7 +1714,27 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 8000,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": [
+       {
+        "key": "system_prompt",
+        "label": "System prompt",
+        "description": "The instructions Claude Code sends before the conversation",
+        "tokens_est": 8000,
+        "measure": null,
+        "visible": "hidden",
+        "has_text": false,
+        "shapes": 0
+       }
+      ]
+     }
     }
    },
    "child_sources": {},
@@ -2072,16 +2128,6 @@
        "findings": 2
       },
       {
-       "key": "builtin",
-       "source": null,
-       "kind": null,
-       "label": "System prompt, tools and listings",
-       "reason": "from the coding agent",
-       "tokens_est": 8000,
-       "t": null,
-       "findings": null
-      },
-      {
        "key": "rest",
        "source": null,
        "kind": null,
@@ -2094,7 +2140,27 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 8000,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": [
+       {
+        "key": "system_prompt",
+        "label": "System prompt",
+        "description": "The instructions Claude Code sends before the conversation",
+        "tokens_est": 8000,
+        "measure": null,
+        "visible": "hidden",
+        "has_text": false,
+        "shapes": 0
+       }
+      ]
+     }
     }
    },
    "child_sources": {},
@@ -2488,16 +2554,6 @@
        "findings": 2
       },
       {
-       "key": "builtin",
-       "source": null,
-       "kind": null,
-       "label": "System prompt, tools and listings",
-       "reason": "from the coding agent",
-       "tokens_est": 8000,
-       "t": null,
-       "findings": null
-      },
-      {
        "key": "rest",
        "source": null,
        "kind": null,
@@ -2510,7 +2566,27 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 8000,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": [
+       {
+        "key": "system_prompt",
+        "label": "System prompt",
+        "description": "The instructions Claude Code sends before the conversation",
+        "tokens_est": 8000,
+        "measure": null,
+        "visible": "hidden",
+        "has_text": false,
+        "shapes": 0
+       }
+      ]
+     }
     }
    },
    "child_sources": {},
@@ -2902,16 +2978,6 @@
        "findings": null
       },
       {
-       "key": "builtin",
-       "source": null,
-       "kind": null,
-       "label": "System prompt, tools and listings",
-       "reason": "from the coding agent",
-       "tokens_est": 8000,
-       "t": null,
-       "findings": null
-      },
-      {
        "key": "rest",
        "source": null,
        "kind": null,
@@ -2924,7 +2990,27 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 8000,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": [
+       {
+        "key": "system_prompt",
+        "label": "System prompt",
+        "description": "The instructions Claude Code sends before the conversation",
+        "tokens_est": 8000,
+        "measure": null,
+        "visible": "hidden",
+        "has_text": false,
+        "shapes": 0
+       }
+      ]
+     }
     }
    },
    "child_sources": {
@@ -3305,16 +3391,6 @@
        "findings": null
       },
       {
-       "key": "builtin",
-       "source": null,
-       "kind": null,
-       "label": "System prompt, tools and listings",
-       "reason": "from the coding agent",
-       "tokens_est": 8000,
-       "t": null,
-       "findings": null
-      },
-      {
        "key": "rest",
        "source": null,
        "kind": null,
@@ -3327,7 +3403,27 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 8000,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": [
+       {
+        "key": "system_prompt",
+        "label": "System prompt",
+        "description": "The instructions Claude Code sends before the conversation",
+        "tokens_est": 8000,
+        "measure": null,
+        "visible": "hidden",
+        "has_text": false,
+        "shapes": 0
+       }
+      ]
+     }
     }
    },
    "child_sources": {
@@ -3688,16 +3784,6 @@
        "findings": null
       },
       {
-       "key": "builtin",
-       "source": null,
-       "kind": null,
-       "label": "System prompt, tools and listings",
-       "reason": "from the coding agent",
-       "tokens_est": 8000,
-       "t": null,
-       "findings": null
-      },
-      {
        "key": "rest",
        "source": null,
        "kind": null,
@@ -3710,7 +3796,27 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 8000,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": [
+       {
+        "key": "system_prompt",
+        "label": "System prompt",
+        "description": "The instructions Claude Code sends before the conversation",
+        "tokens_est": 8000,
+        "measure": null,
+        "visible": "hidden",
+        "has_text": false,
+        "shapes": 0
+       }
+      ]
+     }
     }
    },
    "child_sources": {},
@@ -4094,16 +4200,6 @@
        "findings": null
       },
       {
-       "key": "builtin",
-       "source": null,
-       "kind": null,
-       "label": "System prompt, tools and listings",
-       "reason": "from the coding agent",
-       "tokens_est": 8000,
-       "t": null,
-       "findings": null
-      },
-      {
        "key": "rest",
        "source": null,
        "kind": null,
@@ -4116,7 +4212,27 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 8000,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": [
+       {
+        "key": "system_prompt",
+        "label": "System prompt",
+        "description": "The instructions Claude Code sends before the conversation",
+        "tokens_est": 8000,
+        "measure": null,
+        "visible": "hidden",
+        "has_text": false,
+        "shapes": 0
+       }
+      ]
+     }
     }
    },
    "child_sources": {},
@@ -4500,16 +4616,6 @@
        "findings": null
       },
       {
-       "key": "builtin",
-       "source": null,
-       "kind": null,
-       "label": "System prompt, tools and listings",
-       "reason": "from the coding agent",
-       "tokens_est": 8000,
-       "t": null,
-       "findings": null
-      },
-      {
        "key": "rest",
        "source": null,
        "kind": null,
@@ -4522,7 +4628,27 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 8000,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": [
+       {
+        "key": "system_prompt",
+        "label": "System prompt",
+        "description": "The instructions Claude Code sends before the conversation",
+        "tokens_est": 8000,
+        "measure": null,
+        "visible": "hidden",
+        "has_text": false,
+        "shapes": 0
+       }
+      ]
+     }
     }
    },
    "child_sources": {},
@@ -4900,16 +5026,6 @@
        "findings": null
       },
       {
-       "key": "builtin",
-       "source": null,
-       "kind": null,
-       "label": "System prompt, tools and listings",
-       "reason": "from the coding agent",
-       "tokens_est": 8000,
-       "t": null,
-       "findings": null
-      },
-      {
        "key": "rest",
        "source": null,
        "kind": null,
@@ -4922,7 +5038,27 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 8000,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": [
+       {
+        "key": "system_prompt",
+        "label": "System prompt",
+        "description": "The instructions Claude Code sends before the conversation",
+        "tokens_est": 8000,
+        "measure": null,
+        "visible": "hidden",
+        "has_text": false,
+        "shapes": 0
+       }
+      ]
+     }
     }
    },
    "child_sources": {},
@@ -5316,16 +5452,6 @@
        "findings": 2
       },
       {
-       "key": "builtin",
-       "source": null,
-       "kind": null,
-       "label": "System prompt, tools and listings",
-       "reason": "from the coding agent",
-       "tokens_est": 8000,
-       "t": null,
-       "findings": null
-      },
-      {
        "key": "rest",
        "source": null,
        "kind": null,
@@ -5338,7 +5464,27 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 8000,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": [
+       {
+        "key": "system_prompt",
+        "label": "System prompt",
+        "description": "The instructions Claude Code sends before the conversation",
+        "tokens_est": 8000,
+        "measure": null,
+        "visible": "hidden",
+        "has_text": false,
+        "shapes": 0
+       }
+      ]
+     }
     }
    },
    "child_sources": {},
@@ -5732,16 +5878,6 @@
        "findings": 2
       },
       {
-       "key": "builtin",
-       "source": null,
-       "kind": null,
-       "label": "System prompt, tools and listings",
-       "reason": "from the coding agent",
-       "tokens_est": 8000,
-       "t": null,
-       "findings": null
-      },
-      {
        "key": "rest",
        "source": null,
        "kind": null,
@@ -5754,7 +5890,27 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 8000,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": [
+       {
+        "key": "system_prompt",
+        "label": "System prompt",
+        "description": "The instructions Claude Code sends before the conversation",
+        "tokens_est": 8000,
+        "measure": null,
+        "visible": "hidden",
+        "has_text": false,
+        "shapes": 0
+       }
+      ]
+     }
     }
    },
    "child_sources": {},
@@ -5886,7 +6042,10 @@
  "sources": [
   {
    "id": "CLAUDE.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5931,7 +6090,10 @@
   },
   {
    "id": "~/.claude/CLAUDE.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5969,7 +6131,10 @@
   },
   {
    "id": "packages/cli/CLAUDE.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -6000,7 +6165,10 @@
   },
   {
    "id": ".claude/rules/rules-engine.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -6036,7 +6204,10 @@
   },
   {
    "id": ".claude/rules/style.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -6069,7 +6240,10 @@
   },
   {
    "id": ".claude/skills/orient/SKILL.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -6095,7 +6269,10 @@
   },
   {
    "id": ".claude/skills/agents-sdk/SKILL.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -6121,7 +6298,10 @@
   },
   {
    "id": ".claude/skills/cloudflare/SKILL.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -6145,7 +6325,10 @@
   },
   {
    "id": "~/.claude/projects/-work-demo/memory/MEMORY.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -6178,7 +6361,10 @@
   },
   {
    "id": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -6202,7 +6388,10 @@
   },
   {
    "id": "mcp:docs-server",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -6236,7 +6425,10 @@
   },
   {
    "id": "hook:PreToolUse:Edit",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -6262,7 +6454,10 @@
   },
   {
    "id": ".claude/agents/test-runner.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -6296,7 +6491,10 @@
   },
   {
    "id": ".claude/agents/reviewer.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -6330,7 +6528,10 @@
   },
   {
    "id": "builtin-agent:Explore",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -10535,24 +10736,6 @@
   "unit": "usd_per_mtok",
   "source_method": "A source's cost is the tokens it carried in each reply times that reply's input-side price per context token, summed over every reply."
  },
- "builtin": [
-  {
-   "key": "system_prompt",
-   "label": "System prompt",
-   "tokens_est": 2800,
-   "note": "Not in the transcript; its size is what the reply total leaves.",
-   "visible": "hidden",
-   "remainder": true
-  },
-  {
-   "key": "skill_list",
-   "label": "Skills listing",
-   "tokens_est": 5100,
-   "note": "49 skill descriptions",
-   "visible": "shown",
-   "remainder": false
-  }
- ],
  "session_cost": {
   "total_usd": 9.52,
   "unpriced": 0,

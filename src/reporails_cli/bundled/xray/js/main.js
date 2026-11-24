@@ -20,6 +20,8 @@ import { onRegister } from './components/nodes/index.js';
 const $ = s => document.querySelector(s);
 let ix = null, version = null, etag = null, inflight = false, changed = false, lastAgentHash = '#/agent/main', afterHash = null;
 const run = { busy: false, res: null, autoChecked: new Set() };
+// Whether each agent's own-context group is open: one setting for every agent, kept while another is selected.
+state.ownOpen = false;
 const opened = new Set();
 
 const env = () => { const focus = focusSource(ix, state); return { ix, state, tab: activeTab(state), focus, graphFocus: focus && state.layers[focus.kind] ? focus : null, text, opened, busy: run.busy, res: run.res }; };
@@ -144,6 +146,7 @@ const closePeek = () => { state.peek = null; };
 function openPeek(kind, id, from) {
   details.remember(calls.openerOf(from) || from);
   state.peek = { kind, id };
+  if (kind === 'builtin') state.ownOpen = true;
 }
 
 // Draws the Graph tab's agent when a "show in graph" link names one: its parents become the path, it becomes the selection.
@@ -194,6 +197,7 @@ document.addEventListener('click', e => {
   if (t.closest('[data-close-peek]')) { closePeek(); return render(); }
   const pin = t.closest('[data-pin]');
   if (pin) { state.pinned = pin.dataset.pin; closePeek(); return render(); }
+  if (t.closest('[data-own-group]')) { state.ownOpen = !state.ownOpen; return render(); }
   const peek = t.closest('[data-peek]');
   const want = peek && details.parsePeek(peek.dataset.peek);
   if (want) { openPeek(want.kind, want.id, peek); return render(); }

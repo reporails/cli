@@ -59,7 +59,6 @@ def test_launch_settings_show_when_no_launch_recorded_a_request() -> None:
     metas = {"a1": SubagentMeta(None, None, None, 1, None, False, True, "opus", False)}
     launch = launched_with(["a1"], {}, metas)
     assert launch is not None
-    assert launch.system_tokens_est is None
     assert ("Model asked for", "opus") in launch.settings
     assert launched_with(["a2"], {}, metas) is None
 

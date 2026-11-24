@@ -7,7 +7,6 @@ from collections.abc import Iterable, Sequence
 
 from reporails_cli.core.platform.dto.events import EventRecord, RequestSize, SubagentMeta
 from reporails_cli.core.platform.dto.xray_sources import AgentLaunch
-from reporails_cli.core.xray.derive import tokens_of
 
 
 def first_requests(records: Sequence[EventRecord]) -> dict[str, RequestSize]:
@@ -73,8 +72,7 @@ def first_launch(launch_ids: Iterable[str], first: dict[str, RequestSize]) -> st
 def launched_with(
     launch_ids: Iterable[str], first: dict[str, RequestSize], metas: dict[str, SubagentMeta]
 ) -> AgentLaunch | None:
-    """The system prompt size in tokens of the first launch (lowest id) that recorded a request (None when none
-    did), each tool the launches were sent with and how many launches had it, most launches first then by name, and
+    """Each tool the launches were sent with and how many launches had it, most launches first then by name, and
     the launch settings; None when no launch recorded a request or a launch setting."""
     ids = list(launch_ids)
     chosen = first_launch(ids, first)
@@ -82,7 +80,6 @@ def launched_with(
         return None
     counts = Counter(name for node_id in ids if node_id in first for name in set(first[node_id].tool_names))
     return AgentLaunch(
-        tokens_of(first[chosen].system_chars) if chosen is not None else None,
         tuple(sorted(counts.items(), key=lambda item: (-item[1], item[0]))),
         _settings(ids, first, metas),
     )

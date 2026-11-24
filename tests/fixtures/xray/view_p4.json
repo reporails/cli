@@ -253,6 +253,22 @@
    "window_s": 90.0,
    "window_share": 0.013,
    "min_size": 3
+  },
+  "context": {
+   "basis": [
+    {
+     "key": "measured",
+     "label": "measured"
+    },
+    {
+     "key": "measured_earlier",
+     "label": "measured · earlier request"
+    },
+    {
+     "key": "estimate",
+     "label": "estimate"
+    }
+   ]
   }
  },
  "nodes": [
@@ -737,7 +753,16 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 0,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": []
+     }
     }
    },
    "child_sources": {
@@ -1115,7 +1140,16 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 0,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": []
+     }
     }
    },
    "child_sources": {},
@@ -1473,7 +1507,16 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 0,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": []
+     }
     }
    },
    "child_sources": {},
@@ -1839,7 +1882,16 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 0,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": []
+     }
     }
    },
    "child_sources": {},
@@ -2205,7 +2257,16 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 0,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": []
+     }
     }
    },
    "child_sources": {},
@@ -2579,7 +2640,16 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 0,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": []
+     }
     }
    },
    "child_sources": {
@@ -2932,7 +3002,16 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 0,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": []
+     }
     }
    },
    "child_sources": {
@@ -3275,7 +3354,16 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 0,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": []
+     }
     }
    },
    "child_sources": {},
@@ -3641,7 +3729,16 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 0,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": []
+     }
     }
    },
    "child_sources": {},
@@ -4007,7 +4104,16 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 0,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": []
+     }
     }
    },
    "child_sources": {},
@@ -4367,7 +4473,16 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 0,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": []
+     }
     }
    },
    "child_sources": {},
@@ -4733,7 +4848,16 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 0,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": []
+     }
     }
    },
    "child_sources": {},
@@ -5099,7 +5223,16 @@
      ],
      "over": false,
      "measured": false,
-     "note": null
+     "note": null,
+     "own": {
+      "label": "Claude Code's own context",
+      "reason": "sent by Claude Code itself, not from your files",
+      "tokens_est": 0,
+      "basis": "estimate",
+      "request_id": null,
+      "tokens_per_char": null,
+      "rows": []
+     }
     }
    },
    "child_sources": {},
@@ -5231,7 +5364,10 @@
  "sources": [
   {
    "id": "CLAUDE.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5271,7 +5407,10 @@
   },
   {
    "id": "~/.claude/CLAUDE.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5304,7 +5443,10 @@
   },
   {
    "id": "packages/cli/CLAUDE.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5330,7 +5472,10 @@
   },
   {
    "id": ".claude/rules/rules-engine.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5359,7 +5504,10 @@
   },
   {
    "id": ".claude/rules/style.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5385,7 +5533,10 @@
   },
   {
    "id": ".claude/skills/orient/SKILL.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5406,7 +5557,10 @@
   },
   {
    "id": ".claude/skills/agents-sdk/SKILL.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5427,7 +5581,10 @@
   },
   {
    "id": ".claude/skills/cloudflare/SKILL.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5446,7 +5603,10 @@
   },
   {
    "id": "~/.claude/projects/-work-demo/memory/MEMORY.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5475,7 +5635,10 @@
   },
   {
    "id": "~/.claude/projects/-work-demo/memory/feedback_orphan.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5494,7 +5657,10 @@
   },
   {
    "id": "mcp:docs-server",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5518,7 +5684,10 @@
   },
   {
    "id": "hook:PreToolUse:Edit",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5539,7 +5708,10 @@
   },
   {
    "id": ".claude/agents/test-runner.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5568,7 +5740,10 @@
   },
   {
    "id": ".claude/agents/reviewer.md",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5597,7 +5772,10 @@
   },
   {
    "id": "hook:PostToolUse:Edit",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,
@@ -5618,7 +5796,10 @@
   },
   {
    "id": "hook:Stop",
-   "excluded": {"hits": [], "outside": null},
+   "excluded": {
+    "hits": [],
+    "outside": null
+   },
    "launch_settings": [],
    "launch_tools": [],
    "mcp": null,

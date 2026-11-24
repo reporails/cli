@@ -43,6 +43,14 @@ CALL_RESULT_CHARS = 4000
 register_transcript(ClaudeTranscriptAdapter())
 
 
+def adapter_for(agent: str) -> TranscriptAdapter:
+    """The transcript adapter registered for `agent`; raises `PayloadRefused` for an unknown agent."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        raise PayloadRefused(f"unknown agent: {agent}")
+    return adapter
+
+
 def session_transcript(project_root: Path, session_id: str) -> Path:
     """The transcript file of one session of the project."""
     return claude_project_dir(project_root) / f"{session_id}.jsonl"
@@ -89,8 +97,8 @@ def subagent_count(session_file: Path) -> int:
     return len(_files(session_file)) - 1
 
 
-def _main_rows(path: Path) -> Iterator[JsonObject]:
-    """The rows of the main transcript in order, from the head; an undecodable line is skipped."""
+def file_rows(path: Path) -> Iterator[JsonObject]:
+    """The rows of a transcript file in order, from the head; an undecodable line is skipped."""
     with contextlib.suppress(OSError), path.open("rb") as handle:
         for line in handle:
             with contextlib.suppress(ValueError):
@@ -103,7 +111,7 @@ def session_start(agent: str, session_file: Path) -> str | None:
     adapter = get_transcript_adapter(agent)
     if adapter is None:
         return None
-    for row in _main_rows(session_file):
+    for row in file_rows(session_file):
         with contextlib.suppress(PayloadRefused):
             timed = next((record.time for record in adapter.resolve_row(row, None) if record.time), None)
             if timed is not None:
@@ -117,7 +125,7 @@ def first_row_time(agent: str, session_file: Path) -> str | None:
     adapter = get_transcript_adapter(agent)
     if adapter is None:
         return None
-    return next((timed for timed in map(adapter.row_time, _main_rows(session_file)) if timed is not None), None)
+    return next((timed for timed in map(adapter.row_time, file_rows(session_file)) if timed is not None), None)
 
 
 def session_cwd(agent: str, session_file: Path) -> str | None:
@@ -126,7 +134,7 @@ def session_cwd(agent: str, session_file: Path) -> str | None:
     adapter = get_transcript_adapter(agent)
     if adapter is None:
         return None
-    for row in _main_rows(session_file):
+    for row in file_rows(session_file):
         with contextlib.suppress(PayloadRefused):
             folder = next((record.cwd for record in adapter.resolve_row(row, None) if record.cwd), None)
             if folder is not None:
@@ -140,7 +148,7 @@ def first_prompt_text(agent: str, session_file: Path) -> str | None:
     adapter = get_transcript_adapter(agent)
     if adapter is None:
         return None
-    for row in _main_rows(session_file):
+    for row in file_rows(session_file):
         try:
             if any(record.prompt is not None for record in adapter.resolve_row(row, None)):
                 return adapter.resolve_prompt(row)
@@ -155,7 +163,7 @@ def opens_with_clear(agent: str, session_file: Path) -> bool:
     adapter = get_transcript_adapter(agent)
     if adapter is None:
         return False
-    opened = (adapter.opens_with_clear(row) for row in _main_rows(session_file))
+    opened = (adapter.opens_with_clear(row) for row in file_rows(session_file))
     return next((verdict for verdict in opened if verdict is not None), False)
 
 
@@ -237,10 +245,8 @@ def subagent_brief(agent: str, session_file: Path, subagent_id: str) -> str | No
 
     Raises `PayloadRefused` when the agent is unknown or the file's first row is not the shape the
     adapter is pinned to. The text is returned, never stored."""
-    adapter = get_transcript_adapter(agent)
-    if adapter is None:
-        raise PayloadRefused(f"unknown agent: {agent}")
-    first_row = _first_row(_owner_path(session_file, subagent_id))
+    adapter = adapter_for(agent)
+    first_row = _first_row(owner_path(session_file, subagent_id))
     return None if first_row is None else adapter.resolve_brief(first_row)
 
 
@@ -256,19 +262,17 @@ def subagent_output(
 
     Raises `PayloadRefused` when the agent is unknown, the source is `result` and no launching call is named, or a
     `handback` or `result` row read is not the shape the adapter is pinned to. The text is returned, never stored."""
-    adapter = get_transcript_adapter(agent)
-    if adapter is None:
-        raise PayloadRefused(f"unknown agent: {agent}")
-    path = _owner_path(session_file, subagent_id)
+    adapter = adapter_for(agent)
+    path = owner_path(session_file, subagent_id)
     if source == "handback":
-        row = _find_row(path, HANDBACK_TOOL, lambda found: adapter.resolve_handback(found) is not None)
+        row = find_row(path, HANDBACK_TOOL, lambda found: adapter.resolve_handback(found) is not None)
         return None if row is None else adapter.resolve_handback(row)
     if source == "reply":
         return _last_reply(adapter, path, subagent_id)
     if use_id is None:
         raise PayloadRefused("the subagent's launching call is not named")
     for _, file in _files(session_file):
-        row = _find_row(file, use_id, lambda found: adapter.holds_result(found, use_id))
+        row = find_row(file, use_id, lambda found: adapter.holds_result(found, use_id))
         if row is not None:
             return adapter.resolve_result(row, use_id)
     return None
@@ -285,34 +289,10 @@ def _last_reply(adapter: TranscriptAdapter, path: Path, subagent_id: str) -> str
             return None
         return kinds[-1] if kinds else None
 
-    row = _find_row(path, '"assistant"', lambda found: last_kind(found) is not None, latest=True)
+    row = find_row(path, '"assistant"', lambda found: last_kind(found) is not None, latest=True)
     if row is None or last_kind(row) != "assistant_text":
         return None
     return adapter.resolve_reply(row)
-
-
-def subagent_system(agent: str, session_file: Path, subagent_id: str | None) -> str | None:
-    """The system prompt the first request of one subagent was sent with, or None when the session has no such
-    subagent file or the file records no request with its shape. With no subagent id, the system prompt of the
-    last request the main transcript records.
-
-    Raises `PayloadRefused` when the agent is unknown or a request or shape row is not the shape the adapter is
-    pinned to. The text is returned, never stored."""
-    adapter = get_transcript_adapter(agent)
-    if adapter is None:
-        raise PayloadRefused(f"unknown agent: {agent}")
-    path = _owner_path(session_file, subagent_id)
-    request = _find_row(
-        path,
-        '"api-request"',
-        lambda row: adapter.resolve_request_shape(row) is not None,
-        latest=subagent_id is None,
-    )
-    shape_hash = None if request is None else adapter.resolve_request_shape(request)
-    if shape_hash is None:
-        return None
-    shape = _find_row(path, shape_hash, lambda row: adapter.resolve_system(row, shape_hash) is not None)
-    return None if shape is None else adapter.resolve_system(shape, shape_hash)
 
 
 def prompt_text(agent: str, session_file: Path, prompt_id: str) -> str | None:
@@ -321,10 +301,8 @@ def prompt_text(agent: str, session_file: Path, prompt_id: str) -> str | None:
 
     Raises `PayloadRefused` when the agent is unknown or the row is not a typed prompt of the pinned shape.
     The text is returned, never stored."""
-    adapter = get_transcript_adapter(agent)
-    if adapter is None:
-        raise PayloadRefused(f"unknown agent: {agent}")
-    row = _find_row(session_file, prompt_id, lambda row: row.get("uuid") == prompt_id)
+    adapter = adapter_for(agent)
+    row = find_row(session_file, prompt_id, lambda row: row.get("uuid") == prompt_id)
     return None if row is None else adapter.resolve_prompt(row)
 
 
@@ -336,10 +314,8 @@ def scan_compact_summaries(
     last line waits for the next read. A summary row that names no boundary is left out.
 
     Raises `PayloadRefused` when the agent is unknown. Only sizes and positions are returned, never text."""
-    adapter = get_transcript_adapter(agent)
-    if adapter is None:
-        raise PayloadRefused(f"unknown agent: {agent}")
-    lines, end = read_appended_lines(_owner_path(session_file, subagent_id), offset)
+    adapter = adapter_for(agent)
+    lines, end = read_appended_lines(owner_path(session_file, subagent_id), offset)
     spans: list[SummarySpan] = []
     start = offset
     for line in lines:
@@ -357,15 +333,13 @@ def compact_summary(agent: str, session_file: Path, subagent_id: str | None, spa
     boundary than `span.link`.
 
     Raises `PayloadRefused` when the agent is unknown. The text is returned, never stored."""
-    adapter = get_transcript_adapter(agent)
-    if adapter is None:
-        raise PayloadRefused(f"unknown agent: {agent}")
-    lines, _ = read_appended_lines(_owner_path(session_file, subagent_id), span.start, span.end + 1)
+    adapter = adapter_for(agent)
+    lines, _ = read_appended_lines(owner_path(session_file, subagent_id), span.start, span.end + 1)
     found = _summary_row(adapter, lines[0]) if lines else None
     return None if found is None or found[0] != span.link else found[1]
 
 
-def _owner_path(session_file: Path, subagent_id: str | None) -> Path:
+def owner_path(session_file: Path, subagent_id: str | None) -> Path:
     """The main transcript, or the file of one subagent: one of the session's own or of a workflow run's agents.
     A subagent id no file has resolves to the path of a session subagent that is not there."""
     if subagent_id is None:
@@ -392,11 +366,9 @@ def hook_output_text(agent: str, session_file: Path, subagent_id: str | None, ro
 
     Raises `PayloadRefused` when the agent is unknown or the row is not a hook row of the pinned shape. The text is
     returned, never stored."""
-    adapter = get_transcript_adapter(agent)
-    if adapter is None:
-        raise PayloadRefused(f"unknown agent: {agent}")
-    path = _owner_path(session_file, subagent_id)
-    row = _find_row(path, row_id, lambda found: found.get("uuid") == row_id)
+    adapter = adapter_for(agent)
+    path = owner_path(session_file, subagent_id)
+    row = find_row(path, row_id, lambda found: found.get("uuid") == row_id)
     return None if row is None else adapter.resolve_hook_output(row)
 
 
@@ -410,10 +382,8 @@ def call_detail(
 
     Raises `PayloadRefused` when the agent is unknown or the call or its result is not the pinned shape. The text
     is returned, never stored."""
-    adapter = get_transcript_adapter(agent)
-    if adapter is None:
-        raise PayloadRefused(f"unknown agent: {agent}")
-    path = _owner_path(session_file, subagent_id)
+    adapter = adapter_for(agent)
+    path = owner_path(session_file, subagent_id)
     row, answer = _find_call_rows(
         path, use_id, lambda found: adapter.holds_call(found, use_id), lambda found: adapter.holds_result(found, use_id)
     )
@@ -433,9 +403,7 @@ def workflow_runs(agent: str, session_file: Path) -> tuple[WorkflowRun, ...]:
 
     Raises `PayloadRefused` when the agent is unknown or a record file is not the shape the adapter is pinned
     to; a record file that is not yet whole JSON counts as absent."""
-    adapter = get_transcript_adapter(agent)
-    if adapter is None:
-        raise PayloadRefused(f"unknown agent: {agent}")
+    adapter = adapter_for(agent)
     records = {path.stem: _json_object(path) for path in _run_records(session_file)}
     folders = {folder.name: folder for folder in _run_dirs(session_file)}
     runs: list[WorkflowRun] = []
@@ -531,7 +499,7 @@ def _first_row(path: Path) -> JsonObject | None:
         return None
 
 
-def _find_row(
+def find_row(
     path: Path, needle: str, matches: Callable[[JsonObject], bool], *, latest: bool = False
 ) -> JsonObject | None:
     """The first row of a file that holds `needle` and that `matches` accepts, or the last when `latest`; None

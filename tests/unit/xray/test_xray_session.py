@@ -28,7 +28,7 @@ FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "eventbus" / "tran
 RUNNING = XrayCheck("running", None)
 TOP_KEYS = {
     "version", "session", "project", "started_at", "length_s", "picked", "model", "window", "adapter", "price_list",
-    "nodes", "edges", "sources", "stations", "track", "builtin", "session_cost", "funnel", "facts", "check", "refusals",
+    "nodes", "edges", "sources", "stations", "track", "session_cost", "funnel", "facts", "check", "refusals",
     "not_known",
 }  # fmt: skip
 HANDOFFS = "2.1.309-handoffs"

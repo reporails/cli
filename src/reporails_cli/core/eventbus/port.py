@@ -8,7 +8,7 @@ from typing import Protocol
 
 from reporails_cli.core.eventbus.store import append
 from reporails_cli.core.platform.contract.json_value import JsonObject
-from reporails_cli.core.platform.dto.events import EventRecord, RequestChain
+from reporails_cli.core.platform.dto.events import EventRecord, MessageText, RequestChain
 from reporails_cli.core.platform.dto.workflows import WorkflowRun
 
 
@@ -68,13 +68,18 @@ class TranscriptAdapter(Protocol):
         """The text of an assistant reply row; None for any other row or a row with no text. Raises `PayloadRefused` for
         a text block with no text."""
 
-    def resolve_request_shape(self, row: JsonObject) -> str | None:
-        """The hash of the request shape an API request row names; None for any other row; raises
-        `PayloadRefused` when the row's hash is not the pinned shape."""
+    def resolve_request(self, row: JsonObject) -> tuple[str, str] | None:
+        """The id and the request shape hash of an API request row; None for any other row; raises `PayloadRefused`
+        when the row's hash is not the pinned shape."""
 
-    def resolve_system(self, row: JsonObject, shape_hash: str) -> str | None:
-        """The system prompt of the request-shape row recorded under `shape_hash`; None for any other row; raises
-        `PayloadRefused` when that row is not the pinned shape."""
+    def resolve_shape_text(self, row: JsonObject, shape_hash: str, item: str) -> str | None:
+        """The text of own-context item `item` (the system prompt or the tool definitions) in the request-shape row
+        recorded under `shape_hash`; None for any other row or item; raises `PayloadRefused` when that row is not
+        the pinned shape."""
+
+    def request_blocks(self, chain: RequestChain) -> list[MessageText]:
+        """The listings recorded before the request `chain` last took, each under the item it belongs to, then its
+        notes and thinking in message order."""
 
     def holds_call(self, row: JsonObject, use_id: str) -> bool:
         """Whether the row is an assistant row holding the tool call `use_id`."""

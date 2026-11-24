@@ -7,7 +7,6 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 
-from reporails_cli.core.platform.dto.events import HarnessKind
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary
 from reporails_cli.core.platform.dto.xray_build import AgentRecords, AgentWorld, Frame, SourceTable
 from reporails_cli.core.platform.dto.xray_composition import (
@@ -20,14 +19,13 @@ from reporails_cli.core.platform.dto.xray_composition import (
 )
 from reporails_cli.core.platform.dto.xray_graph import (
     INJECTED_TRIGGERS,
-    ContextKey,
     LoadEvent,
     XrayContextRow,
     XrayInContext,
-    XrayRowMeasure,
 )
+from reporails_cli.core.platform.dto.xray_own import LISTING_KEYS, ContextKey, XrayOwnContext, XrayRowMeasure
 from reporails_cli.core.platform.dto.xray_sources import SourceEntry, XrayContextText
-from reporails_cli.core.xray.derive import frame_time
+from reporails_cli.core.xray.graph.builtin import LISTED, own_context
 from reporails_cli.core.xray.graph.composition import count_text, listing_chars, share, tokens_at, tool_share
 from reporails_cli.core.xray.graph.sources import source_label
 
@@ -193,21 +191,8 @@ def _measured_shares(measured: RequestMeasure, defined: int) -> list[tuple[Conte
     ]
 
 
-def _unsized_kinds(own: AgentRecords, frame: Frame, reply_t: float) -> list[str]:
-    """The names of the attachment kinds that only named themselves by `reply_t`, in the order first seen."""
-    found: dict[str, None] = {}
-    for record in own.records:
-        entry = record.harness
-        moment = frame_time(frame, record)
-        if record.event != "harness" or entry is None or entry.kind != "unsized":
-            continue
-        if moment is not None and moment <= reply_t:
-            found[entry.label.replace("_", " ")] = None
-    return list(found)
-
-
 def _harness_row(
-    key: ContextKey, chars: int, reason: str, texts: dict[ContextKey, XrayContextText], scale: float, *, taken: int = 0
+    key: ContextKey, chars: int, names: dict[ContextKey, str], scale: float, *, taken: int = 0
 ) -> XrayContextRow:
     """The row of `chars` characters of a measured request at its `scale`, less the `taken` tokens an earlier row
     already lists."""
@@ -216,8 +201,8 @@ def _harness_row(
         key,
         None,
         None,
-        texts[key].label,
-        reason,
+        names[key],
+        "",
         max(0, tokens - taken),
         None,
         None,
@@ -226,51 +211,33 @@ def _harness_row(
 
 
 def _listing_rows(
-    own: AgentRecords, frame: Frame, reply: ReplyComposition, scale: float, texts: dict[ContextKey, XrayContextText]
+    own: AgentRecords, frame: Frame, reply: ReplyComposition, scale: float, names: dict[ContextKey, str]
 ) -> list[XrayContextRow]:
     """The rows of the agent listing, the deferred tools and the session context at the characters each held by
     the reply; a listing of no characters is left out."""
-    listings: list[tuple[ContextKey, HarnessKind]] = [
-        ("agent_listing", "agent_list"),
-        ("deferred_tools", "deferred_tools"),
-        ("session_context", "session_context"),
-    ]
-    sized = ((key, listing_chars(own, frame, kind, reply.t)) for key, kind in listings)
-    return [_harness_row(key, chars, texts[key].reason, texts, scale) for key, chars in sized if chars > 0]
+    sized = ((key, listing_chars(own, frame, LISTED[key], reply.t)) for key in LISTING_KEYS)
+    return [_harness_row(key, chars, names, scale) for key, chars in sized if chars > 0]
 
 
 def _harness_shares(
-    own: AgentRecords,
-    frame: Frame,
-    reply: ReplyComposition,
-    injected: int,
-    texts: dict[ContextKey, XrayContextText],
+    own: AgentRecords, frame: Frame, reply: ReplyComposition, injected: int, names: dict[ContextKey, str]
 ) -> list[XrayContextRow]:
     """The rows of a reply's own measured request beyond the system prompt, tool definitions and tool calls: the
     agent listing, the deferred tools and the session context at the characters each held by the reply, the
     agent's thinking, and the other messages Claude Code sent (the share of the request's message notes that no
-    row above lists: `injected` tokens of sources, the skills listing and the three listings), with the kinds of
-    attachment that named themselves only. A row of no characters is left out."""
+    row above lists: `injected` tokens of sources, the skills listing and the three listings). A row of no
+    characters is left out."""
     measured = reply.measure
     if measured is None:
         return []
     size, scale = measured.size, measured.scale
-    rows = _listing_rows(own, frame, reply, scale, texts)
+    rows = _listing_rows(own, frame, reply, scale, names)
     listed = reply.parts[COMPOSITION_KEYS.index("skill_listing")] + injected + sum(row.tokens_est for row in rows)
     if size.parts.thinking > 0:
-        rows.append(_harness_row("thinking", size.parts.thinking, texts["thinking"].reason, texts, scale))
+        rows.append(_harness_row("thinking", size.parts.thinking, names, scale))
     if size.parts.notes > 0:
-        other = texts["harness_other"]
-        kinds = _unsized_kinds(own, frame, reply.t)
-        reason = other.reason.format(kinds=", ".join(kinds)) if kinds else other.reason_none or other.reason
-        rows.append(_harness_row("harness_other", size.parts.notes, reason, texts, scale, taken=listed))
+        rows.append(_harness_row("harness_other", size.parts.notes, names, scale, taken=listed))
     return rows
-
-
-def _reason(text: XrayContextText, own_request: bool) -> str:
-    """The reason a measured row gives: the one for a share of the reply's own request, or the one for a share of an
-    earlier request when the row has it."""
-    return text.reason if own_request else text.reason_earlier or text.reason
 
 
 def _absorb_rounding(rows: list[XrayContextRow], surplus: int) -> list[XrayContextRow]:
@@ -284,8 +251,9 @@ def _measured_rows(
     reply: ReplyComposition,
     opening: Sequence[XrayContextRow],
     defined: int,
-    texts: dict[ContextKey, XrayContextText],
     *,
+    texts: dict[ContextKey, XrayContextText],
+    names: dict[ContextKey, str],
     extra: Sequence[XrayContextRow],
     own_request: bool = True,
 ) -> list[XrayContextRow]:
@@ -301,9 +269,7 @@ def _measured_rows(
     if listing > 0:
         shares.append(("skill_listing", listing, None))
     rows = [
-        XrayContextRow(
-            key, None, None, texts[key].label, _reason(texts[key], own_request), tokens, None, None, row_measure
-        )
+        XrayContextRow(key, None, None, names[key], "", tokens, None, None, row_measure)
         for key, tokens, row_measure in shares
     ]
     rows.extend(extra)
@@ -318,14 +284,42 @@ def _tail_rows(
     reply: ReplyComposition,
     opening: Sequence[XrayContextRow],
     taken: tuple[int, int],
+    *,
     texts: dict[ContextKey, XrayContextText],
+    names: dict[ContextKey, str],
     extra: Sequence[XrayContextRow],
 ) -> list[XrayContextRow]:
     """The rows after the opening ones: the shares of the request the reply is sized from (its own, else the latest
     complete one before it), or the estimated closing rows when none sizes it."""
     if reply.sized is None:
         return _closing_rows(reply, opening, taken, texts)
-    return _measured_rows(reply.sized, reply, opening, taken[1], texts, extra=extra, own_request=reply.measured)
+    return _measured_rows(
+        reply.sized, reply, opening, taken[1], texts=texts, names=names, extra=extra, own_request=reply.measured
+    )
+
+
+def _row_names(vocabulary: AdapterVocabulary) -> dict[ContextKey, str]:
+    """The label of each kind of "in context" row, as the vocabulary words it."""
+    context = vocabulary.context
+    return {item.key: item.label for item in context.texts} | {item.key: item.label for item in context.builtin}
+
+
+def _own_and_rows(
+    own: AgentRecords,
+    world: AgentWorld,
+    reply: ReplyComposition,
+    opening: Sequence[XrayContextRow],
+    *,
+    taken: tuple[int, int],
+    injected: int,
+    texts: dict[ContextKey, XrayContextText],
+) -> tuple[XrayOwnContext, tuple[XrayContextRow, ...]]:
+    """The coding agent's own context as one group, and the rows that stay: the `opening` rows, then the tail."""
+    names = _row_names(world.context.vocabulary)
+    extra = _harness_shares(own, world.frame, reply, injected, names)
+    tail = _tail_rows(reply, opening, taken, texts=texts, names=names, extra=extra)
+    group, kept = own_context(tail, own, world.frame, reply, world.context.vocabulary)
+    return group, (*opening, *kept)
 
 
 def build_in_context(
@@ -336,14 +330,14 @@ def build_in_context(
     brief_chars: int | None,
 ) -> XrayInContext | None:
     """What the agent's context held at its peak reply: its task prompt (a subagent), its definition, the sources
-    loaded by then (inherited first, then by time), the hooks that fired, then one of three tails. A reply whose
-    request was recorded shows the measured shares of that request (system prompt, tool definitions, tool calls
-    and results, and the conversation as what is left). A reply whose request was not recorded, after a complete
-    one, shows that earlier request's system prompt and tool definitions (the request and its tokens per character
-    are named) and the conversation and tool results as what is left, labelled an estimate. With no complete request
-    before it, the reply shows the coding agent's own context and the conversation and tool results, which take
-    what the estimates leave. The rows may overshoot the total; the last row is then 0 and `over` is set. None when
-    the agent has no reply."""
+    loaded by then (inherited first, then by time), the hooks that fired, the tool calls and results, and the
+    conversation as what is left, with the coding agent's own context as one group beside them. A reply whose
+    request was recorded holds the group's items as measured shares of that request. A reply whose request was not
+    recorded, after a complete one, holds that earlier request's system prompt, tool definitions and skills listing
+    (the request and its tokens per character are named), and the conversation and tool results as what is left,
+    labelled an estimate. With no complete request before it, the group is the estimated system prompt and
+    listings, and the conversation and tool results take what the estimates leave. The rows and the group may
+    overshoot the total; the last row is then 0 and `over` is set. None when the agent has no reply."""
     composition, carried = series
     if composition.peak is None:
         return None
@@ -358,14 +352,12 @@ def build_in_context(
         texts=texts,
         world=world,
     )
-    shown = (
-        *rows,
-        *_tail_rows(reply, rows, (mcp, defined), texts, _harness_shares(own, world.frame, reply, injected, texts)),
-    )
+    group, shown = _own_and_rows(own, world, reply, rows, taken=(mcp, defined), injected=injected, texts=texts)
     return XrayInContext(
         reply.total,
         shown,
-        sum(row.tokens_est for row in shown) != reply.total,
+        group,
+        sum(row.tokens_est for row in shown) + group.tokens_est != reply.total,
         reply.measured,
         None if reply.measured else texts["estimated"].reason,
         None if reply.sized is None else reply.sized.size.request_id,

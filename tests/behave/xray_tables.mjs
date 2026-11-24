@@ -163,9 +163,9 @@ if (mode === 'sources' && ready) {
   await tab('sources');
   out.rows = await page.ev(`[...document.querySelectorAll('#view-sources .vl-row')].map(r => ({ source: r.dataset.source || null, peek: r.dataset.peek || null, text: r.textContent }))`);
   out.height = await page.ev(`document.querySelector('#view-sources .vl-sizer').offsetHeight`);
-  await click('#view-sources .vl-row[data-peek]');
+  await click('#view-sources .vl-row[data-source]');
   await page.until(`!!document.querySelector('#side-sources .pk-panel')`);
-  out.builtinPanel = await page.ev(`document.querySelector('#side-sources .pk-title') ? document.querySelector('#side-sources .pk-title').textContent : ''`);
+  out.panelTitle = await page.ev(`document.querySelector('#side-sources .pk-title') ? document.querySelector('#side-sources .pk-title').textContent : ''`);
 }
 
 console.log(JSON.stringify(out));

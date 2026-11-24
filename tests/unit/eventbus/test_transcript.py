@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.eventbus.adapters.claude_transcript import ClaudeTranscriptAdapter
+from reporails_cli.core.eventbus.context_text import context_text
 from reporails_cli.core.eventbus.port import TRANSCRIPT_ADAPTERS, PayloadRefused
 from reporails_cli.core.eventbus.transcript import (
     CALL_INPUT_CHARS,
@@ -24,7 +25,6 @@ from reporails_cli.core.eventbus.transcript import (
     scan_compact_summaries,
     subagent_brief,
     subagent_output,
-    subagent_system,
     workflow_runs,
 )
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object
@@ -1069,22 +1069,26 @@ def _shape(shape_hash: str, system: list[str]) -> dict[str, object]:
     return {"type": "api-request-shape", "shapeHash": shape_hash, "shape": {"system": blocks, "tools": [{"name": "A"}]}}
 
 
-def test_a_subagent_system_prompt_is_the_text_of_the_shape_its_first_request_names(tmp_path: Path) -> None:
+def test_an_agents_system_prompt_is_the_text_of_the_shape_its_request_names(tmp_path: Path) -> None:
     request = {"type": "api-request", "id": "r1", "shapeHash": "two", "keep": 0, "tail": []}
     session = _shaped_subagent(tmp_path, [_shape("one", ["WRONG"]), _shape("two", ["SYS-A", "SYS-B"]), request])
-    assert subagent_system("claude", session, "aaa") == "SYS-A\n\nSYS-B"
-    assert subagent_system("claude", session, "nosuchagent") is None
+    assert context_text("claude", session, "aaa", "r1", "system_prompt") == ["SYS-A\n\nSYS-B"]
+    assert context_text("claude", session, "nosuchagent", "r1", "system_prompt") is None
+    assert context_text("claude", session, "aaa", "r2", "system_prompt") is None
 
 
-def test_a_subagent_file_with_no_request_has_no_system_prompt(tmp_path: Path) -> None:
-    session = _shaped_subagent(tmp_path, [_shape("one", ["SYS"])])
-    assert subagent_system("claude", session, "aaa") is None
+def test_an_agents_tool_definitions_are_each_tool_with_its_description(tmp_path: Path) -> None:
+    request = {"type": "api-request", "id": "r1", "shapeHash": "one", "keep": 0, "tail": []}
+    shape = _shape("one", ["SYS"])
+    shape["shape"]["tools"] = [{"name": "Read", "description": "Reads a file"}, {"name": "Bare"}]
+    session = _shaped_subagent(tmp_path, [shape, request])
+    assert context_text("claude", session, "aaa", "r1", "tool_definitions") == ["Read\nReads a file\n\nBare"]
 
 
 def test_a_request_naming_a_shape_the_file_lacks_has_no_system_prompt(tmp_path: Path) -> None:
     request = {"type": "api-request", "id": "r1", "shapeHash": "gone", "keep": 0, "tail": []}
     session = _shaped_subagent(tmp_path, [_shape("one", ["SYS"]), request])
-    assert subagent_system("claude", session, "aaa") is None
+    assert context_text("claude", session, "aaa", "r1", "system_prompt") is None
 
 
 def test_a_shape_whose_system_is_not_a_list_is_refused(tmp_path: Path) -> None:
@@ -1092,7 +1096,40 @@ def test_a_shape_whose_system_is_not_a_list_is_refused(tmp_path: Path) -> None:
     bad = {"type": "api-request-shape", "shapeHash": "one", "shape": {"system": "x", "tools": []}}
     session = _shaped_subagent(tmp_path, [bad, request])
     with pytest.raises(PayloadRefused, match=r"shape\.system"):
-        subagent_system("claude", session, "aaa")
+        context_text("claude", session, "aaa", "r1", "system_prompt")
+
+
+def _walked(tmp_path: Path, notes: str, *, kept: bool) -> Path:
+    """A subagent file whose second request keeps the first request's messages (or drops them); the first names a
+    reminder blob, and an agent listing attachment was recorded before it."""
+    reminder = {"role": "user", "content": notes}
+    listing = {
+        "type": "attachment",
+        "sessionId": "s1",
+        "timestamp": "2026-11-01T10:00:00.000Z",
+        "attachment": {"type": "agent_listing_delta", "addedTypes": ["h"], "addedLines": ["- h: x"]},
+    }
+    blob = {"type": "api-request-blob", "hash": "n", "message": reminder}
+    stamp = {"sessionId": "s1", "timestamp": "2026-11-01T10:00:01.000Z"}
+    first = {"type": "api-request", "id": "r1", "shapeHash": "one", "keep": 0, "tail": ["n"], **stamp}
+    second = {"type": "api-request", "id": "r2", "shapeHash": "one", "keep": 1 if kept else 0, "tail": [], **stamp}
+    return _shaped_subagent(tmp_path, [_shape("one", ["SYS"]), listing, blob, first, second])
+
+
+def test_the_other_messages_are_the_notes_of_the_requests_own_message_chain(tmp_path: Path) -> None:
+    session = _walked(tmp_path, "<system-reminder>hello</system-reminder>", kept=True)
+    assert context_text("claude", session, "aaa", "r2", "harness_other") == ["<system-reminder>hello</system-reminder>"]
+
+
+def test_a_request_that_drops_a_message_does_not_show_its_text(tmp_path: Path) -> None:
+    session = _walked(tmp_path, "<system-reminder>hello</system-reminder>", kept=False)
+    assert context_text("claude", session, "aaa", "r2", "harness_other") == []
+
+
+def test_a_listed_item_is_the_text_its_attachment_recorded_and_no_other_message_repeats_it(tmp_path: Path) -> None:
+    session = _walked(tmp_path, "<system-reminder>- h: x</system-reminder>", kept=True)
+    assert context_text("claude", session, "aaa", "r1", "agent_listing") == ["- h: x"]
+    assert context_text("claude", session, "aaa", "r1", "harness_other") == []
 
 
 def test_a_hook_that_exits_non_zero_without_blocking_is_a_failed_firing_with_its_exit_code_and_stderr(

@@ -521,6 +521,11 @@ def _session_view(context) -> dict:
     return json.loads(body)
 
 
+def _flat(ic: dict) -> list[dict]:
+    """The rows of an agent's In context list and the items of its own context group, as one list."""
+    return [*ic["rows"], *ic["own"]["rows"]]
+
+
 def _context_of(view: dict) -> tuple[dict, dict]:
     nodes = {node["id"]: node for node in view["nodes"]}
     (sub_id,) = [key for key in nodes if key != "main"]
@@ -530,26 +535,26 @@ def _context_of(view: dict) -> tuple[dict, dict]:
 @then("the main agent's In context rows are measured, add up to its peak reply and name the system prompt and tools")
 def step_main_measured(context):
     main, _ = _context_of(_session_view(context))
-    keys = [row["key"] for row in main["rows"]]
+    keys = [row["key"] for row in _flat(main)]
     assert main["total"] == context.peaks["main"], (main["total"], context.peaks)
-    assert sum(row["tokens_est"] for row in main["rows"]) == context.peaks["main"], main["rows"]
-    assert main["measured"] is True and main["over"] is False, main
-    assert {"system_prompt", "tool_definitions"} <= set(keys) and keys[-1] == "rest", keys
+    assert sum(row["tokens_est"] for row in _flat(main)) == context.peaks["main"], main
+    assert main["measured"] is True and main["over"] is False and main["own"]["basis"] == "measured", main
+    assert {"system_prompt", "tool_definitions"} <= set(keys) and main["rows"][-1]["key"] == "rest", keys
 
 
 @then("the subagent's In context rows add up to the peak reply of its own file")
 def step_sub_measured(context):
     _, sub = _context_of(_session_view(context))
     assert sub["measured"] is True and sub["total"] == context.peaks["sub"], (sub["total"], context.peaks)
-    assert sum(row["tokens_est"] for row in sub["rows"]) == context.peaks["sub"], sub["rows"]
-    assert {"system_prompt", "tool_definitions"} <= {row["key"] for row in sub["rows"]}
+    assert sum(row["tokens_est"] for row in _flat(sub)) == context.peaks["sub"], sub
+    assert {"system_prompt", "tool_definitions"} <= {row["key"] for row in sub["own"]["rows"]}
 
 
 @then("each agent's system, tool definition and tool call rows are the shares of its request's own characters")
 def step_measured_shares(context):
     main, sub = _context_of(_session_view(context))
     for name, ic in (("main", main), ("sub", sub)):
-        rows = {row["key"]: row["tokens_est"] for row in ic["rows"]}
+        rows = {row["key"]: row["tokens_est"] for row in _flat(ic)}
         got = {key: rows[key] for key in context.expected[name]}
         assert got == context.expected[name], (name, got, context.expected[name])
 
@@ -560,28 +565,26 @@ def step_picture_row(context):
     row = next(row for row in main["rows"] if row["key"] == "tool_io")
     assert row["measure"]["images"] == PICTURE_TOKENS, row
     assert row["tokens_est"] >= PICTURE_TOKENS, row
-    others = [r for r in main["rows"] if r["key"] in ("system_prompt", "tool_definitions")]
+    others = [r for r in main["own"]["rows"] if r["key"] in ("system_prompt", "tool_definitions")]
     assert all(r["measure"]["images"] == 0 for r in others), others
 
 
-@then("each agent's measured System prompt row opens that agent's own figure and request")
+@then("each agent's System prompt item opens that agent's own figure and request")
 def step_measured_row_opens_own(context):
     seen = _page(context, "measuredrow")
     if seen is None:
         return
     main, sub = _context_of(_session_view(context))
     for name, ic in (("main", main), ("sub", sub)):
-        row = next(row for row in ic["rows"] if row["key"] == "system_prompt")
+        row = next(row for row in ic["own"]["rows"] if row["key"] == "system_prompt")
         text = seen[name]["text"]
-        assert seen[name]["peek"].startswith("measured:system_prompt:"), seen[name]
+        assert seen[name]["peek"].startswith("builtin:system_prompt:"), seen[name]
         assert f"{_k1(row['tokens_est'])} · measured" in text, (name, row["tokens_est"], text)
-        assert ic["request_id"] in text, (name, ic["request_id"], text)
+        assert ic["own"]["request_id"] in text, (name, ic["own"]["request_id"], text)
         assert f"{row['measure']['chars']:,}" in text, (name, text)
-    assert "What it contains" in seen["main"]["text"], seen["main"]
-    assert "What it contains" not in seen["sub"]["text"], seen["sub"]
-    assert main["request_id"] != sub["request_id"]
-    assert main["request_id"] not in seen["sub"]["text"], seen["sub"]
-    assert sub["request_id"] not in seen["main"]["text"], seen["main"]
+    assert main["own"]["request_id"] != sub["own"]["request_id"]
+    assert main["own"]["request_id"] not in seen["sub"]["text"], seen["sub"]
+    assert sub["own"]["request_id"] not in seen["main"]["text"], seen["main"]
 
 
 @then("the page's In context list for each agent shows no remainder text and no asterisk")
@@ -599,9 +602,8 @@ def step_estimated_view(context):
     main, _ = _context_of(_session_view(context))
     assert main["measured"] is False, main
     assert main["note"] == "Estimated: no complete recorded request for this reply.", main["note"]
-    assert "rest" in [row["key"] for row in main["rows"]] and "system_prompt" not in [
-        row["key"] for row in main["rows"]
-    ]
+    assert "rest" in [row["key"] for row in main["rows"]] and main["own"]["basis"] == "estimate", main
+    assert [row["key"] for row in main["own"]["rows"]] == ["system_prompt"], main["own"]
 
 
 @then("the page shows the estimate note and a remainder row in the main agent's In context list")
@@ -611,7 +613,7 @@ def step_estimated_page(context):
         return
     text = seen["main"]["text"]
     assert "Estimated: no complete recorded request for this reply." in text, text
-    assert "remainder" in text.lower(), text
+    assert "Claude Code's own context" in text and "estimate" in text, text
 
 
 @then("the general-purpose agent type's details show its recorded system prompt and its tools with launch counts")
@@ -620,27 +622,32 @@ def step_agent_shape_on_page(context):
     if seen is None:
         return
     assert seen["ready"] and seen["row"], seen
-    assert seen["text"] == "t" * 500, seen
+    assert seen["action"] == "Open the system prompt it launched with" and seen["text"] == "t" * 500, seen
+    assert seen["opened"].startswith("System prompt"), seen
     assert seen["tools"].splitlines() == [f"Tool{n} · 1 launch" for n in range(6)], seen
     assert "Comes from the coding agent" not in seen["dialog"], seen
     assert "launchs" not in seen["dialog"], seen
 
 
-@then("the system prompt route returns that text only for a type the session launched")
+@then("the context text route returns that text only for an agent the session recorded a request for")
 def step_system_route(context):
+    _session_view(context)
     page = _get(context.url)[1]
     token = re.search(r'name="xray-token" content="([^"]+)"', page).group(1)
-    status, body = _get(context.url + "system?type=general-purpose", token)
+    status, body = _get(context.url + f"context-text?agent={SUB_ID}&item=system_prompt", token)
     assert status == 200 and json.loads(body)["text"] == "t" * 500, (status, body)
-    status, _ = _get(context.url + "system?type=Explore", token)
+    status, _ = _get(context.url + "context-text?agent=nosuch&item=system_prompt", token)
     assert status == 400, status
+    status, _ = _get(context.url + "system?type=general-purpose", token)
+    assert status == 404, status
 
 
 def _main_system(context) -> str:
-    """The text of the main agent's system prompt route."""
+    """The text of the main agent's system prompt route, asked once the page has fetched the view."""
+    _session_view(context)
     page = _get(context.url)[1]
     token = re.search(r'name="xray-token" content="([^"]+)"', page).group(1)
-    status, body = _get(context.url + "system?type=", token)
+    status, body = _get(context.url + "context-text?agent=&item=system_prompt", token)
     assert status == 200, (status, body)
     return json.loads(body)["text"]
 
@@ -658,20 +665,22 @@ def step_main_system_text(context):
 @then("the main agent's System prompt details say there were two and show the latest")
 def step_main_system_latest(context):
     assert _main_system(context) == "w" * 300
-    builtin = next(item for item in _session_view(context)["builtin"] if item["key"] == "system_prompt")
-    assert builtin["system_shapes"] == 2, builtin
+    main, _ = _context_of(_session_view(context))
+    builtin = next(item for item in main["own"]["rows"] if item["key"] == "system_prompt")
+    assert builtin["shapes"] == 2, builtin
     seen = _page(context, "mainsystem")
     if seen is None:
         return
     assert seen["text"] == "w" * 300, seen["text"][:80]
-    assert "2 different system prompts; this is the latest" in seen["dialog"], seen["dialog"][:300]
+    assert "2 different system prompts across this agent\u2019s requests" in seen["dialog"], seen["dialog"][:300]
 
 
 @then("the main agent's System prompt details show the text without saying the system prompts differed")
 def step_main_system_same_text(context):
     assert _main_system(context) == "s" * 2000
-    builtin = next(item for item in _session_view(context)["builtin"] if item["key"] == "system_prompt")
-    assert builtin["system_shapes"] == 1, builtin
+    main, _ = _context_of(_session_view(context))
+    builtin = next(item for item in main["own"]["rows"] if item["key"] == "system_prompt")
+    assert builtin["shapes"] == 1, builtin
     seen = _page(context, "mainsystem")
     if seen is None:
         return
@@ -683,9 +692,10 @@ def step_main_system_same_text(context):
 def step_main_system_none(context):
     page = _get(context.url)[1]
     token = re.search(r'name="xray-token" content="([^"]+)"', page).group(1)
-    assert _get(context.url + "system?type=", token)[0] == 400
-    builtin = next(item for item in _session_view(context)["builtin"] if item["key"] == "system_prompt")
-    assert builtin["system_shapes"] == 0, builtin
+    assert _get(context.url + "context-text?agent=&item=system_prompt", token)[0] == 400
+    main, _ = _context_of(_session_view(context))
+    builtin = next(item for item in main["own"]["rows"] if item["key"] == "system_prompt")
+    assert builtin["shapes"] == 0 and not builtin["has_text"], builtin
 
 
 @then("the general-purpose agent type's details show its launch settings")
@@ -1767,20 +1777,20 @@ def step_earlier_request_sizes(context):
     # the newest reply has no request row; the request before it (req-main-2, total 1000 + 800 + 2) is measured
     other = len("please summarise the layout") + len("and the tests") + len("the layout is flat")
     expected = _expected_shares(1802, system=2000, other=other, calls=0)
-    rows = {row["key"]: row["tokens_est"] for row in main["rows"]}
+    rows = {row["key"]: row["tokens_est"] for row in _flat(main)}
     assert main["measured"] is False and main["total"] == context.peaks["main"], main
-    builtin = {item["key"]: item for item in view["builtin"]}
+    assert main["own"]["basis"] == "measured_earlier", main["own"]
+    builtin = {item["key"]: item for item in main["own"]["rows"]}
     system, tools = builtin["system_prompt"], builtin.get("tool_definitions")
     # the unrecorded newest reply is the peak, so its remainder would have been shown as the system prompt
-    assert system["tokens_est"] == expected["system_prompt"] and not system["remainder"], (system, expected)
+    assert system["tokens_est"] == expected["system_prompt"], (system, expected)
     assert tools is not None and tools["tokens_est"] == expected["tool_definitions"], (tools, expected)
     assert rows.get("system_prompt") == expected["system_prompt"], (rows, expected)
     assert rows.get("tool_definitions") == expected["tool_definitions"], (rows, expected)
     assert sum(rows.values()) == main["total"] and "rest" in rows, rows
-    assert "request req-main-2" in system["note"], system
-    # the row's details name the request the size came from, and its tokens per character
-    assert main["request_id"] == "req-main-2" and main["tokens_per_char"], main
-    assert all(row["measure"] for row in main["rows"] if row["key"] in ("system_prompt", "tool_definitions"))
+    # the group names the request the sizes came from, and its tokens per character
+    assert main["own"]["request_id"] == "req-main-2" and main["own"]["tokens_per_char"], main["own"]
+    assert all(row["measure"] for row in main["own"]["rows"] if row["key"] in ("system_prompt", "tool_definitions"))
     # the chart's composition of the pending reply holds the request's system and tool share in its remainder category
     composition = next(node for node in view["nodes"] if node["id"] == "main")["detail"]["composition"]
     last = dict(zip(composition["keys"], composition["replies"][-1][5:], strict=False))
@@ -2149,3 +2159,127 @@ def step_summary_read_by_position(context):
     path.write_bytes(b"\n".join(lines))
     status, body = _get(context.url + "summary?id=" + second["summary_id"], token)
     assert status == 200 and json.loads(body)["text"] == SUMMARIES[1], (status, body)
+
+
+# ---- the coding agent's own context: one group per agent in the inspector, each item opening its recorded text ----
+
+OWN_ITEMS = {
+    "system_prompt",
+    "tool_definitions",
+    "agent_listing",
+    "deferred_tools",
+    "session_context",
+    "thinking",
+    "harness_other",
+}
+REMINDER = "<system-reminder>\nThe harness notes of this turn, written in full.\n" + "n" * 600 + "\n</system-reminder>"
+
+
+@given("a project with a session whose requests carried every item of the coding agent's own context, with a subagent")
+def step_session_with_every_own_item(context):
+    context.project = build_project(context.tmpdir / "proj").resolve()
+    _write_session(context, True)
+    folder = context.home / ".claude" / "projects" / claude_project_folder_name(context.project)
+    session = folder / "session.jsonl"
+    rows = [json.loads(line) for line in session.read_text(encoding="utf-8").splitlines()]
+    attachments = [
+        {"type": "agent_listing_delta", "addedTypes": ["helper"], "addedLines": ["- helper: Helps."]},
+        {"type": "deferred_tools_delta", "addedNames": ["WebFetch"], "addedLines": ["WebFetch: fetches a page"]},
+        {"type": "session_context", "context": {"cwd": str(context.project), "date": "2026-11-24"}},
+    ]
+    opening = [_row("attachment", 0, "2.1.309", context.project, attachment=item) for item in attachments]
+    thought = {"role": "assistant", "content": [{"type": "thinking", "thinking": "", "signature": "x" * 90}]}
+    for row in rows:
+        if row.get("hash") == "blob-note":
+            row["message"] = {"role": "user", "content": REMINDER}
+        if row.get("id") == "req-main-3":
+            row["tail"] = [*row["tail"], "blob-think"]
+    rows.insert(
+        rows.index(next(row for row in rows if row.get("id") == "req-main-3")),
+        {"type": "api-request-blob", "hash": "blob-think", "message": thought},
+    )
+    session.write_text("\n".join(json.dumps(row) for row in [*opening, *rows]) + "\n", encoding="utf-8")
+
+
+def _own_page(context) -> dict | None:
+    seen = _page(context, "own")
+    if seen is not None:
+        seen["view"] = _session_view(context)
+    return seen
+
+
+@then("each item of each agent's own context is listed once in the inspector and not in Sources or the Sources table")
+def step_own_listed_once(context):
+    seen = _own_page(context)
+    if seen is None:
+        return
+    main, sub = _context_of(seen["view"])
+    assert {row["key"] for row in main["own"]["rows"]} >= OWN_ITEMS, main["own"]["rows"]
+    for name, ic in (("main", main), ("sub", sub)):
+        shown = seen[name]
+        assert [item["key"] for item in shown["items"]] == [row["key"] for row in ic["own"]["rows"]], shown["items"]
+        for row in ic["own"]["rows"]:
+            assert shown["counts"][row["key"]] == 1, (name, row["key"], shown["counts"])
+            assert row["label"] not in shown["sources"], (name, row["label"])
+            assert row["label"] not in shown["table"], (name, row["label"])
+
+
+@then("each item opens the text its request recorded and the system prompt shows its sections")
+def step_own_items_open_text(context):
+    seen = _own_page(context)
+    if seen is None:
+        return
+    texts = {"main": "s" * 2000, "sub": "t" * 500}
+    for name in ("main", "sub"):
+        opened = {item["key"]: item for item in seen[name]["opened"]}
+        assert opened["system_prompt"]["text"] == texts[name], (name, opened["system_prompt"]["text"][:60])
+        assert opened["system_prompt"]["sections"] >= 1, opened["system_prompt"]
+        assert "Tool0" in opened["tool_definitions"]["text"], opened["tool_definitions"]
+        assert all(item["marked"] for item in opened.values()), opened
+    opened = {item["key"]: item for item in seen["main"]["opened"]}
+    assert opened["agent_listing"]["text"] == "- helper: Helps.", opened["agent_listing"]
+    assert opened["deferred_tools"]["text"] == "WebFetch: fetches a page", opened["deferred_tools"]
+    assert "2026-11-24" in opened["session_context"]["text"], opened["session_context"]
+    assert REMINDER in opened["harness_other"]["text"], opened["harness_other"]
+    assert opened["thinking"]["text"] is None and "no readable text" in opened["thinking"]["dialog"], opened["thinking"]
+
+
+@then("an item's size in the list is the size in its details")
+def step_own_size_matches(context):
+    seen = _own_page(context)
+    if seen is None:
+        return
+    for name in ("main", "sub"):
+        sizes = {item["key"]: item["size"] for item in seen[name]["items"]}
+        for item in seen[name]["opened"]:
+            assert item["tag"].split(" · ")[0] == sizes[item["key"]], (name, item["key"], item["tag"], sizes)
+
+
+@then("the group starts collapsed with one header, and the group and the rows still add up to the peak reply")
+def step_own_collapsed_and_adds_up(context):
+    seen = _own_page(context)
+    if seen is None:
+        return
+    start = seen["main"]["start"]
+    assert start["groups"] == 1 and start["subs"] == 0 and start["expanded"] == "false", start
+    main, sub = _context_of(seen["view"])
+    for ic in (main, sub):
+        assert not ic["over"], ic
+        assert sum(row["tokens_est"] for row in ic["rows"]) + ic["own"]["tokens_est"] == ic["total"], ic
+        assert ic["own"]["tokens_est"] == sum(row["tokens_est"] for row in ic["own"]["rows"]), ic["own"]
+
+
+@then("every own context item opens a description and says no request was recorded and the size is an estimate")
+def step_own_estimate_fallback(context):
+    seen = _own_page(context)
+    if seen is None:
+        return
+    main, _ = _context_of(seen["view"])
+    assert main["own"]["basis"] == "estimate", main["own"]
+    for item in seen["main"]["opened"]:
+        assert item["text"] is None and "What it holds" in item["dialog"], item
+        assert (
+            "No request was recorded for this agent, so this is a description and the size is an estimate."
+            in item["dialog"]
+        ), item
+        assert item["tag"].endswith("estimate"), item

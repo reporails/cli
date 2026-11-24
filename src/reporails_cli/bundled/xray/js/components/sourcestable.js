@@ -1,4 +1,4 @@
-// The Sources tab: every source and the coding agent's built-in context items in one virtualised table.
+// The Sources tab: every source in one virtualised table.
 import { el } from '../dom.js';
 import { markOpen } from './details.js';
 import { k1 } from '../format.js';
@@ -14,18 +14,16 @@ const inContext = (env, s, verb) => {
   return n ? `${n} of ${env.ix.view.nodes.length} agents` : `never ${verb}`;
 };
 
-// The key of what the row opens: a source by its id, a built-in item by its key.
-const openKey = item => (item.s ? `src:${item.s.id}` : `builtin:${item.key}`);
+const openKey = item => `src:${item.s.id}`;
 const isOpen = (peek, item) => !!peek && `${peek.kind}:${peek.id}` === openKey(item);
 
 function row(env, item) {
   const b = el('button', 'vl-row tb-row tb-src-grid');
   b.type = 'button';
-  const chip = el('span', item.s ? 'chip on' : 'chip', item.letter);
+  const chip = el('span', 'chip on', item.letter);
   chip.setAttribute('aria-hidden', 'true');
   b.append(chip, el('span', 'tb-trunc', item.name), el('span', 'tb-trunc tb-dim', item.kind), el('span', `tb-trunc${item.never ? ' tb-dim' : ''}`, item.who), el('span', 'tb-mono tb-r', item.tokens == null ? '–' : `~${k1(item.tokens)}`), el('span', item.finds ? 'tb-r tb-find' : 'tb-r tb-dim', item.finds ? String(item.finds) : '–'));
-  if (item.s) b.dataset.source = item.s.id;
-  else b.dataset.peek = `builtin:${item.key}`;
+  b.dataset.source = item.s.id;
   markOpen(b, env.state.peek, [openKey(item)], 'on');
   if (item.never) b.classList.add('never');
   return b;
@@ -37,7 +35,6 @@ function items(env) {
     const k = ix.kinds.get(s.kind);
     return { s, letter: k ? k.letter : s.kind.charAt(0), name: s.label || s.name, kind: k ? k.label : s.kind, who: inContext(env, s, k ? k.verb : 'loaded'), never: s.availability === 'unrecorded' || !(s.had_by && s.had_by.length), tokens: s.tokens_est, finds: (s.findings && s.findings.count) || 0 };
   });
-  for (const b of v.builtin || []) out.push({ key: b.key, letter: '·', name: b.label, kind: 'Session context', who: b.visible === 'hidden' ? 'every agent · not visible' : 'every agent', never: false, tokens: b.tokens_est, remainder: b.remainder, finds: 0 });
   return out;
 }
 
