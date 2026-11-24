@@ -742,6 +742,8 @@
      "peak": 14
     },
     "in_context": {
+     "t": 7200.0,
+     "latest": true,
      "total": 596000,
      "rows": [
       {

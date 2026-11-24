@@ -30,6 +30,11 @@ export const forgetTexts = view => {
   }
   // A call whose request failed is asked again after 30 s at the earliest; one whose result had not landed, once its result shows.
   const now = Date.now();
+  heldContexts = new Map();
+  for (const [k, e] of [...contexts.entries()]) {
+    if (e.data) heldContexts.set(k, e);
+    contexts.delete(k);
+  }
   for (const [k, e] of [...callDetails.entries()]) if ((e.error && now - e.at >= RETRY_MS) || (e.data && e.data.result == null && finished.has(k))) callDetails.delete(k);
 };
 
@@ -75,6 +80,25 @@ export function callDetail(id) {
     if (res && res.ok && res.j) callDetails.set(id, { data: res.j, text: typeof res.j.text === 'string' ? res.j.text : null });
     else callDetails.set(id, { at: Date.now(), error: (res && res.j && res.j.error) || (res ? `request refused (${res.status})` : 'The x-ray server did not answer.') });
   }).then(redraw);
+  return e;
+}
+// What an agent's context held at a moment, as the server counts it ({loading}, {error} or {data}, the list `in_context` holds for the latest reply): fetched once per view version, the last one shown meanwhile; the page draws again when it changes.
+const contexts = new Map();
+let heldContexts = new Map();
+export const contextAtUrl = (agent, at) => sessionUrl('context', { agent, at });
+export function contextAt(agent, at) {
+  const key = `${agent}@${at}`;
+  if (contexts.has(key)) return contexts.get(key);
+  const before = heldContexts.get(key);
+  heldContexts.delete(key);
+  const e = before || { loading: true };
+  contexts.set(key, e);
+  xrayFetch(contextAtUrl(agent, at)).then(res => {
+    const now = res && res.ok && res.j ? { data: res.j } : { error: (res && res.j && res.j.error) || (res ? `request refused (${res.status})` : 'The x-ray server did not answer.') };
+    const same = before && now.data && JSON.stringify(now.data) === JSON.stringify(before.data);
+    contexts.set(key, same ? before : now);
+    if (!same) redraw();
+  });
   return e;
 }
 // The recorded text of one item of an agent's own context (`agent` is empty for the main agent).

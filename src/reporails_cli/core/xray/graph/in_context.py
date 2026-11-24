@@ -1,5 +1,5 @@
-"""The rows of what an agent's context held at its peak reply: the task prompt, the agent definition, the sources
-and hooks loaded by then, and the tail of measured or estimated shares that makes up the rest of its total.
+"""The rows of what an agent's context held at one of its replies: the task prompt, the agent definition, the
+sources and hooks loaded by then, and the tail of measured or estimated shares that makes up the rest of its total.
 """
 
 from __future__ import annotations
@@ -359,38 +359,34 @@ def _own_and_rows(
     return group, (*opening, *kept)
 
 
-def build_in_context(
+def _reply_index(composition: XrayComposition, moment: float | None) -> int | None:
+    """The index of the last reply at or before `moment`, or of the agent's latest reply when `moment` is None;
+    None when the agent has no such reply."""
+    if moment is None:
+        return len(composition.replies) - 1 if composition.replies else None
+    found = [index for index, reply in enumerate(composition.replies) if reply.t <= moment]
+    return found[-1] if found else None
+
+
+def _reply_context(
     own: AgentRecords,
     run_type: str | None,
-    series: tuple[XrayComposition, tuple[CarriedReply, ...]],
     world: AgentWorld,
+    reply: ReplyComposition,
+    *,
     brief_chars: int | None,
-) -> XrayInContext | None:
-    """What the agent's context held at its peak reply: its task prompt (a subagent), its definition, the sources
-    loaded by then (inherited first, then by time), the hooks that fired, the tool calls and results, and the
-    conversation as what is left, with the coding agent's own context as one group beside them. A reply whose
-    request was recorded holds the group's items as measured shares of that request. A reply whose request was not
-    recorded, after a complete one, holds that earlier request's system prompt, tool definitions and skills listing
-    (the request and its tokens per character are named), and the conversation and tool results as what is left,
-    labelled an estimate. With no complete request before it, the group is the estimated system prompt and
-    listings, and the conversation and tool results take what the estimates leave. The rows and the group may
-    overshoot the total; the last row is then 0 and `over` is set. None when the agent has no reply."""
-    composition, carried = series
-    if composition.peak is None:
-        return None
-    reply = composition.replies[composition.peak]
+    carried: CarriedReply,
+    latest: bool,
+) -> XrayInContext:
+    """What the agent's context held at `reply`, one of its replies (`latest` when it is the last)."""
     texts = {item.key: item for item in world.context.vocabulary.context.texts}
     rows, mcp, defined, injected = _opening_rows(
-        own,
-        run_type,
-        brief_chars,
-        reply_t=reply.t,
-        carried=carried[composition.peak],
-        texts=texts,
-        world=world,
+        own, run_type, brief_chars, reply_t=reply.t, carried=carried, texts=texts, world=world
     )
     group, shown = _own_and_rows(own, world, reply, rows, taken=(mcp, defined), injected=injected, texts=texts)
     return XrayInContext(
+        reply.t,
+        latest,
         reply.total,
         shown,
         group,
@@ -399,4 +395,33 @@ def build_in_context(
         None if reply.measured else texts["estimated"].reason,
         None if reply.sized is None else reply.sized.size.request_id,
         None if reply.sized is None else reply.sized.scale,
+    )
+
+
+def build_in_context(
+    own: AgentRecords,
+    run_type: str | None,
+    series: tuple[XrayComposition, tuple[CarriedReply, ...]],
+    world: AgentWorld,
+    brief_chars: int | None,
+    *,
+    moment: float | None = None,
+) -> XrayInContext | None:
+    """What the agent's context held at its reply at or before `moment` (its latest reply when `moment` is None),
+    counted from the last compaction before that reply: its task prompt (a subagent), its definition, the sources
+    loaded by then (inherited first, then by time), the hooks that fired, the tool calls and results, and the
+    conversation as what is left, with the coding agent's own context as one group beside them. A reply whose
+    request was recorded holds the group's items as measured shares of that request. A reply whose request was not
+    recorded, after a complete one, holds that earlier request's system prompt, tool definitions and skills listing
+    (the request and its tokens per character are named), and the conversation and tool results as what is left,
+    labelled an estimate. With no complete request before it, the group is the estimated system prompt and
+    listings, and the conversation and tool results take what the estimates leave. The rows and the group may
+    overshoot the total; the last row is then 0 and `over` is set. None when the agent has no such reply."""
+    composition, carried = series
+    index = _reply_index(composition, moment)
+    if index is None:
+        return None
+    latest = index == len(composition.replies) - 1
+    return _reply_context(
+        own, run_type, world, composition.replies[index], brief_chars=brief_chars, carried=carried[index], latest=latest
     )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 
 from reporails_cli.core.mapper.structure import top_level_sections
@@ -25,6 +26,24 @@ def text_fields(lookup: Callable[[XraySession, str], str | None]) -> Callable[[X
         return None if text is None else {"text": text}
 
     return fields
+
+
+def seconds_of(text: str) -> float | None:
+    """The number of seconds a query value writes; None for text that is no finite number."""
+    try:
+        seconds = float(text)
+    except ValueError:
+        return None
+    return seconds if math.isfinite(seconds) else None
+
+
+def in_context_fields(session: XraySession, agent: str, at: str) -> JsonObject | None:
+    """The reply fields of an agent's "in context" list at its last reply at or before `at` seconds into the
+    session; None for an `at` that is no number, an agent the session lists none of and a moment before the agent's
+    first reply."""
+    moment = seconds_of(at)
+    found = None if moment is None else session.in_context_at(agent, moment)
+    return None if found is None else found.to_json()
 
 
 def context_fields(session: XraySession, agent: str, name: str) -> JsonObject | None:

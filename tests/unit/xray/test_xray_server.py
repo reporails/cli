@@ -1085,6 +1085,24 @@ def test_context_text_refuses_an_item_no_recorded_request_holds_and_a_missing_or
     assert _get(client, "/system", {"type": ""}).status_code == 404
 
 
+def test_context_replies_with_what_an_agents_context_held_at_a_moment_and_refuses_what_it_cannot_place(
+    client: TestClient,
+) -> None:
+    view = client.get("/view", headers={"X-Xray-Token": TOKEN}).json()
+    detail = next(node for node in view["nodes"] if node["id"] == "main")["detail"]
+    first, last = detail["composition"]["replies"][0], detail["composition"]["replies"][-1]
+    assert first[0] < last[0]
+    now = _get(client, "/context", {"agent": "", "at": str(last[0])})
+    assert now.status_code == 200 and now.json()["latest"] is True
+    assert now.json()["total"] == last[1] == detail["in_context"]["total"]
+    earlier = _get(client, "/context", {"agent": "", "at": str(first[0])})
+    assert earlier.status_code == 200 and earlier.json()["latest"] is False
+    assert earlier.json()["total"] == first[1] and earlier.json()["t"] == first[0]
+    for query in ({}, {"agent": ""}, {"at": "soon"}, {"at": "nan"}, {"agent": "nosuch", "at": "9"}, {"at": "-1"}):
+        assert _get(client, "/context", query).status_code == 400
+    assert _get(client, "/context", {"agent": "", "at": "9"}, token=None).status_code == 403
+
+
 @pytest.fixture
 def broken_config(project: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (project / ".ails").mkdir()

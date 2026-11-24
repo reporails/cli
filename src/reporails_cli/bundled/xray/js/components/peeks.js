@@ -1,7 +1,7 @@
 // The details renderers for a source, an item of the coding agent's own context, a task prompt, the peak context and the estimated cost.
 import { el, nk, err } from '../dom.js';
 import { clock, costEst, exclusionNote, hookStatus, k1, MCP_STATES, plural, startedAt, tk, usd } from '../format.js';
-import { briefUrl, contextTextUrl, hookOutputUrl, outputUrl, peekUrl } from '../api.js';
+import { briefUrl, contextAt, contextTextUrl, hookOutputUrl, outputUrl, peekUrl } from '../api.js';
 import { textBlock } from './textblock.js';
 import { hashFor } from '../state.js';
 import { bandColour } from '../geometry.js';
@@ -48,16 +48,19 @@ function fetched(entry, pick) {
   return out;
 }
 
-// The reason an agent had the source, as the first recorded load words it.
-function whyLoaded(view, id) {
-  for (const n of view.nodes) {
+// The reason an agent had the source: the row of an agent's latest list that words it, else the way its first recorded load came (a source a compaction dropped has no row there).
+function whyLoaded(ix, id) {
+  for (const n of ix.view.nodes) {
     const rows = (n.detail && n.detail.in_context && n.detail.in_context.rows) || [];
     const hit = rows.find(r => r.source === id && r.reason);
     if (hit) return hit.reason;
   }
+  for (const st of ix.view.stations) {
+    const load = st.loads.find(l => l.source === id);
+    if (load && ix.triggers.has(load.trigger)) return ix.triggers.get(load.trigger);
+  }
   return null;
 }
-
 
 // When the agent had the source: its first load into that agent, else the agent's start.
 function loadTime(ix, node, s) {
@@ -149,7 +152,7 @@ registerPeek('src', (env, id) => {
   const loaded = s.kind && (ix.kinds.get(s.kind) || {}).definitions
     ? (s.launches > 0 ? `launched as ${plural(s.launches, 'subagent')}` : 'never launched')
     : unrecorded ? UNRECORDED : holders.length ? `${holders.length} of ${view.nodes.length} agents` : 'no agent';
-  const why = unrecorded ? null : whyLoaded(view, s.id);
+  const why = unrecorded ? null : whyLoaded(ix, s.id);
   const m = s.mcp;
   const where = m ? (m.declared_in ? `${SCOPES[m.scope] || m.scope}: ${m.declared_in}` : 'no configuration file declares it') : null;
   const side = [kv([['Path', s.path], ['Plugin', m ? m.plugin : null], ['State', m ? MCP_STATES[m.state] : null], ['Declared in', where], ['Loaded by', loaded], ['Why', why]])];
@@ -329,8 +332,8 @@ registerPeek('peak', (env, id) => {
   }
   const cached = Math.round(reply[4] / total * 100);
   const over = replyOver(reply);
-  const io = ((node.detail.in_context || {}).rows || []).find(r => r.key === 'tool_io');
-  const ic = node.detail.in_context;
+  const ic = contextAt(node.id, reply[0]).data;
+  const io = ic && ic.rows.find(r => r.key === 'tool_io');
   const ioFacts = io && io.measure ? [kv([[io.label, tk(io.tokens_est, true)], ['Characters', io.measure.chars.toLocaleString('en-US')], ['Image tokens', io.measure.images > 0 ? io.measure.images.toLocaleString('en-US') : null], ['Tokens per character', ic.tokens_per_char == null ? null : Number(ic.tokens_per_char).toPrecision(3)]])] : [];
   const remLabel = (adapter.composition.find(c => c.key === adapter.composition_remainder) || {}).label || adapter.composition_remainder;
   return {

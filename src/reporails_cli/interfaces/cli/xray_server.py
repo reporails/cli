@@ -62,6 +62,7 @@ from reporails_cli.interfaces.cli.xray_fields import (
     context_fields,
     finding_fields,
     hook_output_fields,
+    in_context_fields,
     text_fields,
 )
 from reporails_cli.interfaces.cli.xray_launch import RequestClock, bound_socket, mark_requests, run_until_idle, span
@@ -237,8 +238,7 @@ class XrayServer:
         )
 
     async def launch(self, _request: Request) -> Response:
-        """The id of this launch, so a caller can tell a live page from a record left behind, and whether the
-        installed code changed since it started."""
+        """The id of this launch, to tell a live page from a record left behind, and whether ails changed since."""
         changed = await run_in_threadpool(self._code_changed)
         return JSONResponse({"launch": self._identity.launch, "changed": changed}, headers=NO_STORE)
 
@@ -272,8 +272,7 @@ class XrayServer:
             return session.peek(RunContext(), path)
 
     async def _text_route(self, request: Request, route: _TextRoute) -> Response:
-        """Guard the request, read `?<query>=` and reply `{"id", ...}` with the fields the route's lookup finds in the
-        session the request is on."""
+        """Guard the request, read `?<query>=` and reply `{"id", ...}` with the fields the lookup finds."""
         refusal = await self._guard(request)
         if refusal is not None:
             return refusal
@@ -323,22 +322,29 @@ class XrayServer:
 
     async def context_text(self, request: Request) -> Response:
         """The recorded text of one own-context item: `?agent=<node id, empty for main>&item=<key>`."""
-        refusal = await self._guard(request)
-        if refusal is not None:
-            return refusal
-        chosen = await self._session_of(request)
-        if isinstance(chosen, JSONResponse):
-            return chosen
-        agent, item = request.query_params.get("agent", ""), request.query_params.get("item", "")
-        try:
-            fields = await run_in_threadpool(
-                self._locked, lambda s, key: context_fields(s, agent, key), chosen[1], item
-            )
-        except PayloadRefused as err:
-            return _refused(400, err.reason)
-        if fields is None:
-            return _refused(400, "no recorded request holds that item for that agent")
-        return JSONResponse({"id": f"{agent}:{item}", **fields}, headers=NO_STORE)
+        agent = request.query_params.get("agent", "")
+        return await self._text_route(
+            request,
+            _TextRoute(
+                "item",
+                "the query is ?agent=<node id>&item=<key>",
+                lambda session, item: context_fields(session, agent, item),
+                "no recorded request holds that item for that agent",
+            ),
+        )
+
+    async def in_context(self, request: Request) -> Response:
+        """What an agent's context held at a moment: `?agent=<node id, empty for main>&at=<seconds>`."""
+        agent = request.query_params.get("agent", "")
+        return await self._text_route(
+            request,
+            _TextRoute(
+                "at",
+                "the query is ?agent=<node id>&at=<seconds>",
+                lambda session, at: in_context_fields(session, agent, at),
+                "no reply of that agent holds a context at that moment",
+            ),
+        )
 
     async def prompt(self, request: Request) -> Response:
         """The text of one typed prompt of the session."""
@@ -538,6 +544,7 @@ def build_app(
             Route("/brief", server.brief, methods=["GET"]),
             Route("/output", server.output, methods=["GET"]),
             Route("/context-text", server.context_text, methods=["GET"]),
+            Route("/context", server.in_context, methods=["GET"]),
             Route("/prompt", server.prompt, methods=["GET"]),
             Route("/summary", server.summary, methods=["GET"]),
             Route("/call", server.call, methods=["GET"]),

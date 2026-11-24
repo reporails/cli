@@ -74,6 +74,23 @@ def step_project_with_compactions(context):
     )
 
 
+CALL_ROWS = {4: "toolu_c1", 7: "toolu_c2", 14: "toolu_c3", 18: "toolu_c4"}
+
+
+@given("a project with a recorded Claude Code session that compacted twice and called a tool in every reply")
+def step_project_with_calls(context):
+    step_project_with_compactions(context)
+    (context.project / "sub").mkdir()
+    (context.project / "sub" / "CLAUDE.md").write_text("# Sub\n\nRun `make check` in this folder.\n", encoding="utf-8")
+    path = next((context.home / ".claude" / "projects").rglob("session.jsonl"))
+    rows = [json.loads(row) for row in path.read_text(encoding="utf-8").splitlines()]
+    for number, use_id in CALL_ROWS.items():
+        rows[number]["message"]["content"] = [
+            {"type": "tool_use", "id": use_id, "name": "Bash", "input": {"command": "true"}}
+        ]
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+
+
 @given('the project\'s instruction file reads "{text}"')
 def step_instruction_text(context, text):
     (context.project / "CLAUDE.md").write_text(text + "\n", encoding="utf-8")
@@ -1004,6 +1021,15 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             },
         )
 
+    def _serve_context(self, query: dict[str, list[str]]) -> None:
+        """The agent's In context list of the fixture view, worded as the list at the moment asked for."""
+        agent, at = query.get("agent", [""])[0], query.get("at", [""])[0]
+        node = next((n for n in json.loads(self.view_text)["nodes"] if n["id"] == agent), None)
+        held = None if node is None else node["detail"].get("in_context")
+        if held is None:
+            return self._json(400, {"error": "no reply of that agent holds a context at that moment"})
+        self._json(200, {**held, "id": at, "t": float(at), "latest": False})
+
     def do_GET(self) -> None:  # http.server's name
         url = urlparse(self.path)
         query = parse_qs(url.query)
@@ -1030,8 +1056,9 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         if url.path == "/first-prompt":
             wanted = query.get("session", [""])[0]
             return self._json(200, {"id": wanted, "text": STUB_PROMPTS.get(wanted, "")})
-        if url.path == "/view":
-            return self._serve_view(query)
+        served = {"/view": self._serve_view, "/context": self._serve_context}
+        if url.path in served:
+            return served[url.path](query)
         key = query.get("id", query.get("subagent", query.get("path", [""])))[0]
         texts = {
             "/call": CALLS.get(key, ""),
@@ -2125,6 +2152,33 @@ def step_first_compaction_without_summary(context):
     path = next((context.home / ".claude" / "projects").rglob("session.jsonl"))
     kept = [row for row in path.read_text(encoding="utf-8").splitlines() if SUMMARIES[0] not in row]
     path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+
+def _thousands(tokens: float) -> str:
+    """A token count as the page's size labels write it between one thousand and a million."""
+    return f"{tokens / 1000:.0f}k" if tokens >= 10000 else f"{round(tokens / 1000, 1):g}k"
+
+
+@then(
+    "the In context list names the latest reply and lists nothing loaded before the last compaction, and picking "
+    "an earlier call lists the file loaded then with that reply's total"
+)
+def step_in_context_moments(context):
+    token = re.search(r'name="xray-token" content="([^"]+)"', _get(context.url)[1]).group(1)
+    main = next(n for n in json.loads(_get(context.url + "view", token)[1])["nodes"] if n["id"] == "main")
+    replies = main["detail"]["composition"]["replies"]
+    earlier, latest = replies[1], replies[-1]
+    seen = _layout_script(context, "moments", CALL_ROWS[7], CALL_ROWS[18])
+    if seen is None:
+        return
+    assert seen["ready"], "the page did not draw"
+    last = _thousands(latest[1])
+    for shown in (seen["base"], seen["picked"][1]):
+        assert not any(source.endswith("CLAUDE.md") for source in shown["sources"]), shown
+        assert shown["heading"].endswith("latest reply") and shown["heading"].startswith(last), shown["heading"]
+    before = seen["picked"][0]
+    assert any(source.endswith("sub/CLAUDE.md") for source in before["sources"]), before
+    assert before["heading"].startswith(_thousands(earlier[1])) and "latest" not in before["heading"], before
 
 
 @then("the first compaction offers no summary and the second offers the summary its own boundary links to")

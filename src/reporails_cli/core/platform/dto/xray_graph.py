@@ -347,25 +347,26 @@ class XrayContextRow:
 
 @dataclass(frozen=True)
 class XrayInContext:
-    """What an agent's context held at its peak reply: the measured total, the rows that make it up (the last row
-    takes what the estimates leave), the coding agent's own context as one group beside them, and whether the
-    estimates overshoot the total, which leaves that row at 0."""
+    """What an agent's context held at one reply: its time, latest or not, the exact total, the rows, the own group."""
 
+    t: float
+    latest: bool
     total: int
     rows: tuple[XrayContextRow, ...]
     own: XrayOwnContext
     over: bool
-    # Whether the rows are shares of the request Claude Code recorded, not estimates.
+    # Whether the rows are shares of the request Claude Code recorded, not estimates; what to tell the reader when
+    # they are estimates; the recorded request they are shares of and its tokens per character (None: not measured).
     measured: bool
-    # What to tell the reader when the rows are estimates; None when they are measured.
     note: str | None
-    # The id of the recorded request the rows are shares of and its tokens per character; None when not measured.
     request_id: str | None
     tokens_per_char: float | None
 
     def to_json(self) -> JsonObject:
         """The list as a JSON object."""
         return {
+            "t": self.t,
+            "latest": self.latest,
             "total": self.total,
             "rows": objects(row.to_json() for row in self.rows),
             "own": self.own.to_json(),
@@ -408,9 +409,8 @@ class XrayBack:
 
 @dataclass(frozen=True)
 class XrayAgentDetail:
-    """What the page shows of an agent beyond the generic node: its context line, what it was handed, what it
-    handed back, how it ended, the prompts a person typed to it and
-    what its context held at its peak reply (None for an agent with no reply)."""
+    """What the page shows of an agent beyond the generic node: its context line, what it was handed and handed back,
+    how it ended, the prompts a person typed to it and its context at its latest reply (None without a reply)."""
 
     context_start: int | None
     peak: int | None

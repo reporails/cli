@@ -37,6 +37,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayDown,
     XrayEdge,
     XrayGiven,
+    XrayInContext,
     XrayPrompt,
     XrayUsage,
 )
@@ -289,6 +290,11 @@ def _detail(
     )
 
 
+def _run_type(own: AgentRecords) -> str | None:
+    """The agent type a subagent was launched as; None for the main agent and for a run that names none."""
+    return next((r.subagent_type for r in own.records if r.event == "subagent_run"), None)
+
+
 def _brief_chars(own: AgentRecords) -> int | None:
     """The size in characters of the task brief a subagent was launched with; None when its records hold none."""
     meta = _launch(own.records)
@@ -431,7 +437,7 @@ def _subagent_given(
 def _sub_node(
     own: AgentRecords, parent: AgentRecords, meta: SubagentMeta | None, world: AgentWorld
 ) -> tuple[ProducedNode, XrayEdge]:
-    run_type = next((r.subagent_type for r in own.records if r.event == "subagent_run"), None)
+    run_type = _run_type(own)
     task, given, down = _subagent_given(own, meta, run_type, world)
     handoff = _handoff(own, parent, meta, down, world)
     detail = _detail(own, given, (down, handoff.back, handoff.outcome, handoff.source), world, run_type)
@@ -467,12 +473,31 @@ def _groups(records: Sequence[EventRecord]) -> dict[str, list[EventRecord]]:
     return groups
 
 
+def _world(records: Sequence[EventRecord], frame: Frame, context: ProducerContext) -> AgentWorld:
+    """What every agent of `records` is read against."""
+    times = sorted(moment for record in records if (moment := frame_time(frame, record)) is not None)
+    return AgentWorld(frame, context, times[-1] if times else 0.0)
+
+
+def agent_context_at(
+    records: Sequence[EventRecord], frame: Frame, context: ProducerContext, agent: str, moment: float
+) -> XrayInContext | None:
+    """What the context of the agent keyed `agent` held at its last reply at or before `moment`; None for an agent
+    `records` hold none of and for a moment before its first reply."""
+    group = _groups(records).get(agent)
+    if group is None:
+        return None
+    own = _own(agent, group, frame, context)
+    brief = _brief_chars(own)
+    series = composition_series(own, context.sources, frame, brief)
+    return build_in_context(own, _run_type(own), series, _world(records, frame, context), brief, moment=moment)
+
+
 def produce_agents(records: Sequence[EventRecord], frame: Frame, context: ProducerContext) -> Produced:
     """The agent nodes of `records`, the main agent first and the subagents in launch order, and one edge from each
     subagent's parent to it."""
     owns = {key: _own(key, group, frame, context) for key, group in _groups(records).items()}
-    times = sorted(moment for record in records if (moment := frame_time(frame, record)) is not None)
-    world = AgentWorld(frame, context, times[-1] if times else 0.0)
+    world = _world(records, frame, context)
     metas = {key: _launch(own.records) for key, own in owns.items() if key != MAIN_ID}
     nodes = [_main_node(owns[MAIN_ID], world)]
     edges: list[XrayEdge] = []

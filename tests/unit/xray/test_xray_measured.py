@@ -20,6 +20,7 @@ from reporails_cli.core.platform.dto.xray_composition import COMPOSITION_KEYS, R
 from reporails_cli.core.platform.dto.xray_graph import XrayContextRow, XrayInContext
 from reporails_cli.core.platform.dto.xray_own import XrayListed, XrayOwnItem, XrayRowMeasure
 from tests.unit.xray.test_xray_composition import _files, _rows
+from tests.unit.xray.test_xray_context_at import _at
 from tests.unit.xray.test_xray_graph import _agent, _graph, _node, harness, launch, load, rec, reply
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
@@ -167,13 +168,13 @@ def test_a_request_with_unresolved_messages_is_not_measured(tmp_path: Path) -> N
     assert not any(item.key == "tool_definitions" for item in _raw(tmp_path, records).own.rows)
 
 
-def test_the_builtin_items_read_the_request_of_the_peak_reply_not_one_with_the_same_total(tmp_path: Path) -> None:
-    peak_request, other_request = _size("a"), _size("b", system_chars=6000, tools_chars=6000)
+def test_the_builtin_items_read_the_request_of_the_latest_reply_not_one_with_the_same_total(tmp_path: Path) -> None:
+    latest_request, other_request = _size("a"), _size("b", system_chars=6000, tools_chars=6000)
     records = [
         _request(0.5, other_request),
-        _answer(2, 17200, "b"),
-        _request(0.4, peak_request),
-        _answer(1, 17200, "a"),
+        _answer(1, 17200, "b"),
+        _request(0.4, latest_request),
+        _answer(2, 17200, "a"),
     ]
     items = _items(tmp_path, records)
     assert items["system_prompt"].tokens_est == 4000 and items["tool_definitions"].tokens_est == 8000
@@ -272,9 +273,9 @@ def test_a_peak_with_no_complete_request_is_sized_by_the_latest_complete_one_bef
 def test_a_peak_is_never_sized_by_a_request_recorded_after_it(tmp_path: Path) -> None:
     later = _size("b", system_chars=1000, tools_chars=1000)
     records = [*_pending_peak("missing"), _request(2.5, later), _answer(3, 10000, "b")]
-    ic = _context(tmp_path, records)
-    assert ic.total == 20000 and ic.request_id == "a" and _by_key(ic)["system_prompt"] == 4000
-    items = _items(tmp_path, records)
+    ic = _at(tmp_path, records, 2.5)
+    assert ic is not None and ic.total == 20000 and ic.request_id == "a"
+    items = {item.key: item for item in ic.own.rows}
     assert items["system_prompt"].tokens_est == 4000
 
 

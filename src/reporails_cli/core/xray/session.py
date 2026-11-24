@@ -56,7 +56,7 @@ from reporails_cli.core.platform.dto.xray import (
     XrayWindow,
 )
 from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable, WorkflowReading
-from reporails_cli.core.platform.dto.xray_graph import OutputSource
+from reporails_cli.core.platform.dto.xray_graph import OutputSource, XrayInContext
 from reporails_cli.core.platform.dto.xray_own import ContextKey, XrayOwnContext, XrayOwnItem
 from reporails_cli.core.platform.dto.xray_sources import (
     ArtifactFile,
@@ -81,7 +81,7 @@ from reporails_cli.core.xray.derive import epoch, latest_model, real_path, repli
 from reporails_cli.core.xray.facts import build_facts
 from reporails_cli.core.xray.funnel import build_funnel
 from reporails_cli.core.xray.graph.agents import MAIN_ID, main_records
-from reporails_cli.core.xray.graph.build import build_graph
+from reporails_cli.core.xray.graph.build import build_graph, context_at
 from reporails_cli.core.xray.graph.hook_sources import with_earlier_firings
 from reporails_cli.core.xray.graph.sources import build_sources, ran_sources
 from reporails_cli.core.xray.vocabulary import vocabulary_for
@@ -137,13 +137,14 @@ class _FileReads:
     """Where the reads of one session's transcript files stopped: the cursor of the record read and, per file (a
     subagent id, None for the main one), the byte offset scanned for compaction summaries and the summaries
     found so far by the id of the boundary row each follows, and the source each subagent's output text is read from
-    as the last view sized it, and each agent's own context as the last view held it, and the hook firings of the
-    project's other sessions."""
+    as the last view sized it, each agent's own context as the last view held it, how an agent's context at a given
+    reply is counted from the records the last view read, and the hook firings of the project's other sessions."""
 
     def __init__(self, project_root: Path, session_file: Path) -> None:
         self.earlier = _EarlierSessions(project_root, session_file)
         self.outputs: dict[str, OutputSource] = {}
         self.own: dict[str, XrayOwnContext] = {}
+        self.context_at: Callable[[str, float], XrayInContext | None] | None = None
         self._cursor = TranscriptCursor()
         self._found: dict[str | None, tuple[int, dict[str, SummarySpan]]] = {}
 
@@ -339,6 +340,12 @@ class XraySession:
         refusal naming what was wrong, and the other runs are still read."""
         return workflow_runs(AGENT, self._file)
 
+    def in_context_at(self, agent: str, moment: float) -> XrayInContext | None:
+        """What the context of `agent` (a node id, empty for the main agent) held at its last reply at or before
+        `moment` seconds into the session, from the records the last view read; None before any view, for an agent
+        the view lists none of and for a moment before its first reply."""
+        return None if self._reads.context_at is None else self._reads.context_at(agent or MAIN_ID, moment)
+
     def context_text(self, agent: str, item: ContextKey) -> list[str] | None:
         """The texts of one item of an agent's own context, read from the request the last view sized the item from:
         `agent` is a node id, empty for the main agent. None for an agent or item the last view holds no recorded
@@ -430,12 +437,20 @@ class XraySession:
         records = [record for record in self._transcript if record.event != "refusal"]
         frame = self._frame(files, records)
         vocabulary = vocabulary_for(AGENT, [item.label for item in files if item.kind == "agent"])
-        artifacts = build_artifacts(run, files, self._findings, self._root, advertised=advertised_files(files, records))
-        table = build_sources(run, artifacts, records, frame)
+        table = build_sources(
+            run,
+            build_artifacts(run, files, self._findings, self._root, advertised=advertised_files(files, records)),
+            records,
+            frame,
+        )
         self._reads.earlier.request()
         table = replace(table, entries=with_earlier_firings(table.entries, self._reads.earlier.found()))
         prices = load_price_list()
-        graph = build_graph(records, frame, table, vocabulary, prices, workflows=WorkflowReading(self.workflows()))
+        workflows = WorkflowReading(self.workflows())
+        graph = build_graph(records, frame, table, vocabulary, prices, workflows=workflows)
+        self._reads.context_at = lambda agent, moment: context_at(
+            records, frame, table, vocabulary, prices, workflows=workflows, agent=agent, at=moment
+        )
         self._reads.outputs = {
             node.id: node.detail.back.source for node in graph.nodes if node.detail.back.source is not None
         }

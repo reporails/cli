@@ -1,6 +1,6 @@
-// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions|summaries|stripe|restart|recorded|excluded|agent> [source id]
+// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions|summaries|stripe|restart|recorded|excluded|agent|moments> [source id | call ids]
 // Drives the real `ails xray` page in headless Chrome and prints one JSON object describing what it drew.
-import { openPage, toGraph } from './xray_cdp.mjs';
+import { openPage, sleep, toGraph } from './xray_cdp.mjs';
 
 const [url, mode] = [process.argv[2], process.argv[3]];
 const page = await openPage(url, 1440);
@@ -172,6 +172,21 @@ if (mode === 'restart' && ready) {
   await page.until(`!document.querySelector('.pk-dialog')`);
   out.belowCard = below;
   out.focusedCard = await page.ev(`document.activeElement.dataset.card || null`);
+}
+
+// The inspector's In context list as the page draws it with nothing picked, then with each call (argv[4..]) picked in turn.
+if (mode === 'moments' && ready) {
+  const list = () => page.ev(`(() => { const s = document.querySelector('#inspector .ix-ctx'); return s ? { heading: (s.querySelector('.ix-total') || {}).textContent || null, sources: [...s.querySelectorAll('[data-source]')].map(b => b.dataset.source), text: s.textContent } : null; })()`);
+  out.base = await list();
+  out.picked = [];
+  for (const id of process.argv.slice(4)) {
+    await page.ev(`(() => { const x = document.createElement('button'); x.dataset.peek = 'call:' + ${JSON.stringify(id)}; document.body.append(x); x.click(); x.remove(); return 0; })()`);
+    await page.until(`(() => { const s = document.querySelector('#inspector .ix-ctx'); return !!s && !!s.querySelector('.ix-total') && !/Loading/.test(s.textContent); })()`, 120);
+    await sleep(300);
+    out.picked.push(await list());
+    await page.ev(`(document.querySelector('[data-close-peek].pk-x') || { click() {} }).click(); 0`);
+    await sleep(300);
+  }
 }
 
 console.log(JSON.stringify(out));

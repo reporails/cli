@@ -20,6 +20,7 @@ from reporails_cli.core.platform.dto.xray_cost import PriceList
 from reporails_cli.core.platform.dto.xray_graph import (
     LoadEvent,
     SourceKind,
+    XrayInContext,
     XrayLoad,
     XrayNode,
     XrayStation,
@@ -34,6 +35,7 @@ from reporails_cli.core.platform.dto.xray_sources import (
 )
 from reporails_cli.core.xray.cost import session_cost
 from reporails_cli.core.xray.graph import spine
+from reporails_cli.core.xray.graph.agents import agent_context_at
 from reporails_cli.core.xray.graph.bursts import bursts
 from reporails_cli.core.xray.graph.port import PRODUCERS
 from reporails_cli.core.xray.graph.shapes import first_requests, launch_metas, launched_with
@@ -183,6 +185,22 @@ def build_graph(
         session_cost([(node.id, node.detail.usage.cost) for node in pnodes]),
         workflow_nodes(workflows, records, pnodes, frame, root),
     )
+
+
+def context_at(
+    records: Sequence[EventRecord],
+    frame: Frame,
+    sources: SourceTable,
+    vocabulary: AdapterVocabulary,
+    prices: PriceList,
+    *,
+    workflows: WorkflowReading,
+    agent: str,
+    at: float,
+) -> XrayInContext | None:
+    """What the context of the agent keyed `agent` held at its last reply at or before `at` seconds into the
+    session: the agent's "in context" list for that moment, from the same records `build_graph` reads."""
+    return agent_context_at(records, frame, ProducerContext(sources, vocabulary, prices, workflows), agent, at)
 
 
 def _had_by(

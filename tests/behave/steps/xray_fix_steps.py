@@ -187,24 +187,18 @@ def step_call_instructions(context):
     flagged = {k["key"] for k in view["adapter"]["source_kinds"] if k.get("instructions")}
     by_id = {s["id"]: s for s in view["sources"]}
     calls = sorted(((c["t"], t["node"], c) for t in view["track"] for c in t["calls"]), key=lambda r: r[0])[:150]
-    stations = {s["node"]: s for s in view["stations"]}
-
-    def in_context(when: float, node_id: str) -> list[str]:
-        want: list[str] = []
-        for load in stations[node_id]["loads"]:
-            source = by_id.get(load["source"])
-            if (
-                source
-                and (load["t"] is None or load["t"] <= when)
-                and source["kind"] in flagged
-                and source["id"] not in want
-            ):
-                want.append(source["id"])
-        return want
-
-    index = max(i for i, r in enumerate(calls) if in_context(r[0], r[1]))
-    when, node_id, call = calls[index]
-    want = in_context(when, node_id)
+    held = {
+        n["id"]: [
+            r["source"]
+            for r in n["detail"]["in_context"]["rows"]
+            if r["key"] == "source" and by_id[r["source"]]["kind"] in flagged
+        ]
+        for n in view["nodes"]
+        if n["detail"].get("in_context")
+    }
+    index = max(i for i, r in enumerate(calls) if held.get(r[1]))
+    _, node_id, call = calls[index]
+    want = held[node_id]
     seen = _drive(context, "calls_instr", {"id": call["use_id"], "index": index})
     if seen is None:
         return
@@ -233,7 +227,7 @@ def step_solo(context):
     tiles = seen["tiles"]
     assert [t[: len(x)] for t, x in zip(tiles, labels, strict=True)] == labels, tiles
     assert not any("this agent" in t for t in tiles), "one agent is not 'this agent'"
-    assert seen["context"] and seen["context"].endswith("at peak"), seen
+    assert seen["context"] and seen["context"].endswith("latest reply"), seen
     assert f"${node['detail']['cost']['total_usd']:.2f}" in seen["tiles"][1], seen["tiles"]
 
 
@@ -301,7 +295,7 @@ def step_wording(context):
     if seen is None:
         return
     view = context.fixture
-    assert seen["total"].endswith(" at peak") and not seen["total"].startswith("~"), seen["total"]
+    assert seen["total"].endswith(" · latest reply") and not seen["total"].startswith("~"), seen["total"]
     assert "Read from cache at this turn" in seen["peak"], seen["peak"]
     assert "Read from cache across all replies" in seen["cost"], seen["cost"]
     assert seen["roles"] == ["Index", "Read on demand"], seen["roles"]

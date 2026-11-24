@@ -127,6 +127,12 @@ export function callIndex(ix) {
   return made;
 }
 
+// The moment the picked call stands for on `node`: the call's time when the call is the node's own, else null (the node's latest reply).
+export function pickedMoment(ix, state, node) {
+  const found = state.peek && state.peek.kind === 'call' ? callIndex(ix).byId.get(state.peek.id) : null;
+  return found && found.node.id === node.id ? found.call.t : null;
+}
+
 // The ids of a node and every agent below it.
 export function subtreeIds(ix, id) {
   const out = new Set();
