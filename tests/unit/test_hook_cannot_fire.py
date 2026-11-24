@@ -8,7 +8,7 @@ import pytest
 
 from reporails_cli.core.platform.utils.hook_config import cannot_fire
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 
 
 def _script(folder: Path, name: str, *, executable: bool) -> Path:
