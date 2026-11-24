@@ -2162,7 +2162,8 @@ def _thousands(tokens: float) -> str:
 @then(
     "the In context list names the latest reply and lists nothing loaded before the last compaction, and picking "
     "an earlier call lists the file loaded then with that reply's total, and a row of that list opens that reply's "
-    "details and keeps the list"
+    "details and keeps the list, and closing that row's details returns to the call's details with the list still "
+    "naming the call's moment"
 )
 def step_in_context_moments(context):
     token = re.search(r'name="xray-token" content="([^"]+)"', _get(context.url)[1]).group(1)
@@ -2183,6 +2184,9 @@ def step_in_context_moments(context):
     opened = seen["opened"][0]
     assert opened["kicker"].startswith("Context at a reply") and opened["title"] == f"{earlier[1]:,} tokens", opened
     assert opened["list"]["heading"] == before["heading"] and opened["list"]["sources"] == before["sources"], opened
+    closed = seen["closed"][0]
+    assert closed["kicker"].startswith("Tool call"), closed
+    assert closed["list"]["heading"] == before["heading"] and "latest" not in closed["list"]["heading"], closed
 
 
 @then("the first compaction offers no summary and the second offers the summary its own boundary links to")

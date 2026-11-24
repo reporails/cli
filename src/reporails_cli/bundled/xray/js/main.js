@@ -141,7 +141,14 @@ async function runAct(kind, path) {
 
 const toggle = (set, v) => { if (!set.delete(v)) set.add(v); };
 
-const closePeek = () => { state.peek = null; state.at = null; };
+const closePeek = () => { state.peek = null; state.from = null; };
+
+// Closing details a list row opened returns to the call details the row's list was for; closing those, or any other details, shuts them.
+const leavePeek = () => {
+  const back = state.from;
+  closePeek();
+  state.peek = back;
+};
 
 // Selects an agent: its parents become the path and it becomes the selection. True when the page can draw it now.
 function selectNode(id) {
@@ -160,8 +167,9 @@ const inspected = () => ix.nodes.get(state.sel) || ix.nodes.get(state.path[state
 // A builtin peek's id is "<item key>:<node id>": the item's row is only marked in the inspector of that node.
 function openPeek(kind, id, from) {
   details.remember(calls.openerOf(from) || from);
+  const call = state.peek && state.peek.kind === 'call' ? state.peek : state.from;
+  state.from = from.dataset.at == null ? null : call;
   state.peek = { kind, id };
-  state.at = from.dataset.at == null ? null : { node: from.dataset.atNode, t: Number(from.dataset.at) };
   if (kind !== 'builtin') return;
   state.ownOpen = true;
   const node = id.slice(id.indexOf(':') + 1);
@@ -208,7 +216,7 @@ document.addEventListener('click', e => {
   if (t.closest('[data-clear]')) { state.pinned = null; return render(); }
   const eye = t.closest('[data-eye]');
   if (eye) { state.layers[eye.dataset.eye] = !state.layers[eye.dataset.eye]; return render(); }
-  if (t.closest('[data-close-peek]')) { closePeek(); return render(); }
+  if (t.closest('[data-close-peek]')) { leavePeek(); return render(); }
   const pin = t.closest('[data-pin]');
   if (pin) { state.pinned = pin.dataset.pin; closePeek(); return render(); }
   if (t.closest('[data-own-group]')) { state.ownOpen = !state.ownOpen; return render(); }
@@ -253,7 +261,7 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (e.key !== 'Escape' || e.defaultPrevented) return;
-  if (state.peek) closePeek();
+  if (state.peek) leavePeek();
   else if (state.sel) state.sel = null;
   else if (state.pinned) state.pinned = null;
   else return;

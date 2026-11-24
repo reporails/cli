@@ -127,13 +127,20 @@ export function callIndex(ix) {
   return made;
 }
 
-// The moment the inspector's list on `node` is for: the picked call's time when the call is the node's own, else the moment a row of that list was opened at (`state.at`, kept while its details are open), else null (the node's latest reply).
+// The moment the inspector's list on `node` is for: the time of the call whose details are open, or whose details a row of the list opened (`state.from`), when the call is the node's own; else null (the node's latest reply).
 export function pickedMoment(ix, state, node) {
-  const peek = state.peek;
+  const peek = state.peek && state.peek.kind === 'call' ? state.peek : state.from;
   if (!peek) return null;
-  if (peek.kind !== 'call') return state.at && state.at.node === node.id ? state.at.t : null;
   const found = callIndex(ix).byId.get(peek.id);
   return found && found.node.id === node.id ? found.call.t : null;
+}
+
+// What the last compaction of `node` before `t` left of the instruction file `source` it had loaded; null when there was none.
+export function fileStateAt(ix, node, source, t) {
+  const held = ((ix.stations.get(node.id) || { compactions: [] }).compactions).filter(c => c.t < t);
+  const last = held[held.length - 1];
+  const file = last && last.files.find(f => f.source === source);
+  return file ? file.state : null;
 }
 
 // The ids of a node and every agent below it.

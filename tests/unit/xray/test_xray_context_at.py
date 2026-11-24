@@ -159,3 +159,27 @@ def test_a_source_says_why_in_the_wording_of_the_rows_and_a_dropped_hook_in_the_
     assert why[KEPT] == _rows(latest)[KEPT][1]
     assert why["SessionStart:startup"] == "fired 2 times"
     assert why[DROPPED] is None
+
+
+def _restored_before_the_stamp(root: Path) -> list[EventRecord]:
+    """A file loaded by a path match, then a compaction whose record is stamped after the whole-file attachment that
+    restores it (as the transcript stamps it), the attachment following the compaction in the file."""
+    claude, _, _ = _files(root)
+    return [
+        load(0.1, claude),
+        load(1.5, claude, memory_type="nested"),
+        reply(1, context=10000),
+        rec("post_compact", 2.4, source="auto"),
+        *_attached(2.1, claude),
+        reply(3, context=4000),
+    ]
+
+
+def test_a_file_the_compaction_restored_reports_the_restore_not_the_load_before_it(tmp_path: Path) -> None:
+    records = _restored_before_the_stamp(tmp_path)
+    before, after = _rows(_at(tmp_path, records, 1.1)), _rows(_at(tmp_path, records, 3.1))
+    assert before[KEPT][0] == pytest.approx(0.1)
+    assert after[KEPT][0] == pytest.approx(2.1)
+    assert after[KEPT][1] != before[KEPT][1]
+    latest = _agent(_node(_graph(tmp_path, records, _files(tmp_path)), "main")).in_context
+    assert _rows(latest) == _rows(_at(tmp_path, records, 3.0))

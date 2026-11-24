@@ -758,12 +758,89 @@
           "total": 596000,
           "rows": [
             {
+              "key": "source",
+              "source": "CLAUDE.md",
+              "kind": "instructions",
+              "label": "CLAUDE.md",
+              "reason": "loaded with the session's instructions",
+              "tokens_est": 2500,
+              "t": 0.0,
+              "findings": 21,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "~/.claude/CLAUDE.md",
+              "kind": "instructions",
+              "label": "~/.claude/CLAUDE.md",
+              "reason": "loaded with the session's instructions",
+              "tokens_est": 1640,
+              "t": 0.0,
+              "findings": null,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "~/.claude/projects/-work-demo/memory/MEMORY.md",
+              "kind": "memory",
+              "label": "MEMORY.md",
+              "reason": "loaded with the session's instructions",
+              "tokens_est": 3100,
+              "t": 2.4,
+              "findings": 1,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "mcp:docs-server",
+              "kind": "mcp",
+              "label": "docs-server",
+              "reason": "loaded with the session's instructions",
+              "tokens_est": 473,
+              "t": 3.6,
+              "findings": null,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": ".claude/rules/rules-engine.md",
+              "kind": "rule",
+              "label": ".claude/rules/rules-engine.md",
+              "reason": "loaded when a matching file was touched",
+              "tokens_est": 1200,
+              "t": 47.0,
+              "findings": 2,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": ".claude/skills/orient/SKILL.md",
+              "kind": "skill",
+              "label": "orient",
+              "reason": "loaded by the agent",
+              "tokens_est": 2700,
+              "t": 64.0,
+              "findings": null,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": ".claude/skills/agents-sdk/SKILL.md",
+              "kind": "skill",
+              "label": "agents-sdk",
+              "reason": "loaded by the agent",
+              "tokens_est": 0,
+              "t": null,
+              "findings": null,
+              "measure": null
+            },
+            {
               "key": "rest",
               "source": null,
               "kind": null,
               "label": "Conversation and tool results",
               "reason": "grew during the run, estimated",
-              "tokens_est": 596000,
+              "tokens_est": 584387,
               "t": null,
               "findings": null,
               "measure": null
@@ -1152,12 +1229,45 @@
           "total": 88000,
           "rows": [
             {
+              "key": "source",
+              "source": "CLAUDE.md",
+              "kind": "instructions",
+              "label": "CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 2500,
+              "t": 120.0,
+              "findings": 21,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "~/.claude/CLAUDE.md",
+              "kind": "instructions",
+              "label": "~/.claude/CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 1640,
+              "t": 120.0,
+              "findings": null,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "mcp:docs-server",
+              "kind": "mcp",
+              "label": "docs-server",
+              "reason": "handed down at launch",
+              "tokens_est": 473,
+              "t": 121.0,
+              "findings": null,
+              "measure": null
+            },
+            {
               "key": "rest",
               "source": null,
               "kind": null,
               "label": "Conversation and tool results",
               "reason": "grew during the run, estimated",
-              "tokens_est": 88000,
+              "tokens_est": 83387,
               "t": null,
               "findings": null,
               "measure": null
@@ -1525,12 +1635,56 @@
           "total": 120000,
           "rows": [
             {
+              "key": "source",
+              "source": "CLAUDE.md",
+              "kind": "instructions",
+              "label": "CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 2500,
+              "t": 150.0,
+              "findings": 21,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "~/.claude/CLAUDE.md",
+              "kind": "instructions",
+              "label": "~/.claude/CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 1640,
+              "t": 150.0,
+              "findings": null,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "mcp:docs-server",
+              "kind": "mcp",
+              "label": "docs-server",
+              "reason": "handed down at launch",
+              "tokens_est": 473,
+              "t": 151.0,
+              "findings": null,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": ".claude/rules/rules-engine.md",
+              "kind": "rule",
+              "label": ".claude/rules/rules-engine.md",
+              "reason": "loaded when a matching file was touched",
+              "tokens_est": 1200,
+              "t": 240.0,
+              "findings": 2,
+              "measure": null
+            },
+            {
               "key": "rest",
               "source": null,
               "kind": null,
               "label": "Conversation and tool results",
               "reason": "grew during the run, estimated",
-              "tokens_est": 120000,
+              "tokens_est": 114187,
               "t": null,
               "findings": null,
               "measure": null
@@ -1906,12 +2060,34 @@
           "total": 64000,
           "rows": [
             {
+              "key": "source",
+              "source": "CLAUDE.md",
+              "kind": "instructions",
+              "label": "CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 2500,
+              "t": 200.0,
+              "findings": 21,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "~/.claude/CLAUDE.md",
+              "kind": "instructions",
+              "label": "~/.claude/CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 1640,
+              "t": 200.0,
+              "findings": null,
+              "measure": null
+            },
+            {
               "key": "rest",
               "source": null,
               "kind": null,
               "label": "Conversation and tool results",
               "reason": "grew during the run, estimated",
-              "tokens_est": 64000,
+              "tokens_est": 59860,
               "t": null,
               "findings": null,
               "measure": null
@@ -2287,12 +2463,34 @@
           "total": 97000,
           "rows": [
             {
+              "key": "source",
+              "source": "CLAUDE.md",
+              "kind": "instructions",
+              "label": "CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 2500,
+              "t": 220.0,
+              "findings": 21,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "~/.claude/CLAUDE.md",
+              "kind": "instructions",
+              "label": "~/.claude/CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 1640,
+              "t": 220.0,
+              "findings": null,
+              "measure": null
+            },
+            {
               "key": "rest",
               "source": null,
               "kind": null,
               "label": "Conversation and tool results",
               "reason": "grew during the run, estimated",
-              "tokens_est": 97000,
+              "tokens_est": 92860,
               "t": null,
               "findings": null,
               "measure": null
@@ -2676,12 +2874,34 @@
           "total": 210000,
           "rows": [
             {
+              "key": "source",
+              "source": "CLAUDE.md",
+              "kind": "instructions",
+              "label": "CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 2500,
+              "t": 260.0,
+              "findings": 21,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "~/.claude/CLAUDE.md",
+              "kind": "instructions",
+              "label": "~/.claude/CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 1640,
+              "t": 260.0,
+              "findings": null,
+              "measure": null
+            },
+            {
               "key": "rest",
               "source": null,
               "kind": null,
               "label": "Conversation and tool results",
               "reason": "grew during the run, estimated",
-              "tokens_est": 210000,
+              "tokens_est": 205860,
               "t": null,
               "findings": null,
               "measure": null
@@ -3044,12 +3264,45 @@
           "total": 72000,
           "rows": [
             {
+              "key": "source",
+              "source": "CLAUDE.md",
+              "kind": "instructions",
+              "label": "CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 2500,
+              "t": 400.0,
+              "findings": 21,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "~/.claude/CLAUDE.md",
+              "kind": "instructions",
+              "label": "~/.claude/CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 1640,
+              "t": 400.0,
+              "findings": null,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "mcp:docs-server",
+              "kind": "mcp",
+              "label": "docs-server",
+              "reason": "handed down at launch",
+              "tokens_est": 473,
+              "t": 401.0,
+              "findings": null,
+              "measure": null
+            },
+            {
               "key": "rest",
               "source": null,
               "kind": null,
               "label": "Conversation and tool results",
               "reason": "grew during the run, estimated",
-              "tokens_est": 72000,
+              "tokens_est": 67387,
               "t": null,
               "findings": null,
               "measure": null
@@ -3402,12 +3655,34 @@
           "total": 51000,
           "rows": [
             {
+              "key": "source",
+              "source": "CLAUDE.md",
+              "kind": "instructions",
+              "label": "CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 2500,
+              "t": 450.0,
+              "findings": 21,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "~/.claude/CLAUDE.md",
+              "kind": "instructions",
+              "label": "~/.claude/CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 1640,
+              "t": 450.0,
+              "findings": null,
+              "measure": null
+            },
+            {
               "key": "rest",
               "source": null,
               "kind": null,
               "label": "Conversation and tool results",
               "reason": "grew during the run, estimated",
-              "tokens_est": 51000,
+              "tokens_est": 46860,
               "t": null,
               "findings": null,
               "measure": null
@@ -3783,12 +4058,34 @@
           "total": 180000,
           "rows": [
             {
+              "key": "source",
+              "source": "CLAUDE.md",
+              "kind": "instructions",
+              "label": "CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 2500,
+              "t": 1500.0,
+              "findings": 21,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "~/.claude/CLAUDE.md",
+              "kind": "instructions",
+              "label": "~/.claude/CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 1640,
+              "t": 1500.0,
+              "findings": null,
+              "measure": null
+            },
+            {
               "key": "rest",
               "source": null,
               "kind": null,
               "label": "Conversation and tool results",
               "reason": "grew during the run, estimated",
-              "tokens_est": 180000,
+              "tokens_est": 175860,
               "t": null,
               "findings": null,
               "measure": null
@@ -4164,12 +4461,34 @@
           "total": 90000,
           "rows": [
             {
+              "key": "source",
+              "source": "CLAUDE.md",
+              "kind": "instructions",
+              "label": "CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 2500,
+              "t": 2800.0,
+              "findings": 21,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "~/.claude/CLAUDE.md",
+              "kind": "instructions",
+              "label": "~/.claude/CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 1640,
+              "t": 2800.0,
+              "findings": null,
+              "measure": null
+            },
+            {
               "key": "rest",
               "source": null,
               "kind": null,
               "label": "Conversation and tool results",
               "reason": "grew during the run, estimated",
-              "tokens_est": 90000,
+              "tokens_est": 85860,
               "t": null,
               "findings": null,
               "measure": null
@@ -4539,12 +4858,34 @@
           "total": 43000,
           "rows": [
             {
+              "key": "source",
+              "source": "CLAUDE.md",
+              "kind": "instructions",
+              "label": "CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 2500,
+              "t": 3400.0,
+              "findings": 21,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "~/.claude/CLAUDE.md",
+              "kind": "instructions",
+              "label": "~/.claude/CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 1640,
+              "t": 3400.0,
+              "findings": null,
+              "measure": null
+            },
+            {
               "key": "rest",
               "source": null,
               "kind": null,
               "label": "Conversation and tool results",
               "reason": "grew during the run, estimated",
-              "tokens_est": 43000,
+              "tokens_est": 38860,
               "t": null,
               "findings": null,
               "measure": null
@@ -4920,12 +5261,34 @@
           "total": 77000,
           "rows": [
             {
+              "key": "source",
+              "source": "CLAUDE.md",
+              "kind": "instructions",
+              "label": "CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 2500,
+              "t": 3700.0,
+              "findings": 21,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "~/.claude/CLAUDE.md",
+              "kind": "instructions",
+              "label": "~/.claude/CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 1640,
+              "t": 3700.0,
+              "findings": null,
+              "measure": null
+            },
+            {
               "key": "rest",
               "source": null,
               "kind": null,
               "label": "Conversation and tool results",
               "reason": "grew during the run, estimated",
-              "tokens_est": 77000,
+              "tokens_est": 72860,
               "t": null,
               "findings": null,
               "measure": null
@@ -5301,12 +5664,34 @@
           "total": 61000,
           "rows": [
             {
+              "key": "source",
+              "source": "CLAUDE.md",
+              "kind": "instructions",
+              "label": "CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 2500,
+              "t": 7000.0,
+              "findings": 21,
+              "measure": null
+            },
+            {
+              "key": "source",
+              "source": "~/.claude/CLAUDE.md",
+              "kind": "instructions",
+              "label": "~/.claude/CLAUDE.md",
+              "reason": "handed down at launch",
+              "tokens_est": 1640,
+              "t": 7000.0,
+              "findings": null,
+              "measure": null
+            },
+            {
               "key": "rest",
               "source": null,
               "kind": null,
               "label": "Conversation and tool results",
               "reason": "grew during the run, estimated",
-              "tokens_est": 61000,
+              "tokens_est": 56860,
               "t": null,
               "findings": null,
               "measure": null

@@ -3,10 +3,11 @@
 import { el, err, svg, sync } from '../dom.js';
 import { markOpen } from './details.js';
 import { clock, k1, tk, usd, range, plural } from '../format.js';
-import { childrenOf, peakOf, pickedMoment, typeOf } from '../views.js';
+import { childrenOf, fileStateAt, peakOf, pickedMoment, typeOf } from '../views.js';
 import { contextAt, promptUrl } from '../api.js';
 import { tile } from './nodes/agent.js';
 import { textBlock } from './textblock.js';
+import { FILE_STATE_WORDS } from './compaction.js';
 
 const EXPAND = 'M4 9V4h5 M20 9V4h-5 M4 15v5h5 M20 15v5h-5';
 
@@ -116,14 +117,15 @@ function contextRow(row, node, env, ic, picked) {
   const b = el('button', 'ic');
   b.type = 'button';
   const go = opener(row, node, ic);
-  if (picked) { b.dataset.at = ic.t; b.dataset.atNode = node.id; }
+  if (picked) b.dataset.at = ic.t;
   if (go && go.source) b.dataset.source = go.source;
   else if (go) b.dataset.peek = go.peek;
   if (go) markOpen(b, env.state.peek, [go.source ? `src:${go.source}` : go.peek]);
   const time = row.t != null ? clock(row.t) : 'always';
-  b.setAttribute('aria-label', `${row.label}, ${row.reason}${row.findings ? `, ${row.findings} findings` : ''}, ${tk(row.tokens_est, true)}. Open details.`);
+  const reason = row.source && fileStateAt(env.ix, node, row.source, ic.t) === 'restored' ? FILE_STATE_WORDS.restored[0] : row.reason;
+  b.setAttribute('aria-label', `${row.label}, ${reason}${row.findings ? `, ${row.findings} findings` : ''}, ${tk(row.tokens_est, true)}. Open details.`);
   const text = el('span', 'ic-t');
-  text.append(el('span', 'ic-n', row.label), el('span', 'ic-w', row.reason));
+  text.append(el('span', 'ic-n', row.label), el('span', 'ic-w', reason));
   b.append(el('span', 'chip on', kind ? kind.letter : '·'), text);
   if (row.findings) b.append(el('span', 'ic-f', String(row.findings)));
   b.append(el('span', 'ic-k mono', tk(row.tokens_est, true)), el('span', 'ic-s mono', time));

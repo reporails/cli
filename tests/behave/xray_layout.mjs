@@ -180,6 +180,7 @@ if (mode === 'moments' && ready) {
   out.base = await list();
   out.picked = [];
   out.opened = [];
+  out.closed = [];
   for (const id of process.argv.slice(4)) {
     await page.ev(`(() => { const x = document.createElement('button'); x.dataset.peek = 'call:' + ${JSON.stringify(id)}; document.body.append(x); x.click(); x.remove(); return 0; })()`);
     await page.until(`(() => { const s = document.querySelector('#inspector .ix-ctx'); return !!s && !!s.querySelector('.ix-total') && !/Loading/.test(s.textContent); })()`, 120);
@@ -191,6 +192,8 @@ if (mode === 'moments' && ready) {
     out.opened.push({ kicker: await page.ev(`(document.querySelector('.pk-dialog .pk-k') || {}).textContent || null`), title: await page.ev(`(document.querySelector('.pk-title') || {}).textContent || null`), list: await list() });
     await page.ev(`(document.querySelector('[data-close-peek].pk-x') || { click() {} }).click(); 0`);
     await sleep(300);
+    // Closing a row's details returns to the call details the row's list was for, and the list stays at the call's moment.
+    out.closed.push({ kicker: await page.ev(`(document.querySelector('.pk-dialog .pk-k') || {}).textContent || null`), list: await list() });
   }
 }
 

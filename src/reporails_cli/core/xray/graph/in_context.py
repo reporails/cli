@@ -34,6 +34,7 @@ from reporails_cli.core.platform.dto.xray_own import (
 )
 from reporails_cli.core.platform.dto.xray_sources import SourceEntry, XrayContextText
 from reporails_cli.core.xray.graph.builtin import own_context
+from reporails_cli.core.xray.graph.compaction_files import restore_moments
 from reporails_cli.core.xray.graph.composition import count_text, listing_chars, share, tokens_at, tool_share
 from reporails_cli.core.xray.graph.sources import source_label
 
@@ -56,12 +57,36 @@ def _since_compaction(loads: Sequence[LoadEvent], cuts: Sequence[float]) -> Load
     return next(load for load in loads if (load.t or 0.0) >= cut)
 
 
+def _restores(own: AgentRecords, reply_t: float, sources: SourceTable, t0: float) -> dict[str, float]:
+    """The moment (seconds into the session) each file the last compaction before `reply_t` restored whole came back
+    at. The transcript stamps that before the compaction's own record, so the load that put such a file into the
+    context is this one, not one before the compaction."""
+    index = sum(1 for item in own.compactions if item.t < reply_t) - 1
+    if index < 0:
+        return {}
+    back = {item.source for item in own.compactions[index].files if item.state == "restored"}
+    if not back:
+        return {}
+    return {
+        source: moment - t0 for source, moment in restore_moments(own.records, sources)[index].items() if source in back
+    }
+
+
+def _restore_load(loads: Sequence[LoadEvent], moment: float | None) -> LoadEvent | None:
+    """The attachment among `loads` that came at `moment`; None when `moment` is None or none did."""
+    if moment is None:
+        return None
+    return next((item for item in loads if item.trigger == "attached" and abs((item.t or 0.0) - moment) < 1e-6), None)
+
+
 def _first_loads(
-    own: AgentRecords, reply_t: float, carried: dict[str, int], sources: SourceTable
+    own: AgentRecords, reply_t: float, carried: dict[str, int], world: AgentWorld
 ) -> list[tuple[LoadEvent, SourceEntry]]:
     """The load of each source that was in the agent's context at the reply (a carried source or an MCP server) that
-    put it there, counting from the last compaction that held it. A hook counts from its first firing after the last
-    compaction before `reply_t`."""
+    put it there, counting from the last compaction that held it, or the restore of a file that compaction restored.
+    A hook counts from its first firing after the last compaction before `reply_t`."""
+    sources = world.context.sources
+    restores = _restores(own, reply_t, sources, world.frame.t0)
     dropped = _dropped_at(own, reply_t)
     cuts = sorted(item.t for item in own.compactions if item.t < reply_t)
     by_source: dict[str, list[LoadEvent]] = {}
@@ -74,7 +99,7 @@ def _first_loads(
         entry = sources.get(source)
         if entry is None or not (entry.kind == "mcp" or source in carried):
             continue
-        load = _since_compaction(loads, cuts)
+        load = _restore_load(loads, restores.get(source)) or _since_compaction(loads, cuts)
         if entry.kind == "hook" and (load.t or 0.0) < dropped:
             continue
         found.append((load, entry))
@@ -117,7 +142,7 @@ def _source_rows(
     hooks: list[XrayContextRow] = []
     mcp = 0
     injected = 0
-    for load, entry in _first_loads(own, reply_t, carried, world.context.sources):
+    for load, entry in _first_loads(own, reply_t, carried, world):
         tokens = tokens_at((load.chars or 0) if entry.kind == "mcp" else carried[entry.id], measured)
         if entry.kind == "mcp":
             mcp += tokens
