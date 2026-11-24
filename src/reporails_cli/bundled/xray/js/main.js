@@ -141,7 +141,7 @@ async function runAct(kind, path) {
 
 const toggle = (set, v) => { if (!set.delete(v)) set.add(v); };
 
-const closePeek = () => { state.peek = null; };
+const closePeek = () => { state.peek = null; state.at = null; };
 
 // Selects an agent: its parents become the path and it becomes the selection. True when the page can draw it now.
 function selectNode(id) {
@@ -161,6 +161,7 @@ const inspected = () => ix.nodes.get(state.sel) || ix.nodes.get(state.path[state
 function openPeek(kind, id, from) {
   details.remember(calls.openerOf(from) || from);
   state.peek = { kind, id };
+  state.at = from.dataset.at == null ? null : { node: from.dataset.atNode, t: Number(from.dataset.at) };
   if (kind !== 'builtin') return;
   state.ownOpen = true;
   const node = id.slice(id.indexOf(':') + 1);

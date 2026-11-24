@@ -179,11 +179,16 @@ if (mode === 'moments' && ready) {
   const list = () => page.ev(`(() => { const s = document.querySelector('#inspector .ix-ctx'); return s ? { heading: (s.querySelector('.ix-total') || {}).textContent || null, sources: [...s.querySelectorAll('[data-source]')].map(b => b.dataset.source), text: s.textContent } : null; })()`);
   out.base = await list();
   out.picked = [];
+  out.opened = [];
   for (const id of process.argv.slice(4)) {
     await page.ev(`(() => { const x = document.createElement('button'); x.dataset.peek = 'call:' + ${JSON.stringify(id)}; document.body.append(x); x.click(); x.remove(); return 0; })()`);
     await page.until(`(() => { const s = document.querySelector('#inspector .ix-ctx'); return !!s && !!s.querySelector('.ix-total') && !/Loading/.test(s.textContent); })()`, 120);
     await sleep(300);
     out.picked.push(await list());
+    // A row of the picked list that is not a source opens the details of that list's reply, and the list stays.
+    await page.ev(`(document.querySelector('#inspector .ix-ctx [data-peek^="reply:"]') || { click() {} }).click(); 0`);
+    await page.until(`!!document.querySelector('.pk-dialog .pk-lg')`, 120);
+    out.opened.push({ kicker: await page.ev(`(document.querySelector('.pk-dialog .pk-k') || {}).textContent || null`), title: await page.ev(`(document.querySelector('.pk-title') || {}).textContent || null`), list: await list() });
     await page.ev(`(document.querySelector('[data-close-peek].pk-x') || { click() {} }).click(); 0`);
     await sleep(300);
   }

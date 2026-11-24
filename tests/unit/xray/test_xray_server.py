@@ -1098,8 +1098,13 @@ def test_context_replies_with_what_an_agents_context_held_at_a_moment_and_refuse
     earlier = _get(client, "/context", {"agent": "", "at": str(first[0])})
     assert earlier.status_code == 200 and earlier.json()["latest"] is False
     assert earlier.json()["total"] == first[1] and earlier.json()["t"] == first[0]
-    for query in ({}, {"agent": ""}, {"at": "soon"}, {"at": "nan"}, {"agent": "nosuch", "at": "9"}, {"at": "-1"}):
+    for query in ({}, {"agent": ""}, {"agent": "nosuch", "at": "9"}):
         assert _get(client, "/context", query).status_code == 400
+    for at in ("", "soon", "nan", "inf", "-1"):
+        refused = _get(client, "/context", {"agent": "", "at": at})
+        assert refused.status_code == 400 and "at is not a number" in refused.json()["error"], at
+    unknown = _get(client, "/context", {"agent": "nosuch", "at": "9"}).json()["error"]
+    assert "at is not" not in unknown
     assert _get(client, "/context", {"agent": "", "at": "9"}, token=None).status_code == 403
 
 

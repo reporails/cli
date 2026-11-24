@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 
+from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.mapper.structure import top_level_sections
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
@@ -39,10 +40,12 @@ def seconds_of(text: str) -> float | None:
 
 def in_context_fields(session: XraySession, agent: str, at: str) -> JsonObject | None:
     """The reply fields of an agent's "in context" list at its last reply at or before `at` seconds into the
-    session; None for an `at` that is no number, an agent the session lists none of and a moment before the agent's
-    first reply."""
+    session; None for an agent the session lists none of and a moment before the agent's first reply. Raises
+    `PayloadRefused` naming `at` when it is no number of seconds, 0 or more."""
     moment = seconds_of(at)
-    found = None if moment is None else session.in_context_at(agent, moment)
+    if moment is None or moment < 0:
+        raise PayloadRefused("at is not a number of seconds, 0 or more")
+    found = session.in_context_at(agent, moment)
     return None if found is None else found.to_json()
 
 

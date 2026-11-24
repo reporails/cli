@@ -127,9 +127,12 @@ export function callIndex(ix) {
   return made;
 }
 
-// The moment the picked call stands for on `node`: the call's time when the call is the node's own, else null (the node's latest reply).
+// The moment the inspector's list on `node` is for: the picked call's time when the call is the node's own, else the moment a row of that list was opened at (`state.at`, kept while its details are open), else null (the node's latest reply).
 export function pickedMoment(ix, state, node) {
-  const found = state.peek && state.peek.kind === 'call' ? callIndex(ix).byId.get(state.peek.id) : null;
+  const peek = state.peek;
+  if (!peek) return null;
+  if (peek.kind !== 'call') return state.at && state.at.node === node.id ? state.at.t : null;
+  const found = callIndex(ix).byId.get(peek.id);
   return found && found.node.id === node.id ? found.call.t : null;
 }
 

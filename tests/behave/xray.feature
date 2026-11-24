@@ -83,7 +83,7 @@ Feature: ails xray serves a session's context window on the loopback address thr
     Given a project with a recorded Claude Code session that compacted twice and called a tool in every reply
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
-    And the In context list names the latest reply and lists nothing loaded before the last compaction, and picking an earlier call lists the file loaded then with that reply's total
+    And the In context list names the latest reply and lists nothing loaded before the last compaction, and picking an earlier call lists the file loaded then with that reply's total, and a row of that list opens that reply's details and keeps the list
 
   @e2e
   Scenario: A compaction summary is served on request and reaches no event record

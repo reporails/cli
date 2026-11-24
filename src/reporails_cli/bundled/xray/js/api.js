@@ -28,13 +28,13 @@ export const forgetTexts = view => {
     if (e.text !== undefined) shown.set(k, e);
     fetched.delete(k);
   }
-  // A call whose request failed is asked again after 30 s at the earliest; one whose result had not landed, once its result shows.
-  const now = Date.now();
   heldContexts = new Map();
   for (const [k, e] of [...contexts.entries()]) {
     if (e.data) heldContexts.set(k, e);
     contexts.delete(k);
   }
+  // A call whose request failed is asked again after 30 s at the earliest; one whose result had not landed, once its result shows.
+  const now = Date.now();
   for (const [k, e] of [...callDetails.entries()]) if ((e.error && now - e.at >= RETRY_MS) || (e.data && e.data.result == null && finished.has(k))) callDetails.delete(k);
 };
 
@@ -82,7 +82,7 @@ export function callDetail(id) {
   }).then(redraw);
   return e;
 }
-// What an agent's context held at a moment, as the server counts it ({loading}, {error} or {data}, the list `in_context` holds for the latest reply): fetched once per view version, the last one shown meanwhile; the page draws again when it changes.
+// What an agent's context held at a moment, as the server counts it ({loading}, {error} or {data}, the list the server counts for that reply): fetched once per view version, the last one shown meanwhile and kept when a new fetch fails; the page draws again when it changes.
 const contexts = new Map();
 let heldContexts = new Map();
 export const contextAtUrl = (agent, at) => sessionUrl('context', { agent, at });
@@ -96,8 +96,9 @@ export function contextAt(agent, at) {
   xrayFetch(contextAtUrl(agent, at)).then(res => {
     const now = res && res.ok && res.j ? { data: res.j } : { error: (res && res.j && res.j.error) || (res ? `request refused (${res.status})` : 'The x-ray server did not answer.') };
     const same = before && now.data && JSON.stringify(now.data) === JSON.stringify(before.data);
-    contexts.set(key, same ? before : now);
-    if (!same) redraw();
+    const holding = before && before.data && !now.data;
+    contexts.set(key, same || holding ? before : now);
+    if (!same && !holding) redraw();
   });
   return e;
 }

@@ -110,6 +110,14 @@ class XrayComposition:
     replies: tuple[ReplyComposition, ...]
     peak: int | None
 
+    def reply_at(self, moment: float | None) -> int | None:
+        """The index of the last reply at or before `moment` seconds, or of the latest reply when `moment` is None;
+        None when no reply is there."""
+        if moment is None:
+            return len(self.replies) - 1 if self.replies else None
+        found = [index for index, reply in enumerate(self.replies) if reply.t <= moment]
+        return found[-1] if found else None
+
     def to_json(self) -> JsonObject:
         """The composition as columns: the category keys, one row per reply and the peak index."""
         rows: list[JsonValue] = [reply.to_row() for reply in self.replies]

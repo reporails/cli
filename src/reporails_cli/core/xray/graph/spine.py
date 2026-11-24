@@ -346,10 +346,11 @@ def _held_tokens(source: str, loads: Sequence[LoadEvent], sources: SourceTable) 
 def _conversation_at(node: ProducedNode, until: float) -> int | None:
     """The estimated tokens of the node's conversation and tool results at its last reply by `until`; None when it
     had not replied."""
-    replies = [reply for reply in node.detail.usage.composition.replies if reply.t <= until]
-    if not replies:
+    composition = node.detail.usage.composition
+    index = composition.reply_at(until)
+    if index is None:
         return None
-    parts = replies[-1].parts
+    parts = composition.replies[index].parts
     return sum(parts[COMPOSITION_KEYS.index(key)] for key in SPOKEN_KEYS)
 
 

@@ -48,20 +48,6 @@ function fetched(entry, pick) {
   return out;
 }
 
-// The reason an agent had the source: the row of an agent's latest list that words it, else the way its first recorded load came (a source a compaction dropped has no row there).
-function whyLoaded(ix, id) {
-  for (const n of ix.view.nodes) {
-    const rows = (n.detail && n.detail.in_context && n.detail.in_context.rows) || [];
-    const hit = rows.find(r => r.source === id && r.reason);
-    if (hit) return hit.reason;
-  }
-  for (const st of ix.view.stations) {
-    const load = st.loads.find(l => l.source === id);
-    if (load && ix.triggers.has(load.trigger)) return ix.triggers.get(load.trigger);
-  }
-  return null;
-}
-
 // When the agent had the source: its first load into that agent, else the agent's start.
 function loadTime(ix, node, s) {
   const st = ix.stations.get(node.id);
@@ -152,7 +138,7 @@ registerPeek('src', (env, id) => {
   const loaded = s.kind && (ix.kinds.get(s.kind) || {}).definitions
     ? (s.launches > 0 ? `launched as ${plural(s.launches, 'subagent')}` : 'never launched')
     : unrecorded ? UNRECORDED : holders.length ? `${holders.length} of ${view.nodes.length} agents` : 'no agent';
-  const why = unrecorded ? null : whyLoaded(ix, s.id);
+  const why = unrecorded ? null : s.why;
   const m = s.mcp;
   const where = m ? (m.declared_in ? `${SCOPES[m.scope] || m.scope}: ${m.declared_in}` : 'no configuration file declares it') : null;
   const side = [kv([['Path', s.path], ['Plugin', m ? m.plugin : null], ['State', m ? MCP_STATES[m.state] : null], ['Declared in', where], ['Loaded by', loaded], ['Why', why]])];
@@ -310,12 +296,9 @@ function bar(values, total) {
   return box;
 }
 
-registerPeek('peak', (env, id) => {
+// What one reply's context was made of: its composition and cache split, and for the tool calls and results the measured sizes the server counts for that reply.
+function replyDetails(env, node, comp, reply, kicker) {
   const { ix } = env;
-  const node = ix.nodes.get(id);
-  const hit = node && peakOf(node);
-  if (!hit) return null;
-  const { comp, reply } = hit;
   const total = reply[1], parts = replyParts(comp, reply), measured = replyMeasured(reply);
   const adapter = ix.view.adapter;
   const base = Math.max(total, parts.reduce((a, b) => a + b, 0));
@@ -337,7 +320,7 @@ registerPeek('peak', (env, id) => {
   const ioFacts = io && io.measure ? [kv([[io.label, tk(io.tokens_est, true)], ['Characters', io.measure.chars.toLocaleString('en-US')], ['Image tokens', io.measure.images > 0 ? io.measure.images.toLocaleString('en-US') : null], ['Tokens per character', ic.tokens_per_char == null ? null : Number(ic.tokens_per_char).toPrecision(3)]])] : [];
   const remLabel = (adapter.composition.find(c => c.key === adapter.composition_remainder) || {}).label || adapter.composition_remainder;
   return {
-    chip: '∑', kicker: `Peak context · ${nodeLabel(node)} at ${clock(reply[0])}`, title: `${total.toLocaleString('en-US')} tokens`, tags: [],
+    chip: '∑', kicker: `${kicker} · ${nodeLabel(node)} at ${clock(reply[0])}`, title: `${total.toLocaleString('en-US')} tokens`, tags: [],
     main: [bar(cats.map(x => [x.i, parts[x.i]]), base), legend],
     side: [...ioFacts, kv([['Read from cache at this turn', `${cached}%`], ['New this turn', `${(reply[2] + reply[3]).toLocaleString('en-US')} tokens`]]),
       ...(over ? [nk('These estimates add up to more than the exact total, so the split is approximate and the percentages are shares of what was estimated.')] : []),
@@ -346,6 +329,21 @@ registerPeek('peak', (env, id) => {
         : nk(`The total is measured. How it splits into parts is estimated, so parts show ~. *Includes whatever could not be attributed, folded into ${remLabel}, so the parts add up to the total.`)],
     actions: [],
   };
+}
+
+registerPeek('peak', (env, id) => {
+  const node = env.ix.nodes.get(id);
+  const hit = node && peakOf(node);
+  return hit ? replyDetails(env, node, hit.comp, hit.reply, 'Peak context') : null;
+});
+
+// The id is "<seconds>:<node id>": the reply of that agent the list of one row was counted for.
+registerPeek('reply', (env, id) => {
+  const at = id.indexOf(':');
+  const node = env.ix.nodes.get(id.slice(at + 1));
+  const comp = node && node.detail && node.detail.composition;
+  const reply = comp && comp.replies.find(r => r[0] === Number(id.slice(0, at)));
+  return reply ? replyDetails(env, node, comp, reply, 'Context at a reply') : null;
 });
 
 registerPeek('cost', (env, id) => {

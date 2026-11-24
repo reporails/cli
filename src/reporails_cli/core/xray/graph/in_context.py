@@ -4,11 +4,12 @@ sources and hooks loaded by then, and the tail of measured or estimated shares t
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary
-from reporails_cli.core.platform.dto.xray_build import AgentRecords, AgentWorld, Frame, SourceTable
+from reporails_cli.core.platform.dto.xray_build import AgentRecords, AgentWorld, Frame, ProducedNode, SourceTable
 from reporails_cli.core.platform.dto.xray_composition import (
     COMPOSITION_KEYS,
     REMAINDER_KEY,
@@ -48,31 +49,47 @@ def _dropped_at(own: AgentRecords, reply_t: float) -> float:
     return max((item.t for item in own.compactions if item.t < reply_t), default=float("-inf"))
 
 
+def _since_compaction(loads: Sequence[LoadEvent], cuts: Sequence[float]) -> LoadEvent:
+    """The first of a source's `loads` (in time order) at or after the last of the compactions `cuts` that came at
+    or before its latest load: the load that put the source into the agent's context then."""
+    cut = max((at for at in cuts if at <= (loads[-1].t or 0.0)), default=float("-inf"))
+    return next(load for load in loads if (load.t or 0.0) >= cut)
+
+
 def _first_loads(
     own: AgentRecords, reply_t: float, carried: dict[str, int], sources: SourceTable
 ) -> list[tuple[LoadEvent, SourceEntry]]:
-    """The first load by `reply_t` of each source that was in the agent's context at the reply: a carried source
-    or an MCP server. A hook counts from its first firing after the last compaction."""
+    """The load of each source that was in the agent's context at the reply (a carried source or an MCP server) that
+    put it there, counting from the last compaction that held it. A hook counts from its first firing after the last
+    compaction before `reply_t`."""
     dropped = _dropped_at(own, reply_t)
-    seen: set[str] = set()
-    found: list[tuple[LoadEvent, SourceEntry]] = []
+    cuts = sorted(item.t for item in own.compactions if item.t < reply_t)
+    by_source: dict[str, list[LoadEvent]] = {}
     for load in sorted(
         (item for item in own.loads if item.t is not None and item.t <= reply_t), key=lambda i: i.t or 0
     ):
-        entry = sources.get(load.source)
-        if entry is None or load.source in seen or not (entry.kind == "mcp" or load.source in carried):
+        by_source.setdefault(load.source, []).append(load)
+    found: list[tuple[LoadEvent, SourceEntry]] = []
+    for source, loads in by_source.items():
+        entry = sources.get(source)
+        if entry is None or not (entry.kind == "mcp" or source in carried):
             continue
+        load = _since_compaction(loads, cuts)
         if entry.kind == "hook" and (load.t or 0.0) < dropped:
             continue
-        seen.add(load.source)
         found.append((load, entry))
-    return found
+    return sorted(found, key=lambda item: item[0].t or 0.0)
 
 
 def _hook_reason(vocabulary: AdapterVocabulary) -> Callable[[int], str]:
     """The reason a hook row gives for a number of firings, in the vocabulary's wording for one firing or several."""
     text = next(item for item in vocabulary.context.texts if item.key == "hooks")
     return lambda count: count_text(text.reason, text.reason_once, count) or text.reason
+
+
+def _trigger_labels(vocabulary: AdapterVocabulary) -> dict[str, str]:
+    """The wording of each way a source loads."""
+    return {item.key: item.label for item in vocabulary.triggers}
 
 
 def _fire_counts(own: AgentRecords, reply_t: float) -> dict[str, int]:
@@ -93,7 +110,7 @@ def _source_rows(
     Claude Code sent as a message of its own (the MCP servers, the hooks, and the files loaded by a trigger that
     injects them). The carried characters become tokens at the scale of `measured`, or at the estimate's four
     characters to a token when it is None."""
-    triggers = {item.key: item.label for item in world.context.vocabulary.triggers}
+    triggers = _trigger_labels(world.context.vocabulary)
     reason = _hook_reason(world.context.vocabulary)
     fires = _fire_counts(own, reply_t)
     loaded: list[tuple[LoadEvent, XrayContextRow]] = []
@@ -359,15 +376,6 @@ def _own_and_rows(
     return group, (*opening, *kept)
 
 
-def _reply_index(composition: XrayComposition, moment: float | None) -> int | None:
-    """The index of the last reply at or before `moment`, or of the agent's latest reply when `moment` is None;
-    None when the agent has no such reply."""
-    if moment is None:
-        return len(composition.replies) - 1 if composition.replies else None
-    found = [index for index, reply in enumerate(composition.replies) if reply.t <= moment]
-    return found[-1] if found else None
-
-
 def _reply_context(
     own: AgentRecords,
     run_type: str | None,
@@ -418,10 +426,37 @@ def build_in_context(
     listings, and the conversation and tool results take what the estimates leave. The rows and the group may
     overshoot the total; the last row is then 0 and `over` is set. None when the agent has no such reply."""
     composition, carried = series
-    index = _reply_index(composition, moment)
+    index = composition.reply_at(moment)
     if index is None:
         return None
     latest = index == len(composition.replies) - 1
     return _reply_context(
         own, run_type, world, composition.replies[index], brief_chars=brief_chars, carried=carried[index], latest=latest
     )
+
+
+def source_reasons(
+    nodes: Sequence[ProducedNode], sources: SourceTable, vocabulary: AdapterVocabulary
+) -> dict[str, str]:
+    """For each source an agent had, why: the reason of its row in the first agent's latest list that words one,
+    else, for a hook, the wording of its firings in that agent's session and, for any other source, the wording of
+    the way its first recorded load came."""
+    labels = _trigger_labels(vocabulary)
+    reason = _hook_reason(vocabulary)
+    why: dict[str, str] = {}
+    for node in nodes:
+        latest = node.detail.in_context
+        for row in () if latest is None else latest.rows:
+            if row.source is not None and row.reason:
+                why.setdefault(row.source, row.reason)
+    for node in nodes:
+        fired = Counter(load.source for load in node.spine.loads)
+        for load in node.spine.loads:
+            entry = sources.get(load.source)
+            if entry is None or load.source in why:
+                continue
+            if entry.kind == "hook":
+                why[load.source] = reason(fired[load.source])
+            elif load.trigger in labels:
+                why[load.source] = labels[load.trigger]
+    return why

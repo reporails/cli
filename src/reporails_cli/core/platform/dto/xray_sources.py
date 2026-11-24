@@ -304,8 +304,6 @@ class XraySource(SourceFacts):
     availability: Availability
     had_by: tuple[str, ...]
     actionable: bool
-    # How many agents ran from an agent definition (None for any other kind).
-    launches: int | None
     # What the source cost across every reply that carried it, an estimate; None when no priced reply carried it.
     cost_usd_est: float | None
     # The name the page shows the source by.
@@ -322,6 +320,13 @@ class XraySource(SourceFacts):
     # What an agent source's launches were sent with (None when no launch recorded a request), an MCP server's
     # configuration and state, or a hook's commands and firings (None for any other kind).
     detail: AgentLaunch | McpDetail | HookDetail | None = None
+    # Why an agent had the source, in the wording the "in context" rows use (None when no agent had it).
+    why: str | None = None
+
+    @property
+    def launches(self) -> int | None:
+        """How many agents ran from an agent definition (None for any other kind)."""
+        return len(self.had_by) if self.kind == "agent" else None
 
     @property
     def launch(self) -> AgentLaunch | None:
@@ -358,6 +363,7 @@ class XraySource(SourceFacts):
             "launch_settings": [[label, value] for label, value in (self.launch.settings if self.launch else ())],
             "mcp": self.detail.to_json() if isinstance(self.detail, McpDetail) else None,
             "hook": self.detail.to_json() if isinstance(self.detail, HookDetail) else None,
+            "why": self.why,
         }
 
 

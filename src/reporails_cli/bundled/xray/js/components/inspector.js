@@ -103,18 +103,20 @@ function tiles(node, env) {
   return box;
 }
 
-// The details a row of the in-context list opens: a source, the task prompt, or the composition at peak.
-function opener(row, node) {
+// The details a row of the in-context list opens: a source, the task prompt, or the composition at the reply the list is for.
+function opener(row, node, ic) {
   if (row.key === 'source' || row.key === 'hooks') return row.source ? { source: row.source } : null;
   if (row.key === 'task') return { peek: `task:${node.id}` };
-  return { peek: `peak:${node.id}` };
+  return { peek: `reply:${ic.t}:${node.id}` };
 }
 
-function contextRow(row, node, env) {
+// `picked`: the list is for a picked moment; the row then names that reply, so opening its details keeps the list.
+function contextRow(row, node, env, ic, picked) {
   const kind = row.kind ? env.ix.kinds.get(row.kind) : null;
   const b = el('button', 'ic');
   b.type = 'button';
-  const go = opener(row, node);
+  const go = opener(row, node, ic);
+  if (picked) { b.dataset.at = ic.t; b.dataset.atNode = node.id; }
   if (go && go.source) b.dataset.source = go.source;
   else if (go) b.dataset.peek = go.peek;
   if (go) markOpen(b, env.state.peek, [go.source ? `src:${go.source}` : go.peek]);
@@ -183,6 +185,7 @@ function contextShown(node, env) {
 function inContext(node, env) {
   const sec = el('section', 'ix-sec ix-ctx');
   const shown = contextShown(node, env);
+  const picked = pickedMoment(env.ix, env.state, node) != null;
   const ic = shown.data;
   const head = el('div', 'ix-sh');
   head.append(el('h4', null, 'In context'));
@@ -192,9 +195,9 @@ function inContext(node, env) {
   if (shown.error) { sec.append(err(shown.error)); return sec; }
   if (!ic) { sec.append(quiet('Not known here: no replies were recorded for this agent.')); return sec; }
   const opening = r => r.key === 'task' || r.key === 'source' || r.key === 'hooks';
-  for (const r of ic.rows.filter(opening)) sec.append(contextRow(r, node, env));
+  for (const r of ic.rows.filter(opening)) sec.append(contextRow(r, node, env, ic, picked));
   sec.append(ownGroup(ic, node, env));
-  for (const r of ic.rows.filter(r => !opening(r))) sec.append(contextRow(r, node, env));
+  for (const r of ic.rows.filter(r => !opening(r))) sec.append(contextRow(r, node, env, ic, picked));
   if (ic.note) sec.append(quiet(ic.note));
   if (ic.over) sec.append(quiet(`These estimates add up to more than the exact ${k1(ic.total)}, so the split is approximate.`));
   const w = node.withheld;

@@ -19,7 +19,7 @@ from reporails_cli.core.xray.graph.build import context_at
 from reporails_cli.core.xray.graph.sources import build_sources
 from reporails_cli.core.xray.vocabulary import vocabulary_for
 from tests.unit.xray.test_xray_composition import _attached, _files
-from tests.unit.xray.test_xray_graph import _agent, _graph, _node, at, call, launch, load, rec, reply
+from tests.unit.xray.test_xray_graph import _agent, _graph, _hook_note, _node, at, call, launch, load, rec, reply
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 
@@ -100,3 +100,62 @@ def test_a_subagent_is_counted_by_its_own_replies(tmp_path: Path) -> None:
     records = [reply(1), call(2, "tuA", "agent"), launch(3, "A", None, "tuA"), reply(4, "A", 2000), reply(6, "A", 3000)]
     ic = _at(tmp_path, records, 5, agent="A")
     assert ic is not None and ic.total == 2000 and not ic.latest
+
+
+def _rows(ic: XrayInContext | None) -> dict[str, tuple[float | None, str]]:
+    assert ic is not None
+    return {row.label: (row.t, row.reason) for row in ic.rows if row.key == "source"}
+
+
+def _reloaded(root: Path) -> list[EventRecord]:
+    """Both files loaded at the start, a compaction that drops both, and the dropped one loaded again."""
+    claude, rule, _ = _files(root)
+    return [
+        load(0.1, claude),
+        load(0.2, rule),
+        reply(1, context=10000),
+        rec("post_compact", 2, source="auto"),
+        *_attached(2.5, claude),
+        load(2.6, rule, memory_type="nested"),
+        reply(3, context=4000),
+        reply(4, context=4500),
+    ]
+
+
+def test_a_row_reports_the_load_since_the_last_compaction_before_the_reply(tmp_path: Path) -> None:
+    records = _reloaded(tmp_path)
+    before, after = _rows(_at(tmp_path, records, 1.0)), _rows(_at(tmp_path, records, 3.1))
+    assert before[DROPPED][0] == pytest.approx(0.2)
+    assert after[DROPPED][0] == pytest.approx(2.6)
+    assert after[DROPPED][1] != before[DROPPED][1]
+    assert after[KEPT][0] == pytest.approx(2.5)
+    assert after[KEPT][1] != before[KEPT][1]
+
+
+def test_the_latest_list_reports_the_same_loads_as_the_list_at_that_reply(tmp_path: Path) -> None:
+    records = _reloaded(tmp_path)
+    latest = _agent(_node(_graph(tmp_path, records, _files(tmp_path)), "main")).in_context
+    assert _rows(latest) == _rows(_at(tmp_path, records, 4.0))
+    assert _rows(latest)[DROPPED][0] == pytest.approx(2.6)
+
+
+def test_a_source_says_why_in_the_wording_of_the_rows_and_a_dropped_hook_in_the_wording_of_its_firings(
+    tmp_path: Path,
+) -> None:
+    claude, rule, _ = _files(tmp_path)
+    records = [
+        _hook_note(0.5, "SessionStart:startup", "SessionStart", 120),
+        _hook_note(0.6, "SessionStart:startup", "SessionStart", 120),
+        load(0.1, claude),
+        reply(1, context=10000),
+        rec("post_compact", 2, source="auto"),
+        *_attached(2.5, claude),
+        reply(3, context=4000),
+    ]
+    graph = _graph(tmp_path, records, [claude, rule])
+    latest = _agent(_node(graph, "main")).in_context
+    assert latest is not None
+    why = {source.label: source.why for source in graph.sources}
+    assert why[KEPT] == _rows(latest)[KEPT][1]
+    assert why["SessionStart:startup"] == "fired 2 times"
+    assert why[DROPPED] is None

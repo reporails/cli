@@ -37,6 +37,7 @@ from reporails_cli.core.xray.cost import session_cost
 from reporails_cli.core.xray.graph import spine
 from reporails_cli.core.xray.graph.agents import agent_context_at
 from reporails_cli.core.xray.graph.bursts import bursts
+from reporails_cli.core.xray.graph.in_context import source_reasons
 from reporails_cli.core.xray.graph.port import PRODUCERS
 from reporails_cli.core.xray.graph.shapes import first_requests, launch_metas, launched_with
 from reporails_cli.core.xray.graph.sources import builtin_agent_id, memory_role, source_label
@@ -257,7 +258,6 @@ def _builtin_agent(
         availability="loaded",
         had_by=tuple(ids),
         actionable=False,
-        launches=len(ids),
         cost_usd_est=None,
         label=labels.get(agent_type, agent_type),
         agent_type=agent_type,
@@ -275,6 +275,7 @@ def _sources(
     had, launched, vocabulary = build.had, set(build.launch), build.vocabulary
     out: list[XraySource] = []
     costs = _source_costs(nodes)
+    reasons = source_reasons(nodes, sources, vocabulary)
     for entry in sources.entries:
         had_by = _had_by(entry, nodes, had, launched)
         out.append(
@@ -289,7 +290,6 @@ def _sources(
                 had_by=had_by,
                 actionable=entry.actionable,
                 excluded=entry.excluded,
-                launches=len(had_by) if entry.kind == "agent" else None,
                 cost_usd_est=costs.get(entry.id),
                 label=source_label(entry),
                 scopes=entry.scopes,
@@ -297,6 +297,7 @@ def _sources(
                 agent_type=entry.name if entry.kind == "agent" else None,
                 memory_role=memory_role(entry),
                 detail=launched_with(had_by, first, metas) if entry.kind == "agent" else entry.detail,
+                why=reasons.get(entry.id),
             )
         )
     defined = {entry.name for entry in sources.entries if entry.kind == "agent"}
