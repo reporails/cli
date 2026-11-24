@@ -506,6 +506,12 @@ def _flow_heal(state: CheckState) -> None:
     )
 
 
+def _exit_on_unknown_capability(state: CheckState) -> None:
+    """End the run with exit 2 when a named capability is one the agent lacks, as a path that does not exist does."""
+    if any(entry.reason == "unknown_capability" for entry in state.targets.unevaluated):
+        raise typer.Exit(2)
+
+
 def run_check_flow(state: CheckState) -> None:
     """Run the ``ails check`` phases over `state`, raising ``typer.Exit`` on scoped-exit paths.
 
@@ -518,6 +524,7 @@ def run_check_flow(state: CheckState) -> None:
         _emit_server_refusal(state.targets.output_format, refusal)
         raise typer.Exit(1)
     if not _flow_scope(state):
+        _exit_on_unknown_capability(state)
         return
     # Fetch the model only once there are files to map: a mistyped path or an empty
     # scope exits above without downloading it.
@@ -527,6 +534,7 @@ def run_check_flow(state: CheckState) -> None:
         _flow_assemble(state)
         _flow_render(state)
         _flow_heal(state)
+    _exit_on_unknown_capability(state)
     if _should_exit_strict(
         state.inputs.strict,
         state.render.capability_paths,

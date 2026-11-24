@@ -25,7 +25,7 @@ from reporails_cli.core.discovery.walk import file_under_target
 from reporails_cli.core.heal.apply import suppressed_by_path
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.pipeline.mapping import discover_scope
-from reporails_cli.core.pipeline.named_targets import markdown_under_folders
+from reporails_cli.core.pipeline.named_targets import markdown_under_folders, shown_path
 from reporails_cli.core.platform.adapters.notices_seen import due_notices
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.classify import UnresolvedSkill
@@ -167,10 +167,6 @@ def _narrow_to_path_targets(instruction_files: list[Path], path_targets: set[Pat
     return [f for f in instruction_files if any(file_under_target(f, tgt) for tgt in path_targets)]
 
 
-def _relativize_paths(paths: set[Path], project_root: Path) -> set[str]:
-    return {p.relative_to(project_root).as_posix() if p.is_relative_to(project_root) else p.as_posix() for p in paths}
-
-
 def _validate_output_format(output_format: str | None) -> None:
     """Reject an unknown `--format` with a usage error naming the formats that exist."""
     if output_format and output_format not in CHECK_FORMATS:
@@ -209,7 +205,7 @@ def _emit_json(
     if timer.enabled:
         data["timing"] = [*timer.as_dict()]
     if context.capability_paths:
-        data["capability_paths"] = [*sorted(_relativize_paths(context.capability_paths, context.project_root))]
+        data["capability_paths"] = [*sorted({shown_path(p, context.project_root) for p in context.capability_paths})]
     print(json.dumps(data, indent=2))
 
 
@@ -364,7 +360,7 @@ def _should_exit_strict(
         return True
     if capability_paths:
         # Key the scope set with the SAME normalization the display filter uses
-        # (`normalize_finding_path`), not `_relativize_paths`. The two diverge for
+        # (`normalize_finding_path`), not a plain relative path. The two diverge for
         # user-scope paths (`~/.claude/...`), so a strict run on such a target could
         # exit 0 while the display showed errors for it.
 

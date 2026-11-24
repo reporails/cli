@@ -109,6 +109,24 @@ def step_run_no_target_fmt(context, fmt):
     context.result = run_ails(context.project, "check", "--format", fmt, "--offline", home=context.home)
 
 
+@given('a git project with a "docs" folder holding "guide.md"')
+def step_docs_folder(context):
+    context.project = build_project(context.tmpdir)
+    write_claude(context.project, _CLAUDE)
+    (context.project / "docs").mkdir()
+    (context.project / "docs" / "guide.md").write_text(_PROSE, encoding="utf-8")
+
+
+@when('I run "ails check" on the named targets "{first}" and "{second}" as {fmt}')
+def step_run_two_named(context, first, second, fmt):
+    context.result = run_ails(context.project, "check", first, second, "--format", fmt, "--offline", home=context.home)
+
+
+@then("the exit code is {code:d}")
+def step_exit_code(context, code):
+    assert context.result.returncode == code, (context.result.returncode, _output(context))
+
+
 @then('the json files map contains "{name}"')
 def step_files_contain(context, name):
     assert name in document(context.result)["files"], sorted(document(context.result)["files"])

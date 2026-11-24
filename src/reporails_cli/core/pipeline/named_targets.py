@@ -1,8 +1,7 @@
 """The targets a run names: how each was read, which were checked, and why each other one was not.
 
-`ails check` and the server's `validate` both read their targets here, so the same targets get the
-same answer: checked, or listed with one reason (`NotEvaluatedReason`), and a bare word that is both
-a folder and a capability gets a notice saying which meaning was used.
+Each named target ends checked, or listed with one reason (`NotEvaluatedReason`). A bare word that is
+both a folder and a capability gets a notice saying which meaning was used.
 """
 
 from __future__ import annotations

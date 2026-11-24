@@ -12,7 +12,7 @@ from pathlib import Path
 
 from reporails_cli.core.discovery.agents import get_known_agents
 from reporails_cli.core.mapper.models import Models
-from reporails_cli.core.pipeline.check_one import check_path, model_refusal, rules_missing_message
+from reporails_cli.core.pipeline.check_one import check_path, model_refusal, resolve_scan_target, rules_missing_message
 from reporails_cli.core.pipeline.server_gate import server_gate
 from reporails_cli.core.platform.adapters.daemon_socket import UnixDaemonSocket
 from reporails_cli.core.platform.adapters.http_get import http_get
@@ -195,11 +195,16 @@ def run_pipeline_for_path(
 ) -> tuple[JsonObject, RulesetMap | None, float | None]:
     """Check `path` (directory or file); returns `(payload, ruleset_map, file_score)`. `ruleset_map` and
     `file_score` are `None` on a structured error/needs-install payload — the caller checks `"error"` /
-    `"needs_install"` in the payload. A file `path` narrows the validated set to that single file;
+    `"needs_install"` in the payload. A file `path` narrows the validated set to that single file, unless
+    `named` holds other files, when the project is checked and the reply keeps the named ones;
     `file_score` is that single file's own display score (`None` for a directory or an unscored file).
     `project_root` roots the check, `named` holds files the caller named for a directory `path`, and `run` is
     this tool call's own. `report` reads the named targets from the files the check covered.
     """
+    given = Path(path)
+    if given.is_file() and named - {given.resolve()}:
+        # A file `path` with other named files: the check covers the project, so each one is checked.
+        path = str(resolve_scan_target(given.resolve(), project_root)[0])
     checked = check_path(
         path,
         project_root,

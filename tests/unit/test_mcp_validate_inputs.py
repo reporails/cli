@@ -496,6 +496,17 @@ def _validate(project: Path, targets: list[str]) -> dict[str, Any]:
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
+def test_validate_of_a_file_path_still_checks_a_named_folder(project: Path) -> None:
+    """`validate(path=<file>, targets=[folder])` checks the folder's markdown, as `ails check <file> <folder>` does."""
+    (project / "docs").mkdir()
+    (project / "docs" / "guide.md").write_text("# Guide\n\nAlways review the code carefully.\n", encoding="utf-8")
+    reply = asyncio.run(server._run_validate(str(project / "CLAUDE.md"), True, ["docs/"], project, no_models()))
+    assert any(key.endswith("guide.md") for key in reply["files"]), reply
+    assert reply["not_evaluated"] == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
 def test_validate_checks_a_linked_folder_outside_the_project_as_check_does(project: Path, tmp_path: Path) -> None:
     """A folder linked to a folder outside the project is checked for its markdown, not reported as holding none."""
     outside = tmp_path / "outside" / "ext"

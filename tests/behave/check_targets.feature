@@ -44,3 +44,16 @@ Feature: `ails check` reports the targets it did not check, and names what it wa
     When I run "ails check" on the named target "linked" as json
     Then the json checks a file named "notes.md" and lists "linked" as not checked for no reason
 
+  @e2e @regression
+  Scenario: A capability the agent lacks is listed as not checked and the run exits 2
+    Given a git copilot project with a "prompts" folder
+    When I run "ails check" with agent "copilot" on the named target "@skils" as json
+    Then the json not_evaluated lists "@skils" with the reason "unknown_capability"
+    And the exit code is 2
+
+  @e2e @regression
+  Scenario: A file and a folder named together are both checked
+    Given a git project with a "docs" folder holding "guide.md"
+    When I run "ails check" on the named targets "CLAUDE.md" and "docs" as json
+    Then the json files map contains "docs/guide.md"
+
