@@ -24,6 +24,7 @@
 - A rule that selects files by whether they are committed, gitignored or user-level now finds them; before, such a rule matched no file.
 - `ails test` runs a rule's pattern checks only on the files its `match` selects, as `ails check` does, so a rule pack's fixtures test the rule's real scope.
 - A Claude Code memory file that keeps its `type` under `metadata:` no longer gets a "missing frontmatter: type" warning.
+- The docs now name `AILS_API_KEY` as the environment variable the CLI reads its API key from, and show a CI job that installs the CLI with `npm` and sets it. `REPORAILS_API_KEY` in the GitHub Action examples is only an example secret name; the Action passes its `api-key` input on as `AILS_API_KEY`.
 
 ### Removed
 
