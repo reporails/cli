@@ -104,8 +104,8 @@ def step_unlisted_guide(context):
     (context.project / "docs" / "guide.md").write_text("# Guide\n\nAlways run tests.\n", encoding="utf-8")
 
 
-@then('the notice says "{name}" is not an instruction file of this project, with no advice to move')
+@then('the notice says "{name}" is not loaded by an agent and is checked as a referenced file, with no advice to move')
 def step_in_folder_notice(context, name):
     output = " ".join(_output(context).split())
-    assert f"{name} is not an instruction file of this project." in output, output
+    assert f"{name} is not loaded by " in output and "; checked as a referenced file." in output, output
     assert "run ails check in that project's folder" not in output, output

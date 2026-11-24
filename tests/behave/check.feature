@@ -127,7 +127,7 @@ Feature: `ails check` scores and validates instruction files end-to-end
   Scenario: A file in the folder the command runs in is not told to move
     Given a git project with a "docs/guide.md" that is not an instruction file
     When I run "ails check docs/guide.md"
-    Then the notice says "docs/guide.md" is not an instruction file of this project, with no advice to move
+    Then the notice says "docs/guide.md" is not loaded by an agent and is checked as a referenced file, with no advice to move
 
   @e2e @regression
   Scenario: A named file no agent loads is checked as a referenced file

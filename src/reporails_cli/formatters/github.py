@@ -17,7 +17,9 @@ from reporails_cli.core.platform.contract.json_value import as_str
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity, Notice
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.dto.targets import TargetReport
 from reporails_cli.formatters import json as json_formatter
+from reporails_cli.formatters.text.not_evaluated import unevaluated_target_lines
 
 
 def _escape_workflow_property(value: str) -> str:
@@ -73,7 +75,9 @@ def format_combined_annotations(
     ruleset_map: RulesetMap | None = None,
     project_root: Path | None = None,
     file_type_by_path: dict[str, str] | None = None,
+    *,
     elapsed_ms: float | None = None,
+    targets: TargetReport = json_formatter.NO_TARGET_REPORT,
 ) -> str:
     """Emit GitHub workflow commands from CombinedResult findings.
 
@@ -92,6 +96,8 @@ def format_combined_annotations(
         elapsed_ms: Scan duration, when the caller has one to attach — matches the
             `elapsed_ms` the `-f json` trailer carries, so a consumer reading either
             format sees the same run duration.
+        targets: How the run read its command-line targets: each target nothing was checked for
+            and each notice on them is annotated, and both ride the trailing JSON line.
     """
 
     lines: list[str] = []
@@ -100,7 +106,11 @@ def format_combined_annotations(
         title = _escape_workflow_property(f"reporails: server {as_str(server_error['error'])}")
         message = escape_workflow_data(as_str(server_error["message"]))
         lines.append(f"::warning title={title}::{message}")
-    lines.extend(_notice_annotations(result.reply.notices))
+    lines.extend(_notice_annotations((*result.reply.notices, *targets.notices)))
+    lines.extend(
+        f"::warning title=reporails::{escape_workflow_data(line)}"
+        for line in unevaluated_target_lines(targets.unevaluated)
+    )
     for f in result.findings:
         command = _finding_command(f.severity)
         # Canonical rule id, matching the trailing JSON summary's `rule` field.
@@ -115,6 +125,7 @@ def format_combined_annotations(
         ruleset_map=ruleset_map,
         project_root=project_root,
         file_type_by_path=file_type_by_path,
+        targets=targets,
     )
     if elapsed_ms is not None:
         data["elapsed_ms"] = round(elapsed_ms, 1)

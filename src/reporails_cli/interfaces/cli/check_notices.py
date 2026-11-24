@@ -65,16 +65,17 @@ def _emit_heal_withheld(output_format: str, *, funnel_error: object, tier: str |
     console.print(f"[yellow]{message}[/yellow]")
 
 
-def _emit_unlisted_file(file: Path, root: Path, run_folder: Path, output_format: str) -> None:
+def _emit_unlisted_file(file: Path, root: Path, run_folder: Path, output_format: str, agent: str) -> None:
     """Say that a named file is checked outside any project listing, in the active output format.
 
-    A file whose project is the folder the command runs in is told only that it is not listed; a file
+    A file whose project is the folder the command runs in is told which agent does not load it and
+    that it is checked as a referenced file; a file
     of another project is told to run the check in that project's folder.
     Under json/github the diagnosis owns stdout, so the notice goes to stderr."""
     if root == run_folder:
         inside = [p for p in (file, *own_name_spellings(file)) if p.is_relative_to(root)]
         shown = inside[0].relative_to(root).as_posix() if inside else str(file)
-        message = f"{shown} is not an instruction file of this project."
+        message = f"{shown} is not loaded by {agent or 'any agent'}; checked as a referenced file."
     else:
         message = (
             f"{file} is not an instruction file in the project at {root}; run ails check in that project's folder."
@@ -100,16 +101,14 @@ def target_clash_notice(token: str, agent: str) -> Notice:
 def _emit_target_report(state: CheckState) -> None:
     """Say how the run read its targets: the capability-or-folder words and the targets nothing was checked for.
 
-    JSON carries both in its own keys. Text prints them above the result; the other machine format, on stderr.
+    The machine formats carry both themselves (JSON in its own keys, github as annotations).
+    Text prints them above the result.
     """
-    if state.targets.output_format == "json":
+    if state.targets.output_format in MACHINE_READABLE_CHECK_FORMATS:
         return
     lines = [n.text for n in state.targets.notices] + unevaluated_target_lines(state.targets.unevaluated)
     for line in lines:
-        if state.targets.output_format in MACHINE_READABLE_CHECK_FORMATS:
-            print(line, file=sys.stderr)
-        else:
-            console.print(f"[yellow]{escape_markup(line)}[/yellow]", soft_wrap=True)
+        console.print(f"[yellow]{escape_markup(line)}[/yellow]", soft_wrap=True)
 
 
 def _emit_heal_scope_refusal(output_format: str) -> None:

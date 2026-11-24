@@ -676,3 +676,14 @@ def test_a_listed_excluded_entry_names_its_files_relative_to_the_root(tmp_path: 
     listed = out["workflow"]["listed"]
     assert listed[0]["files"] == ["sub/CLAUDE.md"]
     assert "files" not in listed[1]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_diagnostic
+def test_github_annotates_a_target_nothing_was_checked_for() -> None:
+    from reporails_cli.formatters.github import format_combined_annotations
+
+    out = format_combined_annotations(_result(), targets=TargetReport((UnevaluatedTarget("assets", "no_files"),)))
+    lines = out.splitlines()
+    assert lines[0].startswith("::warning title=reporails::assets not checked")
+    assert '"not_evaluated": [{"file": "assets", "reason": "no_files"}]' in lines[-1]

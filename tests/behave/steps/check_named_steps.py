@@ -59,6 +59,41 @@ def step_copilot_project(context):
     (context.project / ".github" / "prompts" / "plan.prompt.md").write_text(_PROSE, encoding="utf-8")
 
 
+@given('a git project that sets exclude_dirs to "prompts", a folder holding "review.md"')
+def step_excluded_prompts(context):
+    context.project = build_project(context.tmpdir)
+    write_claude(context.project, _CLAUDE)
+    (context.project / "prompts").mkdir()
+    (context.project / "prompts" / "review.md").write_text(_PROSE, encoding="utf-8")
+    (context.project / ".ails").mkdir()
+    (context.project / ".ails" / "config.yml").write_text("exclude_dirs: [prompts]\n", encoding="utf-8")
+
+
+@given('a git project whose CLAUDE.md imports "docs/extra.md" under generic_scanning')
+def step_imported_doc(context):
+    context.project = build_project(context.tmpdir)
+    write_claude(context.project, _CLAUDE + "\n@docs/extra.md\n")
+    (context.project / "docs").mkdir()
+    (context.project / "docs" / "extra.md").write_text(_PROSE, encoding="utf-8")
+    (context.project / ".ails").mkdir()
+    (context.project / ".ails" / "config.yml").write_text("generic_scanning: true\n", encoding="utf-8")
+
+
+@given('a git project with a "prompts/Up.MD" file')
+def step_upper_md(context):
+    context.project = build_project(context.tmpdir)
+    write_claude(context.project, _CLAUDE)
+    (context.project / "prompts").mkdir()
+    (context.project / "prompts" / "Up.MD").write_text(_PROSE, encoding="utf-8")
+
+
+@given("a git copilot project with no skill files")
+def step_copilot_no_skills(context):
+    context.project = build_project(context.tmpdir)
+    (context.project / ".github").mkdir()
+    (context.project / ".github" / "copilot-instructions.md").write_text(_CLAUDE, encoding="utf-8")
+
+
 @when('I run "ails check" on the named target "{target}" as {fmt}')
 def step_run_named(context, target, fmt):
     _run(context, target, fmt)
@@ -144,3 +179,28 @@ def step_text_clash(context, word):
 @then("the json format_version is {version:d}")
 def step_format_version(context, version):
     assert document(context.result)["format_version"] == version, list(document(context.result))
+
+
+@then('the text run of "{name}" shows it as Imported and not as an unlisted file')
+def step_imported_panel(context, name):
+    context.result = run_ails(context.project, "check", name, "--offline", home=context.home)
+    out = _output(context)
+    assert "Imported" in out and "Referenced" not in out, out
+    assert "is not an instruction file" not in out and "is not loaded by" not in out, out
+
+
+@then('the output names "{name}" as not checked')
+def step_names_unchecked_only(context, name):
+    out = _output(context)
+    assert name in out and "not checked" in out, out
+
+
+@then('the output says the markdown of "{name}" is left out by exclude_dirs')
+def step_excluded_text(context, name):
+    out = _output(context)
+    assert f"{name} not checked" in out and "exclude_dirs" in out and "holds no markdown" not in out, out
+
+
+@then("the output does not ask to create an instruction file")
+def step_no_create_any(context):
+    assert "to get started" not in _output(context), _output(context)

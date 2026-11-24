@@ -94,7 +94,7 @@ def test_mcp_does_not_swallow_a_formatter_error(project: Path, monkeypatch: pyte
     (project / "CLAUDE.md").write_text("# P\n\nRun tests.\n", encoding="utf-8")
     monkeypatch.setattr(tools, "check_path", lambda *_a, **_k: object())
 
-    def bad(_run: object, full: bool = False) -> None:
+    def bad(_run: object, full: bool = False, **_kw: object) -> None:
         raise ValueError("formatter bug")
 
     monkeypatch.setattr(tools, "format_run", bad)

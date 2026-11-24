@@ -6,6 +6,7 @@ health and, on the paid plan, the remediation workflow). `preflight` and `explai
 """
 
 import time
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from reporails_cli.core.platform.dto.diagnostics import FunnelError, tiers_unpai
 from reporails_cli.core.platform.dto.pipeline import CheckRun, Refusal
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.dto.targets import TargetReport
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.formatters.host_hooks import host_hooks_field
@@ -161,17 +163,19 @@ def unpaid_signed_in_reply(payload: JsonObject) -> bool:
     return tiers_unpaid(tier if isinstance(tier, str) else None, funnel_tier if isinstance(funnel_tier, str) else None)
 
 
-def format_run(run: CheckRun, *, full: bool) -> JsonObject:
+def format_run(run: CheckRun, *, full: bool, targets: TargetReport = json_formatter.NO_TARGET_REPORT) -> JsonObject:
     """The `validate` payload of a finished check. Unless `full` is set it is bounded to a
     top-N-per-file envelope (aggregate stats + surface_health stay whole), so a large repo stays under
     the harness per-tool-result token cap. A server funnel rejection is carried as a top-level `funnel`
     object; a mapper failure as a top-level `mapper_error` string, so a caller (`remedy_brief`'s
-    `brief_unavailable`) can name the real cause instead of a bare "produced no map"."""
+    `brief_unavailable`) can name the real cause instead of a bare "produced no map".
+    `targets` lists the named targets nothing was checked for, each with its reason."""
     payload = json_formatter.format_combined_result(
         run.result,
         ruleset_map=run.ruleset_map,
         project_root=run.scope.scan_root,
         file_type_by_path=run.scope.file_type_by_path,
+        targets=targets,
     )
     payload = with_host_hooks(_attach_funnel(payload, run.funnel_error), run.result)
     if run.mapper_error is not None:
@@ -187,13 +191,14 @@ def run_pipeline_for_path(
     project_root: Path,
     run: RunContext,
     models: Models,
+    report: Callable[[list[Path]], TargetReport] | None = None,
 ) -> tuple[JsonObject, RulesetMap | None, float | None]:
     """Check `path` (directory or file); returns `(payload, ruleset_map, file_score)`. `ruleset_map` and
     `file_score` are `None` on a structured error/needs-install payload — the caller checks `"error"` /
     `"needs_install"` in the payload. A file `path` narrows the validated set to that single file;
     `file_score` is that single file's own display score (`None` for a directory or an unscored file).
     `project_root` roots the check, `named` holds files the caller named for a directory `path`, and `run` is
-    this tool call's own.
+    this tool call's own. `report` reads the named targets from the files the check covered.
     """
     checked = check_path(
         path,
@@ -207,4 +212,5 @@ def run_pipeline_for_path(
     )
     if isinstance(checked, Refusal):
         return refusal_payload(checked), None, None
-    return format_run(checked, full=full), checked.ruleset_map, checked.file_score
+    targets = report(checked.scope.instruction_files) if report is not None else TargetReport()
+    return format_run(checked, full=full, targets=targets), checked.ruleset_map, checked.file_score

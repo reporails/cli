@@ -464,3 +464,25 @@ def test_still_reaching_reply_is_not_cached_and_never_trips_the_breaker(
         assert reply.get("error") is None
         assert STILL_REACHING_MESSAGE in reply["funnel"]["message"]
     assert pipeline_replies == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_a_validate_target_no_file_was_checked_for_is_reported_with_its_reason(tmp_path: Path) -> None:
+    """A folder of images, a folder a setting excludes and a non-markdown file each name their reason."""
+    from reporails_cli.core.platform.config.run_context import RunContext
+    from reporails_cli.interfaces.mcp.validate_targets import target_report
+
+    (tmp_path / "CLAUDE.md").write_text("# P\n", encoding="utf-8")
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "logo.png").write_bytes(b"\x89PNG")
+    (tmp_path / "prompts").mkdir()
+    (tmp_path / "prompts" / "review.md").write_text("# R\n", encoding="utf-8")
+    (tmp_path / ".ails").mkdir()
+    (tmp_path / ".ails" / "config.yml").write_text("exclude_dirs: [prompts]\n", encoding="utf-8")
+    report = target_report(RunContext(), ("assets", "prompts", "assets/logo.png"), tmp_path, [tmp_path / "CLAUDE.md"])
+    assert {(t.target, t.reason) for t in report.unevaluated} == {
+        ("assets", "no_markdown"),
+        ("prompts", "excluded"),
+        ("assets/logo.png", "not_markdown"),
+    }

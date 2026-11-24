@@ -275,10 +275,15 @@ def walk_glob(root: Path, filename: str, skip: Pruner) -> list[Path]:
     return [named for path in found if (named := documented_path(path, filename)) is not None]
 
 
+def is_markdown_file(path: Path) -> bool:
+    """True when `path` names a markdown file: the one rule discovery, a named target and a link share."""
+    return path.suffix == ".md"
+
+
 def walk_markdown(root: Path, skip: Pruner) -> Iterator[Path]:
     """Yield every regular `.md` file under root, following symlinks safely and not
     entering a folder `skip` prunes."""
-    yield from _walk(root, skip, lambda p: p.suffix == ".md")
+    yield from _walk(root, skip, is_markdown_file)
 
 
 def walk_files(root: Path, skip: Pruner, predicate: Callable[[Path], bool] | None = None) -> Iterator[Path]:

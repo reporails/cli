@@ -7,7 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from reporails_cli.core.discovery.exclusions import leaves_out
-from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.discovery.walk import is_markdown_file, safe_resolve
 from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import link_targets, strip_anchor
 from reporails_cli.core.platform.dto.classify import LinkEdge
@@ -116,7 +116,7 @@ def _resolve_md_target(base_dir: Path, target: str) -> Path | None:
     cleaned = strip_anchor(target)
     if not cleaned or _looks_like_url(cleaned):
         return None
-    if not cleaned.endswith(".md"):
+    if not is_markdown_file(Path(cleaned)):
         return None
     return safe_resolve(base_dir / cleaned)
 

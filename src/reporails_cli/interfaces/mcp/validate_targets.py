@@ -12,13 +12,14 @@ from pathlib import Path
 from reporails_cli.core.classify.capability_paths import TargetError, classify_target_token, sniff_agent
 from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
 from reporails_cli.core.discovery.agents import detect_agents
-from reporails_cli.core.discovery.exclusions import load_run_exclusions
-from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.discovery.exclusions import load_run_exclusions, markdown_folder_reason
+from reporails_cli.core.discovery.walk import is_markdown_file, safe_resolve
 from reporails_cli.core.lint.suppression import renumbered_json
 from reporails_cli.core.pipeline.mapping import resolve_agent_filters
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str, str_list
 from reporails_cli.core.platform.dto.discovery import RunExclusions
+from reporails_cli.core.platform.dto.targets import NotEvaluatedReason, TargetReport, UnevaluatedTarget
 from reporails_cli.interfaces.mcp.remedy_brief import resolve_from_root
 
 
@@ -58,14 +59,8 @@ def _resolve_one_target(
     return set(), set()
 
 
-def resolve_validate_targets(
-    run: RunContext, tokens: tuple[str, ...], scan_root: Path
-) -> tuple[set[Path], set[Path]] | JsonObject:
-    """The files and directories `tokens` name under `scan_root`, read the way `ails check` reads
-    its targets (`skills`, `skills:<name>`, `agents:<name>`, `@main`, a path; a typed word such
-    as `skill` reads as its config key). A relative path is read against `scan_root`. Returns
-    `(files, dirs)` — every path resolved — or a `target_not_found` error payload."""
-
+def _target_context(run: RunContext, scan_root: Path) -> tuple[RunExclusions, str, str]:
+    """The `(exclusions, effective agent, token agent)` that read the target tokens under `scan_root`."""
     exclusions = load_run_exclusions(run, scan_root)
     effective_agent, _, _, _ = resolve_agent_filters(
         run,
@@ -74,7 +69,50 @@ def resolve_validate_targets(
         scan_root,
         exclusions,
     )
-    token_agent = sniff_agent(run, "", scan_root)
+    return exclusions, effective_agent, sniff_agent(run, "", scan_root)
+
+
+def _unchecked_reason(
+    files: set[Path], dirs: set[Path], checked: set[Path], exclusions: RunExclusions
+) -> NotEvaluatedReason | None:
+    """Why a resolved target gave nothing to check, or None when a file of it was checked or the reason is not known."""
+    if any(f in checked for f in files) or any(c.is_relative_to(d) for d in dirs for c in checked):
+        return None
+    if not files and not dirs:
+        return "no_files"
+    if not files:
+        return markdown_folder_reason(exclusions, next(iter(sorted(dirs))))
+    if len(files) == 1 and not is_markdown_file(next(iter(files))):
+        return "not_markdown"
+    return None
+
+
+def target_report(run: RunContext, tokens: tuple[str, ...], scan_root: Path, checked: list[Path]) -> TargetReport:
+    """The targets among `tokens` that none of the `checked` files came from, each with its reason."""
+    exclusions, effective_agent, token_agent = _target_context(run, scan_root)
+    checked_paths = {safe_resolve(f) for f in checked}
+    unevaluated: list[UnevaluatedTarget] = []
+    for token in tokens:
+        result = _resolve_one_target(
+            run, token, token_agent, scan_root, effective_agent=effective_agent, exclusions=exclusions
+        )
+        if isinstance(result, dict):
+            continue
+        reason = _unchecked_reason(result[0], result[1], checked_paths, exclusions)
+        if reason is not None:
+            unevaluated.append(UnevaluatedTarget(token, reason))
+    return TargetReport(tuple(unevaluated))
+
+
+def resolve_validate_targets(
+    run: RunContext, tokens: tuple[str, ...], scan_root: Path
+) -> tuple[set[Path], set[Path]] | JsonObject:
+    """The files and directories `tokens` name under `scan_root`, read the way `ails check` reads
+    its targets (`skills`, `skills:<name>`, `agents:<name>`, `@main`, a path; a typed word such
+    as `skill` reads as its config key). A relative path is read against `scan_root`. Returns
+    `(files, dirs)` — every path resolved — or a `target_not_found` error payload."""
+
+    exclusions, effective_agent, token_agent = _target_context(run, scan_root)
     files: set[Path] = set()
     dirs: set[Path] = set()
     for token in tokens:

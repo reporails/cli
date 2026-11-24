@@ -20,11 +20,11 @@ import typer
 
 from reporails_cli.core.classify.capability_paths import TargetError, looks_like_windows_path, sniff_agent
 from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
-from reporails_cli.core.classify.generic_type import is_markdown_file
 from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions
-from reporails_cli.core.discovery.walk import file_under_target, safe_resolve, walk_files
+from reporails_cli.core.discovery.walk import file_under_target, is_markdown_file, safe_resolve, walk_files
 from reporails_cli.core.heal.apply import suppressed_by_path
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
+from reporails_cli.core.pipeline.mapping import discover_scope
 from reporails_cli.core.platform.adapters.notices_seen import due_notices
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.classify import UnresolvedSkill
@@ -150,6 +150,15 @@ def _markdown_under_folders(state: CheckState) -> set[Path]:
     }
 
 
+def project_files(state: CheckState) -> list[Path]:
+    """The files a whole-project scan of the run's scan root covers, listed as a run without a named file lists them."""
+    config = state.run.project_config(state.targets.target)
+    agent = state.inputs.agent or config.default_agent
+    return discover_scope(
+        state.run, state.targets.target, agent, state.inputs.exclude_dirs, state.inputs.exclude_files
+    ).files
+
+
 def scan_scope(single_path: Path | None, project_root: Path) -> tuple[Path | None, Path, Path | None]:
     """The `(subtree, scan_root, single_file)` of a lone path target, read as `.` when there is no target:
     the scan root and file the shared target rule picks, and the folder target narrower than the root
@@ -271,6 +280,7 @@ def _dispatch_output(
                 project_root=context.project_root,
                 file_type_by_path=context.file_type_by_path,
                 elapsed_ms=elapsed_ms,
+                targets=context.targets,
             )
         )
         return

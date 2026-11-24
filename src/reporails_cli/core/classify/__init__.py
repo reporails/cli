@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from reporails_cli.core.classify.content_format import detect_content_format
-from reporails_cli.core.classify.generic_type import is_markdown_file, make_generic_classified
+from reporails_cli.core.classify.generic_type import make_generic_classified
 from reporails_cli.core.classify.link_walker import walk_markdown_links
 from reporails_cli.core.classify.vcs import with_default_vcs
 from reporails_cli.core.discovery.agent_config import (
@@ -24,7 +24,7 @@ from reporails_cli.core.discovery.agent_discovery import is_memory_recall_entry
 from reporails_cli.core.discovery.plugin_roots import config_pattern_hits
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.discovery.surface_config import surface_include_patterns
-from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.discovery.walk import is_markdown_file, safe_resolve
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.classify import LinkEdge
 from reporails_cli.core.platform.dto.discovery import RunExclusions

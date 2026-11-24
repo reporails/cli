@@ -13,6 +13,8 @@ _REASON_TEXT: dict[NotEvaluatedReason, str] = {
     "no_markdown": "the folder holds no markdown file",
     "not_markdown": "it is not a markdown file",
     "unknown_capability": "the agent has no such capability",
+    "excluded": "its markdown files are left out by exclude_dirs or exclude_files",
+    "no_files": "the project has no files for it",
 }
 
 

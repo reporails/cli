@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from reporails_cli.core.platform.dto.diagnostics import Notice
 
-NotEvaluatedReason = Literal["no_markdown", "not_markdown", "unknown_capability"]
+NotEvaluatedReason = Literal["no_markdown", "not_markdown", "unknown_capability", "excluded", "no_files"]
 
 
 @dataclass(frozen=True)

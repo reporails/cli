@@ -426,3 +426,19 @@ def test_the_grouped_listing_carries_each_rules_files_only_when_it_has_them() ->
         {"rule": "X:1", "count": 2, "files": ["sub/CLAUDE.md"]},
         {"rule": "X:2", "count": 1},
     ]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_the_text_view_header_carries_the_format_version() -> None:
+    payload = {**_paid_payload(), "format_version": 1}
+    assert "format_version 1" in render_text_view(payload).splitlines()[0]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_the_text_view_lists_an_unchecked_target_with_its_reason() -> None:
+    payload = {**_paid_payload(), "not_evaluated": [{"file": "prompts", "reason": "excluded"}]}
+    assert "prompts not checked: its markdown files are left out by exclude_dirs or exclude_files" in render_text_view(
+        payload
+    )

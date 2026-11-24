@@ -17,7 +17,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 from reporails_cli.core.classify import classify_files, load_file_types
-from reporails_cli.core.classify.generic_type import is_markdown_file
 from reporails_cli.core.discovery.agent_config import categorize_file_type
 from reporails_cli.core.discovery.agents import (
     detect_agents,
@@ -36,7 +35,7 @@ from reporails_cli.core.discovery.exclusions import (
     record_patterns,
     with_named,
 )
-from reporails_cli.core.discovery.walk import safe_resolve, shared_dir_listings
+from reporails_cli.core.discovery.walk import is_markdown_file, safe_resolve, shared_dir_listings
 from reporails_cli.core.mapper.daemon import is_daemon_running, retire_daemon
 from reporails_cli.core.mapper.daemon_client import (
     DaemonStatus,

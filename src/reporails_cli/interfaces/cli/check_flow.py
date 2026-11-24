@@ -26,10 +26,9 @@ from reporails_cli.core.classify.capability_paths import (
     classify_target_token,
     folder_shadowed_by_capability,
 )
-from reporails_cli.core.classify.generic_type import is_markdown_file
-from reporails_cli.core.discovery.exclusions import no_exclusions
+from reporails_cli.core.discovery.exclusions import markdown_folder_reason, no_exclusions
 from reporails_cli.core.discovery.file_aliases import get_file_aliases
-from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
+from reporails_cli.core.discovery.walk import file_under_target, is_markdown_file, safe_resolve
 from reporails_cli.core.heal.apply import heal_scope_files, heal_scope_outside
 from reporails_cli.core.pipeline.mapping import (
     apply_generic_scan,
@@ -68,6 +67,7 @@ from reporails_cli.interfaces.cli.check_orchestration import (
     _run_heal_pass,
     _should_exit_strict,
     _token_agent,
+    project_files,
     scan_scope,
 )
 from reporails_cli.interfaces.cli.check_pipeline import _flow_assemble, _flow_pipeline
@@ -85,6 +85,7 @@ from reporails_cli.interfaces.cli.helpers import (
 
 if TYPE_CHECKING:
     from reporails_cli.core.mapper.models import Models
+    from reporails_cli.core.platform.dto.classify import UnresolvedSkill
     from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResult, Notice, RemediationWorkflow
     from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
     from reporails_cli.core.platform.dto.models import LocalFinding
@@ -115,6 +116,8 @@ class CheckTargets:
     """Resolved target scope — capability specs, path targets, scan root, output format."""
 
     capability_specs: list[tuple[str, str]] = field(default_factory=list)
+    # The word each capability spec was written as, in the same order.
+    capability_words: list[str] = field(default_factory=list)
     path_targets: set[Path] = field(default_factory=set)
     single_path: Path | None = None
     single_file: Path | None = None
@@ -206,6 +209,7 @@ def _take_capability(state: CheckState, token: str, spec: tuple[str, str], agent
         state.targets.unevaluated.append(UnevaluatedTarget(token, "unknown_capability"))
         return
     state.targets.capability_specs.append(spec)
+    state.targets.capability_words.append(token)
     if folder_shadowed_by_capability(token, "capability"):
         state.targets.notices.append(target_clash_notice(token, agent))
 
@@ -327,14 +331,16 @@ def _list_unchecked_paths(state: CheckState) -> None:
     """List each named file or folder no file is checked for, and say a named file no agent loads is checked anyway."""
     single = state.targets.single_file
     root = state.inputs.project_root
-    if single is not None and not is_listed_file(state.run, single, state.targets.target):
-        if is_markdown_file(single):
-            _emit_unlisted_file(single, state.targets.target, root, state.targets.output_format)
-        else:
-            state.scope.instruction_files = []
+    if (
+        single is not None
+        and not is_markdown_file(single)
+        and not is_listed_file(state.run, single, state.targets.target)
+    ):
+        state.scope.instruction_files = []
     for path in sorted(state.targets.path_targets - {root}):
         if path.is_dir() and not any(file_under_target(f, path) for f in state.scope.instruction_files):
-            state.targets.unevaluated.append(UnevaluatedTarget(_shown(path, root), "no_markdown"))
+            reason = markdown_folder_reason(state.scope.exclusions, path)
+            state.targets.unevaluated.append(UnevaluatedTarget(_shown(path, root), reason))
         elif (
             path.is_file() and not is_markdown_file(path) and not is_listed_file(state.run, path, state.targets.target)
         ):
@@ -353,13 +359,19 @@ def _narrow_upfront(state: CheckState) -> bool:
         )
         raise typer.Exit(2)
     if state.targets.capability_specs:
-        cap_paths, unresolved_skills = _resolve_capability_paths(
-            state.run,
-            state.targets.capability_specs,
-            state.scope.effective_agent,
-            state.inputs.project_root,
-            state.scope.exclusions,
-        )
+        unresolved_skills: list[UnresolvedSkill] = []
+        for spec, word in zip(state.targets.capability_specs, state.targets.capability_words, strict=True):
+            paths, unresolved = _resolve_capability_paths(
+                state.run,
+                [spec],
+                state.scope.effective_agent,
+                state.inputs.project_root,
+                state.scope.exclusions,
+            )
+            cap_paths |= paths
+            unresolved_skills += unresolved
+            if not paths and not unresolved:
+                state.targets.unevaluated.append(UnevaluatedTarget(word, "no_files"))
         state.scope.upfront_paths |= cap_paths
         _warn_unresolved_skills(unresolved_skills, state.inputs.project_root)
     if cap_paths:
@@ -384,14 +396,7 @@ def _narrow_upfront(state: CheckState) -> bool:
 
 def _apply_generic_scan(state: CheckState) -> bool:
     """Fold @-import-reached files into the scored set and compute is_targeted. Always True."""
-    import_extra, state.scope.file_type_by_path = apply_generic_scan(
-        state.run,
-        state.targets.target,
-        state.scope.instruction_files,
-        state.scope.effective_agent,
-        generic_scanning=state.scope.generic_scanning,
-        exclusions=state.scope.exclusions,
-    )
+    import_extra, state.scope.file_type_by_path = _classify_generic(state)
     if import_extra:
         state.scope.instruction_files = list(state.scope.instruction_files) + import_extra
     for path in state.scope.instruction_files:
@@ -400,12 +405,57 @@ def _apply_generic_scan(state: CheckState) -> bool:
             if key not in state.scope.file_type_by_path and not is_listed_file(state.run, path, state.targets.target):
                 state.scope.file_type_by_path[key] = "referenced"
                 state.scope.unloaded.append(path)
+    _announce_unlisted(state)
     state.scope.is_targeted = (
         state.targets.target != state.inputs.project_root
         or bool(state.scope.upfront_paths)
         or state.targets.single_file is not None
     )
     return True
+
+
+def _classify_generic(state: CheckState) -> tuple[list[Path], dict[str, str]]:
+    """The `(import_extra, file_type_by_path)` of the files in scope.
+
+    A run that names files is classified from the whole project's files, so a named file an `@` import
+    reaches keeps the class and loading its importer gives it; only the named files keep their class.
+    """
+    files = state.scope.instruction_files
+    named = state.scope.exclusions.named
+    if not (state.scope.generic_scanning and named):
+        return apply_generic_scan(
+            state.run,
+            state.targets.target,
+            files,
+            state.scope.effective_agent,
+            generic_scanning=state.scope.generic_scanning,
+            exclusions=state.scope.exclusions,
+        )
+    held = set(files)
+    seeds = [*files, *(f for f in project_files(state) if f not in held)]
+    _, file_types = apply_generic_scan(
+        state.run,
+        state.targets.target,
+        seeds,
+        state.scope.effective_agent,
+        generic_scanning=True,
+        exclusions=state.scope.exclusions,
+    )
+    keep = {normalize_finding_path(str(f), state.targets.target) for f in files}
+    return [], {key: kind for key, kind in file_types.items() if key in keep}
+
+
+def _announce_unlisted(state: CheckState) -> None:
+    """Say a named markdown file no agent lists is checked anyway, unless an import brings it in as a loaded file."""
+    file = state.targets.single_file
+    if file is None or not is_markdown_file(file) or is_listed_file(state.run, file, state.targets.target):
+        return
+    key = normalize_finding_path(str(file), state.targets.target)
+    if state.scope.file_type_by_path.get(key) == "generic":
+        return
+    _emit_unlisted_file(
+        file, state.targets.target, state.inputs.project_root, state.targets.output_format, state.scope.effective_agent
+    )
 
 
 def _flow_render(state: CheckState) -> None:

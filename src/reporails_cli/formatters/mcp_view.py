@@ -108,6 +108,7 @@ def _status_lines(payload: JsonObject) -> list[str]:
         f"{findings} findings" if findings is not None else "",
         f"level {payload['level']}" if payload.get("level") else "",
         f"{file_count} files" if file_count else "",
+        f"format_version {payload['format_version']}" if payload.get("format_version") is not None else "",
     )
     line = _dot(*parts)
     return [f"validate: {line}"] if line else []
