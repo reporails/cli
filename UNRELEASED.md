@@ -55,3 +55,4 @@
 - The x-ray graph records are split into two modules and smaller functions; no change in what the page shows.
 - The pattern checks scan exactly the files the run checks, so the folders and files `exclude_dirs`, `exclude_files` and `--exclude-dirs` leave out stay out of them; checking one file applies its project's `.ails/config.yml` to the files that file's links reach.
 - Tests: the loader refusals for an empty or uncompilable `pattern-either` and a check without an id are covered against the real loader.
+- The superseded-check scenario passes without the bundled model.
