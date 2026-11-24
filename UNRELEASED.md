@@ -45,7 +45,7 @@
 - A check-level `disabled: true` override in an agent config now drops that check; before, it still ran and reported.
 - A settings file without hooks is no longer reported by a rule that another rule supersedes.
 - The x-ray compaction stripe's one-line text stays inside the stripe at 1280 and 1920 px instead of running past it.
-- The hidden-character and secret-file checks no longer time out on large files, so they are no longer reported as not evaluated.
+- The hidden-character check no longer times out on large files, so it is no longer reported as not evaluated.
 
 ### Removed
 
