@@ -15,10 +15,12 @@ import pytest
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonValue, as_list, as_object
 from reporails_cli.core.platform.dto.events import (
+    CompactionBoundary,
     EventKind,
     EventRecord,
     HarnessEntry,
     HarnessKind,
+    HookFiring,
     InstructionLoad,
     ReplyText,
     SkillRun,
@@ -1472,3 +1474,32 @@ def test_the_agents_funnel_row_counts_the_built_in_agent_types_a_session_launche
     )
     (row,) = build_funnel(table, graph.sources, ["agent"], set())
     assert (row.on_disk, row.loaded) == (2, 1)
+
+
+def test_the_files_a_session_start_hook_group_loads_after_a_compaction_count_as_loaded_again(tmp_path: Path) -> None:
+    """A compaction at 100 s; its SessionStart hook fires just before, the root file loads before the agent's first
+    reply and the two nested files after it, each within seconds of the load before: the hook's group, as the card
+    shows it. The stripe names every file of the group as loaded again and only the file with no load as not."""
+    root = _file(tmp_path, "CLAUDE.md", 400)
+    nested = [_file(tmp_path, f"{name}/CLAUDE.md", 400) for name in ("a", "b")]
+    left = _file(tmp_path, "c/CLAUDE.md", 400)
+    firing = HookFiring("SessionStart", "SessionStart", "hook-1", "echo", 0, 5, "context_added", 120)
+    records = [
+        load(1, root),
+        *(load(2, file, memory_type="nested") for file in [*nested, left]),
+        reply(3),
+        rec("hook_firing", 99.6, item=firing),
+        rec("post_compact", 100, source="manual", item=CompactionBoundary("b")),
+        load(104, root),
+        reply(110),
+        load(120, nested[0], memory_type="nested"),
+        load(141, nested[1], memory_type="nested"),
+        reply(150),
+    ]
+    graph = _graph(tmp_path, records, [root, *nested, left])
+    (station,) = (item for item in graph.stations if item.node == MAIN_ID)
+    (group,) = station.groups
+    assert group.hook == "hook:SessionStart"
+    (compaction,) = station.compactions
+    states = {Path(item.source).parent.name: item.state for item in compaction.files}
+    assert states == {"": "reloaded", "a": "reloaded", "b": "reloaded", "c": "summarized"}

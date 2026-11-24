@@ -285,3 +285,92 @@ def step_after_compaction(context):
     assert len(seen["notBack"]) == 1 and "packages/cli" in seen["notBack"][0], seen["notBack"]
     assert len(seen["hooksOff"]) == 1, seen
     assert len(seen["rows"]) == 2, seen
+
+
+VERSION = "2.1.309"
+RESTART_FILES = ("docs/a/CLAUDE.md", "docs/b/CLAUDE.md", "docs/c/CLAUDE.md")
+
+
+def _nested(project: Path, relative: str, minute: int, second: int) -> dict:
+    attachment = {"type": "nested_memory", "path": str(project / relative), "content": {"content": "x"}}
+    return _row("attachment", 0, VERSION, project, attachment=attachment, **_at(minute, second))
+
+
+def _text_reply(number: int, project: Path, minute: int, second: int, read: int) -> dict:
+    content = [{"type": "text", "text": "ok"}]
+    return _reply(number, VERSION, project, f"msg_{number}", content, _usage(read, 300), f"req-{number}") | _at(
+        minute, second
+    )
+
+
+def _restart_session(project: Path) -> list[dict]:
+    """The root file and three nested files load at the start; at minute 10 the SessionStart hook fires, the context
+    compacts, the root file loads again before the next reply and two of the nested files load after it, each within
+    seconds of the load before."""
+    root = {"type": "instructions", "files": [{"path": str(project / "CLAUDE.md"), "type": "Project"}]}
+    firing = {
+        "type": "hook_additional_context",
+        "hookName": "SessionStart",
+        "hookEvent": "SessionStart",
+        "content": ["reload the orientation files"],
+    }
+    prompt = {"uuid": "p-one", "promptSource": "typed", "origin": {"kind": "human"}}
+    return [
+        _row("user", 0, VERSION, project, message={"role": "user", "content": "go"}, **prompt, **_at(0)),
+        _row("attachment", 0, VERSION, project, attachment=root, **_at(0, 1)),
+        *(_nested(project, relative, 0, 2) for relative in RESTART_FILES),
+        _text_reply(1, project, 0, 5, 9000),
+        _row("attachment", 0, VERSION, project, attachment=firing, uuid="hook-1", **_at(10, 0)),
+        _row(
+            "system",
+            0,
+            VERSION,
+            project,
+            subtype="compact_boundary",
+            compactMetadata={"trigger": "manual"},
+            uuid="boundary-1",
+            **_at(10, 1),
+        ),
+        _row("attachment", 0, VERSION, project, attachment=root, **_at(10, 4)),
+        _text_reply(2, project, 10, 8, 900),
+        _nested(project, RESTART_FILES[0], 10, 20),
+        _nested(project, RESTART_FILES[1], 10, 40),
+        _text_reply(3, project, 10, 50, 1500),
+        _text_reply(4, project, 30, 0, 2000),
+    ]
+
+
+@given(
+    "a project whose session compacted, its SessionStart hook fired and the root file loaded before the next reply "
+    "and two nested files after it"
+)
+def step_restart_session(context):
+    root = context.tmpdir / "restart"
+    root.mkdir()
+    project = build_project(root).resolve()
+    for relative in RESTART_FILES:
+        target = project / relative
+        target.parent.mkdir(parents=True)
+        target.write_text(f"# {relative}\n\nKeep this folder tidy.\n" * 40, encoding="utf-8")
+    home = root / "home"
+    folder = home / ".claude" / "projects" / claude_project_folder_name(project)
+    folder.mkdir(parents=True)
+    rows = _restart_session(project)
+    (folder / "session.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    context.project, context.home = project, home
+
+
+@then("the compaction names the root file and both nested files as loaded again and only the file with no load as not")
+def step_restart_states(context):
+    station = _main_station(_view(context.url))
+    folder = {"CLAUDE.md": "root", **{relative: relative.split("/")[1] for relative in RESTART_FILES}}
+    (group,) = [group for group in station["groups"] if group["hook"] == "hook:SessionStart"]
+    assert {folder[f["source"]] for f in group["files"]} >= {"a", "b"}, group
+    (compaction,) = station["compactions"]
+    states = {folder[item["source"]]: (item["state"], item["in_context"]) for item in compaction["files"]}
+    assert states == {
+        "root": ("reloaded", True),
+        "a": ("reloaded", True),
+        "b": ("reloaded", True),
+        "c": ("summarized", False),
+    }, compaction["files"]

@@ -89,11 +89,23 @@ def _attach(
         held.add(attached)
 
 
-def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tuple[XrayFileState, ...]]:
+def _place(records: Sequence[EventRecord], moment: float) -> int:
+    """How many compactions among `records` came before the one at `moment`."""
+    return sum(
+        1
+        for record in records
+        if record.event == "post_compact" and (found := epoch(record.time)) is not None and found < moment
+    )
+
+
+def file_states(
+    records: Sequence[EventRecord], sources: SourceTable, regrouped: Sequence[frozenset[str]]
+) -> list[tuple[XrayFileState, ...]]:
     """For each compaction among `records`, in time order, each instruction file loaded before it with its state
     after it. The loads and file attachments that follow the compaction before the agent's next reply settle its
-    files, and so do the files read in the messages the compaction kept. A file whose content is in the context carries
-    on to the next compaction."""
+    files, and so do the files read in the messages the compaction kept and the files `regrouped` holds for it (one
+    set per compaction, in time order: the loads of a group its restart's hook firing caused, which count as loaded
+    again). A file whose content is in the context carries on to the next compaction."""
     held: set[str] = set()
     pending: tuple[float, tuple[str, ...], frozenset[str]] | None = None
     reloaded: set[str] = set()
@@ -107,7 +119,8 @@ def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tu
         if pending is None:
             return
         kept = {sid for row_id in kept_in.keys() & pending[2] for sid in kept_in[row_id]}
-        settled = [(src, _state(src, reloaded, whole | kept, named, waiting=waiting)) for src in pending[1]]
+        back = reloaded | regrouped[_place(records, pending[0])]
+        settled = [(src, _state(src, back, whole | kept, named, waiting=waiting)) for src in pending[1]]
         states = tuple(XrayFileState(src, state, state in IN_CONTEXT_FILE_STATES) for src, state in settled)
         done.append((pending[0], states))
         held = {item.source for item in states if item.state in IN_CONTEXT_FILE_STATES} | reloaded | whole

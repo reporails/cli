@@ -253,9 +253,10 @@ def subagent_brief(agent: str, session_file: Path, subagent_id: str) -> str | No
 def subagent_output(
     agent: str, session_file: Path, subagent_id: str, source: OutputSource, use_id: str | None
 ) -> str | None:
-    """The text one subagent handed back, read from `source`: the first hand-back call of its file (`handback`),
-    the text of the last assistant row of its file when that row holds no tool call (`reply`), or the result of the
-    launching call `use_id` in the transcript file that holds it (`result`). None when the source holds no text.
+    """The text one subagent handed back, read from `source`: the first hand-back call of its file, or for an agent
+    of a workflow run the output the run's journal says it accepted (`handback`), the text of the last assistant row
+    of its file when that row holds no tool call (`reply`), or the result of the launching call `use_id` in the
+    transcript file that holds it (`result`). None when the source holds no text.
 
     For `reply` a row the adapter refuses is skipped, so the last readable reply counts; `handback` and `result`
     raise `PayloadRefused` on a row that is not the shape the adapter is pinned to.
@@ -264,9 +265,12 @@ def subagent_output(
     `handback` or `result` row read is not the shape the adapter is pinned to. The text is returned, never stored."""
     adapter = adapter_for(agent)
     path = owner_path(session_file, subagent_id)
+    if source == "handback" and _workflow_of(path) is not None:
+        handed = (adapter.resolve_handback(row, subagent_id) for row in _journal(path.parent))
+        return next((text for text in handed if text is not None), None)
     if source == "handback":
-        row = find_row(path, HANDBACK_TOOL, lambda found: adapter.resolve_handback(found) is not None)
-        return None if row is None else adapter.resolve_handback(row)
+        row = find_row(path, HANDBACK_TOOL, lambda found: adapter.resolve_handback(found, subagent_id) is not None)
+        return None if row is None else adapter.resolve_handback(row, subagent_id)
     if source == "reply":
         return _last_reply(adapter, path, subagent_id)
     if use_id is None:
@@ -419,7 +423,7 @@ def workflow_runs(agent: str, session_file: Path) -> tuple[WorkflowRun | Workflo
 def _workflow_run(adapter: TranscriptAdapter, run_id: str, record: Path | None, folder: Path | None) -> WorkflowRun:
     """The run `run_id`, from its record file and its agent folder; raises `PayloadRefused` for a file it cannot
     read."""
-    journal = [] if folder is None else _rows(read_appended_lines(folder / _JOURNAL, 0)[0])
+    journal = [] if folder is None else _journal(folder)
     paths = (
         {}
         if folder is None
@@ -433,6 +437,11 @@ def _workflow_run(adapter: TranscriptAdapter, run_id: str, record: Path | None, 
         if (meta := _json_object(path.with_suffix(".meta.json"))) is not None
     }
     return adapter.resolve_workflow_run(run_id, None if record is None else _json_object(record), journal, metas)
+
+
+def _journal(folder: Path) -> list[JsonObject]:
+    """The rows of the journal in a workflow run's agent folder; none while it is not written."""
+    return _rows(read_appended_lines(folder / _JOURNAL, 0)[0])
 
 
 def _json_object(path: Path) -> JsonObject | None:

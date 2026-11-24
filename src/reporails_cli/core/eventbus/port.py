@@ -80,16 +80,17 @@ class TranscriptAdapter(Protocol):
         self, run_id: str, record: JsonObject | None, journal: list[JsonObject], metas: dict[str, JsonObject]
     ) -> WorkflowRun:
         """The workflow run `run_id`, from its record file; with no record file (`record` None), from the journal
-        rows and the meta files of its agents, as a running run. Raises `PayloadRefused` when a record is not the
-        pinned shape."""
+        rows and the meta files of its agents, as a running run, each agent with the size of the output the run
+        accepted from it. Raises `PayloadRefused` when a record or a journal row is not the pinned shape."""
 
     def resolve_brief(self, first_row: JsonObject) -> str:
         """The brief a subagent was given, from the first row of its file; raises `PayloadRefused` when that
         row is not the pinned shape."""
 
-    def resolve_handback(self, row: JsonObject) -> str | None:
-        """The message of the hand-back call the row holds; None for any other row; raises `PayloadRefused` when the
-        call is not the pinned shape."""
+    def resolve_handback(self, row: JsonObject, agent_id: str) -> str | None:
+        """What the row says agent `agent_id` handed back: the message of a hand-back call it holds, or the output a
+        workflow run's journal row says the run accepted from that agent; None for any other row. Raises
+        `PayloadRefused` when the call or the journal row is not the pinned shape."""
 
     def resolve_reply(self, row: JsonObject) -> str | None:
         """The text of an assistant reply row; None for any other row or a row with no text. Raises `PayloadRefused` for

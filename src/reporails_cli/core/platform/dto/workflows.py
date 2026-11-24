@@ -14,14 +14,16 @@ RECORDED_STATUSES: tuple[WorkflowStatus, ...] = ("running", "completed", "failed
 
 @dataclass(frozen=True)
 class WorkflowAgent:
-    """One agent of a workflow run: its id, the index and title of its phase and its label. `phase_index` is the
-    place of the agent's phase among the run's phases. While the run has no record file, a phase title or label the
-    agent's files do not state is None, and so is the index of an agent with no phase title."""
+    """One agent of a workflow run: its id, the index and title of its phase, its label and the size in characters
+    of the output the run accepted from it (None while the run has accepted none). `phase_index` is the place of the
+    agent's phase among the run's phases. While the run has no record file, a phase title or label the agent's files
+    do not state is None, and so is the index of an agent with no phase title."""
 
     agent_id: str
     phase_index: int | None
     phase_title: str | None
     label: str | None
+    result_chars: int | None
 
 
 @dataclass(frozen=True)

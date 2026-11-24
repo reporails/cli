@@ -143,3 +143,64 @@ def step_unreadable(context):
     assert len(seen["cards"]) == 2, seen["cards"]
     assert sum("not readable" in card for card in seen["cards"]) == 1, seen["cards"]
     assert sum("second-check" in card for card in seen["cards"]) == 1, seen["cards"]
+
+
+FIRST, SECOND = "awf0000000000001", "awf0000000000002"
+ACCEPTED = {
+    FIRST: json.dumps({"status": "built", "note": "PLACEHOLDER-WF-HANDBACK-1"}, indent=2),
+    SECOND: "PLACEHOLDER-WF-HANDBACK-2",
+}
+
+
+def _handbacks(view: dict) -> dict[str, tuple]:
+    """Each workflow agent's outcome, hand-back tokens and the source they were sized from, with its edge's."""
+    edges = {edge["to"]: edge for edge in view["edges"]}
+    return {
+        node["id"]: (
+            node["detail"]["outcome"],
+            node["detail"]["back_tokens_est"],
+            node["detail"]["output_source"],
+            edges[node["id"]]["back"],
+        )
+        for node in view["nodes"]
+        if node["id"] in ACCEPTED
+    }
+
+
+def _tokens(text: str) -> int:
+    return len(text) // 4
+
+
+@then("each agent of the run hands back the output the run accepted, and its hand-back text is that output")
+def step_handed_back(context):
+    view = _view(context.url)
+    assert _handbacks(view) == {
+        key: ("returned", _tokens(text), "handback", _tokens(text)) for key, text in ACCEPTED.items()
+    }, _handbacks(view)
+    status, page = _get(context.url)
+    token = re.search(r'name="xray-token" content="([^"]+)"', page)
+    assert status == 200 and token, status
+    for key, text in ACCEPTED.items():
+        status, body = _get(f"{context.url}output?subagent={key}", token.group(1))
+        assert status == 200, (key, status, body)
+        assert json.loads(body)["text"] == text, (key, body)
+
+
+@given("the run was stopped before it accepted the second agent's output")
+def step_stopped(context):
+    session = _folder(context) / "session"
+    record = session / "workflows" / "wf_test01.json"
+    record.write_text(
+        json.dumps(json.loads(record.read_text(encoding="utf-8")) | {"status": "killed"}), encoding="utf-8"
+    )
+    journal = session / "subagents" / "workflows" / "wf_test01" / "journal.jsonl"
+    rows = journal.read_text(encoding="utf-8").splitlines()
+    kept = [row for row in rows if not (SECOND in row and '"result"' in row)]
+    journal.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+
+@then("the first agent hands back the output the run accepted and the second reads stopped")
+def step_first_back_second_stopped(context):
+    found = _handbacks(_view(context.url))
+    first = _tokens(ACCEPTED[FIRST])
+    assert found == {FIRST: ("returned", first, "handback", first), SECOND: ("stopped", None, None, None)}, found

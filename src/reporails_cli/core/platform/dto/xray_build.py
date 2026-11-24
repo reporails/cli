@@ -6,11 +6,12 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import NamedTuple
 
 from reporails_cli.core.platform.dto.events import EventRecord, HarnessEntry, HarnessKind
 from reporails_cli.core.platform.dto.mcp import McpDeclaration
 from reporails_cli.core.platform.dto.transcript import SummarySpan
-from reporails_cli.core.platform.dto.workflows import WorkflowRefused, WorkflowRun
+from reporails_cli.core.platform.dto.workflows import WorkflowAgent, WorkflowRefused, WorkflowRun, WorkflowStatus
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary
 from reporails_cli.core.platform.dto.xray_compaction import XrayCompaction
 from reporails_cli.core.platform.dto.xray_cost import PriceList
@@ -58,6 +59,20 @@ class WorkflowReading:
     not read."""
 
     runs: tuple[WorkflowRun | WorkflowRefused, ...]
+
+    def agent(self, agent_id: str) -> tuple[WorkflowStatus, WorkflowAgent] | None:
+        """The status of the readable run that lists the agent `agent_id`, and the agent as it lists it; None when no
+        readable run lists it."""
+        return next(
+            (
+                (run.status, agent)
+                for run in self.runs
+                if isinstance(run, WorkflowRun)
+                for agent in run.agents
+                if agent.agent_id == agent_id
+            ),
+            None,
+        )
 
 
 @dataclass(frozen=True)
@@ -136,6 +151,14 @@ class ProducedCall(CallFacts):
     back_tokens_est: int | None
 
 
+class Firing(NamedTuple):
+    """One hook firing of a node that blocked or added text: its moment, the hook's source id and its event."""
+
+    t: float
+    hook: str
+    event: str
+
+
 @dataclass(frozen=True)
 class ProducedSpine:
     """What the builder derives a node's generic facts from: its context line, loads, calls, compactions and every
@@ -146,8 +169,8 @@ class ProducedSpine:
     calls: tuple[ProducedCall, ...]
     compactions: tuple[XrayCompaction, ...]
     activity: tuple[float, ...]
-    # Each hook firing of the node: its moment and the hook's source id.
-    firings: tuple[tuple[float, str], ...]
+    # Each hook firing of the node that blocked or added text, in time order.
+    firings: tuple[Firing, ...]
 
 
 @dataclass(frozen=True)
@@ -175,12 +198,13 @@ class Produced:
 
 @dataclass(frozen=True)
 class ProducerContext:
-    """What a producer reads beside the records: the session's sources, the coding agent's vocabulary and the price
-    list."""
+    """What a producer reads beside the records: the session's sources, the coding agent's vocabulary, the price
+    list and the session's workflow runs."""
 
     sources: SourceTable
     vocabulary: AdapterVocabulary
     prices: PriceList
+    workflows: WorkflowReading
 
 
 @dataclass(frozen=True)
@@ -225,7 +249,7 @@ class AgentRecords:
     compactions: tuple[XrayCompaction, ...]
     times: tuple[float, ...]
     reply: AgentReply | None
-    firings: tuple[tuple[float, str], ...]
+    firings: tuple[Firing, ...]
 
     @property
     def start(self) -> float:

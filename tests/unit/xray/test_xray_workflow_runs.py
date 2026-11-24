@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.platform.dto.xray import XrayView
+from reporails_cli.core.platform.dto.xray_graph import XrayAgentDetail
 from reporails_cli.core.platform.dto.xray_workflows import XrayWorkflow
+from reporails_cli.core.xray.derive import tokens_of
 from reporails_cli.core.xray.session import XraySession
 from tests.unit.xray.test_xray_session import _project, _session, _view
 
@@ -99,3 +101,38 @@ def test_each_agent_is_listed_under_the_phase_its_record_numbers_from_one(tmp_pa
     run = _run(_view(session))
     assert [(p.title, p.agents) for p in run.phases] == [("Preflight", (FIRST,)), ("Build", ()), ("Verify", (SECOND,))]
     assert run.unphased == ()
+
+
+def _handbacks(view: XrayView) -> dict[str, tuple[str | None, int | None, str | None]]:
+    """Each workflow agent's outcome, hand-back size and the source it was sized from."""
+    details = {node.id: node.detail for node in view.nodes if node.id in (FIRST, SECOND)}
+    return {
+        key: (detail.outcome, detail.back.tokens_est, detail.back.source)
+        for key, detail in details.items()
+        if isinstance(detail, XrayAgentDetail)
+    }
+
+
+def test_a_workflow_agent_hands_back_the_result_its_run_accepted(tmp_path: Path) -> None:
+    session, _ = _setup(tmp_path)
+    view = _view(session)
+    accepted = json.dumps({"status": "built", "note": "PLACEHOLDER-WF-HANDBACK-1"}, indent=2)
+    assert _handbacks(view) == {
+        FIRST: ("returned", tokens_of(len(accepted)), "handback"),
+        SECOND: ("returned", tokens_of(len("PLACEHOLDER-WF-HANDBACK-2")), "handback"),
+    }
+    edge = next(edge for edge in view.edges if edge.child == FIRST)
+    node = next(node for node in view.nodes if node.id == FIRST)
+    assert (edge.outcome, edge.back, edge.back_t) == ("returned", tokens_of(len(accepted)), node.end)
+    assert session.output(FIRST) == accepted
+
+
+def test_the_agent_a_killed_run_left_without_an_accepted_result_reads_stopped(tmp_path: Path) -> None:
+    session, record = _setup(tmp_path)
+    _edited(record, status="killed")
+    journal = record.parents[1] / "subagents" / "workflows" / "wf_test01" / "journal.jsonl"
+    rows = journal.read_text().splitlines()
+    journal.write_text("\n".join(row for row in rows if not (SECOND in row and '"result"' in row)) + "\n")
+    handbacks = _handbacks(_view(session))
+    assert handbacks[SECOND] == ("stopped", None, None)
+    assert handbacks[FIRST][0] == "returned"

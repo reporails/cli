@@ -146,7 +146,7 @@ from reporails_cli.core.eventbus.adapters.claude_rows import (
     required_text,
     usage_counts,
 )
-from reporails_cli.core.eventbus.adapters.claude_workflows import resolve_workflow_run
+from reporails_cli.core.eventbus.adapters.claude_workflows import accepted_output, resolve_workflow_run
 from reporails_cli.core.eventbus.port import ContextReader, PayloadRefused
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
@@ -244,9 +244,10 @@ class ClaudeTranscriptAdapter:
         """The text of the result of the tool call `use_id` in a user row, for the route that shows it."""
         return result_text(row, use_id)
 
-    def resolve_handback(self, row: JsonObject) -> str | None:
-        """The message of the hand-back call an assistant row holds; None for any other row."""
-        return handback_message(row)
+    def resolve_handback(self, row: JsonObject, agent_id: str) -> str | None:
+        """The message of the hand-back call an assistant row holds, or the output a workflow journal `result` row
+        says the run accepted from `agent_id`; None for any other row."""
+        return handback_message(row) if row.get("type") == "assistant" else accepted_output(row, agent_id)
 
     def resolve_reply(self, row: JsonObject) -> str | None:
         """The text of an assistant row; None for any other row or a row with no text."""

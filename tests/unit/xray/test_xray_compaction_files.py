@@ -27,7 +27,7 @@ def test_every_file_one_kept_row_loaded_is_restored(monkeypatch: pytest.MonkeyPa
         EventRecord("claude", "post_compact", "s", "2026-01-01T00:01:00Z", item=CompactionBoundary("b", ("row-1",))),
         EventRecord("claude", "assistant_usage", "s", "2026-01-01T00:02:00Z"),
     ]
-    (states,) = file_states(records, SourceTable((), Path(), {}, {}))
+    (states,) = file_states(records, SourceTable((), Path(), {}, {}), (frozenset(),))
     assert {item.source: item.state for item in states} == {
         "CLAUDE.md": "restored",
         ".claude/rules/a.md": "restored",
@@ -44,7 +44,7 @@ def test_a_file_state_says_whether_its_content_is_in_the_context(monkeypatch: py
         EventRecord("claude", "post_compact", "s", "2026-01-01T00:01:00Z", item=CompactionBoundary("b", ("row-1",))),
         EventRecord("claude", "assistant_usage", "s", "2026-01-01T00:02:00Z"),
     ]
-    (states,) = file_states(records, SourceTable((), Path(), {}, {}))
+    (states,) = file_states(records, SourceTable((), Path(), {}, {}), (frozenset(),))
     assert {item.source: (item.state, item.in_context) for item in states} == {
         "CLAUDE.md": ("restored", True),
         "kept.md": ("restored", True),

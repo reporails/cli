@@ -85,7 +85,7 @@ def _unreadable(
     ]
     titles = list(dict.fromkeys(title for _, title in named if title is not None))
     members = [
-        WorkflowAgent(agent_id, None if title is None else titles.index(title), title, None)
+        WorkflowAgent(agent_id, None if title is None else titles.index(title), title, None, None)
         for agent_id, title in named
     ]
     phases, unphased = _phases(titles, members, nodes)

@@ -18,3 +18,9 @@ Feature: Instruction loads one hook caused draw as one group card on the x-ray c
   Scenario: Files a hook's group reloads after a compaction count as reloaded and stay drawn with the Hooks layer off
     Given the bundled page is served over a view where a hook's group of loads reloads the root files just after the compaction
     Then the group's card sits below the compaction stripe, the compaction lists as not loaded again only the file with no load, and the card stays with the Hooks layer off
+
+  Scenario: Files a SessionStart hook's group loads after a compaction, after the agent's first reply too, count as loaded again
+    Given a project whose session compacted, its SessionStart hook fired and the root file loaded before the next reply and two nested files after it
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the compaction names the root file and both nested files as loaded again and only the file with no load as not

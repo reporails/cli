@@ -7,6 +7,14 @@ Feature: A Claude Code session with a Workflow run shows a workflow node on the 
     Then the printed address is on 127.0.0.1
     And the view holds the workflow with its name, status, two agents, token total and one agent under each of its two phases
     And the canvas draws the workflow node with those facts and opening it lists each phase with its agent
+    And each agent of the run hands back the output the run accepted, and its hand-back text is that output
+
+  Scenario: The agent a stopped Workflow run left without an accepted output reads stopped
+    Given a project with a recorded Claude Code session that ran a Workflow of two phases
+    And the run was stopped before it accepted the second agent's output
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the first agent hands back the output the run accepted and the second reads stopped
 
   @page @browser
   Scenario: Only the Workflow run whose record has the wrong shape shows as not readable and the page still loads

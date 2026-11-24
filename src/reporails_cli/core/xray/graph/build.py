@@ -69,14 +69,13 @@ def _layout(nodes: Sequence[ProducedNode]) -> NodeLayout:
 def _station(node: ProducedNode, sources: SourceTable, vocabulary: AdapterVocabulary) -> XrayStation:
     small_kinds = {kind.key for kind in vocabulary.source_kinds if kind.small}
     hooks, stretched = spine.hook_stretches(node, sources)
-    instructions = frozenset(kind.key for kind in vocabulary.source_kinds if kind.instructions)
-    groups, grouped = spine.load_groups(node, sources, instructions)
+    groups, grouped = spine.load_groups(node, sources, spine.instruction_kinds(vocabulary))
     taken = stretched | grouped
     cuts = spine.cuts_of(node)
     return XrayStation(
         node.id,
         tuple(
-            _load(load, sources, small_kinds, spine.load_segment(cuts, node, load))
+            _load(load, sources, small_kinds, spine.load_segment(cuts, node.start, load))
             for number, load in enumerate(node.spine.loads)
             if number not in taken
         ),
@@ -158,7 +157,7 @@ def build_graph(
 ) -> Graph:
     """The graph of `records`: the nodes and edges of every registered producer, linked by parent, and the
     session's workflow runs."""
-    context = ProducerContext(sources, vocabulary, prices)
+    context = ProducerContext(sources, vocabulary, prices, workflows)
     produced = [producer.produce(records, frame, context) for producer in PRODUCERS]
     pnodes = [node for item in produced for node in item.nodes]
     edges = tuple(edge for item in produced for edge in item.edges)

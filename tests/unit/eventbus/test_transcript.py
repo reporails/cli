@@ -1370,6 +1370,39 @@ def test_workflow_runs_return_the_run_record_with_its_agents(tmp_path: Path) -> 
     assert [(a.agent_id, a.phase_index, a.phase_title, a.label) for a in run.agents] == WF_AGENTS
 
 
+WF_HANDBACK_1 = json.dumps({"status": "built", "note": "PLACEHOLDER-WF-HANDBACK-1"}, indent=2, ensure_ascii=False)
+WF_HANDBACK_2 = "PLACEHOLDER-WF-HANDBACK-2"
+
+
+def test_only_an_agent_the_journal_holds_an_accepted_result_for_carries_its_size(tmp_path: Path) -> None:
+    session = _workflow_session(tmp_path)
+    (run,) = workflow_runs("claude", session)
+    assert [(a.agent_id, a.result_chars) for a in run.agents] == [
+        (WF_A, len(WF_HANDBACK_1)),
+        (WF_B, len(WF_HANDBACK_2)),
+    ]
+    journal = session.with_suffix("") / "subagents" / "workflows" / WF_RUN / "journal.jsonl"
+    rows = journal.read_text().splitlines()
+    journal.write_text("\n".join(row for row in rows if not (WF_B in row and '"result"' in row)) + "\n")
+    (run,) = workflow_runs("claude", session)
+    assert [(a.agent_id, a.result_chars) for a in run.agents] == [(WF_A, len(WF_HANDBACK_1)), (WF_B, None)]
+
+
+def test_a_journal_result_row_with_no_agent_id_refuses_the_run(tmp_path: Path) -> None:
+    session = _workflow_session(tmp_path)
+    journal = session.with_suffix("") / "subagents" / "workflows" / WF_RUN / "journal.jsonl"
+    with journal.open("a") as handle:
+        handle.write(json.dumps({"type": "result", "agentId": 7, "result": {}}) + "\n")
+    (refused,) = workflow_runs("claude", session)
+    assert isinstance(refused, WorkflowRefused) and "agentId" in refused.reason
+
+
+def test_a_workflow_agent_s_hand_back_text_is_the_result_the_run_accepted(tmp_path: Path) -> None:
+    session = _workflow_session(tmp_path)
+    assert subagent_output("claude", session, WF_A, "handback", None) == WF_HANDBACK_1
+    assert subagent_output("claude", session, WF_B, "handback", None) == WF_HANDBACK_2
+
+
 def test_a_run_with_no_record_file_yet_is_running_with_phases_from_its_agents(tmp_path: Path) -> None:
     session = _workflow_session(tmp_path)
     (session.with_suffix("") / "workflows" / f"{WF_RUN}.json").unlink()
