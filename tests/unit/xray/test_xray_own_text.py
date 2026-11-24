@@ -91,12 +91,20 @@ def test_other_messages_leave_out_the_notes_a_source_and_a_hook_count_in_their_o
     assert _session(tmp_path, before, blobs).context_text("", "harness_other") == [rest]
 
 
-def test_other_messages_leave_out_a_nested_instruction_file_recorded_as_an_object(tmp_path: Path) -> None:
-    nested = "Keep the sub module small " + "n" * 200
-    recorded = {"path": "/p/sub/CLAUDE.md", "type": "Project", "content": nested, "contentDiffersFromDisk": False}
-    before = [_attachment(1, type="nested_memory", path="/p/sub/CLAUDE.md", content=recorded)]
+@pytest.mark.parametrize("after_tag", ["\n", ""])
+def test_other_messages_leave_out_a_nested_instruction_file_as_claude_code_frames_it(
+    tmp_path: Path, after_tag: str
+) -> None:
+    # The shapes Claude Code records: the file's content ends in a newline, and the request's note names the file,
+    # leaves a blank line, holds the content, then closes the tag on a line of its own, with or without a newline.
+    nested = "# Sub module\n\nKeep the sub module small " + "n" * 200 + ".\n\n`make check` runs its tests.\n"
+    path = "/p/sub/CLAUDE.md"
+    recorded = {"path": path, "type": "Project", "content": nested, "contentDiffersFromDisk": False}
+    before = [_attachment(1, type="nested_memory", path=path, content=recorded, displayPath="sub/CLAUDE.md")]
+    note = f"<system-reminder>\nContents of {path}:\n\n{nested}\n</system-reminder>{after_tag}"
     rest = _reminder("The user has not heard from you in a while.")
-    blobs = [_blob("n1", "user", _reminder(f"Contents of /p/sub/CLAUDE.md:\n{nested}")), _blob("n2", "user", rest)]
+    result = {"tool_use_id": "toolu_1", "type": "tool_result", "content": "1\tdone"}
+    blobs = [_blob("n1", "user", [result, {"type": "text", "text": note}]), _blob("n2", "user", rest)]
     assert _session(tmp_path, before, blobs).context_text("", "harness_other") == [rest]
 
 

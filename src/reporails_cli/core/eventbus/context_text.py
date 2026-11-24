@@ -63,7 +63,8 @@ def _shape_text(adapter: TranscriptAdapter, path: Path, request_id: str, item: s
 
 
 def _claimed(adapter: TranscriptAdapter, note: str, claims: set[str]) -> bool:
-    """Whether the texts other rows count make up most of `note`."""
+    """Whether the texts other rows count make up most of `note`; each claimed text was read the way the note is, so
+    the whitespace a request trims off a note's end does not keep a text from matching it."""
     body = adapter.context.resolve_note_body(note)
     return sum(len(claim) for claim in claims if claim in body) >= _CLAIMED_SHARE * len(body)
 
@@ -113,7 +114,7 @@ def _chain_text(
     for row in file_rows(path):
         try:
             records = adapter.resolve_row(row, subagent_id, chain)
-            claims.update(adapter.context.resolve_claimed(row))
+            claims.update(map(adapter.context.resolve_note_body, adapter.context.resolve_claimed(row)))
             _fold(adapter, row, records, listings, compacted=compacted)
         except PayloadRefused:
             continue
