@@ -10,12 +10,11 @@ const section = (title, ...nodes) => {
   return box;
 };
 
-// "<node id>:<index>": a node id may hold colons, the index never does.
+// The group's id is the view's, which names the group by its first load.
 registerPeek('loadgroup', (env, id) => {
-  const at = id.lastIndexOf(':');
-  const node = env.ix.nodes.get(id.slice(0, at));
-  const station = env.ix.stations.get(id.slice(0, at));
-  const g = station && station.groups[Number(id.slice(at + 1))];
+  const station = env.ix.view.stations.find(st => st.groups.some(x => x.id === id));
+  const g = station && station.groups.find(x => x.id === id);
+  const node = station && env.ix.nodes.get(station.node);
   if (!node || !g) return null;
   const hook = env.ix.sources.get(g.hook);
   const name = hook ? hook.label : g.hook;

@@ -736,9 +736,11 @@
           ],
           "first_launch": 118.5,
           "last_return": 900.0,
-          "down_tokens": 20132
+          "down_tokens": 20132,
+          "segment": 0
         }
-      ]
+      ],
+      "segment": 0
     },
     {
       "id": "a1",
@@ -1081,7 +1083,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "a2",
@@ -1420,7 +1423,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "a3",
@@ -1767,7 +1771,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "a4",
@@ -2114,7 +2119,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "a5",
@@ -2473,7 +2479,8 @@
         "~/.claude/CLAUDE.md": 1,
         "mcp:docs-server": 1
       },
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "a5b",
@@ -2806,7 +2813,8 @@
         "CLAUDE.md": 1,
         "~/.claude/CLAUDE.md": 1
       },
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "a5c",
@@ -3127,7 +3135,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "a6",
@@ -3474,7 +3483,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "a7",
@@ -3821,7 +3831,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "a8",
@@ -4162,7 +4173,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 1
     },
     {
       "id": "a9",
@@ -4509,7 +4521,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 1
     },
     {
       "id": "a10",
@@ -4856,7 +4869,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 1
     }
   ],
   "edges": [
@@ -5470,7 +5484,8 @@
           "tokens_est": 2500,
           "trigger": "session_start",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5478,7 +5493,8 @@
           "tokens_est": 1640,
           "trigger": "session_start",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/projects/-work-demo/memory/MEMORY.md",
@@ -5486,7 +5502,8 @@
           "tokens_est": 3100,
           "trigger": "session_start",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "mcp:docs-server",
@@ -5494,7 +5511,8 @@
           "tokens_est": 473,
           "trigger": "session_start",
           "event": null,
-          "small": true
+          "small": true,
+          "segment": 0
         },
         {
           "source": "hook:PreToolUse:Edit",
@@ -5502,7 +5520,8 @@
           "tokens_est": 210,
           "trigger": "hook",
           "event": "PreToolUse",
-          "small": true
+          "small": true,
+          "segment": 0
         },
         {
           "source": ".claude/rules/rules-engine.md",
@@ -5510,7 +5529,8 @@
           "tokens_est": 1200,
           "trigger": "path_match",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": ".claude/skills/orient/SKILL.md",
@@ -5518,7 +5538,8 @@
           "tokens_est": 2700,
           "trigger": "agent",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": ".claude/skills/agents-sdk/SKILL.md",
@@ -5526,7 +5547,8 @@
           "tokens_est": null,
           "trigger": "agent",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": ".claude/agents/auditor.md",
@@ -5534,7 +5556,8 @@
           "tokens_est": 420,
           "trigger": "session_start",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 1
         }
       ],
       "mcp": [
@@ -5543,14 +5566,16 @@
           "first": 900.0,
           "last": 960.0,
           "calls": 7,
-          "back_tokens_est": 2100
+          "back_tokens_est": 2100,
+          "segment": 0
         },
         {
           "server": "mcp:docs-server",
           "first": 2100.0,
           "last": 2400.0,
           "calls": 58,
-          "back_tokens_est": 15100
+          "back_tokens_est": 15100,
+          "segment": 0
         }
       ],
       "compactions": [
@@ -5568,7 +5593,8 @@
           "first": 1200.0,
           "last": 1260.0,
           "count": 3,
-          "tokens_est": 90
+          "tokens_est": 90,
+          "segment": 0
         }
       ]
     },
@@ -5581,7 +5607,8 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5589,7 +5616,8 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "mcp:docs-server",
@@ -5597,7 +5625,8 @@
           "tokens_est": 473,
           "trigger": "inherited",
           "event": null,
-          "small": true
+          "small": true,
+          "segment": 0
         }
       ],
       "mcp": [
@@ -5606,7 +5635,8 @@
           "first": 180.0,
           "last": 195.0,
           "calls": 3,
-          "back_tokens_est": 900
+          "back_tokens_est": 900,
+          "segment": 0
         }
       ],
       "compactions": [],
@@ -5622,7 +5652,8 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5630,7 +5661,8 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "mcp:docs-server",
@@ -5638,7 +5670,8 @@
           "tokens_est": 473,
           "trigger": "inherited",
           "event": null,
-          "small": true
+          "small": true,
+          "segment": 0
         },
         {
           "source": ".claude/rules/rules-engine.md",
@@ -5646,7 +5679,8 @@
           "tokens_est": 1200,
           "trigger": "path_match",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         }
       ],
       "mcp": [
@@ -5655,7 +5689,8 @@
           "first": 210.0,
           "last": 225.0,
           "calls": 3,
-          "back_tokens_est": 900
+          "back_tokens_est": 900,
+          "segment": 0
         }
       ],
       "compactions": [],
@@ -5671,7 +5706,8 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5679,7 +5715,8 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         }
       ],
       "mcp": [],
@@ -5696,7 +5733,8 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5704,7 +5742,8 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         }
       ],
       "mcp": [],
@@ -5721,7 +5760,8 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5729,7 +5769,8 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         }
       ],
       "mcp": [],
@@ -5746,7 +5787,8 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5754,7 +5796,8 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "mcp:docs-server",
@@ -5762,7 +5805,8 @@
           "tokens_est": 473,
           "trigger": "inherited",
           "event": null,
-          "small": true
+          "small": true,
+          "segment": 0
         }
       ],
       "mcp": [],
@@ -5779,7 +5823,8 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5787,7 +5832,8 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         }
       ],
       "mcp": [],
@@ -5804,7 +5850,8 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5812,7 +5859,8 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         }
       ],
       "mcp": [],
@@ -5829,7 +5877,8 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5837,7 +5886,8 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         }
       ],
       "mcp": [],
@@ -5854,7 +5904,8 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5862,7 +5913,8 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         }
       ],
       "mcp": [],
@@ -5879,7 +5931,8 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5887,7 +5940,8 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         }
       ],
       "mcp": [],
@@ -5904,7 +5958,8 @@
           "tokens_est": 2500,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5912,7 +5967,8 @@
           "tokens_est": 1640,
           "trigger": "inherited",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         }
       ],
       "mcp": [],
@@ -5935,7 +5991,8 @@
           "failed": false,
           "use_id": "toolu_main_0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 72.9,
@@ -5947,7 +6004,8 @@
           "failed": false,
           "use_id": "toolu_main_1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 144.9,
@@ -5959,7 +6017,8 @@
           "failed": false,
           "use_id": "toolu_main_2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 195.8,
@@ -5971,7 +6030,8 @@
           "failed": false,
           "use_id": "toolu_main_3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 279.7,
@@ -5983,7 +6043,8 @@
           "failed": false,
           "use_id": "toolu_main_4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 348.4,
@@ -5995,7 +6056,8 @@
           "failed": false,
           "use_id": "toolu_main_5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 386.8,
@@ -6007,7 +6069,8 @@
           "failed": false,
           "use_id": "toolu_main_6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 452.9,
@@ -6019,7 +6082,8 @@
           "failed": false,
           "use_id": "toolu_main_7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 533.3,
@@ -6031,7 +6095,8 @@
           "failed": false,
           "use_id": "toolu_main_8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 590.2,
@@ -6043,7 +6108,8 @@
           "failed": false,
           "use_id": "toolu_main_9",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 651.7,
@@ -6055,7 +6121,8 @@
           "failed": false,
           "use_id": "toolu_main_10",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 698.3,
@@ -6067,7 +6134,8 @@
           "failed": false,
           "use_id": "toolu_main_11",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 797.7,
@@ -6079,7 +6147,8 @@
           "failed": false,
           "use_id": "toolu_main_12",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 830.1,
@@ -6091,7 +6160,8 @@
           "failed": false,
           "use_id": "toolu_main_13",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 918.0,
@@ -6103,7 +6173,8 @@
           "failed": false,
           "use_id": "toolu_main_14",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 986.2,
@@ -6115,7 +6186,8 @@
           "failed": false,
           "use_id": "toolu_main_15",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1034.3,
@@ -6127,7 +6199,8 @@
           "failed": false,
           "use_id": "toolu_main_16",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1075.7,
@@ -6139,7 +6212,8 @@
           "failed": false,
           "use_id": "toolu_main_17",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1135.8,
@@ -6151,7 +6225,8 @@
           "failed": false,
           "use_id": "toolu_main_18",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1237.7,
@@ -6163,7 +6238,8 @@
           "failed": false,
           "use_id": "toolu_main_19",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1273.8,
@@ -6175,7 +6251,8 @@
           "failed": false,
           "use_id": "toolu_main_20",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1300.0,
@@ -6187,7 +6264,8 @@
           "failed": true,
           "use_id": "toolu_fail0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1312.5,
@@ -6199,7 +6277,8 @@
           "failed": true,
           "use_id": "toolu_fail1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1325.0,
@@ -6211,7 +6290,8 @@
           "failed": true,
           "use_id": "toolu_fail2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1337.5,
@@ -6223,7 +6303,8 @@
           "failed": true,
           "use_id": "toolu_fail3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1348.8,
@@ -6235,7 +6316,8 @@
           "failed": false,
           "use_id": "toolu_main_21",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1350.0,
@@ -6247,7 +6329,8 @@
           "failed": true,
           "use_id": "toolu_fail4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1362.5,
@@ -6259,7 +6342,8 @@
           "failed": true,
           "use_id": "toolu_fail5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1375.0,
@@ -6271,7 +6355,8 @@
           "failed": true,
           "use_id": "toolu_fail6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1387.5,
@@ -6283,7 +6368,8 @@
           "failed": true,
           "use_id": "toolu_fail7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1397.3,
@@ -6295,7 +6381,8 @@
           "failed": false,
           "use_id": "toolu_main_22",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1400.0,
@@ -6307,7 +6394,8 @@
           "failed": true,
           "use_id": "toolu_fail8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1492.6,
@@ -6319,7 +6407,8 @@
           "failed": false,
           "use_id": "toolu_main_23",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1556.9,
@@ -6331,7 +6420,8 @@
           "failed": false,
           "use_id": "toolu_main_24",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1585.9,
@@ -6343,7 +6433,8 @@
           "failed": false,
           "use_id": "toolu_main_25",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1677.9,
@@ -6355,7 +6446,8 @@
           "failed": false,
           "use_id": "toolu_main_26",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1726.1,
@@ -6367,7 +6459,8 @@
           "failed": false,
           "use_id": "toolu_main_27",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1793.0,
@@ -6379,7 +6472,8 @@
           "failed": false,
           "use_id": "toolu_main_28",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1837.9,
@@ -6391,7 +6485,8 @@
           "failed": false,
           "use_id": "toolu_main_29",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1922.9,
@@ -6403,7 +6498,8 @@
           "failed": false,
           "use_id": "toolu_main_30",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1952.5,
@@ -6415,7 +6511,8 @@
           "failed": false,
           "use_id": "toolu_main_31",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2041.3,
@@ -6427,7 +6524,8 @@
           "failed": false,
           "use_id": "toolu_main_32",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2087.9,
@@ -6439,7 +6537,8 @@
           "failed": false,
           "use_id": "toolu_main_33",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2184.2,
@@ -6451,7 +6550,8 @@
           "failed": false,
           "use_id": "toolu_main_34",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2214.8,
@@ -6463,7 +6563,8 @@
           "failed": false,
           "use_id": "toolu_main_35",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2307.8,
@@ -6475,7 +6576,8 @@
           "failed": false,
           "use_id": "toolu_main_36",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2361.1,
@@ -6487,7 +6589,8 @@
           "failed": false,
           "use_id": "toolu_main_37",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2412.3,
@@ -6499,7 +6602,8 @@
           "failed": false,
           "use_id": "toolu_main_38",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2485.5,
@@ -6511,7 +6615,8 @@
           "failed": false,
           "use_id": "toolu_main_39",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2557.5,
@@ -6523,7 +6628,8 @@
           "failed": false,
           "use_id": "toolu_main_40",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2601.3,
@@ -6535,7 +6641,8 @@
           "failed": false,
           "use_id": "toolu_main_41",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2677.7,
@@ -6547,7 +6654,8 @@
           "failed": false,
           "use_id": "toolu_main_42",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2751.9,
@@ -6559,7 +6667,8 @@
           "failed": false,
           "use_id": "toolu_main_43",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2770.7,
@@ -6571,7 +6680,8 @@
           "failed": false,
           "use_id": "toolu_main_44",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2877.9,
@@ -6583,7 +6693,8 @@
           "failed": false,
           "use_id": "toolu_main_45",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2930.2,
@@ -6595,7 +6706,8 @@
           "failed": false,
           "use_id": "toolu_main_46",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2983.1,
@@ -6607,7 +6719,8 @@
           "failed": false,
           "use_id": "toolu_main_47",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3046.9,
@@ -6619,7 +6732,8 @@
           "failed": false,
           "use_id": "toolu_main_48",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 3093.1,
@@ -6631,7 +6745,8 @@
           "failed": false,
           "use_id": "toolu_main_49",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 3190.8,
@@ -6643,7 +6758,8 @@
           "failed": false,
           "use_id": "toolu_main_50",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 3207.1,
@@ -6655,7 +6771,8 @@
           "failed": false,
           "use_id": "toolu_main_51",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 3295.8,
@@ -6667,7 +6784,8 @@
           "failed": false,
           "use_id": "toolu_main_52",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 3353.0,
@@ -6679,7 +6797,8 @@
           "failed": false,
           "use_id": "toolu_main_53",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 3414.6,
@@ -6691,7 +6810,8 @@
           "failed": false,
           "use_id": "toolu_main_54",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 3462.2,
@@ -6703,7 +6823,8 @@
           "failed": false,
           "use_id": "toolu_main_55",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 3546.0,
@@ -6715,7 +6836,8 @@
           "failed": false,
           "use_id": "toolu_main_56",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 3618.8,
@@ -6727,7 +6849,8 @@
           "failed": false,
           "use_id": "toolu_main_57",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 3654.0,
@@ -6739,7 +6862,8 @@
           "failed": false,
           "use_id": "toolu_main_58",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 3732.5,
@@ -6751,7 +6875,8 @@
           "failed": false,
           "use_id": "toolu_main_59",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 3817.2,
@@ -6763,7 +6888,8 @@
           "failed": false,
           "use_id": "toolu_main_60",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 3878.3,
@@ -6775,7 +6901,8 @@
           "failed": false,
           "use_id": "toolu_main_61",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 3931.7,
@@ -6787,7 +6914,8 @@
           "failed": false,
           "use_id": "toolu_main_62",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 3988.0,
@@ -6799,7 +6927,8 @@
           "failed": false,
           "use_id": "toolu_main_63",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 4073.2,
@@ -6811,7 +6940,8 @@
           "failed": false,
           "use_id": "toolu_main_64",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 4104.4,
@@ -6823,7 +6953,8 @@
           "failed": false,
           "use_id": "toolu_main_65",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 4193.7,
@@ -6835,7 +6966,8 @@
           "failed": false,
           "use_id": "toolu_main_66",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 4244.7,
@@ -6847,7 +6979,8 @@
           "failed": false,
           "use_id": "toolu_main_67",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 4312.9,
@@ -6859,7 +6992,8 @@
           "failed": false,
           "use_id": "toolu_main_68",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         },
         {
           "t": 4353.6,
@@ -6871,7 +7005,8 @@
           "failed": false,
           "use_id": "toolu_main_69",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 1
         }
       ],
       "failure_runs": [
@@ -6902,7 +7037,8 @@
           "failed": false,
           "use_id": "toolu_a1_0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 155.4,
@@ -6914,7 +7050,8 @@
           "failed": false,
           "use_id": "toolu_a1_1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 174.5,
@@ -6926,7 +7063,8 @@
           "failed": false,
           "use_id": "toolu_a1_2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 200.4,
@@ -6938,7 +7076,8 @@
           "failed": false,
           "use_id": "toolu_a1_3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 208.8,
@@ -6950,7 +7089,8 @@
           "failed": false,
           "use_id": "toolu_a1_4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 243.6,
@@ -6962,7 +7102,8 @@
           "failed": false,
           "use_id": "toolu_a1_5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 253.3,
@@ -6974,7 +7115,8 @@
           "failed": false,
           "use_id": "toolu_a1_6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 276.1,
@@ -6986,7 +7128,8 @@
           "failed": false,
           "use_id": "toolu_a1_7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 304.9,
@@ -6998,7 +7141,8 @@
           "failed": false,
           "use_id": "toolu_a1_8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 329.1,
@@ -7010,7 +7154,8 @@
           "failed": false,
           "use_id": "toolu_a1_9",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 347.3,
@@ -7022,7 +7167,8 @@
           "failed": false,
           "use_id": "toolu_a1_10",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 364.7,
@@ -7034,7 +7180,8 @@
           "failed": false,
           "use_id": "toolu_a1_11",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 380.7,
@@ -7046,7 +7193,8 @@
           "failed": false,
           "use_id": "toolu_a1_12",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         }
       ],
       "failure_runs": [],
@@ -7065,7 +7213,8 @@
           "failed": false,
           "use_id": "toolu_a2_0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 190.1,
@@ -7077,7 +7226,8 @@
           "failed": false,
           "use_id": "toolu_a2_1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 222.7,
@@ -7089,7 +7239,8 @@
           "failed": false,
           "use_id": "toolu_a2_2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 244.4,
@@ -7101,7 +7252,8 @@
           "failed": false,
           "use_id": "toolu_a2_3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 276.0,
@@ -7113,7 +7265,8 @@
           "failed": false,
           "use_id": "toolu_a2_4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 291.1,
@@ -7125,7 +7278,8 @@
           "failed": false,
           "use_id": "toolu_a2_5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 317.3,
@@ -7137,7 +7291,8 @@
           "failed": false,
           "use_id": "toolu_a2_6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 355.4,
@@ -7149,7 +7304,8 @@
           "failed": false,
           "use_id": "toolu_a2_7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 373.1,
@@ -7161,7 +7317,8 @@
           "failed": false,
           "use_id": "toolu_a2_8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 393.8,
@@ -7173,7 +7330,8 @@
           "failed": false,
           "use_id": "toolu_a2_9",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 422.5,
@@ -7185,7 +7343,8 @@
           "failed": false,
           "use_id": "toolu_a2_10",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 454.2,
@@ -7197,7 +7356,8 @@
           "failed": false,
           "use_id": "toolu_a2_11",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 482.1,
@@ -7209,7 +7369,8 @@
           "failed": false,
           "use_id": "toolu_a2_12",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 508.2,
@@ -7221,7 +7382,8 @@
           "failed": false,
           "use_id": "toolu_a2_13",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 534.0,
@@ -7233,7 +7395,8 @@
           "failed": false,
           "use_id": "toolu_a2_14",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 560.0,
@@ -7245,7 +7408,8 @@
           "failed": false,
           "use_id": "toolu_a2_15",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 584.3,
@@ -7257,7 +7421,8 @@
           "failed": false,
           "use_id": "toolu_a2_16",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         }
       ],
       "failure_runs": [],
@@ -7276,7 +7441,8 @@
           "failed": false,
           "use_id": "toolu_a3_0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 234.7,
@@ -7288,7 +7454,8 @@
           "failed": false,
           "use_id": "toolu_a3_1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 270.5,
@@ -7300,7 +7467,8 @@
           "failed": false,
           "use_id": "toolu_a3_2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 305.6,
@@ -7312,7 +7480,8 @@
           "failed": false,
           "use_id": "toolu_a3_3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 326.9,
@@ -7324,7 +7493,8 @@
           "failed": false,
           "use_id": "toolu_a3_4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 361.2,
@@ -7336,7 +7506,8 @@
           "failed": false,
           "use_id": "toolu_a3_5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 405.6,
@@ -7348,7 +7519,8 @@
           "failed": false,
           "use_id": "toolu_a3_6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 432.8,
@@ -7360,7 +7532,8 @@
           "failed": false,
           "use_id": "toolu_a3_7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 456.4,
@@ -7372,7 +7545,8 @@
           "failed": false,
           "use_id": "toolu_a3_8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 498.0,
@@ -7384,7 +7558,8 @@
           "failed": false,
           "use_id": "toolu_a3_9",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 512.1,
@@ -7396,7 +7571,8 @@
           "failed": false,
           "use_id": "toolu_a3_10",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 541.0,
@@ -7408,7 +7584,8 @@
           "failed": false,
           "use_id": "toolu_a3_11",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 579.8,
@@ -7420,7 +7597,8 @@
           "failed": false,
           "use_id": "toolu_a3_12",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 600.1,
@@ -7432,7 +7610,8 @@
           "failed": false,
           "use_id": "toolu_a3_13",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 648.3,
@@ -7444,7 +7623,8 @@
           "failed": false,
           "use_id": "toolu_a3_14",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 670.4,
@@ -7456,7 +7636,8 @@
           "failed": false,
           "use_id": "toolu_a3_15",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 708.9,
@@ -7468,7 +7649,8 @@
           "failed": false,
           "use_id": "toolu_a3_16",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 720.6,
@@ -7480,7 +7662,8 @@
           "failed": false,
           "use_id": "toolu_a3_17",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 755.7,
@@ -7492,7 +7675,8 @@
           "failed": false,
           "use_id": "toolu_a3_18",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 789.9,
@@ -7504,7 +7688,8 @@
           "failed": false,
           "use_id": "toolu_a3_19",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 826.5,
@@ -7516,7 +7701,8 @@
           "failed": false,
           "use_id": "toolu_a3_20",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 856.1,
@@ -7528,7 +7714,8 @@
           "failed": false,
           "use_id": "toolu_a3_21",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 878.1,
@@ -7540,7 +7727,8 @@
           "failed": false,
           "use_id": "toolu_a3_22",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         }
       ],
       "failure_runs": [],
@@ -7559,7 +7747,8 @@
           "failed": false,
           "use_id": "toolu_a4_0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 255.5,
@@ -7571,7 +7760,8 @@
           "failed": false,
           "use_id": "toolu_a4_1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 285.9,
@@ -7583,7 +7773,8 @@
           "failed": false,
           "use_id": "toolu_a4_2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 313.1,
@@ -7595,7 +7786,8 @@
           "failed": false,
           "use_id": "toolu_a4_3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 339.7,
@@ -7607,7 +7799,8 @@
           "failed": false,
           "use_id": "toolu_a4_4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 367.0,
@@ -7619,7 +7812,8 @@
           "failed": false,
           "use_id": "toolu_a4_5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 383.1,
@@ -7631,7 +7825,8 @@
           "failed": false,
           "use_id": "toolu_a4_6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 412.4,
@@ -7643,7 +7838,8 @@
           "failed": false,
           "use_id": "toolu_a4_7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 445.6,
@@ -7655,7 +7851,8 @@
           "failed": false,
           "use_id": "toolu_a4_8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 479.7,
@@ -7667,7 +7864,8 @@
           "failed": false,
           "use_id": "toolu_a4_9",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 503.6,
@@ -7679,7 +7877,8 @@
           "failed": false,
           "use_id": "toolu_a4_10",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 516.4,
@@ -7691,7 +7890,8 @@
           "failed": false,
           "use_id": "toolu_a4_11",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 545.9,
@@ -7703,7 +7903,8 @@
           "failed": false,
           "use_id": "toolu_a4_12",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 569.5,
@@ -7715,7 +7916,8 @@
           "failed": false,
           "use_id": "toolu_a4_13",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 604.8,
@@ -7727,7 +7929,8 @@
           "failed": false,
           "use_id": "toolu_a4_14",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 619.7,
@@ -7739,7 +7942,8 @@
           "failed": false,
           "use_id": "toolu_a4_15",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 665.4,
@@ -7751,7 +7955,8 @@
           "failed": false,
           "use_id": "toolu_a4_16",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 688.9,
@@ -7763,7 +7968,8 @@
           "failed": false,
           "use_id": "toolu_a4_17",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         }
       ],
       "failure_runs": [],
@@ -7782,7 +7988,8 @@
           "failed": false,
           "use_id": "toolu_a5_0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 313.3,
@@ -7794,7 +8001,8 @@
           "failed": false,
           "use_id": "toolu_a5_1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 339.4,
@@ -7806,7 +8014,8 @@
           "failed": false,
           "use_id": "toolu_a5_2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 369.4,
@@ -7818,7 +8027,8 @@
           "failed": false,
           "use_id": "toolu_a5_3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 413.8,
@@ -7830,7 +8040,8 @@
           "failed": false,
           "use_id": "toolu_a5_4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 437.7,
@@ -7842,7 +8053,8 @@
           "failed": false,
           "use_id": "toolu_a5_5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 462.3,
@@ -7854,7 +8066,8 @@
           "failed": false,
           "use_id": "toolu_a5_6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 505.7,
@@ -7866,7 +8079,8 @@
           "failed": false,
           "use_id": "toolu_a5_7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 538.0,
@@ -7878,7 +8092,8 @@
           "failed": false,
           "use_id": "toolu_a5_8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 553.7,
@@ -7890,7 +8105,8 @@
           "failed": false,
           "use_id": "toolu_a5_9",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 586.0,
@@ -7902,7 +8118,8 @@
           "failed": false,
           "use_id": "toolu_a5_10",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 631.0,
@@ -7914,7 +8131,8 @@
           "failed": false,
           "use_id": "toolu_a5_11",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 668.9,
@@ -7926,7 +8144,8 @@
           "failed": false,
           "use_id": "toolu_a5_12",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 689.8,
@@ -7938,7 +8157,8 @@
           "failed": false,
           "use_id": "toolu_a5_13",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 722.2,
@@ -7950,7 +8170,8 @@
           "failed": false,
           "use_id": "toolu_a5_14",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 754.7,
@@ -7962,7 +8183,8 @@
           "failed": false,
           "use_id": "toolu_a5_15",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 786.6,
@@ -7974,7 +8196,8 @@
           "failed": false,
           "use_id": "toolu_a5_16",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 826.4,
@@ -7986,7 +8209,8 @@
           "failed": false,
           "use_id": "toolu_a5_17",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 855.8,
@@ -7998,7 +8222,8 @@
           "failed": false,
           "use_id": "toolu_a5_18",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 894.9,
@@ -8010,7 +8235,8 @@
           "failed": false,
           "use_id": "toolu_a5_19",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 917.7,
@@ -8022,7 +8248,8 @@
           "failed": false,
           "use_id": "toolu_a5_20",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 964.5,
@@ -8034,7 +8261,8 @@
           "failed": false,
           "use_id": "toolu_a5_21",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 976.4,
@@ -8046,7 +8274,8 @@
           "failed": false,
           "use_id": "toolu_a5_22",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1008.3,
@@ -8058,7 +8287,8 @@
           "failed": false,
           "use_id": "toolu_a5_23",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1051.6,
@@ -8070,7 +8300,8 @@
           "failed": false,
           "use_id": "toolu_a5_24",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1070.7,
@@ -8082,7 +8313,8 @@
           "failed": false,
           "use_id": "toolu_a5_25",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1109.4,
@@ -8094,7 +8326,8 @@
           "failed": false,
           "use_id": "toolu_a5_26",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1152.9,
@@ -8106,7 +8339,8 @@
           "failed": false,
           "use_id": "toolu_a5_27",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1188.1,
@@ -8118,7 +8352,8 @@
           "failed": false,
           "use_id": "toolu_a5_28",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         }
       ],
       "failure_runs": [],
@@ -8137,7 +8372,8 @@
           "failed": false,
           "use_id": "toolu_a5b_0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 433.7,
@@ -8149,7 +8385,8 @@
           "failed": false,
           "use_id": "toolu_a5b_1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 462.5,
@@ -8161,7 +8398,8 @@
           "failed": false,
           "use_id": "toolu_a5b_2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 478.8,
@@ -8173,7 +8411,8 @@
           "failed": false,
           "use_id": "toolu_a5b_3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 506.8,
@@ -8185,7 +8424,8 @@
           "failed": false,
           "use_id": "toolu_a5b_4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 519.0,
@@ -8197,7 +8437,8 @@
           "failed": false,
           "use_id": "toolu_a5b_5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 543.7,
@@ -8209,7 +8450,8 @@
           "failed": false,
           "use_id": "toolu_a5b_6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 572.7,
@@ -8221,7 +8463,8 @@
           "failed": false,
           "use_id": "toolu_a5b_7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 601.2,
@@ -8233,7 +8476,8 @@
           "failed": false,
           "use_id": "toolu_a5b_8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 608.0,
@@ -8245,7 +8489,8 @@
           "failed": false,
           "use_id": "toolu_a5b_9",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 637.2,
@@ -8257,7 +8502,8 @@
           "failed": false,
           "use_id": "toolu_a5b_10",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 661.4,
@@ -8269,7 +8515,8 @@
           "failed": false,
           "use_id": "toolu_a5b_11",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 674.9,
@@ -8281,7 +8528,8 @@
           "failed": false,
           "use_id": "toolu_a5b_12",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         }
       ],
       "failure_runs": [],
@@ -8300,7 +8548,8 @@
           "failed": false,
           "use_id": "toolu_a5c_0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 477.2,
@@ -8312,7 +8561,8 @@
           "failed": false,
           "use_id": "toolu_a5c_1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 491.6,
@@ -8324,7 +8574,8 @@
           "failed": false,
           "use_id": "toolu_a5c_2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 512.1,
@@ -8336,7 +8587,8 @@
           "failed": false,
           "use_id": "toolu_a5c_3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 518.1,
@@ -8348,7 +8600,8 @@
           "failed": false,
           "use_id": "toolu_a5c_4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 536.4,
@@ -8360,7 +8613,8 @@
           "failed": false,
           "use_id": "toolu_a5c_5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 556.1,
@@ -8372,7 +8626,8 @@
           "failed": false,
           "use_id": "toolu_a5c_6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 569.9,
@@ -8384,7 +8639,8 @@
           "failed": false,
           "use_id": "toolu_a5c_7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 582.3,
@@ -8396,7 +8652,8 @@
           "failed": false,
           "use_id": "toolu_a5c_8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         }
       ],
       "failure_runs": [],
@@ -8415,7 +8672,8 @@
           "failed": false,
           "use_id": "toolu_a6_0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1553.7,
@@ -8427,7 +8685,8 @@
           "failed": false,
           "use_id": "toolu_a6_1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1580.7,
@@ -8439,7 +8698,8 @@
           "failed": false,
           "use_id": "toolu_a6_2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1613.7,
@@ -8451,7 +8711,8 @@
           "failed": false,
           "use_id": "toolu_a6_3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1652.9,
@@ -8463,7 +8724,8 @@
           "failed": false,
           "use_id": "toolu_a6_4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1675.7,
@@ -8475,7 +8737,8 @@
           "failed": false,
           "use_id": "toolu_a6_5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1704.2,
@@ -8487,7 +8750,8 @@
           "failed": false,
           "use_id": "toolu_a6_6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1737.5,
@@ -8499,7 +8763,8 @@
           "failed": false,
           "use_id": "toolu_a6_7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1789.4,
@@ -8511,7 +8776,8 @@
           "failed": false,
           "use_id": "toolu_a6_8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1807.7,
@@ -8523,7 +8789,8 @@
           "failed": false,
           "use_id": "toolu_a6_9",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1857.4,
@@ -8535,7 +8802,8 @@
           "failed": false,
           "use_id": "toolu_a6_10",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1882.1,
@@ -8547,7 +8815,8 @@
           "failed": false,
           "use_id": "toolu_a6_11",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1910.1,
@@ -8559,7 +8828,8 @@
           "failed": false,
           "use_id": "toolu_a6_12",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1960.2,
@@ -8571,7 +8841,8 @@
           "failed": false,
           "use_id": "toolu_a6_13",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1971.9,
@@ -8583,7 +8854,8 @@
           "failed": false,
           "use_id": "toolu_a6_14",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2007.5,
@@ -8595,7 +8867,8 @@
           "failed": false,
           "use_id": "toolu_a6_15",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2057.7,
@@ -8607,7 +8880,8 @@
           "failed": false,
           "use_id": "toolu_a6_16",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2067.5,
@@ -8619,7 +8893,8 @@
           "failed": false,
           "use_id": "toolu_a6_17",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2123.8,
@@ -8631,7 +8906,8 @@
           "failed": false,
           "use_id": "toolu_a6_18",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2140.3,
@@ -8643,7 +8919,8 @@
           "failed": false,
           "use_id": "toolu_a6_19",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2182.6,
@@ -8655,7 +8932,8 @@
           "failed": false,
           "use_id": "toolu_a6_20",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2200.9,
@@ -8667,7 +8945,8 @@
           "failed": false,
           "use_id": "toolu_a6_21",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2253.9,
@@ -8679,7 +8958,8 @@
           "failed": false,
           "use_id": "toolu_a6_22",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2270.8,
@@ -8691,7 +8971,8 @@
           "failed": false,
           "use_id": "toolu_a6_23",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2303.6,
@@ -8703,7 +8984,8 @@
           "failed": false,
           "use_id": "toolu_a6_24",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2341.3,
@@ -8715,7 +8997,8 @@
           "failed": false,
           "use_id": "toolu_a6_25",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2367.3,
@@ -8727,7 +9010,8 @@
           "failed": false,
           "use_id": "toolu_a6_26",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2409.5,
@@ -8739,7 +9023,8 @@
           "failed": false,
           "use_id": "toolu_a6_27",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2441.3,
@@ -8751,7 +9036,8 @@
           "failed": false,
           "use_id": "toolu_a6_28",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2468.7,
@@ -8763,7 +9049,8 @@
           "failed": false,
           "use_id": "toolu_a6_29",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2518.0,
@@ -8775,7 +9062,8 @@
           "failed": false,
           "use_id": "toolu_a6_30",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2553.5,
@@ -8787,7 +9075,8 @@
           "failed": false,
           "use_id": "toolu_a6_31",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2565.0,
@@ -8799,7 +9088,8 @@
           "failed": false,
           "use_id": "toolu_a6_32",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         }
       ],
       "failure_runs": [],
@@ -8818,7 +9108,8 @@
           "failed": false,
           "use_id": "toolu_a7_0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2839.9,
@@ -8830,7 +9121,8 @@
           "failed": false,
           "use_id": "toolu_a7_1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2872.8,
@@ -8842,7 +9134,8 @@
           "failed": false,
           "use_id": "toolu_a7_2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2894.4,
@@ -8854,7 +9147,8 @@
           "failed": false,
           "use_id": "toolu_a7_3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2930.7,
@@ -8866,7 +9160,8 @@
           "failed": false,
           "use_id": "toolu_a7_4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2946.5,
@@ -8878,7 +9173,8 @@
           "failed": false,
           "use_id": "toolu_a7_5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 2987.9,
@@ -8890,7 +9186,8 @@
           "failed": false,
           "use_id": "toolu_a7_6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3009.0,
@@ -8902,7 +9199,8 @@
           "failed": false,
           "use_id": "toolu_a7_7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3023.8,
@@ -8914,7 +9212,8 @@
           "failed": false,
           "use_id": "toolu_a7_8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3054.7,
@@ -8926,7 +9225,8 @@
           "failed": false,
           "use_id": "toolu_a7_9",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3077.6,
@@ -8938,7 +9238,8 @@
           "failed": false,
           "use_id": "toolu_a7_10",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3120.5,
@@ -8950,7 +9251,8 @@
           "failed": false,
           "use_id": "toolu_a7_11",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3136.2,
@@ -8962,7 +9264,8 @@
           "failed": false,
           "use_id": "toolu_a7_12",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3180.3,
@@ -8974,7 +9277,8 @@
           "failed": false,
           "use_id": "toolu_a7_13",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3201.5,
@@ -8986,7 +9290,8 @@
           "failed": false,
           "use_id": "toolu_a7_14",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3220.9,
@@ -8998,7 +9303,8 @@
           "failed": false,
           "use_id": "toolu_a7_15",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3245.9,
@@ -9010,7 +9316,8 @@
           "failed": false,
           "use_id": "toolu_a7_16",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3283.3,
@@ -9022,7 +9329,8 @@
           "failed": false,
           "use_id": "toolu_a7_17",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         }
       ],
       "failure_runs": [],
@@ -9041,7 +9349,8 @@
           "failed": false,
           "use_id": "toolu_a8_0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3428.3,
@@ -9053,7 +9362,8 @@
           "failed": false,
           "use_id": "toolu_a8_1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3446.3,
@@ -9065,7 +9375,8 @@
           "failed": false,
           "use_id": "toolu_a8_2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3456.3,
@@ -9077,7 +9388,8 @@
           "failed": false,
           "use_id": "toolu_a8_3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3479.1,
@@ -9089,7 +9401,8 @@
           "failed": false,
           "use_id": "toolu_a8_4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3505.2,
@@ -9101,7 +9414,8 @@
           "failed": false,
           "use_id": "toolu_a8_5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3515.3,
@@ -9113,7 +9427,8 @@
           "failed": false,
           "use_id": "toolu_a8_6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3539.8,
@@ -9125,7 +9440,8 @@
           "failed": false,
           "use_id": "toolu_a8_7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3547.6,
@@ -9137,7 +9453,8 @@
           "failed": false,
           "use_id": "toolu_a8_8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3564.7,
@@ -9149,7 +9466,8 @@
           "failed": false,
           "use_id": "toolu_a8_9",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3581.8,
@@ -9161,7 +9479,8 @@
           "failed": false,
           "use_id": "toolu_a8_10",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         }
       ],
       "failure_runs": [],
@@ -9180,7 +9499,8 @@
           "failed": false,
           "use_id": "toolu_a9_0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3750.1,
@@ -9192,7 +9512,8 @@
           "failed": false,
           "use_id": "toolu_a9_1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3770.9,
@@ -9204,7 +9525,8 @@
           "failed": false,
           "use_id": "toolu_a9_2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3797.5,
@@ -9216,7 +9538,8 @@
           "failed": false,
           "use_id": "toolu_a9_3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3824.5,
@@ -9228,7 +9551,8 @@
           "failed": false,
           "use_id": "toolu_a9_4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3855.4,
@@ -9240,7 +9564,8 @@
           "failed": false,
           "use_id": "toolu_a9_5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3892.3,
@@ -9252,7 +9577,8 @@
           "failed": false,
           "use_id": "toolu_a9_6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3921.9,
@@ -9264,7 +9590,8 @@
           "failed": false,
           "use_id": "toolu_a9_7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3952.0,
@@ -9276,7 +9603,8 @@
           "failed": false,
           "use_id": "toolu_a9_8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 3998.2,
@@ -9288,7 +9616,8 @@
           "failed": false,
           "use_id": "toolu_a9_9",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 4016.9,
@@ -9300,7 +9629,8 @@
           "failed": false,
           "use_id": "toolu_a9_10",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 4040.9,
@@ -9312,7 +9642,8 @@
           "failed": false,
           "use_id": "toolu_a9_11",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 4067.5,
@@ -9324,7 +9655,8 @@
           "failed": false,
           "use_id": "toolu_a9_12",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 4103.7,
@@ -9336,7 +9668,8 @@
           "failed": false,
           "use_id": "toolu_a9_13",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 4143.4,
@@ -9348,7 +9681,8 @@
           "failed": false,
           "use_id": "toolu_a9_14",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 4156.0,
@@ -9360,7 +9694,8 @@
           "failed": false,
           "use_id": "toolu_a9_15",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 4188.6,
@@ -9372,7 +9707,8 @@
           "failed": false,
           "use_id": "toolu_a9_16",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 4228.3,
@@ -9384,7 +9720,8 @@
           "failed": false,
           "use_id": "toolu_a9_17",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 4258.1,
@@ -9396,7 +9733,8 @@
           "failed": false,
           "use_id": "toolu_a9_18",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 4289.8,
@@ -9408,7 +9746,8 @@
           "failed": false,
           "use_id": "toolu_a9_19",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 4320.6,
@@ -9420,7 +9759,8 @@
           "failed": false,
           "use_id": "toolu_a9_20",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 4338.8,
@@ -9432,7 +9772,8 @@
           "failed": false,
           "use_id": "toolu_a9_21",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 4374.3,
@@ -9444,7 +9785,8 @@
           "failed": false,
           "use_id": "toolu_a9_22",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         }
       ],
       "failure_runs": [],
@@ -9463,7 +9805,8 @@
           "failed": false,
           "use_id": "toolu_a10_0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 7027.9,
@@ -9475,7 +9818,8 @@
           "failed": false,
           "use_id": "toolu_a10_1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 7043.8,
@@ -9487,7 +9831,8 @@
           "failed": false,
           "use_id": "toolu_a10_2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 7063.0,
@@ -9499,7 +9844,8 @@
           "failed": false,
           "use_id": "toolu_a10_3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 7074.7,
@@ -9511,7 +9857,8 @@
           "failed": false,
           "use_id": "toolu_a10_4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 7093.6,
@@ -9523,7 +9870,8 @@
           "failed": false,
           "use_id": "toolu_a10_5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 7110.7,
@@ -9535,7 +9883,8 @@
           "failed": false,
           "use_id": "toolu_a10_6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 7127.3,
@@ -9547,7 +9896,8 @@
           "failed": false,
           "use_id": "toolu_a10_7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 7153.1,
@@ -9559,7 +9909,8 @@
           "failed": false,
           "use_id": "toolu_a10_8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 7170.4,
@@ -9571,7 +9922,8 @@
           "failed": false,
           "use_id": "toolu_a10_9",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 7179.9,
@@ -9583,7 +9935,8 @@
           "failed": false,
           "use_id": "toolu_a10_10",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         }
       ],
       "failure_runs": [],

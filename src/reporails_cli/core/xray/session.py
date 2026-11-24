@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 
 from reporails_cli.core.discovery.plugin_roots import installed_plugin_roots
@@ -54,7 +55,7 @@ from reporails_cli.core.platform.dto.xray import (
 from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable, WorkflowReading
 from reporails_cli.core.platform.dto.xray_graph import OutputSource
 from reporails_cli.core.platform.dto.xray_own import ContextKey, XrayOwnContext, XrayOwnItem
-from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayArtifact, XrayPeek
+from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayPeek
 from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.artifacts import (
     advertised_files,
@@ -152,7 +153,7 @@ class XraySession:
         self._file = session_file
         self._transcript: list[EventRecord] = []
         self._reads = _FileReads()
-        self._listed: tuple[tuple[ArtifactFile, ...], tuple[XrayArtifact, ...]] | None = None
+        self._content: XrayView | None = None
         self._shown: dict[str, ArtifactFile] | None = None
         self._walked: (
             tuple[tuple[tuple[int, int] | None, ...], float, tuple[ArtifactFile, ...], tuple[str, ...]] | None
@@ -170,7 +171,6 @@ class XraySession:
             return False
         self._transcript.extend(records)
         self._shown = None
-        self.version += 1
         return True
 
     def _listing(self, run: RunContext) -> tuple[ArtifactFile, ...]:
@@ -330,8 +330,7 @@ class XraySession:
     ) -> XrayView:
         """The view of the records read so far, listing the files under the config `run` read; `findings` maps a
         file path to its finding tally and `check` is the state of the launch check; `picked` is how the session
-        was chosen. The version rises when the records, the findings, the check or the listed files change."""
-        changed = dict(findings) != self._findings or check != self._check
+        was chosen. The version rises whenever the view built differs from the one built before it."""
         self._findings = dict(findings)
         self._check = check
         self._shown = None
@@ -340,9 +339,6 @@ class XraySession:
         frame = self._frame(files, records)
         vocabulary = vocabulary_for(AGENT, [item.label for item in files if item.kind == "agent"])
         artifacts = build_artifacts(run, files, self._findings, self._root, advertised=advertised_files(files, records))
-        if changed or self._listed not in (None, (files, artifacts)):
-            self.version += 1
-        self._listed = (files, artifacts)
         table = build_sources(run, artifacts, records, frame)
         prices = load_price_list()
         graph = build_graph(records, frame, table, vocabulary, prices, workflows=WorkflowReading(self.workflows()))
@@ -353,8 +349,8 @@ class XraySession:
             node.id: node.detail.in_context.own for node in graph.nodes if node.detail.in_context is not None
         }
         window = window_of(replies_of(main_records(records)))
-        return XrayView(
-            version=self.version,
+        content = XrayView(
+            version=0,
             info=self._info(records, picked),
             model=latest_model(records),
             window=window,
@@ -370,6 +366,10 @@ class XraySession:
             gaps=self._gaps(window),
             verdict=self._verdict(table, graph, records, vocabulary),
         )
+        if content != self._content:
+            self.version += 1
+        self._content = content
+        return replace(content, version=self.version)
 
     def _frame(self, files: tuple[ArtifactFile, ...], records: list[EventRecord]) -> Frame:
         """The clock zero, project root, finding tallies and runnable paths the derivations read."""

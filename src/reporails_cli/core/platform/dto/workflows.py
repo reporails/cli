@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
+
+# The state of a workflow run: `running` (no record file yet, or the record says so), a state a record file names, or
+# `unreadable` (the record file is not JSON or not the shape the adapter is pinned to).
+WorkflowStatus = Literal["running", "completed", "failed", "cancelled", "unreadable"]
+# The states a record file may name.
+RECORDED_STATUSES: tuple[WorkflowStatus, ...] = ("running", "completed", "failed", "cancelled")
 
 
 @dataclass(frozen=True)
 class WorkflowAgent:
-    """One agent of a workflow run: its id, the index and title of its phase and its label. While the run has no
-    record file, a phase title or label the agent's files do not state is None, and so is the index of an agent with
-    no phase title."""
+    """One agent of a workflow run: its id, the index and title of its phase and its label. `phase_index` is the
+    place of the agent's phase among the run's phases. While the run has no record file, a phase title or label the
+    agent's files do not state is None, and so is the index of an agent with no phase title."""
 
     agent_id: str
     phase_index: int | None
@@ -20,14 +27,13 @@ class WorkflowAgent:
 @dataclass(frozen=True)
 class WorkflowRun:
     """One workflow run of a session: its id, name and status (`running` while the run has no record file), the
-    titles of its phases, the number of its agents, its duration in milliseconds, its token total and its start time
-    in milliseconds since 1970 (None while the run has no record file), and its agents."""
+    titles of its phases, its duration in milliseconds, its token total and its start time in milliseconds since 1970
+    (None while the run has no record file), and its agents."""
 
     run_id: str
     name: str | None
-    status: str
+    status: WorkflowStatus
     phases: tuple[str, ...]
-    agent_count: int
     duration_ms: int | None
     total_tokens: int | None
     start_time: int | None
@@ -36,7 +42,8 @@ class WorkflowRun:
 
 @dataclass(frozen=True)
 class WorkflowRefused:
-    """A workflow run whose record file is not the shape the adapter is pinned to: its id and what was wrong."""
+    """A workflow run whose record file is not JSON or not the shape the adapter is pinned to: its id and what was
+    wrong."""
 
     run_id: str
     reason: str

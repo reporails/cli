@@ -178,17 +178,13 @@ def _cuts(context) -> list[dict]:
     return _station(context)["compactions"]
 
 
-def _seg(context, t: float) -> int:
-    return sum(1 for c in _cuts(context) if c["t"] <= t)
-
-
 def _fold_counts(context, seg: int) -> tuple[int, int]:
-    """The loads and the subagents the view holds for a segment, from the view's own times."""
-    start = _main(context)["start"]
-    loads = sum(
-        1 for load in _station(context)["loads"] if _seg(context, load["t"] if load["t"] is not None else start) == seg
-    )
-    kids = sum(1 for n in context.fixture["nodes"] if n["parent"] == "main" and _seg(context, n["start"]) == seg)
+    """The loads (those on the station, in its groups and in its hook stretches) and the subagents the view holds for a
+    segment, by the segment the view gives each."""
+    station = _station(context)
+    loads = sum(1 for load in station["loads"] if load["segment"] == seg)
+    loads += sum(x["count"] for x in [*station["groups"], *station["hooks"]] if x["segment"] == seg)
+    kids = sum(1 for n in context.fixture["nodes"] if n["parent"] == "main" and n["segment"] == seg)
     return loads, kids
 
 
@@ -207,7 +203,7 @@ def step_folds_default(context):
 
 @then("picking an agent launched in the first segment opens that segment and leaves the others folded")
 def step_folds_pick(context):
-    first = next(n["id"] for n in context.fixture["nodes"] if n["parent"] == "main" and _seg(context, n["start"]) == 0)
+    first = next(n["id"] for n in context.fixture["nodes"] if n["parent"] == "main" and n["segment"] == 0)
     seen = _canvas(context, "folds", first)
     if seen is None:
         return
@@ -272,7 +268,7 @@ def step_folds_open(context):
 @then("picking a call that ran in the first segment opens that segment and leaves the others folded")
 def step_folds_call(context):
     calls = next(t for t in context.fixture["track"] if t["node"] == "main")["calls"]
-    call = next(c for c in calls if _seg(context, c["t"]) == 0)
+    call = next(c for c in calls if c["segment"] == 0)
     seen = _canvas(context, "folds", f"call:{call['use_id']}")
     if seen is None:
         return

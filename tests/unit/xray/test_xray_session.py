@@ -156,34 +156,33 @@ def test_the_vocabulary_lists_the_agent_types_found_on_disk_after_the_built_in_o
     assert keys[:5] == ["main", "Explore", "general-purpose", "Plan", "fork"] and keys[5:] == ["helper"]
 
 
-def test_refresh_reports_growth_and_bumps_the_version(tmp_path: Path) -> None:
+def test_refresh_reports_growth_and_the_version_rises_with_the_view_the_growth_changes(tmp_path: Path) -> None:
     session = _session(tmp_path, "2.1.301", _project(tmp_path))
     assert session.version == 0
     assert session.refresh() is True
-    version = session.version
+    version = session.view(RunContext(), {}, RUNNING, "newest").version
     assert session.refresh() is False
-    assert session.version == version
+    assert session.view(RunContext(), {}, RUNNING, "newest").version == version
     before = session.view(RunContext(), {}, RUNNING, "newest").nodes[0].detail
     _append_turn(tmp_path, "2.1.301")
     assert session.refresh() is True
-    assert session.version == version + 1
-    after = session.view(RunContext(), {}, RUNNING, "newest").nodes[0].detail
+    grown = session.view(RunContext(), {}, RUNNING, "newest")
+    assert grown.version == version + 1
+    after = grown.nodes[0].detail
     assert len(after.series) == len(before.series) + 1 and after.series[-1][1] == 30103
     assert session.refresh() is False
 
 
-def test_the_version_follows_the_findings_it_is_given(tmp_path: Path) -> None:
+def test_the_version_follows_the_findings_and_the_check_it_is_given(tmp_path: Path) -> None:
     session = _session(tmp_path, "2.1.301", _project(tmp_path))
     session.refresh()
-    version = session.version
-    session.view(RunContext(), {}, RUNNING, "newest")
-    assert session.version == version
-    session.view(RunContext(), {"a.md": _tally(2)}, RUNNING, "newest")
-    assert session.version == version + 1
-    session.view(RunContext(), {"a.md": _tally(2)}, RUNNING, "newest")
-    assert session.version == version + 1
-    session.view(RunContext(), {"a.md": _tally(2)}, XrayCheck("done", None), "newest")
-    assert session.version == version + 2
+    version = session.view(RunContext(), {}, RUNNING, "newest").version
+    assert session.view(RunContext(), {}, RUNNING, "newest").version == version
+    assert session.view(RunContext(), {"CLAUDE.md": _tally(2)}, RUNNING, "newest").version == version + 1
+    assert session.view(RunContext(), {"CLAUDE.md": _tally(2)}, RUNNING, "newest").version == version + 1
+    assert (
+        session.view(RunContext(), {"CLAUDE.md": _tally(2)}, XrayCheck("done", None), "newest").version == version + 2
+    )
 
 
 def test_a_source_lists_what_could_load_with_its_size_findings_and_the_nodes_that_had_it(tmp_path: Path) -> None:

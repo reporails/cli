@@ -1366,7 +1366,7 @@ def test_workflow_runs_return_the_run_record_with_its_agents(tmp_path: Path) -> 
     (run,) = workflow_runs("claude", _workflow_session(tmp_path))
     assert (run.run_id, run.name, run.status) == (WF_RUN, "PLACEHOLDER-WORKFLOW", "completed")
     assert run.phases == ("Build", "Verify")
-    assert (run.agent_count, run.duration_ms, run.total_tokens, run.start_time) == (2, 130000, 4200, 1795113523095)
+    assert (run.duration_ms, run.total_tokens, run.start_time) == (130000, 4200, 1795113523095)
     assert [(a.agent_id, a.phase_index, a.phase_title, a.label) for a in run.agents] == WF_AGENTS
 
 
@@ -1376,7 +1376,7 @@ def test_a_run_with_no_record_file_yet_is_running_with_phases_from_its_agents(tm
     (run,) = workflow_runs("claude", session)
     assert (run.run_id, run.status, run.name) == (WF_RUN, "running", None)
     assert run.phases == ("Build", "Verify")
-    assert (run.agent_count, run.duration_ms, run.total_tokens, run.start_time) == (2, None, None, None)
+    assert (run.duration_ms, run.total_tokens, run.start_time) == (None, None, None)
     assert [(a.agent_id, a.phase_index, a.phase_title, a.label) for a in run.agents] == WF_AGENTS
 
 
@@ -1384,6 +1384,7 @@ def test_a_run_with_no_record_file_yet_is_running_with_phases_from_its_agents(tm
     ("key", "value", "reason"),
     [
         ("status", 3, "status"),
+        ("status", "paused", "none of running"),
         ("runId", "wf_other", "run other than"),
         ("phases", {}, "not a list"),
         ("durationMs", "long", "durationMs"),
@@ -1403,6 +1404,18 @@ def test_a_malformed_run_record_is_refused_for_that_run_only(
     refused, readable = found[WF_RUN], found["wf_good"]
     assert isinstance(refused, WorkflowRefused) and re.search(reason, refused.reason)
     assert isinstance(readable, WorkflowRun)
+
+
+def test_a_record_file_that_is_not_json_is_refused_for_that_run_only(tmp_path: Path) -> None:
+    session = _workflow_session(tmp_path)
+    record = session.with_suffix("") / "workflows" / f"{WF_RUN}.json"
+    good = json.loads(record.read_text()) | {"runId": "wf_good", "workflowProgress": [], "phases": []}
+    (record.parent / "wf_good.json").write_text(json.dumps(good))
+    record.write_text('{"runId": "wf_test01", "status": "comp')
+    found = {run.run_id: run for run in workflow_runs("claude", session)}
+    refused = found[WF_RUN]
+    assert isinstance(refused, WorkflowRefused) and "not readable JSON" in refused.reason
+    assert isinstance(found["wf_good"], WorkflowRun)
 
 
 def test_a_session_with_no_workflow_has_no_runs(tmp_path: Path) -> None:

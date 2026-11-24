@@ -15,3 +15,11 @@ Feature: A Claude Code session with a Workflow run shows a workflow node on the 
     When "ails xray --no-open" is started in the project
     Then the printed address is on 127.0.0.1
     And the view holds the second run as a readable node and the first as not readable with the reason, and the canvas still draws both nodes
+
+  @page @browser
+  Scenario: A Workflow run record cut off mid-write shows as not readable instead of running
+    Given a project with a recorded Claude Code session that ran a Workflow of two phases
+    And the session holds a second well-formed Workflow run record and the first run's record is cut off mid-write
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the view holds the second run as a readable node and the first as not readable with the reason, and the canvas still draws both nodes

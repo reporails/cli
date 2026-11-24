@@ -5,10 +5,11 @@ import { clock, k1, tk } from '../format.js';
 import { summaryUrl } from '../api.js';
 import { textBlock } from './textblock.js';
 import { registerPeek } from './details.js';
-import { sourceFirsts } from '../views.js';
+import { loadedKeys } from '../views.js';
 
 // What the page says of each state of an instruction file with no card after a compaction, and why.
 export const FILE_STATE_WORDS = {
+  reloaded: ['loaded again after the compaction', 'the file was loaded into the context again'],
   restored: ['kept in the messages the compaction preserved', 'the file came back inside the preserved messages, not as a new load'],
   pending: ['settles at the next reply', 'whether the file came back is known after the next reply'],
   named: ['named only: the agent must read it again', 'Claude Code told the agent the file name, not its content'],
@@ -38,9 +39,8 @@ registerPeek('compaction', (env, id) => {
     : section('What is left after the compaction', nk('The transcript holds no summary for this compaction.'));
   const files = el('div', 'pk-list');
   const index = Number(id.slice(at + 1));
-  const cuts = ((env.ix.stations.get(nodeId) || { compactions: [] }).compactions).map(x => x.t);
-  const cards = new Set(sourceFirsts(env.ix, node, cuts).map(f => f.key));
-  const gone = (c.files || []).filter(f => !cards.has(`${index + 1}|${f.source}`));
+  const loaded = loadedKeys(env.ix, node);
+  const gone = (c.files || []).filter(f => !loaded.has(`${index + 1}|${f.source}`));
   for (const f of gone) {
     const s = env.ix.sources.get(f.source);
     const [words, why] = FILE_STATE_WORDS[f.state] || [f.state, ''];

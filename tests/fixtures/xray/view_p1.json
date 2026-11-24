@@ -701,7 +701,8 @@
           ],
           "first_launch": 98.5,
           "last_return": 700.0,
-          "down_tokens": 25500
+          "down_tokens": 25500,
+          "segment": 0
         },
         {
           "members": [
@@ -711,9 +712,11 @@
           ],
           "first_launch": 118.5,
           "last_return": 600.0,
-          "down_tokens": 19500
+          "down_tokens": 19500,
+          "segment": 0
         }
-      ]
+      ],
+      "segment": 0
     },
     {
       "id": "b1",
@@ -1056,7 +1059,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "b2",
@@ -1399,7 +1403,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "b3",
@@ -1742,7 +1747,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "b4",
@@ -2085,7 +2091,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "b5",
@@ -2428,7 +2435,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "b6",
@@ -2771,7 +2779,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "d1",
@@ -3114,7 +3123,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "d2",
@@ -3457,7 +3467,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "d3",
@@ -3800,7 +3811,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "c1",
@@ -4143,7 +4155,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "c2",
@@ -4486,7 +4499,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     },
     {
       "id": "c3",
@@ -4829,7 +4843,8 @@
         }
       },
       "child_sources": {},
-      "bursts": []
+      "bursts": [],
+      "segment": 0
     }
   ],
   "edges": [
@@ -5284,7 +5299,8 @@
           "tokens_est": 2500,
           "trigger": "session_start",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/CLAUDE.md",
@@ -5292,7 +5308,8 @@
           "tokens_est": 1640,
           "trigger": "session_start",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "~/.claude/projects/-work-demo/memory/MEMORY.md",
@@ -5300,7 +5317,8 @@
           "tokens_est": 3100,
           "trigger": "session_start",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": "mcp:docs-server",
@@ -5308,7 +5326,8 @@
           "tokens_est": 473,
           "trigger": "session_start",
           "event": null,
-          "small": true
+          "small": true,
+          "segment": 0
         },
         {
           "source": "hook:PreToolUse:Edit",
@@ -5316,7 +5335,8 @@
           "tokens_est": 210,
           "trigger": "hook",
           "event": "PreToolUse",
-          "small": true
+          "small": true,
+          "segment": 0
         },
         {
           "source": ".claude/rules/rules-engine.md",
@@ -5324,7 +5344,8 @@
           "tokens_est": 1200,
           "trigger": "path_match",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": ".claude/skills/orient/SKILL.md",
@@ -5332,7 +5353,8 @@
           "tokens_est": 2700,
           "trigger": "agent",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         },
         {
           "source": ".claude/skills/agents-sdk/SKILL.md",
@@ -5340,7 +5362,8 @@
           "tokens_est": null,
           "trigger": "agent",
           "event": null,
-          "small": false
+          "small": false,
+          "segment": 0
         }
       ],
       "mcp": [
@@ -5349,7 +5372,8 @@
           "first": 900.0,
           "last": 960.0,
           "calls": 7,
-          "back_tokens_est": 2100
+          "back_tokens_est": 2100,
+          "segment": 0
         }
       ],
       "compactions": [],
@@ -5360,7 +5384,8 @@
           "first": 1200.0,
           "last": 1260.0,
           "count": 3,
-          "tokens_est": 90
+          "tokens_est": 90,
+          "segment": 0
         }
       ]
     }
@@ -5379,7 +5404,8 @@
           "failed": false,
           "use_id": "toolu_main_0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 72.9,
@@ -5391,7 +5417,8 @@
           "failed": false,
           "use_id": "toolu_main_1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 144.9,
@@ -5403,7 +5430,8 @@
           "failed": false,
           "use_id": "toolu_main_2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 195.8,
@@ -5415,7 +5443,8 @@
           "failed": false,
           "use_id": "toolu_main_3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 279.7,
@@ -5427,7 +5456,8 @@
           "failed": false,
           "use_id": "toolu_main_4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 348.4,
@@ -5439,7 +5469,8 @@
           "failed": false,
           "use_id": "toolu_main_5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 386.8,
@@ -5451,7 +5482,8 @@
           "failed": false,
           "use_id": "toolu_main_6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 452.9,
@@ -5463,7 +5495,8 @@
           "failed": false,
           "use_id": "toolu_main_7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 533.3,
@@ -5475,7 +5508,8 @@
           "failed": false,
           "use_id": "toolu_main_8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 590.2,
@@ -5487,7 +5521,8 @@
           "failed": false,
           "use_id": "toolu_main_9",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 651.7,
@@ -5499,7 +5534,8 @@
           "failed": false,
           "use_id": "toolu_main_10",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 698.3,
@@ -5511,7 +5547,8 @@
           "failed": false,
           "use_id": "toolu_main_11",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 797.7,
@@ -5523,7 +5560,8 @@
           "failed": false,
           "use_id": "toolu_main_12",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 830.1,
@@ -5535,7 +5573,8 @@
           "failed": false,
           "use_id": "toolu_main_13",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 918.0,
@@ -5547,7 +5586,8 @@
           "failed": false,
           "use_id": "toolu_main_14",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 986.2,
@@ -5559,7 +5599,8 @@
           "failed": false,
           "use_id": "toolu_main_15",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1034.3,
@@ -5571,7 +5612,8 @@
           "failed": false,
           "use_id": "toolu_main_16",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1075.7,
@@ -5583,7 +5625,8 @@
           "failed": false,
           "use_id": "toolu_main_17",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1135.8,
@@ -5595,7 +5638,8 @@
           "failed": false,
           "use_id": "toolu_main_18",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1237.7,
@@ -5607,7 +5651,8 @@
           "failed": false,
           "use_id": "toolu_main_19",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1273.8,
@@ -5619,7 +5664,8 @@
           "failed": false,
           "use_id": "toolu_main_20",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1300.0,
@@ -5631,7 +5677,8 @@
           "failed": true,
           "use_id": "toolu_fail0",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1312.5,
@@ -5643,7 +5690,8 @@
           "failed": true,
           "use_id": "toolu_fail1",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1325.0,
@@ -5655,7 +5703,8 @@
           "failed": true,
           "use_id": "toolu_fail2",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1337.5,
@@ -5667,7 +5716,8 @@
           "failed": true,
           "use_id": "toolu_fail3",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1348.8,
@@ -5679,7 +5729,8 @@
           "failed": false,
           "use_id": "toolu_main_21",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1350.0,
@@ -5691,7 +5742,8 @@
           "failed": true,
           "use_id": "toolu_fail4",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1362.5,
@@ -5703,7 +5755,8 @@
           "failed": true,
           "use_id": "toolu_fail5",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1375.0,
@@ -5715,7 +5768,8 @@
           "failed": true,
           "use_id": "toolu_fail6",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1387.5,
@@ -5727,7 +5781,8 @@
           "failed": true,
           "use_id": "toolu_fail7",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1397.3,
@@ -5739,7 +5794,8 @@
           "failed": false,
           "use_id": "toolu_main_22",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1400.0,
@@ -5751,7 +5807,8 @@
           "failed": true,
           "use_id": "toolu_fail8",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1492.6,
@@ -5763,7 +5820,8 @@
           "failed": false,
           "use_id": "toolu_main_23",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1556.9,
@@ -5775,7 +5833,8 @@
           "failed": false,
           "use_id": "toolu_main_24",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1585.9,
@@ -5787,7 +5846,8 @@
           "failed": false,
           "use_id": "toolu_main_25",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1677.9,
@@ -5799,7 +5859,8 @@
           "failed": false,
           "use_id": "toolu_main_26",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1726.1,
@@ -5811,7 +5872,8 @@
           "failed": false,
           "use_id": "toolu_main_27",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         },
         {
           "t": 1793.0,
@@ -5823,7 +5885,8 @@
           "failed": false,
           "use_id": "toolu_main_28",
           "duration_s": null,
-          "result_tokens_est": null
+          "result_tokens_est": null,
+          "segment": 0
         }
       ],
       "failure_runs": [

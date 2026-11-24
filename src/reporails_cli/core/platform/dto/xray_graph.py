@@ -20,12 +20,10 @@ from reporails_cli.core.platform.dto.xray_own import ContextKey, XrayOwnContext,
 NodeKind = Literal["agent"]
 SourceKind = Literal["instructions", "rule", "skill", "agent", "memory", "mcp", "hook"]
 LoadTrigger = Literal["session_start", "path_match", "agent", "inherited", "hook", "attached"]
-# The triggers of a loaded file whose text Claude Code sends as a message of its own; a file loaded `agent` came
-# through a tool read or a skill run.
+# The triggers of a file whose text Claude Code sends as a message of its own; `agent` came through a tool read.
 INJECTED_TRIGGERS: frozenset[LoadTrigger] = frozenset({"session_start", "inherited", "path_match", "attached"})
 AgentOutcome = Literal["returned", "failed", "stopped", "no_handback", "running"]
-# Where the text a subagent handed back is read from: its hand-back message, the last reply it wrote, or the result its
-# parent received.
+# Where a subagent's handed-back text is read from: its hand-back message, its last reply or its parent's result.
 OutputSource = Literal["handback", "reply", "result"]
 # The outcomes in which an agent's parent received something back.
 HANDED_BACK_OUTCOMES: frozenset[AgentOutcome] = frozenset({"returned", "failed"})
@@ -58,9 +56,10 @@ class LoadEvent:
 
 @dataclass(frozen=True)
 class XrayLoad(LoadEvent):
-    """One station on a node's spine: a load and whether it is small."""
+    """One station on a node's spine: a load, whether it is small and its segment (the node's compactions before it)."""
 
     small: bool
+    segment: int
 
     def to_json(self) -> JsonObject:
         """The load as a JSON object."""
@@ -71,18 +70,20 @@ class XrayLoad(LoadEvent):
             "trigger": self.trigger,
             "event": self.event,
             "small": self.small,
+            "segment": self.segment,
         }
 
 
 @dataclass(frozen=True)
 class XrayMcpCluster:
-    """The calls a node made to one MCP server close together in time, and the size of their results."""
+    """The calls a node made to one MCP server close together in time, the size of their results and their segment."""
 
     server: str
     first: float
     last: float
     calls: int
     back_tokens_est: int
+    segment: int
 
     def to_json(self) -> JsonObject:
         """The cluster as a JSON object."""
@@ -92,19 +93,21 @@ class XrayMcpCluster:
             "last": self.last,
             "calls": self.calls,
             "back_tokens_est": self.back_tokens_est,
+            "segment": self.segment,
         }
 
 
 @dataclass(frozen=True)
 class XrayHookStretch:
     """The loads of one hook that came close together in time, as one stretch: when it began and ended, how many
-    loads it holds and their size together."""
+    loads it holds, their size together and their segment."""
 
     source: str
     first: float
     last: float
     count: int
     tokens_est: int
+    segment: int
 
     def to_json(self) -> JsonObject:
         """The stretch as a JSON object."""
@@ -114,6 +117,7 @@ class XrayHookStretch:
             "last": self.last,
             "count": self.count,
             "tokens_est": self.tokens_est,
+            "segment": self.segment,
         }
 
 
@@ -134,10 +138,12 @@ class XrayGroupFile:
 
 @dataclass(frozen=True)
 class XrayLoadGroup:
-    """Instruction loads that came close together in time, drawn as one card: the loads a hook's firing caused (its
-    source id is `hook`), or, with `hook` None, one file loaded again and again. When they began and ended, how many
-    loads they hold and their size together. A load is counted once, here or among the station's loads."""
+    """Instruction loads close together in time, drawn as one card: the loads a hook's firing caused (its source id is
+    `hook`), or, with `hook` None, one file loaded again and again. Their span, count and size; a load is counted once,
+    here or among the station's loads. `id` is the first load's, kept as later loads join; all are in `segment`."""
 
+    id: str
+    segment: int
     hook: str | None
     first: float
     last: float
@@ -148,6 +154,8 @@ class XrayLoadGroup:
     def to_json(self) -> JsonObject:
         """The group as a JSON object."""
         return {
+            "id": self.id,
+            "segment": self.segment,
             "hook": self.hook,
             "first": self.first,
             "last": self.last,
@@ -197,10 +205,11 @@ class CallFacts:
 
 @dataclass(frozen=True)
 class XrayCall(CallFacts):
-    """One call of a node: its facts, the MCP server it went to and the size of its result in tokens."""
+    """One call of a node: its facts, the MCP server it went to, the size of its result in tokens and its segment."""
 
     server: str | None
     result_tokens_est: int | None
+    segment: int
 
     def to_json(self) -> JsonObject:
         """The call as a JSON object."""
@@ -215,6 +224,7 @@ class XrayCall(CallFacts):
             "use_id": self.use_id,
             "duration_s": self.duration_s,
             "result_tokens_est": self.result_tokens_est,
+            "segment": self.segment,
         }
 
 
@@ -475,12 +485,13 @@ class XrayWithheld:
 @dataclass(frozen=True)
 class XrayBurst:
     """Children a node launched in one quick run: their ids, when the first went out, when the last came back (None
-    while any has not) and the size of what went down to them together."""
+    while any has not), the size of what went down to them together and its segment."""
 
     members: tuple[str, ...]
     first_launch: float
     last_return: float | None
     down_tokens: int
+    segment: int
 
     def to_json(self) -> JsonObject:
         """The burst as a JSON object."""
@@ -489,29 +500,32 @@ class XrayBurst:
             "first_launch": self.first_launch,
             "last_return": self.last_return,
             "down_tokens": self.down_tokens,
+            "segment": self.segment,
         }
 
 
 class ClusterItem(NamedTuple):
-    """One thing to merge by time: the key it merges under, when it happened, its size and its place in the list it
-    came from."""
+    """One thing to merge by time: the key it merges under, when it happened, its size, its place in the list it
+    came from and its segment; items of two segments never merge."""
 
     key: str
     t: float
     tokens: int
     position: int
+    segment: int
 
 
 @dataclass(frozen=True)
 class XrayTree:
     """Where a node hangs: its parent (None for a root), its depth, its children in launch order, how many nodes
-    hang below it and the bursts among its children."""
+    hang below it, the bursts among its children and the segment of its parent's context it started in."""
 
     parent: str | None
     depth: int
     children: tuple[str, ...]
     descendants: int
     bursts: tuple[XrayBurst, ...]
+    segment: int
 
 
 @dataclass(frozen=True)
@@ -549,6 +563,7 @@ class XrayNode:
             "end": self.end,
             "children": list(self.tree.children),
             "descendants": self.tree.descendants,
+            "segment": self.tree.segment,
             "slots": slots,
             "tools": objects(item.to_json() for item in self.tools),
             "withheld": None if self.withheld is None else self.withheld.to_json(),

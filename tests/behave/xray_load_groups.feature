@@ -13,3 +13,8 @@ Feature: Instruction loads one hook caused draw as one group card on the x-ray c
   Scenario: A folded segment's compaction stripe keeps its one line of text inside the stripe at 1280 and 1920 pixels
     Given the bundled page is served over the "view_folds" fixture view
     Then every compaction stripe's text ends inside its stripe at 1280 and at 1920 pixels
+
+  @page @browser
+  Scenario: Files a hook's group reloads after a compaction count as reloaded and stay drawn with the Hooks layer off
+    Given the bundled page is served over a view where a hook's group of loads reloads the root files just after the compaction
+    Then the group's card sits below the compaction stripe, the compaction lists as not loaded again only the file with no load, and the card stays with the Hooks layer off

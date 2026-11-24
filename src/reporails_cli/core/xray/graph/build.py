@@ -72,9 +72,14 @@ def _station(node: ProducedNode, sources: SourceTable, vocabulary: AdapterVocabu
     instructions = frozenset(kind.key for kind in vocabulary.source_kinds if kind.instructions)
     groups, grouped = spine.load_groups(node, sources, instructions)
     taken = stretched | grouped
+    cuts = spine.cuts_of(node)
     return XrayStation(
         node.id,
-        tuple(_load(load, sources, small_kinds) for number, load in enumerate(node.spine.loads) if number not in taken),
+        tuple(
+            _load(load, sources, small_kinds, spine.load_segment(cuts, node, load))
+            for number, load in enumerate(node.spine.loads)
+            if number not in taken
+        ),
         spine.mcp_clusters(node),
         node.spine.compactions,
         hooks,
@@ -82,14 +87,14 @@ def _station(node: ProducedNode, sources: SourceTable, vocabulary: AdapterVocabu
     )
 
 
-def _load(load: LoadEvent, sources: SourceTable, small_kinds: set[SourceKind]) -> XrayLoad:
+def _load(load: LoadEvent, sources: SourceTable, small_kinds: set[SourceKind], segment: int) -> XrayLoad:
     entry = sources.get(load.source)
     small = (
         load.tokens_est < SMALL_TOKENS
         if load.tokens_est is not None
         else entry is not None and entry.kind in small_kinds
     )
-    return XrayLoad(load.source, load.t, load.tokens_est, load.trigger, load.event, load.chars, small)
+    return XrayLoad(load.source, load.t, load.tokens_est, load.trigger, load.event, load.chars, small, segment)
 
 
 def _availability(entry: SourceEntry, had_by: Sequence[str], unrecorded: frozenset[SourceKind]) -> Availability:
@@ -106,6 +111,8 @@ def _xray_node(node: ProducedNode, build: BuildContext) -> XrayNode:
     edge = build.launch.get(node.id)
     parent = build.by_id.get(edge.parent) if edge is not None else None
     layout = build.layout
+    above_id = layout.parents[node.id]
+    above = None if above_id is None else build.by_id[above_id]
     withheld = (
         spine.withheld(parent, node, edge.out_t, build.sources)
         if node.kind in build.has_spine and edge is not None and parent is not None
@@ -115,7 +122,7 @@ def _xray_node(node: ProducedNode, build: BuildContext) -> XrayNode:
         id=node.id,
         kind=node.kind,
         tree=XrayTree(
-            layout.parents[node.id],
+            above_id,
             layout.depth[node.id],
             tuple(layout.children[node.id]),
             layout.descendants[node.id],
@@ -124,7 +131,9 @@ def _xray_node(node: ProducedNode, build: BuildContext) -> XrayNode:
                 node.end - node.start,
                 build.vocabulary.burst,
                 {item.id: item.end for item in build.by_id.values()},
+                spine.cuts_of(node),
             ),
+            0 if above is None else spine.segment_of(spine.cuts_of(above), node.start),
         ),
         name=node.name,
         type=node.type,
@@ -163,6 +172,7 @@ def build_graph(
         vocabulary=vocabulary,
     )
     spined = [node for node in pnodes if node.kind in build.has_spine]
+    root = next((node for node in pnodes if build.layout.parents[node.id] is None), None)
     return Graph(
         tuple(_xray_node(node, build) for node in pnodes),
         edges,
@@ -172,7 +182,7 @@ def build_graph(
             XrayTrack(node.id, spine.track_calls(node), spine.failure_runs(node), spine.breaks(node)) for node in spined
         ),
         session_cost([(node.id, node.detail.usage.cost) for node in pnodes]),
-        workflow_nodes(workflows, records, pnodes, frame),
+        workflow_nodes(workflows, records, pnodes, frame, root),
     )
 
 

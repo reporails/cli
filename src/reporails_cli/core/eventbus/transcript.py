@@ -401,38 +401,49 @@ def workflow_runs(agent: str, session_file: Path) -> tuple[WorkflowRun | Workflo
     """The workflow runs of the session, by run id: each run its record file holds, and each run that has an agent
     folder but no record file yet as a running run built from its journal and its agents' meta files.
 
-    A run whose record file is not the shape the adapter is pinned to comes back as a `WorkflowRefused` naming what
-    was wrong; the other runs are still read. A record file that is not yet whole JSON counts as absent. Raises
-    `PayloadRefused` when the agent is unknown."""
+    A run whose record file or an agent meta file is not JSON, or whose record is not the shape the adapter is
+    pinned to, comes back as a `WorkflowRefused` naming what was wrong; the other runs are still read. A file that
+    is absent counts as not written yet. Raises `PayloadRefused` when the agent is unknown."""
     adapter = adapter_for(agent)
-    records = {path.stem: _json_object(path) for path in _run_records(session_file)}
+    records = {path.stem: path for path in _run_records(session_file)}
     folders = {folder.name: folder for folder in _run_dirs(session_file)}
     runs: list[WorkflowRun | WorkflowRefused] = []
     for run_id in sorted({*records, *folders}):
-        folder = folders.get(run_id)
-        journal = [] if folder is None else _rows(read_appended_lines(folder / _JOURNAL, 0)[0])
-        agents = (
-            {}
-            if folder is None
-            else {
-                path.stem.removeprefix(_SUBAGENT_PREFIX): path
-                for path in sorted(folder.glob(f"{_SUBAGENT_PREFIX}*.jsonl"))
-            }
-        )
-        metas = {agent_id: meta for agent_id, path in agents.items() if (meta := _meta(path)) is not None}
         try:
-            runs.append(adapter.resolve_workflow_run(run_id, records.get(run_id), journal, metas))
+            runs.append(_workflow_run(adapter, run_id, records.get(run_id), folders.get(run_id)))
         except PayloadRefused as refused:
             runs.append(WorkflowRefused(run_id, str(refused)))
     return tuple(runs)
 
 
+def _workflow_run(adapter: TranscriptAdapter, run_id: str, record: Path | None, folder: Path | None) -> WorkflowRun:
+    """The run `run_id`, from its record file and its agent folder; raises `PayloadRefused` for a file it cannot
+    read."""
+    journal = [] if folder is None else _rows(read_appended_lines(folder / _JOURNAL, 0)[0])
+    paths = (
+        {}
+        if folder is None
+        else {
+            path.stem.removeprefix(_SUBAGENT_PREFIX): path for path in sorted(folder.glob(f"{_SUBAGENT_PREFIX}*.jsonl"))
+        }
+    )
+    metas = {
+        agent_id: meta
+        for agent_id, path in paths.items()
+        if (meta := _json_object(path.with_suffix(".meta.json"))) is not None
+    }
+    return adapter.resolve_workflow_run(run_id, None if record is None else _json_object(record), journal, metas)
+
+
 def _json_object(path: Path) -> JsonObject | None:
-    """The JSON object a file holds; None while it is absent or not yet whole JSON."""
+    """The JSON object a file holds; None while the file is absent. Raises `PayloadRefused` for a file that is not
+    JSON or not an object."""
     try:
         return as_object(json.loads(path.read_bytes()))
-    except (OSError, ValueError):
+    except OSError:
         return None
+    except ValueError as err:
+        raise PayloadRefused(f"{path.name} is not readable JSON: {err}") from err
 
 
 def _read_file(
@@ -475,9 +486,12 @@ def _run_record(
     adapter: TranscriptAdapter, agent: str, session_id: str, path: Path, *, before: FileCursor, rows: list[JsonObject]
 ) -> EventRecord | None:
     """The `subagent_run` record of a subagent file, the refusal the adapter raises for its meta file, or
-    None while the first row or the meta file is not there yet."""
+    None while the first row or the meta file is not there yet or not yet whole JSON."""
     first_row = rows[0] if before.offset == 0 and rows else _first_row(path)
-    meta = _meta(path)
+    try:
+        meta = _json_object(path.with_suffix(".meta.json"))
+    except PayloadRefused:
+        return None
     if first_row is None or meta is None:
         return None
     try:
@@ -547,14 +561,6 @@ def _find_call_rows(
     except OSError:
         return None, None
     return call, None
-
-
-def _meta(path: Path) -> JsonObject | None:
-    """The subagent's `agent-<id>.meta.json` object; None while the file is absent or not yet whole JSON."""
-    try:
-        return as_object(json.loads(path.with_suffix(".meta.json").read_bytes()))
-    except (OSError, ValueError):
-        return None
 
 
 def _refusal(agent: str, session_id: str, reason: str) -> EventRecord:

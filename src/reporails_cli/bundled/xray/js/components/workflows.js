@@ -15,7 +15,7 @@ export function workflowCard(env, w, p, abs) {
   box.style.width = '132px';
   box.style.height = '76px';
   const phases = w.phases.map(x => x.title).join(' → ');
-  const sub = w.refusal ? `${w.status} · ${agentsOf(w)}` : [w.status, agentsOf(w), w.total_tokens == null ? null : tk(w.total_tokens, true)].filter(Boolean).join(' · ');
+  const sub = w.refusal ? `${w.status_text} · ${agentsOf(w)}` : [w.status_text, agentsOf(w), w.total_tokens == null ? null : tk(w.total_tokens, true)].filter(Boolean).join(' · ');
   box.title = `${runName(w)} · ${sub}${phases ? ' · phases: ' + phases : ''}`;
   box.setAttribute('aria-label', `Workflow ${runName(w)}, ${sub}${phases ? ', phases ' + phases : ''}: open details`);
   box.append(el('span', 'wf-k mono', '⚙ workflow'), el('b', 'wf-n', runName(w)), el('span', 'wf-s mono', sub), el('span', 'wf-p mono', phases));
@@ -26,25 +26,27 @@ registerPeek('workflow', (env, id) => {
   const w = (env.ix.view.workflows || []).find(x => x.run_id === id);
   if (!w) return null;
   const facts = el('div', 'pk-kv');
-  const rows = [['Workflow', runName(w)], ['Status', w.status], ['Agents', String(w.agent_count)], ['Tokens', w.total_tokens == null ? null : `${tk(w.total_tokens, true)}`], ['Started', w.start == null ? null : clock(w.start)], ['Took', w.duration_ms == null ? null : dur(w.duration_ms / 1000)], ['Run', w.run_id]];
+  const rows = [['Workflow', runName(w)], ['Status', w.status_text], ['Agents', String(w.agent_count)], ['Tokens', w.total_tokens == null ? null : `${tk(w.total_tokens, true)}`], ['Started', w.start == null ? null : clock(w.start)], ['Took', w.duration_ms == null ? null : dur(w.duration_ms / 1000)], ['Run', w.run_id]];
   for (const [k, v] of rows) if (v) facts.append(el('span', 'lb', k), el('span', 'v', v));
   const list = el('div', 'pk-list');
-  w.phases.forEach((phase, i) => {
-    const head = el('span', 'wf-phase', `${i + 1}. ${phase.title} · ${phase.agents.length} agent${phase.agents.length === 1 ? '' : 's'}`);
-    head.dataset.phase = phase.title;
-    list.append(head);
-    for (const agent of phase.agents) {
-      const node = env.ix.nodes.get(agent);
-      const b = el('button', 'wf-agent', node ? node.name : agent);
-      b.type = 'button';
-      b.dataset.showInGraph = agent;
-      list.append(b);
-    }
-  });
+  const agentButton = agent => {
+    const node = env.ix.nodes.get(agent);
+    const b = el('button', 'wf-agent', node ? node.name : agent);
+    b.type = 'button';
+    b.dataset.showInGraph = agent;
+    return b;
+  };
+  const headed = (text, phase, agents) => {
+    const head = el('span', 'wf-phase', `${text} · ${agents.length} agent${agents.length === 1 ? '' : 's'}`);
+    head.dataset.phase = phase;
+    list.append(head, ...agents.map(agentButton));
+  };
+  w.phases.forEach((phase, i) => headed(`${i + 1}. ${phase.title}`, phase.title, phase.agents));
+  if (w.unphased.length) headed('Not in a phase the run names', '', w.unphased);
   const sec = (title, ...nodes) => { const s = el('section', 'pk-sec'); s.append(el('h4', null, title), ...nodes); return s; };
   return {
-    chip: '⚙', kicker: 'Workflow', title: runName(w), tags: [w.status, agentsOf(w)],
-    main: [sec('Facts', facts), sec('Phases', w.phases.length ? list : nk('The run names no phase.'))],
+    chip: '⚙', kicker: 'Workflow', title: runName(w), tags: [w.status_text, agentsOf(w)],
+    main: [sec('Facts', facts), sec('Phases', w.phases.length || w.unphased.length ? list : nk('The run names no phase.'))],
     side: [w.refusal ? sec('Not readable', nk(`The run's record is not in the shape this version reads: ${w.refusal}`)) : nk('Each agent is also a card on the graph.')],
     actions: [],
   };

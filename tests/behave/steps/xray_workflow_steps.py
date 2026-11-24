@@ -38,21 +38,32 @@ def step_session(context):
     )
 
 
-@given(
-    "the session holds a second well-formed Workflow run record and the first run's record "
-    "holds a status that is not text"
-)
-def step_bad_record(context):
+def _second_record(context) -> Path:
+    """Writes a well-formed second run record beside the first and returns the first run's record file."""
     workflows = _folder(context) / "session" / "workflows"
     first = workflows / "wf_test01.json"
     good = json.loads(first.read_text(encoding="utf-8")) | {
         "runId": "wf_second01",
         "workflowName": "second-check",
         "workflowProgress": [],
-        "agentCount": 0,
     }
     (workflows / "wf_second01.json").write_text(json.dumps(good), encoding="utf-8")
+    return first
+
+
+@given(
+    "the session holds a second well-formed Workflow run record and the first run's record "
+    "holds a status that is not text"
+)
+def step_bad_record(context):
+    first = _second_record(context)
     first.write_text(json.dumps(json.loads(first.read_text(encoding="utf-8")) | {"status": 7}), encoding="utf-8")
+
+
+@given("the session holds a second well-formed Workflow run record and the first run's record is cut off mid-write")
+def step_cut_record(context):
+    first = _second_record(context)
+    first.write_text(first.read_text(encoding="utf-8")[:40], encoding="utf-8")
 
 
 def _view(url: str) -> dict:
@@ -121,8 +132,8 @@ def step_unreadable(context):
     runs = {run["run_id"]: run for run in view["workflows"]}
     assert set(runs) == {"wf_test01", "wf_second01"}, runs
     bad, good = runs["wf_test01"], runs["wf_second01"]
-    assert bad["status"] == "not readable" and bad["name"] is None and bad["total_tokens"] is None, bad
-    assert bad["refusal"] and "status" in bad["refusal"], bad
+    assert (bad["status"], bad["status_text"]) == ("unreadable", "not readable"), bad
+    assert bad["name"] is None and bad["total_tokens"] is None and bad["refusal"], bad
     assert [p["title"] for p in bad["phases"]] == ["Build", "Verify"], bad["phases"]
     assert (good["name"], good["status"], good["refusal"]) == ("second-check", "completed", None), good
     seen = _page(context)

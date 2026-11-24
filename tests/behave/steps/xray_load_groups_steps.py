@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from support import build_project
 from reporails_cli.core.discovery.agent_discovery import claude_project_folder_name
 
 SCRIPT = Path(__file__).resolve().parents[1] / "xray_load_groups.mjs"
+FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "xray"
 HOOK = "PreToolUse:Read"
 FILES = ("docs/a/CLAUDE.md", "docs/b/CLAUDE.md")
 # The order the four loads arrive in: the first file three times, the second once.
@@ -130,13 +132,13 @@ def step_view(context):
     context.grouped_view = view
 
 
-def _page(context, width: int) -> dict:
+def _page(context, width: int, mode: str = "hook") -> dict:
     node, chrome = shutil.which("node"), shutil.which("google-chrome") or shutil.which("chromium")
     if node is None or chrome is None:
         context.scenario.skip("SKIPPED LOUDLY: no node or Chrome on PATH, the page was not driven")
         return {}
     done = subprocess.run(
-        [node, str(SCRIPT), context.url, str(width)],
+        [node, str(SCRIPT), context.url, str(width), mode],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -229,3 +231,57 @@ def step_stripes(context):
             "no stripe was long enough to be cut",
             seen,
         )
+
+
+def _group_after_compaction(view: dict) -> None:
+    """The main agent's one compaction (at 3000 s) is followed, inside seconds, by a hook's group that loads the two
+    root instruction files again; the compaction names both as reloaded and a third file as summarized."""
+    station = next(s for s in view["stations"] if s["node"] == "main")
+    files = [("CLAUDE.md", 2500), ("~/.claude/CLAUDE.md", 1640)]
+    station["compactions"][0]["files"] = [
+        *({"source": source, "state": "reloaded", "in_context": True} for source, _ in files),
+        {"source": "packages/cli/CLAUDE.md", "state": "summarized", "in_context": False},
+    ]
+    station["groups"] = [
+        {
+            "id": "main@CLAUDE.md@3001.0",
+            "segment": 1,
+            "hook": "hook:PreToolUse:Edit",
+            "first": 3001.0,
+            "last": 3002.0,
+            "count": 2,
+            "tokens_est": sum(tokens for _, tokens in files),
+            "files": [
+                {"source": source, "first": 3001.0 + number, "count": 1, "tokens_est": tokens}
+                for number, (source, tokens) in enumerate(files)
+            ],
+        }
+    ]
+
+
+@given(
+    "the bundled page is served over a view where a hook's group of loads reloads "
+    "the root files just after the compaction"
+)
+def step_serve_group_after_compaction(context):
+    view = json.loads((FIXTURES / "view_sample.json").read_text(encoding="utf-8"))
+    _group_after_compaction(view)
+    path = Path(tempfile.gettempdir()) / f"xray_groups_{os.getpid()}.json"
+    path.write_text(json.dumps(view), encoding="utf-8")
+    context.add_cleanup(lambda: path.unlink(missing_ok=True))
+    context.execute_steps(f'Given the bundled page is served over the "{str(path)[:-5]}" fixture view')
+
+
+@then(
+    "the group's card sits below the compaction stripe, the compaction lists as not loaded again only the file "
+    "with no load, and the card stays with the Hooks layer off"
+)
+def step_after_compaction(context):
+    seen = _page(context, 1440, "compaction")
+    if not seen:
+        return
+    assert len(seen["cards"]) == 1, seen
+    assert seen["cards"][0]["top"] >= seen["stripe"]["bottom"] - 1, seen
+    assert len(seen["notBack"]) == 1 and "packages/cli" in seen["notBack"][0], seen["notBack"]
+    assert len(seen["hooksOff"]) == 1, seen
+    assert len(seen["rows"]) == 2, seen

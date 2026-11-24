@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
+from reporails_cli.core.platform.dto.workflows import WorkflowStatus
 from reporails_cli.core.platform.dto.xray import (
     AdapterVocabulary,
     FactKind,
@@ -82,6 +83,15 @@ HOOK_STATUS_TEXT: dict[str, str] = {
     "not_executable": "not executable",
     "folder_missing": "folder missing",
     "script_missing": "script missing",
+}
+
+# What a workflow run's status reads on the page, by status.
+WORKFLOW_STATUS_TEXT: dict[WorkflowStatus, str] = {
+    "running": "running",
+    "completed": "completed",
+    "failed": "failed",
+    "cancelled": "cancelled",
+    "unreadable": "not readable",
 }
 
 _CLAUDE_COMPOSITION = (
