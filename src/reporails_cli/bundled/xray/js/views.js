@@ -139,7 +139,7 @@ export function pickedMoment(ix, state, node) {
 export function fileStateAt(ix, node, source, t) {
   const held = ((ix.stations.get(node.id) || { compactions: [] }).compactions).filter(c => c.t < t);
   const last = held[held.length - 1];
-  const file = last && last.files.find(f => f.source === source);
+  const file = last && (last.files || []).find(f => f.source === source);
   return file ? file.state : null;
 }
 

@@ -43,7 +43,8 @@ if (mode === 'calls_instr' && ready) {
   await page.ev(`document.querySelector('#view-calls .vl').scrollTop = ${args.index * 34}; 0`);
   await sleep(250);
   await click(`#view-calls [data-peek="call:${args.id}"]`);
-  await page.until(`/Instructions in context/.test(document.querySelector('#side-calls').textContent)`);
+  // The details list the files once the server has answered for the call's moment; until then they say Loading.
+  await page.until(`(() => { const s = document.querySelector('#side-calls').textContent; return /Instructions in context/.test(s) && !/Loading/.test(s); })()`);
   out.sources = await page.ev(`[...document.querySelectorAll('#side-calls .tb-src')].map(b => b.dataset.source)`);
   out.finds = await texts('#side-calls .tb-find');
 }
