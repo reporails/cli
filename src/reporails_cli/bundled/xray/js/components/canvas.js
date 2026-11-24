@@ -4,10 +4,11 @@ import { el, svg, sync } from '../dom.js';
 import { clock, k1, range, tk } from '../format.js';
 import { callDetail } from '../api.js';
 import {
-  BAND_OPACITY, BOT_H, BOT_W, CH, COLX, CW, GROUP_TILES, SH, SPINE_HALF_MAX, SPINE_HALF_MIN, SPX, STATION_EDGE, STRIPE_HALF, SW, TOP_W, TOP_Y, TRACK_STEP, TRACK_X0, W, Y0,
+  BAND_OPACITY, BOT_H, FOLD_H, SCOLX, BOT_W, CH, COLX, CW, GROUP_TILES, SH, SPINE_HALF_MAX, SPINE_HALF_MIN, SPX, STATION_EDGE, STRIPE_HALF, SW, TOP_W, TOP_Y, TRACK_STEP, TRACK_X0, W, Y0,
   bandColour, layoutTime, labelLeft, lengthFor, mergeStations, placeSources, replyAt, stationSide, tickMarks,
 } from '../geometry.js';
-import { groupOpen } from '../state.js';
+import { foldKey, groupOpen } from '../state.js';
+import { FILE_STATE_WORDS } from './compaction.js';
 import { markOpen } from './details.js';
 import { RESTART_S, callIndex, childrenOf, isSpine, kindOfSource, replyParts, segmentOf, sourceFirsts, startsSession, typeOf } from '../views.js';
 import { rendererFor } from './nodes/index.js';
@@ -101,7 +102,7 @@ function ptsOf(samples, from, to) {
 }
 
 function ticks(cur, scale) {
-  return tickMarks(cur, scale.y).map(m => {
+  return tickMarks(cur, scale.y).filter(m => !scale.inFold(m.t)).map(m => {
     const e = abs('tick', 0, m.y - 7);
     e.textContent = clock(m.t);
     return e;
@@ -302,7 +303,7 @@ const STATION_CLEAR = 12;
 const shownSource = (env, sid) => { const k = kindOfSource(env.ix, sid); return !k || env.state.layers[k.key]; };
 
 // Hooks stay on the spine: a one-off hook load is a station and a repeated stretch of firings is one pill at its middle.
-function stationItems(env, cur, scale, cutTimes) {
+function stationItems(env, cur, scale, cutTimes, folded) {
   const { ix } = env;
   const st = ix.stations.get(cur.id);
   if (!st) return [];
@@ -317,7 +318,7 @@ function stationItems(env, cur, scale, cutTimes) {
   };
   const items = [];
   for (const l of st.loads) {
-    if (!isSpine(ix, l.source) || !shownSource(env, l.source)) continue;
+    if (!isSpine(ix, l.source) || !shownSource(env, l.source) || folded.has(segmentOf(cutTimes, l.t ?? cur.start, l))) continue;
     const s = ix.sources.get(l.source);
     const k = kindOfSource(ix, l.source);
     items.push({
@@ -329,7 +330,7 @@ function stationItems(env, cur, scale, cutTimes) {
     });
   }
   for (const h of st.hooks || []) {
-    if (!shownSource(env, h.source)) continue;
+    if (!shownSource(env, h.source) || folded.has(segmentOf(cutTimes, h.first))) continue;
     const k = kindOfSource(ix, h.source);
     const s = ix.sources.get(h.source);
     items.push({
@@ -453,21 +454,38 @@ function stationPill(env, cl) {
   return b;
 }
 
-function stations(env, cur, scale, held, cuts) {
-  const out = mergeStations(stationItems(env, cur, scale, cuts)).map(cl => stationPill(env, cl));
-  held.forEach((c, i) => out.push(compactStripe(env, cur, c, i, scale.cuts.get(`cut:${i}`).y)));
+function stations(env, cur, scale, held, cuts, folded) {
+  const out = mergeStations(stationItems(env, cur, scale, cuts, folded)).map(cl => stationPill(env, cl));
+  held.forEach((c, i) => out.push(compactStripe(env, cur, c, i, scale.cuts.get(`cut:${i}`).y, env.ix, folded.has(i))));
   return out;
 }
 
+// The files a compaction left in the context and the ones it did not, as the view states them (`in_context`).
+const filesOf = (ix, c, back) => (c.files || []).filter(f => !!f.in_context === back).map(f => {
+  const s = ix.sources.get(f.source);
+  return { name: s ? s.label : f.source, state: f.state };
+});
+
 // A compaction: a thin band across the canvas at its time that opens its details.
-function compactStripe(env, cur, c, i, y) {
+function compactStripe(env, cur, c, i, y, ix, folded) {
   const both = c.before != null && c.after != null;
   const m = abs('compact', 0, y - STRIPE_HALF, 'button');
   m.type = 'button';
   m.dataset.peek = `compaction:${cur.id}:${i}`;
   markOpen(m, env.state.peek, [m.dataset.peek]);
   m.setAttribute('aria-label', `Compaction${c.trigger ? ', ' + c.trigger : ''}, at ${clock(c.t)}${both ? `, context ${k1(c.before)} to ${k1(c.after)}` : ''}: open details`);
-  m.append(el('span', null, `compacted${both ? ` · ${k1(c.before)} → ${k1(c.after)}` : ''} · at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`));
+  const label = el('span', null, `compacted${both ? ` · ${k1(c.before)} → ${k1(c.after)}` : ''} · at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`);
+  m.append(label);
+  if (folded) {
+    // The segment above is folded, so the stripe keeps what the compaction dropped in view.
+    const back = filesOf(ix, c, true), gone = filesOf(ix, c, false);
+    const list = (word, files) => `${word} ${files.length}${files.length ? ': ' + files.map(f => f.name).join(', ') : ''}`;
+    label.append(` · ${list('back', back)} · ${list('not back', gone)}`);
+    label.style.whiteSpace = 'nowrap';
+    m.dataset.back = back.map(f => f.name).join('\n');
+    m.dataset.notBack = gone.map(f => f.name).join('\n');
+    m.title = [...back.map(f => `${f.name} · came back`), ...gone.map(f => `${f.name} · ${(FILE_STATE_WORDS[f.state] || [f.state])[0]}`)].join('\n');
+  }
   return m;
 }
 
@@ -564,7 +582,7 @@ function sideTrack(env, cur, scale, sel, height) {
   for (const r of tr.failure_runs) {
     const first = tr.calls.find(c => c.use_id === r.call_id) || tr.calls.find(c => c.failed && c.t >= r.first && c.t <= r.last);
     const runX = first ? colX.get(first.category) : undefined;
-    if (runX === undefined) continue;
+    if (runX === undefined || scale.inFold(r.first)) continue;
     const y0 = scale.y(r.first);
     const br = abs('bracket', runX - 5, y0);
     br.style.height = `${Math.max(6, scale.y(r.last) - y0)}px`;
@@ -599,7 +617,7 @@ function agentsShown(ix, state) {
 // Landmarks for the jump rail, each with an anchor on the canvas.
 function railMarks(cur, tr, scale, groups, placedMap, sel, shownAgents) {
   const marks = [];
-  for (const r of tr.failure_runs) marks.push({ y: scale.y(r.first), kind: 'fail', label: `Repeated failure · ${r.count} times at ${clock(r.first)}` });
+  for (const r of tr.failure_runs.filter(r => !scale.inFold(r.first))) marks.push({ y: scale.y(r.first), kind: 'fail', label: `Repeated failure · ${r.count} times at ${clock(r.first)}` });
   if (shownAgents) {
     for (const g of groups) {
       const p = placedMap.get(g.key);
@@ -612,6 +630,47 @@ function railMarks(cur, tr, scale, groups, placedMap, sel, shownAgents) {
   return marks.map((m, i) => ({ ...m, id: `xr-j-${i}` }));
 }
 
+// The one line a folded segment keeps: what it loaded, the agents it launched and the context before and after its compaction.
+function foldBand(env, cur, f, scale, held, kids, segAt) {
+  const { ix } = env;
+  const cuts = held.map(c => c.t);
+  const c = held[f.seg];
+  const top = scale.folds.find(x => x.key === f.key).top;
+  const loads = ((ix.stations.get(cur.id) || { loads: [] }).loads).filter(l => segmentOf(cuts, l.t ?? cur.start, l) === f.seg).length;
+  const agents = kids.filter(k => segAt(k.start) === f.seg).length;
+  const both = c.before != null && c.after != null;
+  const from = f.seg ? cuts[f.seg - 1] : cur.start;
+  const b = abs('card group fold', SCOLX.L2, top, 'button');
+  b.dataset.group = f.key;
+  b.dataset.loads = String(loads);
+  b.dataset.agents = String(agents);
+  if (c.before != null) b.dataset.before = String(c.before);
+  if (c.after != null) b.dataset.after = String(c.after);
+  b.setAttribute('aria-expanded', 'false');
+  b.style.width = `${COLX.R2 + CW - SCOLX.L2}px`;
+  b.style.height = `${FOLD_H}px`;
+  const stats = `${loads} load${loads === 1 ? '' : 's'} · ${agents} agent${agents === 1 ? '' : 's'}${both ? ` · context ${k1(c.before)} → ${k1(c.after)}` : ''}`;
+  b.setAttribute('aria-label', `Folded: ${range(from, c.t)}. ${stats}. Expand to see it.`);
+  const head = el('span', 'gh');
+  head.append(el('span', 'gn mono', '▸ folded'), el('b', 'nm', range(from, c.t)));
+  const when = el('span', 'gs');
+  when.append(el('span', 'sub mono', stats), el('span', 'gx', 'expand ›'));
+  b.append(head, when);
+  return b;
+}
+
+// The control that folds an open segment before the newest compaction again.
+function foldClose(f, scale) {
+  const at = f.seg ? scale.cuts.get(`cut:${f.seg - 1}`).y - STRIPE_HALF : Y0 - 20;
+  const head = abs('ghead', COLX.R2 + CW - 70, at);
+  const btn = el('button', 'gcollapse', 'fold');
+  btn.dataset.group = f.key;
+  btn.setAttribute('aria-expanded', 'true');
+  btn.setAttribute('aria-label', `Fold the segment before compaction ${f.seg + 1}`);
+  head.append(btn);
+  return head;
+}
+
 export function render(box, env) {
   const { ix, state, focus } = env;
   const cur = ix.nodes.get(state.path[state.path.length - 1]);
@@ -619,18 +678,32 @@ export function render(box, env) {
   const kids = childrenOf(ix, cur);
   const shownAgents = agentsShown(ix, state);
   const tr = ix.track.get(cur.id) || { calls: [], failure_runs: [], breaks: [] };
-  const groups = shownAgents ? groupsOf(cur, kids, state) : [];
-  const drawnKids = shownAgents ? kids : [];
+  const held = (ix.stations.get(cur.id) || { compactions: [] }).compactions;
+  const cuts = held.map(c => c.t);
+  // Every segment before the newest compaction folds, unless the user opened it or it holds the selected agent.
+  const segAt = t => cuts.filter(c => c <= t).length;
+  const allGroups = groupsOf(cur, kids, state);
+  // A picked call opens the segment it ran in, as a selected agent does.
+  const pickedCall = state.peek && state.peek.kind === 'call' ? tr.calls.find(c => c.use_id === state.peek.id) : null;
+  const pickedSeg = pickedCall ? segAt(pickedCall.t) : -1;
+  const folds = [];
+  for (let i = 0; i < held.length; i++) {
+    const key = foldKey(cur.id, i);
+    const ids = [...kids.filter(c => segAt(c.start) === i).map(c => c.id), ...allGroups.filter(g => segAt(g.burst.first_launch) === i).flatMap(g => g.members.map(m => m.id))];
+    folds.push({ key, seg: i, open: groupOpen(state, key, ids) || pickedSeg === i });
+  }
+  const folded = new Set(folds.filter(f => !f.open).map(f => f.seg));
+  const groups = shownAgents ? allGroups.filter(g => !folded.has(segAt(g.burst.first_launch))) : [];
+  const drawnKids = shownAgents ? kids.filter(c => !folded.has(segAt(c.start))) : [];
   const inGroup = new Set(groups.flatMap(g => g.members.map(m => m.id)));
   const units = [
     ...drawnKids.filter(c => !inGroup.has(c.id)).map(c => ({ key: c.id, t: c.start, members: 0, expanded: false })),
     ...groups.map(g => ({ key: g.key, t: g.burst.first_launch, members: g.members.length, expanded: g.expanded })),
   ];
-  const held = (ix.stations.get(cur.id) || { compactions: [] }).compactions;
-  const cuts = held.map(c => c.t);
   const firsts = sourceFirsts(ix, cur, cuts);
   const restarts = restartCards(firsts, held);
-  held.forEach((c, i) => units.push({ key: `cut:${i}`, t: c.t, cut: true, cards: restarts[i] }));
+  held.forEach((c, i) => units.push({ key: `cut:${i}`, t: c.t, cut: true, cards: folded.has(i + 1) ? [] : restarts[i] }));
+  for (const f of folds) if (folded.has(f.seg)) units.push({ key: f.key, t: f.seg ? cuts[f.seg - 1] : cur.start, t1: cuts[f.seg], fold: true });
   const scale = layoutTime(cur, tr.breaks, lengthFor(isRoot), units);
   const placedMap = new Map();
   for (const p of scale.placed) {
@@ -643,7 +716,7 @@ export function render(box, env) {
   const sel = state.sel ? ix.nodes.get(state.sel) : null;
   const renderer = rendererFor(cur.kind);
   const hand = isRoot ? null : renderer.handback && renderer.handback(cur, env);
-  const items = sourceItems(env, firsts.filter(f => shownSource(env, f.id)), scale);
+  const items = sourceItems(env, firsts.filter(f => shownSource(env, f.id) && !folded.has(f.seg)), scale);
   const walls = [...scale.cuts.values()].map(c => ({ top: c.y - STRIPE_HALF, bottom: c.y + STRIPE_HALF }));
   const placedSources = new Map(placeSources(items.map(it => ({ key: it.key, y: it.y })), walls).map(p => [p.key, p]));
   const sourcesBottom = Math.max(0, ...[...placedSources.values()].map(p => p.top + SH));
@@ -668,7 +741,8 @@ export function render(box, env) {
   }
   for (const c of shownKids) cv.append(childCard(env, c, placedMap.get(c.id), matchOf(c), state.sel === c.id));
   for (const it of items) cv.append(sourceNode(env, it, placedSources.get(it.key)));
-  cv.append(...stations(env, cur, scale, held, cuts), ...drawn.pills);
+  cv.append(...stations(env, cur, scale, held, cuts, folded), ...drawn.pills);
+  for (const f of folds) cv.append(f.open ? foldClose(f, scale) : foldBand(env, cur, f, scale, held, kids, segAt));
   if (hand) {
     const b = abs('card bottom', SPX - BOT_W / 2, botY, hand.peek ? 'button' : 'div');
     b.style.width = `${BOT_W}px`;

@@ -22,10 +22,12 @@ class XrayFileState:
 
     source: str
     state: FileState
+    # Whether the file's content is in the context after the compaction: its state is in IN_CONTEXT_FILE_STATES.
+    in_context: bool
 
     def to_json(self) -> JsonObject:
         """The file state as a JSON object."""
-        return {"source": self.source, "state": self.state}
+        return {"source": self.source, "state": self.state, "in_context": self.in_context}
 
 
 @dataclass(frozen=True)

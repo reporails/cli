@@ -107,9 +107,8 @@ def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tu
         if pending is None:
             return
         kept = {sid for row_id in kept_in.keys() & pending[2] for sid in kept_in[row_id]}
-        states = tuple(
-            XrayFileState(src, _state(src, reloaded, whole | kept, named, waiting=waiting)) for src in pending[1]
-        )
+        settled = [(src, _state(src, reloaded, whole | kept, named, waiting=waiting)) for src in pending[1]]
+        states = tuple(XrayFileState(src, state, state in IN_CONTEXT_FILE_STATES) for src, state in settled)
         done.append((pending[0], states))
         held = {item.source for item in states if item.state in IN_CONTEXT_FILE_STATES} | reloaded | whole
 

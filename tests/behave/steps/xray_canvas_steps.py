@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -11,6 +12,9 @@ from pathlib import Path
 from behave import then  # type: ignore[import-untyped]
 
 SCRIPT = Path(__file__).resolve().parents[1] / "xray_canvas.mjs"
+
+# The modes that look at the folds themselves; every other mode gets each fold opened as it draws.
+FOLD_MODES = {"folds", "fold-key"}
 
 
 def _canvas(context, mode: str, *args: str, width: int = 1440) -> dict | None:
@@ -25,7 +29,7 @@ def _canvas(context, mode: str, *args: str, width: int = 1440) -> dict | None:
         encoding="utf-8",
         timeout=120,
         check=False,
-        env={**os.environ, "CHROME_BIN": chrome},
+        env={**os.environ, "CHROME_BIN": chrome, **({"XRAY_KEEP_FOLDS": "1"} if mode in FOLD_MODES else {})},
     )
     assert done.returncode == 0, done.stderr
     seen = json.loads(done.stdout.strip().splitlines()[-1])
@@ -168,3 +172,110 @@ def step_break_labels(context):
     assert len(seen["labels"]) >= 2, seen["labels"]
     for label in seen["labels"]:
         assert not label["hits"], label
+
+
+def _cuts(context) -> list[dict]:
+    return _station(context)["compactions"]
+
+
+def _seg(context, t: float) -> int:
+    return sum(1 for c in _cuts(context) if c["t"] <= t)
+
+
+def _fold_counts(context, seg: int) -> tuple[int, int]:
+    """The loads and the subagents the view holds for a segment, from the view's own times."""
+    start = _main(context)["start"]
+    loads = sum(
+        1 for load in _station(context)["loads"] if _seg(context, load["t"] if load["t"] is not None else start) == seg
+    )
+    kids = sum(1 for n in context.fixture["nodes"] if n["parent"] == "main" and _seg(context, n["start"]) == seg)
+    return loads, kids
+
+
+@then("the segments before the newest compaction are folded bands and the newest segment is drawn open")
+def step_folds_default(context):
+    seen = _canvas(context, "folds")
+    if seen is None:
+        return
+    last = len(_cuts(context))  # the segments are numbered 0..last, and `last` is the newest
+    folds = seen["before"]["folds"]
+    assert [f["group"] for f in folds] == [f"fold:main:{i}" for i in range(last)], folds
+    assert all(f["expanded"] == "false" and f["tag"] == "BUTTON" for f in folds), folds
+    assert not any(c.endswith(f":{last}") for c in seen["before"]["closers"]), seen["before"]["closers"]
+    assert len(seen["before"]["stripes"]) == last, seen["before"]["stripes"]
+
+
+@then("picking an agent launched in the first segment opens that segment and leaves the others folded")
+def step_folds_pick(context):
+    first = next(n["id"] for n in context.fixture["nodes"] if n["parent"] == "main" and _seg(context, n["start"]) == 0)
+    seen = _canvas(context, "folds", first)
+    if seen is None:
+        return
+    groups = [f["group"] for f in seen["before"]["folds"]]
+    assert "fold:main:0" not in groups, groups
+    assert "fold:main:1" in groups, groups
+    assert seen["before"]["closers"] == ["fold:main:0"], seen["before"]["closers"]
+
+
+@then("each folded segment shows the loads, agents and context before and after that the view holds")
+def step_folds_numbers(context):
+    seen = _canvas(context, "folds")
+    if seen is None:
+        return
+    assert seen["before"]["folds"], "no folded segment drawn"
+    for i, fold in enumerate(seen["before"]["folds"]):
+        loads, kids = _fold_counts(context, i)
+        cut = _cuts(context)[i]
+        assert (fold["loads"], fold["agents"]) == (loads, kids), (fold, loads, kids)
+        assert (fold["before"], fold["after"]) == (cut["before"], cut["after"]), fold
+        assert f"{loads} load" in fold["text"] and f"{kids} agent" in fold["text"], fold["text"]
+        assert f"{cut['before'] // 1000}k → {cut['after'] // 1000}k" in fold["text"], fold["text"]
+
+
+@then("each stripe closing a folded segment lists the files that came back and the files that did not")
+def step_folds_stripe(context):
+    seen = _canvas(context, "folds")
+    if seen is None:
+        return
+    labels = {s["id"]: s["label"] for s in context.fixture["sources"]}
+    stripes = seen["before"]["stripes"]
+    assert seen["before"]["folds"], "no folded segment drawn"
+    for i in range(len(seen["before"]["folds"])):
+        files = _cuts(context)[i]["files"]
+        back = [
+            labels.get(f["source"], f["source"]) for f in files if f["state"] in {"reloaded", "restored", "pending"}
+        ]
+        gone = [labels.get(f["source"], f["source"]) for f in files if f["state"] in {"named", "summarized"}]
+        assert back and gone, files
+        stripe = stripes[i]
+        assert stripe["back"].split("\n") == back and stripe["notBack"].split("\n") == gone, (stripe, back, gone)
+        assert all(name in stripe["text"] for name in back + gone), stripe["text"]
+
+
+@then("clicking a folded segment opens it, keeps every compaction's sizes and lengthens the canvas")
+def step_folds_open(context):
+    seen = _canvas(context, "folds", "open")
+    if seen is None:
+        return
+    before, after = seen["before"], seen["after"]
+    assert before["folds"], "no folded segment drawn"
+    assert len(after["folds"]) == len(before["folds"]) - 1, (before["folds"], after["folds"])
+    assert after["closers"] == ["fold:main:0"], after["closers"]
+    assert after["height"] > before["height"], (before["height"], after["height"])
+
+    def sizes(snap):
+        return [re.findall(r"\d+k → \d+k", s["text"]) for s in snap["stripes"]]
+
+    assert sizes(before) == sizes(after), (sizes(before), sizes(after))
+
+
+@then("picking a call that ran in the first segment opens that segment and leaves the others folded")
+def step_folds_call(context):
+    calls = next(t for t in context.fixture["track"] if t["node"] == "main")["calls"]
+    call = next(c for c in calls if _seg(context, c["t"]) == 0)
+    seen = _canvas(context, "folds", f"call:{call['use_id']}")
+    if seen is None:
+        return
+    groups = [f["group"] for f in seen["before"]["folds"]]
+    assert groups == ["fold:main:1", "fold:main:2"], groups
+    assert seen["before"]["closers"] == ["fold:main:0"], seen["before"]["closers"]

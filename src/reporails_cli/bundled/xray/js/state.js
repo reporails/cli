@@ -46,3 +46,7 @@ export const go = (path, file) => { location.hash = hashFor(path, file ?? null);
 
 // A fan-out group is open when the user said so; otherwise when the selected agent is one of its members.
 export const groupOpen = (st, key, memberIds) => (key in st.groups ? st.groups[key] : memberIds.includes(st.sel));
+
+// A compaction segment drawn before the newest one is folded unless the user opened it or it holds the selected agent. Its open
+// state is kept in the same `groups` record as a fan-out group's, so open or closed has one owner.
+export const foldKey = (nodeId, seg) => `fold:${nodeId}:${seg}`;
