@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from reporails_cli.core.classify.content_format import detect_content_format
-from reporails_cli.core.classify.generic_type import make_generic_classified
+from reporails_cli.core.classify.generic_type import is_markdown_file, make_generic_classified
 from reporails_cli.core.classify.link_walker import walk_markdown_links
 from reporails_cli.core.classify.vcs import with_default_vcs
 from reporails_cli.core.discovery.agent_config import (
@@ -24,6 +24,7 @@ from reporails_cli.core.discovery.agent_discovery import is_memory_recall_entry
 from reporails_cli.core.discovery.plugin_roots import config_pattern_hits
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.discovery.surface_config import surface_include_patterns
+from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.classify import LinkEdge
 from reporails_cli.core.platform.dto.discovery import RunExclusions
@@ -294,7 +295,26 @@ def classify_files(
     if generic_scanning:
         classified.extend(_classify_generic_via_links(scan_root, classified, exclusions))
 
+    if exclusions is not None and exclusions.named:
+        classified.extend(_classify_named_unloaded(scan_root, files, classified, exclusions))
+
     return classified
+
+
+def _classify_named_unloaded(
+    scan_root: Path, files: list[Path], classified: list[ClassifiedFile], exclusions: RunExclusions
+) -> list[ClassifiedFile]:
+    """The named markdown files nothing above classified, as `referenced` files no link reaches.
+
+    A file the user names is checked whether or not an agent loads it: it is discoverable, never
+    loaded, so it carries what the link walk gives a file reached only by a link.
+    """
+    held = {safe_resolve(cf.path) for cf in classified}
+    return [
+        make_generic_classified(f, [], scan_root)
+        for f in files
+        if is_markdown_file(f) and safe_resolve(f) in exclusions.named and safe_resolve(f) not in held
+    ]
 
 
 def _classify_generic_via_links(

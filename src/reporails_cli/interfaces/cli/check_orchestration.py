@@ -20,7 +20,9 @@ import typer
 
 from reporails_cli.core.classify.capability_paths import TargetError, looks_like_windows_path, sniff_agent
 from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
-from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
+from reporails_cli.core.classify.generic_type import is_markdown_file
+from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions
+from reporails_cli.core.discovery.walk import file_under_target, safe_resolve, walk_files
 from reporails_cli.core.heal.apply import suppressed_by_path
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.platform.adapters.notices_seen import due_notices
@@ -30,6 +32,7 @@ from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, Fu
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.heal import HealRegression
 from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.dto.targets import TargetReport
 from reporails_cli.core.platform.observability.log_levels import quiet_loggers
 from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
@@ -117,12 +120,34 @@ def _named_paths(state: CheckState, capability_paths: frozenset[Path]) -> tuple[
     """
     single = state.targets.single_file
     named = frozenset(
-        capability_paths | {t for t in state.targets.path_targets if t.is_file()} | ({single} if single else set())
+        capability_paths
+        | {t for t in state.targets.path_targets if t.is_file()}
+        | ({single} if single else set())
+        | _markdown_under_folders(state)
     )
     only_files = all(name for _, name in state.targets.capability_specs) and all(
         t.is_file() for t in state.targets.path_targets
     )
     return named, bool(named) and only_files
+
+
+def _markdown_under_folders(state: CheckState) -> set[Path]:
+    """The markdown files the run keeps under the folders it names, each checked whether or not an agent loads it.
+
+    The project folder itself is the whole-project run, so it names none.
+    """
+    folders = [t for t in state.targets.path_targets if t.is_dir() and t != state.inputs.project_root]
+    if not folders:
+        return set()
+    exclusions = load_run_exclusions(
+        state.run, state.targets.target, state.inputs.exclude_dirs, state.inputs.exclude_files
+    )
+    return {
+        f
+        for folder in folders
+        for f in walk_files(folder, exclusions, is_markdown_file)
+        if not leaves_out(exclusions, f)
+    }
 
 
 def scan_scope(single_path: Path | None, project_root: Path) -> tuple[Path | None, Path, Path | None]:
@@ -191,6 +216,7 @@ class RenderContext(NamedTuple):
     verbose: bool = False
     heal_regressions: tuple[HealRegression, ...] = ()
     aliases: dict[Path, list[Path]] | None = None
+    targets: TargetReport = TargetReport()
 
 
 def _emit_json(
@@ -203,6 +229,7 @@ def _emit_json(
         project_root=context.project_root,
         file_type_by_path=context.file_type_by_path,
         heal_regressions=context.heal_regressions,
+        targets=context.targets,
     )
     data["elapsed_ms"] = round(elapsed_ms, 1)
     timer = get_stage_timer()

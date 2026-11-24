@@ -7,6 +7,14 @@ from collections.abc import Iterable
 from rich.console import Console
 from rich.markup import escape
 
+from reporails_cli.core.platform.dto.targets import NotEvaluatedReason, UnevaluatedTarget
+
+_REASON_TEXT: dict[NotEvaluatedReason, str] = {
+    "no_markdown": "the folder holds no markdown file",
+    "not_markdown": "it is not a markdown file",
+    "unknown_capability": "the agent has no such capability",
+}
+
 
 def group_not_evaluated(pairs: Iterable[tuple[str, str]]) -> list[tuple[str, list[str]]]:
     """The `(rule id, file)` pairs as `(file, [rule ids])`, files and rules in first-seen order."""
@@ -38,3 +46,18 @@ def print_not_evaluated(console: Console, pairs: Iterable[tuple[str, str]]) -> N
         console.print()
         for line in lines:
             console.print(f"  {line}", soft_wrap=True)
+
+
+def unevaluated_target_sentence(target: str, reason: NotEvaluatedReason) -> str:
+    """`<target> not checked: <reason>`, plain text."""
+    return f"{target} not checked: {_REASON_TEXT[reason]}"
+
+
+def target_reason(value: str) -> NotEvaluatedReason | None:
+    """The reason a document names, or None when this version does not know it."""
+    return next((reason for reason in _REASON_TEXT if reason == value), None)
+
+
+def unevaluated_target_lines(targets: Iterable[UnevaluatedTarget]) -> list[str]:
+    """One plain line per target the run did not check."""
+    return [unevaluated_target_sentence(t.target, t.reason) for t in targets]

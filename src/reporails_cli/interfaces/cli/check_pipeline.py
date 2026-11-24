@@ -82,7 +82,7 @@ def _flow_pipeline(state: CheckState) -> None:
             progress("Mapping instruction files...")
             state.pipeline.ruleset_map = map_instruction_files(
                 state.targets.target,
-                state.scope.instruction_files,
+                [f for f in state.scope.instruction_files if f not in state.scope.unloaded],
                 progress=map_progress,
                 filtered_agents=state.scope.filtered,
                 mapper=state.run.project_config(state.targets.target).mapper,

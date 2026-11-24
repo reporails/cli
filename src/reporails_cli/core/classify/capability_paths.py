@@ -147,6 +147,13 @@ def classify_target_token(
     return "path", _path(token)
 
 
+def folder_shadowed_by_capability(token: str, kind: str) -> bool:
+    """True when `token` was read as a capability yet is a bare word that also names an existing folder."""
+    if kind != "capability" or token.startswith(("@", "file:")) or ":" in token:
+        return False
+    return safe_resolve(Path(token)).is_dir()
+
+
 def sniff_agent(run: RunContext, agent: str, project_root: Path) -> str:
     """The agent whose vocabulary reads target tokens: `agent` when given, else the project's
     configured default agent, else the first agent detected under `project_root` (`""` when

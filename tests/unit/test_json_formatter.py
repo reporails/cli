@@ -17,6 +17,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
 from reporails_cli.core.platform.dto.models import Level
 from reporails_cli.core.platform.dto.platform import CombinedResult, CombinedStats, Omissions, ServerReply
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.dto.targets import TargetReport, UnevaluatedTarget
 from reporails_cli.formatters.json import format_combined_result
 
 
@@ -46,6 +47,25 @@ class TestQualityNullDisplayScore:
         data = format_combined_result(_result(quality=quality))
         assert data["quality"] is None
         assert data["quality"] != 1.0
+
+
+class TestFormatVersion:
+    """The JSON names its output-format version, so a consumer reads the keys it was written against."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_format_version_is_pinned_at_one(self) -> None:
+        assert format_combined_result(_result())["format_version"] == 1
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_targets_nothing_was_checked_for_join_the_pattern_timeouts(self) -> None:
+        omitted = _result(omissions=Omissions(not_evaluated=(("CORE:C:0001", "a.md"),)))
+        data = format_combined_result(omitted, targets=TargetReport((UnevaluatedTarget("assets", "no_markdown"),)))
+        assert data["not_evaluated"] == [
+            {"rule": "CORE:C:0001", "file": "a.md"},
+            {"file": "assets", "reason": "no_markdown"},
+        ]
 
 
 class TestServerErrorSection:

@@ -22,12 +22,15 @@
 
 - `ails xray` itemises what Claude Code adds to the context by itself: the agent listing, deferred tools, session context, the agent's thinking and Claude Code's other messages each get their own In-context row, for the main agent and every subagent, so Conversation holds only what you and the agent wrote. When Claude Code recorded the request a reply answered, every row is sized at that request's measured tokens per character. The System prompt details list the prompt's sections, each with its share.
 
+- `ails check -f json` and the MCP `validate` response carry a top-level `format_version`, now `1`, which changes when the shape of that output changes. Its `not_evaluated` list can now also hold `{"file", "reason"}` items for a named target that was not checked, beside the existing `{"rule", "file"}` items.
+
 ### Fixed
 
 - A rule that selects files by whether they are committed, gitignored or user-level now finds them; before, such a rule matched no file.
 - `ails test` runs a rule's pattern checks only on the files its `match` selects, as `ails check` does, so a rule pack's fixtures test the rule's real scope.
 - A Claude Code memory file that keeps its `type` under `metadata:` no longer gets a "missing frontmatter: type" warning.
 - The docs now name `AILS_API_KEY` as the environment variable the CLI reads its API key from, and show a CI job that installs the CLI with `npm` and sets it. `REPORAILS_API_KEY` in the GitHub Action examples is only an example secret name; the Action passes its `api-key` input on as `AILS_API_KEY`.
+- `ails check prompts/review.md` on a markdown file no agent loads now checks it as a referenced file, with the same findings, the `Referenced` panel and no score, as when a link reaches it. `ails check ./prompts` checks the markdown files under the folder instead of printing "Create a CLAUDE.md". A folder with no markdown, a file that is not markdown, or a capability the agent does not have is reported by name and not checked. When a word names both a capability and a folder, the output says which one it checked.
 
 ### Removed
 

@@ -32,6 +32,11 @@ REFERENCED_TYPE_NAME = "referenced"
 _EAGER_SOURCES: frozenset[str] = frozenset({"main"}) | MEMORY_SURFACES
 
 
+def is_markdown_file(path: Path) -> bool:
+    """True when `path` is a markdown file, the kind a named file is checked as when no agent loads it."""
+    return path.suffix.lower() == ".md"
+
+
 def make_generic_classified(
     path: Path,
     edges: list[LinkEdge],

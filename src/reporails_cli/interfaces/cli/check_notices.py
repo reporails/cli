@@ -18,9 +18,12 @@ from rich.markup import escape as escape_markup
 from reporails_cli.core.discovery.walk import own_name_spellings
 from reporails_cli.core.heal.apply import heal_withheld_for_run
 from reporails_cli.core.pipeline.assemble import with_exclusions
+from reporails_cli.core.platform.dto.diagnostics import Notice
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.dto.targets import TargetReport
 from reporails_cli.formatters.github import escape_workflow_data
+from reporails_cli.formatters.text.not_evaluated import unevaluated_target_lines
 from reporails_cli.formatters.text.verdict import render_excluded_line
 from reporails_cli.interfaces.cli.check_orchestration import RenderContext, _dispatch_output
 from reporails_cli.interfaces.cli.helpers import _print_no_instruction_files, console
@@ -80,6 +83,33 @@ def _emit_unlisted_file(file: Path, root: Path, run_folder: Path, output_format:
         print(message, file=sys.stderr)
         return
     console.print(f"[yellow]{message}[/yellow]", soft_wrap=True)
+
+
+def target_clash_notice(token: str, agent: str) -> Notice:
+    """The notice that a bare word naming both a capability of `agent` and a folder was read as the capability."""
+    return Notice(
+        id="target_clash",
+        level="info",
+        text=(
+            f"`{token}` is both a capability of {agent} and a folder here; it was read as the capability. "
+            f"Use `file:{token}` to check the folder."
+        ),
+    )
+
+
+def _emit_target_report(state: CheckState) -> None:
+    """Say how the run read its targets: the capability-or-folder words and the targets nothing was checked for.
+
+    JSON carries both in its own keys. Text prints them above the result; the other machine format, on stderr.
+    """
+    if state.targets.output_format == "json":
+        return
+    lines = [n.text for n in state.targets.notices] + unevaluated_target_lines(state.targets.unevaluated)
+    for line in lines:
+        if state.targets.output_format in MACHINE_READABLE_CHECK_FORMATS:
+            print(line, file=sys.stderr)
+        else:
+            console.print(f"[yellow]{escape_markup(line)}[/yellow]", soft_wrap=True)
 
 
 def _emit_heal_scope_refusal(output_format: str) -> None:
@@ -148,8 +178,13 @@ def _emit_empty_run(state: CheckState) -> None:
                 capability_paths=set(),
                 ascii_mode=state.inputs.ascii_mode,
                 verbose=state.inputs.verbose,
+                targets=TargetReport(tuple(state.targets.unevaluated), tuple(state.targets.notices)),
             ),
         )
+        return
+    _emit_target_report(state)
+    if state.targets.unevaluated:
+        _print_excluded_record(state)
         return
     whole_project = not state.targets.capability_specs and all(
         t == state.inputs.project_root for t in state.targets.path_targets

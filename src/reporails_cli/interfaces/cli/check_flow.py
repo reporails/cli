@@ -21,7 +21,12 @@ from typing import TYPE_CHECKING
 
 import typer
 
-from reporails_cli.core.classify.capability_paths import canonicalize_capability, classify_target_token
+from reporails_cli.core.classify.capability_paths import (
+    canonicalize_capability,
+    classify_target_token,
+    folder_shadowed_by_capability,
+)
+from reporails_cli.core.classify.generic_type import is_markdown_file
 from reporails_cli.core.discovery.exclusions import no_exclusions
 from reporails_cli.core.discovery.file_aliases import get_file_aliases
 from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
@@ -38,14 +43,18 @@ from reporails_cli.core.platform.config.bootstrap import running_in_ci
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.heal import HealRegression
 from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.dto.targets import TargetReport, UnevaluatedTarget
 from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.interfaces.cli.check_notices import (
     _emit_empty_run,
     _emit_heal_scope_refusal,
     _emit_heal_withheld,
     _emit_server_refusal,
+    _emit_target_report,
     _emit_unlisted_file,
     _notify_heal_scope_skips,
+    target_clash_notice,
 )
 from reporails_cli.interfaces.cli.check_orchestration import (
     HealScope,
@@ -118,6 +127,9 @@ class CheckTargets:
     subtree_scoped: bool = False
     target: Path = field(default_factory=Path)
     output_format: str = ""
+    # The targets no file of the run came from, and the notices on how the run read its targets.
+    unevaluated: list[UnevaluatedTarget] = field(default_factory=list)
+    notices: list[Notice] = field(default_factory=list)
 
 
 @dataclass
@@ -134,6 +146,8 @@ class CheckScope:
     upfront_paths: set[Path] = field(default_factory=set)
     is_targeted: bool = False
     file_type_by_path: dict[str, str] = field(default_factory=dict)
+    # The named markdown files no agent loads: checked through their `referenced` class, never mapped.
+    unloaded: list[Path] = field(default_factory=list)
     generic_scanning: bool = False
 
 
@@ -185,6 +199,17 @@ class CheckState:
     render: CheckRender = field(default_factory=CheckRender)
 
 
+def _take_capability(state: CheckState, token: str, spec: tuple[str, str], agent: str) -> None:
+    """Keep a capability target the agent has; list one it lacks, and say when the word also names a folder."""
+    config = state.run.project_config(state.inputs.project_root)
+    if agent and canonicalize_capability(spec[0], agent, config) is None:
+        state.targets.unevaluated.append(UnevaluatedTarget(token, "unknown_capability"))
+        return
+    state.targets.capability_specs.append(spec)
+    if folder_shadowed_by_capability(token, "capability"):
+        state.targets.notices.append(target_clash_notice(token, agent))
+
+
 def _flow_targets(state: CheckState) -> None:
     """Classify target tokens, pick the scan root + output format, enforce heal scope-safety."""
     if state.inputs.targets:
@@ -193,7 +218,7 @@ def _flow_targets(state: CheckState) -> None:
             sniff_agent = _token_agent(state.run, token, state.inputs.agent, state.inputs.project_root, sniffed)
             kind, payload = classify_target_token(state.run, token, sniff_agent, state.inputs.project_root)
             if kind == "capability" and isinstance(payload, tuple):
-                state.targets.capability_specs.append(payload)
+                _take_capability(state, token, payload, sniff_agent)
             elif isinstance(payload, Path):
                 if not payload.exists():
                     suggestion = ""
@@ -275,20 +300,45 @@ def _resolve_scope_at_target(state: CheckState, capability_paths: frozenset[Path
 def _flow_scope(state: CheckState) -> bool:
     """Detect agents, discover instruction files, narrow to scope. False = nothing in scope."""
     _resolve_scope_at_target(state)
-    single = state.targets.single_file
-    if single is not None and not is_listed_file(state.run, single, state.targets.target):
-        _emit_unlisted_file(single, state.targets.target, state.inputs.project_root, state.targets.output_format)
+    _list_unchecked_paths(state)
     # A scope-to-subtree run keeps the project scan root, so its narrowing runs here
     # with the capability/multi-path narrowing rather than through the re-root branch.
     narrows = state.targets.single_path is None or state.targets.subtree_scoped
     named_targets = bool(state.targets.capability_specs or state.targets.path_targets)
+    if state.targets.unevaluated and not named_targets:
+        _emit_empty_run(state)
+        return False
     if not state.scope.instruction_files and not (narrows and named_targets):
         _emit_empty_run(state)
         return False
     if narrows and not _narrow_upfront(state):
         return False
+    _emit_target_report(state)
 
     return _apply_generic_scan(state)
+
+
+def _shown(path: Path, project_root: Path) -> str:
+    """`path` relative to the project when it sits inside, else as given."""
+    return path.relative_to(project_root).as_posix() if path.is_relative_to(project_root) else str(path)
+
+
+def _list_unchecked_paths(state: CheckState) -> None:
+    """List each named file or folder no file is checked for, and say a named file no agent loads is checked anyway."""
+    single = state.targets.single_file
+    root = state.inputs.project_root
+    if single is not None and not is_listed_file(state.run, single, state.targets.target):
+        if is_markdown_file(single):
+            _emit_unlisted_file(single, state.targets.target, root, state.targets.output_format)
+        else:
+            state.scope.instruction_files = []
+    for path in sorted(state.targets.path_targets - {root}):
+        if path.is_dir() and not any(file_under_target(f, path) for f in state.scope.instruction_files):
+            state.targets.unevaluated.append(UnevaluatedTarget(_shown(path, root), "no_markdown"))
+        elif (
+            path.is_file() and not is_markdown_file(path) and not is_listed_file(state.run, path, state.targets.target)
+        ):
+            state.targets.unevaluated.append(UnevaluatedTarget(_shown(path, root), "not_markdown"))
 
 
 def _narrow_upfront(state: CheckState) -> bool:
@@ -344,6 +394,12 @@ def _apply_generic_scan(state: CheckState) -> bool:
     )
     if import_extra:
         state.scope.instruction_files = list(state.scope.instruction_files) + import_extra
+    for path in state.scope.instruction_files:
+        if safe_resolve(path) in state.scope.exclusions.named and is_markdown_file(path):
+            key = normalize_finding_path(str(path), state.targets.target)
+            if key not in state.scope.file_type_by_path and not is_listed_file(state.run, path, state.targets.target):
+                state.scope.file_type_by_path[key] = "referenced"
+                state.scope.unloaded.append(path)
     state.scope.is_targeted = (
         state.targets.target != state.inputs.project_root
         or bool(state.scope.upfront_paths)
@@ -372,6 +428,7 @@ def _flow_render(state: CheckState) -> None:
                 verbose=state.inputs.verbose,
                 heal_regressions=state.render.heal_regressions,
                 aliases=get_file_aliases(state.run, state.targets.target),
+                targets=TargetReport(tuple(state.targets.unevaluated), tuple(state.targets.notices)),
             ),
         )
     state.pipeline.stage_timer.mark("render")

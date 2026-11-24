@@ -141,6 +141,13 @@ def _extend_with_generic(
     return effective
 
 
+def _loaded_files(instruction_files: list[Path], classified: list[ClassifiedFile]) -> list[Path]:
+    """`instruction_files` without the ones classified `referenced`: a file named on the command line that no
+    agent loads reaches the rules the way a file only a link reaches does, through its class."""
+    referenced = {cf.path for cf in classified if cf.file_type == "referenced"}
+    return [f for f in instruction_files if f not in referenced]
+
+
 def _classify_agent_files(
     project_dir: Path,
     instruction_files: list[Path],
@@ -195,7 +202,7 @@ def run_m_probes(
     classified = _classify_agent_files(
         project_dir, instruction_files, agent, project.config, skills=skills, exclusions=exclusions
     )
-    effective_files = _extend_with_generic(instruction_files, classified, generic_scanning)
+    effective_files = _extend_with_generic(_loaded_files(instruction_files, classified), classified, generic_scanning)
 
     findings: list[LocalFinding] = []
     findings.extend(
