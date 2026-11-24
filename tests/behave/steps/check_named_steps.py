@@ -291,3 +291,39 @@ def step_checked_nothing_unlisted(context, name):
     doc = document(context.result)
     assert name in doc["files"], sorted(doc["files"])
     assert not [i for i in doc["not_evaluated"] if "reason" in i], doc["not_evaluated"]
+
+
+@given('an empty git project "{name}" and a git project beside it to run from')
+def step_empty_project_beside(context, name):
+    context.empty_project = build_project(context.tmpdir / name)
+    context.project = build_project(context.tmpdir / "runner")
+    write_claude(context.project, _CLAUDE)
+
+
+@when('I run "ails check" on the empty project by its path as {fmt}')
+def step_run_empty_by_path(context, fmt):
+    _run(context, str(context.empty_project), fmt)
+
+
+@given('an empty git project with a "docs" folder holding only "readme.txt"')
+def step_empty_project_docs(context):
+    context.project = build_project(context.tmpdir)
+    (context.project / "docs").mkdir()
+    (context.project / "docs" / "readme.txt").write_text("hello\n", encoding="utf-8")
+
+
+@then("the output says no instruction files were found and asks to create an AGENTS.md")
+def step_usual_empty_run(context):
+    out = _output(context)
+    assert "No instruction files found." in out and "Level: L0" in out, out
+    assert "Create an AGENTS.md to get started." in out, out
+
+
+@then("the output lists no target as not checked")
+def step_nothing_unchecked(context):
+    assert "not checked" not in _output(context), _output(context)
+
+
+@then("the json not_evaluated is empty")
+def step_json_not_evaluated_empty(context):
+    assert document(context.result)["not_evaluated"] == [], document(context.result)["not_evaluated"]

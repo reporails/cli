@@ -165,10 +165,13 @@ def unchecked_paths(
     scan_target: Path,
 ) -> list[UnevaluatedTarget]:
     """Each named folder none of the `checked` files sits under, and each non-markdown file no agent loads
-    here: `other_project` when it is an agent's file of a project outside `project_root`."""
+    here: `other_project` when it is an agent's file of a project outside `project_root`.
+
+    `project_root` and `scan_target` are the projects the run checks, so naming either lists nothing.
+    """
     files = list(checked)
     out: list[UnevaluatedTarget] = []
-    for path in sorted(set(path_targets) - {project_root}):
+    for path in sorted(set(path_targets) - {project_root, scan_target}):
         if path.is_dir():
             if any(file_under_target(f, path) for f in files):
                 continue

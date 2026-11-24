@@ -167,15 +167,17 @@ def _emit_empty_run(state: CheckState) -> None:
         )
         return
     _emit_target_report(state)
-    if state.targets.unevaluated:
-        _print_excluded_record(state)
-        return
     whole_project = not state.targets.capability_specs and all(
-        t == state.inputs.project_root for t in state.targets.path_targets
+        t == state.targets.target for t in state.targets.path_targets
     )
     others = state.scope.detected if whole_project and _agent_is_pinned(state) else None
-    _print_no_instruction_files(state.scope.effective_agent, console, others)
+    _print_no_instruction_files(state.scope.effective_agent, console, others, create_hint=not _agent_has_files(state))
     _print_excluded_record(state)
+
+
+def _agent_has_files(state: CheckState) -> bool:
+    """True when the project already holds instruction files of the run's agent, so there is none to create."""
+    return any(a.agent_type.id == state.scope.effective_agent and a.instruction_files for a in state.scope.detected)
 
 
 def _print_excluded_record(state: CheckState) -> None:

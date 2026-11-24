@@ -71,3 +71,21 @@ Feature: `ails check` reports the targets it did not check, and names what it wa
     Given a git project and a user-level "~/.claude/settings.json" beside a user CLAUDE.md
     When I run "ails check" on that settings file as json
     Then the json checks "settings.json" and lists nothing as not checked
+
+  @e2e @regression
+  Scenario: An empty project named from another folder gets the usual empty-run result
+    Given an empty git project "emptyproj" and a git project beside it to run from
+    When I run "ails check" on the empty project by its path as text
+    Then the output says no instruction files were found and asks to create an AGENTS.md
+    And the output lists no target as not checked
+    When I run "ails check" on the empty project by its path as json
+    Then the json not_evaluated is empty
+
+  @e2e @regression
+  Scenario: A folder with no markdown in a project with no instruction file keeps the usual result and is listed
+    Given an empty git project with a "docs" folder holding only "readme.txt"
+    When I run "ails check" on the named target "docs" as text
+    Then the output says no instruction files were found and asks to create an AGENTS.md
+    And the output names "docs" as not checked
+    When I run "ails check" on the named target "docs" as json
+    Then the json not_evaluated lists "docs" with the reason "no_markdown"
