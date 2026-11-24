@@ -82,3 +82,20 @@ def test_a_record_with_status_killed_shows_the_run_as_stopped_not_as_not_readabl
     _edited(record, status="killed")
     run = _run(_view(session))
     assert (run.status, run.status_text, run.refusal) == ("killed", "stopped", None)
+
+
+def test_each_agent_is_listed_under_the_phase_its_record_numbers_from_one(tmp_path: Path) -> None:
+    session, record = _setup(tmp_path)
+    data = json.loads(record.read_text())
+    phases = [{"title": "Preflight"}, {"title": "Build"}, {"title": "Verify"}]
+    numbered = {FIRST: (1, "Preflight"), SECOND: (3, "Verify")}
+    agents = [
+        {**e, "phaseIndex": numbered[e["agentId"]][0], "phaseTitle": numbered[e["agentId"]][1]}
+        for e in data["workflowProgress"]
+        if "agentId" in e
+    ]
+    markers = [{"type": "workflow_phase", "index": n, "title": p["title"]} for n, p in enumerate(phases, 1)]
+    _edited(record, phases=phases, workflowProgress=markers + agents)
+    run = _run(_view(session))
+    assert [(p.title, p.agents) for p in run.phases] == [("Preflight", (FIRST,)), ("Build", ()), ("Verify", (SECOND,))]
+    assert run.unphased == ()

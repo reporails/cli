@@ -4,9 +4,9 @@ A run record is the JSON object `<session>/workflows/<runId>.json`. Pinned keys:
 file's run id), `status` (a string), `phases` (a list of objects with a string `title`) and `workflowProgress` (a
 list); when present, `workflowName` (a string), `durationMs`, `totalTokens` and `startTime` (whole
 numbers). The `workflowProgress` entries that carry an `agentId` are the run's agents, each with a string `agentId`,
-`phaseIndex` (a whole number), `phaseTitle` and `label` (strings). A `journal.jsonl` row of type `started` carries
-`agentId`, `label` and `phase` (strings). An agent's meta file carries `workflowPhase` (a string). Anything else is
-ignored; a field of another shape refuses the record."""
+`phaseIndex` (a whole number numbering the record's phases from 1), `phaseTitle` and `label` (strings). A
+`journal.jsonl` row of type `started` carries `agentId`, `label` and `phase` (strings). An agent's meta file carries
+`workflowPhase` (a string). Anything else is ignored; a field of another shape refuses the record."""
 
 from __future__ import annotations
 
@@ -14,6 +14,9 @@ from reporails_cli.core.eventbus.adapters.claude_rows import meta_field
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object
 from reporails_cli.core.platform.dto.workflows import RECORDED_STATUSES, WorkflowAgent, WorkflowRun, WorkflowStatus
+
+# The `phaseIndex` of a run's first phase: Claude Code numbers a run's phases from 1.
+_FIRST_PHASE_INDEX = 1
 
 
 def _required[Field: (str, int)](record: JsonObject, key: str, kind: type[Field]) -> Field:
@@ -42,9 +45,10 @@ def _status(record: JsonObject) -> WorkflowStatus:
 
 
 def _recorded_agent(entry: JsonObject) -> WorkflowAgent:
+    """The agent one `workflowProgress` entry names, with its phase's place among the run's phases."""
     return WorkflowAgent(
         _required(entry, "agentId", str),
-        _required(entry, "phaseIndex", int),
+        _required(entry, "phaseIndex", int) - _FIRST_PHASE_INDEX,
         _required(entry, "phaseTitle", str),
         _required(entry, "label", str),
     )
