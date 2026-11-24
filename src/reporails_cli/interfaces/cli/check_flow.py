@@ -311,9 +311,9 @@ def _list_unchecked_paths(state: CheckState) -> None:
             state.run,
             state.targets.path_targets,
             state.scope.instruction_files,
-            state.scope.exclusions,
-            state.inputs.project_root,
-            state.targets.target,
+            exclusions=state.scope.exclusions,
+            project_root=state.inputs.project_root,
+            scan_target=state.targets.target,
         )
     )
 

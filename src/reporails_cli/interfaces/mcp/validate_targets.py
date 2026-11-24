@@ -7,6 +7,7 @@ locations, files, and cross-file entries that hold one of them.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from reporails_cli.core.classify.capability_paths import TargetError
@@ -67,6 +68,30 @@ def validate_target_report(
     )
 
 
+def _capability_files(
+    run: RunContext,
+    specs: Sequence[tuple[str, str]],
+    effective_agent: str,
+    scan_root: Path,
+    exclusions: RunExclusions,
+) -> tuple[set[Path], set[Path]] | JsonObject:
+    """The files and skill folders the capability `specs` name, or a `target_not_found` error payload."""
+    files: set[Path] = set()
+    dirs: set[Path] = set()
+    for capability, name in specs:
+        try:
+            paths, _unresolved = resolve_capability_spec(
+                run, capability, name, effective_agent, project_root=scan_root, exclusions=exclusions
+            )
+        except TargetError as err:
+            return {"error": "target_not_found", "message": err.message()}
+        resolved_paths = {safe_resolve(p) for p in paths}
+        files |= resolved_paths
+        # A skill names its whole folder (references and the rest); an agent or rule is its one file.
+        dirs |= {p.parent for p in resolved_paths if p.name == "SKILL.md"}
+    return files, dirs
+
+
 def resolve_validate_targets(
     run: RunContext, tokens: tuple[str, ...], scan_root: Path
 ) -> tuple[set[Path], set[Path]] | JsonObject:
@@ -81,19 +106,10 @@ def resolve_validate_targets(
     reading = read_validate_targets(run, tokens, scan_root)
     if reading.missing:
         return {"error": "target_not_found", "message": f"Path not found: {reading.missing[0].path}"}
-    files: set[Path] = set()
-    dirs: set[Path] = set()
-    for capability, name in reading.capability_specs:
-        try:
-            paths, _unresolved = resolve_capability_spec(
-                run, capability, name, effective_agent, project_root=scan_root, exclusions=exclusions
-            )
-        except TargetError as err:
-            return {"error": "target_not_found", "message": err.message()}
-        resolved_paths = {safe_resolve(p) for p in paths}
-        files |= resolved_paths
-        # A skill names its whole folder (references and the rest); an agent or rule is its one file.
-        dirs |= {p.parent for p in resolved_paths if p.name == "SKILL.md"}
+    named = _capability_files(run, reading.capability_specs, effective_agent, scan_root, exclusions)
+    if isinstance(named, dict):
+        return named
+    files, dirs = named
     folders = [p for p in reading.path_targets if p.is_dir() and p != scan_root]
     for path in reading.path_targets:
         if path.is_dir():

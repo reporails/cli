@@ -66,6 +66,58 @@ def _existing_target_root(token: str, project_root: Path, base: Path | None) -> 
         return None
 
 
+class _TargetReader:
+    """The state of one `read_targets` call: what the tokens read so far, and the agent each project root
+    sniffs as."""
+
+    def __init__(self, run: RunContext, agent: str, project_root: Path, base: Path | None) -> None:
+        self.run = run
+        self.agent = agent
+        self.project_root = project_root
+        self.base = base
+        self.sniffed: dict[Path, str] = {}
+        self.specs: list[tuple[str, str]] = []
+        self.words: list[str] = []
+        self.paths: set[Path] = set()
+        self.missing: list[MissingTarget] = []
+        self.unevaluated: list[UnevaluatedTarget] = []
+        self.notices: list[Notice] = []
+
+    def read(self, token: str) -> None:
+        """Read `token` as a capability, a capability the agent lacks, or a path."""
+        root = _existing_target_root(token, self.project_root, self.base) or self.project_root
+        if root not in self.sniffed:
+            self.sniffed[root] = sniff_agent(self.run, self.agent, root)
+        token_agent = self.sniffed[root]
+        kind, payload = classify_target_token(self.run, token, token_agent, self.project_root, self.base)
+        config = self.run.project_config(self.project_root)
+        if kind == "capability" and isinstance(payload, tuple):
+            if token_agent and canonicalize_capability(payload[0], token_agent, config) is None:
+                self.unevaluated.append(UnevaluatedTarget(token, "unknown_capability"))
+                return
+            self.specs.append(payload)
+            self.words.append(token)
+            if folder_shadowed_by_capability(token, "capability", self.base):
+                self.notices.append(target_clash_notice(token, token_agent))
+        elif isinstance(payload, Path):
+            if payload.exists():
+                self.paths.add(payload)
+                return
+            hint = bool(token_agent) and canonicalize_capability(token, token_agent, config) is not None
+            self.missing.append(MissingTarget(token, payload, hint))
+
+    def reading(self) -> TargetReading:
+        """What the tokens read."""
+        return TargetReading(
+            tuple(self.specs),
+            tuple(self.words),
+            frozenset(self.paths),
+            tuple(self.missing),
+            tuple(self.unevaluated),
+            tuple(self.notices),
+        )
+
+
 def read_targets(
     run: RunContext, tokens: Iterable[str], agent: str, project_root: Path, base: Path | None = None
 ) -> TargetReading:
@@ -73,37 +125,10 @@ def read_targets(
     `unknown_capability`), or a path. A relative path is read against `base` (the working folder when
     None). The agent whose vocabulary reads a token is sniffed under the project of an existing path
     target, under `project_root` for anything else."""
-    config = run.project_config(project_root)
-    sniffed: dict[Path, str] = {}
-    specs: list[tuple[str, str]] = []
-    words: list[str] = []
-    paths: set[Path] = set()
-    missing: list[MissingTarget] = []
-    unevaluated: list[UnevaluatedTarget] = []
-    notices: list[Notice] = []
+    reader = _TargetReader(run, agent, project_root, base)
     for token in tokens:
-        root = _existing_target_root(token, project_root, base) or project_root
-        if root not in sniffed:
-            sniffed[root] = sniff_agent(run, agent, root)
-        token_agent = sniffed[root]
-        kind, payload = classify_target_token(run, token, token_agent, project_root, base)
-        if kind == "capability" and isinstance(payload, tuple):
-            if token_agent and canonicalize_capability(payload[0], token_agent, config) is None:
-                unevaluated.append(UnevaluatedTarget(token, "unknown_capability"))
-                continue
-            specs.append(payload)
-            words.append(token)
-            if folder_shadowed_by_capability(token, "capability", base):
-                notices.append(target_clash_notice(token, token_agent))
-        elif isinstance(payload, Path):
-            if payload.exists():
-                paths.add(payload)
-                continue
-            hint = bool(token_agent) and canonicalize_capability(token, token_agent, config) is not None
-            missing.append(MissingTarget(token, payload, hint))
-    return TargetReading(
-        tuple(specs), tuple(words), frozenset(paths), tuple(missing), tuple(unevaluated), tuple(notices)
-    )
+        reader.read(token)
+    return reader.reading()
 
 
 def markdown_under_folders(folders: Iterable[Path], exclusions: RunExclusions) -> set[Path]:
@@ -120,6 +145,7 @@ def unchecked_paths(
     run: RunContext,
     path_targets: Iterable[Path],
     checked: Iterable[Path],
+    *,
     exclusions: RunExclusions,
     project_root: Path,
     scan_target: Path,
@@ -157,7 +183,14 @@ def target_report(
     and the notices on how a word was read."""
     unevaluated = [
         *reading.unevaluated,
-        *unchecked_paths(run, reading.path_targets, checked, exclusions, project_root, project_root),
+        *unchecked_paths(
+            run,
+            reading.path_targets,
+            checked,
+            exclusions=exclusions,
+            project_root=project_root,
+            scan_target=project_root,
+        ),
     ]
     for (capability, name), word in zip(reading.capability_specs, reading.capability_words, strict=True):
         try:
