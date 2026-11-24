@@ -18,13 +18,14 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import typer
 
-from reporails_cli.core.classify.capability_paths import TargetError, looks_like_windows_path, sniff_agent
+from reporails_cli.core.classify.capability_paths import TargetError
 from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
-from reporails_cli.core.discovery.exclusions import leaves_out, load_run_exclusions
-from reporails_cli.core.discovery.walk import file_under_target, is_markdown_file, safe_resolve, walk_files
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
+from reporails_cli.core.discovery.walk import file_under_target
 from reporails_cli.core.heal.apply import suppressed_by_path
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.pipeline.mapping import discover_scope
+from reporails_cli.core.pipeline.named_targets import markdown_under_folders
 from reporails_cli.core.platform.adapters.notices_seen import due_notices
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.classify import UnresolvedSkill
@@ -123,7 +124,7 @@ def _named_paths(state: CheckState, capability_paths: frozenset[Path]) -> tuple[
         capability_paths
         | {t for t in state.targets.path_targets if t.is_file()}
         | ({single} if single else set())
-        | _markdown_under_folders(state)
+        | _folder_markdown(state)
     )
     only_files = all(name for _, name in state.targets.capability_specs) and all(
         t.is_file() for t in state.targets.path_targets
@@ -131,23 +132,15 @@ def _named_paths(state: CheckState, capability_paths: frozenset[Path]) -> tuple[
     return named, bool(named) and only_files
 
 
-def _markdown_under_folders(state: CheckState) -> set[Path]:
-    """The markdown files the run keeps under the folders it names, each checked whether or not an agent loads it.
-
-    The project folder itself is the whole-project run, so it names none.
-    """
+def _folder_markdown(state: CheckState) -> set[Path]:
+    """The markdown files the run keeps under the folders it names; the project folder itself names none."""
     folders = [t for t in state.targets.path_targets if t.is_dir() and t != state.inputs.project_root]
     if not folders:
         return set()
     exclusions = load_run_exclusions(
         state.run, state.targets.target, state.inputs.exclude_dirs, state.inputs.exclude_files
     )
-    return {
-        f
-        for folder in folders
-        for f in walk_files(folder, exclusions, is_markdown_file)
-        if not leaves_out(exclusions, f)
-    }
+    return markdown_under_folders(folders, exclusions)
 
 
 def project_files(state: CheckState) -> list[Path]:
@@ -167,35 +160,6 @@ def scan_scope(single_path: Path | None, project_root: Path) -> tuple[Path | Non
     scan_root, single_file = resolve_scan_target(target, project_root)
     narrower = target.is_dir() and target != scan_root and target.is_relative_to(scan_root)
     return (target if narrower else None), scan_root, single_file
-
-
-def _existing_target_root(token: str, project_root: Path) -> Path | None:
-    """The scan root of a target token that names an existing file or folder, else None.
-
-    A capability form (`@skills`, `skills:backlog`) and a word that names nothing on disk
-    return None: those are read against the current folder's project.
-    """
-
-    raw = token[len("file:") :] if token.startswith("file:") else token
-    if raw.startswith("@") or (":" in raw and not looks_like_windows_path(raw)):
-        return None
-    try:
-        path = safe_resolve(Path(raw))
-        if not path.exists():
-            return None
-        return resolve_scan_target(path, project_root)[0]
-    except OSError:
-        return None
-
-
-def _token_agent(run: RunContext, token: str, agent: str, project_root: Path, sniffed: dict[Path, str]) -> str:
-    """The agent whose vocabulary reads `token`: sniffed under the project of an existing path
-    target, under the current folder's project for anything else (`sniffed` caches per root)."""
-
-    root = _existing_target_root(token, project_root) or project_root
-    if root not in sniffed:
-        sniffed[root] = sniff_agent(run, agent, root)
-    return sniffed[root]
 
 
 def _narrow_to_path_targets(instruction_files: list[Path], path_targets: set[Path]) -> list[Path]:

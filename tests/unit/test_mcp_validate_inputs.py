@@ -471,7 +471,7 @@ def test_still_reaching_reply_is_not_cached_and_never_trips_the_breaker(
 def test_a_validate_target_no_file_was_checked_for_is_reported_with_its_reason(tmp_path: Path) -> None:
     """A folder of images, a folder a setting excludes and a non-markdown file each name their reason."""
     from reporails_cli.core.platform.config.run_context import RunContext
-    from reporails_cli.interfaces.mcp.validate_targets import target_report
+    from reporails_cli.interfaces.mcp.validate_targets import validate_target_report
 
     (tmp_path / "CLAUDE.md").write_text("# P\n", encoding="utf-8")
     (tmp_path / "assets").mkdir()
@@ -480,9 +480,55 @@ def test_a_validate_target_no_file_was_checked_for_is_reported_with_its_reason(t
     (tmp_path / "prompts" / "review.md").write_text("# R\n", encoding="utf-8")
     (tmp_path / ".ails").mkdir()
     (tmp_path / ".ails" / "config.yml").write_text("exclude_dirs: [prompts]\n", encoding="utf-8")
-    report = target_report(RunContext(), ("assets", "prompts", "assets/logo.png"), tmp_path, [tmp_path / "CLAUDE.md"])
+    report = validate_target_report(
+        RunContext(), ("assets", "prompts", "assets/logo.png"), tmp_path, [tmp_path / "CLAUDE.md"]
+    )
     assert {(t.target, t.reason) for t in report.unevaluated} == {
         ("assets", "no_markdown"),
         ("prompts", "excluded"),
         ("assets/logo.png", "not_markdown"),
     }
+
+
+def _validate(project: Path, targets: list[str]) -> dict[str, Any]:
+    return asyncio.run(server._run_validate(str(project), True, targets, project, no_models()))
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_validate_checks_a_linked_folder_outside_the_project_as_check_does(project: Path, tmp_path: Path) -> None:
+    """A folder linked to a folder outside the project is checked for its markdown, not reported as holding none."""
+    outside = tmp_path / "outside" / "ext"
+    outside.mkdir(parents=True)
+    (outside / "notes.md").write_text("# Notes\n\nAlways review the code carefully.\n", encoding="utf-8")
+    (project / "linked").symlink_to(outside, target_is_directory=True)
+    reply = _validate(project, ["linked"])
+    assert any(key.endswith("notes.md") for key in reply["files"]), reply
+    assert [item for item in reply["not_evaluated"] if item.get("file") == "linked"] == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_validate_says_which_meaning_a_folder_and_capability_word_was_read_as(project: Path) -> None:
+    """`prompts` names a folder and a capability of copilot: the reply carries the notice `ails check` prints."""
+    (project / "CLAUDE.md").unlink()
+    (project / ".github" / "prompts").mkdir(parents=True)
+    (project / ".github" / "copilot-instructions.md").write_text("# P\n\nRun the tests.\n", encoding="utf-8")
+    (project / ".github" / "prompts" / "plan.prompt.md").write_text("# Plan\n\nAlways plan.\n", encoding="utf-8")
+    (project / "prompts").mkdir()
+    (project / "prompts" / "review.prompt.md").write_text("# R\n\nAlways review.\n", encoding="utf-8")
+    reply = _validate(project, ["prompts"])
+    assert "target_clash" in [n.get("id") for n in reply["notices"]], reply["notices"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_validate_lists_a_capability_the_agent_lacks_instead_of_failing(project: Path) -> None:
+    """An unknown capability is listed under `not_evaluated` with `unknown_capability`, as `ails check` lists it."""
+    (project / "CLAUDE.md").unlink()
+    (project / ".github").mkdir()
+    (project / ".github" / "copilot-instructions.md").write_text("# P\n\nRun the tests.\n", encoding="utf-8")
+    reply = _validate(project, ["@nosuchthing"])
+    assert "error" not in reply, reply
+    assert reply["format_version"]
+    assert {"file": "@nosuchthing", "reason": "unknown_capability"} in reply["not_evaluated"]

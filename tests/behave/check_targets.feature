@@ -37,3 +37,10 @@ Feature: `ails check` reports the targets it did not check, and names what it wa
     When I run "ails check" on the named target "skills" as text
     Then the output names "skills" as not checked
     And the output does not ask to create an instruction file
+
+  @e2e @regression
+  Scenario: A folder linked to a folder outside the project is checked for the markdown it holds
+    Given a git project whose "linked" folder links to a folder outside it that holds "notes.md"
+    When I run "ails check" on the named target "linked" as json
+    Then the json checks a file named "notes.md" and lists "linked" as not checked for no reason
+

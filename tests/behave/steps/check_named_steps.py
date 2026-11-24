@@ -204,3 +204,20 @@ def step_excluded_text(context, name):
 @then("the output does not ask to create an instruction file")
 def step_no_create_any(context):
     assert "to get started" not in _output(context), _output(context)
+
+
+@given('a git project whose "linked" folder links to a folder outside it that holds "notes.md"')
+def step_linked_folder_outside(context):
+    context.project = build_project(context.tmpdir / "proj")
+    write_claude(context.project, _CLAUDE)
+    outside = context.tmpdir / "outside" / "ext"
+    outside.mkdir(parents=True)
+    (outside / "notes.md").write_text(_PROSE, encoding="utf-8")
+    (context.project / "linked").symlink_to(outside, target_is_directory=True)
+
+
+@then('the json checks a file named "{name}" and lists "{target}" as not checked for no reason')
+def step_checks_file_not_listed(context, name, target):
+    doc = document(context.result)
+    assert any(key.endswith(name) for key in doc["files"]), sorted(doc["files"])
+    assert target not in [item.get("file") for item in doc["not_evaluated"]], doc["not_evaluated"]

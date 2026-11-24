@@ -80,10 +80,13 @@ def leaves_out(exclusions: RunExclusions, path: Path) -> bool:
     return _hit(exclusions, path, resolved, exclusions.dirs, exclusions.files)
 
 
-def markdown_folder_reason(exclusions: RunExclusions, folder: Path) -> NotEvaluatedReason:
-    """Why a folder gave no file: `excluded` when a setting leaves out its markdown, else `no_markdown`."""
-    held = walk_files(folder, no_exclusions(folder), is_markdown_file)
-    return "excluded" if any(leaves_out(exclusions, f) for f in held) else "no_markdown"
+def markdown_folder_reason(exclusions: RunExclusions, folder: Path) -> NotEvaluatedReason | None:
+    """Why a folder gave no file: `excluded` when a setting leaves out its markdown, `no_markdown` when it
+    holds none, and None when it holds markdown that is not left out (it is not a folder nothing was checked for)."""
+    held = list(walk_files(folder, no_exclusions(folder), is_markdown_file))
+    if any(leaves_out(exclusions, f) for f in held):
+        return "excluded"
+    return None if held else "no_markdown"
 
 
 def record_patterns(exclusions: RunExclusions, *, narrowed: bool = False) -> tuple[tuple[str, ...], tuple[str, ...]]:

@@ -21,12 +21,7 @@ from typing import TYPE_CHECKING
 
 import typer
 
-from reporails_cli.core.classify.capability_paths import (
-    canonicalize_capability,
-    classify_target_token,
-    folder_shadowed_by_capability,
-)
-from reporails_cli.core.discovery.exclusions import markdown_folder_reason, no_exclusions
+from reporails_cli.core.discovery.exclusions import no_exclusions
 from reporails_cli.core.discovery.file_aliases import get_file_aliases
 from reporails_cli.core.discovery.walk import file_under_target, is_markdown_file, safe_resolve
 from reporails_cli.core.heal.apply import heal_scope_files, heal_scope_outside
@@ -35,6 +30,7 @@ from reporails_cli.core.pipeline.mapping import (
     discover_scope,
     is_listed_file,
 )
+from reporails_cli.core.pipeline.named_targets import read_targets, unchecked_capability, unchecked_paths
 from reporails_cli.core.pipeline.server_gate import server_gate
 from reporails_cli.core.platform.adapters.http_get import http_get
 from reporails_cli.core.platform.adapters.key_check import handshake
@@ -53,7 +49,6 @@ from reporails_cli.interfaces.cli.check_notices import (
     _emit_target_report,
     _emit_unlisted_file,
     _notify_heal_scope_skips,
-    target_clash_notice,
 )
 from reporails_cli.interfaces.cli.check_orchestration import (
     HealScope,
@@ -66,7 +61,6 @@ from reporails_cli.interfaces.cli.check_orchestration import (
     _resolve_capability_paths,
     _run_heal_pass,
     _should_exit_strict,
-    _token_agent,
     project_files,
     scan_scope,
 )
@@ -202,43 +196,24 @@ class CheckState:
     render: CheckRender = field(default_factory=CheckRender)
 
 
-def _take_capability(state: CheckState, token: str, spec: tuple[str, str], agent: str) -> None:
-    """Keep a capability target the agent has; list one it lacks, and say when the word also names a folder."""
-    config = state.run.project_config(state.inputs.project_root)
-    if agent and canonicalize_capability(spec[0], agent, config) is None:
-        state.targets.unevaluated.append(UnevaluatedTarget(token, "unknown_capability"))
-        return
-    state.targets.capability_specs.append(spec)
-    state.targets.capability_words.append(token)
-    if folder_shadowed_by_capability(token, "capability"):
-        state.targets.notices.append(target_clash_notice(token, agent))
-
-
 def _flow_targets(state: CheckState) -> None:
     """Classify target tokens, pick the scan root + output format, enforce heal scope-safety."""
     if state.inputs.targets:
-        sniffed: dict[Path, str] = {}
-        for token in state.inputs.targets:
-            sniff_agent = _token_agent(state.run, token, state.inputs.agent, state.inputs.project_root, sniffed)
-            kind, payload = classify_target_token(state.run, token, sniff_agent, state.inputs.project_root)
-            if kind == "capability" and isinstance(payload, tuple):
-                _take_capability(state, token, payload, sniff_agent)
-            elif isinstance(payload, Path):
-                if not payload.exists():
-                    suggestion = ""
-                    if (
-                        sniff_agent
-                        and canonicalize_capability(
-                            token, sniff_agent, state.run.project_config(state.inputs.project_root)
-                        )
-                        is not None
-                    ):
-                        suggestion = (
-                            f"\n[dim]'{token}' is a known capability — did you mean `ails check {token}`?[/dim]"
-                        )
-                    console.print(f"[red]Error:[/red] Path not found: {payload}{suggestion}")
-                    raise typer.Exit(2)
-                state.targets.path_targets.add(payload)
+        reading = read_targets(state.run, state.inputs.targets, state.inputs.agent, state.inputs.project_root)
+        if reading.missing:
+            missing = reading.missing[0]
+            suggestion = (
+                f"\n[dim]'{missing.token}' is a known capability — did you mean `ails check {missing.token}`?[/dim]"
+                if missing.capability_hint
+                else ""
+            )
+            console.print(f"[red]Error:[/red] Path not found: {missing.path}{suggestion}")
+            raise typer.Exit(2)
+        state.targets.capability_specs.extend(reading.capability_specs)
+        state.targets.capability_words.extend(reading.capability_words)
+        state.targets.path_targets |= reading.path_targets
+        state.targets.unevaluated.extend(reading.unevaluated)
+        state.targets.notices.extend(reading.notices)
 
     state.targets.single_path = (
         next(iter(state.targets.path_targets))
@@ -322,29 +297,25 @@ def _flow_scope(state: CheckState) -> bool:
     return _apply_generic_scan(state)
 
 
-def _shown(path: Path, project_root: Path) -> str:
-    """`path` relative to the project when it sits inside, else as given."""
-    return path.relative_to(project_root).as_posix() if path.is_relative_to(project_root) else str(path)
-
-
 def _list_unchecked_paths(state: CheckState) -> None:
     """List each named file or folder no file is checked for, and say a named file no agent loads is checked anyway."""
     single = state.targets.single_file
-    root = state.inputs.project_root
     if (
         single is not None
         and not is_markdown_file(single)
         and not is_listed_file(state.run, single, state.targets.target)
     ):
         state.scope.instruction_files = []
-    for path in sorted(state.targets.path_targets - {root}):
-        if path.is_dir() and not any(file_under_target(f, path) for f in state.scope.instruction_files):
-            reason = markdown_folder_reason(state.scope.exclusions, path)
-            state.targets.unevaluated.append(UnevaluatedTarget(_shown(path, root), reason))
-        elif (
-            path.is_file() and not is_markdown_file(path) and not is_listed_file(state.run, path, state.targets.target)
-        ):
-            state.targets.unevaluated.append(UnevaluatedTarget(_shown(path, root), "not_markdown"))
+    state.targets.unevaluated.extend(
+        unchecked_paths(
+            state.run,
+            state.targets.path_targets,
+            state.scope.instruction_files,
+            state.scope.exclusions,
+            state.inputs.project_root,
+            state.targets.target,
+        )
+    )
 
 
 def _narrow_upfront(state: CheckState) -> bool:
@@ -370,8 +341,9 @@ def _narrow_upfront(state: CheckState) -> bool:
             )
             cap_paths |= paths
             unresolved_skills += unresolved
-            if not paths and not unresolved:
-                state.targets.unevaluated.append(UnevaluatedTarget(word, "no_files"))
+            entry = unchecked_capability(word, paths, unresolved)
+            if entry is not None:
+                state.targets.unevaluated.append(entry)
         state.scope.upfront_paths |= cap_paths
         _warn_unresolved_skills(unresolved_skills, state.inputs.project_root)
     if cap_paths:

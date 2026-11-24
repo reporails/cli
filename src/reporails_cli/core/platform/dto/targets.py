@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
@@ -23,5 +24,26 @@ class UnevaluatedTarget:
 class TargetReport:
     """How the run read the targets named on the command line: those nothing was checked for, and notices on them."""
 
+    unevaluated: tuple[UnevaluatedTarget, ...] = ()
+    notices: tuple[Notice, ...] = ()
+
+
+@dataclass(frozen=True)
+class MissingTarget:
+    """A path target that names nothing on disk; `capability_hint` says the word is also a capability of the agent."""
+
+    token: str
+    path: Path
+    capability_hint: bool
+
+
+@dataclass(frozen=True)
+class TargetReading:
+    """The targets read against the agent's vocabulary: what each names and what is already known unchecked."""
+
+    capability_specs: tuple[tuple[str, str], ...] = ()
+    capability_words: tuple[str, ...] = ()
+    path_targets: frozenset[Path] = frozenset()
+    missing: tuple[MissingTarget, ...] = ()
     unevaluated: tuple[UnevaluatedTarget, ...] = ()
     notices: tuple[Notice, ...] = ()

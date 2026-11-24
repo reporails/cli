@@ -60,8 +60,8 @@ from reporails_cli.interfaces.mcp.validate_targets import (
     keep_target_locations,
     named_files,
     resolve_validate_targets,
-    target_report,
     target_tokens,
+    validate_target_report,
 )
 from reporails_cli.interfaces.mcp.xray_tool import xray_page
 
@@ -197,7 +197,7 @@ async def _fresh_validate_payload(
         project_root=scan_root,
         run=run,
         models=models,
-        report=partial(target_report, run, tokens, scan_root) if tokens else None,
+        report=partial(validate_target_report, run, tokens, scan_root) if tokens else None,
     )
     if selection is not None and "files" in payload:
         payload = keep_target_locations(payload, *selection, scan_root, tokens)

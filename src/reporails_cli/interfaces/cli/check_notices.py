@@ -18,7 +18,6 @@ from rich.markup import escape as escape_markup
 from reporails_cli.core.discovery.walk import own_name_spellings
 from reporails_cli.core.heal.apply import heal_withheld_for_run
 from reporails_cli.core.pipeline.assemble import with_exclusions
-from reporails_cli.core.platform.dto.diagnostics import Notice
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.targets import TargetReport
@@ -84,18 +83,6 @@ def _emit_unlisted_file(file: Path, root: Path, run_folder: Path, output_format:
         print(message, file=sys.stderr)
         return
     console.print(f"[yellow]{message}[/yellow]", soft_wrap=True)
-
-
-def target_clash_notice(token: str, agent: str) -> Notice:
-    """The notice that a bare word naming both a capability of `agent` and a folder was read as the capability."""
-    return Notice(
-        id="target_clash",
-        level="info",
-        text=(
-            f"`{token}` is both a capability of {agent} and a folder here; it was read as the capability. "
-            f"Use `file:{token}` to check the folder."
-        ),
-    )
 
 
 def _emit_target_report(state: CheckState) -> None:

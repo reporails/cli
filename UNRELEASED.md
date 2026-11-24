@@ -33,6 +33,8 @@
 
 - Antigravity hooks are no longer expected in `~/.gemini/antigravity-cli/settings.json`, which the Antigravity CLI does not load.
 
+- `validate` and `ails check` now give the same answer for every named target. A folder linked from outside the project is checked for the markdown it holds. A word that is both a folder and a capability tells you which meaning was used. A capability the agent lacks is listed as not checked with its name instead of failing the call.
+- A folder is only reported as holding no markdown when it holds none.
 - A rule that selects files by whether they are committed, gitignored or user-level now finds them; before, such a rule matched no file.
 - `ails test` runs a rule's pattern checks only on the files its `match` selects, as `ails check` does, so a rule pack's fixtures test the rule's real scope.
 - A Claude Code memory file that keeps its `type` under `metadata:` no longer gets a "missing frontmatter: type" warning.
