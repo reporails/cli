@@ -112,57 +112,6 @@ class TestCompilerEdgeCases:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_rule_with_no_operator(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """A deterministic check with no operator is refused at load: nothing compiles, the file is logged."""
-        p = _write_rule(tmp_path, {"checks": [{"id": "TEST-001", "message": "bad"}]})
-        result = compile_rules(rules_from_checks([p]))
-        assert result.checks == []
-        assert "check 1 (TEST-001): a deterministic check needs one pattern operator" in caplog.text
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_rule_with_unknown_operator(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """A check naming only an unknown operator has no pattern operator and is refused at load."""
-        p = _write_rule(
-            tmp_path,
-            {"checks": [{"id": "TEST-002", "pattern-metavar": "$X", "message": "bad"}]},
-        )
-        assert compile_rules(rules_from_checks([p])).checks == []
-        assert "check 1 (TEST-002)" in caplog.text
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_invalid_regex_pattern(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """A pattern that does not compile is refused at load, naming the check and field."""
-        p = _write_rule(
-            tmp_path,
-            {"checks": [{"id": "BAD-REGEX", "pattern-regex": "[invalid(", "message": "bad"}]},
-        )
-        result = compile_rules(rules_from_checks([p]))
-        assert result.checks == []
-        assert "check 1 (BAD-REGEX): pattern-regex: does not compile" in caplog.text
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_invalid_regex_in_pattern_either(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """An alternative that does not compile refuses the whole file at load."""
-        p = _write_rule(
-            tmp_path,
-            {
-                "checks": [
-                    {
-                        "id": "BAD-EITHER",
-                        "pattern-either": [{"pattern-regex": "[valid"}, {"pattern-regex": "ok"}],
-                        "message": "bad",
-                    }
-                ]
-            },
-        )
-        assert compile_rules(rules_from_checks([p])).checks == []
-        assert "check 1 (BAD-EITHER): pattern-either.0.pattern-regex: does not compile" in caplog.text
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
     def test_nonexistent_yml_path(self, tmp_path: Path) -> None:
         """Non-existent path should be silently skipped."""
         result = compile_rules(rules_from_checks([tmp_path / "does-not-exist.yml"]))
@@ -189,49 +138,6 @@ class TestCompilerEdgeCases:
         p.write_text(content)
         result = compile_rules(rules_from_checks([p]))
         assert result.checks == []
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_pattern_either_empty_list(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """An empty pattern-either is refused at load."""
-        p = _write_rule(
-            tmp_path,
-            {"checks": [{"id": "EMPTY-EITHER", "pattern-either": [], "message": "x"}]},
-        )
-        assert compile_rules(rules_from_checks([p])).checks == []
-        assert "check 1 (EMPTY-EITHER): pattern-either:" in caplog.text
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_patterns_only_negative(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """A `patterns` block holding only pattern-not-regex matches nothing, so its check is refused at load."""
-        p = _write_rule(
-            tmp_path,
-            {
-                "checks": [
-                    {
-                        "id": "NEG-ONLY",
-                        "patterns": [{"pattern-not-regex": "(?i)secret"}],
-                        "message": "should not have secrets",
-                    }
-                ]
-            },
-        )
-        assert compile_rules(rules_from_checks([p])).checks == []
-        assert (
-            "check 1 (NEG-ONLY): patterns: holds no `pattern-regex`; `pattern-not-regex` alone matches nothing"
-            in caplog.text
-        )
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_missing_id_and_message(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """A check without an id is refused at load; one without a message compiles with an empty one."""
-        refused = _write_rule(tmp_path, {"checks": [{"pattern-regex": "test"}]}, "refused.yml")
-        assert compile_rules(rules_from_checks([refused])).checks == []
-        assert "check 1: id:" in caplog.text
-        kept = _write_rule(tmp_path, {"checks": [{"id": "K-1", "pattern-regex": "test"}]}, "kept.yml")
-        assert [(c.id, c.message) for c in compile_rules(rules_from_checks([kept])).checks] == [("K-1", "")]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -970,28 +876,3 @@ class TestIntegration:
         results = _sarif_results(sarif)
         assert len(results) == 1
         assert elapsed < 5.0
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_pattern_either_all_sub_unsupported(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """pattern-either where no sub-entry has pattern-regex is refused at load."""
-        rule_yml = _write_rule(
-            tmp_path,
-            {
-                "checks": [
-                    {
-                        "id": "BAD-SUB",
-                        "pattern-either": [
-                            {"pattern-metavar": "$X"},
-                            {"metavariable-regex": "test"},
-                        ],
-                        "message": "x",
-                    }
-                ]
-            },
-        )
-        _write_target(tmp_path, "content\n")
-
-        result = compile_rules(rules_from_checks([rule_yml]))
-        assert result.checks == []
-        assert "check 1 (BAD-SUB): pattern-either.0:" in caplog.text

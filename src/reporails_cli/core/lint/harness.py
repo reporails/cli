@@ -6,7 +6,7 @@ pass/fail results.
 
 Uses the same check engines as production validation (ails check):
 - Mechanical: dispatch_single_check from core.mechanical.runner
-- Deterministic: compile_rules and scan_ruleset from core.lint.regex
+- Deterministic: compile_check and scan_ruleset from core.lint.regex
 - Content query: maps the fixture with the real mapper and evaluates it
   through `content_checker._evaluate_check` — the same dispatch `ails
   check` runs content_query checks through.

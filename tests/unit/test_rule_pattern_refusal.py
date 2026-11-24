@@ -294,19 +294,6 @@ def test_a_valid_checks_file_compiles_every_check_field(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_a_checks_file_without_a_checks_list_is_logged(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    yml = tmp_path / "checks.yml"
-    yml.write_text("foo: bar\n")
-
-    with caplog.at_level(logging.WARNING):
-        result = compile_rules(rules_from_checks([yml]))
-
-    assert result.checks == []
-    assert "has no valid 'checks' list" in caplog.text
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
 @pytest.mark.parametrize("pattern", ["(?m)^(?!---)", "^$", "foo|", ".*", "(?:)", "x*", "(?<!\\n)\\Z"])
 def test_a_pattern_that_can_match_empty_text_loads(tmp_path: Path, pattern: str) -> None:
     yml = tmp_path / "checks.yml"

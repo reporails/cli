@@ -32,6 +32,9 @@
 - A Claude Code memory file that keeps its `type` under `metadata:` no longer gets a "missing frontmatter: type" warning.
 - The docs now name `AILS_API_KEY` as the environment variable the CLI reads its API key from, and show a CI job that installs the CLI with `npm` and sets it. `REPORAILS_API_KEY` in the GitHub Action examples is only an example secret name; the Action passes its `api-key` input on as `AILS_API_KEY`.
 - `ails check prompts/review.md` on a markdown file no agent loads now checks it as a referenced file, with the same findings, the `Referenced` panel and no score, as when a link reaches it. `ails check ./prompts` checks the markdown files under the folder instead of printing "Create a CLAUDE.md". A folder with no markdown, a folder whose markdown files `exclude_dirs` or `exclude_files` leave out, a file that is not markdown, a capability the agent does not have, or one with no files in the project is reported by name and not checked, in the text output, the JSON `not_evaluated` list, GitHub annotations and the MCP `validate` reply. A named file an `@`-import reaches keeps its importer's class. When a word names both a capability and a folder, the output says which one it checked.
+- `ails check prompts/review.md` on a markdown file no agent loads now checks it as a referenced file, with the same findings, the `Referenced` panel and no score, as when a link reaches it. `ails check ./prompts` checks the markdown files under the folder instead of printing "Create a CLAUDE.md". A folder with no markdown, a file that is not markdown, or a capability the agent does not have is reported by name and not checked. When a word names both a capability and a folder, the output says which one it checked.
+- A check-level `disabled: true` override in an agent config now drops that check; before, it still ran and reported.
+- A settings file without hooks is no longer reported by a rule that another rule supersedes.
 
 ### Removed
 

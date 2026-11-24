@@ -8,11 +8,14 @@ from __future__ import annotations
 import os
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from tests.suite_env import suite_env
+
+if TYPE_CHECKING:
+    from reporails_cli.core.platform.dto.models import Rule
 
 # Set at import so import-time reads and `ails` subprocesses see the suite environment too. The CI
 # markers stay: they are how pytest itself detects a CI run, and each test drops them below.
@@ -406,46 +409,31 @@ def ails_client(base_url: str, *, tier: str | None = None, api_key: str | None =
         return AilsClient(tier or "free", api_key=api_key)
 
 
-def rules_from_checks(yml_paths: list[Path]) -> list[Any]:
-    """One parsed `Rule` per readable `checks.yml`, read once through the registry's reader.
+def rules_from_checks(yml_paths: list[Path]) -> list[Rule]:
+    """One `Rule` per distinct owning rule id across the checks of `yml_paths`, each carrying its own checks.
 
-    A file that is missing or whose checks the registry refuses is logged and left out.
+    The files are read through the registry's reader and loader; a missing file or one the
+    registry refuses is skipped.
     """
-    import logging
-
-    from reporails_cli.core.platform.dto.models import Category, Rule, RuleType
+    from reporails_cli.core.lint.regex.not_evaluated import rule_id_of
+    from reporails_cli.core.platform.dto.models import Category, Check, Rule, RuleType
     from reporails_cli.core.platform.rules.registry import RuleReadError, read_checks_document
     from reporails_cli.core.platform.rules.rule_builder import load_checks
 
-    log = logging.getLogger(__name__)
-    rules: list[Rule] = []
+    by_rule: dict[str, list[Check]] = {}
     for yml_path in yml_paths:
         if not yml_path.exists():
             continue
         try:
-            data = read_checks_document(yml_path)
-            if not data:
-                log.warning("Rule file %s has no valid data, skipping", yml_path)
-                continue
-            if not isinstance(data.get("checks"), list):
-                log.warning("Rule file %s has no valid 'checks' list, skipping", yml_path)
-                continue
-            checks = load_checks(data)
-        except (RuleReadError, ValueError) as exc:
-            log.warning(
-                "Failed to load rule file %s: %s", yml_path, exc.problem if isinstance(exc, RuleReadError) else exc
-            )
+            checks = load_checks(read_checks_document(yml_path))
+        except (RuleReadError, ValueError):
             continue
-        rules.append(
-            Rule(
-                id="TEST:X:0000",
-                title="test",
-                category=Category.STRUCTURE,
-                type=RuleType.DETERMINISTIC,
-                checks=checks,
-            )
-        )
-    return rules
+        for check in checks:
+            by_rule.setdefault(rule_id_of(check.id), []).append(check)
+    return [
+        Rule(id=rule_id, title="test", category=Category.STRUCTURE, type=RuleType.DETERMINISTIC, checks=checks)
+        for rule_id, checks in by_rule.items()
+    ]
 
 
 def run_rule_files(yml_paths: list[Path], target: Path, instruction_files: list[Path] | None = None) -> dict[str, Any]:

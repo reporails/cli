@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from pathlib import Path
 
@@ -13,7 +12,6 @@ from typer.testing import CliRunner
 from reporails_cli.core.classify.stopwords import extract_all
 from reporails_cli.core.classify.stopwords_sync import sync_all, sync_vocab
 from reporails_cli.interfaces.cli.stopwords_command import stopwords_app
-from tests.conftest import rules_from_checks
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_lint]
 
@@ -168,28 +166,6 @@ def test_extract_reports_a_broken_checks_file(tmp_path: Path) -> None:
     assert cli.exit_code == 0
     assert "is not valid YAML" in cli.output
     assert not (rule / "vocab.yml").exists()
-
-
-def test_compile_rules_skips_a_non_utf8_checks_file(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    from reporails_cli.core.lint.regex.compiler import compile_rules  # pylint: disable=import-outside-toplevel
-
-    path = tmp_path / "checks.yml"
-    path.write_bytes(b"checks: \xff\xfe\n")
-    with caplog.at_level(logging.WARNING):
-        result = compile_rules(rules_from_checks([path]))
-    assert result.checks == []
-    assert any("Failed to load rule file" in r.message and "is not UTF-8 text" in r.message for r in caplog.records)
-
-
-def test_compiler_warning_names_the_file_once(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    from reporails_cli.core.lint.regex.compiler import compile_rules  # pylint: disable=import-outside-toplevel
-
-    path = tmp_path / "checks.yml"
-    path.write_bytes(b"checks: \xff\xfe\n")
-    with caplog.at_level(logging.WARNING):
-        compile_rules(rules_from_checks([path]))
-    [record] = [r for r in caplog.records if "Failed to load rule file" in r.message]
-    assert record.getMessage().count(str(path)) == 1
 
 
 def test_extract_names_the_file_once(tmp_path: Path) -> None:

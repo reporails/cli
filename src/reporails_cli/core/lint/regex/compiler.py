@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from reporails_cli.core.lint.regex.not_evaluated import rule_id_of
 from reporails_cli.core.platform.contract.rule_pattern import compile_rule_pattern
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
 from reporails_cli.core.platform.dto.lint import CompiledCheck, CompiledRuleSet
@@ -54,11 +55,15 @@ def compile_check(check: Check) -> CompiledCheck:
 
 
 def compile_rules(rules: Iterable[Rule]) -> CompiledRuleSet:
-    """Compile the deterministic checks of parsed rules into a CompiledRuleSet.
+    """Compile each rule's own deterministic checks into a CompiledRuleSet.
 
-    Each rule's `checks` are the registry's resolved list, so a check a superseding or
-    inheriting rule takes from its parent compiles with the rule that carries it.
+    A check whose id names another rule is skipped; that rule compiles it.
     """
     return CompiledRuleSet(
-        checks=[compile_check(check) for rule in rules for check in rule.checks if check.type == "deterministic"]
+        checks=[
+            compile_check(check)
+            for rule in rules
+            for check in rule.checks
+            if check.type == "deterministic" and rule_id_of(check.id) == rule.id
+        ]
     )
