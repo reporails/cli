@@ -144,6 +144,7 @@ def build_graph(
     sources: SourceTable,
     vocabulary: AdapterVocabulary,
     prices: PriceList,
+    *,
     workflows: WorkflowReading,
 ) -> Graph:
     """The graph of `records`: the nodes and edges of every registered producer, linked by parent, and the

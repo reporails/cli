@@ -174,7 +174,7 @@ def _graph(
         build_sources(RunContext(), artifacts, records, frame),
         vocab,
         load_price_list(),
-        WorkflowReading(()),
+        workflows=WorkflowReading(()),
     )
 
 
@@ -769,7 +769,7 @@ def test_a_skill_that_ran_is_used_a_forked_one_is_used_but_not_loaded_and_a_comm
         RunContext(), build_artifacts(RunContext(), files, {}, tmp_path, advertised={}), records, frame
     )
     graph = build_graph(
-        records, frame, table, vocabulary_for("claude", []), load_price_list(), WorkflowReading(())
+        records, frame, table, vocabulary_for("claude", []), load_price_list(), workflows=WorkflowReading(())
     )
     (row,) = build_funnel(table, graph.sources, ["skill"], ran_sources(records, table))
     assert (row.kind, row.on_disk, row.loaded, row.used) == ("skill", 4, 2, 3)
@@ -1435,7 +1435,7 @@ def test_the_funnel_does_not_count_an_unrecorded_kind_as_zero_loaded(tmp_path: P
         RunContext(), build_artifacts(RunContext(), [claude], {}, tmp_path, advertised={}), records, frame
     )
     graph = build_graph(
-        records, frame, table, vocabulary_for("claude", []), load_price_list(), WorkflowReading(())
+        records, frame, table, vocabulary_for("claude", []), load_price_list(), workflows=WorkflowReading(())
     )
     (row,) = build_funnel(table, graph.sources, ["instructions"], set())
     assert (row.on_disk, row.loaded, row.used) == (1, None, None)
@@ -1449,7 +1449,7 @@ def test_the_funnel_takes_the_unrecorded_kinds_from_the_source_table(tmp_path: P
         RunContext(), build_artifacts(RunContext(), [claude], {}, tmp_path, advertised={}), records, frame
     )
     graph = build_graph(
-        records, frame, table, vocabulary_for("claude", []), load_price_list(), WorkflowReading(())
+        records, frame, table, vocabulary_for("claude", []), load_price_list(), workflows=WorkflowReading(())
     )
     (row,) = build_funnel(table, graph.sources, ["instructions"], set())
     assert row.loaded == 1
@@ -1467,7 +1467,7 @@ def test_the_agents_funnel_row_counts_the_built_in_agent_types_a_session_launche
         RunContext(), build_artifacts(RunContext(), [definition], {}, tmp_path, advertised={}), records, frame
     )
     graph = build_graph(
-        records, frame, table, vocabulary_for("claude", []), load_price_list(), WorkflowReading(())
+        records, frame, table, vocabulary_for("claude", []), load_price_list(), workflows=WorkflowReading(())
     )
     (row,) = build_funnel(table, graph.sources, ["agent"], set())
     assert (row.on_disk, row.loaded) == (2, 1)

@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from reporails_cli.core.platform.dto.events import EventRecord
 from reporails_cli.core.platform.dto.workflows import WorkflowAgent, WorkflowRefused, WorkflowRun
 from reporails_cli.core.platform.dto.xray_build import Frame, ProducedNode, WorkflowReading
-from reporails_cli.core.platform.dto.xray_graph import XrayWorkflow, XrayWorkflowPhase
+from reporails_cli.core.platform.dto.xray_workflows import XrayWorkflow, XrayWorkflowPhase
 
 # The status of a run whose record file the adapter refused.
 UNREADABLE = "not readable"

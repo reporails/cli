@@ -199,6 +199,13 @@ def hook_sources(records: Sequence[EventRecord], artifacts: Sequence[XrayArtifac
         )
         for label, fired in ((label, runs.get(label, [])) for label in dict.fromkeys([*sizes, *runs]))
     ]
+    sources.extend(_unfired_sources(declared, ran, frame))
+    return sources
+
+
+def _unfired_sources(declared: Sequence[DeclaredHook], ran: set[int], frame: Frame) -> list[SourceEntry]:
+    """A source for each declared hook none of the recorded firings ran."""
+    sources: list[SourceEntry] = []
     for at, item in enumerate(declared):
         if at in ran:
             continue

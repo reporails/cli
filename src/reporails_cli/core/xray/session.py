@@ -340,7 +340,7 @@ class XraySession:
         self._listed = (files, artifacts)
         table = build_sources(run, artifacts, records, frame)
         prices = load_price_list()
-        graph = build_graph(records, frame, table, vocabulary, prices, WorkflowReading(self.workflows()))
+        graph = build_graph(records, frame, table, vocabulary, prices, workflows=WorkflowReading(self.workflows()))
         self._reads.outputs = {
             node.id: node.detail.back.source for node in graph.nodes if node.detail.back.source is not None
         }

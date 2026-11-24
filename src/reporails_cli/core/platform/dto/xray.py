@@ -23,10 +23,10 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayNode,
     XrayStation,
     XrayTrack,
-    XrayWorkflow,
     objects,
 )
 from reporails_cli.core.platform.dto.xray_sources import XrayBasisLabel, XrayBuiltinInfo, XrayContextText, XraySource
+from reporails_cli.core.platform.dto.xray_workflows import XrayWorkflow
 
 CheckState = Literal["running", "done", "refused"]
 FactKind = Literal["memory_unlinked", "repeated_instructions", "kind_absent"]
