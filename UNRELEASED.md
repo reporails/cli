@@ -15,7 +15,7 @@
 - `ails xray` draws the instruction files that one hook made Claude Code load within a quick run as one card named after that hook, with its file count and size; opening the card lists the loads. A file loaded again and again within a quick run is one card that counts the loads (for example ×21).
 - `ails xray` shows a Workflow run as a node naming the workflow, its phases, status, agent count and tokens, with the run's agents under their phases; a run whose record cannot be read shows as "not readable" while the other runs and the page still load.
 - `ails xray` lists every hook your settings and plugins declare in the Hooks group, not only the ones that fired, and the header reads fired/declared.
-- `ails xray` says why a declared hook cannot fire: its script lost the executable bit ("never fired · not executable"), its folder is gone ("folder missing") or the script is missing ("script missing"). The group header adds "N cannot fire", and the hook's details open on a Health section with the fix, such as `chmod +x <path>`.
+- `ails xray` says why a declared hook cannot fire: its script lost the executable bit ("never fired · not executable"), its folder is gone ("folder missing") or the script is missing ("script missing"). The group header adds "N cannot fire", and the hook's details open on a Health section with the fix, such as `chmod +x <path>`. A hook declared under several matchers reads as fired under each one it ran for, and the last-fired time shows in the page's own session clock.
 
 ### Changed
 

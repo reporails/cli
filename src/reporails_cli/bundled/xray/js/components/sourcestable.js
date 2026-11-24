@@ -1,7 +1,7 @@
 // The Sources tab: every source in one virtualised table.
 import { el } from '../dom.js';
 import { markOpen } from './details.js';
-import { k1 } from '../format.js';
+import { hookStatus, k1 } from '../format.js';
 import { UNRECORDED } from '../views.js';
 import { vlist, viewHeight, revealRow } from './vlist.js';
 
@@ -9,7 +9,7 @@ const ROW_H = 36;
 const scrolled = new WeakMap();
 
 const inContext = (env, s, verb) => {
-  if (s.hook) return s.hook.status;
+  if (s.hook) return hookStatus(s.hook);
   if (s.availability === 'unrecorded') return UNRECORDED;
   const n = s.had_by ? s.had_by.length : 0;
   return n ? `${n} of ${env.ix.view.nodes.length} agents` : `never ${verb}`;

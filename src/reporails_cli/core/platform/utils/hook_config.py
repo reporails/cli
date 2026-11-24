@@ -158,19 +158,51 @@ _INTERPRETERS = frozenset(
     {"bash", "sh", "zsh", "dash", "fish", "python", "python3", "node", "deno", "bun", "ruby", "perl", "php", "pwsh"}
 )
 _VARIABLE_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-_PROJECT_DIR_RE = re.compile(r"\$\{CLAUDE_PROJECT_DIR\}|\$CLAUDE_PROJECT_DIR\b")
+# The folder variables Claude Code expands in a hook command, braced or not.
+FOLDER_VARIABLE_RE = re.compile(
+    r"\$\{(CLAUDE_PLUGIN_ROOT|CLAUDE_PLUGIN_DATA|CLAUDE_PROJECT_DIR)\}"
+    r"|\$(CLAUDE_PLUGIN_ROOT|CLAUDE_PLUGIN_DATA|CLAUDE_PROJECT_DIR)\b"
+)
+_SHELLS = frozenset({"bash", "sh", "zsh", "dash", "fish"})
+_SHELL_BODY_RE = re.compile(r"^-[A-Za-z]*c[A-Za-z]*$")
+_VERSION_SUFFIX_RE = re.compile(r"[\d.]+$")
+# The arguments after which an interpreter runs the text it is given instead of a script file.
+_INLINE_ARGUMENTS: dict[str, frozenset[str]] = {
+    "python": frozenset({"-c"}),
+    "node": frozenset({"-e", "-p", "--eval", "--print"}),
+    "bun": frozenset({"-e", "-p", "--eval", "--print"}),
+    "deno": frozenset({"eval"}),
+    "ruby": frozenset({"-e"}),
+    "perl": frozenset({"-e", "-E"}),
+    "php": frozenset({"-r"}),
+    "pwsh": frozenset({"-c", "-Command", "-command"}),
+}
 
 
 def _expand_folders(token: str, project_root: Path, plugin_root: Path | None) -> str | None:
-    """The token with the folder variables Claude Code expands put in; None when it names a variable that cannot be
-    expanded here."""
-    text = _PROJECT_DIR_RE.sub(lambda _: str(project_root), token)
-    if "${CLAUDE_PLUGIN_ROOT}" in text:
-        if plugin_root is None:
-            return None
-        text = text.replace("${CLAUDE_PLUGIN_ROOT}", str(plugin_root))
-    text = os.path.expanduser(os.path.expandvars(text))
+    """The token with the folder variables put in: the project folder, and the folder of the plugin that declares
+    the hook; None when it names a variable whose value is not known here."""
+    values = {"CLAUDE_PROJECT_DIR": project_root, "CLAUDE_PLUGIN_ROOT": plugin_root}
+
+    def value(match: re.Match[str]) -> str:
+        folder = values.get(match.group(1) or match.group(2))
+        return "$" if folder is None else str(folder)
+
+    text = os.path.expanduser(FOLDER_VARIABLE_RE.sub(value, token))
     return None if "$" in text else text
+
+
+def _runs_inline(interpreter: str, arguments: list[str]) -> bool:
+    """Whether the interpreter is given a script body instead of a script file."""
+    family = _VERSION_SUFFIX_RE.sub("", interpreter)
+    for argument in arguments:
+        if argument in _INLINE_ARGUMENTS.get(family, frozenset()):
+            return True
+        if family in _SHELLS and _SHELL_BODY_RE.match(argument):
+            return True
+        if not argument.startswith("-"):
+            return False
+    return False
 
 
 def _is_path(token: str) -> bool:
@@ -180,14 +212,17 @@ def _is_path(token: str) -> bool:
 def hook_script(command: str, project_root: Path, plugin_root: Path | None = None) -> tuple[Path, bool] | None:
     """The script path a hook command runs and whether an interpreter runs it, folder variables expanded; a relative
     path stands for the project root. None when the command names no script path (a bare command, a shell line that
-    starts with another command, a variable that cannot be expanded)."""
+    starts with another command, an inline script body, a variable whose value is not known)."""
     try:
         tokens = [token for token in shlex.split(command) if not _VARIABLE_ASSIGNMENT_RE.match(token)]
     except ValueError:
         return None
     if not tokens:
         return None
-    interpreted = os.path.basename(tokens[0]) in _INTERPRETERS
+    interpreter = os.path.basename(tokens[0])
+    interpreted = interpreter in _INTERPRETERS
+    if interpreted and _runs_inline(interpreter, tokens[1:]):
+        return None
     token = next((item for item in tokens[1:] if _is_path(item)), None) if interpreted else tokens[0]
     if token is None or not _is_path(token):
         return None

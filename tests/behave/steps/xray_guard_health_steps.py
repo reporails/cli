@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -94,7 +95,7 @@ def step_rows(context, phrase):
     broken = _row(seen, SILENT)
     assert broken["facts"] == phrase, broken
     fired = next(row for row in seen["rows"] if row["facts"].startswith("fired "))
-    assert fired["facts"].startswith("fired 1\u00d7 \u00b7 last ") and len(fired["facts"].rsplit(" ", 1)[1]) == 5, fired
+    assert re.fullmatch(r"fired 1\u00d7 \u00b7 last \d+:\d\d", fired["facts"]), fired
 
 
 @then('the broken hook\'s details open on a Health section naming the event, the matcher and "chmod +x" for its script')

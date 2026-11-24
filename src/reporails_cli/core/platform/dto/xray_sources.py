@@ -171,7 +171,8 @@ class HookHealth:
 class HookDetail:
     """A hook as the session shows it: the commands it ran with their declaring files, how many times it fired and
     its latest firings, the event and matcher it is registered under (None when no hook config declares it), its
-    health, the phrase that states its status and when it last fired this session (None when it did not)."""
+    health, the phrase that states its status (its `{time}` filled by the page) and when it last fired, in seconds from
+    the session's start (None when it did not fire this session)."""
 
     commands: tuple[HookCommand, ...]
     firing_count: int
@@ -180,7 +181,7 @@ class HookDetail:
     matcher: str = ""
     health: HookHealth = field(default_factory=lambda: HookHealth(None, None))
     status: str = ""
-    last_fired: str | None = None
+    last_fired: float | None = None
 
     def to_json(self) -> JsonObject:
         """The detail as a JSON object."""

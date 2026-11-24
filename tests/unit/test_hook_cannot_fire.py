@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.utils.hook_config import cannot_fire
+from reporails_cli.core.platform.utils.hook_config import cannot_fire, hook_script
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 
@@ -63,3 +63,43 @@ def test_a_script_missing_in_an_existing_folder_cannot_fire(tmp_path: Path) -> N
     (tmp_path / "hooks").mkdir()
     assert cannot_fire("./hooks/absent.sh", tmp_path) == "script_missing"
     assert cannot_fire("bash ./hooks/absent.sh", tmp_path) == "script_missing"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "bash -c 'cd sub && ./run.sh'",
+        'sh -c "./sub/run.sh"',
+        "bash -lc './sub/run.sh'",
+        "python3 -c 'import x; x.run(\"./sub/run.py\")'",
+        "node -e \"require('./sub/run.js')\"",
+    ],
+)
+def test_a_command_running_an_inline_script_names_no_script(tmp_path: Path, command: str) -> None:
+    assert hook_script(command, tmp_path) is None
+    assert cannot_fire(command, tmp_path) is None
+
+
+def test_a_script_after_interpreter_options_is_still_the_script(tmp_path: Path) -> None:
+    found = hook_script("bash -x ./sub/run.sh", tmp_path)
+    assert found is not None and found[0] == tmp_path / "sub" / "run.sh"
+
+
+@pytest.mark.parametrize("spelling", ["${CLAUDE_PLUGIN_ROOT}", "$CLAUDE_PLUGIN_ROOT"])
+def test_the_plugin_folder_variable_comes_from_the_declaring_plugin_in_both_spellings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spelling: str
+) -> None:
+    plugin = tmp_path / "plugin"
+    _script(plugin / "hooks", "x.sh", executable=True)
+    monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(tmp_path / "another-plugin"))
+    assert cannot_fire(f'"{spelling}"/hooks/x.sh', tmp_path, plugin) is None
+    assert hook_script(f"{spelling}/hooks/x.sh", tmp_path, plugin) == (plugin / "hooks" / "x.sh", False)
+
+
+def test_a_plugin_variable_with_no_known_value_gives_no_reason_whatever_the_environment_holds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(tmp_path / "elsewhere"))
+    monkeypatch.setenv("CLAUDE_PLUGIN_DATA", str(tmp_path / "elsewhere"))
+    assert cannot_fire('"${CLAUDE_PLUGIN_ROOT}"/hooks/x.sh', tmp_path, None) is None
+    assert cannot_fire('"${CLAUDE_PLUGIN_DATA}"/run.sh', tmp_path, tmp_path / "plugin") is None

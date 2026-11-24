@@ -29,19 +29,26 @@ def _declare(root: Path) -> None:
     (root / ".claude" / "settings.json").write_text(json.dumps(settings))
 
 
-def _fire(session_file: Path, command: str) -> None:
+def _fire(
+    session_file: Path,
+    command: str | None,
+    name: str = "PreToolUse:Bash",
+    event: str = "PreToolUse",
+    uuid: str = "h1",
+) -> None:
     attachment = {
         "type": "hook_success",
-        "hookName": "PreToolUse:Bash",
-        "hookEvent": "PreToolUse",
-        "command": command,
+        "hookName": name,
+        "hookEvent": event,
         "exitCode": 0,
         "durationMs": 3,
         "stdout": "",
         "stderr": "",
         "content": "",
     }
-    row = {"type": "attachment", "timestamp": "2026-10-17T16:54:55.000Z", "sessionId": "s", "uuid": "h1"}
+    if command is not None:
+        attachment["command"] = command
+    row = {"type": "attachment", "timestamp": "2026-10-17T16:54:55.000Z", "sessionId": "s", "uuid": uuid}
     with session_file.open("a") as handle:
         handle.write(json.dumps({**row, "attachment": attachment}) + "\n")
 
@@ -74,3 +81,71 @@ def test_a_declared_hook_that_never_fired_and_cannot_is_listed_with_its_reason(
     assert (never.event, never.matcher) == ("PreToolUse", "Bash")
     funnel = next(row for row in view.verdict.funnel if row.kind == "hook")
     assert funnel.on_disk - funnel.loaded == 1  # only the non-executable hook did not fire
+
+
+def _settings(root: Path, hooks: dict[str, list[dict[str, object]]]) -> None:
+    script = root / ".claude" / "hooks" / "guard.sh"
+    script.parent.mkdir(exist_ok=True)
+    script.write_text("#!/bin/sh\nexit 0\n")
+    script.chmod(0o755)
+    (root / ".claude" / "settings.json").write_text(json.dumps({"hooks": hooks}))
+
+
+def _never_fired(hooks: dict[str, HookDetail]) -> set[str]:
+    """The declared guard hooks no firing ran."""
+    return {name for name, detail in hooks.items() if name.endswith("\u00b7 guard.sh") and not detail.firing_count}
+
+
+def _guard(matcher: str | None = None) -> dict[str, object]:
+    handler = {"type": "command", "command": '"$CLAUDE_PROJECT_DIR"/.claude/hooks/guard.sh'}
+    return {"hooks": [handler]} if matcher is None else {"matcher": matcher, "hooks": [handler]}
+
+
+def test_one_command_declared_under_two_matchers_is_marked_run_under_each(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _settings(root, {"PreToolUse": [_guard("Bash"), _guard("Edit")]})
+    session = _session(tmp_path, HANDOFFS, root)
+    command = f'"{root}"/.claude/hooks/guard.sh'
+    _fire(tmp_path / HANDOFFS / "session.jsonl", command, "PreToolUse:Bash", uuid="h1")
+    _fire(tmp_path / HANDOFFS / "session.jsonl", command, "PreToolUse:Edit", uuid="h2")
+    assert _never_fired(_hooks(_view(session))) == set()
+
+
+def test_a_firing_marks_every_declaration_of_its_command_it_matches(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _settings(root, {"PreToolUse": [_guard("Edit|Write"), _guard("Edit"), _guard("Read")]})
+    session = _session(tmp_path, HANDOFFS, root)
+    command = f'"{root}"/.claude/hooks/guard.sh'
+    _fire(tmp_path / HANDOFFS / "session.jsonl", command, "PreToolUse:Edit")
+    assert _never_fired(_hooks(_view(session))) == {"PreToolUse:Read \u00b7 guard.sh"}
+
+
+def test_a_hook_whose_output_names_no_command_is_marked_run_when_one_declaration_fits(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _settings(root, {"UserPromptSubmit": [_guard()]})
+    session = _session(tmp_path, HANDOFFS, root)
+    _fire(tmp_path / HANDOFFS / "session.jsonl", None, "UserPromptSubmit", "UserPromptSubmit")
+    hooks = _hooks(_view(session))
+    assert _never_fired(hooks) == set()
+    assert hooks["UserPromptSubmit"].firing_count == 1
+
+
+def test_a_hook_whose_output_names_no_command_is_not_guessed_among_several_declarations(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _settings(root, {"UserPromptSubmit": [_guard(), _guard()]})
+    session = _session(tmp_path, HANDOFFS, root)
+    _fire(tmp_path / HANDOFFS / "session.jsonl", None, "UserPromptSubmit", "UserPromptSubmit")
+    assert _never_fired(_hooks(_view(session))) == {"UserPromptSubmit \u00b7 guard.sh"}
+
+
+def test_a_hook_reports_when_it_last_fired_in_seconds_from_the_session_start_with_its_time_left_to_the_page(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    _settings(root, {"PreToolUse": [_guard("Bash")]})
+    session = _session(tmp_path, HANDOFFS, root)
+    _fire(tmp_path / HANDOFFS / "session.jsonl", f'"{root}"/.claude/hooks/guard.sh')
+    ran = _hooks(_view(session))["PreToolUse:Bash"]
+    assert ran.status == "fired 1\u00d7 \u00b7 last {time}"
+    assert isinstance(ran.last_fired, float) and ran.last_fired >= 0
+    assert ran.to_json()["last_fired"] == ran.last_fired

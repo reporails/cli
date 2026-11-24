@@ -1,6 +1,6 @@
 // The details renderers for a source, an item of the coding agent's own context, a task prompt, the peak context and the estimated cost.
 import { el, nk, err } from '../dom.js';
-import { clock, costEst, exclusionNote, k1, MCP_STATES, plural, tk, usd } from '../format.js';
+import { clock, costEst, exclusionNote, hookStatus, k1, MCP_STATES, plural, tk, usd } from '../format.js';
 import { briefUrl, contextTextUrl, hookOutputUrl, outputUrl, peekUrl } from '../api.js';
 import { textBlock } from './textblock.js';
 import { hashFor } from '../state.js';
@@ -89,12 +89,9 @@ function findingsBlock(s, env) {
 const DECISIONS = { context_added: 'added to the context', message_shown: 'showed a message', blocked: 'blocked', failed: 'failed', ran: 'ran' };
 const SCOPES = { project: 'project .mcp.json', user: 'your user settings', local: 'this project in your user settings', managed: 'managed settings', plugin: 'plugin' };
 
-const CANNOT_FIRE = { not_executable: 'the script is not executable', folder_missing: 'the folder of the script does not exist', script_missing: 'the script does not exist' };
-
-// A hook's health: where it is registered, its status and, when it cannot fire, why and the line that recovers it.
+// A hook's health: where it is registered, its status (which says why it cannot fire) and the line that recovers it.
 function healthSection(hook) {
-  const lines = [`event: ${hook.event || 'not declared in a hook config'}`, `matcher: ${hook.matcher || 'any'}`, `status: ${hook.status}`, `last fired: ${hook.last_fired ? `${hook.last_fired} (this session)` : 'never in this session'}`];
-  if (hook.cannot_fire) lines.push(`cannot fire: ${CANNOT_FIRE[hook.cannot_fire] || hook.cannot_fire}`);
+  const lines = [`event: ${hook.event || 'not declared in a hook config'}`, `matcher: ${hook.matcher || 'any'}`, `status: ${hookStatus(hook)}`, `last fired: ${hook.last_fired != null ? `${clock(hook.last_fired)} (this session)` : 'never in this session'}`];
   if (hook.recovery) lines.push(`fix: ${hook.recovery}`);
   return section('Health', pre(lines.join('\n')));
 }

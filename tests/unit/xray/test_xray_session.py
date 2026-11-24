@@ -537,12 +537,9 @@ def test_a_hook_that_fired_without_adding_to_the_context_counts_as_fired(tmp_pat
     assert hook.had_by == ()
     assert hook.availability == "loaded"
     (row,) = [row for row in view.verdict.funnel if row.kind == "hook"]
-    # Every fired hook is loaded; the project's declared hook ran no firing here, so it is the one not loaded.
-    assert (row.loaded, row.on_disk) == (6, 7)
-    declared = next(
-        source for source in view.sources if source.kind == "hook" and source.id.startswith("hook:declared:")
-    )
-    assert declared.availability == "on_disk"
+    # The firing names no command and the project declares one handler for it, so that handler ran too.
+    assert (row.loaded, row.on_disk) == (6, 6)
+    assert not [source for source in view.sources if source.id.startswith("hook:declared:")]
 
 
 def test_a_summary_id_with_a_non_ascii_digit_is_no_summary_not_an_error(tmp_path: Path) -> None:

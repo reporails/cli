@@ -3,12 +3,12 @@ command and its latest firings, and one per declared hook that did not fire, wit
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
-from datetime import datetime
 from pathlib import Path
 
 from reporails_cli.core.platform.contract.json_value import as_str
-from reporails_cli.core.platform.dto.events import EventRecord, is_note_kind
+from reporails_cli.core.platform.dto.events import EventRecord, HookFiring, is_note_kind
 from reporails_cli.core.platform.dto.hooks import CannotFire
 from reporails_cli.core.platform.dto.xray_build import Frame
 from reporails_cli.core.platform.dto.xray_sources import (
@@ -20,7 +20,13 @@ from reporails_cli.core.platform.dto.xray_sources import (
     SourceEntry,
     XrayArtifact,
 )
-from reporails_cli.core.platform.utils.hook_config import cannot_fire, hook_script, hook_sites, read_hook_config
+from reporails_cli.core.platform.utils.hook_config import (
+    FOLDER_VARIABLE_RE,
+    cannot_fire,
+    hook_script,
+    hook_sites,
+    read_hook_config,
+)
 from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.derive import frame_time, real_path, tokens_of
 from reporails_cli.core.xray.vocabulary import HOOK_STATUS_TEXT
@@ -28,8 +34,6 @@ from reporails_cli.core.xray.vocabulary import HOOK_STATUS_TEXT
 # The firings of one hook the page lists, the latest first kept.
 FIRINGS_SHOWN = 100
 
-# What a hook command may spell for a folder Claude Code expands before it runs the command.
-_FOLDER_VARIABLES = ("${CLAUDE_PLUGIN_ROOT}", "${CLAUDE_PLUGIN_DATA}", "${CLAUDE_PROJECT_DIR}", "$CLAUDE_PROJECT_DIR")
 _GAP = "\0"
 
 
@@ -41,9 +45,7 @@ def hook_id(label: str) -> str:
 def _holds(declared: str, ran: str) -> bool:
     """Whether the command a hook config declares is the command that ran: equal, or equal with each folder
     variable standing for whatever text the harness put there."""
-    template = declared
-    for variable in _FOLDER_VARIABLES:
-        template = template.replace(variable, _GAP)
+    template = FOLDER_VARIABLE_RE.sub(_GAP, declared)
     if _GAP not in template:
         return declared == ran
     first, *rest = template.split(_GAP)
@@ -94,15 +96,31 @@ def _commands(ran: Sequence[str], declared: Sequence[DeclaredHook]) -> tuple[Hoo
     )
 
 
-def _declared_for(declared: Sequence[DeclaredHook], event: str, command: str | None) -> int | None:
-    """The position of the first declared handler of `event` whose command is the one that ran."""
-    if command is None:
-        return None
-    return next((at for at, item in enumerate(declared) if item.event == event and _holds(item.command, command)), None)
+def _matcher_holds(declared: str, ran: str | None) -> bool:
+    """Whether a hook registered under the matcher `declared` runs for the tool or source `ran` (None when the
+    record names none): an empty matcher or `*` matches all, any other is a pattern matched against the whole name."""
+    if ran is None or not declared.strip("*"):
+        return True
+    try:
+        return re.fullmatch(declared, ran) is not None
+    except re.error:
+        return declared == ran
 
 
-def _clock(moment: float) -> str:
-    return datetime.fromtimestamp(moment).astimezone().strftime("%H:%M")
+def _declared_for(declared: Sequence[DeclaredHook], firing: HookFiring) -> list[int]:
+    """The positions of the declared handlers a firing ran: those of its event whose matcher holds for the name the
+    firing carries and whose command is the one that ran. A firing that names no command ran a handler only when
+    exactly one declaration could have produced it."""
+    event = firing.event
+    tool = firing.label.partition(":")[2] if firing.label.startswith(f"{event}:") else None
+    found = [
+        at
+        for at, item in enumerate(declared)
+        if item.event == event
+        and _matcher_holds(item.matcher, tool)
+        and (firing.command is None or _holds(item.command, firing.command))
+    ]
+    return found if firing.command is not None or len(found) == 1 else []
 
 
 def _recovery(item: DeclaredHook, reason: CannotFire | None, frame: Frame) -> str | None:
@@ -120,12 +138,12 @@ def _recovery(item: DeclaredHook, reason: CannotFire | None, frame: Frame) -> st
     return f"{path.parent} does not exist; restore it or fix the command"
 
 
-def _status(fired: Sequence[HookRun], reason: CannotFire | None, frame: Frame) -> tuple[str, str | None]:
-    """The phrase stating a hook's status and the time it last fired (None when it did not fire this session)."""
-    moments = [frame.t0 + run.t for run in fired if run.t is not None]
+def _status(fired: Sequence[HookRun], reason: CannotFire | None) -> tuple[str, float | None]:
+    """The phrase stating a hook's status, its `{time}` left for the page to fill, and the moment it last fired
+    (seconds from the session's start; None when it did not fire this session)."""
+    moments = [run.t for run in fired if run.t is not None]
     if moments:
-        text = _clock(max(moments))
-        return HOOK_STATUS_TEXT["fired"].format(count=len(fired), time=text), text
+        return HOOK_STATUS_TEXT["fired"].format(count=len(fired), time="{time}"), max(moments)
     if reason is not None:
         return HOOK_STATUS_TEXT["never_fired"].format(reason=HOOK_STATUS_TEXT[reason]), None
     return HOOK_STATUS_TEXT["never"], None
@@ -145,7 +163,7 @@ def _detail(
     if item is not None and not ran:
         reason = cannot_fire(item.command, frame.root, Path(item.plugin_root) if item.plugin_root else None)
     runs = tuple(run for run, _ in ran)
-    status, last = _status(runs, reason, frame)
+    status, last = _status(runs, reason)
     commands = _commands([command for _, command in ran if command], declared)
     if item is not None and not commands:
         commands = (HookCommand(item.command, item.file),)
@@ -186,10 +204,10 @@ def hook_sources(records: Sequence[EventRecord], artifacts: Sequence[XrayArtifac
             )
             runs.setdefault(firing.label, []).append((run, firing.command))
             events.setdefault(firing.label, firing.event)
-            at = _declared_for(declared, firing.event, firing.command)
-            if at is not None:
-                matched.setdefault(firing.label, at)
-                ran.add(at)
+            found = _declared_for(declared, firing)
+            if found:
+                matched.setdefault(firing.label, found[0])
+                ran.update(found)
     sources = [
         _source(
             hook_id(label),

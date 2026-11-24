@@ -2,7 +2,7 @@
 // per source kind the adapter declares; each header says how many were used and carries the kind's eye for the graph.
 import { el, svg, sync } from '../dom.js';
 import { markOpen } from './details.js';
-import { costEst, fill, tk, plural, MCP_STATES } from '../format.js';
+import { costEst, fill, hookStatus, tk, plural, MCP_STATES } from '../format.js';
 import { SOURCES_SHOWN } from '../geometry.js';
 import { UNRECORDED, revealedSource } from '../views.js';
 
@@ -29,7 +29,7 @@ function facts(s, kind) {
     if (s.availability === 'loaded' && s.tokens_est != null) bits.push(`${tk(s.tokens_est, true)} tok`);
     return bits;
   }
-  if (s.hook) return [s.hook.status];
+  if (s.hook) return [hookStatus(s.hook)];
   if (s.builtin) return [`built in · launched as ${plural(s.launches || 0, 'subagent')}`];
   const bits = [];
   const finds = findingsOf(s);
