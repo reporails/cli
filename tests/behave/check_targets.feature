@@ -57,3 +57,17 @@ Feature: `ails check` reports the targets it did not check, and names what it wa
     When I run "ails check" on the named targets "CLAUDE.md" and "docs" as json
     Then the json files map contains "docs/guide.md"
 
+
+  @e2e @regression
+  Scenario: A settings file of another project is listed as that project's file
+    Given a project "proj" elsewhere with a ".claude/settings.json" and a folder outside it
+    When I run "ails check" on that settings file as json
+    Then the json not_evaluated lists that settings file with the reason "other_project"
+    When I run "ails check" on that settings file as text
+    Then the output says to run ails check in that project's folder
+
+  @e2e @regression
+  Scenario: A user-level settings file is checked
+    Given a git project and a user-level "~/.claude/settings.json" beside a user CLAUDE.md
+    When I run "ails check" on that settings file as json
+    Then the json checks "settings.json" and lists nothing as not checked

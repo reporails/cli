@@ -239,3 +239,55 @@ def step_checks_file_not_listed(context, name, target):
     doc = document(context.result)
     assert any(key.endswith(name) for key in doc["files"]), sorted(doc["files"])
     assert target not in [item.get("file") for item in doc["not_evaluated"]], doc["not_evaluated"]
+
+
+_BROKEN_HOOKS = (
+    '{"hooks": {"PretoolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "echo hi"}]}]}}\n'
+)
+
+
+@given('a project "proj" elsewhere with a ".claude/settings.json" and a folder outside it')
+def step_other_project_settings(context):
+    proj = context.tmpdir / "elsewhere" / "proj"
+    (proj / ".claude").mkdir(parents=True)
+    write_claude(proj, _CLAUDE)
+    (proj / ".claude" / "settings.json").write_text(_BROKEN_HOOKS, encoding="utf-8")
+    context.config_file = str((proj / ".claude" / "settings.json").resolve())
+    context.project = context.tmpdir / "outside"
+    context.project.mkdir()
+
+
+@given('a git project and a user-level "~/.claude/settings.json" beside a user CLAUDE.md')
+def step_user_settings(context):
+    (context.home / ".claude").mkdir(parents=True)
+    write_claude(context.home / ".claude", _CLAUDE)
+    (context.home / ".claude" / "settings.json").write_text(_BROKEN_HOOKS, encoding="utf-8")
+    context.config_file = str(context.home / ".claude" / "settings.json")
+    context.project = build_project(context.tmpdir)
+    write_claude(context.project, _CLAUDE)
+
+
+@when('I run "ails check" on that settings file as {fmt}')
+def step_run_config_file(context, fmt):
+    _run(context, context.config_file, fmt)
+
+
+@then('the json not_evaluated lists that settings file with the reason "{reason}"')
+def step_config_not_evaluated(context, reason):
+    doc = document(context.result)
+    assert doc["files"] == {}, sorted(doc["files"])
+    assert doc["not_evaluated"] == [{"file": context.config_file, "reason": reason}], doc["not_evaluated"]
+
+
+@then("the output says to run ails check in that project's folder")
+def step_points_at_its_project(context):
+    out = _output(context)
+    assert f"{context.config_file} not checked:" in out, out
+    assert "run ails check in that project's folder" in out, out
+
+
+@then('the json checks "{name}" and lists nothing as not checked')
+def step_checked_nothing_unlisted(context, name):
+    doc = document(context.result)
+    assert name in doc["files"], sorted(doc["files"])
+    assert not [i for i in doc["not_evaluated"] if "reason" in i], doc["not_evaluated"]

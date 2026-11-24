@@ -86,8 +86,8 @@ def test_absolute_config_file_target_from_another_cwd_is_not_checked_there(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`ails check <absolute path to .claude/settings.json>` run from a cwd outside the
-    project (no `.git`) does not check the file: it says the file is not an instruction
-    file in its own folder and points at running the check in the project folder."""
+    project (no `.git`) does not check the file: it lists it as a file of another project
+    and points at running the check in the project folder."""
     project = _project(tmp_path)
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
@@ -95,9 +95,12 @@ def test_absolute_config_file_target_from_another_cwd_is_not_checked_there(
 
     monkeypatch.chdir(elsewhere)
     result = runner.invoke(app, ["check", settings_abs, "-f", "json"])
+    data = json.loads(result.output[result.output.index("{") : result.output.rindex("}") + 1])
+    assert data["files"] == {}
+    assert data["not_evaluated"] == [{"file": settings_abs, "reason": "other_project"}]
 
-    assert "run ails check in that project's folder" in result.output
-    assert json.loads(result.output[result.output.index("{") : result.output.rindex("}") + 1])["files"] == {}
+    text = runner.invoke(app, ["check", settings_abs, "--offline"])
+    assert "run ails check in that project's folder" in " ".join(text.output.split())
 
     by_file = _findings_by_file(monkeypatch, project, ".claude/settings.json")
     assert "CLAUDE:S:0005" in next(iter(by_file.values()))

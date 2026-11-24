@@ -490,6 +490,29 @@ def test_a_validate_target_no_file_was_checked_for_is_reported_with_its_reason(t
     }
 
 
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_a_validate_target_of_another_project_is_listed_as_that_projects_file(tmp_path: Path) -> None:
+    """A settings file of a project outside the scan root is `other_project`; an image there stays `not_markdown`."""
+    from reporails_cli.core.platform.config.run_context import RunContext
+    from reporails_cli.interfaces.mcp.validate_targets import validate_target_report
+
+    here = tmp_path / "here"
+    here.mkdir()
+    (here / "CLAUDE.md").write_text("# P\n", encoding="utf-8")
+    other = tmp_path / "other"
+    (other / ".claude").mkdir(parents=True)
+    settings = other / ".claude" / "settings.json"
+    settings.write_text("{}\n", encoding="utf-8")
+    image = other / "logo.png"
+    image.write_bytes(b"\x89PNG")
+    report = validate_target_report(RunContext(), (str(settings), str(image)), here, [here / "CLAUDE.md"])
+    assert {(t.target, t.reason) for t in report.unevaluated} == {
+        (str(settings), "other_project"),
+        (str(image), "not_markdown"),
+    }
+
+
 def _validate(project: Path, targets: list[str]) -> dict[str, Any]:
     return asyncio.run(server._run_validate(str(project), True, targets, project, no_models()))
 

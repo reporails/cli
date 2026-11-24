@@ -22,7 +22,7 @@ from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.targets import TargetReport
 from reporails_cli.formatters.github import escape_workflow_data
-from reporails_cli.formatters.text.not_evaluated import unevaluated_target_lines
+from reporails_cli.formatters.text.not_evaluated import RUN_IN_ITS_PROJECT, unevaluated_target_lines
 from reporails_cli.formatters.text.verdict import render_excluded_line
 from reporails_cli.interfaces.cli.check_orchestration import RenderContext, _dispatch_output
 from reporails_cli.interfaces.cli.helpers import _print_no_instruction_files, console
@@ -76,9 +76,7 @@ def _emit_unlisted_file(file: Path, root: Path, run_folder: Path, output_format:
         shown = inside[0].relative_to(root).as_posix() if inside else str(file)
         message = f"{shown} is not loaded by {agent or 'any agent'}; checked as a referenced file."
     else:
-        message = (
-            f"{file} is not an instruction file in the project at {root}; run ails check in that project's folder."
-        )
+        message = f"{file} is not an instruction file in the project at {root}; {RUN_IN_ITS_PROJECT}."
     if output_format in MACHINE_READABLE_CHECK_FORMATS:
         print(message, file=sys.stderr)
         return

@@ -9,9 +9,12 @@ from rich.markup import escape
 
 from reporails_cli.core.platform.dto.targets import NotEvaluatedReason, UnevaluatedTarget
 
+RUN_IN_ITS_PROJECT = "run ails check in that project's folder"
+
 _REASON_TEXT: dict[NotEvaluatedReason, str] = {
     "no_markdown": "the folder holds no markdown file",
     "not_markdown": "it is not a markdown file",
+    "other_project": f"it is a file of another project; {RUN_IN_ITS_PROJECT}",
     "unknown_capability": "the agent has no such capability",
     "excluded": "its markdown files are left out by exclude_dirs or exclude_files",
     "no_files": "the project has no files for it",

@@ -19,6 +19,7 @@ from reporails_cli.core.classify.capability_paths import (
 )
 from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
 from reporails_cli.core.discovery.exclusions import leaves_out, markdown_folder_reason
+from reporails_cli.core.discovery.project_root import outermost_agent_dir
 from reporails_cli.core.discovery.walk import file_under_target, is_markdown_file, safe_resolve, walk_files
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.pipeline.mapping import is_listed_file
@@ -26,7 +27,13 @@ from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.classify import UnresolvedSkill
 from reporails_cli.core.platform.dto.diagnostics import Notice
 from reporails_cli.core.platform.dto.discovery import RunExclusions
-from reporails_cli.core.platform.dto.targets import MissingTarget, TargetReading, TargetReport, UnevaluatedTarget
+from reporails_cli.core.platform.dto.targets import (
+    MissingTarget,
+    NotEvaluatedReason,
+    TargetReading,
+    TargetReport,
+    UnevaluatedTarget,
+)
 
 
 def target_clash_notice(token: str, agent: str) -> Notice:
@@ -140,6 +147,14 @@ def markdown_under_folders(folders: Iterable[Path], exclusions: RunExclusions) -
     }
 
 
+def _file_reason(run: RunContext, path: Path, project_root: Path) -> NotEvaluatedReason:
+    """Why a named non-markdown file no agent loads here was not checked: `other_project` when it sits in an
+    agent folder of a project outside `project_root` that reads it as an agent's file, else `not_markdown`."""
+    agent_dir = None if path.is_relative_to(project_root) else outermost_agent_dir(path)
+    listed = agent_dir is not None and is_listed_file(run, path, agent_dir.parent)
+    return "other_project" if listed else "not_markdown"
+
+
 def unchecked_paths(
     run: RunContext,
     path_targets: Iterable[Path],
@@ -149,7 +164,8 @@ def unchecked_paths(
     project_root: Path,
     scan_target: Path,
 ) -> list[UnevaluatedTarget]:
-    """Each named folder none of the `checked` files sits under, and each non-markdown file no agent loads."""
+    """Each named folder none of the `checked` files sits under, and each non-markdown file no agent loads
+    here: `other_project` when it is an agent's file of a project outside `project_root`."""
     files = list(checked)
     out: list[UnevaluatedTarget] = []
     for path in sorted(set(path_targets) - {project_root}):
@@ -160,7 +176,7 @@ def unchecked_paths(
             if reason is not None:
                 out.append(UnevaluatedTarget(shown_path(path, project_root), reason))
         elif path.is_file() and not is_markdown_file(path) and not is_listed_file(run, path, scan_target):
-            out.append(UnevaluatedTarget(shown_path(path, project_root), "not_markdown"))
+            out.append(UnevaluatedTarget(shown_path(path, project_root), _file_reason(run, path, project_root)))
     return out
 
 
