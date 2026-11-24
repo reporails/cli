@@ -91,6 +91,15 @@ def test_other_messages_leave_out_the_notes_a_source_and_a_hook_count_in_their_o
     assert _session(tmp_path, before, blobs).context_text("", "harness_other") == [rest]
 
 
+def test_other_messages_leave_out_a_nested_instruction_file_recorded_as_an_object(tmp_path: Path) -> None:
+    nested = "Keep the sub module small " + "n" * 200
+    recorded = {"path": "/p/sub/CLAUDE.md", "type": "Project", "content": nested, "contentDiffersFromDisk": False}
+    before = [_attachment(1, type="nested_memory", path="/p/sub/CLAUDE.md", content=recorded)]
+    rest = _reminder("The user has not heard from you in a while.")
+    blobs = [_blob("n1", "user", _reminder(f"Contents of /p/sub/CLAUDE.md:\n{nested}")), _blob("n2", "user", rest)]
+    assert _session(tmp_path, before, blobs).context_text("", "harness_other") == [rest]
+
+
 def test_a_listing_shows_the_entries_its_size_counts_and_no_entry_twice(tmp_path: Path) -> None:
     before = [
         _attachment(1, type="agent_listing_delta", addedTypes=["a", "b"], addedLines=["- a: A", "- b: B"]),

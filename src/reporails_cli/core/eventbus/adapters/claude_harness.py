@@ -175,7 +175,7 @@ class ClaudeContextReader:
             files = (as_object(item).get("content") for item in as_list(attachment.get("files")))
             return [text for text in files if isinstance(text, str) and text]
         if kind == "nested_memory":
-            text = attachment.get("content")
+            text = as_object(attachment.get("content")).get("content")
             return [text] if isinstance(text, str) and text else []
         listed = self.resolve_listing_text(row)
         if listed is None or listed[0] in UNLISTED_KINDS:

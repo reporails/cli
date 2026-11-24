@@ -25,7 +25,7 @@
 
 - `ails check`, the MCP `validate` tool and the x-ray page parse each rule's checks once, where they parsed them again for every check run: over 20 `validate` calls the rule-file reads drop from 790 to 130. Findings are unchanged.
 
-- `ails xray` shows what the coding agent adds to the context by itself (system prompt, tool definitions, listings, deferred tools, session context, thinking and its other messages) as one collapsed group in each agent's In context list, so Conversation holds only what you and the agent wrote. Opening an item shows the text the agent actually sent and, for the system prompt, its sections with their shares; each item has one size across the page, measured from the recorded request when there is one and labelled as an estimate otherwise. The Sources panel no longer lists these items.
+- `ails xray` shows what the coding agent adds to the context by itself (system prompt, tool definitions, listings, deferred tools, session context, thinking and its other messages) as one collapsed group in each agent's In context list, so Conversation holds only what you and the agent wrote. Opening an item shows only the text its size counts (text another row already counts is left out) and, for thinking and tool definitions, how much of it is readable; for the system prompt it also shows its sections with their shares. Each item has one size across the page and says how it was measured: from the recorded request when there is one, labelled as an estimate otherwise (never called the system prompt then). "Open the system prompt it launched with" selects that agent. The Sources panel no longer lists these items.
 
 - `ails check -f json` and the MCP `validate` response carry a top-level `format_version`, now `1`, which changes when the shape of that output changes. Its `not_evaluated` list can now also hold `{"file", "reason"}` items for a named target that was not checked, beside the existing `{"rule", "file"}` items.
 
@@ -43,7 +43,6 @@
 - A check-level `disabled: true` override in an agent config now drops that check; before, it still ran and reported.
 - A settings file without hooks is no longer reported by a rule that another rule supersedes.
 - The x-ray compaction stripe's one-line text stays inside the stripe at 1280 and 1920 px instead of running past it.
-- x-ray: an own-context item's details show only the text its size counts, say how much of it is readable (thinking, tool definitions), and no longer fail on one unreadable transcript row. Each item says how its own size was measured, the estimate without a recorded request is no longer called the system prompt, and "Open the system prompt it launched with" selects that agent.
 
 ### Removed
 
