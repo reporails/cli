@@ -21,7 +21,6 @@
 
 - `ails check`, the MCP `validate` tool and the x-ray page parse each rule's checks once, where they parsed them again for every check run: over 20 `validate` calls the rule-file reads drop from 790 to 130. Findings are unchanged.
 
-- `ails xray` itemises what Claude Code adds to the context by itself: the agent listing, deferred tools, session context, the agent's thinking and Claude Code's other messages each get their own In-context row, for the main agent and every subagent, so Conversation holds only what you and the agent wrote. When Claude Code recorded the request a reply answered, every row is sized at that request's measured tokens per character. The System prompt details list the prompt's sections, each with its share.
 - `ails xray` shows what the coding agent adds to the context by itself (system prompt, tool definitions, listings, deferred tools, session context, thinking and its other messages) as one collapsed group in each agent's In context list, so Conversation holds only what you and the agent wrote. Opening an item shows the text the agent actually sent and, for the system prompt, its sections with their shares; each item has one size across the page, measured from the recorded request when there is one and labelled as an estimate otherwise. The Sources panel no longer lists these items.
 
 - `ails check -f json` and the MCP `validate` response carry a top-level `format_version`, now `1`, which changes when the shape of that output changes. Its `not_evaluated` list can now also hold `{"file", "reason"}` items for a named target that was not checked, beside the existing `{"rule", "file"}` items.
@@ -38,4 +37,4 @@
 
 ### Internal
 
-- The pattern checks scan exactly the files the run hands them; a run's exclusions, from the project's `.ails/config.yml` and from `--exclude-dirs`, decide that list once, and a file target reads the project folder's config, never one beside the file.
+- The pattern checks scan exactly the files the run checks, so the folders and files `exclude_dirs`, `exclude_files` and `--exclude-dirs` leave out stay out of them; checking one file applies its project's `.ails/config.yml` to the files that file's links reach.
