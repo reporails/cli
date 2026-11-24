@@ -84,15 +84,15 @@ If you only have a root file but a large repo, you'll likely trip `CORE:E:0002` 
 
 ## Why does my CI run say "anonymous" even though I'm authenticated locally?
 
-CI runs in a fresh environment without the credentials file at `~/.reporails/credentials.yml` that `ails login` writes locally. Create an API key on [reporails.com/account](https://reporails.com/account), store it as a secret in your CI provider, and pass it via the action input or environment variable:
+CI runs in a fresh environment without the credentials file at `~/.reporails/credentials.yml` that `ails login` writes locally. Create an API key on [reporails.com/account](https://reporails.com/account), store it as a secret in your CI provider, and pass it via the action input or the `AILS_API_KEY` environment variable:
 
 ```yaml
 - uses: reporails/cli/action@0.6.4
   with:
-    api-key: ${{ secrets.REPORAILS_API_KEY }}
+    api-key: ${{ secrets.REPORAILS_API_KEY }}   # example secret name; the action exports it as AILS_API_KEY
 ```
 
-See the [GitHub Actions section in the README](https://github.com/reporails/cli#readme).
+A job that runs `ails` directly (for example after installing it with `npm`) sets `AILS_API_KEY` itself; see [Configuration → Authentication](configuration.md#authentication). See also the [GitHub Actions section in the README](https://github.com/reporails/cli#readme).
 
 ## Does every CI run download the model again?
 

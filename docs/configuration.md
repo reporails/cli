@@ -371,7 +371,15 @@ The page also opens when your coding agent runs `ails login`, for example from t
 
 The sign-in is stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX; Windows logs a warning, secure the file manually). When `AILS_API_KEY` is set, it is used instead of the sign-in.
 
-For CI, create an API key on [reporails.com/account](https://reporails.com/account) and add it to your CI provider's secret store as `AILS_API_KEY` (or pass it via the GitHub Action's `api-key` input — see the [GitHub Actions section in the README](https://github.com/reporails/cli#readme)).
+For CI, create an API key on [reporails.com/account](https://reporails.com/account) and add it to your CI provider's secret store. `AILS_API_KEY` is the environment variable the CLI reads, so a job that runs `ails` directly must export the key under that name. Without it the run is anonymous. A GitHub Actions job using the `npm` package:
+
+```yaml
+- run: npx @reporails/cli check
+  env:
+    AILS_API_KEY: ${{ secrets.REPORAILS_API_KEY }}
+```
+
+`REPORAILS_API_KEY` is only an example secret name; the secret can be called anything. With the GitHub Action, pass the secret through its `api-key` input instead and the action exports it as `AILS_API_KEY` for you — see the [GitHub Actions section in the README](https://github.com/reporails/cli#readme).
 
 ## GitHub Action
 
@@ -386,7 +394,7 @@ For CI, create an API key on [reporails.com/account](https://reporails.com/accou
 | `exclude-dir`  | (empty) | Comma-separated directory *names* to skip (e.g. `vendor,dist`), added to the built-in excludes.   |
 | `version`      | (empty) | CLI version to install (e.g. `0.6.4`). Empty installs the latest release.                         |
 | `from-source`  | `false` | Internal — installs the CLI from a local checkout so the action can test itself. Leave it `false`. |
-| `api-key`      | (empty) | Your API key, normally `${{ secrets.REPORAILS_API_KEY }}`. Empty runs anonymously.                |
+| `api-key`      | (empty) | Your API key, e.g. `${{ secrets.REPORAILS_API_KEY }}`; the action exports it as `AILS_API_KEY`. Empty runs anonymously. |
 | `server-url`   | (empty) | Overrides the diagnostic endpoint. Empty uses production — set it only for a staging deployment.  |
 
 And every output:
@@ -405,7 +413,7 @@ And every output:
   id: reporails
   with:
     path: ./packages/api
-    api-key: ${{ secrets.REPORAILS_API_KEY }}
+    api-key: ${{ secrets.REPORAILS_API_KEY }}   # example secret name; exported as AILS_API_KEY
     exclude-dir: "vendor,dist"
     min-score: "7.0"
 - run: echo "level=${{ steps.reporails.outputs.level }}"

@@ -96,7 +96,7 @@ See [Tiers and Limits](tiers.md) for the side-by-side breakdown, and [Configurat
 
 - **The score is lower than you expected.** Run `ails check -v` to see all findings (the default output may leave some out). Then `ails explain CORE:S:0002` (or whichever rule ID) to see the rule body and pass / fail examples. The [Score Guide](score-guide.md) explains what each band means, how per-surface scores roll up, and which rules to start with.
 - **You disagree with a rule.** Browse [reporails.com/rules](https://reporails.com/rules) for the rule's intent before deciding, then disable it in `.ails/config.yml` — see [Configuration → Disabling rules](configuration.md#disabling-rules).
-- **You want this in CI.** See the [GitHub Actions section in the README](https://github.com/reporails/cli#readme) and [Configuration → Authentication](configuration.md#authentication) for creating an API key on [reporails.com/account](https://reporails.com/account) and wiring it as `secrets.REPORAILS_API_KEY`.
+- **You want this in CI.** See the [GitHub Actions section in the README](https://github.com/reporails/cli#readme) and [Configuration → Authentication](configuration.md#authentication) for creating an API key on [reporails.com/account](https://reporails.com/account) and wiring it into your job. The CLI reads the key from `AILS_API_KEY`; `secrets.REPORAILS_API_KEY` is only an example secret name.
 
 ## Useful flags
 
