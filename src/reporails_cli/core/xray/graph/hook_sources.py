@@ -3,23 +3,27 @@ command and its latest firings, and one per declared hook that did not fire, wit
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
+from reporails_cli.core.platform.config.claude_settings import hooks_turned_off
 from reporails_cli.core.platform.contract.json_value import as_str
 from reporails_cli.core.platform.dto.events import EventRecord, HookFiring, is_note_kind
 from reporails_cli.core.platform.dto.hooks import CannotFire
 from reporails_cli.core.platform.dto.xray_build import Frame
 from reporails_cli.core.platform.dto.xray_sources import (
     DeclaredHook,
+    EarlierFirings,
     HookCommand,
     HookDetail,
+    HookEarlier,
     HookHealth,
     HookRun,
     SourceEntry,
     XrayArtifact,
 )
+from reporails_cli.core.platform.policy.host_hooks import matcher_selects
 from reporails_cli.core.platform.utils.hook_config import (
     FOLDER_VARIABLE_RE,
     cannot_fire,
@@ -81,11 +85,13 @@ def _declared_hooks(artifacts: Sequence[XrayArtifact], frame: Frame) -> list[Dec
             continue
         wire = relative_wire_path(path, frame.root)
         plugin = _plugin_root(Path(real))
+        off = hooks_turned_off(frame.root, Path(real))
+        off_wire = None if off is None else relative_wire_path(str(off), frame.root)
         for site in hook_sites(config.data):
             command = as_str(site.handler.get("command"))
             if command:
                 place = "/".join(str(step) for step in site.path)
-                found.append(DeclaredHook(site.event, site.matcher, command, wire, plugin, place))
+                found.append(DeclaredHook(site.event, site.matcher, command, wire, plugin, place, off_wire))
     return found
 
 
@@ -96,36 +102,29 @@ def _commands(ran: Sequence[str], declared: Sequence[DeclaredHook]) -> tuple[Hoo
     )
 
 
-def _matcher_holds(declared: str, ran: str | None) -> bool:
-    """Whether a hook registered under the matcher `declared` runs for the tool or source `ran` (None when the
-    record names none): an empty matcher or `*` matches all, any other is a pattern matched against the whole name."""
-    if ran is None or not declared.strip("*"):
-        return True
-    try:
-        return re.fullmatch(declared, ran) is not None
-    except re.error:
-        return declared == ran
+def _fits(event: str, matcher: str, command: str, firing: HookFiring) -> bool:
+    """Whether a firing ran the handler registered for `event` under `matcher` with `command`: the same event, a
+    matcher that selects the name the firing carries, and the command that ran."""
+    tool = firing.label.partition(":")[2] if firing.label.startswith(f"{firing.event}:") else None
+    return (
+        firing.event == event
+        and (tool is None or matcher_selects(matcher, tool))
+        and (firing.command is None or _holds(command, firing.command))
+    )
 
 
 def _declared_for(declared: Sequence[DeclaredHook], firing: HookFiring) -> list[int]:
-    """The positions of the declared handlers a firing ran: those of its event whose matcher holds for the name the
-    firing carries and whose command is the one that ran. A firing that names no command ran a handler only when
+    """The positions of the declared handlers a firing ran. A firing that names no command ran a handler only when
     exactly one declaration could have produced it."""
-    event = firing.event
-    tool = firing.label.partition(":")[2] if firing.label.startswith(f"{event}:") else None
-    found = [
-        at
-        for at, item in enumerate(declared)
-        if item.event == event
-        and _matcher_holds(item.matcher, tool)
-        and (firing.command is None or _holds(item.command, firing.command))
-    ]
+    found = [at for at, item in enumerate(declared) if _fits(item.event, item.matcher, item.command, firing)]
     return found if firing.command is not None or len(found) == 1 else []
 
 
 def _recovery(item: DeclaredHook, reason: CannotFire | None, frame: Frame) -> str | None:
     if reason is None:
         return None
+    if reason == "all_hooks_off":
+        return None if item.hooks_off is None else f"disableAllHooks is true in {item.hooks_off}; set it to false there"
     plugin = Path(item.plugin_root) if item.plugin_root else None
     found = hook_script(item.command, frame.root, plugin)
     if found is None:
@@ -138,60 +137,94 @@ def _recovery(item: DeclaredHook, reason: CannotFire | None, frame: Frame) -> st
     return f"{path.parent} does not exist; restore it or fix the command"
 
 
-def _status(fired: Sequence[HookRun], reason: CannotFire | None) -> tuple[str, float | None]:
-    """The phrase stating a hook's status, its `{time}` left for the page to fill, and the moment it last fired
-    (seconds from the session's start; None when it did not fire this session)."""
+def _status(
+    fired: Sequence[HookRun], reason: CannotFire | None, earlier: HookEarlier | None, *, checking: bool
+) -> tuple[str, float | None]:
+    """The phrase stating a hook's status, its `{time}`, `{when}` and `{session}` left for the page to fill, and the
+    moment it last fired (seconds from the session's start; None when it did not fire this session). A hook that did
+    not fire this session says when it last fired in another one, or that the other sessions are still being read."""
     moments = [run.t for run in fired if run.t is not None]
     if moments:
         return HOOK_STATUS_TEXT["fired"].format(count=len(fired), time="{time}"), max(moments)
-    if reason is not None:
-        return HOOK_STATUS_TEXT["never_fired"].format(reason=HOOK_STATUS_TEXT[reason]), None
-    return HOOK_STATUS_TEXT["never"], None
+    if earlier is not None:
+        key = "earlier"
+    elif checking:
+        key = "checking"
+    else:
+        key = "never_fired" if reason is not None else "never"
+    if reason is not None and key != "never_fired":
+        key += "_blocked"
+    why = "" if reason is None else HOOK_STATUS_TEXT[reason]
+    return HOOK_STATUS_TEXT[key].format(reason=why, when="{when}", session="{session}"), None
 
 
-def _detail(
-    ran: Sequence[tuple[HookRun, str | None]],
-    declared: Sequence[DeclaredHook],
-    at: int | None,
-    frame: Frame,
-    event: str | None,
-) -> HookDetail:
-    """A hook's detail: its commands and firings, and for a hook a config declares its event, matcher, health and
-    status."""
-    item = declared[at] if at is not None else None
-    reason: CannotFire | None = None
-    if item is not None and not ran:
-        reason = cannot_fire(item.command, frame.root, Path(item.plugin_root) if item.plugin_root else None)
-    runs = tuple(run for run, _ in ran)
-    status, last = _status(runs, reason)
-    commands = _commands([command for _, command in ran if command], declared)
-    if item is not None and not commands:
-        commands = (HookCommand(item.command, item.file),)
-    return HookDetail(
-        commands,
-        len(runs),
-        runs[-FIRINGS_SHOWN:],
-        event if item is None else item.event,
-        "" if item is None else item.matcher,
-        HookHealth(reason, None if item is None else _recovery(item, reason, frame)),
-        status,
-        last,
-    )
+def _reason(item: DeclaredHook, frame: Frame) -> CannotFire | None:
+    """Why the declared handler cannot fire: a settings file turns every hook off, else what its script lacks."""
+    if item.hooks_off is not None:
+        return "all_hooks_off"
+    return cannot_fire(item.command, frame.root, Path(item.plugin_root) if item.plugin_root else None)
+
+
+class _HookName:
+    """What the records and the hook configs say of one hook name (or of one declared handler no firing ran): its
+    firings with the command each ran, its event, the positions of the declared handlers it ran as and whether some
+    firing ran no declared handler."""
+
+    def __init__(self, event: str | None = None, positions: Sequence[int] = ()) -> None:
+        self.size: int | None = None
+        self.runs: list[tuple[HookRun, str | None]] = []
+        self.event = event
+        self.positions = list(positions)
+        self.undeclared = False
+
+    def add(self, firing: HookFiring, run: HookRun, declared: Sequence[DeclaredHook]) -> list[int]:
+        """Record one firing; the positions of the declared handlers it ran."""
+        self.runs.append((run, firing.command))
+        self.event = self.event or firing.event
+        found = _declared_for(declared, firing)
+        self.undeclared = self.undeclared or not found
+        self.positions.extend(at for at in found if at not in self.positions)
+        return found
+
+    def detail(self, declared: Sequence[DeclaredHook], frame: Frame, own_id: str) -> HookDetail:
+        """The hook's detail: its commands and firings, and for a hook a config declares its event, matcher, health and
+        status. The other sessions are read later, so a declared hook that did not fire says it is still checking."""
+        item = declared[self.positions[0]] if self.positions else None
+        reason: CannotFire | None = None if item is None or self.runs else _reason(item, frame)
+        runs = tuple(run for run, _ in self.runs)
+        waiting = item is not None and not self.runs
+        status, last = _status(runs, reason, None, checking=waiting)
+        commands = _commands([command for _, command in self.runs if command], declared)
+        if item is not None and not commands:
+            commands = (HookCommand(item.command, item.file),)
+        own = (own_id,) if self.undeclared or not self.positions else ()
+        return HookDetail(
+            commands,
+            len(runs),
+            runs[-FIRINGS_SHOWN:],
+            self.event if item is None else item.event,
+            "" if item is None else item.matcher,
+            HookHealth(reason, None if item is None else _recovery(item, reason, frame)),
+            status,
+            last,
+            None,
+            waiting,
+            (*(declared[position].handler for position in self.positions), *own),
+        )
 
 
 def hook_sources(records: Sequence[EventRecord], artifacts: Sequence[XrayArtifact], frame: Frame) -> list[SourceEntry]:
     """A source for each hook name the records show firing, its size that of its largest note, and one for each
-    declared hook none of those firings ran."""
+    declared hook none of those firings ran. A hook that did not fire reads as still checking the other sessions;
+    `with_earlier_firings` settles it."""
     declared = _declared_hooks(artifacts, frame)
-    sizes: dict[str, int] = {}
-    runs: dict[str, list[tuple[HookRun, str | None]]] = {}
-    events: dict[str, str] = {}
-    matched: dict[str, int] = {}
+    names: dict[str, _HookName] = {}
     ran: set[int] = set()
     for record in records:
         entry = record.harness
         if record.event == "harness" and entry is not None and is_note_kind(entry.kind) and entry.event:
-            sizes[entry.label] = max(sizes.get(entry.label, 0), tokens_of(entry.chars))
+            name = names.setdefault(entry.label, _HookName())
+            name.size = max(name.size or 0, tokens_of(entry.chars))
         elif record.hook is not None:
             firing = record.hook
             run = HookRun(
@@ -202,20 +235,10 @@ def hook_sources(records: Sequence[EventRecord], artifacts: Sequence[XrayArtifac
                 firing.duration_ms,
                 firing.chars,
             )
-            runs.setdefault(firing.label, []).append((run, firing.command))
-            events.setdefault(firing.label, firing.event)
-            found = _declared_for(declared, firing)
-            if found:
-                matched.setdefault(firing.label, found[0])
-                ran.update(found)
+            ran.update(names.setdefault(firing.label, _HookName()).add(firing, run, declared))
     sources = [
-        _source(
-            hook_id(label),
-            label,
-            sizes.get(label),
-            _detail(fired, declared, matched.get(label), frame, events.get(label)),
-        )
-        for label, fired in ((label, runs.get(label, [])) for label in dict.fromkeys([*sizes, *runs]))
+        _source(hook_id(label), label, name.size, name.detail(declared, frame, hook_id(label)))
+        for label, name in names.items()
     ]
     sources.extend(_unfired_sources(declared, ran, frame))
     return sources
@@ -230,15 +253,42 @@ def _unfired_sources(declared: Sequence[DeclaredHook], ran: set[int], frame: Fra
         label = f"{item.event}:{item.matcher}" if item.matcher else item.event
         script = hook_script(item.command, frame.root, Path(item.plugin_root) if item.plugin_root else None)
         label = f"{label} \u00b7 {script[0].name if script else item.command.split()[0]}"
-        sources.append(
-            _source(
-                f"hook:declared:{item.file}:{item.place}",
-                label,
-                None,
-                _detail([], declared, at, frame, item.event),
-            )
-        )
+        source_id = f"hook:declared:{item.handler}"
+        detail = _HookName(item.event, [at]).detail(declared, frame, source_id)
+        sources.append(_source(source_id, label, None, detail))
     return sources
+
+
+def _earlier_firing(detail: HookDetail, earlier: EarlierFirings) -> HookEarlier | None:
+    """The latest firing in another session of the handler a declared hook's detail describes; None when none ran it."""
+    if detail.event is None or not detail.commands:
+        return None
+    command = detail.commands[0].command
+    latest = max(
+        (
+            item
+            for item in earlier.firings
+            if item.firing.command is not None and _fits(detail.event, detail.matcher, command, item.firing)
+        ),
+        key=lambda item: item.moment,
+        default=None,
+    )
+    return None if latest is None else HookEarlier(latest.session, latest.at)
+
+
+def with_earlier_firings(entries: Sequence[SourceEntry], earlier: EarlierFirings) -> tuple[SourceEntry, ...]:
+    """The sources with each declared hook that did not fire this session settled against what the other sessions of
+    the project hold: the session and moment it last fired in, or that nothing was found, or that the read goes on."""
+    settled: list[SourceEntry] = []
+    for entry in entries:
+        detail = entry.detail
+        if not isinstance(detail, HookDetail) or detail.firing_count or detail.event is None:
+            settled.append(entry)
+            continue
+        found = _earlier_firing(detail, earlier)
+        status, _ = _status((), detail.health.cannot_fire, found, checking=earlier.checking)
+        settled.append(replace(entry, detail=replace(detail, status=status, earlier=found, checking=earlier.checking)))
+    return tuple(settled)
 
 
 def _source(source_id: str, label: str, size: int | None, detail: HookDetail) -> SourceEntry:

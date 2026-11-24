@@ -272,6 +272,33 @@ def claude_settings_files(project_root: Path) -> tuple[Path, ...]:
     return tuple(_precedence_files(_settings_patterns(), project_root))
 
 
+def _turning_off(files: list[Path]) -> Path | None:
+    """The file whose `disableAllHooks: true` is the value in effect over `files` (lowest precedence first): the last
+    file that sets the key, when it sets it true."""
+    found: Path | None = None
+    for path in files:
+        value = _read_json(path).get("disableAllHooks")
+        if isinstance(value, bool):
+            found = path if value else None
+    return found
+
+
+def hooks_turned_off(project_root: Path, declared_in: Path) -> Path | None:
+    """The settings file whose `disableAllHooks: true` turns off the hooks declared in `declared_in`, for a session in
+    `project_root`; None when none does. Claude Code reads the value that remains after settings precedence (user,
+    project, local, then managed, the last to set it winning), except that `disableAllHooks` in any other file cannot
+    turn off a hook managed settings declare: only a managed file can.
+    https://code.claude.com/docs/en/hooks. An unreadable server-managed cache is left out, as the file listing leaves
+    it out."""
+    scopes = _settings_patterns()
+    with leaving_out_unreadable_cache():
+        managed = _managed_files(scopes)
+    if os.path.realpath(declared_in) in {os.path.realpath(path) for path in managed}:
+        return _turning_off(managed)
+    with leaving_out_unreadable_cache():
+        return _turning_off(_precedence_files(scopes, project_root))
+
+
 def enabled_plugins(project_root: Path | None = None) -> dict[str, bool]:
     """Each plugin id the settings files turn on or off, merged key by key: the highest source that names
     an id decides it. An id no file names is absent (the plugin's own `defaultEnabled` applies)."""

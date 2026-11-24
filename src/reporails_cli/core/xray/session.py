@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -18,6 +20,7 @@ from reporails_cli.core.eventbus.transcript import (
     last_write,
     prompt_text,
     read_transcript,
+    recent_sessions,
     scan_compact_summaries,
     subagent_brief,
     subagent_output,
@@ -55,7 +58,13 @@ from reporails_cli.core.platform.dto.xray import (
 from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable, WorkflowReading
 from reporails_cli.core.platform.dto.xray_graph import OutputSource
 from reporails_cli.core.platform.dto.xray_own import ContextKey, XrayOwnContext, XrayOwnItem
-from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayPeek
+from reporails_cli.core.platform.dto.xray_sources import (
+    ArtifactFile,
+    EarlierFiring,
+    EarlierFirings,
+    FindingTally,
+    XrayPeek,
+)
 from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.artifacts import (
     advertised_files,
@@ -73,8 +82,11 @@ from reporails_cli.core.xray.facts import build_facts
 from reporails_cli.core.xray.funnel import build_funnel
 from reporails_cli.core.xray.graph.agents import MAIN_ID, main_records
 from reporails_cli.core.xray.graph.build import build_graph
+from reporails_cli.core.xray.graph.hook_sources import with_earlier_firings
 from reporails_cli.core.xray.graph.sources import build_sources, ran_sources
 from reporails_cli.core.xray.vocabulary import vocabulary_for
+
+logger = logging.getLogger(__name__)
 
 _CACHE_MAY_DIFFER = (
     "which AGENTS.md files and plugins Claude Code loads may differ from what is shown, since the cache is left out"
@@ -90,6 +102,9 @@ LISTING_MAX_AGE_S = 30.0
 
 # The most characters of one hook firing's output the page is sent.
 HOOK_OUTPUT_CHARS = 20_000
+
+# The project's session list is looked at again for sessions to read after this many seconds.
+EARLIER_MAX_AGE_S = 30.0
 
 
 def _stat_of(path: Path) -> tuple[int, int] | None:
@@ -122,9 +137,11 @@ class _FileReads:
     """Where the reads of one session's transcript files stopped: the cursor of the record read and, per file (a
     subagent id, None for the main one), the byte offset scanned for compaction summaries and the summaries
     found so far by the id of the boundary row each follows, and the source each subagent's output text is read from
-    as the last view sized it, and each agent's own context as the last view held it."""
+    as the last view sized it, and each agent's own context as the last view held it, and the hook firings of the
+    project's other sessions."""
 
-    def __init__(self) -> None:
+    def __init__(self, project_root: Path, session_file: Path) -> None:
+        self.earlier = _EarlierSessions(project_root, session_file)
         self.outputs: dict[str, OutputSource] = {}
         self.own: dict[str, XrayOwnContext] = {}
         self._cursor = TranscriptCursor()
@@ -145,6 +162,81 @@ class _FileReads:
         return found
 
 
+def _in_background(job: Callable[[], None]) -> None:
+    """Run `job` on a thread of its own, off the request that asked for it."""
+    threading.Thread(target=job, daemon=True).start()
+
+
+def _latest_firings(session_file: Path) -> tuple[EarlierFiring, ...]:
+    """The latest firing of each hook name and command a session's transcript records, read with the one transcript
+    reader."""
+    records, _ = read_transcript(AGENT, session_file, TranscriptCursor())
+    latest: dict[tuple[str, str, str | None], EarlierFiring] = {}
+    for record in records:
+        moment = epoch(record.time)
+        if record.hook is None or moment is None:
+            continue
+        key = (record.hook.event, record.hook.label, record.hook.command)
+        held = latest.get(key)
+        if held is None or moment >= held.moment:
+            latest[key] = EarlierFiring(session_file.stem, record.time, moment, record.hook)
+    return tuple(latest.values())
+
+
+class _EarlierSessions:
+    """The hook firings of the project's other recent sessions, the ones the session switcher lists. Reading them is
+    slow, so a view only asks for what has been read so far: the first request starts one background read of every
+    other session, a later request after `EARLIER_MAX_AGE_S` looks at the session list again and reads the sessions it
+    gained, and a session already read is not read again."""
+
+    def __init__(self, project_root: Path, session_file: Path) -> None:
+        self._root = project_root
+        self._own = session_file.stem
+        self._lock = threading.Lock()
+        self._read: dict[str, tuple[EarlierFiring, ...]] = {}
+        self._held = EarlierFirings(checking=True)
+        self._running = False
+        self._checked: float | None = None
+
+    def request(self) -> None:
+        """Start a background read when none is going and none has run for `EARLIER_MAX_AGE_S`."""
+        with self._lock:
+            due = not self._running and (self._checked is None or time.monotonic() - self._checked >= EARLIER_MAX_AGE_S)
+            self._running = self._running or due
+        if due:
+            _in_background(self._read_gained)
+
+    def found(self) -> EarlierFirings:
+        """What has been read so far, and whether the reading goes on."""
+        with self._lock:
+            return self._held
+
+    def _publish(self, *, checking: bool) -> None:
+        firings = tuple(item for found in self._read.values() for item in found)
+        with self._lock:
+            self._held = EarlierFirings(checking, firings)
+
+    def _read_gained(self) -> None:
+        """Read each listed session not read yet and forget the ones the list lost; a session folder that cannot be
+        read leaves what was read."""
+        try:
+            listed = [path for path in recent_sessions(self._root) if path.stem != self._own]
+            names = {path.stem for path in listed}
+            fresh = [path for path in listed if path.stem not in self._read]
+            if fresh:
+                self._publish(checking=True)
+            for path in fresh:
+                self._read[path.stem] = _latest_firings(path)
+            self._read = {name: found for name, found in self._read.items() if name in names}
+        except OSError:
+            logger.warning("the earlier sessions of %s could not all be read", self._root, exc_info=True)
+        finally:
+            with self._lock:
+                self._running = False
+                self._checked = time.monotonic()
+            self._publish(checking=False)
+
+
 class XraySession:
     """The records of one session of a project and the view built from them."""
 
@@ -152,7 +244,7 @@ class XraySession:
         self._root = project_root
         self._file = session_file
         self._transcript: list[EventRecord] = []
-        self._reads = _FileReads()
+        self._reads = _FileReads(project_root, session_file)
         self._content: XrayView | None = None
         self._shown: dict[str, ArtifactFile] | None = None
         self._walked: (
@@ -340,6 +432,8 @@ class XraySession:
         vocabulary = vocabulary_for(AGENT, [item.label for item in files if item.kind == "agent"])
         artifacts = build_artifacts(run, files, self._findings, self._root, advertised=advertised_files(files, records))
         table = build_sources(run, artifacts, records, frame)
+        self._reads.earlier.request()
+        table = replace(table, entries=with_earlier_firings(table.entries, self._reads.earlier.found()))
         prices = load_price_list()
         graph = build_graph(records, frame, table, vocabulary, prices, workflows=WorkflowReading(self.workflows()))
         self._reads.outputs = {

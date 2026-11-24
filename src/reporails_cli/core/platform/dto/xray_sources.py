@@ -8,7 +8,7 @@ from typing import Literal, TypeGuard, get_args
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
-from reporails_cli.core.platform.dto.events import HookDecision
+from reporails_cli.core.platform.dto.events import HookDecision, HookFiring
 from reporails_cli.core.platform.dto.exclusion import FileLeftOut
 from reporails_cli.core.platform.dto.hooks import CannotFire
 from reporails_cli.core.platform.dto.xray_graph import SourceKind
@@ -156,6 +156,41 @@ class DeclaredHook:
     file: str
     plugin_root: str | None
     place: str
+    # The settings file, as the page shows it, whose `disableAllHooks: true` turns the handler off; None when none does.
+    hooks_off: str | None = None
+
+    @property
+    def handler(self) -> str:
+        """The id of the handler: its file and its place in it."""
+        return f"{self.file}:{self.place}"
+
+
+@dataclass(frozen=True)
+class HookEarlier:
+    """When a hook last fired in another session of the project: that session's id and the time of the firing as the
+    transcript wrote it."""
+
+    session: str
+    at: str
+
+
+@dataclass(frozen=True)
+class EarlierFiring:
+    """The latest firing of one hook name and command in another session of the project."""
+
+    session: str
+    at: str
+    moment: float
+    firing: HookFiring
+
+
+@dataclass(frozen=True)
+class EarlierFirings:
+    """What reading the project's other recent sessions found: the latest firing per hook name and command in each,
+    and whether the read is still going (a view built meanwhile cannot say a hook never fired)."""
+
+    checking: bool
+    firings: tuple[EarlierFiring, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -171,8 +206,10 @@ class HookHealth:
 class HookDetail:
     """A hook as the session shows it: the commands it ran with their declaring files, how many times it fired and
     its latest firings, the event and matcher it is registered under (None when no hook config declares it), its
-    health, the phrase that states its status (its `{time}` filled by the page) and when it last fired, in seconds from
-    the session's start (None when it did not fire this session)."""
+    health, the phrase that states its status (its `{time}`, `{when}` and `{session}` filled by the page), when it last
+    fired, in seconds from the session's start (None when it did not fire this session), the other session it last
+    fired in (None when none is known), whether the read of the other sessions is still going, and the ids of the
+    declared handlers it stands for (its own id when no hook config declares it)."""
 
     commands: tuple[HookCommand, ...]
     firing_count: int
@@ -182,6 +219,9 @@ class HookDetail:
     health: HookHealth = field(default_factory=lambda: HookHealth(None, None))
     status: str = ""
     last_fired: float | None = None
+    earlier: HookEarlier | None = None
+    checking: bool = False
+    handlers: tuple[str, ...] = ()
 
     def to_json(self) -> JsonObject:
         """The detail as a JSON object."""
@@ -209,6 +249,8 @@ class HookDetail:
             "recovery": self.health.recovery,
             "status": self.status,
             "last_fired": self.last_fired,
+            "earlier": None if self.earlier is None else {"session": self.earlier.session, "at": self.earlier.at},
+            "checking": self.checking,
         }
 
 

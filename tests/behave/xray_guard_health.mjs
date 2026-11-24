@@ -15,6 +15,8 @@ if (ready) {
   out.header = await page.ev(`(() => { const s = document.querySelector('#sources .ssec[data-kind="hook"]'); return { used: s.querySelector('.ct .used').textContent, total: s.querySelector('.ct .tot').textContent, subs: [...s.querySelectorAll('.sx-sub')].map(e => e.textContent) }; })()`);
   await click('#sources .ssec[data-kind="hook"] .sh');
   await sleep(150);
+  // The other sessions are read in the background; the rows settle on the poll after the read is done.
+  await page.until(`![...document.querySelectorAll('#sources .ssec[data-kind="hook"] .sr .sw')].some(e => e.textContent.includes('checking'))`);
   out.rows = await page.ev(`[...document.querySelectorAll('#sources .ssec[data-kind="hook"] .sr')].map(r => ({ id: r.dataset.source, name: r.querySelector('.sn').textContent, facts: r.querySelector('.sw').textContent }))`);
   const broken = out.rows.find(r => r.facts.includes('cannot') || r.facts.includes('not executable'));
   if (broken) {

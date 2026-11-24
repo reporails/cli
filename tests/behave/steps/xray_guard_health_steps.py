@@ -8,11 +8,12 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
 from behave import given, then  # type: ignore[import-untyped]
-from steps.xray_harness_steps import _append_attachment
+from steps.xray_harness_steps import _append_attachment, _session_file
 
 SCRIPT = Path(__file__).resolve().parents[1] / "xray_guard_health.mjs"
 RAN = "ran.sh"
@@ -46,6 +47,38 @@ def step_ran(context):
         "content": "",
     }
     _append_attachment(context, 1, attachment, uuid="hook-row-0001")
+
+
+EARLIER = "earlier-session"
+
+
+@given("an earlier session of the project recorded the second hook running")
+def step_earlier(context):
+    attachment = {
+        "type": "hook_success",
+        "hookName": "PreToolUse:Bash",
+        "hookEvent": "PreToolUse",
+        "toolUseID": "toolu_0",
+        "command": f'"{context.project}"/.claude/hooks/{SILENT}',
+        "exitCode": 0,
+        "durationMs": 5,
+        "stdout": "",
+        "stderr": "",
+        "content": "",
+    }
+    row = {
+        "type": "attachment",
+        "timestamp": "2026-10-01T09:30:00.000Z",
+        "sessionId": EARLIER,
+        "version": "2.1.308",
+        "cwd": str(context.project),
+        "uuid": "earlier-hook-row",
+        "attachment": attachment,
+    }
+    earlier = _session_file(context).with_name(f"{EARLIER}.jsonl")
+    earlier.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    long_ago = time.time() - 3600
+    os.utime(earlier, (long_ago, long_ago))
 
 
 def _page(context) -> dict | None:
@@ -129,3 +162,16 @@ def step_offline(context):
     here = urlparse(context.url).netloc
     asked = {urlparse(name).netloc for name in seen["requests"] + seen["resourcesAfter"]}
     assert asked == {here}, asked
+
+
+@then("the second hook's row names the earlier session and its time and does not read never fired")
+def step_earlier_row(context):
+    seen = _page(context)
+    if seen is None:
+        return
+    row = _row(seen, SILENT)
+    assert "never fired" not in row["facts"], row
+    assert (
+        row["facts"]
+        == f"not this session \u00b7 last fired 2026-10-01 09:30 UTC (session {EARLIER[:8]}) \u00b7 not executable"
+    ), row

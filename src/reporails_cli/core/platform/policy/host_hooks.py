@@ -17,13 +17,20 @@ from reporails_cli.core.platform.dto.results import AgentConfig, HookEntry
 HEAL_TOOLS: tuple[str, ...] = ("Read", "Edit", "Write")
 _TOOL_NAMES: dict[str, str] = {"Read": "Read", "Edit": "Edit", "Write": "Write", "MultiEdit": "Edit"}
 
-_PLAIN_MATCHER = re.compile(r"[A-Za-z0-9_|]+")
+# A matcher made only of these characters names tools exactly, `|` or `,` between them.
+_NAME_LIST_MATCHER = re.compile(r"[A-Za-z0-9_\- ,|]+")
+_LIST_SEPARATOR = re.compile(r"\s*[|,]\s*")
 
 
-def _matches(matcher: str, tool: str) -> bool:
-    """Whether `matcher` selects `tool`: a name or `a|b` list exactly, any other text as a pattern."""
-    if _PLAIN_MATCHER.fullmatch(matcher):
-        return tool in matcher.split("|")
+def matcher_selects(matcher: str, tool: str) -> bool:
+    """Whether a hook registered under `matcher` runs for the tool (or source) named `tool`, as Claude Code reads a
+    matcher: empty or `*` selects every name; letters, digits, `_`, `-`, spaces, `,` and `|` only is an exact name or
+    a list of exact names; anything else is an unanchored regular expression, one that does not compile selecting
+    nothing. https://code.claude.com/docs/en/hooks"""
+    if matcher in ("", "*"):
+        return True
+    if _NAME_LIST_MATCHER.fullmatch(matcher):
+        return tool in _LIST_SEPARATOR.split(matcher.strip())
     try:
         return re.search(matcher, tool) is not None
     except re.error:
@@ -39,7 +46,5 @@ def intercepted_tools(hook: HookEntry, config: AgentConfig) -> tuple[str, ...]:
         (tools for event, tools in config.intercept_events.items() if event.casefold() == hook.event.casefold()), ()
     )
     reachable = tuple(tool for tool in HEAL_TOOLS if tool in gated)
-    if hook.matcher in ("", "*"):
-        return reachable
-    covered = {edit for name, edit in _TOOL_NAMES.items() if _matches(hook.matcher, name)}
+    covered = {edit for name, edit in _TOOL_NAMES.items() if matcher_selects(hook.matcher, name)}
     return tuple(tool for tool in reachable if tool in covered)
