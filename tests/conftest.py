@@ -449,14 +449,16 @@ def rules_from_checks(yml_paths: list[Path]) -> list[Any]:
 
 
 def run_rule_files(yml_paths: list[Path], target: Path, instruction_files: list[Path] | None = None) -> dict[str, Any]:
-    """Compile rule files and scan `target` with them, returning the SARIF-shaped result."""
-    from reporails_cli.core.discovery.exclusions import load_run_exclusions
+    """Compile rule files and scan `instruction_files` with them, returning the SARIF-shaped result.
+
+    A run hands the scan the files it checked; without `instruction_files` the markdown files under `target` are
+    the list.
+    """
     from reporails_cli.core.lint.regex import scan_ruleset
     from reporails_cli.core.lint.regex.compiler import compile_rules
-    from reporails_cli.core.platform.config.run_context import RunContext
 
-    exclusions = load_run_exclusions(RunContext(), target)
-    return scan_ruleset(compile_rules(rules_from_checks(yml_paths)), target, exclusions, instruction_files)
+    files = sorted(target.rglob("*.md")) if instruction_files is None else instruction_files
+    return scan_ruleset(compile_rules(rules_from_checks(yml_paths)), target, files)
 
 
 @pytest.fixture

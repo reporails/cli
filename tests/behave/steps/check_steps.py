@@ -237,3 +237,34 @@ def step_has_rule(context, rule):
 def step_run_on_folder_from_outside(context, folder):
     target = str(context.project / folder)
     context.result = run_ails(context.home, "check", target, "--format", "json", home=context.home)
+
+
+_TODO_NOTE = "# Notes\n\nTODO: fix this later.\n"
+
+
+@given('a git project whose config excludes "a" and whose "a" and "b" folders each hold a CLAUDE.md with a TODO')
+def step_two_folders_one_config_excluded(context):
+    context.project = build_project(context.tmpdir)
+    write_claude(context.project, _RICH)
+    write_config(context.project, "exclude_dirs:\n  - a\n")
+    for folder in ("a", "b"):
+        (context.project / folder).mkdir()
+        (context.project / folder / "CLAUDE.md").write_text(_TODO_NOTE, encoding="utf-8")
+
+
+def _files_with_rule(context, rule: str) -> set[str]:
+    return {
+        name
+        for name, record in _json_files(context).items()
+        if any(f["rule"] == rule for f in record.get("findings", []))
+    }
+
+
+@then('"{rule}" is reported for "{names}" only')
+def step_rule_reported_for_only(context, rule, names):
+    assert _files_with_rule(context, rule) == set(names.split(",")), sorted(_files_with_rule(context, rule))
+
+
+@then('"{rule}" is reported for no file')
+def step_rule_reported_for_none(context, rule):
+    assert not _files_with_rule(context, rule), sorted(_files_with_rule(context, rule))

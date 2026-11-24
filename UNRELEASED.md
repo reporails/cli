@@ -36,3 +36,5 @@
 ### Removed
 
 ### Internal
+
+- The pattern checks scan exactly the files the run hands them; a run's exclusions, from the project's `.ails/config.yml` and from `--exclude-dirs`, decide that list once, and a file target reads the project folder's config, never one beside the file.

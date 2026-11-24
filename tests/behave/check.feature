@@ -184,3 +184,38 @@ Feature: `ails check` scores and validates instruction files end-to-end
     Given a git project with a "prompts/review.md" that no agent loads
     When I run "ails check" with no target as json
     Then the json format_version is 1
+
+  @e2e @regression
+  Scenario: A folder target skips the folder the config names and checks the one a flag would name
+    Given a git project whose config excludes "a" and whose "a" and "b" folders each hold a CLAUDE.md with a TODO
+    When I run "ails check --format json"
+    Then the check exits 0
+    And "CORE:C:0029" is reported for "b/CLAUDE.md" only
+
+  @e2e @regression
+  Scenario: A folder target skips the folder the flag names too
+    Given a git project whose config excludes "a" and whose "a" and "b" folders each hold a CLAUDE.md with a TODO
+    When I run "ails check --exclude-dirs b --format json"
+    Then the check exits 0
+    And "CORE:C:0029" is reported for no file
+
+  @e2e @regression
+  Scenario: A file target in the folder the project config excludes is still checked
+    Given a git project whose config excludes "a" and whose "a" and "b" folders each hold a CLAUDE.md with a TODO
+    When I run "ails check a/CLAUDE.md --format json"
+    Then the check exits 0
+    And "CORE:C:0029" is reported for "a/CLAUDE.md" only
+
+  @e2e @regression
+  Scenario: A file target in the folder only the flag names is still checked
+    Given a git project whose config excludes "a" and whose "a" and "b" folders each hold a CLAUDE.md with a TODO
+    When I run "ails check b/CLAUDE.md --exclude-dirs b --format json"
+    Then the check exits 0
+    And "CORE:C:0029" is reported for "b/CLAUDE.md" only
+
+  @e2e @regression
+  Scenario: An explicit list checks every file it names, whichever source names its folder
+    Given a git project whose config excludes "a" and whose "a" and "b" folders each hold a CLAUDE.md with a TODO
+    When I run "ails check a/CLAUDE.md b/CLAUDE.md --exclude-dirs b --format json"
+    Then the check exits 0
+    And "CORE:C:0029" is reported for "a/CLAUDE.md,b/CLAUDE.md" only

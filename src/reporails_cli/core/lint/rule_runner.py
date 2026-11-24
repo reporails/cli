@@ -16,7 +16,6 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from reporails_cli.core.classify import classify_files, load_file_types
-from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.content_checker import run_content_checks
 from reporails_cli.core.lint.mechanical.runner import run_mechanical_checks
 from reporails_cli.core.lint.regex import run_checks
@@ -91,7 +90,6 @@ def _collect_deterministic_findings(
     instruction_files: list[Path],
     classified: list[ClassifiedFile],
     *,
-    exclusions: RunExclusions,
     thresholds: Mapping[str, Mapping[str, int]],
 ) -> list[LocalFinding]:
     """Run deterministic checks against matched target files.
@@ -114,8 +112,7 @@ def _collect_deterministic_findings(
             run_checks(
                 [rule],
                 project_dir,
-                exclusions,
-                instruction_files=target_files,
+                target_files,
                 min_lines_overrides=min_lines_overrides,
                 fix_by_rule={rule.id: rule.fix} if rule.fix else None,
                 skill_entries=skill_entries,
@@ -171,9 +168,10 @@ def _classify_agent_files(
 
 
 def _rule_roots(run: RunContext, project_dir: Path) -> tuple[ConfiguredRoot, ConfiguredRoot]:
-    """The project folder and the folder scanned (itself, or a file's parent), each with its config."""
-    scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
-    return run.configured_root(project_dir), run.configured_root(scan_dir)
+    """The project folder and the folder scanned, each with its config. A run's `project_dir` is always a folder,
+    so both are the one root."""
+    root = run.configured_root(project_dir)
+    return root, root
 
 
 def run_m_probes(
@@ -217,7 +215,6 @@ def run_m_probes(
                 project_dir,
                 effective_files,
                 classified,
-                exclusions=load_run_exclusions(run, project_dir),
                 thresholds=project.config.rule_thresholds,
             )
         )

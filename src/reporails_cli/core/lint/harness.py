@@ -121,8 +121,7 @@ def _count_findings(compiled: CompiledCheck, fixture_root: Path, targets: list[P
     sarif = scan_ruleset(
         CompiledRuleSet(checks=[compiled]),
         fixture_root,
-        no_exclusions(fixture_root),
-        instruction_files=targets,
+        targets,
     )
     return sum(len(as_list(as_object(run).get("results"))) for run in as_list(sarif.get("runs")))
 

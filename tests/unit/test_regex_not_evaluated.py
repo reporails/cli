@@ -8,14 +8,12 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.regex import matching, runner
 from reporails_cli.core.lint.regex.not_evaluated import (
     PatternTimeoutError,
     not_evaluated_scope,
     record_not_evaluated,
 )
-from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.platform import CombinedResult, Omissions
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters.text.not_evaluated import print_not_evaluated
@@ -46,9 +44,7 @@ def _project(tmp_path: Path, text: str) -> tuple[Path, Path]:
 
 
 def _run(yml: Path, root: Path) -> list[object]:
-    return runner.run_checks(
-        rules_from_checks([yml]), root, load_run_exclusions(RunContext(), root), instruction_files=[root / "CLAUDE.md"]
-    )
+    return runner.run_checks(rules_from_checks([yml]), root, instruction_files=[root / "CLAUDE.md"])
 
 
 @pytest.mark.unit
@@ -203,7 +199,6 @@ def test_timeout_is_recorded_only_for_a_file_the_check_applies_to(
         runner.run_checks(
             rules_from_checks([yml]),
             tmp_path,
-            load_run_exclusions(RunContext(), tmp_path),
             instruction_files=[tmp_path / "small.md", tmp_path / "big.md"],
         )
     assert unfinished == [("CORE:X:0004", "big.md")]
@@ -225,7 +220,6 @@ def test_timeout_on_a_non_entry_file_is_not_recorded(tmp_path: Path, monkeypatch
         runner.run_checks(
             rules_from_checks([yml]),
             tmp_path,
-            load_run_exclusions(RunContext(), tmp_path),
             instruction_files=[tmp_path / "SKILL.md", tmp_path / "other.md"],
             skill_entries={(tmp_path / "SKILL.md").resolve()},
         )

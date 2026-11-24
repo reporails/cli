@@ -245,7 +245,6 @@ def test_deterministic_type_rule_with_mechanical_checks_still_runs(
         tmp_path,
         [tmp_path / "a.md"],
         [],
-        exclusions=load_run_exclusions(RunContext(), tmp_path),
         thresholds={},
     )
     assert sentinel in out
