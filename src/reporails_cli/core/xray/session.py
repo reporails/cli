@@ -20,6 +20,7 @@ from reporails_cli.core.eventbus.transcript import (
     subagent_brief,
     subagent_output,
     subagent_system,
+    workflow_runs,
 )
 from reporails_cli.core.pipeline.expected_loads import AGENT
 from reporails_cli.core.platform.config.bootstrap import (
@@ -38,6 +39,7 @@ from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
 from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
 from reporails_cli.core.platform.dto.transcript import CallDetail, SummarySpan
+from reporails_cli.core.platform.dto.workflows import WorkflowRun
 from reporails_cli.core.platform.dto.xray import (
     AdapterVocabulary,
     Graph,
@@ -238,6 +240,11 @@ class XraySession:
         run = next((r for r in self._transcript if r.event == "subagent_run" and r.subagent_id == subagent_id), None)
         use_id = None if run is None or run.launch is None else run.launch.tool_use_id
         return subagent_output(AGENT, self._file, subagent_id, source, use_id)
+
+    def workflows(self) -> tuple[WorkflowRun, ...]:
+        """The session's workflow runs. Raises `PayloadRefused` when a run's record file is not the shape the adapter
+        is pinned to."""
+        return workflow_runs(AGENT, self._file)
 
     def system_prompt(self, agent_type: str) -> str | None:
         """The system prompt the first launch of an agent type that recorded a request was sent with; None when the

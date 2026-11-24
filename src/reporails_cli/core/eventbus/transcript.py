@@ -28,9 +28,12 @@ from reporails_cli.core.platform.dto.events import (
     TranscriptCursor,
 )
 from reporails_cli.core.platform.dto.transcript import CallDetail, SummarySpan
+from reporails_cli.core.platform.dto.workflows import WorkflowRun
 from reporails_cli.core.platform.dto.xray_graph import OutputSource
 
 _SUBAGENT_PREFIX = "agent-"
+_WORKFLOWS = "workflows"
+_JOURNAL = "journal.jsonl"
 # How many of a project's transcripts the session listing keeps.
 RECENT_SESSIONS = 20
 # How many characters of a call's input and of its result a call lookup returns.
@@ -181,22 +184,49 @@ def _subagent_dir(session_file: Path) -> Path:
     return session_file.with_suffix("") / "subagents"
 
 
-def _files(session_file: Path) -> list[tuple[str | None, Path]]:
-    """The main transcript (`None`) and each subagent file below it, with the subagent's id."""
-    files: list[tuple[str | None, Path]] = [(None, session_file)]
+def _run_dirs(session_file: Path) -> list[Path]:
+    """The folders of the session's workflow runs, each named by its run id."""
     with contextlib.suppress(OSError):
+        return sorted(path for path in (_subagent_dir(session_file) / _WORKFLOWS).iterdir() if path.is_dir())
+    return []
+
+
+def _run_records(session_file: Path) -> list[Path]:
+    """The run record files of the session's workflow runs, each named `<run id>.json`."""
+    with contextlib.suppress(OSError):
+        return sorted((session_file.with_suffix("") / _WORKFLOWS).glob("*.json"))
+    return []
+
+
+def _files(session_file: Path) -> list[tuple[str | None, Path]]:
+    """The main transcript (`None`) and each subagent file below it, with the subagent's id: the session's own
+    subagents, then the agents of each workflow run."""
+    files: list[tuple[str | None, Path]] = [(None, session_file)]
+    pattern = f"{_SUBAGENT_PREFIX}*.jsonl"
+    with contextlib.suppress(OSError):
+        folders = [_subagent_dir(session_file), *_run_dirs(session_file)]
         files.extend(
             (path.stem.removeprefix(_SUBAGENT_PREFIX), path)
-            for path in sorted(_subagent_dir(session_file).glob(f"{_SUBAGENT_PREFIX}*.jsonl"))
+            for folder in folders
+            for path in sorted(folder.glob(pattern))
         )
     return files
 
 
+def _workflow_of(path: Path) -> str | None:
+    """The id of the workflow run whose folder holds the subagent file `path`; None for any other file."""
+    return path.parent.name if path.parent.parent.name == _WORKFLOWS else None
+
+
 def last_write(session_file: Path, *, main_only: bool = False) -> float | None:
-    """When the transcript or any of its subagent files was last written, in seconds since 1970; with `main_only`,
-    the transcript alone. None when none can be read."""
+    """When the transcript, any of its subagent files, or any workflow run's journal or record file was last
+    written, in seconds since 1970; with `main_only`, the transcript alone. None when none can be read."""
     written: list[float] = []
-    for _, path in _files(session_file)[:1] if main_only else _files(session_file):
+    runs = (
+        [] if main_only else [*(folder / _JOURNAL for folder in _run_dirs(session_file)), *_run_records(session_file)]
+    )
+    files = _files(session_file)[:1] if main_only else _files(session_file)
+    for path in [*(path for _, path in files), *runs]:
         with contextlib.suppress(OSError):
             written.append(path.stat().st_mtime)
     return max(written, default=None)
@@ -210,7 +240,7 @@ def subagent_brief(agent: str, session_file: Path, subagent_id: str) -> str | No
     adapter = get_transcript_adapter(agent)
     if adapter is None:
         raise PayloadRefused(f"unknown agent: {agent}")
-    first_row = _first_row(_subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl")
+    first_row = _first_row(_owner_path(session_file, subagent_id))
     return None if first_row is None else adapter.resolve_brief(first_row)
 
 
@@ -229,7 +259,7 @@ def subagent_output(
     adapter = get_transcript_adapter(agent)
     if adapter is None:
         raise PayloadRefused(f"unknown agent: {agent}")
-    path = _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
+    path = _owner_path(session_file, subagent_id)
     if source == "handback":
         row = _find_row(path, HANDBACK_TOOL, lambda found: adapter.resolve_handback(found) is not None)
         return None if row is None else adapter.resolve_handback(row)
@@ -271,9 +301,7 @@ def subagent_system(agent: str, session_file: Path, subagent_id: str | None) -> 
     adapter = get_transcript_adapter(agent)
     if adapter is None:
         raise PayloadRefused(f"unknown agent: {agent}")
-    path = (
-        session_file if subagent_id is None else _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
-    )
+    path = _owner_path(session_file, subagent_id)
     request = _find_row(
         path,
         '"api-request"',
@@ -338,10 +366,12 @@ def compact_summary(agent: str, session_file: Path, subagent_id: str | None, spa
 
 
 def _owner_path(session_file: Path, subagent_id: str | None) -> Path:
-    """The main transcript, or the file of one subagent."""
+    """The main transcript, or the file of one subagent: one of the session's own or of a workflow run's agents.
+    A subagent id no file has resolves to the path of a session subagent that is not there."""
     if subagent_id is None:
         return session_file
-    return _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
+    found = next((path for known, path in _files(session_file) if known == subagent_id), None)
+    return found or _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
 
 
 def _summary_row(adapter: TranscriptAdapter, line: bytes) -> tuple[str | None, str] | None:
@@ -365,9 +395,7 @@ def hook_output_text(agent: str, session_file: Path, subagent_id: str | None, ro
     adapter = get_transcript_adapter(agent)
     if adapter is None:
         raise PayloadRefused(f"unknown agent: {agent}")
-    path = (
-        session_file if subagent_id is None else _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
-    )
+    path = _owner_path(session_file, subagent_id)
     row = _find_row(path, row_id, lambda found: found.get("uuid") == row_id)
     return None if row is None else adapter.resolve_hook_output(row)
 
@@ -385,9 +413,7 @@ def call_detail(
     adapter = get_transcript_adapter(agent)
     if adapter is None:
         raise PayloadRefused(f"unknown agent: {agent}")
-    path = (
-        session_file if subagent_id is None else _subagent_dir(session_file) / f"{_SUBAGENT_PREFIX}{subagent_id}.jsonl"
-    )
+    path = _owner_path(session_file, subagent_id)
     row, answer = _find_call_rows(
         path, use_id, lambda found: adapter.holds_call(found, use_id), lambda found: adapter.holds_result(found, use_id)
     )
@@ -399,6 +425,42 @@ def call_detail(
     cut = len(full_input) > CALL_INPUT_CHARS or (full_result is not None and len(full_result) > CALL_RESULT_CHARS)
     shown_result = None if full_result is None else full_result[:CALL_RESULT_CHARS]
     return CallDetail(tool, text, full_input[:CALL_INPUT_CHARS], shown_result, cut)
+
+
+def workflow_runs(agent: str, session_file: Path) -> tuple[WorkflowRun, ...]:
+    """The workflow runs of the session, by run id: each run its record file holds, and each run that has an agent
+    folder but no record file yet as a running run built from its journal and its agents' meta files.
+
+    Raises `PayloadRefused` when the agent is unknown or a record file is not the shape the adapter is pinned
+    to; a record file that is not yet whole JSON counts as absent."""
+    adapter = get_transcript_adapter(agent)
+    if adapter is None:
+        raise PayloadRefused(f"unknown agent: {agent}")
+    records = {path.stem: _json_object(path) for path in _run_records(session_file)}
+    folders = {folder.name: folder for folder in _run_dirs(session_file)}
+    runs: list[WorkflowRun] = []
+    for run_id in sorted({*records, *folders}):
+        folder = folders.get(run_id)
+        journal = [] if folder is None else _rows(read_appended_lines(folder / _JOURNAL, 0)[0])
+        agents = (
+            {}
+            if folder is None
+            else {
+                path.stem.removeprefix(_SUBAGENT_PREFIX): path
+                for path in sorted(folder.glob(f"{_SUBAGENT_PREFIX}*.jsonl"))
+            }
+        )
+        metas = {agent_id: meta for agent_id, path in agents.items() if (meta := _meta(path)) is not None}
+        runs.append(adapter.resolve_workflow_run(run_id, records.get(run_id), journal, metas))
+    return tuple(runs)
+
+
+def _json_object(path: Path) -> JsonObject | None:
+    """The JSON object a file holds; None while it is absent or not yet whole JSON."""
+    try:
+        return as_object(json.loads(path.read_bytes()))
+    except (OSError, ValueError):
+        return None
 
 
 def _read_file(
@@ -447,7 +509,7 @@ def _run_record(
     if first_row is None or meta is None:
         return None
     try:
-        return adapter.resolve_subagent(before.subagent_id or "", meta, first_row)
+        return adapter.resolve_subagent(before.subagent_id or "", meta, first_row, _workflow_of(path))
     except PayloadRefused as err:
         return _refusal(agent, session_id, err.reason)
 

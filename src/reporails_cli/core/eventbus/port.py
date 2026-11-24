@@ -9,6 +9,7 @@ from typing import Protocol
 from reporails_cli.core.eventbus.store import append
 from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.events import EventRecord, RequestChain
+from reporails_cli.core.platform.dto.workflows import WorkflowRun
 
 
 class PayloadRefused(Exception):  # noqa: N818  # named for the decision it carries, not a fault
@@ -42,9 +43,18 @@ class TranscriptAdapter(Protocol):
         to that chain and a request row yields its sized request; raises `PayloadRefused`
         on a row of a known type whose fields do not have the shape it is pinned to."""
 
-    def resolve_subagent(self, subagent_id: str, meta: JsonObject, first_row: JsonObject) -> EventRecord:
-        """The `subagent_run` record of one subagent file, from its meta file and its first row; raises
-        `PayloadRefused` when either lacks a field it is pinned to."""
+    def resolve_subagent(
+        self, subagent_id: str, meta: JsonObject, first_row: JsonObject, workflow_run: str | None = None
+    ) -> EventRecord:
+        """The `subagent_run` record of one subagent file, from its meta file and its first row; for an agent of a
+        workflow run, the run's id; raises `PayloadRefused` when either lacks a field it is pinned to."""
+
+    def resolve_workflow_run(
+        self, run_id: str, record: JsonObject | None, journal: list[JsonObject], metas: dict[str, JsonObject]
+    ) -> WorkflowRun:
+        """The workflow run `run_id`, from its record file; with no record file (`record` None), from the journal
+        rows and the meta files of its agents, as a running run. Raises `PayloadRefused` when a record is not the
+        pinned shape."""
 
     def resolve_brief(self, first_row: JsonObject) -> str:
         """The brief a subagent was given, from the first row of its file; raises `PayloadRefused` when that

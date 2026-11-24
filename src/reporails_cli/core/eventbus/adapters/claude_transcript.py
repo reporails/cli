@@ -88,8 +88,9 @@ the adapter refuses any other shape of a row type it reads:
   or a list of blocks, sized by the characters of its text; a block of any other type counts nothing.
 - a subagent file: its first row's `timestamp`, the `agentType` of `agent-<id>.meta.json` and, when present, the
   meta fields `description`, `parentAgentId`, `toolUseId`, `requestShape` (strings; `background` marks a background
-  run), `model` (a string), `launchedWithDefaults` (a boolean), `spawnDepth` (a whole number) and
-  `stoppedByUser` (a boolean).
+  run), `model` (a string), `launchedWithDefaults` (a boolean), `spawnDepth` (a whole number),
+  `stoppedByUser` (a boolean) and `workflowPhase` (a string, on an agent a workflow run started). A workflow run's
+  record file is read by `claude_workflows`.
 - API request rows, recorded on Claude Code 2.1.309 and later: `api-request-shape`, `api-request-blob` and
   `api-request`, sized and dropped by `claude_requests` when `resolve_row` is given a request chain, ignored
   otherwise; their fields are listed there.
@@ -125,6 +126,7 @@ from reporails_cli.core.eventbus.adapters.claude_hooks import (
     hook_note,
     hook_output,
 )
+from reporails_cli.core.eventbus.adapters.claude_launch import subagent_launch
 from reporails_cli.core.eventbus.adapters.claude_requests import (
     feed_row,
     request_shape_hash,
@@ -135,12 +137,12 @@ from reporails_cli.core.eventbus.adapters.claude_rows import (
     brief_text,
     compact_summary_link,
     compact_summary_text,
-    meta_field,
     required_text,
     sized_by_name,
     string_list,
     usage_counts,
 )
+from reporails_cli.core.eventbus.adapters.claude_workflows import resolve_workflow_run
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
@@ -162,14 +164,12 @@ from reporails_cli.core.platform.dto.events import (
     ReplyText,
     RequestChain,
     SkillRun,
-    SubagentMeta,
     TokenUsage,
 )
 
 # The `message.model` Claude Code writes on a reply it made itself, for an API error or an interrupt.
 SYNTHETIC_MODEL = "<synthetic>"
 NESTED_MARKER = "nested"
-BACKGROUND_SHAPE = "background"
 
 
 _HARNESS: dict[str, HarnessAttachment] = {
@@ -312,24 +312,19 @@ class ClaudeTranscriptAdapter:
         """The `timestamp` of a row; None for a row without one."""
         return opt_str(row.get("timestamp")) or None
 
-    def resolve_subagent(self, subagent_id: str, meta: JsonObject, first_row: JsonObject) -> EventRecord:
+    resolve_workflow_run = staticmethod(resolve_workflow_run)
+
+    def resolve_subagent(
+        self, subagent_id: str, meta: JsonObject, first_row: JsonObject, workflow_run: str | None = None
+    ) -> EventRecord:
         """The `subagent_run` record of a subagent file; refuses a meta file without `agentType` or a first row that
-        is not a user row. A first row with no text leaves the brief size unknown."""
+        is not a user row. A first row with no text leaves the brief size unknown. For an agent of a workflow run,
+        the record names the run and the meta's `workflowPhase`."""
         agent_type = opt_str(meta.get("agentType"))
         if not agent_type:
             raise PayloadRefused(f"subagent {subagent_id} meta has no agentType")
         brief = brief_text(first_row)
-        launch = SubagentMeta(
-            description=meta_field(meta, "description", str),
-            parent_id=meta_field(meta, "parentAgentId", str),
-            tool_use_id=meta_field(meta, "toolUseId", str),
-            depth=meta_field(meta, "spawnDepth", int),
-            brief_chars=None if brief is None else len(brief),
-            stopped=meta_field(meta, "stoppedByUser", bool) is True,
-            background=meta_field(meta, "requestShape", str) == BACKGROUND_SHAPE,
-            asked_model=meta_field(meta, "model", str),
-            with_defaults=meta_field(meta, "launchedWithDefaults", bool),
-        )
+        launch = subagent_launch(meta, brief, workflow_run)
         return replace(self._record(first_row, "subagent_run", subagent_id), subagent_type=agent_type, item=launch)
 
     def _tool_calls(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:

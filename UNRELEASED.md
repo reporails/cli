@@ -10,6 +10,7 @@
   - `CORE:G:0014` reports text that tells the agent to drop its other instructions or to hide its own actions or instructions from the user.
   - `CORE:G:0015` reports a command that reads a credential store (`~/.ssh/id_*`, `.aws/credentials`, `.netrc`, …) or uploads a local file or the environment to a remote host. Public keys, `authorized_keys` and a token written as an environment reference are left alone.
 - New skill checks report a skill that some agents drop or degrade: a name over 64 characters or containing `anthropic` or `claude` (`CORE:S:0059`), a description over 1,024 characters (`CORE:S:0060`), Cursor rule fields `alwaysApply` or `globs` (`CORE:S:0061`), a duplicate frontmatter key (`CORE:S:0062`), tab indentation in the frontmatter (`CORE:S:0063`), and a frontmatter key that YAML reads as a non-string (`CORE:S:0064`).
+- `ails xray` reads the agents a Claude Code Workflow run starts, with their loads and hand-backs, and a live page keeps refreshing while a run's agents work.
 
 ### Changed
 

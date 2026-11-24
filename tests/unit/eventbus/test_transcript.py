@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -16,6 +17,7 @@ from reporails_cli.core.eventbus.transcript import (
     CALL_RESULT_CHARS,
     call_detail,
     compact_summary,
+    last_write,
     opens_with_clear,
     prompt_text,
     read_transcript,
@@ -23,6 +25,7 @@ from reporails_cli.core.eventbus.transcript import (
     subagent_brief,
     subagent_output,
     subagent_system,
+    workflow_runs,
 )
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object
 from reporails_cli.core.platform.dto.events import EventRecord, ReplyText, TranscriptCursor
@@ -1267,3 +1270,96 @@ def test_a_name_only_attachment_is_a_harness_record_of_size_zero(tmp_path: Path)
 def test_an_unknown_attachment_type_is_still_dropped(tmp_path: Path) -> None:
     records, _ = read_transcript("claude", _attachment_session(tmp_path, {"type": "zzz_unknown"}), TranscriptCursor())
     assert _of(records, "harness") == []
+
+
+WORKFLOW = "2.1.311-workflow"
+WF_RUN = "wf_test01"
+WF_A, WF_B = "awf0000000000001", "awf0000000000002"
+WF_AGENTS = [(WF_A, 0, "Build", "PLACEHOLDER-LABEL-1"), (WF_B, 1, "Verify", "PLACEHOLDER-LABEL-2")]
+
+
+def _workflow_session(tmp_path: Path) -> Path:
+    shutil.copytree(FIXTURES / WORKFLOW, tmp_path / WORKFLOW)
+    return tmp_path / WORKFLOW / "session.jsonl"
+
+
+def test_a_workflow_agent_reads_into_records_and_a_run_naming_its_workflow_and_phase(tmp_path: Path) -> None:
+    records, _ = read_transcript("claude", _workflow_session(tmp_path), TranscriptCursor())
+    assert not _of(records, "refusal")
+    assert {r.subagent_id for r in _of(records, "assistant_usage")} >= {WF_A, WF_B}
+    runs = {r.subagent_id: r.launch for r in _of(records, "subagent_run")}
+    assert set(runs) == {"amain0000000000001", WF_A, WF_B}
+    wf_a, wf_b, plain = runs[WF_A], runs[WF_B], runs["amain0000000000001"]
+    assert wf_a is not None and wf_b is not None and plain is not None
+    assert (wf_a.workflow_run, wf_a.workflow_phase) == (WF_RUN, "Build")
+    assert (wf_b.workflow_run, wf_b.workflow_phase) == (WF_RUN, "Verify")
+    assert (plain.workflow_run, plain.workflow_phase) == (None, None)
+    assert wf_a.tool_use_id is None
+
+
+def test_last_write_moves_when_only_a_workflow_file_is_touched(tmp_path: Path) -> None:
+    session = _workflow_session(tmp_path)
+    root = session.with_suffix("")
+    targets = [
+        root / "subagents" / "workflows" / WF_RUN / f"agent-{WF_A}.jsonl",
+        root / "subagents" / "workflows" / WF_RUN / "journal.jsonl",
+        root / "workflows" / f"{WF_RUN}.json",
+    ]
+    for index, target in enumerate(targets):
+        stamp = 4_000_000_000 + index
+        os.utime(target, (stamp, stamp))
+        assert last_write(session) == stamp
+        assert last_write(session, main_only=True) != stamp
+
+
+def test_brief_output_and_call_detail_resolve_a_workflow_agent_id(tmp_path: Path) -> None:
+    session = _workflow_session(tmp_path)
+    assert subagent_brief("claude", session, WF_A) == "PLACEHOLDER-WF-BRIEF-1"
+    assert subagent_output("claude", session, WF_B, "reply", None) == "PLACEHOLDER-WF-REPLY-2"
+    detail = call_detail("claude", session, WF_A, "toolu_wfbash", "Bash", shell=True)
+    assert detail is not None and detail.text == "PLACEHOLDER-WF-COMMAND"
+    assert detail.result == "PLACEHOLDER-WF-RESULT"
+    assert call_detail("claude", session, None, "toolu_wfbash", "Bash", shell=True) is None
+    assert subagent_brief("claude", session, "anosuch") is None
+
+
+def test_workflow_runs_return_the_run_record_with_its_agents(tmp_path: Path) -> None:
+    (run,) = workflow_runs("claude", _workflow_session(tmp_path))
+    assert (run.run_id, run.name, run.status) == (WF_RUN, "PLACEHOLDER-WORKFLOW", "completed")
+    assert run.phases == ("Build", "Verify")
+    assert (run.agent_count, run.duration_ms, run.total_tokens, run.start_time) == (2, 130000, 4200, 1795113523095)
+    assert [(a.agent_id, a.phase_index, a.phase_title, a.label) for a in run.agents] == WF_AGENTS
+
+
+def test_a_run_with_no_record_file_yet_is_running_with_phases_from_its_agents(tmp_path: Path) -> None:
+    session = _workflow_session(tmp_path)
+    (session.with_suffix("") / "workflows" / f"{WF_RUN}.json").unlink()
+    (run,) = workflow_runs("claude", session)
+    assert (run.run_id, run.status, run.name) == (WF_RUN, "running", None)
+    assert run.phases == ("Build", "Verify")
+    assert (run.agent_count, run.duration_ms, run.total_tokens, run.start_time) == (2, None, None, None)
+    assert [(a.agent_id, a.phase_index, a.phase_title, a.label) for a in run.agents] == WF_AGENTS
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "reason"),
+    [
+        ("status", 3, "status"),
+        ("runId", "wf_other", "run other than"),
+        ("phases", {}, "not a list"),
+        ("durationMs", "long", "durationMs"),
+        ("workflowProgress", [{"agentId": WF_A}], "phaseIndex"),
+    ],
+)
+def test_a_malformed_run_record_is_refused(key: str, value: object, reason: str, tmp_path: Path) -> None:
+    session = _workflow_session(tmp_path)
+    record = session.with_suffix("") / "workflows" / f"{WF_RUN}.json"
+    record.write_text(json.dumps({**json.loads(record.read_text()), key: value}))
+    with pytest.raises(PayloadRefused, match=reason):
+        workflow_runs("claude", session)
+
+
+def test_a_session_with_no_workflow_has_no_runs(tmp_path: Path) -> None:
+    assert workflow_runs("claude", _copy_session(tmp_path)) == ()
+    with pytest.raises(PayloadRefused, match="unknown agent"):
+        workflow_runs("nosuch", _copy_session(tmp_path))

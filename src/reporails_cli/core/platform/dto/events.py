@@ -208,7 +208,7 @@ class SubagentMeta:
     """What a subagent's meta file and first row say about its launch: the task's short description, the subagent
     that launched it (None for the main agent), the id of the launching call, its nesting depth, the size of its brief
     in characters (None when its first row holds no text), whether the person stopped it and whether it ran in the
-    background."""
+    background. For an agent a workflow run started: the run's id and the title of the phase it ran in."""
 
     description: str | None
     parent_id: str | None
@@ -221,6 +221,8 @@ class SubagentMeta:
     # definition's defaults (None when the meta file does not say).
     asked_model: str | None = None
     with_defaults: bool | None = None
+    workflow_run: str | None = None
+    workflow_phase: str | None = None
 
 
 @dataclass(frozen=True)
