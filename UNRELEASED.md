@@ -44,6 +44,7 @@
 - A check-level `disabled: true` override in an agent config now drops that check; before, it still ran and reported.
 - A settings file without hooks is no longer reported by a rule that another rule supersedes.
 - The x-ray compaction stripe's one-line text stays inside the stripe at 1280 and 1920 px instead of running past it.
+- x-ray: an own-context item's details show only the text its size counts, say how much of it is readable (thinking, tool definitions), and no longer fail on one unreadable transcript row. Each item says how its own size was measured, the estimate without a recorded request is no longer called the system prompt, and "Open the system prompt it launched with" selects that agent.
 
 ### Removed
 

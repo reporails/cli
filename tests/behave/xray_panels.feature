@@ -125,6 +125,20 @@ Feature: The x-ray Sources panel and right column list everything and describe o
     And each item opens the text its request recorded and the system prompt shows its sections
 
   @e2e @browser
+  Scenario: The other messages show only their own text and say what the source and hook rows count
+    Given a project with a session whose other messages hold a source's note and a hook's note beside a message of their own
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the other messages show only their own message and say what is counted in the rows of the source and the hook
+
+  @e2e @browser
+  Scenario: Signed thinking says how many of its counted characters are readable
+    Given a project with a session whose requests carried every item of the coding agent's own context, with a subagent
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the thinking says how many of its counted characters are readable and shows no empty text
+
+  @e2e @browser
   Scenario: An item's size in the list is its size in the details
     Given a project with a session whose requests carried every item of the coding agent's own context, with a subagent
     When "ails xray --no-open" is started in the project

@@ -105,6 +105,7 @@ size and a command's hash; on request, a command's text, a hand-back's message a
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import ClassVar
 
 from reporails_cli.core.eventbus.adapters.claude_calls import (
     blocks_text,
@@ -120,6 +121,7 @@ from reporails_cli.core.eventbus.adapters.claude_calls import (
     tool_call,
     tool_result,
 )
+from reporails_cli.core.eventbus.adapters.claude_harness import ClaudeContextReader, harness_parts
 from reporails_cli.core.eventbus.adapters.claude_hooks import (
     HOOK_NOTE_ATTACHMENTS,
     hook_firing,
@@ -139,17 +141,14 @@ from reporails_cli.core.eventbus.adapters.claude_rows import (
     compact_summary_link,
     compact_summary_text,
     required_text,
-    sized_by_name,
-    string_list,
     usage_counts,
 )
 from reporails_cli.core.eventbus.adapters.claude_workflows import resolve_workflow_run
-from reporails_cli.core.eventbus.port import PayloadRefused
+from reporails_cli.core.eventbus.port import ContextReader, PayloadRefused
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
     as_list,
     as_object,
-    opt_int,
     opt_str,
     strict_str_list,
 )
@@ -158,7 +157,6 @@ from reporails_cli.core.platform.dto.events import (
     CompactionBoundary,
     EventKind,
     EventRecord,
-    HarnessAttachment,
     HarnessEntry,
     InstructionLoad,
     MessageText,
@@ -174,23 +172,6 @@ SYNTHETIC_MODEL = "<synthetic>"
 NESTED_MARKER = "nested"
 
 
-_HARNESS: dict[str, HarnessAttachment] = {
-    "prompt_snapshot": HarnessAttachment(
-        "system_prompt", "system prompt", "systemPrompt", False, "systemPrompt", False
-    ),
-    "skill_listing": HarnessAttachment("skill_list", "skills", "skillCount", True, "content", True),
-    "agent_listing_delta": HarnessAttachment(
-        "agent_list", "agents", "addedTypes", False, "addedLines", False, "removedTypes"
-    ),
-    "mcp_instructions_delta": HarnessAttachment(
-        "mcp_instructions", "MCP server instructions", "addedNames", False, "addedBlocks", False, "removedNames"
-    ),
-}
-
-_UNSIZED = frozenset(
-    {"environment", "auto_mode", "plan_mode", "task_reminder", "silent_turn_reminder", "credential_org", "date"}
-)
-
 # The command row a `/clear` opens the new session's transcript with.
 _CLEAR_COMMAND = "<command-name>/clear</command-name>"
 
@@ -200,6 +181,7 @@ class ClaudeTranscriptAdapter:
 
     agent = "claude"
     session_env = "CLAUDE_CODE_SESSION_ID"  # https://code.claude.com/docs/en/env-vars
+    context: ClassVar[ContextReader] = ClaudeContextReader()
 
     def resolve_row(
         self, row: JsonObject, subagent_id: str | None, requests: RequestChain | None = None
@@ -281,7 +263,7 @@ class ClaudeTranscriptAdapter:
         return shape_text(row, shape_hash, item)
 
     def request_blocks(self, chain: RequestChain) -> list[MessageText]:
-        """The listings recorded before the request `chain` last took, then its notes and thinking in order."""
+        """The notes and thinking of the messages of the request `chain` last took, in order."""
         return request_blocks(chain)
 
     def holds_call(self, row: JsonObject, use_id: str) -> bool:
@@ -462,8 +444,8 @@ class ClaudeTranscriptAdapter:
             return self._hook_note(row, attachment, subagent_id)
         if kind == "queued_command":
             return self._prompt(row, subagent_id)
-        entry = self._harness_entry(attachment, kind)
-        return [] if entry is None else [self._harness(row, entry, subagent_id)]
+        parts = harness_parts(attachment, kind)
+        return [] if parts is None else [self._harness(row, parts[0], subagent_id)]
 
     def _instructions(self, row: JsonObject, attachment: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         loads: list[EventRecord] = []
@@ -473,15 +455,6 @@ class ClaudeTranscriptAdapter:
             loads.append(self._load(row, path, opt_str(entry.get("type")), subagent_id))
         return loads
 
-    def _harness_entry(self, attachment: JsonObject, kind: object) -> HarnessEntry | None:
-        if kind == "session_context":
-            return self._session_context(attachment)
-        if kind == "deferred_tools_delta":
-            return self._deferred_tools(attachment)
-        if isinstance(kind, str) and kind in _HARNESS:
-            return self._listing(attachment, kind)
-        return HarnessEntry("unsized", kind, None, 0) if isinstance(kind, str) and kind in _UNSIZED else None
-
     def _load(self, row: JsonObject, path: str, memory_type: str | None, subagent_id: str | None) -> EventRecord:
         return replace(
             self._record(row, "instruction_load", subagent_id),
@@ -490,97 +463,6 @@ class ClaudeTranscriptAdapter:
 
     def _harness(self, row: JsonObject, entry: HarnessEntry, subagent_id: str | None) -> EventRecord:
         return replace(self._record(row, "harness", subagent_id), item=entry)
-
-    def _listing(self, attachment: JsonObject, kind: str) -> HarnessEntry:
-        spec = _HARNESS[kind]
-        what = f"{kind} attachment"
-        if spec.count_is_number:
-            count = opt_int(attachment.get(spec.count_key))
-            if count is None:
-                raise PayloadRefused(f"{what} {spec.count_key} is not a whole number")
-            names: list[str] = []
-        else:
-            names = string_list(attachment.get(spec.count_key), spec.count_key, what)
-            count = len(names)
-        text = attachment.get(spec.chars_key)
-        added: tuple[tuple[str, int], ...] = ()
-        if spec.chars_is_text:
-            if not isinstance(text, str):
-                raise PayloadRefused(f"{what} {spec.chars_key} is not a string")
-            chars = len(text)
-        else:
-            items = string_list(text, spec.chars_key, what)
-            chars = sum(len(item) for item in items)
-            if spec.removed_key is not None:
-                added = sized_by_name(names, items, (), what)
-        removed = self._removed_names(attachment, spec.removed_key, what)
-        listed = (
-            tuple(string_list(attachment["names"], "names", what))
-            if kind == "skill_listing" and "names" in attachment
-            else None
-        )
-        return HarnessEntry(
-            spec.kind, spec.label, count - len(removed), chars, added=added, removed=removed, names=listed
-        )
-
-    def _removed_names(self, attachment: JsonObject, key: str | None, what: str) -> tuple[str, ...]:
-        """The names a delta row removed; none when the row does not carry the list."""
-        if key is None or key not in attachment:
-            return ()
-        return tuple(string_list(attachment.get(key), key, what))
-
-    def _failed_servers(self, attachment: JsonObject, what: str) -> tuple[str, ...]:
-        """The names of the servers that failed to connect; each entry is an object with a string name."""
-        if "failedMcpServers" not in attachment:
-            return ()
-        entries = attachment["failedMcpServers"]
-        if not isinstance(entries, list):
-            raise PayloadRefused(f"{what} failedMcpServers is not a list of objects")
-        names: list[str] = []
-        for entry in entries:
-            fields = as_object(entry)
-            name = opt_str(fields.get("name"))
-            if not name:
-                raise PayloadRefused(f"{what} failedMcpServers entry has no string name")
-            for key in ("errorCode", "error"):
-                if key in fields and opt_str(fields[key]) is None:
-                    raise PayloadRefused(f"{what} failedMcpServers entry {key} is not a string")
-            names.append(name)
-        return tuple(names)
-
-    def _deferred_tools(self, attachment: JsonObject) -> HarnessEntry:
-        what = "deferred_tools_delta attachment"
-        if "content" in attachment:
-            content = attachment.get("content")
-            if not isinstance(content, str):
-                raise PayloadRefused(f"{what} content is not a string")
-            return HarnessEntry("deferred_tools", "deferred tools", None, len(content))
-        names = string_list(attachment.get("addedNames"), "addedNames", what)
-        lines = string_list(attachment.get("addedLines"), "addedLines", what)
-        removed = self._removed_names(attachment, "removedNames", what)
-        readded = self._removed_names(attachment, "readdedNames", what)
-        added = sized_by_name(names, lines, readded, what)
-        return HarnessEntry(
-            "deferred_tools",
-            "deferred tools",
-            len(names) - len(removed),
-            sum(len(item) for item in lines),
-            added=added,
-            removed=removed,
-            readded=() if added else tuple(names),
-            pending=self._removed_names(attachment, "pendingMcpServers", what),
-            failed=self._failed_servers(attachment, what),
-        )
-
-    def _session_context(self, attachment: JsonObject) -> HarnessEntry:
-        context = attachment.get("context")
-        if not isinstance(context, dict):
-            raise PayloadRefused("session_context attachment context is not an object")
-        values = strict_str_list(list(context.values()))
-        if values is None:
-            raise PayloadRefused("session_context attachment context is not an object of strings")
-        chars = sum(len(value) for value in values)
-        return HarnessEntry("session_context", "session context", None, chars)
 
     def _hook_note(self, row: JsonObject, attachment: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         what = f"{attachment.get('type')} attachment"

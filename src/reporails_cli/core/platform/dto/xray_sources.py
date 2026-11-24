@@ -364,7 +364,8 @@ class XrayBuiltinInfo:
     """One item of the coding agent's own context: its row key, label, whether its text can be read in the
     transcript and what it holds, as a template filled from the item's count (`{count}`); a template that needs a
     count the item lacks gives no description; `note_once` words a count of one. A template with `{kinds}` takes the
-    names the item lists, and `note_none` words the item when it has none."""
+    names the item lists, and `note_none` words the item when it has none. `unread` names what the item's
+    characters hold besides its readable text (None when all of them are readable)."""
 
     key: ContextKey
     label: str
@@ -372,6 +373,7 @@ class XrayBuiltinInfo:
     note: str | None
     note_once: str | None = None
     note_none: str | None = None
+    unread: str | None = None
 
 
 @dataclass(frozen=True)

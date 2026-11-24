@@ -18,7 +18,7 @@ from reporails_cli.core.platform.dto.events import (
 )
 from reporails_cli.core.platform.dto.xray_composition import COMPOSITION_KEYS, REMAINDER_KEY
 from reporails_cli.core.platform.dto.xray_graph import XrayContextRow, XrayInContext
-from reporails_cli.core.platform.dto.xray_own import XrayOwnItem, XrayRowMeasure
+from reporails_cli.core.platform.dto.xray_own import XrayListed, XrayOwnItem, XrayRowMeasure
 from tests.unit.xray.test_xray_composition import _files, _rows
 from tests.unit.xray.test_xray_graph import _agent, _graph, _node, harness, launch, load, rec, reply
 
@@ -240,6 +240,7 @@ def test_a_measured_row_says_how_its_share_was_worked_out(tmp_path: Path) -> Non
     assert ic.request_id == "req" and ic.tokens_per_char == pytest.approx(16200 / 17200)
     assert rows["system_prompt"].measure == XrayRowMeasure(4000, 0, 0)
     assert rows["tool_io"].measure == XrayRowMeasure(4000, 1000, 0)
+    assert rows["tool_io"].reason == "a measured share of the request Claude Code recorded"
     assert rows["rest"].measure is None and rows["source"].measure is None
 
 
@@ -320,7 +321,9 @@ def test_other_claude_code_messages_are_the_notes_share_less_the_rows_listed_abo
     records = _half(_hook(0.2, 200), harness(0.3, "agent_list", "x", 400), _unsized(0.4, "task_reminder"), notes=2000)
     ic = _context(tmp_path, records)
     row = next(row for row in ic.rows if row.key == "harness_other")
-    assert row.tokens_est == 1000 - 100 - 200 and row.measure == XrayRowMeasure(2000, 0, 300)
+    assert row.tokens_est == 1000 - 100 - 200 and row.measure == XrayRowMeasure(
+        2000, 0, 300, (XrayListed("Hooks", 100, False), XrayListed("Agent listing", 200, False))
+    )
     other = next(item for item in _raw(tmp_path, records).own.rows if item.key == "harness_other")
     assert "task reminder" in (other.description or "")
     assert next(r for r in _context(tmp_path, _half(notes=2000)).rows if r.key == "harness_other").tokens_est == 1000

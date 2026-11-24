@@ -4,11 +4,16 @@ into event records, and each subscriber receives every record."""
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from reporails_cli.core.eventbus.store import append
 from reporails_cli.core.platform.contract.json_value import JsonObject
-from reporails_cli.core.platform.dto.events import EventRecord, MessageText, RequestChain
+from reporails_cli.core.platform.dto.events import (
+    EventRecord,
+    HarnessKind,
+    MessageText,
+    RequestChain,
+)
 from reporails_cli.core.platform.dto.workflows import WorkflowRun
 
 
@@ -29,12 +34,34 @@ class EventAdapter(Protocol):  # pylint: disable=too-few-public-methods  # a por
         """The records one payload carries; raises `PayloadRefused` on a shape it does not know."""
 
 
+# The text of one entry of a listing under the name it is listed by; None for a listing that names none.
+ListingPieces = tuple[tuple[str | None, str], ...]
+
+
+class ContextReader(Protocol):
+    """Reads the text an attachment row puts into the agent's own context."""
+
+    def resolve_listing_text(self, row: JsonObject) -> tuple[HarnessKind, ListingPieces] | None:
+        """The kind and the pieces of text, each under its name, of an attachment row the size of the agent's own
+        context counts as a listing; None for any other row. Raises `PayloadRefused` for a pinned field of another
+        shape."""
+
+    def resolve_note_body(self, text: str) -> str:
+        """The text of a note without the wrapper the agent puts around the notes it injects."""
+
+    def resolve_claimed(self, row: JsonObject) -> list[str]:
+        """The texts an attachment row puts into the context that a row other than the other messages counts: a
+        hook's note, an instruction file's content, a listing. Empty for any other row."""
+
+
 class TranscriptAdapter(Protocol):
     """What an agent's transcript adapter offers: its name and the records one transcript row carries."""
 
     agent: str
     # The env var that names the calling session of this agent.
     session_env: str
+    # Reads the text its attachment rows put into the agent's own context.
+    context: ClassVar[ContextReader]
 
     def resolve_row(
         self, row: JsonObject, subagent_id: str | None, requests: RequestChain | None = None
@@ -78,8 +105,7 @@ class TranscriptAdapter(Protocol):
         the pinned shape."""
 
     def request_blocks(self, chain: RequestChain) -> list[MessageText]:
-        """The listings recorded before the request `chain` last took, each under the item it belongs to, then its
-        notes and thinking in message order."""
+        """The notes and thinking of the messages of the request `chain` last took, in message order."""
 
     def holds_call(self, row: JsonObject, use_id: str) -> bool:
         """Whether the row is an assistant row holding the tool call `use_id`."""

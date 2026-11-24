@@ -1115,7 +1115,7 @@ def test_the_own_context_items_follow_the_vocabulary_order_and_the_system_prompt
     graph = _graph(tmp_path, records, [claude])
     items = _own_items(graph)
     assert [item.key for item in items] == [
-        "system_prompt",
+        "built_in_rest",
         "agent_listing",
         "skill_listing",
         "deferred_tools",
@@ -1124,7 +1124,7 @@ def test_the_own_context_items_follow_the_vocabulary_order_and_the_system_prompt
     # The reply total less the estimated instruction file (100) and skills listing (1000), the tool definitions
     # (200), the agent listing (100) and the session context (10).
     assert {item.key: item.tokens_est for item in items} == {
-        "system_prompt": 20_000 - 100 - 1000 - 200 - 100 - 10,
+        "built_in_rest": 20_000 - 100 - 1000 - 200 - 100 - 10,
         "deferred_tools": 200,
         "agent_listing": 100,
         "skill_listing": 1000,
@@ -1139,7 +1139,7 @@ def test_the_own_context_items_follow_the_vocabulary_order_and_the_system_prompt
 
 def test_a_system_prompt_is_never_negative_when_the_estimates_overshoot_the_reply(tmp_path: Path) -> None:
     records = [_entry("skill_list", "skills", 5, 40_000), reply(1, context=500)]
-    system = next(item for item in _own_items(_graph(tmp_path, records)) if item.key == "system_prompt")
+    system = next(item for item in _own_items(_graph(tmp_path, records)) if item.key == "built_in_rest")
     assert system.tokens_est == 0
 
 
@@ -1373,7 +1373,7 @@ def test_the_system_prompt_size_leaves_out_the_mcp_instructions_and_hook_notes_t
     sizes = {item.key: item.tokens_est for item in _own_items(_graph(tmp_path, records))}
     # The total less the hook note (30, counted as a hook note), the tool definitions (100) and the MCP servers'
     # instructions (200, once).
-    assert sizes["system_prompt"] == 1000 - 30 - 100 - 200
+    assert sizes["built_in_rest"] == 1000 - 30 - 100 - 200
 
 
 def test_a_hook_row_counts_only_the_firings_whose_tokens_the_context_still_holds(tmp_path: Path) -> None:

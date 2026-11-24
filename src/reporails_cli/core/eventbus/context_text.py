@@ -4,12 +4,50 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reporails_cli.core.eventbus.port import TranscriptAdapter
+from reporails_cli.core.eventbus.port import ListingPieces, PayloadRefused, TranscriptAdapter
 from reporails_cli.core.eventbus.transcript import adapter_for, file_rows, find_row, owner_path
-from reporails_cli.core.platform.dto.events import MessageText, RequestChain
+from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.events import (
+    DELTA_KINDS,
+    EventRecord,
+    HarnessEntry,
+    HarnessKind,
+    MessageText,
+    RequestChain,
+)
+from reporails_cli.core.platform.dto.xray_build import HarnessSlot
+from reporails_cli.core.platform.dto.xray_own import LISTED
 
-# The kinds of text a request's own messages hold; any other kind is a listing, under the item it belongs to.
-_MESSAGE_KINDS = ("notes", "thinking")
+# How much of a message's characters the texts other rows count must make up for the message to be theirs.
+_CLAIMED_SHARE = 0.5
+
+
+class _Listing:
+    """The text of one listing as its size counts it: the first row's entries, then the entries of each later row
+    up to the first compaction, less the entries a later row removed."""
+
+    def __init__(self, entry: HarnessEntry, pieces: ListingPieces) -> None:
+        self.slot = HarnessSlot.of(entry)
+        self.known: dict[str, str] = {}
+        self.anonymous: list[str] = []
+        self.take(pieces)
+
+    def take(self, pieces: ListingPieces) -> None:
+        """Keep the text of the entries of one row."""
+        for name, text in pieces:
+            if name is None:
+                self.anonymous.append(text)
+            else:
+                self.known[name] = text
+
+    def add(self, entry: HarnessEntry, pieces: ListingPieces) -> None:
+        """Fold in a later row."""
+        self.slot.add(entry)
+        self.take(pieces)
+
+    def texts(self) -> list[str]:
+        """The text the listing holds now."""
+        return [*self.anonymous, *(self.known[name] for name in self.slot.sizes if name in self.known)]
 
 
 def _shape_text(adapter: TranscriptAdapter, path: Path, request_id: str, item: str) -> list[str] | None:
@@ -24,27 +62,67 @@ def _shape_text(adapter: TranscriptAdapter, path: Path, request_id: str, item: s
     return None if text is None else [text]
 
 
-def _item_texts(blocks: list[MessageText], item: str) -> list[str]:
-    """The texts of `item` among a request's blocks: its own listing, the thinking with text, or, for the other
-    messages, the notes that no listing's text is in."""
+def _claimed(adapter: TranscriptAdapter, note: str, claims: set[str]) -> bool:
+    """Whether the texts other rows count make up most of `note`."""
+    body = adapter.context.resolve_note_body(note)
+    return sum(len(claim) for claim in claims if claim in body) >= _CLAIMED_SHARE * len(body)
+
+
+def _block_texts(adapter: TranscriptAdapter, blocks: list[MessageText], item: str, claims: set[str]) -> list[str]:
+    """The texts of `item` among a request's blocks: the thinking with text, or, for the other messages, the notes
+    that no row other than the other messages counts."""
     if item == "thinking":
         return [text for kind, text in blocks if kind == "thinking" and text]
-    if item != "harness_other":
-        return [text for kind, text in blocks if kind == item]
-    listed = [text for kind, text in blocks if kind not in _MESSAGE_KINDS]
-    return [text for kind, text in blocks if kind == "notes" and not any(known in text for known in listed)]
+    return [text for kind, text in blocks if kind == "notes" and not _claimed(adapter, text, claims)]
+
+
+def _fold(
+    adapter: TranscriptAdapter,
+    row: JsonObject,
+    records: list[EventRecord],
+    listings: dict[HarnessKind, _Listing],
+    *,
+    compacted: bool,
+) -> None:
+    """Fold the listing an attachment row holds into `listings`, by the rule the size of a listing follows: the first
+    row, then the later rows of a list kind until the first compaction."""
+    listed = adapter.context.resolve_listing_text(row)
+    if listed is None or listed[0] not in LISTED.values():
+        return
+    kind, pieces = listed
+    entry = next((record.harness for record in records if record.harness and record.harness.kind == kind), None)
+    if entry is None:
+        return
+    held = listings.get(kind)
+    if held is None:
+        listings[kind] = _Listing(entry, pieces)
+    elif kind in DELTA_KINDS and not compacted:
+        held.add(entry, pieces)
 
 
 def _chain_text(
     adapter: TranscriptAdapter, path: Path, subagent_id: str | None, request_id: str, item: str
 ) -> list[str] | None:
     """The text of `item` in the request `request_id` of file `path`, read by walking the file's rows through the
-    adapter's request chain up to that request; None when the file holds no such request or cannot be read."""
+    adapter's request chain up to that request; None when the file holds no such request or cannot be read. A row
+    the adapter refuses is left out, as the view's own read leaves it out."""
     chain = RequestChain(texts={})
+    listings: dict[HarnessKind, _Listing] = {}
+    claims: set[str] = set()
+    compacted = False
     for row in file_rows(path):
-        sized = [record.request for record in adapter.resolve_row(row, subagent_id, chain)]
-        if any(size is not None and size.request_id == request_id for size in sized):
-            return _item_texts(adapter.request_blocks(chain), item)
+        try:
+            records = adapter.resolve_row(row, subagent_id, chain)
+            claims.update(adapter.context.resolve_claimed(row))
+            _fold(adapter, row, records, listings, compacted=compacted)
+        except PayloadRefused:
+            continue
+        compacted = compacted or any(record.event == "post_compact" for record in records)
+        if any(record.request is not None and record.request.request_id == request_id for record in records):
+            kind = next((listed for key, listed in LISTED.items() if key == item), None)
+            if kind is not None:
+                return listings[kind].texts() if kind in listings else []
+            return _block_texts(adapter, adapter.request_blocks(chain), item, claims)
     return None
 
 

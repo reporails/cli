@@ -283,7 +283,7 @@ def test_a_built_in_note_words_a_count_of_one_in_the_singular(tmp_path: Path) ->
         ]
         shown = _agent(_node(_graph(tmp_path, records, _files(tmp_path)), "main")).in_context
         assert shown is not None
-        return [item.description for item in shown.own.rows if item.key != "system_prompt"]
+        return [item.description for item in shown.own.rows if item.key != "built_in_rest"]
 
     assert notes(1) == ["1 agent description", "1 skill description", "1 tool loaded on demand"]
     assert notes(2) == ["2 agent descriptions", "2 skill descriptions", "2 tools loaded on demand"]

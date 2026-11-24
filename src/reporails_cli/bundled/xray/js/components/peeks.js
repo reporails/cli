@@ -22,14 +22,12 @@ const kv = pairs => {
   return box;
 };
 
-// A system prompt's top-level sections, one row each with its share of the prompt's tokens (its characters when the
-// prompt's tokens are not known): read from the reply the text block above the rows fetched, never a second request.
-const promptSections = (env, key, url, rowTokens) => {
+// A system prompt's top-level sections, one row each with its share of the item's tokens as the reply of the text route
+// gives it: read from the reply the text block above the rows fetched, never a second request.
+const promptSections = (env, key, url) => {
   const sections = env.text(key, url).sections;
   if (!sections || !sections.length) return [];
-  const total = sections.reduce((n, s) => n + s.chars, 0);
-  const size = s => rowTokens == null || !total ? plural(s.chars, 'char') : tk(Math.round(rowTokens * s.chars / total), true);
-  return [kv(sections.map(s => [s.heading, size(s)]))];
+  return [kv(sections.map(s => [s.heading, s.tokens == null ? plural(s.chars, 'char') : tk(s.tokens, true)]))];
 };
 
 const pre = text => el('pre', 'pk-pre', text);
@@ -185,16 +183,35 @@ const VISIBLE = { hidden: 'not visible in transcript', partial: 'partly visible 
 const ownOf = node => (node && node.detail && node.detail.in_context ? node.detail.in_context.own : null);
 const hasOwnItem = (node, key) => { const own = ownOf(node); return !!own && own.rows.some(r => r.key === key); };
 
+// What the item's request holds that its text does not, as a sentence: the rows whose tokens its text includes, then the rows counted apart.
+function listedNotes(item) {
+  const listed = (item.measure && item.measure.listed) || [];
+  const named = rows => rows.map(l => `${k1(l.tokens)} ${l.label.toLowerCase()}`).join(', ');
+  const inside = listed.filter(l => l.in_text), apart = listed.filter(l => !l.in_text);
+  const out = [];
+  if (inside.length) out.push(nk(`The text is the whole ${item.label.toLowerCase()}, ${tk(item.whole_tokens, true)}. ${named(inside)} of it is listed as its own row, so this row counts ${tk(item.tokens_est, true)}.`));
+  if (apart.length) out.push(nk(`${named(apart)} are counted in their own rows and are not in this text; this row counts ${tk(item.tokens_est, true)}.`));
+  return out;
+}
+
+// How much of the item's counted characters its text holds, when the rest is not text: "735 of 120,844 characters are readable text; the rest is signed thinking".
+function readableNote(entry) {
+  if (entry.counted == null || entry.readable == null) return [];
+  return [nk(`${entry.readable.toLocaleString('en-US')} of ${entry.counted.toLocaleString('en-US')} characters are readable text; the rest is ${entry.unread}.`)];
+}
+
 // The sections one item opens with: the system prompt's, a block of its recorded text, or what it holds when no request was recorded.
-function ownBody(env, node, item, listed) {
+function ownBody(env, node, item) {
   const key = `ctx:${node.id}:${item.key}`;
   const url = contextTextUrl(node.parent === null ? '' : node.id, item.key);
   if (!item.has_text) return [section('What it holds', pre(item.description || ''), nk('No request was recorded for this agent, so this is a description and the size is an estimate.'))];
   const out = [];
   if (item.shapes > 1) out.push(nk(`${item.shapes} different system prompts across this agent’s requests; this is the one its size is from.`));
-  if (listed > 0) out.push(nk(`The text is the whole ${item.label.toLowerCase()}, ${tk(item.tokens_est + listed, true)}. ${k1(listed)} of it is the agent definition, listed as its own row, so this row counts ${tk(item.tokens_est, true)}.`));
-  out.push(...promptSections(env, key, url, item.tokens_est));
+  out.push(...listedNotes(item));
+  out.push(...promptSections(env, key, url));
   const entry = env.text(key, url);
+  out.push(...readableNote(entry));
+  if (entry.unreadable && entry.counted != null) return [section(item.label, ...out)];
   out.push(entry.unreadable ? nk('The recorded blocks hold no readable text.') : textBlock(env.text, key, url));
   return [section(item.label, ...out)];
 }
@@ -207,10 +224,10 @@ registerPeek('builtin', (env, id) => {
   const item = own && own.rows.find(r => r.key === id.slice(0, at));
   if (!item) return null;
   const m = item.measure;
-  const basis = basisLabel(env.ix.view, own.basis);
+  const basis = basisLabel(env.ix.view, item.basis);
   return {
     chip: '·', kicker: `${own.label} · ${nodeLabel(node)}`, title: item.label, tags: [`${tk(item.tokens_est, true)} · ${basis}`],
-    main: ownBody(env, node, item, m ? m.listed_above : 0),
+    main: ownBody(env, node, item),
     side: [kv([
       ['Basis', basis],
       ['Request', own.request_id],
@@ -308,11 +325,14 @@ registerPeek('peak', (env, id) => {
   }
   const cached = Math.round(reply[4] / total * 100);
   const over = replyOver(reply);
+  const io = ((node.detail.in_context || {}).rows || []).find(r => r.key === 'tool_io');
+  const ic = node.detail.in_context;
+  const ioFacts = io && io.measure ? [kv([[io.label, tk(io.tokens_est, true)], ['Characters', io.measure.chars.toLocaleString('en-US')], ['Image tokens', io.measure.images > 0 ? io.measure.images.toLocaleString('en-US') : null], ['Tokens per character', ic.tokens_per_char == null ? null : Number(ic.tokens_per_char).toPrecision(3)]])] : [];
   const remLabel = (adapter.composition.find(c => c.key === adapter.composition_remainder) || {}).label || adapter.composition_remainder;
   return {
     chip: '∑', kicker: `Peak context · ${nodeLabel(node)} at ${clock(reply[0])}`, title: `${total.toLocaleString('en-US')} tokens`, tags: [],
     main: [bar(cats.map(x => [x.i, parts[x.i]]), base), legend],
-    side: [kv([['Read from cache at this turn', `${cached}%`], ['New this turn', `${(reply[2] + reply[3]).toLocaleString('en-US')} tokens`]]),
+    side: [...ioFacts, kv([['Read from cache at this turn', `${cached}%`], ['New this turn', `${(reply[2] + reply[3]).toLocaleString('en-US')} tokens`]]),
       ...(over ? [nk('These estimates add up to more than the exact total, so the split is approximate and the percentages are shares of what was estimated.')] : []),
       measured
         ? nk('The total and the parts are measured: each part is its share of the request Claude Code recorded for this turn, scaled to the exact total. Instruction files, rules, memory, the skills listing and hook notes are estimated from their sizes.')

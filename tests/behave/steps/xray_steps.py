@@ -603,7 +603,9 @@ def step_estimated_view(context):
     assert main["measured"] is False, main
     assert main["note"] == "Estimated: no complete recorded request for this reply.", main["note"]
     assert "rest" in [row["key"] for row in main["rows"]] and main["own"]["basis"] == "estimate", main
-    assert [row["key"] for row in main["own"]["rows"]] == ["system_prompt"], main["own"]
+    assert [row["key"] for row in main["own"]["rows"]] == ["built_in_rest"], main["own"]
+    rest = main["own"]["rows"][0]
+    assert rest["label"] == "System prompt, tools and other built-in context" and rest["basis"] == "estimate", rest
 
 
 @then("the page shows the estimate note and a remainder row in the main agent's In context list")
@@ -694,8 +696,8 @@ def step_main_system_none(context):
     token = re.search(r'name="xray-token" content="([^"]+)"', page).group(1)
     assert _get(context.url + "context-text?agent=&item=system_prompt", token)[0] == 400
     main, _ = _context_of(_session_view(context))
-    builtin = next(item for item in main["own"]["rows"] if item["key"] == "system_prompt")
-    assert builtin["shapes"] == 0 and not builtin["has_text"], builtin
+    assert not any(item["key"] == "system_prompt" for item in main["own"]["rows"]), main["own"]
+    assert all(not item["has_text"] for item in main["own"]["rows"]), main["own"]
 
 
 @then("the general-purpose agent type's details show its launch settings")
@@ -2241,7 +2243,72 @@ def step_own_items_open_text(context):
     assert opened["deferred_tools"]["text"] == "WebFetch: fetches a page", opened["deferred_tools"]
     assert "2026-11-24" in opened["session_context"]["text"], opened["session_context"]
     assert REMINDER in opened["harness_other"]["text"], opened["harness_other"]
-    assert opened["thinking"]["text"] is None and "no readable text" in opened["thinking"]["dialog"], opened["thinking"]
+    assert opened["thinking"]["text"] is None, opened["thinking"]
+    assert "0 of 90 characters are readable text; the rest is signed thinking" in opened["thinking"]["dialog"]
+    assert "characters are readable text; the rest is tool input schemas" in opened["tool_definitions"]["dialog"]
+
+
+SOURCE_NOTE = "SOURCE-NOTE-TEXT " + "s" * 300
+HOOK_NOTE = "HOOK-NOTE-TEXT " + "h" * 200
+REST_NOTE = "<system-reminder>\nREST-NOTE-TEXT, the harness's own message.\n</system-reminder>"
+
+
+@given(
+    "a project with a session whose other messages hold a source's note and a hook's note beside a message of their own"
+)
+def step_session_with_source_and_hook_notes(context):
+    step_session_with_every_own_item(context)
+    session = context.home / ".claude" / "projects" / claude_project_folder_name(context.project) / "session.jsonl"
+    rows = [json.loads(line) for line in session.read_text(encoding="utf-8").splitlines()]
+    attachments = [
+        {
+            "type": "instructions",
+            "files": [{"path": str(context.project / "CLAUDE.md"), "type": "Project", "content": SOURCE_NOTE}],
+        },
+        {
+            "type": "hook_additional_context",
+            "hookName": "PreToolUse:Bash",
+            "hookEvent": "PreToolUse",
+            "content": [HOOK_NOTE],
+        },
+    ]
+    opening = [_row("attachment", 0, "2.1.309", context.project, attachment=item) for item in attachments]
+    notes = [
+        f"<system-reminder>\nContents of CLAUDE.md:\n{SOURCE_NOTE}\n</system-reminder>",
+        f"<system-reminder>\nPreToolUse:Bash hook additional context: {HOOK_NOTE}\n</system-reminder>",
+        REST_NOTE,
+    ]
+    for row in rows:
+        if row.get("hash") == "blob-note":
+            row["message"] = {"role": "user", "content": [{"type": "text", "text": text} for text in notes]}
+    session.write_text("\n".join(json.dumps(row) for row in [*opening, *rows]) + "\n", encoding="utf-8")
+
+
+@then("the other messages show only their own message and say what is counted in the rows of the source and the hook")
+def step_other_messages_leave_out_counted_notes(context):
+    seen = _own_page(context)
+    if seen is None:
+        return
+    opened = {item["key"]: item for item in seen["main"]["opened"]}["harness_other"]
+    assert "REST-NOTE-TEXT" in opened["text"], opened
+    assert "SOURCE-NOTE-TEXT" not in opened["text"] and "HOOK-NOTE-TEXT" not in opened["text"], opened["text"]
+    assert "are counted in their own rows and are not in this text" in opened["dialog"], opened["dialog"]
+    assert "hooks" in opened["dialog"], opened["dialog"]
+    assert "agent definition, listed as its own row" not in opened["dialog"], opened["dialog"]
+
+
+@then("the thinking says how many of its counted characters are readable and shows no empty text")
+def step_thinking_says_readable(context):
+    seen = _own_page(context)
+    if seen is None:
+        return
+    for name in ("main", "sub"):
+        opened = {item["key"]: item for item in seen[name]["opened"]}.get("thinking")
+        if opened is None:
+            continue
+        assert opened["text"] is None, opened
+        assert "0 of 90 characters are readable text; the rest is signed thinking" in opened["dialog"], opened
+        assert "no readable text" not in opened["dialog"], opened
 
 
 @then("an item's size in the list is the size in its details")

@@ -100,6 +100,13 @@ _CLAUDE_COMPOSITION = (
 # transcript.
 _CLAUDE_BUILTIN = (
     XrayBuiltinInfo(
+        "built_in_rest",
+        "System prompt, tools and other built-in context",
+        "hidden",
+        "Everything Claude Code sent itself that no recorded listing accounts for: the system prompt, the tool "
+        "definitions and the rest; no request was recorded to split it",
+    ),
+    XrayBuiltinInfo(
         "system_prompt", "System prompt", "hidden", "The instructions Claude Code sends before the conversation"
     ),
     XrayBuiltinInfo(
@@ -108,6 +115,7 @@ _CLAUDE_BUILTIN = (
         "hidden",
         "{count} tools sent with every request",
         "{count} tool sent with every request",
+        unread="tool input schemas",
     ),
     XrayBuiltinInfo(
         "agent_listing", "Agent listing", "shown", "{count} agent descriptions", "{count} agent description"
@@ -119,7 +127,9 @@ _CLAUDE_BUILTIN = (
         "deferred_tools", "Deferred tools", "partial", "{count} tools loaded on demand", "{count} tool loaded on demand"
     ),
     XrayBuiltinInfo("session_context", "Session context", "shown", "Working folder, git state and date"),
-    XrayBuiltinInfo("thinking", "Thinking", "partial", "The agent's earlier thinking sent back"),
+    XrayBuiltinInfo(
+        "thinking", "Thinking", "partial", "The agent's earlier thinking sent back", unread="signed thinking"
+    ),
     XrayBuiltinInfo(
         "harness_other",
         "Other Claude Code messages",
@@ -137,7 +147,9 @@ _CLAUDE_BASIS = (
 
 _CLAUDE_CONTEXT_TEXTS = (
     XrayContextText("task", "Task prompt", "written by the parent"),
-    XrayContextText("hooks", "Hook", "fired {count} times", "fired once"),
+    XrayContextText("hooks", "Hooks", "fired {count} times", "fired once"),
+    XrayContextText("definition", "Agent definition", "the file the subagent was launched from"),
+    XrayContextText("source", "Sources", "files and servers Claude Code put into the context itself"),
     XrayContextText("builtin", "Claude Code's own context", "sent by Claude Code itself, not from your files"),
     XrayContextText(
         "rest",

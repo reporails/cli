@@ -44,7 +44,7 @@ export function text(key, url, keep = false) {
   xrayFetch(url).then(res => {
     let now;
     if (!res) now = { error: 'The x-ray server did not answer.' };
-    else if (res.ok && res.j && typeof res.j.text === 'string') now = { text: res.j.text, truncated: !!res.j.truncated, frontmatter: res.j.frontmatter ?? null, body: typeof res.j.body === 'string' ? res.j.body : res.j.text, sections: Array.isArray(res.j.sections) ? res.j.sections : null, unreadable: !!res.j.unreadable };
+    else if (res.ok && res.j && typeof res.j.text === 'string') now = { text: res.j.text, truncated: !!res.j.truncated, frontmatter: res.j.frontmatter ?? null, body: typeof res.j.body === 'string' ? res.j.body : res.j.text, sections: Array.isArray(res.j.sections) ? res.j.sections : null, unreadable: !!res.j.unreadable, readable: res.j.readable ?? null, counted: res.j.counted ?? null, unread: res.j.unread ?? null };
     else now = { error: (res.j && res.j.error) || `request refused (${res.status})` };
     const same = before && now.text === before.text && now.truncated === before.truncated && now.body === before.body;
     fetched.set(key, same ? before : now);

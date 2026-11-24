@@ -33,12 +33,24 @@ def context_fields(session: XraySession, agent: str, name: str) -> JsonObject | 
     None for a name that is no item and for an item no recorded request holds."""
     item = next((key for key in OWN_KEYS if key == name), None)
     texts = None if item is None else session.context_text(agent, item)
-    if item is None or texts is None:
+    row = None if item is None else session.own_item(agent, item)
+    if item is None or texts is None or row is None:
         return None
     text = _BLOCKS.join(texts)
     if item == "system_prompt":
-        return {"text": text, "sections": [section.to_json() for section in top_level_sections(text)]}
-    return {"text": text, "unreadable": not texts}
+        sections = top_level_sections(text)
+        total = sum(section.chars for section in sections)
+        return {
+            "text": text,
+            "sections": [
+                {**section.to_json(), "tokens": round(row.tokens_est * section.chars / total) if total else 0}
+                for section in sections
+            ],
+        }
+    fields: JsonObject = {"text": text, "unreadable": not texts}
+    if row.unread is not None and row.measure is not None:
+        fields |= {"readable": sum(len(part) for part in texts), "counted": row.measure.chars, "unread": row.unread}
+    return fields
 
 
 def hook_output_fields(session: XraySession, key: str) -> JsonObject | None:

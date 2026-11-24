@@ -314,12 +314,16 @@ def _register_shape(chain: RequestChain, row: JsonObject) -> None:
     chain.tool_names[shape_hash] = tuple(_tool_name(tool, what) for tool in tools)
 
 
+def note_body(text: str) -> str:
+    """A note's text without the `<system-reminder>` tag that opens it and the one that closes it."""
+    return text.replace(_REMINDER_TAG, "").replace(_REMINDER_TAG.replace("<", "</"), "").strip()
+
+
 def request_blocks(chain: RequestChain) -> list[MessageText]:
-    """The listings the file recorded before the request the chain last took, each under the item it belongs to, then
-    the notes and thinking of that request's messages in order; a message the chain knows nothing of holds none.
-    Empty for a chain that keeps no text."""
+    """The notes and thinking of the messages of the request the chain last took, in order; a message the chain
+    knows nothing of holds none. Empty for a chain that keeps no text."""
     texts = chain.texts or {}
-    return [*chain.listed, *(block for digest in chain.trail for block in texts.get(digest, ()))]
+    return [block for digest in chain.trail for block in texts.get(digest, ())]
 
 
 def request_shape_ref(row: JsonObject) -> tuple[str, str] | None:
@@ -346,30 +350,6 @@ def shape_text(row: JsonObject, shape_hash: str, item: str) -> str | None:
         name = _tool_name(tool, "api-request-shape")
         named.append(f"{name}\n{description}" if isinstance(description, str) and description else name)
     return BLOCK_SEPARATOR.join(named)
-
-
-def _listed_texts(row: JsonObject) -> list[MessageText]:
-    """The texts an attachment row lists for the coding agent's own context, each under the item it belongs to: the
-    skills listing, the agent listing's added lines, the deferred tools' added lines (or its content in a subagent
-    file) and the values of the session context. Empty for any other row or a field of another shape."""
-    attachment = as_object(row.get("attachment"))
-    kind, content, lines = (
-        attachment.get("type"),
-        attachment.get("content"),
-        strict_str_list(attachment.get("addedLines")),
-    )
-    if kind == "skill_listing" and isinstance(content, str):
-        return [("skill_listing", content)]
-    if kind == "agent_listing_delta" and lines is not None:
-        return [("agent_listing", line) for line in lines]
-    if kind == "deferred_tools_delta":
-        found = lines if lines is not None else [content] if isinstance(content, str) else []
-        return [("deferred_tools", line) for line in found]
-    context = attachment.get("context")
-    values = (
-        strict_str_list(list(context.values())) if kind == "session_context" and isinstance(context, dict) else None
-    )
-    return [("session_context", value) for value in values or []]
 
 
 def _request_tier(row: JsonObject) -> bool | None:
@@ -449,8 +429,6 @@ def feed_row(chain: RequestChain, row: JsonObject) -> RequestSize | None:
         _register_user(chain, row)
     elif kind == "assistant":
         _register_assistant(chain, row)
-    elif kind == "attachment" and chain.texts is not None:
-        chain.listed.extend(_listed_texts(row))
     elif kind == "api-request":
         return _request(chain, row)
     return None

@@ -23,9 +23,16 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayContextRow,
     XrayInContext,
 )
-from reporails_cli.core.platform.dto.xray_own import LISTING_KEYS, ContextKey, XrayOwnContext, XrayRowMeasure
+from reporails_cli.core.platform.dto.xray_own import (
+    LISTED,
+    LISTING_KEYS,
+    ContextKey,
+    XrayListed,
+    XrayOwnContext,
+    XrayRowMeasure,
+)
 from reporails_cli.core.platform.dto.xray_sources import SourceEntry, XrayContextText
-from reporails_cli.core.xray.graph.builtin import LISTED, own_context
+from reporails_cli.core.xray.graph.builtin import own_context
 from reporails_cli.core.xray.graph.composition import count_text, listing_chars, share, tokens_at, tool_share
 from reporails_cli.core.xray.graph.sources import source_label
 
@@ -173,15 +180,22 @@ def _closing_rows(
     return [own_row, XrayContextRow("rest", None, None, rest.label, rest.reason, max(0, left), None, None)]
 
 
-def _measured_shares(measured: RequestMeasure, defined: int) -> list[tuple[ContextKey, int, XrayRowMeasure | None]]:
+def _measured_shares(
+    measured: RequestMeasure, defined: int, definition: str
+) -> list[tuple[ContextKey, int, XrayRowMeasure | None]]:
     """The system prompt, tool definitions and tool calls and results of a measured request as rows: each share
     of the request's characters at its scale, the system prompt less what an earlier row already lists (`defined`,
-    the agent definition), the tool row with the images of the tool results added."""
+    the agent definition, worded `definition`), the tool row with the images of the tool results added."""
     size, scale = measured.size, measured.scale
     system, tools = share(size.system_chars, scale), share(size.tools_chars, scale)
     io_chars = size.parts.tool_calls + size.parts.tool_results
+    inside = min(defined, system)
     return [
-        ("system_prompt", max(0, system - defined), XrayRowMeasure(size.system_chars, 0, min(defined, system))),
+        (
+            "system_prompt",
+            max(0, system - defined),
+            XrayRowMeasure(size.system_chars, 0, inside, (XrayListed(definition, inside, True),) if inside else ()),
+        ),
         ("tool_definitions", tools, XrayRowMeasure(size.tools_chars, 0, 0)),
         (
             "tool_io",
@@ -192,21 +206,27 @@ def _measured_shares(measured: RequestMeasure, defined: int) -> list[tuple[Conte
 
 
 def _harness_row(
-    key: ContextKey, chars: int, names: dict[ContextKey, str], scale: float, *, taken: int = 0
+    key: ContextKey,
+    chars: int,
+    names: dict[ContextKey, str],
+    scale: float,
+    *,
+    taken: tuple[XrayListed, ...] = (),
 ) -> XrayContextRow:
-    """The row of `chars` characters of a measured request at its `scale`, less the `taken` tokens an earlier row
-    already lists."""
+    """The row of `chars` characters of a measured request at its `scale`, less the tokens the `taken` rows
+    already list."""
     tokens = share(chars, scale)
+    inside = sum(item.tokens for item in taken)
     return XrayContextRow(
         key,
         None,
         None,
         names[key],
         "",
-        max(0, tokens - taken),
+        max(0, tokens - inside),
         None,
         None,
-        XrayRowMeasure(chars, 0, min(taken, tokens)),
+        XrayRowMeasure(chars, 0, min(inside, tokens), taken),
     )
 
 
@@ -220,19 +240,32 @@ def _listing_rows(
 
 
 def _harness_shares(
-    own: AgentRecords, frame: Frame, reply: ReplyComposition, injected: int, names: dict[ContextKey, str]
+    own: AgentRecords,
+    frame: Frame,
+    reply: ReplyComposition,
+    injected: tuple[XrayListed, ...],
+    names: dict[ContextKey, str],
 ) -> list[XrayContextRow]:
     """The rows of a reply's own measured request beyond the system prompt, tool definitions and tool calls: the
     agent listing, the deferred tools and the session context at the characters each held by the reply, the
     agent's thinking, and the other messages Claude Code sent (the share of the request's message notes that no
-    row above lists: `injected` tokens of sources, the skills listing and the three listings). A row of no
-    characters is left out."""
+    row above lists: the `injected` rows of sources and hooks, the skills listing and the three listings). A row
+    of no characters is left out."""
     measured = reply.measure
     if measured is None:
         return []
     size, scale = measured.size, measured.scale
     rows = _listing_rows(own, frame, reply, scale, names)
-    listed = reply.parts[COMPOSITION_KEYS.index("skill_listing")] + injected + sum(row.tokens_est for row in rows)
+    skills = reply.parts[COMPOSITION_KEYS.index("skill_listing")]
+    listed = tuple(
+        item
+        for item in (
+            *injected,
+            XrayListed(names["skill_listing"], skills, False),
+            *(XrayListed(names[row.key], row.tokens_est, False) for row in rows),
+        )
+        if item.tokens > 0
+    )
     if size.parts.thinking > 0:
         rows.append(_harness_row("thinking", size.parts.thinking, names, scale))
     if size.parts.notes > 0:
@@ -263,13 +296,15 @@ def _measured_rows(
     when the rest overshoots it. A reply whose own request was not recorded (`own_request` False) takes the sizes
     of the newest earlier measured request for the system prompt and the tool definitions only, and its
     conversation row keeps the tool calls and results."""
-    shares = _measured_shares(measured, defined)
+    shares = _measured_shares(measured, defined, texts["definition"].label)
     shares = shares if own_request else [item for item in shares if item[0] != "tool_io"]
     listing = reply.parts[COMPOSITION_KEYS.index("skill_listing")]
     if listing > 0:
         shares.append(("skill_listing", listing, None))
     rows = [
-        XrayContextRow(key, None, None, names[key], "", tokens, None, None, row_measure)
+        XrayContextRow(
+            key, None, None, names[key], texts[key].reason if key in texts else "", tokens, None, None, row_measure
+        )
         for key, tokens, row_measure in shares
     ]
     rows.extend(extra)
@@ -316,7 +351,9 @@ def _own_and_rows(
 ) -> tuple[XrayOwnContext, tuple[XrayContextRow, ...]]:
     """The coding agent's own context as one group, and the rows that stay: the `opening` rows, then the tail."""
     names = _row_names(world.context.vocabulary)
-    extra = _harness_shares(own, world.frame, reply, injected, names)
+    hooks = sum(row.tokens_est for row in opening if row.key == "hooks")
+    named = (XrayListed(texts["source"].label, injected - hooks, False), XrayListed(texts["hooks"].label, hooks, False))
+    extra = _harness_shares(own, world.frame, reply, named, names)
     tail = _tail_rows(reply, opening, taken, texts=texts, names=names, extra=extra)
     group, kept = own_context(tail, own, world.frame, reply, world.context.vocabulary)
     return group, (*opening, *kept)

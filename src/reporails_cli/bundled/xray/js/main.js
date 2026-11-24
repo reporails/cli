@@ -143,22 +143,35 @@ const toggle = (set, v) => { if (!set.delete(v)) set.add(v); };
 
 const closePeek = () => { state.peek = null; };
 
-function openPeek(kind, id, from) {
-  details.remember(calls.openerOf(from) || from);
-  state.peek = { kind, id };
-  if (kind === 'builtin') state.ownOpen = true;
-}
-
-// Draws the Graph tab's agent when a "show in graph" link names one: its parents become the path, it becomes the selection.
-function showInGraph(id) {
+// Selects an agent: its parents become the path and it becomes the selection. True when the page can draw it now.
+function selectNode(id) {
   const chain = [];
   for (let n = ix.nodes.get(id); n; n = ix.nodes.get(n.parent)) chain.unshift(n.id);
   const here = chain.slice(0, -1);
-  state.tab = 'graph';
-  closePeek();
-  if (!here.length || here.join('/') === state.path.join('/')) { state.sel = id; return render(); }
+  if (!here.length || here.join('/') === state.path.join('/')) { state.sel = id; return true; }
   afterHash = id;
   location.hash = hashFor(here);
+  return false;
+}
+
+// The agent the inspector shows: the selected one, else the last of the path.
+const inspected = () => ix.nodes.get(state.sel) || ix.nodes.get(state.path[state.path.length - 1]) || ix.view.nodes[0];
+
+// A builtin peek's id is "<item key>:<node id>": the item's row is only marked in the inspector of that node.
+function openPeek(kind, id, from) {
+  details.remember(calls.openerOf(from) || from);
+  state.peek = { kind, id };
+  if (kind !== 'builtin') return;
+  state.ownOpen = true;
+  const node = id.slice(id.indexOf(':') + 1);
+  if (ix.nodes.has(node) && inspected().id !== node) selectNode(node);
+}
+
+// Draws the Graph tab's agent when a "show in graph" link names one.
+function showInGraph(id) {
+  state.tab = 'graph';
+  closePeek();
+  if (selectNode(id)) render();
 }
 
 // A changed filter starts the list at its first rows again.

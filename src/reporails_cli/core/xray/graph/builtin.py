@@ -11,6 +11,7 @@ from reporails_cli.core.platform.dto.xray_build import AgentRecords, Frame
 from reporails_cli.core.platform.dto.xray_composition import COMPOSITION_KEYS, ReplyComposition, RequestMeasure
 from reporails_cli.core.platform.dto.xray_graph import XrayContextRow
 from reporails_cli.core.platform.dto.xray_own import (
+    LISTED,
     LISTING_KEYS,
     OWN_KEYS,
     ContextKey,
@@ -22,14 +23,6 @@ from reporails_cli.core.platform.dto.xray_own import (
 from reporails_cli.core.platform.dto.xray_sources import XrayBuiltinInfo
 from reporails_cli.core.xray.derive import build_harness, frame_time, replies_of
 from reporails_cli.core.xray.graph.composition import count_text, listing_chars, tokens_at
-
-# The harness kind each listed item of the coding agent's own context is recorded as.
-LISTED: dict[ContextKey, HarnessKind] = {
-    "agent_listing": "agent_list",
-    "skill_listing": "skill_list",
-    "deferred_tools": "deferred_tools",
-    "session_context": "session_context",
-}
 
 Share = tuple[ContextKey, int, XrayRowMeasure | None]
 
@@ -70,8 +63,8 @@ def _basis(reply: ReplyComposition) -> OwnBasis:
 
 def _estimated(group: XrayContextRow | None, own: AgentRecords, frame: Frame, reply: ReplyComposition) -> list[Share]:
     """The items of a context no recorded request sizes: each listing at four characters to a token, the skills
-    listing from the reply's categories, and the system prompt as what the group row leaves of them, never below
-    0."""
+    listing from the reply's categories, and everything else as what the group row leaves of them, never below
+    0 (the system prompt, the tool definitions and the rest are not told apart without a request)."""
     listed: list[Share] = []
     for key in LISTING_KEYS:
         chars = listing_chars(own, frame, LISTED[key], reply.t)
@@ -81,7 +74,7 @@ def _estimated(group: XrayContextRow | None, own: AgentRecords, frame: Frame, re
     if skills > 0:
         listed.append(("skill_listing", skills, None))
     system = max(0, (0 if group is None else group.tokens_est) - sum(tokens for _, tokens, _ in listed))
-    return [("system_prompt", system, None), *listed]
+    return [("built_in_rest", system, None), *listed]
 
 
 def _items(
@@ -94,6 +87,7 @@ def _items(
     """The items of the own context, one per share in display order, each with what it holds and whether a recorded
     request holds its text."""
     sized = reply.sized
+    group_basis = _basis(reply)
     held = {item.kind: item for item in build_harness(own.records, replies_of(own.records)) or ()}
     kinds = _unsized_kinds(own, frame, reply.t)
     shapes = len({record.request.system_digest for record in own.records if record.request})
@@ -107,6 +101,9 @@ def _items(
             infos[key].visible,
             sized is not None,
             shapes if key == "system_prompt" else 0,
+            group_basis if measure is not None else "estimate",
+            tokens + (0 if measure is None else measure.listed_above),
+            infos[key].unread,
         )
         for key, tokens, measure in sorted(shares, key=lambda share: OWN_KEYS.index(share[0]))
     )

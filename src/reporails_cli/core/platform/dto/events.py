@@ -84,7 +84,8 @@ HarnessKind = (
 
 # The harness kinds whose records are changes to a list, so a session's total is their sum.
 DELTA_KINDS: frozenset[HarnessKind] = frozenset({"skill_list", "agent_list", "mcp_instructions", "deferred_tools"})
-
+# The harness kinds with no listing text: the system prompt and the attachments that carry no size.
+UNLISTED_KINDS: frozenset[HarnessKind] = frozenset({"system_prompt", "unsized"})
 
 # The records an assistant row yields besides its usage: its text and its tool calls.
 ASSISTANT_ROW_KINDS: frozenset[EventKind] = frozenset({"assistant_text", "tool_call"})
@@ -410,7 +411,6 @@ class RequestChain:
     merge: AssistantMerge = field(default_factory=AssistantMerge)
     texts: dict[str, tuple[MessageText, ...]] | None = None
     trail: list[str] = field(default_factory=list)
-    listed: list[MessageText] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

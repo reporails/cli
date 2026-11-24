@@ -53,7 +53,7 @@ from reporails_cli.core.platform.dto.xray import (
 )
 from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable, WorkflowReading
 from reporails_cli.core.platform.dto.xray_graph import OutputSource
-from reporails_cli.core.platform.dto.xray_own import ContextKey, XrayOwnContext
+from reporails_cli.core.platform.dto.xray_own import ContextKey, XrayOwnContext, XrayOwnItem
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayArtifact, XrayPeek
 from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.artifacts import (
@@ -253,9 +253,14 @@ class XraySession:
         request for. Raises `PayloadRefused` when a row read is not the shape the adapter is pinned to. The text is
         not kept."""
         own = self._reads.own.get(agent or MAIN_ID)
-        if own is None or own.request_id is None or not any(row.key == item for row in own.rows):
+        if own is None or own.request_id is None or self.own_item(agent, item) is None:
             return None
         return context_text(AGENT, self._file, agent or None, own.request_id, item)
+
+    def own_item(self, agent: str, item: ContextKey) -> XrayOwnItem | None:
+        """The item of an agent's own context the last view built; None for an agent or item it holds none of."""
+        own = self._reads.own.get(agent or MAIN_ID)
+        return None if own is None else next((row for row in own.rows if row.key == item), None)
 
     def prompt(self, prompt_id: str) -> str | None:
         """The text of a typed prompt the records name; None for any other id. Raises `PayloadRefused` when the
