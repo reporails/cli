@@ -194,7 +194,6 @@ def _load_rule(
         category=rule.category.value if rule else as_str(meta.get("category")),
         checks=list(rule.checks) if rule else built_checks,
         rule_dir=slug_dir,
-        checks_yml=slug_dir / "checks.yml",
         supersedes=(rule.supersedes if rule else as_str(meta.get("supersedes"))) or "",
         inherited=(rule.inherited if rule else as_str(meta.get("inherited"))) or "",
         frontmatter_read=bool(meta),
@@ -257,5 +256,3 @@ def apply_check_inheritance(rules: list[RuleInfo]) -> None:
         replaced_ids = {c.replaces for c in rule.checks if c.replaces}
         inherited_checks = [c for c in parent.checks if c.id not in replaced_ids]
         rule.checks = inherited_checks + list(rule.checks)
-        for c in inherited_checks:
-            rule.inherited_checks_yml[c.id] = parent.checks_yml

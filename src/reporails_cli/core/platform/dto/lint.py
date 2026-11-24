@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import regex as re
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
 from reporails_cli.core.platform.dto.models import Check, FieldProblem
@@ -63,14 +63,8 @@ class RuleInfo(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.
     category: str
     checks: list[Check]
     rule_dir: Path
-    checks_yml: Path
     supersedes: str = ""  # Coordinate of a parent rule whose checks this rule inherits and replaces
     inherited: str = ""  # Coordinate of a parent rule whose checks this rule inherits (both stay active)
-    # check.id -> the checks.yml a merged-in inherited check's pattern actually lives in
-    # (the parent's, not this rule's own `checks_yml`). Populated by `apply_check_inheritance`;
-    # a `deterministic` check looks its pattern up by id in a single checks.yml file, so an
-    # inherited check must resolve against its origin file, not the child's.
-    inherited_checks_yml: dict[str, Path] = Field(default_factory=dict)
     # What the rule.md frontmatter declares, for the structural lint.
     frontmatter_read: bool = False  # a frontmatter mapping was recovered from rule.md
     severity_declared: bool = False

@@ -35,7 +35,7 @@ from reporails_cli.core.lint.harness_discovery import (
 from reporails_cli.core.lint.harness_models import HarnessStatus, fixture_cases, has_fail_fixture, has_pass_fixture
 from reporails_cli.core.lint.mechanical.runner import UnknownCheckError, run_mechanical_check
 from reporails_cli.core.lint.regex import scan_ruleset
-from reporails_cli.core.lint.regex.compiler import compile_rules
+from reporails_cli.core.lint.regex.compiler import compile_check
 from reporails_cli.core.lint.rule_scaffold import (
     _scaffold_fail_fixture,
     _scaffold_fixture,
@@ -50,8 +50,7 @@ from reporails_cli.core.platform.dto.lint import CheckRun, CompiledCheck, Compil
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, FileTypeDeclaration, Rule
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.policy.matching import deterministic_targets
-from reporails_cli.core.platform.rules.registry import RuleReadError, read_checks_document, read_rule
-from reporails_cli.core.platform.rules.rule_builder import load_checks
+from reporails_cli.core.platform.rules.registry import RuleReadError, read_rule
 
 logger = logging.getLogger(__name__)
 
@@ -88,28 +87,7 @@ def _run_mechanical_check(
     return result
 
 
-def _find_compiled_check(ruleset: CompiledRuleSet, check_id: str) -> CompiledCheck | None:
-    """The compiled check for a check id; a file with a single check serves any check id."""
-    dotted = check_id.replace(":", ".")
-    for compiled in ruleset.checks:
-        if compiled.id == dotted:
-            return compiled
-    return ruleset.checks[0] if len(ruleset.checks) == 1 else None
-
-
-def _no_checks_message(checks_yml: Path) -> str:
-    """Why `checks_yml` compiled no checks: the problem that refuses its checks, else that it holds none."""
-    try:
-        load_checks(read_checks_document(checks_yml))
-    except RuleReadError as exc:
-        return str(exc)
-    except ValueError as exc:
-        return f"{checks_yml}: {exc}"
-    return "checks.yml has no patterns (checks: [])"
-
-
 def _run_deterministic_check(
-    checks_yml: Path,
     check: Check,
     fixture_root: Path,
     platform_rule: Rule | str,
@@ -123,19 +101,10 @@ def _run_deterministic_check(
     Returns:
         Tuple of (engine_ok, findings_count, message).
     """
-    if not checks_yml.exists():
-        return False, 0, f"checks.yml not found: {checks_yml}"
-
-    ruleset = compile_rules([checks_yml])
-    if not ruleset.checks:
-        return False, 0, _no_checks_message(checks_yml)
-
-    compiled = _find_compiled_check(ruleset, check.id)
-    if compiled is None:
-        return False, 0, f"No pattern for check {check.id} in checks.yml"
-
     if isinstance(platform_rule, str):
         return False, 0, platform_rule
+
+    compiled = compile_check(check)
 
     try:
         findings = _count_findings(compiled, fixture_root, targets)
@@ -357,9 +326,7 @@ def _run_fixture_checks(
     annotation never bleeds from one fixture into another.
     Returns whether a fail fixture saw at least one violation.
     """
-    run_check = _fixture_check_runner(
-        rule, platform_rule, file_types, map_fixture, kind=kind, fixture_root=effective_dir
-    )
+    run_check = _fixture_check_runner(platform_rule, file_types, map_fixture, kind=kind, fixture_root=effective_dir)
     violation_found = False
     extra: JsonObject = {}
     for check in rule.checks:
@@ -375,7 +342,6 @@ def _run_fixture_checks(
 
 
 def _fixture_check_runner(
-    rule: RuleInfo,
     platform_rule: Rule | str,
     file_types: list[FileTypeDeclaration],
     map_fixture: Callable[[Path], RulesetMap],
@@ -400,7 +366,6 @@ def _fixture_check_runner(
         classified=classified,
         platform_rule=platform_rule,
         targets=targets,
-        rule=rule,
         map_fixture=map_fixture,
     )
 
@@ -413,7 +378,6 @@ def _check_fixture(
     classified: list[ClassifiedFile],
     platform_rule: Rule | str,
     targets: list[Path],
-    rule: RuleInfo,
     map_fixture: Callable[[Path], RulesetMap],
 ) -> tuple[bool, CheckRun, CheckResult | None]:
     """Run a check against a pass fixture. Returns (passed, CheckRun, raw_result).
@@ -428,9 +392,7 @@ def _check_fixture(
         return cr.passed, CheckRun(check_id, check_type, "pass", cr.passed, cr.message), cr
 
     if check_type == "deterministic":
-        ok, count, msg = _run_deterministic_check(
-            rule.inherited_checks_yml.get(check_id, rule.checks_yml), check, fixture_root, platform_rule, targets
-        )
+        ok, count, msg = _run_deterministic_check(check, fixture_root, platform_rule, targets)
         passed = (ok and count > 0) if check.expect == "present" else (ok and count == 0)
         return passed, CheckRun(check_id, check_type, "pass", passed, msg), None
 
@@ -447,7 +409,6 @@ def _check_fixture_for_violation(
     classified: list[ClassifiedFile],
     platform_rule: Rule | str,
     targets: list[Path],
-    rule: RuleInfo,
     map_fixture: Callable[[Path], RulesetMap],
 ) -> tuple[bool, CheckRun, CheckResult | None]:
     """Run a check against a fail fixture. Returns (violation_found, CheckRun, raw_result).
@@ -461,9 +422,7 @@ def _check_fixture_for_violation(
         return not cr.passed, CheckRun(check_id, check_type, "fail", True, cr.message), cr
 
     if check_type == "deterministic":
-        ok, count, msg = _run_deterministic_check(
-            rule.inherited_checks_yml.get(check_id, rule.checks_yml), check, fixture_root, platform_rule, targets
-        )
+        ok, count, msg = _run_deterministic_check(check, fixture_root, platform_rule, targets)
         violation = (ok and count == 0) if check.expect == "present" else (ok and count > 0)
         return violation, CheckRun(check_id, check_type, "fail", True, msg), None
 

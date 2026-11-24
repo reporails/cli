@@ -130,7 +130,7 @@ def _parse_match(frontmatter: JsonObject) -> JsonValue | FileMatch:
     return FileMatch()
 
 
-def build_rule(frontmatter: JsonObject, md_path: Path, yml_path: Path | None, checks: list[Check]) -> Rule:
+def build_rule(frontmatter: JsonObject, md_path: Path, checks: list[Check]) -> Rule:
     """Build Rule from parsed frontmatter and its already-built `checks`.
 
     Raises RuleFieldError with one problem per rejected field when the fields do not validate.
@@ -142,7 +142,6 @@ def build_rule(frontmatter: JsonObject, md_path: Path, yml_path: Path | None, ch
         "see_also": frontmatter.get("see_also", []),
         "checks": checks,
         "md_path": md_path,
-        "yml_path": yml_path,
     }
     for name in (
         "id",

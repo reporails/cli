@@ -262,7 +262,6 @@ class TestMechanicalChecks:
                 {"id": "CORE.S.0001.file-exists", "type": "mechanical", "severity": "medium", "check": "file_exists"}
             ],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         result = run_rule(info, _fts_claude(), fixture_mapper(no_models()))
@@ -286,7 +285,6 @@ class TestMechanicalChecks:
             category="structure",
             checks=[],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         result = run_rule(info, [], fixture_mapper(no_models()))
@@ -312,7 +310,6 @@ class TestMechanicalChecks:
             category="structure",
             checks=[{"id": "CORE.S.0098.check", "type": "mechanical", "severity": "medium", "check": "file_exists"}],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         result = run_rule(info, [], fixture_mapper(no_models()))
@@ -363,12 +360,12 @@ class TestDeterministicChecks:
                     "id": "CORE.S.0003.check",
                     "type": "deterministic",
                     "severity": "medium",
-                    "pattern-regex": "x",
+                    "paths": {"include": ["**/*.md"]},
+                    "pattern-regex": "\\.\\s+[A-Z][a-z]+\\s.*\\.\\s+[A-Z][a-z]+\\s.*\\.",
                     "expect": "absent",
                 }
             ],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         result = run_rule(info, _fts_claude(), fixture_mapper(no_models()))
@@ -414,11 +411,11 @@ class TestDeterministicChecks:
                     "type": "deterministic",
                     "severity": "medium",
                     "expect": "present",
-                    "pattern-regex": "x",
+                    "paths": {"include": ["**/*.md"]},
+                    "pattern-regex": "## (Commands|Architecture)",
                 }
             ],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         result = run_rule(info, _fts_claude(), fixture_mapper(no_models()))
@@ -531,11 +528,11 @@ class TestFixtureDiscovery:
                     "type": "deterministic",
                     "severity": "medium",
                     "expect": "absent",
-                    "pattern-regex": "x",
+                    "paths": {"include": ["**/*.json"]},
+                    "pattern-regex": "dangerous_setting",
                 }
             ],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         file_types = [*_fts_claude(), _ft("config", (".claude/settings.json",))]
@@ -932,7 +929,6 @@ class TestFailScaffoldIntegration:
                 }
             ],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         result = run_rule(info, _fts_claude(), fixture_mapper(no_models()))
@@ -975,7 +971,6 @@ class TestFailScaffoldIntegration:
                 }
             ],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         result = run_rule(info, [], fixture_mapper(no_models()))

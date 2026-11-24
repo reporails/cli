@@ -18,6 +18,8 @@
 
 - Signing in raises the per-check size limit from 2 MB to 5 MB, and the too-large message says so.
 
+- `ails check`, the MCP `validate` tool and the x-ray page read each rule's checks once per run instead of once per file, so a long run of `validate` calls spends less time loading rules. Findings are unchanged.
+
 - `ails xray` itemises what Claude Code adds to the context by itself: the agent listing, deferred tools, session context, the agent's thinking and Claude Code's other messages each get their own In-context row, for the main agent and every subagent, so Conversation holds only what you and the agent wrote. When Claude Code recorded the request a reply answered, every row is sized at that request's measured tokens per character. The System prompt details list the prompt's sections, each with its share.
 
 ### Fixed

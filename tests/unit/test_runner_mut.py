@@ -18,7 +18,6 @@ import regex
 from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.regex.expect import emit_expect_findings, file_below_min_lines, file_matches_path_filter
 from reporails_cli.core.lint.regex.runner import (
-    _compile_ruleset,
     _is_text_file,
     _resolve_scan_targets,
     _scan_all_targets,
@@ -118,18 +117,6 @@ def test_scan_emits_every_match(tmp_path: Path) -> None:
     sarif = _scan_all_targets([f], tmp_path, [check], {})
     results = sarif["runs"][0]["results"]
     assert sum(1 for r in results if r["ruleId"] == "M1") == 2
-
-
-# ---------------------------------------------------------------------------
-# _compile_ruleset None-path guard (L391)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_compile_ruleset_filters_none_path() -> None:
-    """A falsy yml path is filtered out, not dereferenced (L391 `and->or`)."""
-    assert _compile_ruleset([None]).checks == []  # type: ignore[list-item]
 
 
 # ---------------------------------------------------------------------------

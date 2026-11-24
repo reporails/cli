@@ -13,6 +13,7 @@ from reporails_cli.core.lint.regex.expect import (
     file_below_min_lines,
 )
 from reporails_cli.core.platform.dto.lint import CompiledCheck
+from tests.conftest import rules_from_checks
 
 
 def _write_yml(path: Path, body: str) -> Path:
@@ -48,7 +49,7 @@ def test_compiled_check_carries_min_lines(tmp_path: Path) -> None:
         "  min_lines: 30\n"
         "  message: missing scope\n",
     )
-    (check,) = compile_rules([yml]).checks
+    (check,) = compile_rules(rules_from_checks([yml])).checks
     assert check.every_match is False
     assert check.message == "missing scope"
     assert check.min_lines == 30
@@ -66,7 +67,7 @@ def test_compiled_check_defaults_missing_min_lines_to_zero(tmp_path: Path) -> No
         "  expect: present\n"
         "  message: m\n",
     )
-    (check,) = compile_rules([yml]).checks
+    (check,) = compile_rules(rules_from_checks([yml])).checks
     assert check.min_lines == 0  # absent = no gate
 
 

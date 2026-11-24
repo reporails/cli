@@ -19,6 +19,7 @@ from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.platform import CombinedResult, Omissions
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters.text.not_evaluated import print_not_evaluated
+from tests.conftest import rules_from_checks
 
 _CHECKS = """\
 checks:
@@ -46,7 +47,7 @@ def _project(tmp_path: Path, text: str) -> tuple[Path, Path]:
 
 def _run(yml: Path, root: Path) -> list[object]:
     return runner.run_checks(
-        [yml], root, load_run_exclusions(RunContext(), root), instruction_files=[root / "CLAUDE.md"]
+        rules_from_checks([yml]), root, load_run_exclusions(RunContext(), root), instruction_files=[root / "CLAUDE.md"]
     )
 
 
@@ -200,7 +201,7 @@ def test_timeout_is_recorded_only_for_a_file_the_check_applies_to(
     monkeypatch.setattr(matching, "safe_search", lambda *_a: (_ for _ in ()).throw(PatternTimeoutError("forced")))
     with not_evaluated_scope() as unfinished:
         runner.run_checks(
-            [yml],
+            rules_from_checks([yml]),
             tmp_path,
             load_run_exclusions(RunContext(), tmp_path),
             instruction_files=[tmp_path / "small.md", tmp_path / "big.md"],
@@ -222,7 +223,7 @@ def test_timeout_on_a_non_entry_file_is_not_recorded(tmp_path: Path, monkeypatch
     monkeypatch.setattr(matching, "safe_search", lambda *_a: (_ for _ in ()).throw(PatternTimeoutError("forced")))
     with not_evaluated_scope() as unfinished:
         runner.run_checks(
-            [yml],
+            rules_from_checks([yml]),
             tmp_path,
             load_run_exclusions(RunContext(), tmp_path),
             instruction_files=[tmp_path / "SKILL.md", tmp_path / "other.md"],

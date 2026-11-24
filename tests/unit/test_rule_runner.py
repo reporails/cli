@@ -140,6 +140,7 @@ def test_the_regex_scan_gets_the_config_exclusions_never_the_flag_exclusions(
     from reporails_cli.core.discovery.exclusions import parse_run_exclusions
     from reporails_cli.core.lint import rule_runner
     from reporails_cli.core.platform.dto.discovery import RunExclusions
+    from reporails_cli.core.platform.dto.models import Rule
 
     (level2_project / ".ails").mkdir(exist_ok=True)
     (level2_project / ".ails" / "config.yml").write_text("exclude_dirs:\n  - from-config\n", encoding="utf-8")
@@ -148,7 +149,7 @@ def test_the_regex_scan_gets_the_config_exclusions_never_the_flag_exclusions(
         pytest.skip("No instruction files in fixture")
     seen: list[RunExclusions] = []
 
-    def _record(_yml: list[Path], _target: Path, exclusions: RunExclusions, **_kw: object) -> list[object]:
+    def _record(_rules: list[Rule], _target: Path, exclusions: RunExclusions, **_kw: object) -> list[object]:
         seen.append(exclusions)
         return []
 

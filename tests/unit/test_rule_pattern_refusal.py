@@ -12,6 +12,7 @@ from reporails_cli.core.lint.harness_quality import lint_rules
 from reporails_cli.core.lint.regex.compiler import compile_rules
 from reporails_cli.core.platform.rules import registry
 from reporails_cli.core.platform.rules.registry import RuleReadError, read_rule
+from tests.conftest import rules_from_checks
 
 _FRONTMATTER = (
     "---\nid: {rid}\ntitle: T\ncategory: structure\ntype: deterministic\nslug: {slug}\nseverity: medium\n---\n\nbody\n"
@@ -272,7 +273,7 @@ def test_a_valid_checks_file_compiles_every_check_field(tmp_path: Path) -> None:
         "- id: D\n  type: mechanical\n  check: file_exists\n"
     )
 
-    a, b, c = compile_rules([yml]).checks
+    a, b, c = compile_rules(rules_from_checks([yml])).checks
 
     assert (a.id, a.message, a.severity, a.every_match, a.min_lines, a.follow_imports, a.entry_only) == (
         "A",
@@ -298,7 +299,7 @@ def test_a_checks_file_without_a_checks_list_is_logged(tmp_path: Path, caplog: p
     yml.write_text("foo: bar\n")
 
     with caplog.at_level(logging.WARNING):
-        result = compile_rules([yml])
+        result = compile_rules(rules_from_checks([yml]))
 
     assert result.checks == []
     assert "has no valid 'checks' list" in caplog.text
@@ -311,40 +312,24 @@ def test_a_pattern_that_can_match_empty_text_loads(tmp_path: Path, pattern: str)
     yml = tmp_path / "checks.yml"
     yml.write_text(f"checks:\n- id: A\n  pattern-regex: '{pattern}'\n")
 
-    (check,) = compile_rules([yml]).checks
+    (check,) = compile_rules(rules_from_checks([yml])).checks
 
     assert [p.pattern for p in check.patterns] == [pattern]
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_ails_test_reports_the_problem_that_refused_the_checks_not_an_empty_file(tmp_path: Path) -> None:
-    from reporails_cli.core.lint.harness import _run_deterministic_check
-    from reporails_cli.core.platform.dto.models import Check
+def test_ails_test_reports_the_problem_that_refused_the_checks(tmp_path: Path) -> None:
+    from reporails_cli.core.lint.harness import _build_platform_rule
+    from reporails_cli.core.platform.dto.lint import RuleInfo
 
     md = _write_rule(tmp_path, "r", "CORE:S:0001", "pattern-regex: x\n  pattern-inside: b")
-    checks_yml = md.parent / "checks.yml"
-    check = Check.model_validate({"id": "CORE.S.0001.check", "pattern-regex": "x"})
+    info = RuleInfo(rule_id="CORE:S:0001", slug="r", title="T", category="structure", checks=[], rule_dir=md.parent)
 
-    ok, count, message = _run_deterministic_check(checks_yml, check, tmp_path, "unloaded", [])
+    message = _build_platform_rule(info)
 
-    assert (ok, count) == (False, 0)
-    assert message == f"{checks_yml}: check 1 (CORE.S.0001.check): pattern-inside: is not a known key"
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_ails_test_keeps_its_message_for_a_file_that_holds_no_checks(tmp_path: Path) -> None:
-    from reporails_cli.core.lint.harness import _run_deterministic_check
-    from reporails_cli.core.platform.dto.models import Check
-
-    checks_yml = tmp_path / "checks.yml"
-    checks_yml.write_text("checks: []\n")
-    check = Check.model_validate({"id": "CORE.S.0001.check", "pattern-regex": "x"})
-
-    _, _, message = _run_deterministic_check(checks_yml, check, tmp_path, "unloaded", [])
-
-    assert message == "checks.yml has no patterns (checks: [])"
+    assert isinstance(message, str)
+    assert "check 1 (CORE.S.0001.check): pattern-inside: is not a known key" in message
 
 
 @pytest.mark.unit

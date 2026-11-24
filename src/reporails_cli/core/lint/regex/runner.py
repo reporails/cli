@@ -20,7 +20,7 @@ from reporails_cli.core.mapper.imports import expand_imports_with_origins
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_list, as_object, as_str
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.lint import CompiledCheck, CompiledRuleSet
-from reporails_cli.core.platform.dto.models import LocalFinding
+from reporails_cli.core.platform.dto.models import LocalFinding, Rule
 from reporails_cli.core.platform.utils.file_read import read_file_head, read_file_text
 
 logger = logging.getLogger(__name__)
@@ -271,14 +271,6 @@ def _scan_all_targets(
     return _build_sarif(results, list(rule_defs.values()), unfinished)
 
 
-def _compile_ruleset(yml_paths: list[Path]) -> CompiledRuleSet:
-    """Compile the rule files that exist."""
-    valid_paths = [p for p in yml_paths if p and p.exists()]
-    if not valid_paths:
-        return CompiledRuleSet()
-    return compile_rules(valid_paths)
-
-
 def scan_ruleset(
     ruleset: CompiledRuleSet,
     target: Path,
@@ -359,7 +351,7 @@ def _resolve_scanned_files(
 
 
 def run_checks(
-    yml_paths: list[Path],
+    rules: list[Rule],
     target: Path,
     exclusions: RunExclusions,
     *,
@@ -368,7 +360,7 @@ def run_checks(
     fix_by_rule: dict[str, str] | None = None,
     skill_entries: set[Path] | None = None,
 ) -> list[LocalFinding]:
-    """Execute regex validation and return LocalFinding list.
+    """Execute regex validation of the rules' deterministic checks and return LocalFinding list.
 
     `skill_entries` holds the resolved skill entry files of the run (None when it records no
     skills); an `entry_only` check reports on those alone.
@@ -383,7 +375,7 @@ def run_checks(
     registry; propagates to `LocalFinding.fix` so MCP / JSON consumers
     can render the per-finding suggested edit.
     """
-    ruleset = _compile_ruleset(yml_paths)
+    ruleset = compile_rules(rules)
     checks = apply_min_lines_overrides(ruleset.checks, min_lines_overrides) if min_lines_overrides else ruleset.checks
     sarif = scan_ruleset(ruleset, target, exclusions, instruction_files=instruction_files)
     matched_pairs, match_details = _collect_sarif_matches(sarif)

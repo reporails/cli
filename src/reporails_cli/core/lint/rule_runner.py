@@ -106,15 +106,13 @@ def _collect_deterministic_findings(
     for rule in rules.values():
         if rule.type != RuleType.DETERMINISTIC and not _has_deterministic_checks(rule):
             continue
-        if not rule.yml_path or not rule.yml_path.exists():
-            continue
         target_files = deterministic_targets(rule.match, instruction_files, classified)
         if not target_files:
             continue
 
         findings.extend(
             run_checks(
-                [rule.yml_path],
+                [rule],
                 project_dir,
                 exclusions,
                 instruction_files=target_files,

@@ -409,7 +409,6 @@ class Rule(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__in
 
     # Paths (set after loading)
     md_path: Path | None = None
-    yml_path: Path | None = None
 
 
 # ---------------------------------------------------------------------------
