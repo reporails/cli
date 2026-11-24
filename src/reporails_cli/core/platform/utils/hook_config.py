@@ -9,13 +9,15 @@ file goes through `read_hook_config`, the one reader.
 from __future__ import annotations
 
 import json
+import os
 import re
+import shlex
 import tomllib
 from collections.abc import Iterator
 from pathlib import Path
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
-from reporails_cli.core.platform.dto.hooks import HookConfig, HookPath, HookSite
+from reporails_cli.core.platform.dto.hooks import CannotFire, HookConfig, HookPath, HookSite
 from reporails_cli.core.platform.utils.file_read import read_file_text
 
 # A config file larger than this is not read.
@@ -149,3 +151,64 @@ def read_hook_config(path: Path) -> HookConfig | None:
         return HookConfig(text, tomllib.loads(text) if path.suffix == ".toml" else _load_json(text))
     except (OSError, UnicodeDecodeError, ValueError, RecursionError):
         return None
+
+
+# A command that starts with one of these runs the script it is given, which then needs no executable bit.
+_INTERPRETERS = frozenset(
+    {"bash", "sh", "zsh", "dash", "fish", "python", "python3", "node", "deno", "bun", "ruby", "perl", "php", "pwsh"}
+)
+_VARIABLE_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_PROJECT_DIR_RE = re.compile(r"\$\{CLAUDE_PROJECT_DIR\}|\$CLAUDE_PROJECT_DIR\b")
+
+
+def _expand_folders(token: str, project_root: Path, plugin_root: Path | None) -> str | None:
+    """The token with the folder variables Claude Code expands put in; None when it names a variable that cannot be
+    expanded here."""
+    text = _PROJECT_DIR_RE.sub(lambda _: str(project_root), token)
+    if "${CLAUDE_PLUGIN_ROOT}" in text:
+        if plugin_root is None:
+            return None
+        text = text.replace("${CLAUDE_PLUGIN_ROOT}", str(plugin_root))
+    text = os.path.expanduser(os.path.expandvars(text))
+    return None if "$" in text else text
+
+
+def _is_path(token: str) -> bool:
+    return "/" in token and not token.startswith("-")
+
+
+def hook_script(command: str, project_root: Path, plugin_root: Path | None = None) -> tuple[Path, bool] | None:
+    """The script path a hook command runs and whether an interpreter runs it, folder variables expanded; a relative
+    path stands for the project root. None when the command names no script path (a bare command, a shell line that
+    starts with another command, a variable that cannot be expanded)."""
+    try:
+        tokens = [token for token in shlex.split(command) if not _VARIABLE_ASSIGNMENT_RE.match(token)]
+    except ValueError:
+        return None
+    if not tokens:
+        return None
+    interpreted = os.path.basename(tokens[0]) in _INTERPRETERS
+    token = next((item for item in tokens[1:] if _is_path(item)), None) if interpreted else tokens[0]
+    if token is None or not _is_path(token):
+        return None
+    expanded = _expand_folders(token, project_root, plugin_root)
+    if expanded is None:
+        return None
+    path = Path(expanded)
+    return (path if path.is_absolute() else project_root / path), interpreted
+
+
+def cannot_fire(command: str, project_root: Path, plugin_root: Path | None = None) -> CannotFire | None:
+    """Why the hook command cannot fire, or None when nothing shows it cannot: the folder of its script is missing,
+    the script is missing from its folder, or the script exists, runs directly and lacks the executable bit."""
+    found = hook_script(command, project_root, plugin_root)
+    if found is None:
+        return None
+    path, interpreted = found
+    if not path.parent.is_dir():
+        return "folder_missing"
+    if not path.is_file():
+        return "script_missing"
+    if interpreted:
+        return None
+    return None if os.access(path, os.X_OK) else "not_executable"

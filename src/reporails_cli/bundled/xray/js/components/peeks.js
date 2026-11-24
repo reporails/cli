@@ -91,9 +91,19 @@ function findingsBlock(s, env) {
 const DECISIONS = { context_added: 'added to the context', message_shown: 'showed a message', blocked: 'blocked', failed: 'failed', ran: 'ran' };
 const SCOPES = { project: 'project .mcp.json', user: 'your user settings', local: 'this project in your user settings', managed: 'managed settings', plugin: 'plugin' };
 
-// A hook's commands with the file that declares each, and its firings: the output opens on request.
+const CANNOT_FIRE = { not_executable: 'the script is not executable', folder_missing: 'the folder of the script does not exist', script_missing: 'the script does not exist' };
+
+// A hook's health: where it is registered, its status and, when it cannot fire, why and the line that recovers it.
+function healthSection(hook) {
+  const lines = [`event: ${hook.event || 'not declared in a hook config'}`, `matcher: ${hook.matcher || 'any'}`, `status: ${hook.status}`, `last fired: ${hook.last_fired ? `${hook.last_fired} (this session)` : 'never in this session'}`];
+  if (hook.cannot_fire) lines.push(`cannot fire: ${CANNOT_FIRE[hook.cannot_fire] || hook.cannot_fire}`);
+  if (hook.recovery) lines.push(`fix: ${hook.recovery}`);
+  return section('Health', pre(lines.join('\n')));
+}
+
+// A hook's health, its commands with the file that declares each and its firings: the output opens on request.
 function hookSections(env, hook) {
-  const out = [];
+  const out = [healthSection(hook)];
   const cmds = hook.commands.map(c => `${c.command}\n  declared in: ${c.declared_in || 'no hook config Claude Code reads holds this command'}`);
   out.push(section(plural(hook.commands.length, 'command'), cmds.length ? pre(cmds.join('\n\n')) : nk('No command is recorded for this hook.')));
   const list = el('div', 'pk-list');

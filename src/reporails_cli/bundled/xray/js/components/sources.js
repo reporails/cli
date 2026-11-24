@@ -16,6 +16,7 @@ function counts(ix, key, list) {
 }
 
 const findingsText = n => `${n} finding${n === 1 ? '' : 's'}`;
+const cannotFire = n => `${n} cannot fire`;
 const findingsOf = s => (s.findings && s.findings.count) || 0;
 
 // Line 2 of a row: its size, its cost and its findings, or that it never entered a context.
@@ -28,6 +29,7 @@ function facts(s, kind) {
     if (s.availability === 'loaded' && s.tokens_est != null) bits.push(`${tk(s.tokens_est, true)} tok`);
     return bits;
   }
+  if (s.hook) return [s.hook.status];
   if (s.builtin) return [`built in · launched as ${plural(s.launches || 0, 'subagent')}`];
   const bits = [];
   const finds = findingsOf(s);
@@ -153,7 +155,7 @@ function eyeButton(k, on) {
   return b;
 }
 
-// A group: its header (chevron, chip, name, used/total, findings line, hidden line, eye) and its items when open.
+// A group: its header (chevron, chip, name, used/total, findings line, alert line, hidden line, eye) and its items when open.
 function group(env, spec) {
   const { state, ix } = env;
   const open = isOpen(state, ix, spec.key);
@@ -164,7 +166,7 @@ function group(env, spec) {
   button.type = 'button';
   button.dataset.sourceGroup = spec.key;
   button.setAttribute('aria-expanded', String(open));
-  button.setAttribute('aria-label', [spec.label, spec.usage, spec.finds ? findingsText(spec.finds) : null].filter(Boolean).join(', '));
+  button.setAttribute('aria-label', [spec.label, spec.usage, spec.finds ? findingsText(spec.finds) : null, spec.alert ? cannotFire(spec.alert) : null].filter(Boolean).join(', '));
   button.append(el('span', 'chev', open ? '▾' : '▸'), el('span', 'chip on', spec.letter), el('span', 'sx-title', spec.label));
   const ct = el('span', 'ct');
   ct.title = spec.usage;
@@ -172,6 +174,7 @@ function group(env, spec) {
   if (spec.total != null) ct.append(el('span', 'tot', `/${spec.total}`));
   button.append(ct);
   if (spec.finds) button.append(el('span', 'sx-sub gf', findingsText(spec.finds)));
+  if (spec.alert) button.append(el('span', 'sx-sub gf', cannotFire(spec.alert)));
   if (spec.hidden) button.append(el('span', 'sx-sub off', `${spec.graphLabel} hidden on the graph`));
   head.append(button);
   if (spec.eye) head.append(eyeButton(spec.eye, !spec.hidden));
@@ -208,7 +211,7 @@ export function render(box, env) {
     const absent = ix.view.facts.find(f => f.kind === 'kind_absent' && f.target && f.target.value === k.key);
     parts.push(group(env, {
       key: k.key, label: k.label, letter: k.letter, used, total, usage: used == null ? `${UNRECORDED}, ${total} on disk` : `${used} of ${total} ${k.verb}`,
-      finds: list.reduce((n, s) => n + findingsOf(s), 0), hidden: !state.layers[k.key], graphLabel: k.graph_label, eye: k,
+      finds: list.reduce((n, s) => n + findingsOf(s), 0), alert: list.filter(s => s.hook && s.hook.cannot_fire).length, hidden: !state.layers[k.key], graphLabel: k.graph_label, eye: k,
       absent: absent && templates.kind_absent ? fill(templates.kind_absent, { ...absent.numbers, label: k.label.toLowerCase() }) : null,
       rows: list.map(s => row(env, s)), heads: roleHeads(list),
     }));

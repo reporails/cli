@@ -372,7 +372,8 @@ def test_a_source_is_listed_when_the_harness_listing_names_it_and_the_funnel_cou
     assert (skill.availability, skill.had_by) == ("listed", ())
     rows = {row.kind: row for row in view.verdict.funnel}
     # Rows carry source kinds only: a command folds into the skill row.
-    assert list(rows) == ["instructions", "skill", "agent"]
+    assert list(rows) == ["instructions", "skill", "agent", "hook"]
+    assert (rows["hook"].on_disk, rows["hook"].loaded) == (1, 0)
     assert (rows["skill"].advertised, rows["skill"].loaded, rows["skill"].used) == (1, 0, 0)
     assert rows["instructions"].loaded == 1 and rows["instructions"].used is None
 
@@ -536,7 +537,12 @@ def test_a_hook_that_fired_without_adding_to_the_context_counts_as_fired(tmp_pat
     assert hook.had_by == ()
     assert hook.availability == "loaded"
     (row,) = [row for row in view.verdict.funnel if row.kind == "hook"]
-    assert row.loaded == row.on_disk
+    # Every fired hook is loaded; the project's declared hook ran no firing here, so it is the one not loaded.
+    assert (row.loaded, row.on_disk) == (6, 7)
+    declared = next(
+        source for source in view.sources if source.kind == "hook" and source.id.startswith("hook:declared:")
+    )
+    assert declared.availability == "on_disk"
 
 
 def test_a_summary_id_with_a_non_ascii_digit_is_no_summary_not_an_error(tmp_path: Path) -> None:

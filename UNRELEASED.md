@@ -14,6 +14,8 @@
 - `ails xray` folds every segment before the newest compaction into one band showing its loads, its agents and the context size before and after the compaction, so a long session opens at what the agent holds now. The compaction stripe still lists the files that came back and the files that did not. Selecting an agent or a call in an earlier segment opens it.
 - `ails xray` draws the instruction files that one hook made Claude Code load within a quick run as one card named after that hook, with its file count and size; opening the card lists the loads. A file loaded again and again within a quick run is one card that counts the loads (for example ×21).
 - `ails xray` shows a Workflow run as a node naming the workflow, its phases, status, agent count and tokens, with the run's agents under their phases; a run whose record cannot be read shows as "not readable" while the other runs and the page still load.
+- `ails xray` lists every hook your settings and plugins declare in the Hooks group, not only the ones that fired, and the header reads fired/declared.
+- `ails xray` says why a declared hook cannot fire: its script lost the executable bit ("never fired · not executable"), its folder is gone ("folder missing") or the script is missing ("script missing"). The group header adds "N cannot fire", and the hook's details open on a Health section with the fix, such as `chmod +x <path>`.
 
 ### Changed
 
@@ -28,6 +30,8 @@
 - `ails check -f json` and the MCP `validate` response carry a top-level `format_version`, now `1`, which changes when the shape of that output changes. Its `not_evaluated` list can now also hold `{"file", "reason"}` items for a named target that was not checked, beside the existing `{"rule", "file"}` items.
 
 ### Fixed
+
+- Antigravity hooks are no longer expected in `~/.gemini/antigravity-cli/settings.json`, which the Antigravity CLI does not load.
 
 - A rule that selects files by whether they are committed, gitignored or user-level now finds them; before, such a rule matched no file.
 - `ails test` runs a rule's pattern checks only on the files its `match` selects, as `ails check` does, so a rule pack's fixtures test the rule's real scope.

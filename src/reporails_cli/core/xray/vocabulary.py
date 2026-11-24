@@ -73,6 +73,17 @@ _CLAUDE_FACT_NOTES: dict[FactKind, str] = {
     "kind_absent": "No {label} configured",
 }
 
+# What a hook's status reads: each phrase the page shows beside a hook, `{count}`, `{time}` and `{reason}`
+# filled from the view.
+HOOK_STATUS_TEXT: dict[str, str] = {
+    "fired": "fired {count}\u00d7 \u00b7 last {time}",
+    "never_fired": "never fired \u00b7 {reason}",
+    "never": "never fired",
+    "not_executable": "not executable",
+    "folder_missing": "folder missing",
+    "script_missing": "script missing",
+}
+
 _CLAUDE_COMPOSITION = (
     XrayCompositionLabel("system_tools", "System prompt + tools"),
     XrayCompositionLabel("instructions", "Instruction files"),

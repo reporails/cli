@@ -321,12 +321,10 @@ file_types:
         vcs: committed
         maintainer: human
       user:
-        # https://antigravity.google/docs/hooks/: "~/.gemini/config/hooks.json or inside your primary ~/.gemini/antigravity-cli/settings.json file"
-        # settings.json is a `config` surface first (declared above); `hooks` keeps the
-        # pattern for capability targeting only, as claude's does.
+        # https://antigravity.google/docs/hooks/ (Antigravity CLI): "Hooks in `~/.gemini/antigravity-cli/settings.json`
+        # aren't loaded." Global hooks are read from `~/.gemini/config/hooks.json` alone.
         patterns:
           - "~/.gemini/config/hooks.json"
-          - "~/.gemini/antigravity-cli/settings.json"
           - "~/.gemini/config/plugins/*/hooks.json"
         precedence: user
         vcs: external

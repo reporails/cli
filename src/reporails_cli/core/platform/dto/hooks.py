@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
+
+# Why a declared hook handler cannot fire: the folder of its script is missing, the script is missing from its folder,
+# or the script exists but lacks the executable bit.
+CannotFire = Literal["folder_missing", "script_missing", "not_executable"]
 
 # A data path from the top of the parsed file to one handler: keys and list positions.
 HookPath = tuple[str | int, ...]

@@ -10,6 +10,7 @@ from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValu
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
 from reporails_cli.core.platform.dto.events import HookDecision
 from reporails_cli.core.platform.dto.exclusion import FileLeftOut
+from reporails_cli.core.platform.dto.hooks import CannotFire
 from reporails_cli.core.platform.dto.xray_graph import SourceKind
 from reporails_cli.core.platform.dto.xray_own import ContextKey, OwnBasis, Visibility
 
@@ -144,13 +145,42 @@ class HookRun:
 
 
 @dataclass(frozen=True)
+class DeclaredHook:
+    """One hook handler a hook config declares: its event and matcher, its command, the file that declares it as the
+    page shows it, the folder of the plugin that ships the file (None for any other file) and where it sits in the
+    file."""
+
+    event: str
+    matcher: str
+    command: str
+    file: str
+    plugin_root: str | None
+    place: str
+
+
+@dataclass(frozen=True)
+class HookHealth:
+    """Whether a declared hook can fire: why it cannot (None when nothing shows it cannot) and the line that
+    recovers it (None when it can fire or no line applies)."""
+
+    cannot_fire: CannotFire | None
+    recovery: str | None
+
+
+@dataclass(frozen=True)
 class HookDetail:
     """A hook as the session shows it: the commands it ran with their declaring files, how many times it fired and
-    its latest firings."""
+    its latest firings, the event and matcher it is registered under (None when no hook config declares it), its
+    health, the phrase that states its status and when it last fired this session (None when it did not)."""
 
     commands: tuple[HookCommand, ...]
     firing_count: int
     firings: tuple[HookRun, ...]
+    event: str | None = None
+    matcher: str = ""
+    health: HookHealth = field(default_factory=lambda: HookHealth(None, None))
+    status: str = ""
+    last_fired: str | None = None
 
     def to_json(self) -> JsonObject:
         """The detail as a JSON object."""
@@ -168,7 +198,17 @@ class HookDetail:
             }
             for run in self.firings
         ]
-        return {"commands": commands, "firing_count": self.firing_count, "firings": firings}
+        return {
+            "commands": commands,
+            "firing_count": self.firing_count,
+            "firings": firings,
+            "event": self.event,
+            "matcher": self.matcher,
+            "cannot_fire": self.health.cannot_fire,
+            "recovery": self.health.recovery,
+            "status": self.status,
+            "last_fired": self.last_fired,
+        }
 
 
 @dataclass(frozen=True)

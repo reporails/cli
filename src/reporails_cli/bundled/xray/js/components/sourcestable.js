@@ -9,6 +9,7 @@ const ROW_H = 36;
 const scrolled = new WeakMap();
 
 const inContext = (env, s, verb) => {
+  if (s.hook) return s.hook.status;
   if (s.availability === 'unrecorded') return UNRECORDED;
   const n = s.had_by ? s.had_by.length : 0;
   return n ? `${n} of ${env.ix.view.nodes.length} agents` : `never ${verb}`;
@@ -33,7 +34,7 @@ function items(env) {
   const { ix } = env, v = ix.view;
   const out = v.sources.map(s => {
     const k = ix.kinds.get(s.kind);
-    return { s, letter: k ? k.letter : s.kind.charAt(0), name: s.label || s.name, kind: k ? k.label : s.kind, who: inContext(env, s, k ? k.verb : 'loaded'), never: s.availability === 'unrecorded' || !(s.had_by && s.had_by.length), tokens: s.tokens_est, finds: (s.findings && s.findings.count) || 0 };
+    return { s, letter: k ? k.letter : s.kind.charAt(0), name: s.label || s.name, kind: k ? k.label : s.kind, who: inContext(env, s, k ? k.verb : 'loaded'), never: s.availability === 'unrecorded' || (s.hook ? s.availability !== 'loaded' : !(s.had_by && s.had_by.length)), tokens: s.tokens_est, finds: (s.findings && s.findings.count) || 0 };
   });
   return out;
 }

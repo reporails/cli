@@ -28,7 +28,8 @@ def test_kind_absent_names_each_source_kind_of_the_adapter_with_no_source_at_all
     kinds = [item.key for item in view.adapter.source_kinds]
     absent = _of(view.verdict.facts, "kind_absent")
     assert [fact.artifact_kind for fact in absent] == [kind for kind in kinds if kind not in present]
-    assert {"rule", "mcp", "hook"} <= {fact.artifact_kind for fact in absent}
+    assert {"rule", "mcp"} <= {fact.artifact_kind for fact in absent}
+    assert "hook" in present and "hook" not in {fact.artifact_kind for fact in absent}
     assert all(fact.numbers == () and fact.target == XrayTarget("kind", str(fact.artifact_kind)) for fact in absent)
 
 

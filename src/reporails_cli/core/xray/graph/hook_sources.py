@@ -1,18 +1,29 @@
-"""The hooks of a session: one source per hook name, with the commands it ran, the file that declares each command and
-its latest firings."""
+"""The hooks of a session: one source per hook name that fired, with the commands it ran, the file that declares each
+command and its latest firings, and one per declared hook that did not fire, with whether it can."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime
 from pathlib import Path
 
-from reporails_cli.core.platform.contract.json_value import JsonValue, as_str
+from reporails_cli.core.platform.contract.json_value import as_str
 from reporails_cli.core.platform.dto.events import EventRecord, is_note_kind
+from reporails_cli.core.platform.dto.hooks import CannotFire
 from reporails_cli.core.platform.dto.xray_build import Frame
-from reporails_cli.core.platform.dto.xray_sources import HookCommand, HookDetail, HookRun, SourceEntry, XrayArtifact
-from reporails_cli.core.platform.utils.hook_config import hook_sites, read_hook_config
+from reporails_cli.core.platform.dto.xray_sources import (
+    DeclaredHook,
+    HookCommand,
+    HookDetail,
+    HookHealth,
+    HookRun,
+    SourceEntry,
+    XrayArtifact,
+)
+from reporails_cli.core.platform.utils.hook_config import cannot_fire, hook_script, hook_sites, read_hook_config
 from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.derive import frame_time, real_path, tokens_of
+from reporails_cli.core.xray.vocabulary import HOOK_STATUS_TEXT
 
 # The firings of one hook the page lists, the latest first kept.
 FIRINGS_SHOWN = 100
@@ -47,38 +58,118 @@ def _holds(declared: str, ran: str) -> bool:
     return ran.endswith(rest[-1]) and len(ran) - len(rest[-1]) >= at
 
 
-def _declared_commands(artifacts: Sequence[XrayArtifact], frame: Frame) -> list[tuple[str, str]]:
-    """Each `(command, file)` the hook configs declare, the file as the page shows it: the listed hook config files
-    and the settings files, each read once."""
+def _plugin_root(path: Path) -> str | None:
+    """The folder of the plugin a hook config file sits in: the nearest folder above it holding `.claude-plugin`."""
+    return next((str(folder) for folder in path.parents if (folder / ".claude-plugin").is_dir()), None)
+
+
+def _declared_hooks(artifacts: Sequence[XrayArtifact], frame: Frame) -> list[DeclaredHook]:
+    """Each hook handler the hook configs declare: the listed hook config files and the settings files, each read
+    once."""
     paths = dict.fromkeys(
         [*(item.path for item in artifacts if item.kind == "hook"), *(str(path) for path in frame.settings_files)]
     )
-    found: list[tuple[str, str]] = []
+    found: list[DeclaredHook] = []
+    seen: set[str] = set()
     for path in paths:
-        config = read_hook_config(Path(real_path(path, frame.root)))
+        real = real_path(path, frame.root)
+        config = None if real in seen else read_hook_config(Path(real))
+        seen.add(real)
         if config is None:
             continue
         wire = relative_wire_path(path, frame.root)
-        found.extend((command, wire) for command in _commands_of(config.data))
+        plugin = _plugin_root(Path(real))
+        for site in hook_sites(config.data):
+            command = as_str(site.handler.get("command"))
+            if command:
+                place = "/".join(str(step) for step in site.path)
+                found.append(DeclaredHook(site.event, site.matcher, command, wire, plugin, place))
     return found
 
 
-def _commands_of(data: JsonValue) -> list[str]:
-    return [command for site in hook_sites(data) if (command := as_str(site.handler.get("command")))]
-
-
-def _commands(ran: Sequence[str], declared: Sequence[tuple[str, str]]) -> tuple[HookCommand, ...]:
+def _commands(ran: Sequence[str], declared: Sequence[DeclaredHook]) -> tuple[HookCommand, ...]:
     return tuple(
-        HookCommand(command, next((file for text, file in declared if _holds(text, command)), None))
+        HookCommand(command, next((item.file for item in declared if _holds(item.command, command)), None))
         for command in dict.fromkeys(ran)
     )
 
 
+def _declared_for(declared: Sequence[DeclaredHook], event: str, command: str | None) -> int | None:
+    """The position of the first declared handler of `event` whose command is the one that ran."""
+    if command is None:
+        return None
+    return next((at for at, item in enumerate(declared) if item.event == event and _holds(item.command, command)), None)
+
+
+def _clock(moment: float) -> str:
+    return datetime.fromtimestamp(moment).astimezone().strftime("%H:%M")
+
+
+def _recovery(item: DeclaredHook, reason: CannotFire | None, frame: Frame) -> str | None:
+    if reason is None:
+        return None
+    plugin = Path(item.plugin_root) if item.plugin_root else None
+    found = hook_script(item.command, frame.root, plugin)
+    if found is None:
+        return None
+    path = found[0]
+    if reason == "not_executable":
+        return f"chmod +x {path}"
+    if reason == "script_missing":
+        return f"{path} does not exist; restore it or fix the command"
+    return f"{path.parent} does not exist; restore it or fix the command"
+
+
+def _status(fired: Sequence[HookRun], reason: CannotFire | None, frame: Frame) -> tuple[str, str | None]:
+    """The phrase stating a hook's status and the time it last fired (None when it did not fire this session)."""
+    moments = [frame.t0 + run.t for run in fired if run.t is not None]
+    if moments:
+        text = _clock(max(moments))
+        return HOOK_STATUS_TEXT["fired"].format(count=len(fired), time=text), text
+    if reason is not None:
+        return HOOK_STATUS_TEXT["never_fired"].format(reason=HOOK_STATUS_TEXT[reason]), None
+    return HOOK_STATUS_TEXT["never"], None
+
+
+def _detail(
+    ran: Sequence[tuple[HookRun, str | None]],
+    declared: Sequence[DeclaredHook],
+    at: int | None,
+    frame: Frame,
+    event: str | None,
+) -> HookDetail:
+    """A hook's detail: its commands and firings, and for a hook a config declares its event, matcher, health and
+    status."""
+    item = declared[at] if at is not None else None
+    reason: CannotFire | None = None
+    if item is not None and not ran:
+        reason = cannot_fire(item.command, frame.root, Path(item.plugin_root) if item.plugin_root else None)
+    runs = tuple(run for run, _ in ran)
+    status, last = _status(runs, reason, frame)
+    commands = _commands([command for _, command in ran if command], declared)
+    if item is not None and not commands:
+        commands = (HookCommand(item.command, item.file),)
+    return HookDetail(
+        commands,
+        len(runs),
+        runs[-FIRINGS_SHOWN:],
+        event if item is None else item.event,
+        "" if item is None else item.matcher,
+        HookHealth(reason, None if item is None else _recovery(item, reason, frame)),
+        status,
+        last,
+    )
+
+
 def hook_sources(records: Sequence[EventRecord], artifacts: Sequence[XrayArtifact], frame: Frame) -> list[SourceEntry]:
-    """A source for each hook name the records show firing; its size is that of its largest note."""
-    declared = _declared_commands(artifacts, frame)
+    """A source for each hook name the records show firing, its size that of its largest note, and one for each
+    declared hook none of those firings ran."""
+    declared = _declared_hooks(artifacts, frame)
     sizes: dict[str, int] = {}
     runs: dict[str, list[tuple[HookRun, str | None]]] = {}
+    events: dict[str, str] = {}
+    matched: dict[str, int] = {}
+    ran: set[int] = set()
     for record in records:
         entry = record.harness
         if record.event == "harness" and entry is not None and is_note_kind(entry.kind) and entry.event:
@@ -94,22 +185,36 @@ def hook_sources(records: Sequence[EventRecord], artifacts: Sequence[XrayArtifac
                 firing.chars,
             )
             runs.setdefault(firing.label, []).append((run, firing.command))
-    return [
-        SourceEntry(
+            events.setdefault(firing.label, firing.event)
+            at = _declared_for(declared, firing.event, firing.command)
+            if at is not None:
+                matched.setdefault(firing.label, at)
+                ran.add(at)
+    sources = [
+        _source(
             hook_id(label),
-            "hook",
             label,
-            None,
             sizes.get(label),
-            None,
-            False,
-            None,
-            None,
-            detail=HookDetail(
-                _commands([command for _, command in fired if command], declared),
-                len(fired),
-                tuple(run for run, _ in fired[-FIRINGS_SHOWN:]),
-            ),
+            _detail(fired, declared, matched.get(label), frame, events.get(label)),
         )
         for label, fired in ((label, runs.get(label, [])) for label in dict.fromkeys([*sizes, *runs]))
     ]
+    for at, item in enumerate(declared):
+        if at in ran:
+            continue
+        label = f"{item.event}:{item.matcher}" if item.matcher else item.event
+        script = hook_script(item.command, frame.root, Path(item.plugin_root) if item.plugin_root else None)
+        label = f"{label} \u00b7 {script[0].name if script else item.command.split()[0]}"
+        sources.append(
+            _source(
+                f"hook:declared:{item.file}:{item.place}",
+                label,
+                None,
+                _detail([], declared, at, frame, item.event),
+            )
+        )
+    return sources
+
+
+def _source(source_id: str, label: str, size: int | None, detail: HookDetail) -> SourceEntry:
+    return SourceEntry(source_id, "hook", label, None, size, None, False, None, None, detail=detail)
