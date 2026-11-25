@@ -20,8 +20,14 @@ if (ready) {
   out.rows = await page.ev(`[...document.querySelectorAll('#sources .ssec[data-kind="hook"] .sr')].map(r => ({ id: r.dataset.source, name: r.querySelector('.sn').textContent, facts: r.querySelector('.sw').textContent }))`);
   const broken = out.rows.find(r => r.facts.includes('cannot') || r.facts.includes('not executable'));
   if (broken) {
+    const look = id => page.ev(`(() => { const e = document.querySelector('#sources .sr[data-source=' + JSON.stringify(${JSON.stringify(id)}) + ']'); if (!e) return null; const c = getComputedStyle(e); const d = e.querySelector('.sdot');
+      return { open: e.classList.contains('open'), display: c.display, marginTop: c.marginTop, textAlign: c.textAlign, dot: d ? d.getBoundingClientRect().width : null }; })()`);
+    const sibling = out.rows.find(r => r.id !== broken.id);
+    out.hookPlain = sibling ? await look(sibling.id) : null;
     await click(`#sources .sr[data-source=${JSON.stringify(broken.id)}]`);
     await page.until(`!!document.querySelector('.pk-dialog .pk-sec')`);
+    out.hookOpen = await look(broken.id);
+    out.hookSibling = sibling ? await look(sibling.id) : null;
     out.details = await page.ev(`(() => { const secs = [...document.querySelectorAll('.pk-dialog .pk-sec')]; return { titles: secs.map(s => s.querySelector('h4').textContent), health: secs[0].textContent }; })()`);
     await click('[data-close-peek].pk-x');
   }

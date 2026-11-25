@@ -289,6 +289,24 @@ def step_open_mark(context):
     )
 
 
+@then("an opened Sources row and an opened In context row keep the layout of the rows beside them")
+def step_open_layout(context):
+    seen = _panels(context, "open_layout")
+    if seen is None:
+        return
+    assert len(seen["srKeys"]) == 2 and len(seen["icKeys"]) == 2, seen
+    for opened, plain, sibling in (("srOpen", "srPlain", "srSibling"), ("icOpen", "icPlain", "icSibling")):
+        assert seen[opened]["open"] and not seen[sibling]["open"], seen
+        for prop in ("display", "marginTop", "textAlign"):
+            assert seen[opened][prop] == seen[plain][prop] == seen[sibling][prop], (
+                prop,
+                seen[opened],
+                seen[plain],
+                seen[sibling],
+            )
+        assert seen[opened]["dot"] and seen[opened]["dot"] == seen[plain]["dot"], (seen[opened], seen[plain])
+
+
 @then("a station pill, and a Tool calls row scrolled away and back, stay marked open and the Tool calls strip never is")
 def step_open_more(context):
     seen = _panels(context, "open_more")

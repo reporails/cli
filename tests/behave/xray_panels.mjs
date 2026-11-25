@@ -68,6 +68,32 @@ if (mode === 'open_mark' && ready) {
   out.afterRow = await marked();
 }
 
+if (mode === 'open_layout' && ready) {
+  const look = (sel, dot) => page.ev(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; const c = getComputedStyle(e);
+    const d = e.querySelector(${JSON.stringify(dot)});
+    return { open: e.classList.contains('open'), display: c.display, marginTop: c.marginTop, textAlign: c.textAlign, dot: d ? d.getBoundingClientRect().width : null }; })()`);
+  await click('[data-groups="open"]');
+  await sleep(100);
+  const rows = await page.ev(`[...document.querySelectorAll('#sources .sr[data-source]')].slice(0, 2).map(r => r.dataset.source)`);
+  const srSel = id => `#sources .sr[data-source=${JSON.stringify(id)}]`;
+  out.srKeys = rows;
+  out.srPlain = await look(srSel(rows[1]), '.sdot');
+  await click(srSel(rows[0]));
+  await page.until(`!!document.querySelector('.pk-dialog')`);
+  out.srOpen = await look(srSel(rows[0]), '.sdot');
+  out.srSibling = await look(srSel(rows[1]), '.sdot');
+  await click('[data-close-peek].pk-x');
+  await sleep(100);
+  const ic = await page.ev(`[...document.querySelectorAll('#inspector .ic[data-peek], #inspector .ic[data-source]')].slice(0, 2).map(r => r.dataset.peek ? 'peek=' + r.dataset.peek : 'source=' + r.dataset.source)`);
+  const icSel = k => { const [a, v] = k.split('='); return `#inspector .ic[data-${a}=${JSON.stringify(v)}]`; };
+  out.icKeys = ic;
+  out.icPlain = await look(icSel(ic[1]), '.chip');
+  await click(icSel(ic[0]));
+  await page.until(`!!document.querySelector('.pk-dialog')`);
+  out.icOpen = await look(icSel(ic[0]), '.chip');
+  out.icSibling = await look(icSel(ic[1]), '.chip');
+}
+
 if (mode === 'open_more' && ready) {
   const state = sel => page.ev(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); return e ? { expanded: e.getAttribute('aria-expanded'), on: e.classList.contains('on') || e.classList.contains('open') } : null; })()`);
   out.stationKey = await page.ev(`(document.querySelector('.station[data-source]') || { dataset: {} }).dataset.source || null`);

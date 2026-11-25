@@ -138,6 +138,11 @@ def step_details(context):
         return
     details = seen["details"]
     assert details["titles"][0] == "Health", details
+    plain, opened, sibling = seen["hookPlain"], seen["hookOpen"], seen["hookSibling"]
+    assert plain and opened["open"] and not sibling["open"], seen
+    for prop in ("display", "marginTop", "textAlign"):
+        assert opened[prop] == plain[prop] == sibling[prop], (prop, opened, plain, sibling)
+    assert opened["dot"] and opened["dot"] == plain["dot"], (opened, plain)
     health = details["health"]
     script = context.project / ".claude" / "hooks" / SILENT
     for expected in ("event: PreToolUse", "matcher: Bash", "never fired · not executable", f"chmod +x {script}"):

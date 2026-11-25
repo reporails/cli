@@ -48,6 +48,8 @@
 - The hidden-character check no longer times out on large files, so it is no longer reported as not evaluated.
 - The secret-file and piped-remote-code checks no longer report a settings file's deny list.
 
+- `ails xray`: a row whose details are open keeps its place and layout, with no gap above it, its text left-aligned and its status dot kept.
+
 ### Removed
 
 ### Internal
