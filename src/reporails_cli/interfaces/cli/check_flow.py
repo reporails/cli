@@ -145,7 +145,8 @@ class CheckScope:
     file_type_by_path: dict[str, str] = field(default_factory=dict)
     # The named markdown files no agent loads: checked through their `referenced` class, never mapped.
     unloaded: list[Path] = field(default_factory=list)
-    generic_scanning: bool = False
+    # The files an `@` import in the files in scope brings into the run: shown beside the named files.
+    imported: list[Path] = field(default_factory=list)
 
 
 @dataclass
@@ -247,7 +248,6 @@ def _resolve_scope_at_target(state: CheckState, capability_paths: frozenset[Path
     """
 
     config = state.run.project_config(state.targets.target)
-    state.scope.generic_scanning = bool(config.generic_scanning)
     agent_arg = state.inputs.agent or config.default_agent
     if agent_arg:
         _validate_agent(agent_arg, console)
@@ -368,9 +368,9 @@ def _narrow_upfront(state: CheckState) -> bool:
 
 def _apply_generic_scan(state: CheckState) -> bool:
     """Fold @-import-reached files into the scored set and compute is_targeted. Always True."""
-    import_extra, state.scope.file_type_by_path = _classify_generic(state)
-    if import_extra:
-        state.scope.instruction_files = list(state.scope.instruction_files) + import_extra
+    state.scope.imported, state.scope.file_type_by_path = _classify_generic(state)
+    if state.scope.imported:
+        state.scope.instruction_files = list(state.scope.instruction_files) + state.scope.imported
     for path in state.scope.instruction_files:
         if safe_resolve(path) in state.scope.exclusions.named and is_markdown_file(path):
             key = normalize_finding_path(str(path), state.targets.target)
@@ -390,31 +390,32 @@ def _classify_generic(state: CheckState) -> tuple[list[Path], dict[str, str]]:
     """The `(import_extra, file_type_by_path)` of the files in scope.
 
     A run that names files is classified from the whole project's files, so a named file an `@` import
-    reaches keeps the class and loading its importer gives it; only the named files keep their class.
+    reaches keeps the class and loading its importer gives it. The files the named files import join
+    the run; only those and the named files keep their class.
     """
     files = state.scope.instruction_files
-    named = state.scope.exclusions.named
-    if not (state.scope.generic_scanning and named):
-        return apply_generic_scan(
-            state.run,
-            state.targets.target,
-            files,
-            state.scope.effective_agent,
-            generic_scanning=state.scope.generic_scanning,
-            exclusions=state.scope.exclusions,
-        )
+    generic_scanning = bool(state.run.project_config(state.targets.target).generic_scanning)
+    import_extra, file_types = _generic_scan(state, files, generic_scanning=generic_scanning)
+    if not (generic_scanning and state.scope.exclusions.named):
+        return import_extra, file_types
     held = set(files)
-    seeds = [*files, *(f for f in project_files(state) if f not in held)]
-    _, file_types = apply_generic_scan(
+    _, file_types = _generic_scan(
+        state, [*files, *(f for f in project_files(state) if f not in held)], generic_scanning=True
+    )
+    keep = {normalize_finding_path(str(f), state.targets.target) for f in (*files, *import_extra)}
+    return import_extra, {key: kind for key, kind in file_types.items() if key in keep}
+
+
+def _generic_scan(state: CheckState, seeds: list[Path], *, generic_scanning: bool) -> tuple[list[Path], dict[str, str]]:
+    """`apply_generic_scan` over `seeds` in the run's target, agent and exclusions."""
+    return apply_generic_scan(
         state.run,
         state.targets.target,
         seeds,
         state.scope.effective_agent,
-        generic_scanning=True,
+        generic_scanning=generic_scanning,
         exclusions=state.scope.exclusions,
     )
-    keep = {normalize_finding_path(str(f), state.targets.target) for f in files}
-    return [], {key: kind for key, kind in file_types.items() if key in keep}
 
 
 def _announce_unlisted(state: CheckState) -> None:

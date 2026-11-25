@@ -141,7 +141,8 @@ Feature: `ails check` scores and validates instruction files end-to-end
   Scenario: A named file gets the findings and panel of the same file reached only by a link
     Given a git project with a "prompts/review.md" that no agent loads
     When I run "ails check" on the named target "prompts/review.md" as json
-    And I keep the finding set of "prompts/review.md"
+    Then no path-scoped rule file rule is reported for "prompts/review.md"
+    When I keep the finding set of "prompts/review.md"
     Given a git project whose CLAUDE.md links "prompts/review.md" under generic_scanning
     When I run "ails check" with no target as json
     Then the finding set of "prompts/review.md" equals the kept one

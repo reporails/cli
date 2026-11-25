@@ -55,7 +55,7 @@ def covers(exclusions: RunExclusions, path: Path) -> bool:
             real = os.fspath(exclusions.roots[-1])
             for depth, part in enumerate(parts, 1):
                 folder = os.path.join(folder, part)
-                pruned = exclusions.default_pruned(part)
+                pruned = exclusions.default_pruned(folder, part)
                 if not pruned and exclusions.dirs:
                     real = child_real(folder, part, real, os.path.islink(folder))
                     pruned = exclusions.user_pruned(folder, real)

@@ -522,7 +522,10 @@ def _validate(project: Path, targets: list[str]) -> dict[str, Any]:
 def test_validate_of_a_file_path_still_checks_a_named_folder(project: Path) -> None:
     """`validate(path=<file>, targets=[folder])` checks the folder's markdown, as `ails check <file> <folder>` does."""
     (project / "docs").mkdir()
-    (project / "docs" / "guide.md").write_text("# Guide\n\nAlways review the code carefully.\n", encoding="utf-8")
+    # A link to a missing file: a finding the folder's markdown gets, so the reply lists the file.
+    (project / "docs" / "guide.md").write_text(
+        "# Guide\n\nAlways review the code carefully.\nSee [notes](notes.md).\n", encoding="utf-8"
+    )
     reply = asyncio.run(server._run_validate(str(project / "CLAUDE.md"), True, ["docs/"], project, no_models()))
     assert any(key.endswith("guide.md") for key in reply["files"]), reply
     assert reply["not_evaluated"] == []
@@ -534,7 +537,9 @@ def test_validate_checks_a_linked_folder_outside_the_project_as_check_does(proje
     """A folder linked to a folder outside the project is checked for its markdown, not reported as holding none."""
     outside = tmp_path / "outside" / "ext"
     outside.mkdir(parents=True)
-    (outside / "notes.md").write_text("# Notes\n\nAlways review the code carefully.\n", encoding="utf-8")
+    (outside / "notes.md").write_text(
+        "# Notes\n\nAlways review the code carefully.\nSee [more](more.md).\n", encoding="utf-8"
+    )
     (project / "linked").symlink_to(outside, target_is_directory=True)
     reply = _validate(project, ["linked"])
     assert any(key.endswith("notes.md") for key in reply["files"]), reply

@@ -52,16 +52,19 @@ def make_generic_classified(
 
     if is_imported:
         loading = "session_start" if any(st in _EAGER_SOURCES for st in source_types) else "on_demand"
+        scope = "path_scoped"
         file_type = GENERIC_TYPE_NAME
     else:
         # Only `read` verbs reached this file — markdown-link only.
-        # The harness does not auto-load; this is discoverable content.
+        # The harness does not auto-load; this is discoverable content the agent reads when it
+        # chooses to, whatever file it works on: no path filter scopes it.
         loading = "discoverable"
+        scope = "global"
         file_type = REFERENCED_TYPE_NAME
 
     properties: dict[str, str | list[str]] = {
         "format": "freeform",
-        "scope": "path_scoped",
+        "scope": scope,
         "loading": loading,
         "lifecycle": "static",
         "maintainer": "human",

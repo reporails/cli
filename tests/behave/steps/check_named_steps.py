@@ -9,6 +9,9 @@ from support import build_project, document, run_ails, write_claude
 _PROSE = "# Review\n\nAlways review the code carefully before you approve a change.\n"
 _CLAUDE = "# Project\n\n- Always run the tests before you commit.\n"
 _PNG = b"\x89PNG\r\n\x1a\n"
+# A prompt with a link to a file that does not exist: a finding every markdown file gets, loaded or not.
+_PROMPT = _PROSE + "\nSee [the notes](notes.md).\n"
+_PATH_SCOPED_RULES = ("CLAUDE:S:0012", "CORE:S:0038", "CORE:S:0026")
 
 
 def _output(context) -> str:
@@ -27,7 +30,7 @@ def step_unloaded_prompt(context):
     context.project = build_project(context.tmpdir)
     write_claude(context.project, _CLAUDE)
     (context.project / "prompts").mkdir()
-    (context.project / "prompts" / "review.md").write_text(_PROSE, encoding="utf-8")
+    (context.project / "prompts" / "review.md").write_text(_PROMPT, encoding="utf-8")
 
 
 @given('a git project whose CLAUDE.md links "prompts/review.md" under generic_scanning')
@@ -35,7 +38,7 @@ def step_linked_prompt(context):
     context.project = build_project(context.tmpdir / "linked")
     write_claude(context.project, _CLAUDE + "\nSee [the review prompt](prompts/review.md).\n")
     (context.project / "prompts").mkdir()
-    (context.project / "prompts" / "review.md").write_text(_PROSE, encoding="utf-8")
+    (context.project / "prompts" / "review.md").write_text(_PROMPT, encoding="utf-8")
     (context.project / ".ails").mkdir()
     (context.project / ".ails" / "config.yml").write_text("generic_scanning: true\n", encoding="utf-8")
 
@@ -114,7 +117,7 @@ def step_docs_folder(context):
     context.project = build_project(context.tmpdir)
     write_claude(context.project, _CLAUDE)
     (context.project / "docs").mkdir()
-    (context.project / "docs" / "guide.md").write_text(_PROSE, encoding="utf-8")
+    (context.project / "docs" / "guide.md").write_text(_PROMPT, encoding="utf-8")
 
 
 @when('I run "ails check" on the named targets "{first}" and "{second}" as {fmt}')
@@ -142,6 +145,29 @@ def _finding_set(context, name):
     entry = document(context.result)["files"].get(name)
     assert entry is not None, sorted(document(context.result)["files"])
     return sorted((f["rule"], f["line"], f["severity"]) for f in entry["findings"])
+
+
+@then('no path-scoped rule file rule is reported for "{name}"')
+def step_no_path_scoped_rule(context, name):
+    rules = {rule for rule, _, _ in _finding_set(context, name)}
+    assert not rules & set(_PATH_SCOPED_RULES), sorted(rules)
+
+
+@given('a git project whose ".claude" folder holds a rule, a worktree copy and a plan file')
+def step_claude_folder_working_copies(context):
+    context.project = build_project(context.tmpdir)
+    write_claude(context.project, _CLAUDE)
+    for rel in (".claude/rules/style.md", ".claude/worktrees/w1/README.md", ".claude/worktrees/w1/docs/guide.md"):
+        (context.project / rel).parent.mkdir(parents=True, exist_ok=True)
+        (context.project / rel).write_text(_PROSE, encoding="utf-8")
+    (context.project / ".claude" / "plans").mkdir()
+    (context.project / ".claude" / "plans" / "p.md").write_text(_PROSE, encoding="utf-8")
+
+
+@then('the json files map holds no file under "{first}" or "{second}"')
+def step_files_not_under(context, first, second):
+    files = sorted(document(context.result)["files"])
+    assert not [f for f in files if f.startswith((first, second))], files
 
 
 @when('I keep the finding set of "{name}"')
@@ -230,7 +256,7 @@ def step_linked_folder_outside(context):
     write_claude(context.project, _CLAUDE)
     outside = context.tmpdir / "outside" / "ext"
     outside.mkdir(parents=True)
-    (outside / "notes.md").write_text(_PROSE, encoding="utf-8")
+    (outside / "notes.md").write_text(_PROMPT, encoding="utf-8")
     (context.project / "linked").symlink_to(outside, target_is_directory=True)
 
 

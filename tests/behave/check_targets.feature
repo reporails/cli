@@ -15,6 +15,18 @@ Feature: `ails check` reports the targets it did not check, and names what it wa
     Then the text run of "docs/extra.md" shows it as Imported and not as an unlisted file
 
   @e2e @regression
+  Scenario: A named file brings in the file it imports under generic_scanning
+    Given a git project whose CLAUDE.md imports "docs/extra.md" under generic_scanning
+    When I run "ails check" on the named target "CLAUDE.md" as json
+    Then the json files map contains "docs/extra.md"
+
+  @e2e @regression
+  Scenario: A named agent folder leaves out its worktree copies and plan files
+    Given a git project whose ".claude" folder holds a rule, a worktree copy and a plan file
+    When I run "ails check" on the named target ".claude" as json
+    Then the json files map holds no file under ".claude/worktrees/" or ".claude/plans/"
+
+  @e2e @regression
   Scenario: A target nothing was checked for is reported in the github format
     Given a git project with an "assets" folder holding only an image
     When I run "ails check" on the named target "assets" as github
