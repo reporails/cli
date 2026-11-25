@@ -61,3 +61,4 @@
 - Tests: the loader refusals for an empty or uncompilable `pattern-either` and a check without an id are covered against the real loader.
 - The superseded-check scenario passes without the bundled model.
 - A named-file scenario passes without the bundled model.
+- Hook tests run on Windows.

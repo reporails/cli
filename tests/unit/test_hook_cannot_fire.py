@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ def _script(folder: Path, name: str, *, executable: bool) -> Path:
     return path
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no executable bit")
 def test_a_script_without_the_executable_bit_cannot_fire(tmp_path: Path) -> None:
     _script(tmp_path / ".claude" / "hooks", "guard.sh", executable=False)
     assert cannot_fire('"$CLAUDE_PROJECT_DIR"/.claude/hooks/guard.sh', tmp_path) == "not_executable"
@@ -61,14 +63,15 @@ def test_an_option_value_is_never_the_script(tmp_path: Path, command: str) -> No
 
 @pytest.mark.parametrize("spelling", ["${CLAUDE_PROJECT_DIR}", "$CLAUDE_PROJECT_DIR"])
 def test_the_project_folder_variable_is_expanded_in_both_spellings(tmp_path: Path, spelling: str) -> None:
-    _script(tmp_path / "hooks", "guard.sh", executable=False)
-    assert cannot_fire(f"{spelling}/hooks/guard.sh", tmp_path) == "not_executable"
+    (tmp_path / "hooks").mkdir()
+    assert cannot_fire(f"{spelling}/hooks/guard.sh", tmp_path) == "script_missing"
+    assert cannot_fire(f"{spelling}/gone/guard.sh", tmp_path) == "folder_missing"
 
 
 def test_the_plugin_folder_variable_is_expanded_from_the_plugin_root(tmp_path: Path) -> None:
     plugin = tmp_path / "plugin"
-    _script(plugin / "hooks", "run.sh", executable=False)
-    assert cannot_fire("${CLAUDE_PLUGIN_ROOT}/hooks/run.sh", tmp_path, plugin) == "not_executable"
+    (plugin / "hooks").mkdir(parents=True)
+    assert cannot_fire("${CLAUDE_PLUGIN_ROOT}/hooks/run.sh", tmp_path, plugin) == "script_missing"
     assert cannot_fire("${CLAUDE_PLUGIN_ROOT}/hooks/run.sh", tmp_path) is None
 
 

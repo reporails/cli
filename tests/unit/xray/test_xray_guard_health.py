@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import socket
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -28,10 +29,12 @@ def _home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return home
 
 
-def _declare(root: Path) -> None:
+def _declare(root: Path, *, silent_is_missing: bool = False) -> None:
     hooks = root / ".claude" / "hooks"
     hooks.mkdir()
     for name, mode in (("ran.sh", 0o755), ("silent.sh", 0o644)):
+        if name == "silent.sh" and silent_is_missing:
+            continue
         (hooks / name).write_text("#!/bin/sh\nexit 0\n")
         (hooks / name).chmod(mode)
     handlers = [
@@ -71,11 +74,24 @@ def _hooks(view: XrayView) -> dict[str, HookDetail]:
     return {name: detail for name, detail in details.items() if isinstance(detail, HookDetail)}
 
 
+@pytest.mark.parametrize(
+    ("silent_is_missing", "reason", "recovery"),
+    [
+        pytest.param(True, "script missing", "{script} does not exist; restore it or fix the command", id="missing"),
+        pytest.param(
+            False,
+            "not executable",
+            "chmod +x {script}",
+            id="not-executable",
+            marks=pytest.mark.skipif(sys.platform == "win32", reason="Windows has no executable bit"),
+        ),
+    ],
+)
 def test_a_declared_hook_that_never_fired_and_cannot_is_listed_with_its_reason(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, silent_is_missing: bool, reason: str, recovery: str
 ) -> None:
     root = _project(tmp_path)
-    _declare(root)
+    _declare(root, silent_is_missing=silent_is_missing)
     session = _session(tmp_path, HANDOFFS, root)
 
     def refuse(*_args: object, **_kwargs: object) -> None:
@@ -89,11 +105,11 @@ def test_a_declared_hook_that_never_fired_and_cannot_is_listed_with_its_reason(
     ran = hooks["PreToolUse:Bash"]
     assert ran.firing_count == 1 and ran.status.startswith("fired 1\u00d7 \u00b7 last ")
     never = hooks["PreToolUse:Bash \u00b7 silent.sh"]
-    assert never.status == "never fired \u00b7 not executable"
-    assert never.health.recovery == f"chmod +x {root / '.claude' / 'hooks' / 'silent.sh'}"
+    assert never.status == f"never fired \u00b7 {reason}"
+    assert never.health.recovery == recovery.format(script=root / ".claude" / "hooks" / "silent.sh")
     assert (never.event, never.matcher) == ("PreToolUse", "Bash")
     funnel = next(row for row in view.verdict.funnel if row.kind == "hook")
-    assert funnel.on_disk - funnel.loaded == 1  # only the non-executable hook did not fire
+    assert funnel.on_disk - funnel.loaded == 1  # only the hook that cannot fire did not fire
 
 
 def _settings(root: Path, hooks: dict[str, list[dict[str, object]]]) -> None:
@@ -301,11 +317,25 @@ def test_a_hook_no_earlier_session_fired_reads_never_fired_once_the_read_is_done
     assert hooks["PreToolUse:Grep \u00b7 guard.sh"].earlier is not None
 
 
-def test_a_hook_that_cannot_fire_and_fired_earlier_says_both(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("reason", "break_script"),
+    [
+        pytest.param("script missing", lambda path: path.unlink(), id="missing"),
+        pytest.param(
+            "not executable",
+            lambda path: path.chmod(0o644),
+            id="not-executable",
+            marks=pytest.mark.skipif(sys.platform == "win32", reason="Windows has no executable bit"),
+        ),
+    ],
+)
+def test_a_hook_that_cannot_fire_and_fired_earlier_says_both(
+    tmp_path: Path, reason: str, break_script: Callable[[Path], object]
+) -> None:
     root = _project(tmp_path)
     _settings(root, {"PreToolUse": [_guard("Bash")]})
-    (root / ".claude" / "hooks" / "guard.sh").chmod(0o644)
+    break_script(root / ".claude" / "hooks" / "guard.sh")
     session = _session(tmp_path, HANDOFFS, root)
     _earlier_session(root, "previous", f'"{root}"/.claude/hooks/guard.sh')
     found = _hooks(_view(session))["PreToolUse:Bash \u00b7 guard.sh"]
-    assert found.status == "not this session \u00b7 last fired {when} (session {session}) \u00b7 not executable"
+    assert found.status == "not this session \u00b7 last fired {when} (session {session}) \u00b7 " + reason
