@@ -77,7 +77,7 @@ def step_imported_doc(context):
     context.project = build_project(context.tmpdir)
     write_claude(context.project, _CLAUDE + "\n@docs/extra.md\n")
     (context.project / "docs").mkdir()
-    (context.project / "docs" / "extra.md").write_text(_PROSE, encoding="utf-8")
+    (context.project / "docs" / "extra.md").write_text(_PROMPT, encoding="utf-8")
     (context.project / ".ails").mkdir()
     (context.project / ".ails" / "config.yml").write_text("generic_scanning: true\n", encoding="utf-8")
 
