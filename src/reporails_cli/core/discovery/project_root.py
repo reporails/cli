@@ -69,18 +69,20 @@ def agent_dir_names() -> frozenset[str]:
     return frozenset().union(*root_markers())
 
 
+def outermost_agent_dir(target: Path) -> Path | None:
+    """The outermost agent config directory (`.claude`, `.codex`, …) that is or holds `target`, if any."""
+    agent_dirs = agent_dir_names()
+    start = target if target.is_dir() else target.parent
+    return next((folder for folder in reversed((start, *start.parents)) if folder.name in agent_dirs), None)
+
+
 def user_level_agent_dir(target: Path) -> Path | None:
     """The agent config directory directly in the user's home that holds `target`, if any.
 
     Only the outermost agent directory above the target counts, and only when its parent
     is the home directory. Returns `None` for every project-level file.
     """
-    agent_dirs = agent_dir_names()
-    start = target if target.is_dir() else target.parent
-    outermost: Path | None = None
-    for ancestor in (start, *start.parents):
-        if ancestor.name in agent_dirs:
-            outermost = ancestor
+    outermost = outermost_agent_dir(target)
     if outermost is None:
         return None
     home = home_folder()

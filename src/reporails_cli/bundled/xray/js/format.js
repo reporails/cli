@@ -19,6 +19,9 @@ export const dur = s => {
 export const plural = (n, w, ws) => `${n} ${n === 1 ? w : (ws || w + 's')}`;
 // A template whose {names} are filled from `values`; an unknown name stays visible as written.
 export const fill = (template, values) => template.replace(/\{(\w+)\}/g, (m, k) => (k in values ? String(values[k]) : m));
+// A hook's status phrase with the times it last fired filled in: this session's on the session clock as the page shows every
+// other session time, another session's as the date it was written with the start of that session's id.
+export const hookStatus = hook => fill(hook.status, { time: clock(hook.last_fired), when: hook.earlier ? startedAt(hook.earlier.at) : '', session: hook.earlier ? hook.earlier.session.slice(0, 8) : '' });
 // How the page words the state of an MCP server (the state the view carries).
 export const MCP_STATES = { connected: 'connected', pending: 'still connecting', failed: 'failed to connect', turned_off: 'turned off in this project', declared: 'declared, not seen in this session' };
 // What a file's exclusion facts say about its Check and Fix buttons (`left`: the source's `excluded` facts); empty when they say nothing.

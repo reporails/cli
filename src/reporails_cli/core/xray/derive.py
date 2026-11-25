@@ -67,13 +67,18 @@ def frame_time(frame: Frame, record: EventRecord) -> float | None:
     return None if moment is None else moment - frame.t0
 
 
-def file_tokens_est(path: str) -> int | None:
-    """The file's size in tokens, estimated from its bytes; None when it is not a readable file."""
+def file_size(path: str) -> int | None:
+    """The file's size in bytes; None when it is not a readable file."""
     try:
         target = Path(path)
-        return tokens_of(target.stat().st_size) if target.is_file() else None
+        return target.stat().st_size if target.is_file() else None
     except OSError:
         return None
+
+
+def tokens_est_of(size: int | None) -> int | None:
+    """The tokens a file of `size` bytes stands for in a size estimate; None when it has no readable size."""
+    return None if size is None else tokens_of(size)
 
 
 def replies_of(records: Sequence[EventRecord]) -> Replies:
@@ -198,7 +203,7 @@ def build_harness(records: Sequence[EventRecord], replies: Replies) -> tuple[Xra
         entry = record.harness
         if record.event == "post_compact":
             compacted = True
-        elif record.event != "harness" or entry is None:
+        elif record.event != "harness" or entry is None or entry.kind == "unsized":
             continue
         elif is_note_kind(entry.kind):
             if id(record) in started:
@@ -208,5 +213,5 @@ def build_harness(records: Sequence[EventRecord], replies: Replies) -> tuple[Xra
             slots.append(by_kind[entry.kind])
         elif entry.kind in DELTA_KINDS and not compacted:
             by_kind[entry.kind].add(entry)
-    items = [XrayHarnessItem(slot.kind, slot.label, slot.count, tokens_of(slot.chars)) for slot in slots]
+    items = [XrayHarnessItem(slot.kind, slot.label, slot.count, tokens_of(slot.chars), slot.chars) for slot in slots]
     return tuple(items) if items else None

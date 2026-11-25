@@ -28,6 +28,11 @@ export const forgetTexts = view => {
     if (e.text !== undefined) shown.set(k, e);
     fetched.delete(k);
   }
+  heldContexts = new Map();
+  for (const [k, e] of [...contexts.entries()]) {
+    if (e.data) heldContexts.set(k, e);
+    contexts.delete(k);
+  }
   // A call whose request failed is asked again after 30 s at the earliest; one whose result had not landed, once its result shows.
   const now = Date.now();
   for (const [k, e] of [...callDetails.entries()]) if ((e.error && now - e.at >= RETRY_MS) || (e.data && e.data.result == null && finished.has(k))) callDetails.delete(k);
@@ -44,7 +49,7 @@ export function text(key, url, keep = false) {
   xrayFetch(url).then(res => {
     let now;
     if (!res) now = { error: 'The x-ray server did not answer.' };
-    else if (res.ok && res.j && typeof res.j.text === 'string') now = { text: res.j.text, truncated: !!res.j.truncated, frontmatter: res.j.frontmatter ?? null, body: typeof res.j.body === 'string' ? res.j.body : res.j.text };
+    else if (res.ok && res.j && typeof res.j.text === 'string') now = { text: res.j.text, truncated: !!res.j.truncated, frontmatter: res.j.frontmatter ?? null, body: typeof res.j.body === 'string' ? res.j.body : res.j.text, sections: Array.isArray(res.j.sections) ? res.j.sections : null, unreadable: !!res.j.unreadable, readable: res.j.readable ?? null, counted: res.j.counted ?? null, unread: res.j.unread ?? null };
     else now = { error: (res.j && res.j.error) || `request refused (${res.status})` };
     const same = before && now.text === before.text && now.truncated === before.truncated && now.body === before.body;
     fetched.set(key, same ? before : now);
@@ -77,7 +82,28 @@ export function callDetail(id) {
   }).then(redraw);
   return e;
 }
-export const systemUrl = type => sessionUrl('system', { type });
+// What an agent's context held at a moment, as the server counts it ({loading}, {error} or {data}, the list the server counts for that reply): fetched once per view version, the last one shown meanwhile and kept when a new fetch fails; the page draws again when it changes.
+const contexts = new Map();
+let heldContexts = new Map();
+export const contextAtUrl = (agent, at) => sessionUrl('context', { agent, at });
+export function contextAt(agent, at) {
+  const key = `${agent}@${at}`;
+  if (contexts.has(key)) return contexts.get(key);
+  const before = heldContexts.get(key);
+  heldContexts.delete(key);
+  const e = before || { loading: true };
+  contexts.set(key, e);
+  xrayFetch(contextAtUrl(agent, at)).then(res => {
+    const now = res && res.ok && res.j ? { data: res.j } : { error: (res && res.j && res.j.error) || (res ? `request refused (${res.status})` : 'The x-ray server did not answer.') };
+    const same = before && now.data && JSON.stringify(now.data) === JSON.stringify(before.data);
+    const holding = before && before.data && !now.data;
+    contexts.set(key, same || holding ? before : now);
+    if (!same && !holding) redraw();
+  });
+  return e;
+}
+// The recorded text of one item of an agent's own context (`agent` is empty for the main agent).
+export const contextTextUrl = (agent, item) => sessionUrl('context-text', { agent, item });
 export const briefUrl = id => sessionUrl('brief', { subagent: id });
 export const outputUrl = id => sessionUrl('output', { subagent: id });
 export const promptUrl = id => sessionUrl('prompt', { id });

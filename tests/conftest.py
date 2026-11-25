@@ -8,11 +8,14 @@ from __future__ import annotations
 import os
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from tests.suite_env import suite_env
+
+if TYPE_CHECKING:
+    from reporails_cli.core.platform.dto.models import Rule
 
 # Set at import so import-time reads and `ails` subprocesses see the suite environment too. The CI
 # markers stay: they are how pytest itself detects a CI run, and each test drops them below.
@@ -406,15 +409,44 @@ def ails_client(base_url: str, *, tier: str | None = None, api_key: str | None =
         return AilsClient(tier or "free", api_key=api_key)
 
 
+def rules_from_checks(yml_paths: list[Path]) -> list[Rule]:
+    """One `Rule` per distinct owning rule id across the checks of `yml_paths`, each carrying its own checks.
+
+    The files are read through the registry's reader and loader; a missing file or one the
+    registry refuses is skipped.
+    """
+    from reporails_cli.core.lint.regex.not_evaluated import rule_id_of
+    from reporails_cli.core.platform.dto.models import Category, Check, Rule, RuleType
+    from reporails_cli.core.platform.rules.registry import RuleReadError, read_checks_document
+    from reporails_cli.core.platform.rules.rule_builder import load_checks
+
+    by_rule: dict[str, list[Check]] = {}
+    for yml_path in yml_paths:
+        if not yml_path.exists():
+            continue
+        try:
+            checks = load_checks(read_checks_document(yml_path))
+        except (RuleReadError, ValueError):
+            continue
+        for check in checks:
+            by_rule.setdefault(rule_id_of(check.id), []).append(check)
+    return [
+        Rule(id=rule_id, title="test", category=Category.STRUCTURE, type=RuleType.DETERMINISTIC, checks=checks)
+        for rule_id, checks in by_rule.items()
+    ]
+
+
 def run_rule_files(yml_paths: list[Path], target: Path, instruction_files: list[Path] | None = None) -> dict[str, Any]:
-    """Compile rule files and scan `target` with them, returning the SARIF-shaped result."""
-    from reporails_cli.core.discovery.exclusions import load_run_exclusions
+    """Compile rule files and scan `instruction_files` with them, returning the SARIF-shaped result.
+
+    A run hands the scan the files it checked; without `instruction_files` the markdown files under `target` are
+    the list.
+    """
     from reporails_cli.core.lint.regex import scan_ruleset
     from reporails_cli.core.lint.regex.compiler import compile_rules
-    from reporails_cli.core.platform.config.run_context import RunContext
 
-    exclusions = load_run_exclusions(RunContext(), target)
-    return scan_ruleset(compile_rules(yml_paths), target, exclusions, instruction_files)
+    files = sorted(target.rglob("*.md")) if instruction_files is None else instruction_files
+    return scan_ruleset(compile_rules(rules_from_checks(yml_paths)), target, files)
 
 
 @pytest.fixture

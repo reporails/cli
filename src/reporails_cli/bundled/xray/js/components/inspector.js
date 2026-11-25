@@ -1,12 +1,13 @@
 // The right column: one agent, always. Nothing selected shows the agent whose view this is; a selected card shows that agent.
 // Sections: header with slot chips, peak context and cost tiles, what was in context, activity, and the output of a subagent.
-import { el, svg, sync } from '../dom.js';
+import { el, err, svg, sync } from '../dom.js';
 import { markOpen } from './details.js';
 import { clock, k1, tk, usd, range, plural } from '../format.js';
-import { childrenOf, peakOf, typeOf } from '../views.js';
-import { promptUrl } from '../api.js';
+import { childrenOf, fileStateAt, peakOf, pickedMoment, typeOf } from '../views.js';
+import { contextAt, promptUrl } from '../api.js';
 import { tile } from './nodes/agent.js';
 import { textBlock } from './textblock.js';
+import { FILE_STATE_WORDS } from './compaction.js';
 
 const EXPAND = 'M4 9V4h5 M20 9V4h-5 M4 15v5h5 M20 15v5h-5';
 
@@ -103,36 +104,68 @@ function tiles(node, env) {
   return box;
 }
 
-// The details a row of the in-context list opens: a source, the task prompt, a built-in item, how a measured row was worked out for this agent, or the composition at peak.
-function opener(row, node, env) {
-  const view = env.ix.view;
+// The details a row of the in-context list opens: a source, the task prompt, or the composition at the reply the list is for.
+function opener(row, node, ic) {
   if (row.key === 'source' || row.key === 'hooks') return row.source ? { source: row.source } : null;
   if (row.key === 'task') return { peek: `task:${node.id}` };
-  if (row.key === 'builtin') {
-    const item = (view.builtin || []).find(b => b.remainder) || (view.builtin || [])[0];
-    return item ? { peek: `builtin:${item.key}` } : null;
-  }
-  if (row.measure) return { peek: `measured:${row.key}:${node.id}` };
-  return { peek: `peak:${node.id}` };
+  return { peek: `reply:${ic.t}:${node.id}` };
 }
 
-function contextRow(row, node, env, measured) {
+// `picked`: the list is for a picked moment; the row then names that reply, so opening its details keeps the list.
+function contextRow(row, node, env, ic, picked) {
   const kind = row.kind ? env.ix.kinds.get(row.kind) : null;
   const b = el('button', 'ic');
   b.type = 'button';
-  const go = opener(row, node, env);
+  const go = opener(row, node, ic);
+  if (picked) b.dataset.at = ic.t;
   if (go && go.source) b.dataset.source = go.source;
   else if (go) b.dataset.peek = go.peek;
   if (go) markOpen(b, env.state.peek, [go.source ? `src:${go.source}` : go.peek]);
-  const rem = !measured && (row.key === 'rest' || row.key === 'builtin');
-  const time = row.t != null ? clock(row.t) : rem ? 'remainder' : 'always';
-  b.setAttribute('aria-label', `${row.label}, ${row.reason}${row.findings ? `, ${row.findings} findings` : ''}, ${tk(row.tokens_est, true)}${rem ? ' remainder' : ''}. Open details.`);
+  const time = row.t != null ? clock(row.t) : 'always';
+  const reason = row.source && fileStateAt(env.ix, node, row.source, ic.t) === 'restored' ? FILE_STATE_WORDS.restored[0] : row.reason;
+  b.setAttribute('aria-label', `${row.label}, ${reason}${row.findings ? `, ${row.findings} findings` : ''}, ${tk(row.tokens_est, true)}. Open details.`);
   const text = el('span', 'ic-t');
-  text.append(el('span', 'ic-n', row.label), el('span', 'ic-w', row.reason));
+  text.append(el('span', 'ic-n', row.label), el('span', 'ic-w', reason));
   b.append(el('span', 'chip on', kind ? kind.letter : '·'), text);
   if (row.findings) b.append(el('span', 'ic-f', String(row.findings)));
   b.append(el('span', 'ic-k mono', tk(row.tokens_est, true)), el('span', 'ic-s mono', time));
   return b;
+}
+
+// The word the adapter uses for how a size was worked out.
+export const basisLabel = (view, basis) => ((view.adapter.context && view.adapter.context.basis) || []).find(b => b.key === basis)?.label || basis;
+
+// The coding agent's own context: one group header with its size and basis, and, open, one row per item. An item opens its details when the list is the latest reply's, the one the item's text is read from.
+function ownGroup(ic, node, env) {
+  const own = ic.own;
+  const open = !!env.state.ownOpen;
+  const box = el('div', 'ic-own');
+  const head = el('button', 'ic ic-group');
+  head.type = 'button';
+  head.dataset.ownGroup = '1';
+  head.setAttribute('aria-expanded', String(open));
+  const basis = basisLabel(env.ix.view, own.basis);
+  head.setAttribute('aria-label', `${own.label}, ${plural(own.rows.length, 'item')}, ${tk(own.tokens_est, true)}, ${basis}. ${open ? 'Collapse' : 'Expand'}.`);
+  const text = el('span', 'ic-t');
+  text.append(el('span', 'ic-n', `${open ? '▾' : '▸'} ${own.label}`), el('span', 'ic-w', plural(own.rows.length, 'item')));
+  head.append(el('span', 'chip on', '·'), text, el('span', 'ic-k mono', tk(own.tokens_est, true)), el('span', 'ic-s mono', basis));
+  box.append(head);
+  if (!open) return box;
+  for (const item of own.rows) {
+    const b = el(ic.latest ? 'button' : 'div', 'ic ic-sub');
+    b.dataset.ownItem = item.key;
+    if (ic.latest) {
+      b.type = 'button';
+      b.dataset.peek = `builtin:${item.key}:${node.id}`;
+      markOpen(b, env.state.peek, [b.dataset.peek]);
+      b.setAttribute('aria-label', `${item.label}${item.description ? `, ${item.description}` : ''}, ${tk(item.tokens_est, true)}. Open details.`);
+    }
+    const t = el('span', 'ic-t');
+    t.append(el('span', 'ic-n', item.label), el('span', 'ic-w', item.description || ''));
+    b.append(t, el('span', 'ic-k mono', tk(item.tokens_est, true)));
+    box.append(b);
+  }
+  return box;
 }
 
 function sectionHead(title) {
@@ -145,15 +178,28 @@ function quiet(text) {
   return el('p', 'ix-quiet', text);
 }
 
+// What the list shows for the inspected agent: the one its latest reply held, or, while a call of its own is picked, the one at that call's moment (fetched).
+function contextShown(node, env) {
+  const at = pickedMoment(env.ix, env.state, node);
+  return at == null ? { data: node.detail.in_context } : contextAt(node.id, at);
+}
+
 function inContext(node, env) {
   const sec = el('section', 'ix-sec ix-ctx');
-  const ic = node.detail && node.detail.in_context;
+  const shown = contextShown(node, env);
+  const picked = pickedMoment(env.ix, env.state, node) != null;
+  const ic = shown.data;
   const head = el('div', 'ix-sh');
   head.append(el('h4', null, 'In context'));
-  if (ic) head.append(el('span', 'ix-total mono', `${k1(ic.total)} at peak`));
+  if (ic) head.append(el('span', 'ix-total mono', `${k1(ic.total)} at ${clock(ic.t)}${ic.latest ? ' · latest reply' : ''}`));
   sec.append(head);
+  if (shown.loading) { sec.append(quiet('Loading what was in context at that moment…')); return sec; }
+  if (shown.error) { sec.append(err(shown.error)); return sec; }
   if (!ic) { sec.append(quiet('Not known here: no replies were recorded for this agent.')); return sec; }
-  for (const r of ic.rows) sec.append(contextRow(r, node, env, ic.measured));
+  const opening = r => r.key === 'task' || r.key === 'source' || r.key === 'hooks';
+  for (const r of ic.rows.filter(opening)) sec.append(contextRow(r, node, env, ic, picked));
+  sec.append(ownGroup(ic, node, env));
+  for (const r of ic.rows.filter(r => !opening(r))) sec.append(contextRow(r, node, env, ic, picked));
   if (ic.note) sec.append(quiet(ic.note));
   if (ic.over) sec.append(quiet(`These estimates add up to more than the exact ${k1(ic.total)}, so the split is approximate.`));
   const w = node.withheld;

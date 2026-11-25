@@ -1,0 +1,10 @@
+checks:
+- id: CORE.G.0011.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.G.0011.pattern_check
+  type: deterministic
+  follow_imports: true
+  pattern-regex: '(?<![\w.~$}-])(?<![A-Za-z]:)/(?:home|Users)/(?!(?:user|username|you|me|runner|ubuntu|ec2-user|node|root|vscode|codespace|Shared|linuxbrew)(?:/|(?=[\s\x22\x27`),;:\]]|$)))[^\s\\/<>{}$%\x22\x27`|*?:()\[\],;]+(?:/|(?=[\s\x22\x27`),;:\]]|$))|(?<!\w)[A-Za-z]:[\\/]+(?i:Users)[\\/]+(?!(?i:user|username|you|me|runner|ubuntu|ec2-user|node|root|vscode|codespace|Shared|Public|Default(?: User)?|All Users|WDAGUtilityAccount)(?:[\\/]|(?=[\s\x22\x27`),;:\]]|$)))[^\s\\/<>{}$%\x22\x27`|*?:()\[\],;]+(?:[\\/]|(?=[\s\x22\x27`),;:\]]|$))'
+  expect: absent
+  message: "Personal home-directory path detected — use ~, $HOME or a project-relative path instead of a literal user path"

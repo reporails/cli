@@ -1,6 +1,9 @@
 """Run the behave feature files in concurrent processes and print one summary.
 
-Usage: uv run python scripts/behave_parallel.py [extra behave args, e.g. --tags=-api]
+Usage: uv run python scripts/behave_parallel.py [tests/behave/<name>.feature ...] [extra behave args, e.g. --tags=-api]
+
+Existing `.feature` paths (absolute, or relative to the cwd or the repo root) select the feature files to
+run; every other argument goes to behave. With no path, every feature file runs.
 
 Each process runs its own subset of feature files with its own JUnit output; the
 features are balanced longest-first from the previous run's JUnit times when present.
@@ -127,6 +130,23 @@ def collect(out_dir: Path) -> tuple[list[tuple[str, str, float, int]], list[tupl
     return rows, [(seconds, stem, name) for (stem, name), (seconds, _) in cases.items()]
 
 
+def split_args(args: list[str]) -> tuple[list[Path], list[str]]:
+    """Split argv into the feature files it names and the extra behave args."""
+    chosen: list[Path] = []
+    extra: list[str] = []
+    for arg in args:
+        found = next((p for p in (Path(arg), ROOT / arg) if arg.endswith(".feature") and p.is_file()), None)
+        if found is None:
+            extra.append(arg)
+            continue
+        path = found.resolve()
+        if path.parent != FEATURES:
+            raise SystemExit(f"{arg}: feature files must live in {FEATURES}")
+        if path not in chosen:
+            chosen.append(path)
+    return sorted(chosen), extra
+
+
 def hold_performance() -> None:
     """Re-run this script under the `performance` power profile when `powerprofilesctl` offers one.
 
@@ -149,8 +169,8 @@ def hold_performance() -> None:
 
 def main() -> int:
     hold_performance()
-    extra = sys.argv[1:]
-    units = scenario_units(sorted(FEATURES.glob("*.feature")))
+    chosen, extra = split_args(sys.argv[1:])
+    units = scenario_units(chosen or sorted(FEATURES.glob("*.feature")))
     times = previous_times()
     work_dir = JUNIT.parent / "behave-junit-run"
     shutil.rmtree(work_dir, ignore_errors=True)
@@ -163,7 +183,9 @@ def main() -> int:
     rows, scenarios = collect(work_dir)
     JUNIT.mkdir(parents=True, exist_ok=True)
     for stale in JUNIT.glob("*"):
-        stale.unlink()
+        # A subset run keeps the stored times of the features it did not run.
+        if not chosen or stem_of(stale) in {p.stem for p in chosen}:
+            stale.unlink()
     for report in work_dir.glob("worker-*/TESTS-*.xml"):
         # A feature split over processes keeps one report per piece; the next run reads every scenario time
         # from them all.

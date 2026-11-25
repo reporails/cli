@@ -7,18 +7,21 @@ locations, files, and cross-file entries that hold one of them.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
-from reporails_cli.core.classify.capability_paths import TargetError, classify_target_token, sniff_agent
+from reporails_cli.core.classify.capability_paths import TargetError
 from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
 from reporails_cli.core.discovery.agents import detect_agents
 from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.lint.suppression import renumbered_json
 from reporails_cli.core.pipeline.mapping import resolve_agent_filters
+from reporails_cli.core.pipeline.named_targets import markdown_under_folders, read_targets, target_report
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str, str_list
 from reporails_cli.core.platform.dto.discovery import RunExclusions
+from reporails_cli.core.platform.dto.targets import TargetReading, TargetReport
 from reporails_cli.interfaces.mcp.remedy_brief import resolve_from_root
 
 
@@ -32,40 +35,8 @@ def named_files(selection: tuple[set[Path], set[Path]] | None) -> frozenset[Path
     return frozenset(selection[0]) if selection is not None else frozenset()
 
 
-def _resolve_one_target(
-    run: RunContext, token: str, token_agent: str, scan_root: Path, *, effective_agent: str, exclusions: RunExclusions
-) -> tuple[set[Path], set[Path]] | JsonObject:
-    """One target `token` resolved to the `(files, dirs)` it contributes, or a
-    `target_not_found` error payload."""
-
-    kind, target = classify_target_token(run, token, token_agent, scan_root, base=scan_root)
-    if kind == "capability" and isinstance(target, tuple):
-        capability, name = target
-        try:
-            paths, _unresolved = resolve_capability_spec(
-                run, capability, name, effective_agent, project_root=scan_root, exclusions=exclusions
-            )
-        except TargetError as err:
-            return {"error": "target_not_found", "message": err.message()}
-        resolved_paths = {safe_resolve(p) for p in paths}
-        # A skill names its whole folder (references and the rest); an agent or rule is its one file.
-        return resolved_paths, {p.parent for p in resolved_paths if p.name == "SKILL.md"}
-    if isinstance(target, Path):
-        if not target.exists():
-            return {"error": "target_not_found", "message": f"Path not found: {target}"}
-        resolved = safe_resolve(target)
-        return (set(), {resolved}) if target.is_dir() else ({resolved}, set())
-    return set(), set()
-
-
-def resolve_validate_targets(
-    run: RunContext, tokens: tuple[str, ...], scan_root: Path
-) -> tuple[set[Path], set[Path]] | JsonObject:
-    """The files and directories `tokens` name under `scan_root`, read the way `ails check` reads
-    its targets (`skills`, `skills:<name>`, `agents:<name>`, `@main`, a path; a typed word such
-    as `skill` reads as its config key). A relative path is read against `scan_root`. Returns
-    `(files, dirs)` — every path resolved — or a `target_not_found` error payload."""
-
+def _target_context(run: RunContext, scan_root: Path) -> tuple[RunExclusions, str]:
+    """The `(exclusions, effective agent)` that read the target tokens under `scan_root`."""
     exclusions = load_run_exclusions(run, scan_root)
     effective_agent, _, _, _ = resolve_agent_filters(
         run,
@@ -74,17 +45,78 @@ def resolve_validate_targets(
         scan_root,
         exclusions,
     )
-    token_agent = sniff_agent(run, "", scan_root)
+    return exclusions, effective_agent
+
+
+def read_validate_targets(run: RunContext, tokens: tuple[str, ...], scan_root: Path) -> TargetReading:
+    """`tokens` read the way `ails check` reads its targets, a relative path against `scan_root`."""
+    return read_targets(run, tokens, "", scan_root, base=scan_root)
+
+
+def validate_target_report(
+    run: RunContext, tokens: tuple[str, ...], scan_root: Path, checked: list[Path]
+) -> TargetReport:
+    """The targets among `tokens` that none of the `checked` files came from, each with its reason."""
+    exclusions, effective_agent = _target_context(run, scan_root)
+    return target_report(
+        run,
+        read_validate_targets(run, tokens, scan_root),
+        checked,
+        exclusions=exclusions,
+        effective_agent=effective_agent,
+        project_root=scan_root,
+    )
+
+
+def _capability_files(
+    run: RunContext,
+    specs: Sequence[tuple[str, str]],
+    effective_agent: str,
+    scan_root: Path,
+    exclusions: RunExclusions,
+) -> tuple[set[Path], set[Path]] | JsonObject:
+    """The files and skill folders the capability `specs` name, or a `target_not_found` error payload."""
     files: set[Path] = set()
     dirs: set[Path] = set()
-    for token in tokens:
-        result = _resolve_one_target(
-            run, token, token_agent, scan_root, effective_agent=effective_agent, exclusions=exclusions
-        )
-        if isinstance(result, dict):
-            return result
-        files |= result[0]
-        dirs |= result[1]
+    for capability, name in specs:
+        try:
+            paths, _unresolved = resolve_capability_spec(
+                run, capability, name, effective_agent, project_root=scan_root, exclusions=exclusions
+            )
+        except TargetError as err:
+            return {"error": "target_not_found", "message": err.message()}
+        resolved_paths = {safe_resolve(p) for p in paths}
+        files |= resolved_paths
+        # A skill names its whole folder (references and the rest); an agent or rule is its one file.
+        dirs |= {p.parent for p in resolved_paths if p.name == "SKILL.md"}
+    return files, dirs
+
+
+def resolve_validate_targets(
+    run: RunContext, tokens: tuple[str, ...], scan_root: Path
+) -> tuple[set[Path], set[Path]] | JsonObject:
+    """The files and directories `tokens` name under `scan_root`, read the way `ails check` reads
+    its targets (`skills`, `skills:<name>`, `agents:<name>`, `@main`, a path; a typed word such
+    as `skill` reads as its config key). A relative path is read against `scan_root`. The markdown
+    under a named folder is named too, as `ails check` checks it. A capability the agent lacks
+    names nothing (the report lists it). Returns `(files, dirs)` — every path resolved — or a
+    `target_not_found` error payload."""
+
+    exclusions, effective_agent = _target_context(run, scan_root)
+    reading = read_validate_targets(run, tokens, scan_root)
+    if reading.missing:
+        return {"error": "target_not_found", "message": f"Path not found: {reading.missing[0].path}"}
+    named = _capability_files(run, reading.capability_specs, effective_agent, scan_root, exclusions)
+    if isinstance(named, dict):
+        return named
+    files, dirs = named
+    folders = [p for p in reading.path_targets if p.is_dir() and p != scan_root]
+    for path in reading.path_targets:
+        if path.is_dir():
+            dirs.add(safe_resolve(path))
+        else:
+            files.add(safe_resolve(path))
+    files |= {safe_resolve(f) for f in markdown_under_folders(folders, exclusions)}
     return files, dirs
 
 

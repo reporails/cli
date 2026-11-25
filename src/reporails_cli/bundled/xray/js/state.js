@@ -1,8 +1,9 @@
 // Page state and its URL hash: the agent path (#/agent/<id>/<id>) and the findings drill-down (#/file/<path>).
 export const state = {
   path: ['main'], sel: null, pinned: null, hover: null, lit: null, layers: null, file: null, groups: {},
-  // The open tab (null = by the view's shape), the open details ({kind, id} or null) and the Tool calls filters.
-  tab: null, peek: null, calls: { scope: 'all', tool: 'all', failed: false, all: false },
+  // The open tab (null = by the view's shape), the open details ({kind, id} or null), the call details ({kind, id} or null)
+  // a row of the inspector's list opened the open details from, and the Tool calls filters.
+  tab: null, peek: null, from: null, calls: { scope: 'all', tool: 'all', failed: false, all: false },
   // Source kinds opened or closed by hand, the long kinds showing all, and the source last revealed by focus.
   sourceGroups: {}, more: new Set(), revealed: null,
 };
@@ -46,3 +47,7 @@ export const go = (path, file) => { location.hash = hashFor(path, file ?? null);
 
 // A fan-out group is open when the user said so; otherwise when the selected agent is one of its members.
 export const groupOpen = (st, key, memberIds) => (key in st.groups ? st.groups[key] : memberIds.includes(st.sel));
+
+// A compaction segment drawn before the newest one is folded unless the user opened it or it holds the selected agent. Its open
+// state is kept in the same `groups` record as a fan-out group's, so open or closed has one owner.
+export const foldKey = (nodeId, seg) => `fold:${nodeId}:${seg}`;

@@ -4,11 +4,17 @@ into event records, and each subscriber receives every record."""
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from reporails_cli.core.eventbus.store import append
 from reporails_cli.core.platform.contract.json_value import JsonObject
-from reporails_cli.core.platform.dto.events import EventRecord, RequestChain
+from reporails_cli.core.platform.dto.events import (
+    EventRecord,
+    HarnessKind,
+    MessageText,
+    RequestChain,
+)
+from reporails_cli.core.platform.dto.workflows import WorkflowRun
 
 
 class PayloadRefused(Exception):  # noqa: N818  # named for the decision it carries, not a fault
@@ -28,12 +34,34 @@ class EventAdapter(Protocol):  # pylint: disable=too-few-public-methods  # a por
         """The records one payload carries; raises `PayloadRefused` on a shape it does not know."""
 
 
+# The text of one entry of a listing under the name it is listed by; None for a listing that names none.
+ListingPieces = tuple[tuple[str | None, str], ...]
+
+
+class ContextReader(Protocol):
+    """Reads the text an attachment row puts into the agent's own context."""
+
+    def resolve_listing_text(self, row: JsonObject) -> tuple[HarnessKind, ListingPieces] | None:
+        """The kind and the pieces of text, each under its name, of an attachment row the size of the agent's own
+        context counts as a listing; None for any other row. Raises `PayloadRefused` for a pinned field of another
+        shape."""
+
+    def resolve_note_body(self, text: str) -> str:
+        """The text of a note without the wrapper the agent puts around the notes it injects."""
+
+    def resolve_claimed(self, row: JsonObject) -> list[str]:
+        """The texts an attachment row puts into the context that a row other than the other messages counts: a
+        hook's note, an instruction file's content, a listing. Empty for any other row."""
+
+
 class TranscriptAdapter(Protocol):
     """What an agent's transcript adapter offers: its name and the records one transcript row carries."""
 
     agent: str
     # The env var that names the calling session of this agent.
     session_env: str
+    # Reads the text its attachment rows put into the agent's own context.
+    context: ClassVar[ContextReader]
 
     def resolve_row(
         self, row: JsonObject, subagent_id: str | None, requests: RequestChain | None = None
@@ -42,29 +70,43 @@ class TranscriptAdapter(Protocol):
         to that chain and a request row yields its sized request; raises `PayloadRefused`
         on a row of a known type whose fields do not have the shape it is pinned to."""
 
-    def resolve_subagent(self, subagent_id: str, meta: JsonObject, first_row: JsonObject) -> EventRecord:
-        """The `subagent_run` record of one subagent file, from its meta file and its first row; raises
-        `PayloadRefused` when either lacks a field it is pinned to."""
+    def resolve_subagent(
+        self, subagent_id: str, meta: JsonObject, first_row: JsonObject, workflow_run: str | None = None
+    ) -> EventRecord:
+        """The `subagent_run` record of one subagent file, from its meta file and its first row; for an agent of a
+        workflow run, the run's id; raises `PayloadRefused` when either lacks a field it is pinned to."""
+
+    def resolve_workflow_run(
+        self, run_id: str, record: JsonObject | None, journal: list[JsonObject], metas: dict[str, JsonObject]
+    ) -> WorkflowRun:
+        """The workflow run `run_id`, from its record file; with no record file (`record` None), from the journal
+        rows and the meta files of its agents, as a running run, each agent with the size of the output the run
+        accepted from it. Raises `PayloadRefused` when a record or a journal row is not the pinned shape."""
 
     def resolve_brief(self, first_row: JsonObject) -> str:
         """The brief a subagent was given, from the first row of its file; raises `PayloadRefused` when that
         row is not the pinned shape."""
 
-    def resolve_handback(self, row: JsonObject) -> str | None:
-        """The message of the hand-back call the row holds; None for any other row; raises `PayloadRefused` when the
-        call is not the pinned shape."""
+    def resolve_handback(self, row: JsonObject, agent_id: str) -> str | None:
+        """What the row says agent `agent_id` handed back: the message of a hand-back call it holds, or the output a
+        workflow run's journal row says the run accepted from that agent; None for any other row. Raises
+        `PayloadRefused` when the call or the journal row is not the pinned shape."""
 
     def resolve_reply(self, row: JsonObject) -> str | None:
         """The text of an assistant reply row; None for any other row or a row with no text. Raises `PayloadRefused` for
         a text block with no text."""
 
-    def resolve_request_shape(self, row: JsonObject) -> str | None:
-        """The hash of the request shape an API request row names; None for any other row; raises
-        `PayloadRefused` when the row's hash is not the pinned shape."""
+    def resolve_request(self, row: JsonObject) -> tuple[str, str] | None:
+        """The id and the request shape hash of an API request row; None for any other row; raises `PayloadRefused`
+        when the row's hash is not the pinned shape."""
 
-    def resolve_system(self, row: JsonObject, shape_hash: str) -> str | None:
-        """The system prompt of the request-shape row recorded under `shape_hash`; None for any other row; raises
-        `PayloadRefused` when that row is not the pinned shape."""
+    def resolve_shape_text(self, row: JsonObject, shape_hash: str, item: str) -> str | None:
+        """The text of own-context item `item` (the system prompt or the tool definitions) in the request-shape row
+        recorded under `shape_hash`; None for any other row or item; raises `PayloadRefused` when that row is not
+        the pinned shape."""
+
+    def request_blocks(self, chain: RequestChain) -> list[MessageText]:
+        """The notes and thinking of the messages of the request `chain` last took, in message order."""
 
     def holds_call(self, row: JsonObject, use_id: str) -> bool:
         """Whether the row is an assistant row holding the tool call `use_id`."""

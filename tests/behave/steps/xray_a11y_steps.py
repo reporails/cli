@@ -14,6 +14,9 @@ SCRIPT = Path(__file__).resolve().parents[1] / "xray_a11y.mjs"
 ROWS_SHOWN = 150  # the Tool calls table draws this many rows until "Show all"
 MIN_TARGET = 24
 
+# The modes that look at the folds themselves; every other mode gets each fold opened as it draws.
+FOLD_MODES = {"folds", "fold-key"}
+
 
 def _a11y(context, mode: str, width: int = 1440) -> dict | None:
     node, chrome = shutil.which("node"), shutil.which("google-chrome") or shutil.which("chromium")
@@ -27,7 +30,7 @@ def _a11y(context, mode: str, width: int = 1440) -> dict | None:
         encoding="utf-8",
         timeout=180,
         check=False,
-        env={**os.environ, "CHROME_BIN": chrome},
+        env={**os.environ, "CHROME_BIN": chrome, **({"XRAY_KEEP_FOLDS": "1"} if mode in FOLD_MODES else {})},
     )
     assert done.returncode == 0, done.stderr
     seen = json.loads(done.stdout.strip().splitlines()[-1])
@@ -222,3 +225,13 @@ def step_tall_window(context):
     assert fit["scrollY"] > 0 and fit["scrolls"], fit  # the page was scrolled and the window's body scrolls inside
     assert fit["top"] >= 0 and fit["closeTop"] >= 0, fit  # the top bar, with the close button, is on screen
     assert fit["bottom"] <= min(fit["overlayBottom"], fit["viewport"]) + 0.5, fit
+
+
+@then("Enter on a folded segment's band opens that segment and the open segment offers a control to fold it again")
+def step_fold_keyboard(context):
+    seen = _a11y(context, "fold-key")
+    if seen is None:
+        return
+    assert seen["folds"] >= 1 and seen["focused"] and seen["tag"] == "BUTTON", seen
+    assert seen["foldsAfter"] == seen["folds"] - 1, seen
+    assert seen["closers"] >= 1, seen

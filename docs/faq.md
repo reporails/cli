@@ -32,9 +32,9 @@ Run `ails explain CORE:C:0010` first to read the rule body and pass / fail examp
 
 ## What changes when I sign in?
 
-Signing in is free, and it raises your hourly limit from 5 to 100 checks; the per-request payload cap stays the same. An account also gives you an identity — you can subscribe and manage the subscription. `ails check --heal` writes fixes on a Pro account only; an anonymous or free run gets the full diagnosis and no changes.
+Signing in is free, and it raises your hourly limit from 5 to 100 checks; it also raises the per-request payload cap from 2 MB to 5 MB. An account also gives you an identity — you can subscribe and manage the subscription. `ails check --heal` writes fixes on a Pro account only; an anonymous or free run gets the full diagnosis and no changes.
 
-Anonymous and free already show *what's* wrong and *where*: every local finding with its line, and the file-level findings as per-file counts where the line detail belongs to Pro. What **Pro** adds is what the server works out for your project: *which* findings to fix first and which to leave alone, and the *exact line* of every cross-file repetition and topic overlap (anonymous and free see which files and how many, not the lines). The ordered remediation workflow hands these to your coding agent as remedies, runs end to end, and checks each file again after it is rewritten. The server sends no remedies at all to anonymous or free callers — only the fix text of the local checks (like wrapping a bare name in backticks) comes free, in the diagnosis (`-f json`, MCP); writing fixes with `--heal` needs Pro. Pro also raises the hourly rate (5 anonymous, 100 signed in → 1,200) and the payload cap (2 MB → 20 MB).
+Anonymous and free already show *what's* wrong and *where*: every local finding with its line, and the file-level findings as per-file counts where the line detail belongs to Pro. What **Pro** adds is what the server works out for your project: *which* findings to fix first and which to leave alone, and the *exact line* of every cross-file repetition and topic overlap (anonymous and free see which files and how many, not the lines). The ordered remediation workflow hands these to your coding agent as remedies, runs end to end, and checks each file again after it is rewritten. The server sends no remedies at all to anonymous or free callers — only the fix text of the local checks (like wrapping a bare name in backticks) comes free, in the diagnosis (`-f json`, MCP); writing fixes with `--heal` needs Pro. Pro also raises the hourly rate (5 anonymous, 100 signed in → 1,200) and the payload cap (2 MB anonymous, 5 MB signed in → 20 MB).
 
 Sign in with `ails login`: it prints a link and a short code, opens your browser when it can, and finishes when you approve. The link is valid for 30 seconds; when it runs out, run `ails login` again. You sign in once per machine, and it lasts a year. The sign-in is stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX); `ails logout` signs out only that machine. Your plan comes from your account, so any machine you sign in on gets it. For CI, create an API key on [reporails.com/account](https://reporails.com/account).
 
@@ -84,15 +84,15 @@ If you only have a root file but a large repo, you'll likely trip `CORE:E:0002` 
 
 ## Why does my CI run say "anonymous" even though I'm authenticated locally?
 
-CI runs in a fresh environment without the credentials file at `~/.reporails/credentials.yml` that `ails login` writes locally. Create an API key on [reporails.com/account](https://reporails.com/account), store it as a secret in your CI provider, and pass it via the action input or environment variable:
+CI runs in a fresh environment without the credentials file at `~/.reporails/credentials.yml` that `ails login` writes locally. Create an API key on [reporails.com/account](https://reporails.com/account), store it as a secret in your CI provider, and pass it via the action input or the `AILS_API_KEY` environment variable:
 
 ```yaml
 - uses: reporails/cli/action@0.6.4
   with:
-    api-key: ${{ secrets.REPORAILS_API_KEY }}
+    api-key: ${{ secrets.REPORAILS_API_KEY }}   # example secret name; the action exports it as AILS_API_KEY
 ```
 
-See the [GitHub Actions section in the README](https://github.com/reporails/cli#readme).
+A job that runs `ails` directly (for example after installing it with `npm`) sets `AILS_API_KEY` itself; see [Configuration → Authentication](configuration.md#authentication). See also the [GitHub Actions section in the README](https://github.com/reporails/cli#readme).
 
 ## Does every CI run download the model again?
 

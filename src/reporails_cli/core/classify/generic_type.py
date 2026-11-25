@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from reporails_cli.core.classify.vcs import with_default_vcs
 from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES
 from reporails_cli.core.platform.dto.classify import LinkEdge
 from reporails_cli.core.platform.dto.models import ClassifiedFile
@@ -34,7 +35,7 @@ _EAGER_SOURCES: frozenset[str] = frozenset({"main"}) | MEMORY_SURFACES
 def make_generic_classified(
     path: Path,
     edges: list[LinkEdge],
-    project_root: Path | None = None,
+    project_root: Path,
 ) -> ClassifiedFile:
     """Build a `ClassifiedFile` for `path` with `link_*` properties aggregated from `edges`.
 
@@ -51,16 +52,19 @@ def make_generic_classified(
 
     if is_imported:
         loading = "session_start" if any(st in _EAGER_SOURCES for st in source_types) else "on_demand"
+        scope = "path_scoped"
         file_type = GENERIC_TYPE_NAME
     else:
         # Only `read` verbs reached this file — markdown-link only.
-        # The harness does not auto-load; this is discoverable content.
+        # The harness does not auto-load; this is discoverable content the agent reads when it
+        # chooses to, whatever file it works on: no path filter scopes it.
         loading = "discoverable"
+        scope = "global"
         file_type = REFERENCED_TYPE_NAME
 
     properties: dict[str, str | list[str]] = {
         "format": "freeform",
-        "scope": "path_scoped",
+        "scope": scope,
         "loading": loading,
         "lifecycle": "static",
         "maintainer": "human",
@@ -73,15 +77,13 @@ def make_generic_classified(
     return ClassifiedFile(
         path=path,
         file_type=file_type,
-        properties=properties,
+        properties=with_default_vcs(properties, path, project_root),
     )
 
 
-def _rel_or_str(source: Path, project_root: Path | None) -> str:
+def _rel_or_str(source: Path, project_root: Path) -> str:
     """Project-relative POSIX string when possible, absolute POSIX otherwise."""
-    if project_root is not None:
-        try:
-            return source.relative_to(project_root.resolve()).as_posix()
-        except ValueError:
-            pass
-    return source.as_posix()
+    try:
+        return source.relative_to(project_root.resolve()).as_posix()
+    except ValueError:
+        return source.as_posix()

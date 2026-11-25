@@ -35,7 +35,7 @@ from reporails_cli.core.discovery.exclusions import (
     record_patterns,
     with_named,
 )
-from reporails_cli.core.discovery.walk import safe_resolve, shared_dir_listings
+from reporails_cli.core.discovery.walk import is_markdown_file, safe_resolve, shared_dir_listings
 from reporails_cli.core.mapper.daemon import is_daemon_running, retire_daemon
 from reporails_cli.core.mapper.daemon_client import (
     DaemonStatus,
@@ -153,13 +153,13 @@ def _place_named(
     target: Path,
     explicit: bool,
 ) -> list[DetectedAgent]:
-    """`filtered` plus the named files that a user pattern matches yet no directory walk listed.
+    """`filtered` plus the named files no directory walk listed: a user pattern leaves them out, or no agent loads them.
 
     Such a file (its folder pruned from the detection walk by a configured folder) goes to the
     agent that listed it in ``detected``, else to the effective agent under the list its file type
     maps to. With an explicit agent, a file another agent lists is not placed, nor is an unlisted
     file only another agent's file types classify: those files are not part of the run. A named
-    file no user pattern matches is not added. Lists are copied before they grow.
+    file that is not markdown and no user pattern matches is not added. Lists are copied before they grow.
     """
 
     wanted = _unlisted_named(filtered, exclusions)
@@ -187,13 +187,13 @@ def _place_named(
 
 
 def _unlisted_named(filtered: list[DetectedAgent], exclusions: RunExclusions) -> list[Path]:
-    """The named paths a user pattern matches that `filtered` does not hold."""
+    """The named paths `filtered` does not hold: those a user pattern matches, and the markdown files."""
 
-    if not exclusions.named or not (exclusions.dirs or exclusions.files):
+    if not exclusions.named:
         return []
     bare = dataclasses.replace(exclusions, named=frozenset())
     held = set(_by_resolved_path(filtered))
-    return sorted(p for p in exclusions.named if p not in held and leaves_out(bare, p))
+    return sorted(p for p in exclusions.named if p not in held and (is_markdown_file(p) or leaves_out(bare, p)))
 
 
 def _append_file(agents: list[DetectedAgent], owner: str, kind: str, path: Path) -> None:

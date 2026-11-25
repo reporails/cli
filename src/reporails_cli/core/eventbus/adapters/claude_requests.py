@@ -18,6 +18,9 @@ no ASCII escaping. A `user` row's message is known under that hash, and under th
 written as one text block. The rows of one assistant response share `message.id`, one row per content block; the
 response as it stands after each row is known under its hash, and under the hash of the same response with the
 `caller` key taken off every block.
+
+A text counts as notes when its role is `system`, or when its role is `user` and it opens, after any leading
+whitespace, with `<system-reminder>`; as assistant text for `assistant`; as user text otherwise.
 """
 
 from __future__ import annotations
@@ -35,14 +38,8 @@ from reporails_cli.core.platform.contract.json_value import (
     opt_str,
     strict_str_list,
 )
-from reporails_cli.core.platform.dto.events import (
-    AssistantMerge,
-    ImageTokens,
-    MessageSize,
-    RequestChain,
-    RequestConfig,
-    RequestSize,
-)
+from reporails_cli.core.platform.dto.events import AssistantMerge, MessageText, RequestChain, RequestConfig, RequestSize
+from reporails_cli.core.platform.dto.message_size import ImageTokens, MessageSize
 from reporails_cli.core.platform.utils.utils import compact_json
 
 # What joins the text blocks of one message or system prompt.
@@ -52,6 +49,8 @@ _MERGE_CLOSE = b'],"role":"assistant"}'
 _CALLER = "caller"
 # Block types that carry no characters of their own: priced in tokens, or counted as unpriced.
 _PICTURE_BLOCKS = ("image", "document")
+# The tag Claude Code opens its own injected text with.
+_REMINDER_TAG = "<system-reminder>"
 # The field that holds the characters of each kind of thinking block.
 _THINKING_FIELDS = {"thinking": "signature", "redacted_thinking": "data"}
 
@@ -70,10 +69,13 @@ def message_hash(role: JsonValue, content: JsonValue) -> str:
     return hashlib.sha256(_encode(_canonical({"role": role, "content": content}))).hexdigest()
 
 
-def _text_part(role: str, chars: int) -> MessageSize:
+def _text_part(role: str, text: str) -> MessageSize:
+    """The size of a text by part: assistant text for the assistant, notes for a `system` text or a `user` text
+    that opens with a `<system-reminder>` tag, user text otherwise."""
+    chars = len(text)
     if role == "assistant":
         return MessageSize(assistant_text=chars)
-    if role == "system":
+    if role == "system" or (role == "user" and text.lstrip().startswith(_REMINDER_TAG)):
         return MessageSize(notes=chars)
     return MessageSize(user_text=chars)
 
@@ -127,7 +129,7 @@ def _block_size(role: str, block: JsonValue, what: str) -> MessageSize:
         raise PayloadRefused(f"{what} content has a block that is not an object")
     kind = block.get("type")
     if kind == "text":
-        return _text_part(role, len(_string_field(block, "text", what)))
+        return _text_part(role, _string_field(block, "text", what))
     if kind == "tool_use":
         return _tool_use_size(block, what)
     if kind == "tool_result":
@@ -143,11 +145,47 @@ def _block_size(role: str, block: JsonValue, what: str) -> MessageSize:
     raise PayloadRefused(f"{what} content has a block of unknown type {kind!r}")
 
 
+def _block_texts(role: str, content: JsonValue) -> tuple[MessageText, ...]:
+    """The notes and thinking a message's content holds, in order: a text that counts as notes, a tool addition, and
+    each thinking block with its text (empty for a signed block that carries none). A block of any other kind
+    holds none; `content_size` has already refused content that is not readable."""
+    blocks: list[JsonValue] = (
+        [{"type": "text", "text": content}]
+        if isinstance(content, str)
+        else content
+        if isinstance(content, list)
+        else []
+    )
+    found: list[MessageText] = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        kind, text = block.get("type"), block.get("text")
+        if kind == "text" and isinstance(text, str) and _text_part(role, text).notes:
+            found.append(("notes", text))
+        elif kind == "tool_addition":
+            found.append(("notes", compact_json(block.get("tool"), ensure_ascii=False)))
+        elif kind == "thinking":
+            thought = block.get("thinking")
+            found.append(("thinking", thought if isinstance(thought, str) else ""))
+    return tuple(found)
+
+
+def _remember(chain: RequestChain, digests: list[str], role: str, content: JsonValue) -> None:
+    """Keep the notes and thinking of a message under each of its `digests`, when the chain keeps text."""
+    if chain.texts is None:
+        return
+    found = _block_texts(role, content)
+    for digest in digests:
+        chain.texts[digest] = found
+
+
 def content_size(role: str, content: JsonValue, what: str) -> MessageSize:
-    """The size of a message's content by part: a string counts as text of the role, a list by block. Refuses
+    """The size of a message's content by part: a string counts as text of the role (a `user` text opening with
+    `<system-reminder>` counts as notes), a list by block. Refuses
     content that is neither, naming the row type `what`."""
     if isinstance(content, str):
-        return _text_part(role, len(content))
+        return _text_part(role, content)
     if not isinstance(content, list):
         raise PayloadRefused(f"{what} message content is neither a string nor a list")
     total = MessageSize()
@@ -162,9 +200,12 @@ def _register_user(chain: RequestChain, row: JsonObject) -> None:
     if not isinstance(role, str) or content is None:
         return
     size = content_size(role, content, "user row")
-    chain.pool[message_hash(role, content)] = size
+    digests = [message_hash(role, content)]
     if isinstance(content, str):
-        chain.pool[message_hash(role, [{"type": "text", "text": content}])] = size
+        digests.append(message_hash(role, [{"type": "text", "text": content}]))
+    for digest in digests:
+        chain.pool[digest] = size
+    _remember(chain, digests, role, content)
 
 
 def _drop_merge(chain: RequestChain) -> None:
@@ -189,10 +230,14 @@ def _register_assistant(chain: RequestChain, row: JsonObject) -> None:
         without_caller.update(separator + _encode(_canonical(bare)))
         merge.blocks += 1
         merge.size = merge.size + _block_size("assistant", block, "assistant row")
+        if chain.texts is not None:
+            merge.texts.extend(_block_texts("assistant", [block]))
     for running in (with_caller, without_caller):
         closed = running.copy()
         closed.update(_MERGE_CLOSE)
         chain.pool[closed.hexdigest()] = merge.size
+        if chain.texts is not None:
+            chain.texts[closed.hexdigest()] = tuple(merge.texts)
 
 
 def _register_blob(chain: RequestChain, row: JsonObject) -> None:
@@ -207,6 +252,7 @@ def _register_blob(chain: RequestChain, row: JsonObject) -> None:
     if not isinstance(role, str):
         raise PayloadRefused(f"{what} message role is not a string")
     chain.pool[digest] = content_size(role, message.get("content"), what)
+    _remember(chain, [digest], role, message.get("content"))
 
 
 def _system_text(block: JsonValue, what: str) -> str:
@@ -261,18 +307,42 @@ def _register_shape(chain: RequestChain, row: JsonObject) -> None:
     chain.tool_names[shape_hash] = tuple(_tool_name(tool, what) for tool in tools)
 
 
-def request_shape_hash(row: JsonObject) -> str | None:
-    """The `shapeHash` an `api-request` row names; None for any other row, a refusal for one whose hash is not a
-    string."""
-    return _shape_hash(row, "api-request") if row.get("type") == "api-request" else None
+def note_body(text: str) -> str:
+    """A note's text without the `<system-reminder>` tag that opens it and the one that closes it."""
+    return text.replace(_REMINDER_TAG, "").replace(_REMINDER_TAG.replace("<", "</"), "").strip()
 
 
-def shape_system_text(row: JsonObject, shape_hash: str) -> str | None:
-    """The system blocks of the `api-request-shape` row recorded under `shape_hash`, joined by a blank line; None
-    for any other row. The text is returned, never stored."""
+def request_blocks(chain: RequestChain) -> list[MessageText]:
+    """The notes and thinking of the messages of the request the chain last took, in order; a message the chain
+    knows nothing of holds none. Empty for a chain that keeps no text."""
+    texts = chain.texts or {}
+    return [block for digest in chain.trail for block in texts.get(digest, ())]
+
+
+def request_shape_ref(row: JsonObject) -> tuple[str, str] | None:
+    """The id and the `shapeHash` an `api-request` row names; None for any other row, a refusal for one whose hash is
+    not a string."""
+    if row.get("type") != "api-request":
+        return None
+    return opt_str(row.get("id")) or "", _shape_hash(row, "api-request")
+
+
+def shape_text(row: JsonObject, shape_hash: str, item: str) -> str | None:
+    """The system blocks (for the item `system_prompt`) or the tool definitions, each as its name and description
+    (for `tool_definitions`), of the `api-request-shape` row recorded under `shape_hash`, joined by a blank line; None
+    for any other row or item. The text is returned, never stored."""
     if row.get("type") != "api-request-shape" or row.get("shapeHash") != shape_hash:
         return None
-    return BLOCK_SEPARATOR.join(_system_texts(row, "api-request-shape"))
+    if item == "system_prompt":
+        return BLOCK_SEPARATOR.join(_system_texts(row, "api-request-shape"))
+    if item != "tool_definitions":
+        return None
+    named = []
+    for tool in _shape_parts(row, "api-request-shape")[1]:
+        description = tool.get("description") if isinstance(tool, dict) else None
+        name = _tool_name(tool, "api-request-shape")
+        named.append(f"{name}\n{description}" if isinstance(description, str) and description else name)
+    return BLOCK_SEPARATOR.join(named)
 
 
 def _request_tier(row: JsonObject) -> bool | None:
@@ -319,6 +389,9 @@ def _request(chain: RequestChain, row: JsonObject) -> RequestSize:
     # An unknown message keeps its place as an empty size, so the next request's `keep` still counts it.
     kept = min(keep, len(chain.prefix) - 1)
     del chain.prefix[kept + 1 :]
+    if chain.texts is not None:
+        del chain.trail[kept:]
+        chain.trail.extend(tail)
     total = chain.prefix[kept]
     for digest in tail:
         total += chain.pool.get(digest, MessageSize())

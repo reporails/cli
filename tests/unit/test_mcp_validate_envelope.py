@@ -625,3 +625,19 @@ def test_an_oversize_targeted_reply_without_a_cut_list_still_names_remedy_brief(
     )
     assert "findings" not in reply["workflow"]["locations"][0]
     assert "remedy_brief" in reply["truncated"]["hint"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_envelope_keeps_the_format_version_and_the_unchecked_targets():
+    """The bounded reply keeps `format_version` and the `not_evaluated` items a target left, for the consumer."""
+    payload = {
+        **_big_payload(n_files=3, per_file=2),
+        "format_version": 1,
+        "not_evaluated": [{"file": "assets", "reason": "no_markdown"}],
+    }
+
+    bounded = bound_validate_payload(payload)
+
+    assert bounded["format_version"] == 1
+    assert bounded["not_evaluated"] == [{"file": "assets", "reason": "no_markdown"}]

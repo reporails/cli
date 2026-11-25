@@ -38,7 +38,7 @@ def _expected_counts(context) -> dict[str, int]:
     return {
         "graph": len(view["nodes"]),
         "calls": sum(len(t["calls"]) for t in view["track"]),
-        "sources": len(view["sources"]) + len(view.get("builtin") or []),
+        "sources": len(view["sources"]),
     }
 
 

@@ -22,6 +22,7 @@ from reporails_cli.core.platform.dto.events import (
 )
 from reporails_cli.core.platform.dto.xray_composition import COMPOSITION_KEYS, REMAINDER_KEY
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile
+from reporails_cli.core.xray.derive import build_harness, replies_of
 from reporails_cli.core.xray.vocabulary import vocabulary_for
 from tests.unit.xray.test_xray_graph import _agent, _file, _graph, _node, launch, load, rec, reply, result
 
@@ -280,12 +281,12 @@ def test_a_built_in_note_words_a_count_of_one_in_the_singular(tmp_path: Path) ->
             rec("harness", 0.4, item=HarnessEntry("deferred_tools", "tools", count, 400)),
             _peak(5),
         ]
-        return [
-            item.note for item in _graph(tmp_path, records, _files(tmp_path)).builtin if item.key != "system_prompt"
-        ]
+        shown = _agent(_node(_graph(tmp_path, records, _files(tmp_path)), "main")).in_context
+        assert shown is not None
+        return [item.description for item in shown.own.rows if item.key != "built_in_rest"]
 
-    assert notes(1) == ["1 tool loaded on demand", "1 agent description", "1 skill description"]
-    assert notes(2) == ["2 tools loaded on demand", "2 agent descriptions", "2 skill descriptions"]
+    assert notes(1) == ["1 agent description", "1 skill description", "1 tool loaded on demand"]
+    assert notes(2) == ["2 agent descriptions", "2 skill descriptions", "2 tools loaded on demand"]
 
 
 def test_only_the_shell_category_carries_a_command_to_fetch() -> None:
@@ -461,3 +462,11 @@ def test_a_recall_after_the_first_compaction_carries_the_note_to_the_second(tmp_
     first, second = next(item for item in graph.stations if item.node == "main").compactions
     assert [(item.source, item.state) for item in first.files] == [("MEMORY.md", "restored")]
     assert [(item.source, item.state) for item in second.files] == [("MEMORY.md", "summarized")]
+
+
+def test_build_harness_ignores_an_unsized_record() -> None:
+    records = [rec("harness", 0.1, item=HarnessEntry("unsized", "environment", None, 0))]
+    assert build_harness(records, replies_of(records)) is None
+    records.append(rec("harness", 0.2, item=HarnessEntry("skill_list", "skills", 3, 400)))
+    items = build_harness(records, replies_of(records)) or ()
+    assert [item.kind for item in items] == ["skill_list"]

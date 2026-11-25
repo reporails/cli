@@ -3,7 +3,7 @@
 Covers the pure decision helpers (severity normalizer, deterministic-check
 predicate, generic-file extender) plus the collect/dispatch seams: which rules get
 their mechanical checks run, the check_id fallback, the deterministic-eligibility
-guard, the yml_path guard, the scoped default, and the config-error fallbacks.
+guard, the scoped default, and the config-error fallbacks.
 """
 
 from __future__ import annotations
@@ -222,7 +222,7 @@ def test_collect_mechanical_preserves_check_id(tmp_path: Path, monkeypatch: pyte
     assert findings[0].line == 5
 
 
-# --- _collect_deterministic_findings (L110, L112) ---------------------------
+# --- _collect_deterministic_findings (L110) ---------------------------
 
 
 @pytest.mark.unit
@@ -238,48 +238,16 @@ def test_deterministic_type_rule_with_mechanical_checks_still_runs(
     sentinel = object()
     monkeypatch.setattr(f"{_RR}.run_checks", lambda *a, **k: [sentinel])
 
-    yml = tmp_path / "r.yml"
-    yml.write_text("x")
-    rule = _rule(id="R", type=RuleType.DETERMINISTIC, match=None, yml_path=yml)
+    rule = _rule(id="R", type=RuleType.DETERMINISTIC, match=None)
 
     out = _collect_deterministic_findings(
         {"R": rule},
         tmp_path,
         [tmp_path / "a.md"],
         [],
-        exclusions=load_run_exclusions(RunContext(), tmp_path),
         thresholds={},
     )
     assert sentinel in out
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_deterministic_rule_without_yml_path_is_skipped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A rule whose yml_path is None is skipped gracefully.
-
-    Kills: L112 `not yml_path or not yml_path.exists()` with `or -> and`
-    (`and` dereferences `.exists()` on None -> AttributeError).
-    """
-    monkeypatch.setattr(f"{_RR}.run_checks", lambda *a, **k: [object()])
-    rule = _rule(
-        id="R",
-        type=RuleType.DETERMINISTIC,
-        match=None,
-        yml_path=None,
-        checks=[Check.model_validate({"id": "c", "type": "deterministic", "pattern-regex": "x"})],
-    )
-    assert (
-        _collect_deterministic_findings(
-            {"R": rule},
-            tmp_path,
-            [tmp_path / "a.md"],
-            [],
-            exclusions=load_run_exclusions(RunContext(), tmp_path),
-            thresholds={},
-        )
-        == []
-    )
 
 
 # --- run_m_probes (L181 scoped default, L201 config-error fallback) ---------

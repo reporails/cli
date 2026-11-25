@@ -17,7 +17,7 @@ from reporails_cli.core.platform.dto.events import InstructionLoad
 from reporails_cli.core.platform.dto.xray import XrayCheck, XrayView
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally
 from reporails_cli.core.platform.utils.utils import relative_wire_path
-from reporails_cli.core.xray.artifacts import PEEK_LIMIT, agent_file_tokens, artifact_files, build_artifacts
+from reporails_cli.core.xray.artifacts import PEEK_LIMIT, agent_file_sizes, artifact_files, build_artifacts
 from reporails_cli.core.xray.derive import BYTES_PER_TOKEN
 from reporails_cli.core.xray.session import XraySession
 from tests.unit.xray.test_xray_graph import rec
@@ -28,8 +28,8 @@ FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "eventbus" / "tran
 RUNNING = XrayCheck("running", None)
 TOP_KEYS = {
     "version", "session", "project", "started_at", "length_s", "picked", "model", "window", "adapter", "price_list",
-    "nodes", "edges", "sources", "stations", "track", "builtin", "session_cost", "funnel", "facts", "check", "refusals",
-    "not_known",
+    "nodes", "edges", "sources", "stations", "track", "session_cost", "workflows", "funnel", "facts", "check",
+    "refusals", "not_known",
 }  # fmt: skip
 HANDOFFS = "2.1.309-handoffs"
 NEW_TURN = (
@@ -156,34 +156,33 @@ def test_the_vocabulary_lists_the_agent_types_found_on_disk_after_the_built_in_o
     assert keys[:5] == ["main", "Explore", "general-purpose", "Plan", "fork"] and keys[5:] == ["helper"]
 
 
-def test_refresh_reports_growth_and_bumps_the_version(tmp_path: Path) -> None:
+def test_refresh_reports_growth_and_the_version_rises_with_the_view_the_growth_changes(tmp_path: Path) -> None:
     session = _session(tmp_path, "2.1.301", _project(tmp_path))
     assert session.version == 0
     assert session.refresh() is True
-    version = session.version
+    version = session.view(RunContext(), {}, RUNNING, "newest").version
     assert session.refresh() is False
-    assert session.version == version
+    assert session.view(RunContext(), {}, RUNNING, "newest").version == version
     before = session.view(RunContext(), {}, RUNNING, "newest").nodes[0].detail
     _append_turn(tmp_path, "2.1.301")
     assert session.refresh() is True
-    assert session.version == version + 1
-    after = session.view(RunContext(), {}, RUNNING, "newest").nodes[0].detail
+    grown = session.view(RunContext(), {}, RUNNING, "newest")
+    assert grown.version == version + 1
+    after = grown.nodes[0].detail
     assert len(after.series) == len(before.series) + 1 and after.series[-1][1] == 30103
     assert session.refresh() is False
 
 
-def test_the_version_follows_the_findings_it_is_given(tmp_path: Path) -> None:
+def test_the_version_follows_the_findings_and_the_check_it_is_given(tmp_path: Path) -> None:
     session = _session(tmp_path, "2.1.301", _project(tmp_path))
     session.refresh()
-    version = session.version
-    session.view(RunContext(), {}, RUNNING, "newest")
-    assert session.version == version
-    session.view(RunContext(), {"a.md": _tally(2)}, RUNNING, "newest")
-    assert session.version == version + 1
-    session.view(RunContext(), {"a.md": _tally(2)}, RUNNING, "newest")
-    assert session.version == version + 1
-    session.view(RunContext(), {"a.md": _tally(2)}, XrayCheck("done", None), "newest")
-    assert session.version == version + 2
+    version = session.view(RunContext(), {}, RUNNING, "newest").version
+    assert session.view(RunContext(), {}, RUNNING, "newest").version == version
+    assert session.view(RunContext(), {"CLAUDE.md": _tally(2)}, RUNNING, "newest").version == version + 1
+    assert session.view(RunContext(), {"CLAUDE.md": _tally(2)}, RUNNING, "newest").version == version + 1
+    assert (
+        session.view(RunContext(), {"CLAUDE.md": _tally(2)}, XrayCheck("done", None), "newest").version == version + 2
+    )
 
 
 def test_a_source_lists_what_could_load_with_its_size_findings_and_the_nodes_that_had_it(tmp_path: Path) -> None:
@@ -372,7 +371,8 @@ def test_a_source_is_listed_when_the_harness_listing_names_it_and_the_funnel_cou
     assert (skill.availability, skill.had_by) == ("listed", ())
     rows = {row.kind: row for row in view.verdict.funnel}
     # Rows carry source kinds only: a command folds into the skill row.
-    assert list(rows) == ["instructions", "skill", "agent"]
+    assert list(rows) == ["instructions", "skill", "agent", "hook"]
+    assert (rows["hook"].on_disk, rows["hook"].loaded) == (1, 0)
     assert (rows["skill"].advertised, rows["skill"].loaded, rows["skill"].used) == (1, 0, 0)
     assert rows["instructions"].loaded == 1 and rows["instructions"].used is None
 
@@ -448,8 +448,8 @@ def test_a_kind_absent_fact_targets_a_source_kind_of_the_adapter_never_an_artifa
 
 def test_the_size_of_each_listed_agent_definition_is_found_by_its_type(tmp_path: Path) -> None:
     root = _project(tmp_path)
-    sizes = agent_file_tokens(artifact_files(RunContext(), root, []), root)
-    assert sizes["helper"] == (root / ".claude" / "agents" / "helper.md").stat().st_size // BYTES_PER_TOKEN > 0
+    sizes = agent_file_sizes(artifact_files(RunContext(), root, []), root)
+    assert sizes["helper"] == (root / ".claude" / "agents" / "helper.md").stat().st_size > 0
 
 
 def test_a_peek_splits_the_frontmatter_block_from_the_body(tmp_path: Path) -> None:
@@ -536,7 +536,9 @@ def test_a_hook_that_fired_without_adding_to_the_context_counts_as_fired(tmp_pat
     assert hook.had_by == ()
     assert hook.availability == "loaded"
     (row,) = [row for row in view.verdict.funnel if row.kind == "hook"]
-    assert row.loaded == row.on_disk
+    # The firing names no command and the project declares one handler for it, so that handler ran too.
+    assert (row.loaded, row.on_disk) == (6, 6)
+    assert not [source for source in view.sources if source.id.startswith("hook:declared:")]
 
 
 def test_a_summary_id_with_a_non_ascii_digit_is_no_summary_not_an_error(tmp_path: Path) -> None:

@@ -48,20 +48,23 @@ from reporails_cli.core.platform.config.bootstrap import parse_idle_timeout_env
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.contract.json_value import JsonObject
-from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.pipeline import CheckRun, Refusal
 from reporails_cli.core.platform.dto.xray import PickedSession, SessionPick, XrayCheck
 from reporails_cli.core.platform.dto.xray_sources import FindingTally, XrayPeek
-from reporails_cli.core.platform.rules.registry import file_level_check_ids
-from reporails_cli.core.platform.rules.rules_query import rule_category, rule_title
 from reporails_cli.core.platform.utils.utils import home_folder
 from reporails_cli.core.xray.pages import HOST, code_change_watch, forget_page, register_page
 from reporails_cli.core.xray.session import XraySession
 from reporails_cli.core.xray.sessions import session_entries
 from reporails_cli.core.xray.tally import tallies_by_file, tally_of
 from reporails_cli.formatters.mcp_view import render_heal_receipt
-from reporails_cli.formatters.text.rule_meta import rule_docs_url
-from reporails_cli.interfaces.cli.xray_fields import call_fields, hook_output_fields, text_fields
+from reporails_cli.interfaces.cli.xray_fields import (
+    call_fields,
+    context_fields,
+    finding_fields,
+    hook_output_fields,
+    in_context_fields,
+    text_fields,
+)
 from reporails_cli.interfaces.cli.xray_launch import RequestClock, bound_socket, mark_requests, run_until_idle, span
 from reporails_cli.interfaces.cli.xray_line import xray_line
 
@@ -235,8 +238,7 @@ class XrayServer:
         )
 
     async def launch(self, _request: Request) -> Response:
-        """The id of this launch, so a caller can tell a live page from a record left behind, and whether the
-        installed code changed since it started."""
+        """The id of this launch, to tell a live page from a record left behind, and whether ails changed since."""
         changed = await run_in_threadpool(self._code_changed)
         return JSONResponse({"launch": self._identity.launch, "changed": changed}, headers=NO_STORE)
 
@@ -270,8 +272,7 @@ class XrayServer:
             return session.peek(RunContext(), path)
 
     async def _text_route(self, request: Request, route: _TextRoute) -> Response:
-        """Guard the request, read `?<query>=` and reply `{"id", ...}` with the fields the route's lookup finds in the
-        session the request is on."""
+        """Guard the request, read `?<query>=` and reply `{"id", ...}` with the fields the lookup finds."""
         refusal = await self._guard(request)
         if refusal is not None:
             return refusal
@@ -319,15 +320,29 @@ class XrayServer:
             ),
         )
 
-    async def system(self, request: Request) -> Response:
-        """The system prompt one launched agent type was sent with; the empty type is the main agent."""
+    async def context_text(self, request: Request) -> Response:
+        """The recorded text of one own-context item: `?agent=<node id, empty for main>&item=<key>`."""
+        agent = request.query_params.get("agent", "")
         return await self._text_route(
             request,
             _TextRoute(
-                "type",
-                "the query is ?type=<agent type>, empty for the main agent",
-                text_fields(XraySession.system_prompt),
-                "not an agent type this session launched with a recorded request, and no recorded main request",
+                "item",
+                "the query is ?agent=<node id>&item=<key>",
+                lambda session, item: context_fields(session, agent, item),
+                "no recorded request holds that item for that agent",
+            ),
+        )
+
+    async def in_context(self, request: Request) -> Response:
+        """What an agent's context held at a moment: `?agent=<node id, empty for main>&at=<seconds>`."""
+        agent = request.query_params.get("agent", "")
+        return await self._text_route(
+            request,
+            _TextRoute(
+                "at",
+                "the query is ?agent=<node id>&at=<seconds>",
+                lambda session, at: in_context_fields(session, agent, at),
+                "no reply of that agent holds a context at that moment",
             ),
         )
 
@@ -414,7 +429,7 @@ class XrayServer:
                 {
                     "path": str(target),
                     "findings": len(found),
-                    "lines": [_line(f) for f in found],
+                    "lines": [finding_fields(f) for f in found],
                     "fix_command": f"ails check {shlex.quote(key)} --heal",
                 }
             )
@@ -497,20 +512,6 @@ class _TextRoute:
     unknown: str
 
 
-def _line(finding: FindingItem) -> JsonObject:
-    """One finding as the page shows it."""
-    return {
-        "line": finding.line,
-        "rule": finding.rule,
-        "message": finding.message,
-        "severity": finding.severity,
-        "title": rule_title(finding.rule),
-        "category": rule_category(finding.rule),
-        "file_level": finding.check_id in file_level_check_ids() or finding.line == 0,
-        "docs_url": rule_docs_url(finding.rule),
-    }
-
-
 def build_app(
     root: Path,
     session_file: Path,
@@ -542,7 +543,8 @@ def build_app(
             Route("/peek", server.peek, methods=["GET"]),
             Route("/brief", server.brief, methods=["GET"]),
             Route("/output", server.output, methods=["GET"]),
-            Route("/system", server.system, methods=["GET"]),
+            Route("/context-text", server.context_text, methods=["GET"]),
+            Route("/context", server.in_context, methods=["GET"]),
             Route("/prompt", server.prompt, methods=["GET"]),
             Route("/summary", server.summary, methods=["GET"]),
             Route("/call", server.call, methods=["GET"]),

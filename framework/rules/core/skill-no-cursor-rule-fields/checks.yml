@@ -1,0 +1,13 @@
+checks:
+- id: CORE.S.0061.skill-file-exists
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0061.no-cursor-rule-fields
+  type: mechanical
+  check: content_absent
+  args:
+    path: "**/SKILL.md"
+    entry_only: true
+    pattern: |-
+      \A﻿?---[ \t]*\r?\n(?:(?!---[ \t]*\r?\n)[^\n]*\n)*?(?:alwaysApply|globs)[ \t]*:
+  message: "Skill frontmatter carries alwaysApply or globs -- these are Cursor rule fields and skill loaders ignore them"

@@ -14,7 +14,7 @@ from reporails_cli.core.platform.config.config import bundled_agent_config
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.platform import CombinedResult
 from reporails_cli.core.platform.dto.results import HookEntry
-from reporails_cli.core.platform.policy.host_hooks import intercepted_tools
+from reporails_cli.core.platform.policy.host_hooks import intercepted_tools, matcher_selects
 from reporails_cli.formatters.host_hooks import host_hooks_field
 from reporails_cli.formatters.json import format_combined_result
 from reporails_cli.formatters.mcp import bound_validate_payload
@@ -58,6 +58,8 @@ def _entry(agent: str, event: str, matcher: str) -> HookEntry:
         ("claude", "PreToolUse", "Bash", ()),
         ("claude", "PreToolUse", "Edit.*|Bash", ("Edit",)),
         ("claude", "PreToolUse", "Re(", ()),
+        ("claude", "PreToolUse", "Read, Write", ("Read", "Write")),
+        ("claude", "PreToolUse", "^(Edit|Write)$", ("Edit", "Write")),
         ("claude", "PostToolUse", "Edit", ()),
         ("codex", "PreToolUse", "Write", ("Write",)),
         ("antigravity", "PreToolUse", "", ("Read", "Edit", "Write")),
@@ -345,3 +347,28 @@ def test_the_agent_config_is_read_once_per_agent_for_many_hooks(
     assert sorted(t for t in parsed if "CLAUDEX" in t or "CODEXX" in t) == sorted(
         ["prefix: CLAUDEX\n", "prefix: CODEXX\n"]
     )
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_gates
+@pytest.mark.parametrize(
+    ("matcher", "tool", "selected"),
+    [
+        ("", "Bash", True),
+        ("*", "mcp__memory__store", True),
+        ("Bash", "Bash", True),
+        ("Bash", "BashOutput", False),
+        ("Edit|Write", "Write", True),
+        ("Edit, Write", "Edit", True),
+        ("Edit,Write", "Write", True),
+        ("code-reviewer", "code-reviewer", True),
+        ("mcp__memory", "mcp__memory__store", False),
+        ("mcp__memory__.*", "mcp__memory__store", True),
+        ("^Notebook", "NotebookEdit", True),
+        ("Edit.*", "NotebookEdit", True),
+        ("^Edit$", "NotebookEdit", False),
+        ("Re(", "Re(", False),
+    ],
+)
+def test_matcher_selects_follows_the_claude_code_matcher_rules(matcher: str, tool: str, selected: bool) -> None:
+    assert matcher_selects(matcher, tool) is selected

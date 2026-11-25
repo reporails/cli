@@ -106,6 +106,60 @@ Feature: The x-ray Sources panel and right column list everything and describe o
     Then the card and the row that opened the details are marked open and the one opened before is not
 
   @page @browser
+  Scenario: A row whose details are open keeps its place and layout among the rows beside it
+    Given the bundled page is served over the "view_panels" fixture view
+    Then an opened Sources row and an opened In context row keep the layout of the rows beside them
+
+  @page @browser
   Scenario: A station pill and a scrolled Tool calls row keep the open mark and the Tool calls strip never takes it
     Given the bundled page is served over the "view_sample" fixture view
     Then a station pill, and a Tool calls row scrolled away and back, stay marked open and the Tool calls strip never is
+
+  @e2e @browser
+  Scenario: Each agent lists the items of its own context once, in the inspector only
+    Given a project with a session whose requests carried every item of the coding agent's own context, with a subagent
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And each item of each agent's own context is listed once in the inspector and not in Sources or the Sources table
+
+  @e2e @browser
+  Scenario: An own-context item opens the text its request recorded
+    Given a project with a session whose requests carried every item of the coding agent's own context, with a subagent
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And each item opens the text its request recorded and the system prompt shows its sections
+
+  @e2e @browser
+  Scenario: The other messages show only their own text and say what the source and hook rows count
+    Given a project with a session whose other messages hold a source's note and a hook's note beside a message of their own
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the other messages show only their own message and say what is counted in the rows of the source and the hook
+
+  @e2e @browser
+  Scenario: Signed thinking says how many of its counted characters are readable
+    Given a project with a session whose requests carried every item of the coding agent's own context, with a subagent
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the thinking says how many of its counted characters are readable and shows no empty text
+
+  @e2e @browser
+  Scenario: An item's size in the list is its size in the details
+    Given a project with a session whose requests carried every item of the coding agent's own context, with a subagent
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And an item's size in the list is the size in its details
+
+  @e2e @browser
+  Scenario: The own context is one collapsed group and the totals stay as they were
+    Given a project with a session whose requests carried every item of the coding agent's own context, with a subagent
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And the group starts collapsed with one header, and the group and the rows still add up to the peak reply
+
+  @e2e @browser
+  Scenario: A session with no recorded request describes each own-context item and calls its size an estimate
+    Given a project with a session from an older Claude Code that did not record its requests, with a subagent
+    When "ails xray --no-open" is started in the project
+    Then the printed address is on 127.0.0.1
+    And every own context item opens a description and says no request was recorded and the size is an estimate

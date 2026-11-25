@@ -13,7 +13,7 @@ from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.xray_build import Frame
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile
 from reporails_cli.core.xray.artifacts import build_artifacts, left_out_files
-from reporails_cli.core.xray.graph.hook_sources import _declared_commands
+from reporails_cli.core.xray.graph.hook_sources import _declared_hooks
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
 
@@ -37,7 +37,9 @@ def test_hook_config_named_under_home_is_read_where_it_lives(tmp_path: Path) -> 
     listed = ArtifactFile(str(hooks), "hook", "plugin", "p", "hooks", None, None)
     shown = build_artifacts(RunContext(), [listed], {}, tmp_path, advertised={})
     frame = Frame(0.0, tmp_path, {}, {}, {}, False)
-    assert _declared_commands(shown, frame) == [("echo hi", "~/.claude/plugins/p/hooks/hooks.json")]
+    assert [(item.command, item.file) for item in _declared_hooks(shown, frame)] == [
+        ("echo hi", "~/.claude/plugins/p/hooks/hooks.json")
+    ]
 
 
 def test_a_link_out_of_the_project_leads_to_a_path_shown_under_home(tmp_path: Path) -> None:
@@ -59,7 +61,6 @@ def test_launch_settings_show_when_no_launch_recorded_a_request() -> None:
     metas = {"a1": SubagentMeta(None, None, None, 1, None, False, True, "opus", False)}
     launch = launched_with(["a1"], {}, metas)
     assert launch is not None
-    assert launch.system_tokens_est is None
     assert ("Model asked for", "opus") in launch.settings
     assert launched_with(["a2"], {}, metas) is None
 

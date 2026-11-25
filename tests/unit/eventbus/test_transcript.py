@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -10,22 +12,25 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.eventbus.adapters.claude_transcript import ClaudeTranscriptAdapter
+from reporails_cli.core.eventbus.context_text import context_text
 from reporails_cli.core.eventbus.port import TRANSCRIPT_ADAPTERS, PayloadRefused
 from reporails_cli.core.eventbus.transcript import (
     CALL_INPUT_CHARS,
     CALL_RESULT_CHARS,
     call_detail,
     compact_summary,
+    last_write,
     opens_with_clear,
     prompt_text,
     read_transcript,
     scan_compact_summaries,
     subagent_brief,
     subagent_output,
-    subagent_system,
+    workflow_runs,
 )
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object
 from reporails_cli.core.platform.dto.events import EventRecord, ReplyText, TranscriptCursor
+from reporails_cli.core.platform.dto.workflows import WorkflowRefused, WorkflowRun
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_eventbus]
 
@@ -1066,22 +1071,26 @@ def _shape(shape_hash: str, system: list[str]) -> dict[str, object]:
     return {"type": "api-request-shape", "shapeHash": shape_hash, "shape": {"system": blocks, "tools": [{"name": "A"}]}}
 
 
-def test_a_subagent_system_prompt_is_the_text_of_the_shape_its_first_request_names(tmp_path: Path) -> None:
+def test_an_agents_system_prompt_is_the_text_of_the_shape_its_request_names(tmp_path: Path) -> None:
     request = {"type": "api-request", "id": "r1", "shapeHash": "two", "keep": 0, "tail": []}
     session = _shaped_subagent(tmp_path, [_shape("one", ["WRONG"]), _shape("two", ["SYS-A", "SYS-B"]), request])
-    assert subagent_system("claude", session, "aaa") == "SYS-A\n\nSYS-B"
-    assert subagent_system("claude", session, "nosuchagent") is None
+    assert context_text("claude", session, "aaa", "r1", "system_prompt") == ["SYS-A\n\nSYS-B"]
+    assert context_text("claude", session, "nosuchagent", "r1", "system_prompt") is None
+    assert context_text("claude", session, "aaa", "r2", "system_prompt") is None
 
 
-def test_a_subagent_file_with_no_request_has_no_system_prompt(tmp_path: Path) -> None:
-    session = _shaped_subagent(tmp_path, [_shape("one", ["SYS"])])
-    assert subagent_system("claude", session, "aaa") is None
+def test_an_agents_tool_definitions_are_each_tool_with_its_description(tmp_path: Path) -> None:
+    request = {"type": "api-request", "id": "r1", "shapeHash": "one", "keep": 0, "tail": []}
+    shape = _shape("one", ["SYS"])
+    shape["shape"]["tools"] = [{"name": "Read", "description": "Reads a file"}, {"name": "Bare"}]
+    session = _shaped_subagent(tmp_path, [shape, request])
+    assert context_text("claude", session, "aaa", "r1", "tool_definitions") == ["Read\nReads a file\n\nBare"]
 
 
 def test_a_request_naming_a_shape_the_file_lacks_has_no_system_prompt(tmp_path: Path) -> None:
     request = {"type": "api-request", "id": "r1", "shapeHash": "gone", "keep": 0, "tail": []}
     session = _shaped_subagent(tmp_path, [_shape("one", ["SYS"]), request])
-    assert subagent_system("claude", session, "aaa") is None
+    assert context_text("claude", session, "aaa", "r1", "system_prompt") is None
 
 
 def test_a_shape_whose_system_is_not_a_list_is_refused(tmp_path: Path) -> None:
@@ -1089,7 +1098,40 @@ def test_a_shape_whose_system_is_not_a_list_is_refused(tmp_path: Path) -> None:
     bad = {"type": "api-request-shape", "shapeHash": "one", "shape": {"system": "x", "tools": []}}
     session = _shaped_subagent(tmp_path, [bad, request])
     with pytest.raises(PayloadRefused, match=r"shape\.system"):
-        subagent_system("claude", session, "aaa")
+        context_text("claude", session, "aaa", "r1", "system_prompt")
+
+
+def _walked(tmp_path: Path, notes: str, *, kept: bool) -> Path:
+    """A subagent file whose second request keeps the first request's messages (or drops them); the first names a
+    reminder blob, and an agent listing attachment was recorded before it."""
+    reminder = {"role": "user", "content": notes}
+    listing = {
+        "type": "attachment",
+        "sessionId": "s1",
+        "timestamp": "2026-11-01T10:00:00.000Z",
+        "attachment": {"type": "agent_listing_delta", "addedTypes": ["h"], "addedLines": ["- h: x"]},
+    }
+    blob = {"type": "api-request-blob", "hash": "n", "message": reminder}
+    stamp = {"sessionId": "s1", "timestamp": "2026-11-01T10:00:01.000Z"}
+    first = {"type": "api-request", "id": "r1", "shapeHash": "one", "keep": 0, "tail": ["n"], **stamp}
+    second = {"type": "api-request", "id": "r2", "shapeHash": "one", "keep": 1 if kept else 0, "tail": [], **stamp}
+    return _shaped_subagent(tmp_path, [_shape("one", ["SYS"]), listing, blob, first, second])
+
+
+def test_the_other_messages_are_the_notes_of_the_requests_own_message_chain(tmp_path: Path) -> None:
+    session = _walked(tmp_path, "<system-reminder>hello</system-reminder>", kept=True)
+    assert context_text("claude", session, "aaa", "r2", "harness_other") == ["<system-reminder>hello</system-reminder>"]
+
+
+def test_a_request_that_drops_a_message_does_not_show_its_text(tmp_path: Path) -> None:
+    session = _walked(tmp_path, "<system-reminder>hello</system-reminder>", kept=False)
+    assert context_text("claude", session, "aaa", "r2", "harness_other") == []
+
+
+def test_a_listed_item_is_the_text_its_attachment_recorded_and_no_other_message_repeats_it(tmp_path: Path) -> None:
+    session = _walked(tmp_path, "<system-reminder>- h: x</system-reminder>", kept=True)
+    assert context_text("claude", session, "aaa", "r1", "agent_listing") == ["- h: x"]
+    assert context_text("claude", session, "aaa", "r1", "harness_other") == []
 
 
 def test_a_hook_that_exits_non_zero_without_blocking_is_a_failed_firing_with_its_exit_code_and_stderr(
@@ -1254,3 +1296,162 @@ def test_a_reply_lookup_skips_an_assistant_row_the_adapter_refuses(tmp_path: Pat
     folder.mkdir(parents=True)
     (folder / "agent-aaaa.jsonl").write_text("".join(json.dumps(row) + "\n" for row in (refused, final)))
     assert subagent_output("claude", session, "aaaa", "reply", None) == "the final reply"
+
+
+def test_a_name_only_attachment_is_a_harness_record_of_size_zero(tmp_path: Path) -> None:
+    attachment: JsonObject = {"type": "environment", "content": "SECRET-TEXT"}
+    records, _ = read_transcript("claude", _attachment_session(tmp_path, attachment), TranscriptCursor())
+    entries = [r.harness for r in _of(records, "harness") if r.harness]
+    assert [(e.kind, e.label, e.count, e.chars) for e in entries] == [("unsized", "environment", None, 0)]
+    assert "SECRET-TEXT" not in repr(records)
+
+
+def test_an_unknown_attachment_type_is_still_dropped(tmp_path: Path) -> None:
+    records, _ = read_transcript("claude", _attachment_session(tmp_path, {"type": "zzz_unknown"}), TranscriptCursor())
+    assert _of(records, "harness") == []
+
+
+WORKFLOW = "2.1.311-workflow"
+WF_RUN = "wf_test01"
+WF_A, WF_B = "awf0000000000001", "awf0000000000002"
+WF_AGENTS = [(WF_A, 0, "Build", "PLACEHOLDER-LABEL-1"), (WF_B, 1, "Verify", "PLACEHOLDER-LABEL-2")]
+
+
+def _workflow_session(tmp_path: Path) -> Path:
+    shutil.copytree(FIXTURES / WORKFLOW, tmp_path / WORKFLOW)
+    return tmp_path / WORKFLOW / "session.jsonl"
+
+
+def test_a_workflow_agent_reads_into_records_and_a_run_naming_its_workflow_and_phase(tmp_path: Path) -> None:
+    records, _ = read_transcript("claude", _workflow_session(tmp_path), TranscriptCursor())
+    assert not _of(records, "refusal")
+    assert {r.subagent_id for r in _of(records, "assistant_usage")} >= {WF_A, WF_B}
+    runs = {r.subagent_id: r.launch for r in _of(records, "subagent_run")}
+    assert set(runs) == {"amain0000000000001", WF_A, WF_B}
+    wf_a, wf_b, plain = runs[WF_A], runs[WF_B], runs["amain0000000000001"]
+    assert wf_a is not None and wf_b is not None and plain is not None
+    assert (wf_a.workflow_run, wf_a.workflow_phase) == (WF_RUN, "Build")
+    assert (wf_b.workflow_run, wf_b.workflow_phase) == (WF_RUN, "Verify")
+    assert (plain.workflow_run, plain.workflow_phase) == (None, None)
+    assert wf_a.tool_use_id is None
+
+
+def test_last_write_moves_when_only_a_workflow_file_is_touched(tmp_path: Path) -> None:
+    session = _workflow_session(tmp_path)
+    root = session.with_suffix("")
+    targets = [
+        root / "subagents" / "workflows" / WF_RUN / f"agent-{WF_A}.jsonl",
+        root / "subagents" / "workflows" / WF_RUN / "journal.jsonl",
+        root / "workflows" / f"{WF_RUN}.json",
+    ]
+    for index, target in enumerate(targets):
+        stamp = 4_000_000_000 + index
+        os.utime(target, (stamp, stamp))
+        assert last_write(session) == stamp
+        assert last_write(session, main_only=True) != stamp
+
+
+def test_brief_output_and_call_detail_resolve_a_workflow_agent_id(tmp_path: Path) -> None:
+    session = _workflow_session(tmp_path)
+    assert subagent_brief("claude", session, WF_A) == "PLACEHOLDER-WF-BRIEF-1"
+    assert subagent_output("claude", session, WF_B, "reply", None) == "PLACEHOLDER-WF-REPLY-2"
+    detail = call_detail("claude", session, WF_A, "toolu_wfbash", "Bash", shell=True)
+    assert detail is not None and detail.text == "PLACEHOLDER-WF-COMMAND"
+    assert detail.result == "PLACEHOLDER-WF-RESULT"
+    assert call_detail("claude", session, None, "toolu_wfbash", "Bash", shell=True) is None
+    assert subagent_brief("claude", session, "anosuch") is None
+
+
+def test_workflow_runs_return_the_run_record_with_its_agents(tmp_path: Path) -> None:
+    (run,) = workflow_runs("claude", _workflow_session(tmp_path))
+    assert (run.run_id, run.name, run.status) == (WF_RUN, "PLACEHOLDER-WORKFLOW", "completed")
+    assert run.phases == ("Build", "Verify")
+    assert (run.duration_ms, run.total_tokens, run.start_time) == (130000, 4200, 1795113523095)
+    assert [(a.agent_id, a.phase_index, a.phase_title, a.label) for a in run.agents] == WF_AGENTS
+
+
+WF_HANDBACK_1 = json.dumps({"status": "built", "note": "PLACEHOLDER-WF-HANDBACK-1"}, indent=2, ensure_ascii=False)
+WF_HANDBACK_2 = "PLACEHOLDER-WF-HANDBACK-2"
+
+
+def test_only_an_agent_the_journal_holds_an_accepted_result_for_carries_its_size(tmp_path: Path) -> None:
+    session = _workflow_session(tmp_path)
+    (run,) = workflow_runs("claude", session)
+    assert [(a.agent_id, a.result_chars) for a in run.agents] == [
+        (WF_A, len(WF_HANDBACK_1)),
+        (WF_B, len(WF_HANDBACK_2)),
+    ]
+    journal = session.with_suffix("") / "subagents" / "workflows" / WF_RUN / "journal.jsonl"
+    rows = journal.read_text().splitlines()
+    journal.write_text("\n".join(row for row in rows if not (WF_B in row and '"result"' in row)) + "\n")
+    (run,) = workflow_runs("claude", session)
+    assert [(a.agent_id, a.result_chars) for a in run.agents] == [(WF_A, len(WF_HANDBACK_1)), (WF_B, None)]
+
+
+def test_a_journal_result_row_with_no_agent_id_refuses_the_run(tmp_path: Path) -> None:
+    session = _workflow_session(tmp_path)
+    journal = session.with_suffix("") / "subagents" / "workflows" / WF_RUN / "journal.jsonl"
+    with journal.open("a") as handle:
+        handle.write(json.dumps({"type": "result", "agentId": 7, "result": {}}) + "\n")
+    (refused,) = workflow_runs("claude", session)
+    assert isinstance(refused, WorkflowRefused) and "agentId" in refused.reason
+
+
+def test_a_workflow_agent_s_hand_back_text_is_the_result_the_run_accepted(tmp_path: Path) -> None:
+    session = _workflow_session(tmp_path)
+    assert subagent_output("claude", session, WF_A, "handback", None) == WF_HANDBACK_1
+    assert subagent_output("claude", session, WF_B, "handback", None) == WF_HANDBACK_2
+
+
+def test_a_run_with_no_record_file_yet_is_running_with_phases_from_its_agents(tmp_path: Path) -> None:
+    session = _workflow_session(tmp_path)
+    (session.with_suffix("") / "workflows" / f"{WF_RUN}.json").unlink()
+    (run,) = workflow_runs("claude", session)
+    assert (run.run_id, run.status, run.name) == (WF_RUN, "running", None)
+    assert run.phases == ("Build", "Verify")
+    assert (run.duration_ms, run.total_tokens, run.start_time) == (None, None, None)
+    assert [(a.agent_id, a.phase_index, a.phase_title, a.label) for a in run.agents] == WF_AGENTS
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "reason"),
+    [
+        ("status", 3, "status"),
+        ("status", "paused", "none of running"),
+        ("runId", "wf_other", "run other than"),
+        ("phases", {}, "not a list"),
+        ("durationMs", "long", "durationMs"),
+        ("workflowProgress", [{"agentId": WF_A}], "phaseIndex"),
+    ],
+)
+def test_a_malformed_run_record_is_refused_for_that_run_only(
+    key: str, value: object, reason: str, tmp_path: Path
+) -> None:
+    session = _workflow_session(tmp_path)
+    record = session.with_suffix("") / "workflows" / f"{WF_RUN}.json"
+    original = json.loads(record.read_text())
+    record.write_text(json.dumps({**original, key: value}))
+    good = original | {"runId": "wf_good", "workflowProgress": [], "phases": []}
+    (record.parent / "wf_good.json").write_text(json.dumps(good))
+    found = {run.run_id: run for run in workflow_runs("claude", session)}
+    refused, readable = found[WF_RUN], found["wf_good"]
+    assert isinstance(refused, WorkflowRefused) and re.search(reason, refused.reason)
+    assert isinstance(readable, WorkflowRun)
+
+
+def test_a_record_file_that_is_not_json_is_refused_for_that_run_only(tmp_path: Path) -> None:
+    session = _workflow_session(tmp_path)
+    record = session.with_suffix("") / "workflows" / f"{WF_RUN}.json"
+    good = json.loads(record.read_text()) | {"runId": "wf_good", "workflowProgress": [], "phases": []}
+    (record.parent / "wf_good.json").write_text(json.dumps(good))
+    record.write_text('{"runId": "wf_test01", "status": "comp')
+    found = {run.run_id: run for run in workflow_runs("claude", session)}
+    refused = found[WF_RUN]
+    assert isinstance(refused, WorkflowRefused) and "not readable JSON" in refused.reason
+    assert isinstance(found["wf_good"], WorkflowRun)
+
+
+def test_a_session_with_no_workflow_has_no_runs(tmp_path: Path) -> None:
+    assert workflow_runs("claude", _copy_session(tmp_path)) == ()
+    with pytest.raises(PayloadRefused, match="unknown agent"):
+        workflow_runs("nosuch", _copy_session(tmp_path))

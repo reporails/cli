@@ -7,7 +7,7 @@ from pathlib import Path
 
 import regex as re
 
-from reporails_cli.core.discovery.walk import safe_resolve, walk_files, walk_markdown
+from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.lint.regex import matching
 from reporails_cli.core.lint.regex.compiler import compile_rules
 from reporails_cli.core.lint.regex.expect import (
@@ -18,9 +18,8 @@ from reporails_cli.core.lint.regex.expect import (
 from reporails_cli.core.lint.regex.not_evaluated import PatternTimeoutError
 from reporails_cli.core.mapper.imports import expand_imports_with_origins
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_list, as_object, as_str
-from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.lint import CompiledCheck, CompiledRuleSet
-from reporails_cli.core.platform.dto.models import LocalFinding
+from reporails_cli.core.platform.dto.models import LocalFinding, Rule
 from reporails_cli.core.platform.utils.file_read import read_file_head, read_file_text
 
 logger = logging.getLogger(__name__)
@@ -34,26 +33,15 @@ def _get_snippet(match: re.Match[str]) -> str:
     return text[:_SNIPPET_MAX_LEN] + "..." if len(text) > _SNIPPET_MAX_LEN else text
 
 
-def _resolve_scan_targets(
-    target: Path,
-    instruction_files: list[Path] | None,
-    exclusions: RunExclusions,
-) -> list[Path]:
-    """Build scan targets from instruction files or directory scan."""
-    if instruction_files:
-        seen: set[Path] = set()
-        targets: list[Path] = []
-        for ifile in instruction_files:
-            resolved = safe_resolve(ifile)
-            if resolved not in seen and resolved.exists():
-                seen.add(resolved)
-                targets.append(ifile)
-        return targets
-
-    scan_dir = target if target.is_dir() else target.parent
-    targets = list(walk_markdown(scan_dir, exclusions))
-    if not targets:
-        targets = list(walk_files(scan_dir, exclusions, _is_text_file))
+def _resolve_scan_targets(instruction_files: list[Path]) -> list[Path]:
+    """The existing files of `instruction_files`, each once, in order."""
+    seen: set[Path] = set()
+    targets: list[Path] = []
+    for ifile in instruction_files:
+        resolved = safe_resolve(ifile)
+        if resolved not in seen and resolved.exists():
+            seen.add(resolved)
+            targets.append(ifile)
     return targets
 
 
@@ -271,24 +259,15 @@ def _scan_all_targets(
     return _build_sarif(results, list(rule_defs.values()), unfinished)
 
 
-def _compile_ruleset(yml_paths: list[Path]) -> CompiledRuleSet:
-    """Compile the rule files that exist."""
-    valid_paths = [p for p in yml_paths if p and p.exists()]
-    if not valid_paths:
-        return CompiledRuleSet()
-    return compile_rules(valid_paths)
-
-
 def scan_ruleset(
     ruleset: CompiledRuleSet,
     target: Path,
-    exclusions: RunExclusions,
-    instruction_files: list[Path] | None = None,
+    instruction_files: list[Path],
 ) -> JsonObject:
-    """Run a compiled ruleset over the scan targets, returns SARIF-shaped dict."""
+    """Run a compiled ruleset over `instruction_files`, returns SARIF-shaped dict."""
     if not ruleset.checks:
         return {"runs": []}
-    scan_targets = _resolve_scan_targets(target, instruction_files, exclusions)
+    scan_targets = _resolve_scan_targets(instruction_files)
     if not scan_targets:
         return {"runs": []}
     scan_root = target if target.is_dir() else target.parent
@@ -340,15 +319,11 @@ def _collect_not_evaluated(sarif: JsonObject) -> set[tuple[str, str]]:
     return {(as_str(e.get("checkId")), as_str(e.get("uri"))) for e in entries}
 
 
-def _resolve_scanned_files(
-    target: Path,
-    instruction_files: list[Path] | None,
-    exclusions: RunExclusions,
-) -> list[str]:
+def _resolve_scanned_files(target: Path, instruction_files: list[Path]) -> list[str]:
     """Build list of relative file paths that were scanned."""
     scan_root = target if target.is_dir() else target.parent
     scanned: list[str] = []
-    for fp in _resolve_scan_targets(target, instruction_files, exclusions):
+    for fp in _resolve_scan_targets(instruction_files):
         if not fp.is_file():
             continue
         try:
@@ -359,16 +334,15 @@ def _resolve_scanned_files(
 
 
 def run_checks(
-    yml_paths: list[Path],
+    rules: list[Rule],
     target: Path,
-    exclusions: RunExclusions,
+    instruction_files: list[Path],
     *,
-    instruction_files: list[Path] | None = None,
     min_lines_overrides: dict[str, int] | None = None,
     fix_by_rule: dict[str, str] | None = None,
     skill_entries: set[Path] | None = None,
 ) -> list[LocalFinding]:
-    """Execute regex validation and return LocalFinding list.
+    """Execute regex validation of the rules' deterministic checks and return LocalFinding list.
 
     `skill_entries` holds the resolved skill entry files of the run (None when it records no
     skills); an `entry_only` check reports on those alone.
@@ -383,11 +357,11 @@ def run_checks(
     registry; propagates to `LocalFinding.fix` so MCP / JSON consumers
     can render the per-finding suggested edit.
     """
-    ruleset = _compile_ruleset(yml_paths)
+    ruleset = compile_rules(rules)
     checks = apply_min_lines_overrides(ruleset.checks, min_lines_overrides) if min_lines_overrides else ruleset.checks
-    sarif = scan_ruleset(ruleset, target, exclusions, instruction_files=instruction_files)
+    sarif = scan_ruleset(ruleset, target, instruction_files)
     matched_pairs, match_details = _collect_sarif_matches(sarif)
-    scanned_files = _resolve_scanned_files(target, instruction_files, exclusions)
+    scanned_files = _resolve_scanned_files(target, instruction_files)
     return emit_expect_findings(
         checks,
         matched_pairs,

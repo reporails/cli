@@ -19,7 +19,7 @@ from reporails_cli.core.lint.regex.matching import find_line_number, match_check
 from reporails_cli.core.platform.contract.rule_pattern import compile_rule_pattern
 from reporails_cli.core.platform.dto.lint import CompiledCheck
 from reporails_cli.core.platform.utils.utils import strip_frontmatter
-from tests.conftest import run_rule_files
+from tests.conftest import rules_from_checks, run_rule_files
 
 
 class TestLineAndFrontmatterEdges:
@@ -91,7 +91,7 @@ class TestCompilerEdgeCases:
         """Empty YAML file should produce no checks, no errors."""
         p = tmp_path / "empty.yml"
         p.write_text("")
-        result = compile_rules([p])
+        result = compile_rules(rules_from_checks([p]))
         assert result.checks == []
 
     @pytest.mark.unit
@@ -99,7 +99,7 @@ class TestCompilerEdgeCases:
     def test_yaml_with_no_rules_key(self, tmp_path: Path) -> None:
         """YAML without 'rules' key should be silently skipped."""
         p = _write_rule(tmp_path, {"metadata": {"version": "1.0"}})
-        result = compile_rules([p])
+        result = compile_rules(rules_from_checks([p]))
         assert result.checks == []
 
     @pytest.mark.unit
@@ -107,65 +107,14 @@ class TestCompilerEdgeCases:
     def test_yaml_with_empty_rules_list(self, tmp_path: Path) -> None:
         """YAML with empty rules list should produce no checks."""
         p = _write_rule(tmp_path, {"checks": []})
-        result = compile_rules([p])
+        result = compile_rules(rules_from_checks([p]))
         assert result.checks == []
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_rule_with_no_operator(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """A deterministic check with no operator is refused at load: nothing compiles, the file is logged."""
-        p = _write_rule(tmp_path, {"checks": [{"id": "TEST-001", "message": "bad"}]})
-        result = compile_rules([p])
-        assert result.checks == []
-        assert "check 1 (TEST-001): a deterministic check needs one pattern operator" in caplog.text
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_rule_with_unknown_operator(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """A check naming only an unknown operator has no pattern operator and is refused at load."""
-        p = _write_rule(
-            tmp_path,
-            {"checks": [{"id": "TEST-002", "pattern-metavar": "$X", "message": "bad"}]},
-        )
-        assert compile_rules([p]).checks == []
-        assert "check 1 (TEST-002)" in caplog.text
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_invalid_regex_pattern(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """A pattern that does not compile is refused at load, naming the check and field."""
-        p = _write_rule(
-            tmp_path,
-            {"checks": [{"id": "BAD-REGEX", "pattern-regex": "[invalid(", "message": "bad"}]},
-        )
-        result = compile_rules([p])
-        assert result.checks == []
-        assert "check 1 (BAD-REGEX): pattern-regex: does not compile" in caplog.text
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_invalid_regex_in_pattern_either(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """An alternative that does not compile refuses the whole file at load."""
-        p = _write_rule(
-            tmp_path,
-            {
-                "checks": [
-                    {
-                        "id": "BAD-EITHER",
-                        "pattern-either": [{"pattern-regex": "[valid"}, {"pattern-regex": "ok"}],
-                        "message": "bad",
-                    }
-                ]
-            },
-        )
-        assert compile_rules([p]).checks == []
-        assert "check 1 (BAD-EITHER): pattern-either.0.pattern-regex: does not compile" in caplog.text
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_nonexistent_yml_path(self, tmp_path: Path) -> None:
         """Non-existent path should be silently skipped."""
-        result = compile_rules([tmp_path / "does-not-exist.yml"])
+        result = compile_rules(rules_from_checks([tmp_path / "does-not-exist.yml"]))
         assert result.checks == []
 
     @pytest.mark.unit
@@ -174,7 +123,7 @@ class TestCompilerEdgeCases:
         """Binary file disguised as .yml should be handled gracefully."""
         p = tmp_path / "binary.yml"
         p.write_bytes(b"\x00\x01\x02\xff\xfe" * 100)
-        result = compile_rules([p])
+        result = compile_rules(rules_from_checks([p]))
         assert result.checks == []
 
     @pytest.mark.unit
@@ -187,51 +136,8 @@ class TestCompilerEdgeCases:
         content = "a: &a\n  b: &b\n    c: &c\n      d: test\nchecks: []\n"
         p = tmp_path / "nested.yml"
         p.write_text(content)
-        result = compile_rules([p])
+        result = compile_rules(rules_from_checks([p]))
         assert result.checks == []
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_pattern_either_empty_list(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """An empty pattern-either is refused at load."""
-        p = _write_rule(
-            tmp_path,
-            {"checks": [{"id": "EMPTY-EITHER", "pattern-either": [], "message": "x"}]},
-        )
-        assert compile_rules([p]).checks == []
-        assert "check 1 (EMPTY-EITHER): pattern-either:" in caplog.text
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_patterns_only_negative(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """A `patterns` block holding only pattern-not-regex matches nothing, so its check is refused at load."""
-        p = _write_rule(
-            tmp_path,
-            {
-                "checks": [
-                    {
-                        "id": "NEG-ONLY",
-                        "patterns": [{"pattern-not-regex": "(?i)secret"}],
-                        "message": "should not have secrets",
-                    }
-                ]
-            },
-        )
-        assert compile_rules([p]).checks == []
-        assert (
-            "check 1 (NEG-ONLY): patterns: holds no `pattern-regex`; `pattern-not-regex` alone matches nothing"
-            in caplog.text
-        )
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_missing_id_and_message(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """A check without an id is refused at load; one without a message compiles with an empty one."""
-        refused = _write_rule(tmp_path, {"checks": [{"pattern-regex": "test"}]}, "refused.yml")
-        assert compile_rules([refused]).checks == []
-        assert "check 1: id:" in caplog.text
-        kept = _write_rule(tmp_path, {"checks": [{"id": "K-1", "pattern-regex": "test"}]}, "kept.yml")
-        assert [(c.id, c.message) for c in compile_rules([kept]).checks] == [("K-1", "")]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -242,7 +148,7 @@ class TestCompilerEdgeCases:
             for i, sev in enumerate(["critical", "high", "medium", "low", "info"])
         ]
         p = _write_rule(tmp_path, {"checks": rules})
-        result = compile_rules([p])
+        result = compile_rules(rules_from_checks([p]))
         severities = {c.id: c.severity for c in result.checks}
         assert severities == {
             "SEV-0": "error",  # critical
@@ -266,7 +172,7 @@ class TestCompilerEdgeCases:
             {"checks": [{"id": "R2", "pattern-regex": "b", "message": "y"}]},
             "r2.yml",
         )
-        result = compile_rules([p1, p2])
+        result = compile_rules(rules_from_checks([p1, p2]))
         ids = {c.id for c in result.checks}
         assert ids == {"R1", "R2"}
 
@@ -970,28 +876,3 @@ class TestIntegration:
         results = _sarif_results(sarif)
         assert len(results) == 1
         assert elapsed < 5.0
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_pattern_either_all_sub_unsupported(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """pattern-either where no sub-entry has pattern-regex is refused at load."""
-        rule_yml = _write_rule(
-            tmp_path,
-            {
-                "checks": [
-                    {
-                        "id": "BAD-SUB",
-                        "pattern-either": [
-                            {"pattern-metavar": "$X"},
-                            {"metavariable-regex": "test"},
-                        ],
-                        "message": "x",
-                    }
-                ]
-            },
-        )
-        _write_target(tmp_path, "content\n")
-
-        result = compile_rules([rule_yml])
-        assert result.checks == []
-        assert "check 1 (BAD-SUB): pattern-either.0:" in caplog.text

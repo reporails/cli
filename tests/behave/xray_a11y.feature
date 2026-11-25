@@ -70,3 +70,8 @@ Feature: The x-ray page works by keyboard, keeps its focus, and stays readable t
   Scenario: Focus on a source whose id holds a line break survives a redraw
     Given the bundled page is served over the "view_sample" fixture view changed so a source id holds a line break
     Then focus on a canvas source node whose id holds a line break survives the redraw
+
+  @page @browser
+  Scenario: A folded segment opens from the keyboard
+    Given the bundled page is served over the "view_folds" fixture view
+    Then Enter on a folded segment's band opens that segment and the open segment offers a control to fold it again

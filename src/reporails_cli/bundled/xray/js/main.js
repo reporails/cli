@@ -20,6 +20,8 @@ import { onRegister } from './components/nodes/index.js';
 const $ = s => document.querySelector(s);
 let ix = null, version = null, etag = null, inflight = false, changed = false, lastAgentHash = '#/agent/main', afterHash = null;
 const run = { busy: false, res: null, autoChecked: new Set() };
+// Whether each agent's own-context group is open: one setting for every agent, kept while another is selected.
+state.ownOpen = false;
 const opened = new Set();
 
 const env = () => { const focus = focusSource(ix, state); return { ix, state, tab: activeTab(state), focus, graphFocus: focus && state.layers[focus.kind] ? focus : null, text, opened, busy: run.busy, res: run.res }; };
@@ -139,23 +141,46 @@ async function runAct(kind, path) {
 
 const toggle = (set, v) => { if (!set.delete(v)) set.add(v); };
 
-const closePeek = () => { state.peek = null; };
+const closePeek = () => { state.peek = null; state.from = null; };
 
-function openPeek(kind, id, from) {
-  details.remember(calls.openerOf(from) || from);
-  state.peek = { kind, id };
-}
+// Closing details a list row opened returns to the call details the row's list was for; closing those, or any other details, shuts them.
+const leavePeek = () => {
+  const back = state.from;
+  closePeek();
+  state.peek = back;
+};
 
-// Draws the Graph tab's agent when a "show in graph" link names one: its parents become the path, it becomes the selection.
-function showInGraph(id) {
+// Selects an agent: its parents become the path and it becomes the selection. True when the page can draw it now.
+function selectNode(id) {
   const chain = [];
   for (let n = ix.nodes.get(id); n; n = ix.nodes.get(n.parent)) chain.unshift(n.id);
   const here = chain.slice(0, -1);
-  state.tab = 'graph';
-  closePeek();
-  if (!here.length || here.join('/') === state.path.join('/')) { state.sel = id; return render(); }
+  if (!here.length || here.join('/') === state.path.join('/')) { state.sel = id; return true; }
   afterHash = id;
   location.hash = hashFor(here);
+  return false;
+}
+
+// The agent the inspector shows: the selected one, else the last of the path.
+const inspected = () => ix.nodes.get(state.sel) || ix.nodes.get(state.path[state.path.length - 1]) || ix.view.nodes[0];
+
+// A builtin peek's id is "<item key>:<node id>": the item's row is only marked in the inspector of that node.
+function openPeek(kind, id, from) {
+  details.remember(calls.openerOf(from) || from);
+  const call = state.peek && state.peek.kind === 'call' ? state.peek : state.from;
+  state.from = from.dataset.at == null ? null : call;
+  state.peek = { kind, id };
+  if (kind !== 'builtin') return;
+  state.ownOpen = true;
+  const node = id.slice(id.indexOf(':') + 1);
+  if (ix.nodes.has(node) && inspected().id !== node) selectNode(node);
+}
+
+// Draws the Graph tab's agent when a "show in graph" link names one.
+function showInGraph(id) {
+  state.tab = 'graph';
+  closePeek();
+  if (selectNode(id)) render();
 }
 
 // A changed filter starts the list at its first rows again.
@@ -191,9 +216,10 @@ document.addEventListener('click', e => {
   if (t.closest('[data-clear]')) { state.pinned = null; return render(); }
   const eye = t.closest('[data-eye]');
   if (eye) { state.layers[eye.dataset.eye] = !state.layers[eye.dataset.eye]; return render(); }
-  if (t.closest('[data-close-peek]')) { closePeek(); return render(); }
+  if (t.closest('[data-close-peek]')) { leavePeek(); return render(); }
   const pin = t.closest('[data-pin]');
   if (pin) { state.pinned = pin.dataset.pin; closePeek(); return render(); }
+  if (t.closest('[data-own-group]')) { state.ownOpen = !state.ownOpen; return render(); }
   const peek = t.closest('[data-peek]');
   const want = peek && details.parsePeek(peek.dataset.peek);
   if (want) { openPeek(want.kind, want.id, peek); return render(); }
@@ -235,7 +261,7 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (e.key !== 'Escape' || e.defaultPrevented) return;
-  if (state.peek) closePeek();
+  if (state.peek) leavePeek();
   else if (state.sel) state.sel = null;
   else if (state.pinned) state.pinned = null;
   else return;

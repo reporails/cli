@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import replace
 from pathlib import Path
 
 from reporails_cli.core.discovery.plugin_roots import installed_plugin_roots
 from reporails_cli.core.discovery.project_root import resolve_project_root
+from reporails_cli.core.eventbus.context_text import context_text
 from reporails_cli.core.eventbus.transcript import (
     call_detail,
     compact_summary,
@@ -16,10 +20,11 @@ from reporails_cli.core.eventbus.transcript import (
     last_write,
     prompt_text,
     read_transcript,
+    recent_sessions,
     scan_compact_summaries,
     subagent_brief,
     subagent_output,
-    subagent_system,
+    workflow_runs,
 )
 from reporails_cli.core.pipeline.expected_loads import AGENT
 from reporails_cli.core.platform.config.bootstrap import (
@@ -38,6 +43,7 @@ from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.errors import InstalledPluginsUnreadableError
 from reporails_cli.core.platform.dto.events import EventRecord, TranscriptCursor
 from reporails_cli.core.platform.dto.transcript import CallDetail, SummarySpan
+from reporails_cli.core.platform.dto.workflows import WorkflowRefused, WorkflowRun
 from reporails_cli.core.platform.dto.xray import (
     AdapterVocabulary,
     Graph,
@@ -49,13 +55,20 @@ from reporails_cli.core.platform.dto.xray import (
     XrayView,
     XrayWindow,
 )
-from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable
-from reporails_cli.core.platform.dto.xray_graph import OutputSource
-from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, FindingTally, XrayArtifact, XrayPeek
+from reporails_cli.core.platform.dto.xray_build import Frame, SourceTable, WorkflowReading
+from reporails_cli.core.platform.dto.xray_graph import OutputSource, XrayInContext
+from reporails_cli.core.platform.dto.xray_own import ContextKey, XrayOwnContext, XrayOwnItem
+from reporails_cli.core.platform.dto.xray_sources import (
+    ArtifactFile,
+    EarlierFiring,
+    EarlierFirings,
+    FindingTally,
+    XrayPeek,
+)
 from reporails_cli.core.platform.utils.utils import relative_wire_path
 from reporails_cli.core.xray.artifacts import (
     advertised_files,
-    agent_file_tokens,
+    agent_file_sizes,
     artifact_files,
     build_artifacts,
     is_actionable,
@@ -67,11 +80,13 @@ from reporails_cli.core.xray.cost import load_price_list
 from reporails_cli.core.xray.derive import epoch, latest_model, real_path, replies_of, window_of
 from reporails_cli.core.xray.facts import build_facts
 from reporails_cli.core.xray.funnel import build_funnel
-from reporails_cli.core.xray.graph.agents import main_records
-from reporails_cli.core.xray.graph.build import build_graph
-from reporails_cli.core.xray.graph.shapes import first_launch, first_requests
+from reporails_cli.core.xray.graph.agents import MAIN_ID, main_records
+from reporails_cli.core.xray.graph.build import build_graph, context_at
+from reporails_cli.core.xray.graph.hook_sources import with_earlier_firings
 from reporails_cli.core.xray.graph.sources import build_sources, ran_sources
 from reporails_cli.core.xray.vocabulary import vocabulary_for
+
+logger = logging.getLogger(__name__)
 
 _CACHE_MAY_DIFFER = (
     "which AGENTS.md files and plugins Claude Code loads may differ from what is shown, since the cache is left out"
@@ -87,6 +102,9 @@ LISTING_MAX_AGE_S = 30.0
 
 # The most characters of one hook firing's output the page is sent.
 HOOK_OUTPUT_CHARS = 20_000
+
+# The project's session list is looked at again for sessions to read after this many seconds.
+EARLIER_MAX_AGE_S = 30.0
 
 
 def _stat_of(path: Path) -> tuple[int, int] | None:
@@ -119,10 +137,14 @@ class _FileReads:
     """Where the reads of one session's transcript files stopped: the cursor of the record read and, per file (a
     subagent id, None for the main one), the byte offset scanned for compaction summaries and the summaries
     found so far by the id of the boundary row each follows, and the source each subagent's output text is read from
-    as the last view sized it."""
+    as the last view sized it, each agent's own context as the last view held it, how an agent's context at a given
+    reply is counted from the records the last view read, and the hook firings of the project's other sessions."""
 
-    def __init__(self) -> None:
+    def __init__(self, project_root: Path, session_file: Path) -> None:
+        self.earlier = _EarlierSessions(project_root, session_file)
         self.outputs: dict[str, OutputSource] = {}
+        self.own: dict[str, XrayOwnContext] = {}
+        self.context_at: Callable[[str, float], XrayInContext | None] | None = None
         self._cursor = TranscriptCursor()
         self._found: dict[str | None, tuple[int, dict[str, SummarySpan]]] = {}
 
@@ -141,6 +163,81 @@ class _FileReads:
         return found
 
 
+def _in_background(job: Callable[[], None]) -> None:
+    """Run `job` on a thread of its own, off the request that asked for it."""
+    threading.Thread(target=job, daemon=True).start()
+
+
+def _latest_firings(session_file: Path) -> tuple[EarlierFiring, ...]:
+    """The latest firing of each hook name and command a session's transcript records, read with the one transcript
+    reader."""
+    records, _ = read_transcript(AGENT, session_file, TranscriptCursor())
+    latest: dict[tuple[str, str, str | None], EarlierFiring] = {}
+    for record in records:
+        moment = epoch(record.time)
+        if record.hook is None or moment is None:
+            continue
+        key = (record.hook.event, record.hook.label, record.hook.command)
+        held = latest.get(key)
+        if held is None or moment >= held.moment:
+            latest[key] = EarlierFiring(session_file.stem, record.time, moment, record.hook)
+    return tuple(latest.values())
+
+
+class _EarlierSessions:
+    """The hook firings of the project's other recent sessions, the ones the session switcher lists. Reading them is
+    slow, so a view only asks for what has been read so far: the first request starts one background read of every
+    other session, a later request after `EARLIER_MAX_AGE_S` looks at the session list again and reads the sessions it
+    gained, and a session already read is not read again."""
+
+    def __init__(self, project_root: Path, session_file: Path) -> None:
+        self._root = project_root
+        self._own = session_file.stem
+        self._lock = threading.Lock()
+        self._read: dict[str, tuple[EarlierFiring, ...]] = {}
+        self._held = EarlierFirings(checking=True)
+        self._running = False
+        self._checked: float | None = None
+
+    def request(self) -> None:
+        """Start a background read when none is going and none has run for `EARLIER_MAX_AGE_S`."""
+        with self._lock:
+            due = not self._running and (self._checked is None or time.monotonic() - self._checked >= EARLIER_MAX_AGE_S)
+            self._running = self._running or due
+        if due:
+            _in_background(self._read_gained)
+
+    def found(self) -> EarlierFirings:
+        """What has been read so far, and whether the reading goes on."""
+        with self._lock:
+            return self._held
+
+    def _publish(self, *, checking: bool) -> None:
+        firings = tuple(item for found in self._read.values() for item in found)
+        with self._lock:
+            self._held = EarlierFirings(checking, firings)
+
+    def _read_gained(self) -> None:
+        """Read each listed session not read yet and forget the ones the list lost; a session folder that cannot be
+        read leaves what was read."""
+        try:
+            listed = [path for path in recent_sessions(self._root) if path.stem != self._own]
+            names = {path.stem for path in listed}
+            fresh = [path for path in listed if path.stem not in self._read]
+            if fresh:
+                self._publish(checking=True)
+            for path in fresh:
+                self._read[path.stem] = _latest_firings(path)
+            self._read = {name: found for name, found in self._read.items() if name in names}
+        except OSError:
+            logger.warning("the earlier sessions of %s could not all be read", self._root, exc_info=True)
+        finally:
+            with self._lock:
+                self._running = False
+                self._checked = time.monotonic()
+            self._publish(checking=False)
+
+
 class XraySession:
     """The records of one session of a project and the view built from them."""
 
@@ -148,8 +245,8 @@ class XraySession:
         self._root = project_root
         self._file = session_file
         self._transcript: list[EventRecord] = []
-        self._reads = _FileReads()
-        self._listed: tuple[tuple[ArtifactFile, ...], tuple[XrayArtifact, ...]] | None = None
+        self._reads = _FileReads(project_root, session_file)
+        self._content: XrayView | None = None
         self._shown: dict[str, ArtifactFile] | None = None
         self._walked: (
             tuple[tuple[tuple[int, int] | None, ...], float, tuple[ArtifactFile, ...], tuple[str, ...]] | None
@@ -167,7 +264,6 @@ class XraySession:
             return False
         self._transcript.extend(records)
         self._shown = None
-        self.version += 1
         return True
 
     def _listing(self, run: RunContext) -> tuple[ArtifactFile, ...]:
@@ -239,22 +335,31 @@ class XraySession:
         use_id = None if run is None or run.launch is None else run.launch.tool_use_id
         return subagent_output(AGENT, self._file, subagent_id, source, use_id)
 
-    def system_prompt(self, agent_type: str) -> str | None:
-        """The system prompt the first launch of an agent type that recorded a request was sent with; None when the
-        session launched no such type or none of its launches recorded one. Raises `PayloadRefused` when the
-        subagent file does not record it as the adapter is pinned to. The text is not kept.
+    def workflows(self) -> tuple[WorkflowRun | WorkflowRefused, ...]:
+        """The session's workflow runs; a run whose record file is not the shape the adapter is pinned to is a
+        refusal naming what was wrong, and the other runs are still read."""
+        return workflow_runs(AGENT, self._file)
 
-        The empty type is the main agent: the system prompt of the last request the main transcript recorded, None
-        when it recorded none."""
-        if not agent_type:
-            return subagent_system(AGENT, self._file, None)
-        launched = {
-            record.subagent_id
-            for record in self._transcript
-            if record.event == "subagent_run" and record.subagent_type == agent_type and record.subagent_id
-        }
-        chosen = first_launch(launched, first_requests(self._transcript))
-        return None if chosen is None else subagent_system(AGENT, self._file, chosen)
+    def in_context_at(self, agent: str, moment: float) -> XrayInContext | None:
+        """What the context of `agent` (a node id, empty for the main agent) held at its last reply at or before
+        `moment` seconds into the session, from the records the last view read; None before any view, for an agent
+        the view lists none of and for a moment before its first reply."""
+        return None if self._reads.context_at is None else self._reads.context_at(agent or MAIN_ID, moment)
+
+    def context_text(self, agent: str, item: ContextKey) -> list[str] | None:
+        """The texts of one item of an agent's own context, read from the request the last view sized the item from:
+        `agent` is a node id, empty for the main agent. None for an agent or item the last view holds no recorded
+        request for. Raises `PayloadRefused` when a row read is not the shape the adapter is pinned to. The text is
+        not kept."""
+        own = self._reads.own.get(agent or MAIN_ID)
+        if own is None or own.request_id is None or self.own_item(agent, item) is None:
+            return None
+        return context_text(AGENT, self._file, agent or None, own.request_id, item)
+
+    def own_item(self, agent: str, item: ContextKey) -> XrayOwnItem | None:
+        """The item of an agent's own context the last view built; None for an agent or item it holds none of."""
+        own = self._reads.own.get(agent or MAIN_ID)
+        return None if own is None else next((row for row in own.rows if row.key == item), None)
 
     def prompt(self, prompt_id: str) -> str | None:
         """The text of a typed prompt the records name; None for any other id. Raises `PayloadRefused` when the
@@ -324,8 +429,7 @@ class XraySession:
     ) -> XrayView:
         """The view of the records read so far, listing the files under the config `run` read; `findings` maps a
         file path to its finding tally and `check` is the state of the launch check; `picked` is how the session
-        was chosen. The version rises when the records, the findings, the check or the listed files change."""
-        changed = dict(findings) != self._findings or check != self._check
+        was chosen. The version rises whenever the view built differs from the one built before it."""
         self._findings = dict(findings)
         self._check = check
         self._shown = None
@@ -333,34 +437,48 @@ class XraySession:
         records = [record for record in self._transcript if record.event != "refusal"]
         frame = self._frame(files, records)
         vocabulary = vocabulary_for(AGENT, [item.label for item in files if item.kind == "agent"])
-        artifacts = build_artifacts(run, files, self._findings, self._root, advertised=advertised_files(files, records))
-        if changed or self._listed not in (None, (files, artifacts)):
-            self.version += 1
-        self._listed = (files, artifacts)
-        table = build_sources(run, artifacts, records, frame)
+        table = build_sources(
+            run,
+            build_artifacts(run, files, self._findings, self._root, advertised=advertised_files(files, records)),
+            records,
+            frame,
+        )
+        self._reads.earlier.request()
+        table = replace(table, entries=with_earlier_firings(table.entries, self._reads.earlier.found()))
         prices = load_price_list()
-        graph = build_graph(records, frame, table, vocabulary, prices)
+        workflows = WorkflowReading(self.workflows())
+        graph = build_graph(records, frame, table, vocabulary, prices, workflows=workflows)
+        self._reads.context_at = lambda agent, moment: context_at(
+            records, frame, table, vocabulary, prices, workflows=workflows, agent=agent, at=moment
+        )
         self._reads.outputs = {
             node.id: node.detail.back.source for node in graph.nodes if node.detail.back.source is not None
         }
+        self._reads.own = {
+            node.id: node.detail.in_context.own for node in graph.nodes if node.detail.in_context is not None
+        }
         window = window_of(replies_of(main_records(records)))
-        return XrayView(
-            version=self.version,
+        content = XrayView(
+            version=0,
             info=self._info(records, picked),
             model=latest_model(records),
             window=window,
             adapter=vocabulary,
             price_list=prices.info,
             nodes=graph.nodes,
+            workflows=graph.workflows,
             edges=graph.edges,
             sources=graph.sources,
             stations=graph.stations,
             tracks=graph.tracks,
-            builtin=graph.builtin,
             session_cost=graph.session_cost,
             gaps=self._gaps(window),
             verdict=self._verdict(table, graph, records, vocabulary),
         )
+        if content != self._content:
+            self.version += 1
+        self._content = content
+        return replace(content, version=self.version)
 
     def _frame(self, files: tuple[ArtifactFile, ...], records: list[EventRecord]) -> Frame:
         """The clock zero, project root, finding tallies and runnable paths the derivations read."""
@@ -372,7 +490,7 @@ class XraySession:
             self._root,
             self._findings,
             runnable_paths(files),
-            agent_file_tokens(files, self._root),
+            agent_file_sizes(files, self._root),
             live,
             mcp_declarations(self._root, self._plugins),
             mcp_turned_off(self._root),

@@ -65,6 +65,26 @@ def test_flags_join_config_for_folders_and_globs(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
+@pytest.mark.parametrize(
+    ("rel", "pruned"),
+    [
+        (".claude/worktrees", True),
+        (".claude/plans", True),
+        ("pkg/.claude/worktrees", True),
+        ("docs/worktrees", False),
+        ("plans", False),
+        (".claude/rules", False),
+    ],
+)
+def test_agent_working_folders_are_skipped_only_inside_the_agent_folder(tmp_path: Path, rel: str, pruned: bool) -> None:
+    excl = no_exclusions(tmp_path)
+    folder = tmp_path / rel
+    assert excl.prunes(str(folder), folder.name, os.path.realpath(folder)) is pruned
+    assert covers(excl, folder / "README.md") is pruned
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
 def test_leaves_out_tests_user_patterns_only(tmp_path: Path) -> None:
     excl = load_run_exclusions(RunContext(), tmp_path, ["ext"], ["notes/*.md"])
     assert leaves_out(excl, tmp_path / "ext" / "x.md")

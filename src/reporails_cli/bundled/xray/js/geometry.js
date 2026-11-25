@@ -18,6 +18,8 @@ export const STRETCH_MARK = 1.6, TICK_GAP = 18;
 export const GROUP_HEAD = 30, GROUP_PAD = 8;
 // A compaction stripe reaches this far above and below its y.
 export const STRIPE_HALF = 8;
+// A folded segment draws as one band this tall, the time it spans squeezed into it.
+export const FOLD_H = 64;
 const CARD_RISE = 18, KNOT_STEP_S = 0.5, ROW_ORDER = ['R1', 'R2'];
 
 // Time to y before any stretching. Idle breaks keep their linear length until the node is longer than the cap, then each
@@ -59,6 +61,8 @@ const cardSlot = (col, top) => ({ col, top, left: COLX[col], side: 1, inner: COL
 // A compaction restarts the agent's context, so it is a unit too: `{ key, t, cut: true, cards: [{ key, t }] }`. Its stripe
 // is kept clear of the cards above it, the source cards that load again right after it each get a row below it, and every
 // later unit is placed below them. `cuts` maps its key to the stripe's y and each card's y.
+// A folded segment is a unit too: `{ key, t, t1, fold: true }`. Everything in [t, t1] is squeezed into one FOLD_H band that
+// sits below whatever is above it; `folds` lists the bands and `inFold(t)` says whether a time lies inside one.
 // Returns y(t), the y of the node's end, the idle breaks, the stretched segments, the placement of every unit, the
 // compaction stripes and the lowest card bottom.
 export function layoutTime(node, breaks, len, units) {
@@ -72,7 +76,13 @@ export function layoutTime(node, breaks, len, units) {
     const a = knots[i - 1], b = knots[i];
     return a.d + (b.d - a.d) * (t - a.t) / (b.t - a.t);
   };
-  const y = t => { const c = Math.min(node.end, Math.max(node.start, t)); return base.y(c) + delta(c); };
+  const folds = [];
+  const foldAt = c => folds.find(f => c > f.t0 && c < f.t1);
+  const y = t => {
+    const c = Math.min(node.end, Math.max(node.start, t));
+    const f = foldAt(c);
+    return f ? f.top + FOLD_H * (c - f.t0) / (f.t1 - f.t0) : base.y(c) + delta(c);
+  };
   // The columns the top card spans start occupied down to its bottom, so a unit launched under it is pushed below it.
   const topSpans = c => COLX[c] < SPX + TOP_W / 2 && COLX[c] + CW > SPX - TOP_W / 2;
   const bottoms = Object.fromEntries(ROW_ORDER.map(c => [c, topSpans(c) ? TOP_Y + CH : -Infinity]));
@@ -81,6 +91,16 @@ export function layoutTime(node, breaks, len, units) {
   let lowest = 0;
   [...units].sort((a, b) => a.t - b.t).forEach(u => {
     const te = Math.max(u.t, knots[knots.length - 1].t + KNOT_STEP_S);
+    if (u.fold) {
+      const t1 = Math.max(u.t1, te + 2 * KNOT_STEP_S);
+      const top = Math.max(y(te), Math.max(...Object.values(bottoms)) + LANE_GAP);
+      knots.push({ t: te, d: top - base.y(te) });
+      knots.push({ t: t1, d: top + FOLD_H - base.y(t1) });
+      folds.push({ key: u.key, t0: te, t1, top });
+      for (const c of ROW_ORDER) bottoms[c] = Math.max(bottoms[c], top + FOLD_H);
+      lowest = Math.max(lowest, top + FOLD_H);
+      return;
+    }
     if (u.cut) {
       const clear = Math.max(...Object.values(bottoms)) + LANE_GAP + STRIPE_HALF;
       const sy = Math.max(y(te), clear);
@@ -133,7 +153,8 @@ export function layoutTime(node, breaks, len, units) {
     if (factor > STRETCH_MARK) stretches.push({ t0: a.t, t1: b.t, y0: y(a.t), y1: y(b.t), factor });
   }
   const marks = base.marks.map(m => ({ ...m, y0: y(m.start), y1: y(m.end) }));
-  return { y, end: y(node.end), marks, stretches, placed, cuts, lowest };
+  const inFold = t => folds.some(f => t >= f.t0 && t <= f.t1);
+  return { y, end: y(node.end), marks: marks.filter(m => !inFold((m.start + m.end) / 2)), stretches, placed, cuts, lowest, folds, inFold };
 }
 
 // Source nodes (each { key, y }, y the load time's y) stacked in the two left columns: a node is centred on its load and

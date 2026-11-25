@@ -18,7 +18,12 @@ from reporails_cli.core.heal.preservation.compare import SUMMARY_KEYS
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_int, as_list, as_object, str_list
 from reporails_cli.core.platform.utils.utils import compact_json, format_score
 from reporails_cli.formatters.text.display_constants import excluded_phrase
-from reporails_cli.formatters.text.not_evaluated import group_not_evaluated, not_evaluated_sentence
+from reporails_cli.formatters.text.not_evaluated import (
+    group_not_evaluated,
+    not_evaluated_sentence,
+    target_reason,
+    unevaluated_target_sentence,
+)
 
 # The `workflow.locations` block (header plus rows) stays under this many characters.
 LOCATIONS_BUDGET = 4000
@@ -103,6 +108,7 @@ def _status_lines(payload: JsonObject) -> list[str]:
         f"{findings} findings" if findings is not None else "",
         f"level {payload['level']}" if payload.get("level") else "",
         f"{file_count} files" if file_count else "",
+        f"format_version {payload['format_version']}" if payload.get("format_version") is not None else "",
     )
     line = _dot(*parts)
     return [f"validate: {line}"] if line else []
@@ -415,12 +421,12 @@ def _feedback_lines(payload: JsonObject, rules: JsonObject) -> list[str]:
 
 
 def _not_evaluated_lines(payload: JsonObject) -> list[str]:
-    pairs = [
-        (str(e.get("rule", "")), str(e.get("file", "")))
-        for e in as_list(payload.get("not_evaluated"))
-        if isinstance(e, dict)
+    items = [e for e in as_list(payload.get("not_evaluated")) if isinstance(e, dict)]
+    pairs = [(str(e.get("rule", "")), str(e.get("file", ""))) for e in items if "rule" in e]
+    targets = [(str(e.get("file", "")), target_reason(str(e.get("reason", "")))) for e in items if "reason" in e]
+    return [not_evaluated_sentence(file, rules) for file, rules in group_not_evaluated(pairs)] + [
+        unevaluated_target_sentence(file, reason) for file, reason in targets if reason is not None
     ]
-    return [not_evaluated_sentence(file, rules) for file, rules in group_not_evaluated(pairs)]
 
 
 def _truncated_lines(payload: JsonObject) -> list[str]:

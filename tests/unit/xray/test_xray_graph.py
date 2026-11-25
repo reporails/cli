@@ -15,10 +15,12 @@ import pytest
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import JsonValue, as_list, as_object
 from reporails_cli.core.platform.dto.events import (
+    CompactionBoundary,
     EventKind,
     EventRecord,
     HarnessEntry,
     HarnessKind,
+    HookFiring,
     InstructionLoad,
     ReplyText,
     SkillRun,
@@ -46,6 +48,7 @@ from reporails_cli.core.platform.dto.xray_build import (
     ProducedSpine,
     ProducerContext,
     SourceTable,
+    WorkflowReading,
 )
 from reporails_cli.core.platform.dto.xray_compaction import XrayCompaction
 from reporails_cli.core.platform.dto.xray_composition import XrayComposition
@@ -60,6 +63,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayNode,
     XrayUsage,
 )
+from reporails_cli.core.platform.dto.xray_own import XrayOwnItem
 from reporails_cli.core.platform.dto.xray_sources import ArtifactFile, ArtifactKind, FindingTally
 from reporails_cli.core.xray.artifacts import build_artifacts
 from reporails_cli.core.xray.cost import agent_cost, load_price_list
@@ -167,7 +171,12 @@ def _graph(
     artifacts = build_artifacts(RunContext(), files, findings or {}, root, advertised=advertised or {})
     vocab = vocabulary or vocabulary_for("claude", [])
     return build_graph(
-        list(records), frame, build_sources(RunContext(), artifacts, records, frame), vocab, load_price_list()
+        list(records),
+        frame,
+        build_sources(RunContext(), artifacts, records, frame),
+        vocab,
+        load_price_list(),
+        workflows=WorkflowReading(()),
     )
 
 
@@ -550,7 +559,7 @@ def test_a_load_says_what_brought_it_and_whether_it_sits_on_the_spine(tmp_path: 
         rec("skill_run", 3, item=SkillRun("demo", False)),
         rec("skill_run", 3.5, item=SkillRun("demo", True)),
         call(4, "r1", "read", name="Read", path=big.path),
-        load(5, claude),
+        load(50, claude),
     ]
     graph = _graph(tmp_path, records, [claude, nested, skill, big], runnable={"demo": skill.path})
     station = next(item for item in graph.stations if item.node == "main")
@@ -562,7 +571,7 @@ def test_a_load_says_what_brought_it_and_whether_it_sits_on_the_spine(tmp_path: 
         ("sub/CLAUDE.md", 2.0, "path_match", None, True),
         (".claude/skills/demo/SKILL.md", 3.0, "agent", None, False),
         ("docs/big.md", 4.0, "agent", None, False),
-        ("CLAUDE.md", 5.0, "session_start", None, True),
+        ("CLAUDE.md", 50.0, "session_start", None, True),
     ]
     sizes = {s.id: s.tokens_est for s in graph.sources if s.kind in {"mcp", "hook"}}
     assert sizes == {"mcp:docs": 200, "hook:SessionStart:startup": 30}
@@ -635,8 +644,8 @@ class _Widget:
             XrayUsage(_NO_COST, XrayComposition((), None)),
             None,
         )
-        loads = () if self.source is None else (LoadEvent(self.source, 1.0, None, "agent", None),)
-        spine = ProducedSpine((), loads, (), (), (1.0,))
+        loads = () if self.source is None else (LoadEvent(self.source, 1.0, None, "agent", None, None),)
+        spine = ProducedSpine((), loads, (), (), (1.0,), ())
         node = ProducedNode("w1", self.kind, self.parent, "a widget", None, 1.0, 2.0, detail, spine)
         return Produced((node,), (XrayEdge(self.parent, "w1", 0, None, 1.0, None, None),))
 
@@ -726,8 +735,8 @@ def test_the_built_views_key_structure_matches_the_sample_the_page_is_built_agai
         sources=graph.sources,
         stations=graph.stations,
         tracks=graph.tracks,
-        builtin=graph.builtin,
         session_cost=graph.session_cost,
+        workflows=graph.workflows,
         version=1,
         info=XraySessionInfo("s", "p", at(0), 20.0, "newest"),
         model=None,
@@ -761,7 +770,9 @@ def test_a_skill_that_ran_is_used_a_forked_one_is_used_but_not_loaded_and_a_comm
     table = build_sources(
         RunContext(), build_artifacts(RunContext(), files, {}, tmp_path, advertised={}), records, frame
     )
-    graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
+    graph = build_graph(
+        records, frame, table, vocabulary_for("claude", []), load_price_list(), workflows=WorkflowReading(())
+    )
     (row,) = build_funnel(table, graph.sources, ["skill"], ran_sources(records, table))
     assert (row.kind, row.on_disk, row.loaded, row.used) == ("skill", 4, 2, 3)
 
@@ -889,7 +900,7 @@ def test_a_custom_agents_definition_file_is_given_to_it_right_after_the_task_pro
     run = launch(6, "X", None, "tuX", brief_chars=400)
     run = EventRecord(**{**run.__dict__, "subagent_type": "reviewer"})
     session = [reply(1), call(5, "tuX", "agent"), run, reply(7, "X")]
-    graph = _graph(tmp_path, session, agent_files={"reviewer": 625})
+    graph = _graph(tmp_path, session, agent_files={"reviewer": 2500})
     detail = _agent(_node(graph, "X"))
     assert [(item.label, item.tokens_est, item.source) for item in detail.given] == [
         ("task prompt", 100, None),
@@ -1057,14 +1068,15 @@ def _handoff_edge(
 def test_the_window_grows_with_a_long_agent_and_a_burst_sums_what_went_down() -> None:
     settings = XrayBurstSettings(window_s=90.0, window_share=0.013, min_size=3)
     edges = [_handoff_edge("a", 0, 50), _handoff_edge("b", 93, 80), _handoff_edge("c", 93.5, 120)]
-    assert bursts(edges, 600.0, settings, {}) == ()
-    (found,) = bursts(edges, 7200.0, settings, {})
+    assert bursts(edges, 600.0, settings, {}, ()) == ()
+    (found,) = bursts(edges, 7200.0, settings, {}, ())
     assert (found.members, found.first_launch, found.last_return, found.down_tokens) == (("a", "b", "c"), 0, 120, 30)
     (open_run,) = bursts(
         [_handoff_edge("a", 0, 5), _handoff_edge("b", 1, None, outcome="running"), _handoff_edge("c", 2, 7)],
         600.0,
         settings,
         {"a": 5, "b": 9, "c": 7},
+        (),
     )
     assert open_run.last_return is None
 
@@ -1076,7 +1088,7 @@ def test_a_member_that_did_not_hand_back_ends_the_burst_at_its_own_end() -> None
         _handoff_edge("b", 1, None, outcome="stopped"),
         _handoff_edge("c", 2, None, outcome="no_handback"),
     ]
-    (found,) = bursts(edges, 600.0, settings, {"a": 5, "b": 40, "c": 30})
+    (found,) = bursts(edges, 600.0, settings, {"a": 5, "b": 40, "c": 30}, ())
     assert found.last_return == 40
 
 
@@ -1084,7 +1096,14 @@ def _entry(kind: HarnessKind, label: str, count: int | None, chars: int, seconds
     return rec("harness", seconds, item=HarnessEntry(kind, label, count, chars))
 
 
-def test_the_builtin_items_follow_the_vocabulary_order_and_the_system_prompt_carries_the_remainder(
+def _own_items(graph: Graph, node: str = "main") -> list[XrayOwnItem]:
+    """The items of an agent's own context in display order."""
+    shown = _agent(_node(graph, node)).in_context
+    assert shown is not None
+    return list(shown.own.rows)
+
+
+def test_the_own_context_items_follow_the_vocabulary_order_and_the_system_prompt_carries_the_remainder(
     tmp_path: Path,
 ) -> None:
     claude = _file(tmp_path, "CLAUDE.md", 400)
@@ -1097,31 +1116,33 @@ def test_the_builtin_items_follow_the_vocabulary_order_and_the_system_prompt_car
         reply(1, context=20_000),
     ]
     graph = _graph(tmp_path, records, [claude])
-    assert [(item.key, item.remainder) for item in graph.builtin] == [
-        ("system_prompt", True),
-        ("deferred_tools", False),
-        ("agent_list", False),
-        ("skill_list", False),
-        ("session_context", False),
+    items = _own_items(graph)
+    assert [item.key for item in items] == [
+        "built_in_rest",
+        "agent_listing",
+        "skill_listing",
+        "deferred_tools",
+        "session_context",
     ]
-    sizes = {item.key: item.tokens_est for item in graph.builtin}
     # The reply total less the estimated instruction file (100) and skills listing (1000), the tool definitions
     # (200), the agent listing (100) and the session context (10).
-    assert sizes == {
-        "system_prompt": 20_000 - 100 - 1000 - 200 - 100 - 10,
+    assert {item.key: item.tokens_est for item in items} == {
+        "built_in_rest": 20_000 - 100 - 1000 - 200 - 100 - 10,
         "deferred_tools": 200,
-        "agent_list": 100,
-        "skill_list": 1000,
+        "agent_listing": 100,
+        "skill_listing": 1000,
         "session_context": 10,
     }
-    notes = {item.key: item.note for item in graph.builtin}
-    assert notes["agent_list"] == "3 agent descriptions" and notes["session_context"] is not None
-    assert [item.visible for item in graph.builtin][:2] == ["hidden", "partial"]
+    shown = _agent(_node(graph, "main")).in_context
+    assert shown is not None and shown.own.basis == "estimate" and not any(item.has_text for item in items)
+    notes = {item.key: item.description for item in items}
+    assert notes["agent_listing"] == "3 agent descriptions" and notes["session_context"] is not None
+    assert [item.visible for item in items][:2] == ["hidden", "shown"]
 
 
 def test_a_system_prompt_is_never_negative_when_the_estimates_overshoot_the_reply(tmp_path: Path) -> None:
     records = [_entry("skill_list", "skills", 5, 40_000), reply(1, context=500)]
-    system = next(item for item in _graph(tmp_path, records).builtin if item.remainder)
+    system = next(item for item in _own_items(_graph(tmp_path, records)) if item.key == "built_in_rest")
     assert system.tokens_est == 0
 
 
@@ -1225,14 +1246,14 @@ def test_in_context_adds_up_to_the_peak_on_every_node_and_orders_the_rows(tmp_pa
         shown = _agent(node).in_context
         assert shown is not None and not shown.over
         assert shown.total == _agent(node).peak
-        assert sum(row.tokens_est for row in shown.rows) == shown.total
+        assert sum(row.tokens_est for row in shown.rows) + shown.own.tokens_est == shown.total
     main = _agent(_node(graph, "main")).in_context
     assert main is not None
     assert [(row.key, row.label) for row in main.rows if row.key != "source"] == [
         ("hooks", "PreToolUse:hook"),
-        ("builtin", "System prompt, tools and listings"),
         ("rest", "Conversation and tool results"),
     ]
+    assert main.own.label == "Claude Code's own context"
     sources = [(row.label, row.kind, row.reason) for row in main.rows if row.key == "source"]
     assert sources == [
         ("CLAUDE.md", "instructions", "loaded with the session's instructions"),
@@ -1242,7 +1263,8 @@ def test_in_context_adds_up_to_the_peak_on_every_node_and_orders_the_rows(tmp_pa
     assert (hook.reason, hook.tokens_est) == ("fired 2 times", 100)
     sub = _agent(_node(graph, "A")).in_context
     assert sub is not None
-    assert [row.key for row in sub.rows] == ["task", "source", "builtin", "rest"]
+    assert [row.key for row in sub.rows] == ["task", "source", "rest"] and sub.own.rows
+    assert sum(row.tokens_est for row in sub.rows) + sub.own.tokens_est == sub.total
     assert sub.rows[1].reason == "handed down at launch"
 
 
@@ -1351,10 +1373,10 @@ def test_the_system_prompt_size_leaves_out_the_mcp_instructions_and_hook_notes_t
         rec("harness", 0.4, item=HarnessEntry("hook_note", "SessionStart:startup", None, 120, event="SessionStart")),
         reply(1, context=1000),
     ]
-    sizes = {item.key: item.tokens_est for item in _graph(tmp_path, records).builtin}
+    sizes = {item.key: item.tokens_est for item in _own_items(_graph(tmp_path, records))}
     # The total less the hook note (30, counted as a hook note), the tool definitions (100) and the MCP servers'
     # instructions (200, once).
-    assert sizes["system_prompt"] == 1000 - 30 - 100 - 200
+    assert sizes["built_in_rest"] == 1000 - 30 - 100 - 200
 
 
 def test_a_hook_row_counts_only_the_firings_whose_tokens_the_context_still_holds(tmp_path: Path) -> None:
@@ -1415,7 +1437,9 @@ def test_the_funnel_does_not_count_an_unrecorded_kind_as_zero_loaded(tmp_path: P
     table = build_sources(
         RunContext(), build_artifacts(RunContext(), [claude], {}, tmp_path, advertised={}), records, frame
     )
-    graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
+    graph = build_graph(
+        records, frame, table, vocabulary_for("claude", []), load_price_list(), workflows=WorkflowReading(())
+    )
     (row,) = build_funnel(table, graph.sources, ["instructions"], set())
     assert (row.on_disk, row.loaded, row.used) == (1, None, None)
 
@@ -1427,7 +1451,9 @@ def test_the_funnel_takes_the_unrecorded_kinds_from_the_source_table(tmp_path: P
     table = build_sources(
         RunContext(), build_artifacts(RunContext(), [claude], {}, tmp_path, advertised={}), records, frame
     )
-    graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
+    graph = build_graph(
+        records, frame, table, vocabulary_for("claude", []), load_price_list(), workflows=WorkflowReading(())
+    )
     (row,) = build_funnel(table, graph.sources, ["instructions"], set())
     assert row.loaded == 1
     (row,) = build_funnel(
@@ -1443,6 +1469,37 @@ def test_the_agents_funnel_row_counts_the_built_in_agent_types_a_session_launche
     table = build_sources(
         RunContext(), build_artifacts(RunContext(), [definition], {}, tmp_path, advertised={}), records, frame
     )
-    graph = build_graph(records, frame, table, vocabulary_for("claude", []), load_price_list())
+    graph = build_graph(
+        records, frame, table, vocabulary_for("claude", []), load_price_list(), workflows=WorkflowReading(())
+    )
     (row,) = build_funnel(table, graph.sources, ["agent"], set())
     assert (row.on_disk, row.loaded) == (2, 1)
+
+
+def test_the_files_a_session_start_hook_group_loads_after_a_compaction_count_as_loaded_again(tmp_path: Path) -> None:
+    """A compaction at 100 s; its SessionStart hook fires just before, the root file loads before the agent's first
+    reply and the two nested files after it, each within seconds of the load before: the hook's group, as the card
+    shows it. The stripe names every file of the group as loaded again and only the file with no load as not."""
+    root = _file(tmp_path, "CLAUDE.md", 400)
+    nested = [_file(tmp_path, f"{name}/CLAUDE.md", 400) for name in ("a", "b")]
+    left = _file(tmp_path, "c/CLAUDE.md", 400)
+    firing = HookFiring("SessionStart", "SessionStart", "hook-1", "echo", 0, 5, "context_added", 120)
+    records = [
+        load(1, root),
+        *(load(2, file, memory_type="nested") for file in [*nested, left]),
+        reply(3),
+        rec("hook_firing", 99.6, item=firing),
+        rec("post_compact", 100, source="manual", item=CompactionBoundary("b")),
+        load(104, root),
+        reply(110),
+        load(120, nested[0], memory_type="nested"),
+        load(141, nested[1], memory_type="nested"),
+        reply(150),
+    ]
+    graph = _graph(tmp_path, records, [root, *nested, left])
+    (station,) = (item for item in graph.stations if item.node == MAIN_ID)
+    (group,) = station.groups
+    assert group.hook == "hook:SessionStart"
+    (compaction,) = station.compactions
+    states = {Path(item.source).parent.name: item.state for item in compaction.files}
+    assert states == {"": "reloaded", "a": "reloaded", "b": "reloaded", "c": "summarized"}

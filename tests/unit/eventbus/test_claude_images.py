@@ -12,7 +12,7 @@ from reporails_cli.core.eventbus.adapters.claude_images import (
     price_image,
     resized_size,
 )
-from reporails_cli.core.platform.dto.events import ImageTokens
+from reporails_cli.core.platform.dto.message_size import ImageTokens
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_eventbus]
 

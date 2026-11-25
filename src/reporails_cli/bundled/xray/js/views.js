@@ -33,34 +33,44 @@ export const kindOfSource = (ix, id) => {
 // A load of a kind the vocabulary keeps on the spine is a station there.
 export const isSpine = (ix, sid) => { const k = kindOfSource(ix, sid); return !!(k && k.spine); };
 
-// A compaction restarts the agent's context. A load belongs to the segment after every compaction at or before its time; the
-// session-start loads Claude Code stamps up to RESTART_S before the compaction belong to the segment after it too.
-export const RESTART_S = 5;
-export const startsSession = l => !!l && (l.trigger === 'session_start' || l.event === 'SessionStart');
-export const segmentOf = (cuts, t, load) => cuts.filter(c => c <= t || (startsSession(load) && c - t <= RESTART_S)).length;
-
-// Source nodes of an agent, whatever layers are shown: one per source at its first load into its context and again at its
-// first load after each compaction (hooks stay on the spine), one per MCP server with its round trips. An instruction file
-// loaded with no time sits at the agent's start.
-export function sourceFirsts(ix, cur, cuts) {
+// A compaction restarts the agent's context; the view says which segment of the context (the number of compactions before
+// it) every load, group, call, launch and run is in. A source gets a card at its first load into each segment, so a segment
+// after a compaction starts with the cards of what loaded again (hooks stay on the spine), plus one per MCP server with its
+// round trips. An instruction file loaded with no time sits at the agent's start.
+export function sourceFirsts(ix, cur) {
   const st = ix.stations.get(cur.id);
   if (!st) return [];
   const first = new Map();
   for (const l of st.loads) {
     if (isSpine(ix, l.source)) continue;
     const t = l.t ?? cur.start;
-    const seg = segmentOf(cuts, t, l);
-    const key = `${seg}|${l.source}`;
+    const key = `${l.segment}|${l.source}`;
     const prev = first.get(key);
-    if (!prev || t < prev.t) first.set(key, { key, id: l.source, seg, t, load: l, clusters: [] });
+    if (!prev || t < prev.t) first.set(key, { key, id: l.source, seg: l.segment, t, load: l, clusters: [] });
   }
   for (const m of st.mcp) {
-    const seg = segmentOf(cuts, m.first);
-    const key = `${seg}|${m.server}`;
-    if (!first.has(key)) first.set(key, { key, id: m.server, seg, t: m.first, load: null, clusters: [] });
+    const key = `${m.segment}|${m.server}`;
+    if (!first.has(key)) first.set(key, { key, id: m.server, seg: m.segment, t: m.first, load: null, clusters: [] });
     first.get(key).clusters.push(m);
   }
   return [...first.values()];
+}
+
+// The id a load group's card and details are addressed by: the view's, which a later poll keeps.
+export const groupKey = g => `lg:${g.id}`;
+
+// The load groups of an agent's station.
+const groupsOf = (ix, cur) => (ix.stations.get(cur.id) || {}).groups || [];
+
+// The groups of an agent's loads as cards of their own: where they sit in the scale and in which segment.
+export const groupFirsts = (ix, cur) => groupsOf(ix, cur).map(g => ({ key: groupKey(g), seg: g.segment, t: g.first }));
+
+// Every source that loaded into each segment of an agent's context, as `<segment>|<source>`, whichever card draws its load: its
+// own card, or the group card of the loads a hook caused.
+export function loadedKeys(ix, cur) {
+  const keys = new Set(sourceFirsts(ix, cur).map(f => f.key));
+  for (const g of groupsOf(ix, cur)) for (const f of g.files) keys.add(`${g.segment}|${f.source}`);
+  return keys;
 }
 
 export const visibleKinds = (ix, state) => ix.view.adapter.source_kinds.filter(k => state.layers[k.key]);
@@ -93,7 +103,7 @@ export function tabCounts(ix) {
   return {
     graph: v.nodes.length,
     calls: v.track.reduce((n, t) => n + t.calls.length, 0),
-    sources: v.sources.length + (v.builtin || []).length,
+    sources: v.sources.length,
   };
 }
 
@@ -115,6 +125,22 @@ export function callIndex(ix) {
     hasCommand: key => !!(cats.get(key) || {}).command, serverColour: server => serverColour.get(server) || NEUTRAL };
   callIndexes.set(ix, made);
   return made;
+}
+
+// The moment the inspector's list on `node` is for: the time of the call whose details are open, or whose details a row of the list opened (`state.from`), when the call is the node's own; else null (the node's latest reply).
+export function pickedMoment(ix, state, node) {
+  const peek = state.peek && state.peek.kind === 'call' ? state.peek : state.from;
+  if (!peek) return null;
+  const found = callIndex(ix).byId.get(peek.id);
+  return found && found.node.id === node.id ? found.call.t : null;
+}
+
+// What the last compaction of `node` before `t` left of the instruction file `source` it had loaded; null when there was none.
+export function fileStateAt(ix, node, source, t) {
+  const held = ((ix.stations.get(node.id) || { compactions: [] }).compactions).filter(c => c.t < t);
+  const last = held[held.length - 1];
+  const file = last && (last.files || []).find(f => f.source === source);
+  return file ? file.state : null;
 }
 
 // The ids of a node and every agent below it.

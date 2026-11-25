@@ -1,12 +1,12 @@
-// The details renderers for a source, a built-in item, a task prompt, the peak context and the estimated cost.
+// The details renderers for a source, an item of the coding agent's own context, a task prompt, the peak context and the estimated cost.
 import { el, nk, err } from '../dom.js';
-import { clock, costEst, exclusionNote, k1, MCP_STATES, plural, tk, usd } from '../format.js';
-import { briefUrl, hookOutputUrl, outputUrl, peekUrl, systemUrl } from '../api.js';
+import { clock, costEst, exclusionNote, hookStatus, k1, MCP_STATES, plural, startedAt, tk, usd } from '../format.js';
+import { briefUrl, contextAt, contextTextUrl, hookOutputUrl, outputUrl, peekUrl } from '../api.js';
 import { textBlock } from './textblock.js';
 import { hashFor } from '../state.js';
 import { bandColour } from '../geometry.js';
 import { peakOf, replyMeasured, replyOver, replyParts, typeOf, UNRECORDED } from '../views.js';
-import { nodeLabel, sessionCost } from './inspector.js';
+import { basisLabel, nodeLabel, sessionCost } from './inspector.js';
 import { render as renderFindings } from './findings.js';
 import { registerPeek, scrollable } from './details.js';
 
@@ -20,6 +20,14 @@ const kv = pairs => {
   const box = el('div', 'pk-kv');
   for (const [k, v] of pairs) if (v != null && v !== '') box.append(el('span', 'lb', k), el('span', 'v', v));
   return box;
+};
+
+// A system prompt's top-level sections, one row each with its share of the item's tokens as the reply of the text route
+// gives it: read from the reply the text block above the rows fetched, never a second request.
+const promptSections = (env, key, url) => {
+  const sections = env.text(key, url).sections;
+  if (!sections || !sections.length) return [];
+  return [kv(sections.map(s => [s.heading, s.tokens == null ? plural(s.chars, 'char') : tk(s.tokens, true)]))];
 };
 
 const pre = text => el('pre', 'pk-pre', text);
@@ -39,17 +47,6 @@ function fetched(entry, pick) {
   if (entry.truncated) out.append(nk('text truncated'));
   return out;
 }
-
-// The reason an agent had the source, as the first recorded load words it.
-function whyLoaded(view, id) {
-  for (const n of view.nodes) {
-    const rows = (n.detail && n.detail.in_context && n.detail.in_context.rows) || [];
-    const hit = rows.find(r => r.source === id && r.reason);
-    if (hit) return hit.reason;
-  }
-  return null;
-}
-
 
 // When the agent had the source: its first load into that agent, else the agent's start.
 function loadTime(ix, node, s) {
@@ -81,9 +78,23 @@ function findingsBlock(s, env) {
 const DECISIONS = { context_added: 'added to the context', message_shown: 'showed a message', blocked: 'blocked', failed: 'failed', ran: 'ran' };
 const SCOPES = { project: 'project .mcp.json', user: 'your user settings', local: 'this project in your user settings', managed: 'managed settings', plugin: 'plugin' };
 
-// A hook's commands with the file that declares each, and its firings: the output opens on request.
+// When a hook last fired: in this session, else in another session of the project, else not known yet or never.
+function lastFired(hook) {
+  if (hook.last_fired != null) return `${clock(hook.last_fired)} (this session)`;
+  if (hook.earlier) return `${startedAt(hook.earlier.at)} (session ${hook.earlier.session})`;
+  return hook.checking ? 'not in this session; checking earlier sessions…' : 'never in the sessions read';
+}
+
+// A hook's health: where it is registered, its status (which says why it cannot fire) and the line that recovers it.
+function healthSection(hook) {
+  const lines = [`event: ${hook.event || 'not declared in a hook config'}`, `matcher: ${hook.matcher || 'any'}`, `status: ${hookStatus(hook)}`, `last fired: ${lastFired(hook)}`];
+  if (hook.recovery) lines.push(`fix: ${hook.recovery}`);
+  return section('Health', pre(lines.join('\n')));
+}
+
+// A hook's health, its commands with the file that declares each and its firings: the output opens on request.
 function hookSections(env, hook) {
-  const out = [];
+  const out = [healthSection(hook)];
   const cmds = hook.commands.map(c => `${c.command}\n  declared in: ${c.declared_in || 'no hook config Claude Code reads holds this command'}`);
   out.push(section(plural(hook.commands.length, 'command'), cmds.length ? pre(cmds.join('\n\n')) : nk('No command is recorded for this hook.')));
   const list = el('div', 'pk-list');
@@ -118,10 +129,7 @@ registerPeek('src', (env, id) => {
   if (s.tools && s.tools.length) main.push(section('Tools on this server', pre(s.tools.map(([t, n]) => `${t} · ${n ? plural(n, 'call') : 'not called'}`).join('\n'))));
   if (s.hook) main.push(...hookSections(env, s.hook));
   if (entry) main.push(section('Its text', fetched(entry, e => e.body ?? e.text)));
-  else if (s.system_tokens_est == null && !s.hook) main.push(section('Its text', nk(s.builtin ? 'Comes from the coding agent; there is no file.' : 'No file behind this source.')));
-  if (s.kind === 'agent' && s.system_tokens_est != null) {
-    main.push(section(`System prompt · ${tk(s.system_tokens_est, true)} · recorded at launch`, textBlock(env.text, 'system:' + s.agent_type, systemUrl(s.agent_type))));
-  }
+  else if (!s.hook && !(s.kind === 'agent' && s.had_by.length)) main.push(section('Its text', nk(s.builtin ? 'Comes from the coding agent; there is no file.' : 'No file behind this source.')));
   if (s.kind === 'agent') {
     if (s.launch_tools.length) main.push(section('Tools its launches had', pre(s.launch_tools.map(([t, n]) => `${t} · ${plural(n, 'launch', 'launches')}`).join('\n'))));
     if (s.launch_settings.length) main.push(section('Launch settings', pre(s.launch_settings.map(([label, value]) => `${label} · ${value}`).join('\n'))));
@@ -130,7 +138,7 @@ registerPeek('src', (env, id) => {
   const loaded = s.kind && (ix.kinds.get(s.kind) || {}).definitions
     ? (s.launches > 0 ? `launched as ${plural(s.launches, 'subagent')}` : 'never launched')
     : unrecorded ? UNRECORDED : holders.length ? `${holders.length} of ${view.nodes.length} agents` : 'no agent';
-  const why = unrecorded ? null : whyLoaded(view, s.id);
+  const why = unrecorded ? null : s.why;
   const m = s.mcp;
   const where = m ? (m.declared_in ? `${SCOPES[m.scope] || m.scope}: ${m.declared_in}` : 'no configuration file declares it') : null;
   const side = [kv([['Path', s.path], ['Plugin', m ? m.plugin : null], ['State', m ? MCP_STATES[m.state] : null], ['Declared in', where], ['Loaded by', loaded], ['Why', why]])];
@@ -152,6 +160,8 @@ registerPeek('src', (env, id) => {
   if (count) tags.push(`${plural(count, 'finding')}`);
   if (s.tokens_est != null) tags.push(`${tk(s.tokens_est, true)} each · estimated`);
   const actions = [action('Pin on graph', { pin: s.id })];
+  const launched = s.kind === 'agent' && s.had_by.find(h => hasOwnItem(ix.nodes.get(h), 'system_prompt'));
+  if (launched) actions.push(action('Open the system prompt it launched with', { peek: `builtin:system_prompt:${launched}` }));
   if (count && s.path) {
     const a = el('a', 'pk-act primary', 'Open findings page');
     a.href = hashFor(env.state.path, s.path);
@@ -163,54 +173,65 @@ registerPeek('src', (env, id) => {
 
 const VISIBLE = { hidden: 'not visible in transcript', partial: 'partly visible in transcript', shown: 'visible in transcript' };
 
-// What a built-in item contains, and what is true of it wherever it is sent: shared by its own peek and the main
-// agent's measured System prompt and Tool definitions rows.
-const builtinContains = item => section('What it contains', pre(item.note || ''));
+const ownOf = node => (node && node.detail && node.detail.in_context ? node.detail.in_context.own : null);
+const hasOwnItem = (node, key) => { const own = ownOf(node); return !!own && own.rows.some(r => r.key === key); };
 
-// The main agent's system prompt text, read when the details open; a session with no recorded request has none.
-const mainSystemText = (env, item) => {
-  if (item.key !== 'system_prompt' || !item.system_shapes) return [];
-  const many = item.system_shapes > 1;
-  const body = [textBlock(env.text, 'main-system', systemUrl(''))];
-  if (many) body.unshift(nk(`The requests were sent with ${item.system_shapes} different system prompts; this is the latest.`));
-  return [section(`System prompt · recorded request${many ? ` · latest of ${item.system_shapes}` : ''}`, ...body)];
-};
-const builtinFacts = item => kv([['Sent to', 'every agent, every turn'], ['Visibility', VISIBLE[item.visible] || item.visible], ['Source', 'the coding agent itself, not your files']]);
+// What the item's request holds that its text does not, as a sentence: the rows whose tokens its text includes, then the rows counted apart.
+function listedNotes(item) {
+  const listed = (item.measure && item.measure.listed) || [];
+  const named = rows => rows.map(l => `${k1(l.tokens)} ${l.label.toLowerCase()}`).join(', ');
+  const inside = listed.filter(l => l.in_text), apart = listed.filter(l => !l.in_text);
+  const out = [];
+  if (inside.length) out.push(nk(`The text is the whole ${item.label.toLowerCase()}, ${tk(item.whole_tokens, true)}. ${named(inside)} of it is listed as its own row, so this row counts ${tk(item.tokens_est, true)}.`));
+  if (apart.length) out.push(nk(`${named(apart)} are counted in their own rows and are not in this text; this row counts ${tk(item.tokens_est, true)}.`));
+  return out;
+}
 
+// How much of the item's counted characters its text holds, when the rest is not text: "735 of 120,844 characters are readable text; the rest is signed thinking".
+function readableNote(entry) {
+  if (entry.counted == null || entry.readable == null) return [];
+  return [nk(`${entry.readable.toLocaleString('en-US')} of ${entry.counted.toLocaleString('en-US')} characters are readable text; the rest is ${entry.unread}.`)];
+}
+
+// The sections one item opens with: the system prompt's, a block of its recorded text, or what it holds when no request was recorded.
+function ownBody(env, node, item) {
+  const key = `ctx:${node.id}:${item.key}`;
+  const url = contextTextUrl(node.parent === null ? '' : node.id, item.key);
+  if (!item.has_text) return [section('What it holds', pre(item.description || ''), nk('No request was recorded for this agent, so this is a description and the size is an estimate.'))];
+  const out = [];
+  if (item.shapes > 1) out.push(nk(`${item.shapes} different system prompts across this agent’s requests; this is the one its size is from.`));
+  out.push(...listedNotes(item));
+  out.push(...promptSections(env, key, url));
+  const entry = env.text(key, url);
+  out.push(...readableNote(entry));
+  if (entry.unreadable && entry.counted != null) return [section(item.label, ...out)];
+  out.push(entry.unreadable ? nk('The recorded blocks hold no readable text.') : textBlock(env.text, key, url));
+  return [section(item.label, ...out)];
+}
+
+// "<item key>:<node id>": a key has no colon, a node id may.
 registerPeek('builtin', (env, id) => {
-  const item = (env.ix.view.builtin || []).find(b => b.key === id);
-  if (!item) return null;
-  const measured = !item.remainder && (item.key === 'system_prompt' || item.key === 'tool_definitions');
-  const tags = [`${tk(item.tokens_est, true)} · ${item.remainder ? 'remainder' : measured ? 'measured' : 'estimated'}`, VISIBLE[item.visible] || item.visible];
-  return {
-    chip: '·', kicker: 'Built in', title: item.label, tags,
-    main: [builtinContains(item), ...mainSystemText(env, item)],
-    side: [builtinFacts(item)],
-    actions: [],
-  };
-});
-
-// "<row key>:<node id>": a row has no colon, a node id may.
-registerPeek('measured', (env, id) => {
   const at = id.indexOf(':');
   const node = at < 0 ? null : env.ix.nodes.get(id.slice(at + 1));
-  const ic = node && node.detail && node.detail.in_context;
-  const row = ic && (ic.rows || []).find(r => r.key === id.slice(0, at));
-  if (!row || !row.measure) return null;
-  const m = row.measure;
-  const owner = nodeLabel(node);
-  // The built-in items describe the main agent's own system prompt and tool definitions.
-  const item = node.parent === null ? (env.ix.view.builtin || []).find(b => b.key === row.key) : null;
+  const own = ownOf(node);
+  const item = own && own.rows.find(r => r.key === id.slice(0, at));
+  if (!item) return null;
+  const m = item.measure;
+  const basis = basisLabel(env.ix.view, item.basis);
   return {
-    chip: '·', kicker: `Measured · ${owner}`, title: row.label, tags: [`${k1(row.tokens_est)} · measured`],
-    main: [section('How it was measured', kv([
-      ['Request', ic.request_id],
-      ['Characters', m.chars.toLocaleString('en-US')],
-      ['Tokens per character', Number(ic.tokens_per_char).toPrecision(3)],
-      ['Image tokens', m.images > 0 ? m.images.toLocaleString('en-US') : null],
-      ['Already listed above', m.listed_above > 0 ? k1(m.listed_above) : null],
-    ]), nk(`The share is the row’s characters times the tokens per character${m.images > 0 ? ', plus its image tokens' : ''}${m.listed_above > 0 ? ', less what is already listed above' : ''}.`)), ...(item ? [builtinContains(item), ...mainSystemText(env, item)] : [])],
-    side: item ? [builtinFacts(item)] : [],
+    chip: '·', kicker: `${own.label} · ${nodeLabel(node)}`, title: item.label, tags: [`${tk(item.tokens_est, true)} · ${basis}`],
+    main: ownBody(env, node, item),
+    side: [kv([
+      ['Basis', basis],
+      ['Request', own.request_id],
+      ['Characters', m ? m.chars.toLocaleString('en-US') : null],
+      ['Tokens per character', own.tokens_per_char == null ? null : Number(own.tokens_per_char).toPrecision(3)],
+      ['Image tokens', m && m.images > 0 ? m.images.toLocaleString('en-US') : null],
+      ['Already listed above', m && m.listed_above > 0 ? k1(m.listed_above) : null],
+      ['Visibility', VISIBLE[item.visible] || item.visible],
+      ['Sent to', 'this agent, every turn'],
+      ['Source', own.reason],
+    ])],
     actions: [],
   };
 });
@@ -275,12 +296,9 @@ function bar(values, total) {
   return box;
 }
 
-registerPeek('peak', (env, id) => {
+// What one reply's context was made of: its composition and cache split, and for the tool calls and results the measured sizes the server counts for that reply.
+function replyDetails(env, node, comp, reply, kicker) {
   const { ix } = env;
-  const node = ix.nodes.get(id);
-  const hit = node && peakOf(node);
-  if (!hit) return null;
-  const { comp, reply } = hit;
   const total = reply[1], parts = replyParts(comp, reply), measured = replyMeasured(reply);
   const adapter = ix.view.adapter;
   const base = Math.max(total, parts.reduce((a, b) => a + b, 0));
@@ -297,17 +315,35 @@ registerPeek('peak', (env, id) => {
   }
   const cached = Math.round(reply[4] / total * 100);
   const over = replyOver(reply);
+  const ic = contextAt(node.id, reply[0]).data;
+  const io = ic && ic.rows.find(r => r.key === 'tool_io');
+  const ioFacts = io && io.measure ? [kv([[io.label, tk(io.tokens_est, true)], ['Characters', io.measure.chars.toLocaleString('en-US')], ['Image tokens', io.measure.images > 0 ? io.measure.images.toLocaleString('en-US') : null], ['Tokens per character', ic.tokens_per_char == null ? null : Number(ic.tokens_per_char).toPrecision(3)]])] : [];
   const remLabel = (adapter.composition.find(c => c.key === adapter.composition_remainder) || {}).label || adapter.composition_remainder;
   return {
-    chip: '∑', kicker: `Peak context · ${nodeLabel(node)} at ${clock(reply[0])}`, title: `${total.toLocaleString('en-US')} tokens`, tags: [],
+    chip: '∑', kicker: `${kicker} · ${nodeLabel(node)} at ${clock(reply[0])}`, title: `${total.toLocaleString('en-US')} tokens`, tags: [],
     main: [bar(cats.map(x => [x.i, parts[x.i]]), base), legend],
-    side: [kv([['Read from cache at this turn', `${cached}%`], ['New this turn', `${(reply[2] + reply[3]).toLocaleString('en-US')} tokens`]]),
+    side: [...ioFacts, kv([['Read from cache at this turn', `${cached}%`], ['New this turn', `${(reply[2] + reply[3]).toLocaleString('en-US')} tokens`]]),
       ...(over ? [nk('These estimates add up to more than the exact total, so the split is approximate and the percentages are shares of what was estimated.')] : []),
       measured
         ? nk('The total and the parts are measured: each part is its share of the request Claude Code recorded for this turn, scaled to the exact total. Instruction files, rules, memory, the skills listing and hook notes are estimated from their sizes.')
         : nk(`The total is measured. How it splits into parts is estimated, so parts show ~. *Includes whatever could not be attributed, folded into ${remLabel}, so the parts add up to the total.`)],
     actions: [],
   };
+}
+
+registerPeek('peak', (env, id) => {
+  const node = env.ix.nodes.get(id);
+  const hit = node && peakOf(node);
+  return hit ? replyDetails(env, node, hit.comp, hit.reply, 'Peak context') : null;
+});
+
+// The id is "<seconds>:<node id>": the reply of that agent the list of one row was counted for.
+registerPeek('reply', (env, id) => {
+  const at = id.indexOf(':');
+  const node = env.ix.nodes.get(id.slice(at + 1));
+  const comp = node && node.detail && node.detail.composition;
+  const reply = comp && comp.replies.find(r => r[0] === Number(id.slice(0, at)));
+  return reply ? replyDetails(env, node, comp, reply, 'Context at a reply') : null;
 });
 
 registerPeek('cost', (env, id) => {

@@ -1,0 +1,10 @@
+checks:
+- id: CORE.G.0014.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.G.0014.pattern_check
+  type: deterministic
+  follow_imports: true
+  pattern-regex: '(?i)^(?![ \t]*>)(?![^\n]*(?:\b(?:refuse|reject)\b|\bprompt[ -]injection\b))(?:[^`\n]*`[^`\n]*`)*[^`\n]*?(?:\b(?:ignore|disregard|forget|override)[ \t]+(?:(?:all|any)[ \t]+)?(?:(?:your|the)[ \t]+)?(?:previous|prior|above|earlier|other|system)[ \t]+(?:instructions|rules|prompt|guidelines)\b|\byou[ \t]+are[ \t]+no[ \t]+longer[ \t]+bound[ \t]+by\b|\bnew[ \t]+system[ \t]+prompt\b|\b(?:do[ \t]+not|don(?:\x27|’)t|never)[ \t]+(?:(?:tell|inform|mention|reveal|show)[ \t]+(?:this|it|that|these[ \t]+instructions|what[ \t]+you[ \t]+did|what[ \t]+you[ \t]+are[ \t]+doing)[ \t]+to[ \t]+the[ \t]+user\b|(?:tell|inform)[ \t]+the[ \t]+user[ \t]+about[ \t]+(?:this|it|that|these[ \t]+instructions)\b)|\bwithout[ \t]+(?:telling|asking|informing|notifying)[ \t]+the[ \t]+user\b|\bhide[ \t]+(?:this|it|that)[ \t]+from[ \t]+the[ \t]+user\b|\bkeep[ \t]+(?:this|it|that)[ \t]+(?:secret|hidden)[ \t]+from[ \t]+the[ \t]+user\b)'
+  expect: absent
+  message: "Text tells the agent to drop its other instructions or to hide its own actions or instructions from the user — remove it, or quote it as an example to refuse"

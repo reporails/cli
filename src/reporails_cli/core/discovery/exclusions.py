@@ -7,11 +7,12 @@ from collections.abc import Callable, Iterable
 from dataclasses import replace
 from pathlib import Path
 
-from reporails_cli.core.discovery.walk import child_real, safe_resolve
+from reporails_cli.core.discovery.walk import child_real, is_markdown_file, safe_resolve, walk_files
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.contract.json_value import str_list
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.exclusion import EXCLUSION_SETTINGS, ExclusionHit, ExclusionSetting, FolderValue
+from reporails_cli.core.platform.dto.targets import NotEvaluatedReason
 from reporails_cli.core.platform.policy.exclusion import parse_folder_value
 from reporails_cli.core.platform.utils.utils import matches_any_glob, relative_wire_path
 
@@ -54,7 +55,7 @@ def covers(exclusions: RunExclusions, path: Path) -> bool:
             real = os.fspath(exclusions.roots[-1])
             for depth, part in enumerate(parts, 1):
                 folder = os.path.join(folder, part)
-                pruned = exclusions.default_pruned(part)
+                pruned = exclusions.default_pruned(folder, part)
                 if not pruned and exclusions.dirs:
                     real = child_real(folder, part, real, os.path.islink(folder))
                     pruned = exclusions.user_pruned(folder, real)
@@ -77,6 +78,15 @@ def leaves_out(exclusions: RunExclusions, path: Path) -> bool:
     if exclusions.named and resolved in exclusions.named:
         return False
     return _hit(exclusions, path, resolved, exclusions.dirs, exclusions.files)
+
+
+def markdown_folder_reason(exclusions: RunExclusions, folder: Path) -> NotEvaluatedReason | None:
+    """Why a folder gave no file: `excluded` when a setting leaves out its markdown, `no_markdown` when it
+    holds none, and None when it holds markdown that is not left out (it is not a folder nothing was checked for)."""
+    held = list(walk_files(folder, no_exclusions(folder), is_markdown_file))
+    if any(leaves_out(exclusions, f) for f in held):
+        return "excluded"
+    return None if held else "no_markdown"
 
 
 def record_patterns(exclusions: RunExclusions, *, narrowed: bool = False) -> tuple[tuple[str, ...], tuple[str, ...]]:

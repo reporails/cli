@@ -1,0 +1,5 @@
+{"type": "launched"}
+{"type": "started", "key": "k1", "agentId": "awf0000000000001", "label": "PLACEHOLDER-LABEL-1", "phase": "Build"}
+{"type": "started", "key": "k2", "agentId": "awf0000000000002", "label": "PLACEHOLDER-LABEL-2", "phase": "Verify"}
+{"type": "result", "key": "k1", "agentId": "awf0000000000001", "result": {"status": "built", "note": "PLACEHOLDER-WF-HANDBACK-1"}, "toolsUsed": ["Bash", "StructuredOutput"]}
+{"type": "result", "key": "k2", "agentId": "awf0000000000002", "result": "PLACEHOLDER-WF-HANDBACK-2", "toolsUsed": []}

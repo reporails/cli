@@ -44,3 +44,33 @@ Feature: The x-ray graph draws agents right of the spine, what entered context l
   Scenario: A no-activity stripe's label sits clear of the instruction cards and the tool lanes
     Given the bundled page is served over the "view_sample" fixture view changed so the main agent was idle for its first minute
     Then every no-activity label sits clear of the cards, pills, spine and side track in its stripe
+
+  @page @browser
+  Scenario: Every segment before the newest compaction is folded and the newest is open
+    Given the bundled page is served over the "view_folds" fixture view
+    Then the segments before the newest compaction are folded bands and the newest segment is drawn open
+
+  @page @browser
+  Scenario: Picking an agent launched inside an earlier segment opens that segment
+    Given the bundled page is served over the "view_folds" fixture view
+    Then picking an agent launched in the first segment opens that segment and leaves the others folded
+
+  @page @browser
+  Scenario: A folded segment shows the view's loads, agents and context sizes
+    Given the bundled page is served over the "view_folds" fixture view
+    Then each folded segment shows the loads, agents and context before and after that the view holds
+
+  @page @browser
+  Scenario: A folded segment's compaction stripe still lists the files that came back and the ones that did not
+    Given the bundled page is served over the "view_folds" fixture view
+    Then each stripe closing a folded segment lists the files that came back and the files that did not
+
+  @page @browser
+  Scenario: Opening a folded segment changes no number in the view and shortens nothing it holds
+    Given the bundled page is served over the "view_folds" fixture view
+    Then clicking a folded segment opens it, keeps every compaction's sizes and lengthens the canvas
+
+  @page @browser
+  Scenario: Picking a call inside an earlier segment opens that segment
+    Given the bundled page is served over the "view_folds" fixture view
+    Then picking a call that ran in the first segment opens that segment and leaves the others folded

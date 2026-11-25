@@ -9,6 +9,7 @@ from reporails_cli.core.discovery.exclusions import leaves_out
 from reporails_cli.core.discovery.walk import inside_git_repository, path_glob, safe_resolve, walk_glob_matches
 from reporails_cli.core.mapper.skills import skill_entry_paths
 from reporails_cli.core.platform.contract.json_value import JsonValue, str_list
+from reporails_cli.core.platform.contract.rule_pattern import compile_rule_pattern
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import ClassifiedFile
@@ -247,14 +248,43 @@ def _is_set(value: JsonValue) -> bool:
     return value is not None and (not isinstance(value, str) or bool(value.strip()))
 
 
+def _value_gap(value: JsonValue, args: CheckArgs, key: str) -> str | None:
+    """Why the parsed `value` of `key` breaks `max_length` or `value_pattern_absent`; None when it holds.
+
+    The value is measured as parsed: a folded block counts its folded text, and a trailing comment
+    and the line ending are not part of it.
+    """
+    if value is None:
+        return None
+    text = value.strip() if isinstance(value, str) else str(value)
+    max_length = arg_value(args, "max_length")
+    if max_length is not None and len(text) > arg_int(args, "max_length", 0):
+        return f"Frontmatter key '{key}' is {len(text)} characters, over {max_length}"
+    forbidden = str(arg_value(args, "value_pattern_absent", ""))
+    if forbidden and compile_rule_pattern(forbidden).search(text):
+        return f"Frontmatter key '{key}' value matches forbidden pattern {forbidden}"
+    return None
+
+
+def _is_bounded(args: CheckArgs) -> bool:
+    """Whether the check bounds a present value (`max_length`, `value_pattern_absent`) instead of requiring a key."""
+    return arg_value(args, "max_length") is not None or bool(arg_value(args, "value_pattern_absent"))
+
+
 def _frontmatter_key_gap(path: Path, keys: list[str], args: CheckArgs, label: str) -> str | None:
     """Why `path` lacks every one of `keys` in its frontmatter block; None when one is defined.
 
+    When the check is bounded, an absent key is not a gap and a present one is a gap when its
+    parsed value breaks a bound.
     A block that does not read as YAML is not a gap: `frontmatter_valid_yaml` reports it.
     """
     read = read_frontmatter_file(path, lenient=bool(arg_value(args, "lenient", False)))
     if read is not None and read.problem is not None:
         return None
+    if _is_bounded(args):
+        if read is None or read.data is None:
+            return None
+        return next((g for k in keys if (g := _value_gap(read.data.get(k), args, k))), None)
     if read is not None and read.data is not None and any(_is_set(read.data.get(k)) for k in keys):
         return None
     return f"Frontmatter key {label} not found"
@@ -270,6 +300,9 @@ def frontmatter_key(
     Each file missing every listed key is its own occurrence, so one
     compliant sibling in a multi-file match set (e.g. a second Copilot
     `*.instructions.md`) does not hide another file's missing key.
+
+    `max_length` (characters) and `value_pattern_absent` (a regex) instead bound the parsed value
+    of a key that is present; a file without the key passes.
     """
     key = str(arg_value(args, "key", ""))
     alt_key = str(arg_value(args, "alt_key", ""))
@@ -277,7 +310,7 @@ def frontmatter_key(
     label = " or ".join(f"'{k}'" for k in keys)
     targets = [m for m in get_target_files(args, classified_files, root) if m.is_file()]
     if not targets:
-        return CheckResult(passed=False, message=f"Frontmatter key {label} not found")
+        return CheckResult(passed=_is_bounded(args), message=f"Frontmatter key {label} not found")
 
     missing: list[tuple[str, str]] = []
     for match in targets:

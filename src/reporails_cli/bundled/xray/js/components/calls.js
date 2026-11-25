@@ -3,7 +3,7 @@
 import { el, nk, err, sync } from '../dom.js';
 import { clock, k1 } from '../format.js';
 import { typeOf, callIndex, subtreeIds } from '../views.js';
-import { callDetail } from '../api.js';
+import { callDetail, contextAt } from '../api.js';
 import { markOpen, registerPeek, scrollable } from './details.js';
 import { keepFocus, keyFor } from '../focus.js';
 import { vlist, viewHeight, revealRow } from './vlist.js';
@@ -352,28 +352,22 @@ const block = (title, node) => {
 
 const pre = (text, bad) => scrollable(el('pre', `tb-pre${bad ? ' bad' : ''}`, text), bad ? 'Result excerpt' : 'Call text');
 
+// What the agent's context held at the call's moment, as the server lists it: {loading}, {error} or {total, files}: the exact total of the reply then and the instruction files it held.
 function inContext(env, r) {
-  const { ix } = env, st = ix.stations.get(r.node.id);
-  const seen = new Set(), out = [];
-  for (const l of st ? st.loads : []) {
-    const s = ix.sources.get(l.source);
-    if (!s || l.t > r.call.t || !(ix.kinds.get(s.kind) || {}).instructions || seen.has(s.id)) continue;
-    seen.add(s.id);
+  const held = contextAt(r.node.id, r.call.t);
+  if (!held.data) return held;
+  const { ix } = env;
+  const files = [];
+  for (const row of held.data.rows) {
+    const s = row.key === 'source' ? ix.sources.get(row.source) : null;
+    if (!s || !(ix.kinds.get(s.kind) || {}).instructions) continue;
     const b = el('button', 'tb-src');
     b.type = 'button';
     b.dataset.source = s.id;
     b.append(el('span', 'tb-trunc', s.label || s.name), el('span', 'tb-find', s.findings && s.findings.count ? `${s.findings.count} findings` : ''));
-    out.push(b);
+    files.push(b);
   }
-  return out;
-}
-
-// The agent's context total at the last reply at or before the call.
-function contextThen(r) {
-  const comp = r.node.detail && r.node.detail.composition;
-  let total = null;
-  for (const row of comp ? comp.replies : []) if (row[0] <= r.call.t) total = row[1];
-  return total;
+  return { total: held.data.total, files };
 }
 
 registerPeek('call', (env, id) => {
@@ -381,8 +375,9 @@ registerPeek('call', (env, id) => {
   if (!r) return null;
   const { call, node } = r, ty = typeOf(env.ix, node);
   const kv = el('div', 'tb-kv');
-  const then = contextThen(r);
-  for (const [k, v] of [['Agent', `${node.name} · ${ty.label}`], ['At', clock(call.t)], ['Result after', took(call.duration_s)], ['Context then', then == null ? '–' : `${k1(then)} · exact total that turn`]]) kv.append(el('span', 'tb-lb', k), el('span', 'tb-v', v));
+  const held = inContext(env, r);
+  const then = held.loading ? 'Loading…' : held.total == null ? '–' : `${k1(held.total)} · exact total that turn`;
+  for (const [k, v] of [['Agent', `${node.name} · ${ty.label}`], ['At', clock(call.t)], ['Result after', took(call.duration_s)], ['Context then', then]]) kv.append(el('span', 'tb-lb', k), el('span', 'tb-v', v));
   const d = callDetail(id);
   const main = [kv];
   if (d.loading) main.push(nk('Loading the call…'));
@@ -391,9 +386,10 @@ registerPeek('call', (env, id) => {
     main.push(block('Input', pre(d.data.input || '–')), block('Result (excerpt)', pre(d.data.result || 'No result recorded.', call.failed)));
     if (d.data.truncated) main.push(nk('Shortened: the full text is longer than shown.'));
   }
-  const files = inContext(env, r);
-  const side = [block('Instructions in context at this call', files.length ? el('div', 'tb-srcs') : nk('None loaded yet.'))];
-  if (files.length) side[0].lastChild.append(...files);
+  const files = held.files || [];
+  const body = held.loading ? nk('Loading…') : held.error ? err(held.error) : files.length ? el('div', 'tb-srcs') : nk('None loaded yet.');
+  const side = [block('Instructions in context at this call', body)];
+  if (files.length) body.append(...files);
   const show = el('button', 'tb-act', 'Show in graph');
   show.type = 'button';
   show.dataset.showInGraph = node.id;

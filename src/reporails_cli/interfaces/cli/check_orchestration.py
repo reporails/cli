@@ -18,11 +18,14 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import typer
 
-from reporails_cli.core.classify.capability_paths import TargetError, looks_like_windows_path, sniff_agent
+from reporails_cli.core.classify.capability_paths import TargetError
 from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
-from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
+from reporails_cli.core.discovery.walk import file_under_target
 from reporails_cli.core.heal.apply import suppressed_by_path
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
+from reporails_cli.core.pipeline.mapping import discover_scope
+from reporails_cli.core.pipeline.named_targets import markdown_folders, markdown_under_folders, shown_path
 from reporails_cli.core.platform.adapters.notices_seen import due_notices
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.classify import UnresolvedSkill
@@ -30,6 +33,7 @@ from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, Fu
 from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.heal import HealRegression
 from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.dto.targets import TargetReport
 from reporails_cli.core.platform.observability.log_levels import quiet_loggers
 from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
@@ -117,12 +121,40 @@ def _named_paths(state: CheckState, capability_paths: frozenset[Path]) -> tuple[
     """
     single = state.targets.single_file
     named = frozenset(
-        capability_paths | {t for t in state.targets.path_targets if t.is_file()} | ({single} if single else set())
+        capability_paths
+        | {t for t in state.targets.path_targets if t.is_file()}
+        | ({single} if single else set())
+        | _folder_markdown(state)
     )
     only_files = all(name for _, name in state.targets.capability_specs) and all(
         t.is_file() for t in state.targets.path_targets
     )
     return named, bool(named) and only_files
+
+
+def _folder_markdown(state: CheckState) -> set[Path]:
+    """The markdown files the run keeps under the folders it names; a project's folder names none."""
+    folders = markdown_folders(
+        state.targets.path_targets,
+        project_root=state.inputs.project_root,
+        scan_root=state.targets.target,
+        spelled_inside=frozenset(state.targets.spelled_inside),
+    )
+    if not folders:
+        return set()
+    exclusions = load_run_exclusions(
+        state.run, state.targets.target, state.inputs.exclude_dirs, state.inputs.exclude_files
+    )
+    return markdown_under_folders(folders, exclusions)
+
+
+def project_files(state: CheckState) -> list[Path]:
+    """The files a whole-project scan of the run's scan root covers, listed as a run without a named file lists them."""
+    config = state.run.project_config(state.targets.target)
+    agent = state.inputs.agent or config.default_agent
+    return discover_scope(
+        state.run, state.targets.target, agent, state.inputs.exclude_dirs, state.inputs.exclude_files
+    ).files
 
 
 def scan_scope(single_path: Path | None, project_root: Path) -> tuple[Path | None, Path, Path | None]:
@@ -135,42 +167,9 @@ def scan_scope(single_path: Path | None, project_root: Path) -> tuple[Path | Non
     return (target if narrower else None), scan_root, single_file
 
 
-def _existing_target_root(token: str, project_root: Path) -> Path | None:
-    """The scan root of a target token that names an existing file or folder, else None.
-
-    A capability form (`@skills`, `skills:backlog`) and a word that names nothing on disk
-    return None: those are read against the current folder's project.
-    """
-
-    raw = token[len("file:") :] if token.startswith("file:") else token
-    if raw.startswith("@") or (":" in raw and not looks_like_windows_path(raw)):
-        return None
-    try:
-        path = safe_resolve(Path(raw))
-        if not path.exists():
-            return None
-        return resolve_scan_target(path, project_root)[0]
-    except OSError:
-        return None
-
-
-def _token_agent(run: RunContext, token: str, agent: str, project_root: Path, sniffed: dict[Path, str]) -> str:
-    """The agent whose vocabulary reads `token`: sniffed under the project of an existing path
-    target, under the current folder's project for anything else (`sniffed` caches per root)."""
-
-    root = _existing_target_root(token, project_root) or project_root
-    if root not in sniffed:
-        sniffed[root] = sniff_agent(run, agent, root)
-    return sniffed[root]
-
-
 def _narrow_to_path_targets(instruction_files: list[Path], path_targets: set[Path]) -> list[Path]:
     """Keep only instruction files that are equal to or beneath one of `path_targets`."""
     return [f for f in instruction_files if any(file_under_target(f, tgt) for tgt in path_targets)]
-
-
-def _relativize_paths(paths: set[Path], project_root: Path) -> set[str]:
-    return {p.relative_to(project_root).as_posix() if p.is_relative_to(project_root) else p.as_posix() for p in paths}
 
 
 def _validate_output_format(output_format: str | None) -> None:
@@ -191,6 +190,7 @@ class RenderContext(NamedTuple):
     verbose: bool = False
     heal_regressions: tuple[HealRegression, ...] = ()
     aliases: dict[Path, list[Path]] | None = None
+    targets: TargetReport = TargetReport()
 
 
 def _emit_json(
@@ -203,13 +203,14 @@ def _emit_json(
         project_root=context.project_root,
         file_type_by_path=context.file_type_by_path,
         heal_regressions=context.heal_regressions,
+        targets=context.targets,
     )
     data["elapsed_ms"] = round(elapsed_ms, 1)
     timer = get_stage_timer()
     if timer.enabled:
         data["timing"] = [*timer.as_dict()]
     if context.capability_paths:
-        data["capability_paths"] = [*sorted(_relativize_paths(context.capability_paths, context.project_root))]
+        data["capability_paths"] = [*sorted({shown_path(p, context.project_root) for p in context.capability_paths})]
     print(json.dumps(data, indent=2))
 
 
@@ -244,6 +245,7 @@ def _dispatch_output(
                 project_root=context.project_root,
                 file_type_by_path=context.file_type_by_path,
                 elapsed_ms=elapsed_ms,
+                targets=context.targets,
             )
         )
         return
@@ -363,7 +365,7 @@ def _should_exit_strict(
         return True
     if capability_paths:
         # Key the scope set with the SAME normalization the display filter uses
-        # (`normalize_finding_path`), not `_relativize_paths`. The two diverge for
+        # (`normalize_finding_path`), not a plain relative path. The two diverge for
         # user-scope paths (`~/.claude/...`), so a strict run on such a target could
         # exit 0 while the display showed errors for it.
 

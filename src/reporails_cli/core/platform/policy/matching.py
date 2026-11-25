@@ -7,6 +7,8 @@ match-resolution and by the lint runners that target rules to files.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch
 
 
@@ -90,3 +92,12 @@ def match_files(
         Filtered list of ClassifiedFile
     """
     return [cf for cf in classified if file_matches(cf, match)]
+
+
+def deterministic_targets(
+    match: FileMatch | None, instruction_files: list[Path], classified: list[ClassifiedFile]
+) -> list[Path]:
+    """The files a deterministic rule runs on: those its `match` criteria select, else every instruction file."""
+    if match:
+        return [cf.path for cf in match_files(classified, match)]
+    return instruction_files

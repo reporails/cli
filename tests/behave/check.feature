@@ -127,4 +127,96 @@ Feature: `ails check` scores and validates instruction files end-to-end
   Scenario: A file in the folder the command runs in is not told to move
     Given a git project with a "docs/guide.md" that is not an instruction file
     When I run "ails check docs/guide.md"
-    Then the notice says "docs/guide.md" is not an instruction file of this project, with no advice to move
+    Then the notice says "docs/guide.md" is not loaded by an agent and is checked as a referenced file, with no advice to move
+
+  @e2e @regression
+  Scenario: A named file no agent loads is checked as a referenced file
+    Given a git project with a "prompts/review.md" that no agent loads
+    When I run "ails check" on the named target "prompts/review.md" as json
+    Then the check exits 0
+    And the json files map contains "prompts/review.md"
+    And the text run of "prompts/review.md" shows it in the Referenced panel
+
+  @e2e @regression
+  Scenario: A named file gets the findings and panel of the same file reached only by a link
+    Given a git project with a "prompts/review.md" that no agent loads
+    When I run "ails check" on the named target "prompts/review.md" as json
+    Then no path-scoped rule file rule is reported for "prompts/review.md"
+    When I keep the finding set of "prompts/review.md"
+    Given a git project whose CLAUDE.md links "prompts/review.md" under generic_scanning
+    When I run "ails check" with no target as json
+    Then the finding set of "prompts/review.md" equals the kept one
+    And "prompts/review.md" is in the Referenced panel with no score of its own
+
+  @e2e @regression
+  Scenario: A named folder checks the markdown files under it
+    Given a git project with a "prompts/review.md" that no agent loads
+    When I run "ails check" on the named target "./prompts" as json
+    Then the json files map contains "prompts/review.md"
+    When I run "ails check" on the named target "prompts" as text
+    Then the output does not ask to create a CLAUDE.md
+
+  @e2e @regression
+  Scenario: A named folder with no markdown is listed with its reason
+    Given a git project with an "assets" folder holding only an image
+    When I run "ails check" on the named target "assets" as json
+    Then the json not_evaluated lists "assets" with the reason "no_markdown"
+    When I run "ails check" on the named target "assets" as text
+    Then the output names "assets" as not checked and does not ask to create a CLAUDE.md
+
+  @e2e @regression
+  Scenario: A word that is both a capability and a folder states the meaning it used
+    Given a git copilot project with a "prompts" folder
+    When I run "ails check" with agent "copilot" on the named target "prompts" as json
+    Then the json notices say "prompts" was read as the capability, not the folder
+    When I run "ails check" with agent "copilot" on the named target "prompts" as text
+    Then the output says "prompts" was read as the capability, not the folder
+
+  @e2e @regression
+  Scenario: A capability the agent does not have is reported by name
+    Given a git copilot project with a "prompts" folder
+    When I run "ails check" with agent "copilot" on the named target "@nosuchthing" as json
+    Then the json not_evaluated lists "@nosuchthing" with the reason "unknown_capability"
+    When I run "ails check" with agent "copilot" on the named target "@nosuchthing" as text
+    Then the output names "@nosuchthing" as not checked and does not ask to create a CLAUDE.md
+
+  @e2e @regression
+  Scenario: The JSON output carries its format version
+    Given a git project with a "prompts/review.md" that no agent loads
+    When I run "ails check" with no target as json
+    Then the json format_version is 1
+
+  @e2e @regression
+  Scenario: A folder target skips the folder the config names and checks the one a flag would name
+    Given a git project whose config excludes "a" and whose "a" and "b" folders each hold a CLAUDE.md with a TODO
+    When I run "ails check --format json"
+    Then the check exits 0
+    And "CORE:C:0029" is reported for "b/CLAUDE.md" only
+
+  @e2e @regression
+  Scenario: A folder target skips the folder the flag names too
+    Given a git project whose config excludes "a" and whose "a" and "b" folders each hold a CLAUDE.md with a TODO
+    When I run "ails check --exclude-dirs b --format json"
+    Then the check exits 0
+    And "CORE:C:0029" is reported for no file
+
+  @e2e @regression
+  Scenario: A file target in the folder the project config excludes is still checked
+    Given a git project whose config excludes "a" and whose "a" and "b" folders each hold a CLAUDE.md with a TODO
+    When I run "ails check a/CLAUDE.md --format json"
+    Then the check exits 0
+    And "CORE:C:0029" is reported for "a/CLAUDE.md" only
+
+  @e2e @regression
+  Scenario: A file target in the folder only the flag names is still checked
+    Given a git project whose config excludes "a" and whose "a" and "b" folders each hold a CLAUDE.md with a TODO
+    When I run "ails check b/CLAUDE.md --exclude-dirs b --format json"
+    Then the check exits 0
+    And "CORE:C:0029" is reported for "b/CLAUDE.md" only
+
+  @e2e @regression
+  Scenario: An explicit list checks every file it names, whichever source names its folder
+    Given a git project whose config excludes "a" and whose "a" and "b" folders each hold a CLAUDE.md with a TODO
+    When I run "ails check a/CLAUDE.md b/CLAUDE.md --exclude-dirs b --format json"
+    Then the check exits 0
+    And "CORE:C:0029" is reported for "a/CLAUDE.md,b/CLAUDE.md" only

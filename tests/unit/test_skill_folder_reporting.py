@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.mapper.skills import record_skills
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem, QualityResult
@@ -534,6 +533,7 @@ class TestEntryOnlyRegexCheck:
         from reporails_cli.core.lint.regex import run_checks
         from reporails_cli.core.mapper.skills import skill_entry_paths
         from reporails_cli.core.platform.dto.models import ClassifiedFile
+        from tests.conftest import rules_from_checks
 
         classified = []
         for rel, name in files.items():
@@ -543,9 +543,8 @@ class TestEntryOnlyRegexCheck:
             props: dict[str, str | list[str]] = {"skill": str(root / ".claude/skills/a")} if recorded else {}
             classified.append(ClassifiedFile(path=path, file_type="skills", properties=props))
         findings = run_checks(
-            [self._YML],
+            rules_from_checks([self._YML]),
             root,
-            load_run_exclusions(RunContext(), root),
             instruction_files=[cf.path for cf in classified],
             skill_entries=skill_entry_paths(classified),
         )

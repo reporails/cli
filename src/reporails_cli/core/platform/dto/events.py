@@ -18,6 +18,7 @@ from reporails_cli.core.platform.contract.json_value import (
     str_list,
 )
 from reporails_cli.core.platform.dto.attachments import FileAttachment
+from reporails_cli.core.platform.dto.message_size import MessageSize
 
 if TYPE_CHECKING:
     from hashlib import _Hash
@@ -77,13 +78,15 @@ HarnessKind = (
         "deferred_tools",
         "tool_definitions",
         "session_context",
+        "unsized",
     ]
     | NoteKind
 )
 
 # The harness kinds whose records are changes to a list, so a session's total is their sum.
 DELTA_KINDS: frozenset[HarnessKind] = frozenset({"skill_list", "agent_list", "mcp_instructions", "deferred_tools"})
-
+# The harness kinds with no listing text: the system prompt and the attachments that carry no size.
+UNLISTED_KINDS: frozenset[HarnessKind] = frozenset({"system_prompt", "unsized"})
 
 # The records an assistant row yields besides its usage: its text and its tool calls.
 ASSISTANT_ROW_KINDS: frozenset[EventKind] = frozenset({"assistant_text", "tool_call"})
@@ -207,7 +210,7 @@ class SubagentMeta:
     """What a subagent's meta file and first row say about its launch: the task's short description, the subagent
     that launched it (None for the main agent), the id of the launching call, its nesting depth, the size of its brief
     in characters (None when its first row holds no text), whether the person stopped it and whether it ran in the
-    background."""
+    background. For an agent a workflow run started: the run's id and the title of the phase it ran in."""
 
     description: str | None
     parent_id: str | None
@@ -220,6 +223,8 @@ class SubagentMeta:
     # definition's defaults (None when the meta file does not say).
     asked_model: str | None = None
     with_defaults: bool | None = None
+    workflow_run: str | None = None
+    workflow_phase: str | None = None
 
 
 @dataclass(frozen=True)
@@ -290,57 +295,6 @@ class PromptEntry:
 
 
 @dataclass(frozen=True)
-class ImageTokens:
-    """The visual tokens of images, priced at both resolution tiers: a message is sized before the request that
-    names its model is read, so each image carries its cost at the standard and the high-resolution tier."""
-
-    standard: int = 0
-    high: int = 0
-
-    def __add__(self, other: ImageTokens) -> ImageTokens:
-        return ImageTokens(self.standard + other.standard, self.high + other.high)
-
-    def at(self, *, high_resolution: bool) -> int:
-        """The tokens at the tier of a request."""
-        return self.high if high_resolution else self.standard
-
-
-@dataclass(frozen=True)
-class MessageSize:
-    """The size of one message of an API request, by part: characters of text, and the visual tokens of its images;
-    never its text. `images` are the images of the message's own content, `result_images` those inside a tool
-    result, `unpriced_images` the image and document blocks whose cost could not be worked out."""
-
-    user_text: int = 0
-    notes: int = 0
-    assistant_text: int = 0
-    thinking: int = 0
-    tool_calls: int = 0
-    tool_results: int = 0
-    images: ImageTokens = field(default_factory=ImageTokens)
-    result_images: ImageTokens = field(default_factory=ImageTokens)
-    unpriced_images: int = 0
-
-    def __add__(self, other: MessageSize) -> MessageSize:
-        return MessageSize(
-            self.user_text + other.user_text,
-            self.notes + other.notes,
-            self.assistant_text + other.assistant_text,
-            self.thinking + other.thinking,
-            self.tool_calls + other.tool_calls,
-            self.tool_results + other.tool_results,
-            self.images + other.images,
-            self.result_images + other.result_images,
-            self.unpriced_images + other.unpriced_images,
-        )
-
-    @property
-    def text_chars(self) -> int:
-        """The characters of every text part; images are not in it."""
-        return self.user_text + self.notes + self.assistant_text + self.thinking + self.tool_calls + self.tool_results
-
-
-@dataclass(frozen=True)
 class RequestConfig:
     """The short settings a request's `params` carry: its model, its maximum output tokens, the type of its thinking
     setting and its effort; None for one the request does not carry."""
@@ -373,6 +327,10 @@ class RequestSize:
     system_digest: str = ""
 
 
+# One piece of a request a reader may show: its kind (`notes`, `thinking` or the listing item it is) and its text.
+MessageText = tuple[str, str]
+
+
 @dataclass
 class AssistantMerge:
     """The assistant message being merged from its rows: its id, the running hashes of its content with and without
@@ -383,14 +341,16 @@ class AssistantMerge:
     without_caller: _Hash | None = None
     size: MessageSize = field(default_factory=MessageSize)
     blocks: int = 0
+    texts: list[MessageText] = field(default_factory=list)
 
 
 @dataclass
 class RequestChain:
     """What a read of one transcript file knows to size its API requests: each recorded shape as its system
     characters, tool characters and tool count, each known message's size under its hash, the running sums of the
-    previous request's messages (`prefix[i]` is the size of its first `i` messages) and
-    the assistant message being merged from its rows (`merge`). Sizes only, no message text."""
+    previous request's messages (`prefix[i]` is the size of its first `i` messages) and the assistant message being
+    merged from its rows (`merge`). Sizes only, no message text, unless `texts` is set: it then keeps each known
+    message's notes and thinking by hash, the previous request's message hashes (`trail`) and the file's listings."""
 
     shapes: dict[str, tuple[int, int, int]] = field(default_factory=dict)
     tool_names: dict[str, tuple[str, ...]] = field(default_factory=dict)
@@ -399,18 +359,23 @@ class RequestChain:
     pool: dict[str, MessageSize] = field(default_factory=dict)
     prefix: list[MessageSize] = field(default_factory=lambda: [MessageSize()])
     merge: AssistantMerge = field(default_factory=AssistantMerge)
+    texts: dict[str, tuple[MessageText, ...]] | None = None
+    trail: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class FileCursor:
     """Where a transcript read stopped in one file: the byte offset, the last assistant message id and, for a
-    subagent file, whether its run record is settled (emitted, or refused for its meta file)."""
+    subagent file, whether its run record is settled (emitted, or refused for its meta file), and the blocked Stop
+    handlers still waiting for their stop summary."""
 
     subagent_id: str | None
     offset: int = 0
     last_message_id: str | None = None
     run_settled: bool = False
     requests: RequestChain = field(default_factory=RequestChain, compare=False)
+    # The commands of the Stop firings a blocking row reported that no stop summary has listed yet.
+    stop_blocked: tuple[str | None, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -7,11 +7,13 @@ from collections.abc import Sequence
 
 from reporails_cli.core.platform.dto.attachments import WHOLE_FILE_ATTACHMENT_KINDS
 from reporails_cli.core.platform.dto.events import ASSISTANT_ROW_KINDS, EventRecord, SubagentMeta, is_note_kind
+from reporails_cli.core.platform.dto.workflows import WorkflowAgent, WorkflowStatus
 from reporails_cli.core.platform.dto.xray_build import (
     AgentRecords,
     AgentReply,
     AgentWorld,
     CallResult,
+    Firing,
     Frame,
     Handoff,
     LoadReading,
@@ -35,6 +37,7 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayDown,
     XrayEdge,
     XrayGiven,
+    XrayInContext,
     XrayPrompt,
     XrayUsage,
 )
@@ -51,11 +54,13 @@ from reporails_cli.core.xray.derive import (
     tokens_of,
 )
 from reporails_cli.core.xray.graph.compaction_files import file_states
-from reporails_cli.core.xray.graph.composition import build_in_context, composition_series
+from reporails_cli.core.xray.graph.composition import composition_series
 from reporails_cli.core.xray.graph.hook_sources import hook_id
+from reporails_cli.core.xray.graph.in_context import build_in_context
 from reporails_cli.core.xray.graph.mcp_sources import mcp_id
 from reporails_cli.core.xray.graph.port import register
 from reporails_cli.core.xray.graph.sources import for_path
+from reporails_cli.core.xray.graph.spine import instruction_kinds, restart_reloads
 
 # The id of the main agent's node.
 MAIN_ID = "main"
@@ -115,7 +120,7 @@ def _at_start(reading: LoadReading, record: EventRecord) -> bool:
 def _source_load(sid: str | None, t: float | None, reading: LoadReading) -> list[LoadEvent]:
     """A load by the agent's own doing (a run, a read) of the source `sid`; none when `sid` is no source."""
     entry = reading.sources.get(sid) if sid else None
-    return [] if entry is None else [LoadEvent(entry.id, t, entry.tokens_est, "agent", None)]
+    return [] if entry is None else [LoadEvent(entry.id, t, entry.tokens_est, "agent", None, entry.chars)]
 
 
 def _attachment_loads(record: EventRecord, t: float | None, reading: LoadReading) -> list[LoadEvent]:
@@ -129,9 +134,9 @@ def _attachment_loads(record: EventRecord, t: float | None, reading: LoadReading
     if entry is None:
         return []
     if attached.kind in WHOLE_FILE_ATTACHMENT_KINDS:
-        return [LoadEvent(entry.id, t, entry.tokens_est, "attached", None)]
+        return [LoadEvent(entry.id, t, entry.tokens_est, "attached", None, entry.chars)]
     if attached.kind == "edited_text_file":
-        return [LoadEvent(entry.id, t, None, "attached", None)]
+        return [LoadEvent(entry.id, t, None, "attached", None, None)]
     return []
 
 
@@ -143,9 +148,9 @@ def _harness_loads(record: EventRecord, reading: LoadReading) -> list[LoadEvent]
     t = frame_time(reading.frame, record)
     if entry.kind == "mcp_instructions":
         trigger: LoadTrigger = "session_start" if reading.is_main else "inherited"
-        return [LoadEvent(mcp_id(name), t, tokens_of(chars), trigger, None) for name, chars in entry.added]
+        return [LoadEvent(mcp_id(name), t, tokens_of(chars), trigger, None, chars) for name, chars in entry.added]
     if is_note_kind(entry.kind) and entry.event is not None:
-        return [LoadEvent(hook_id(entry.label), t, tokens_of(entry.chars), "hook", entry.event)]
+        return [LoadEvent(hook_id(entry.label), t, tokens_of(entry.chars), "hook", entry.event, entry.chars)]
     return []
 
 
@@ -173,10 +178,10 @@ def _instruction_load(record: EventRecord, reading: LoadReading) -> list[LoadEve
         return []
     t = frame_time(reading.frame, record)
     if load.memory_type == "nested":
-        return [LoadEvent(entry.id, t, entry.tokens_est, "path_match", None)]
+        return [LoadEvent(entry.id, t, entry.tokens_est, "path_match", None, entry.chars)]
     early = _at_start(reading, record)
     trigger: LoadTrigger = "session_start" if reading.is_main else "inherited" if early else "agent"
-    return [LoadEvent(entry.id, t, entry.tokens_est, trigger, None)]
+    return [LoadEvent(entry.id, t, entry.tokens_est, trigger, None, entry.chars)]
 
 
 def _final_reply(group: Sequence[EventRecord], frame: Frame) -> AgentReply | None:
@@ -191,20 +196,45 @@ def _final_reply(group: Sequence[EventRecord], frame: Frame) -> AgentReply | Non
     return AgentReply(frame_time(frame, last) or 0.0, last.reply.chars, last.reply.synthetic)
 
 
-def _own(key: str, group: list[EventRecord], frame: Frame, sources: SourceTable) -> AgentRecords:
+def _firings(group: Sequence[EventRecord], frame: Frame) -> tuple[Firing, ...]:
+    """Each hook firing among `group` that blocked or added text, in time order: a firing that did neither causes no
+    load."""
+    found = [
+        Firing(moment, hook_id(record.hook.label), record.hook.event)
+        for record in group
+        if record.hook is not None
+        and (record.hook.decision == "blocked" or record.hook.chars > 0)
+        and (moment := frame_time(frame, record)) is not None
+    ]
+    return tuple(sorted(found))
+
+
+def _own(key: str, group: list[EventRecord], frame: Frame, context: ProducerContext) -> AgentRecords:
+    sources = context.sources
     replies = replies_of(group)
     results = _results(group, frame)
     reading = LoadReading(frame, sources, replies.points[0][0] if replies.points else float("inf"), key == MAIN_ID)
+    loads = tuple(load for record in group for load in _record_loads(record, reading))
+    times = tuple(sorted(moment for record in group if (moment := frame_time(frame, record)) is not None))
+    firings = _firings(group, frame)
+    cuts = sorted(
+        moment
+        for record in group
+        if record.event == "post_compact" and (moment := frame_time(frame, record)) is not None
+    )
+    kinds = instruction_kinds(context.vocabulary)
+    regrouped = restart_reloads(loads, firings, cuts, times[0] if times else 0.0, sources=sources, kinds=kinds)
     return AgentRecords(
         key=key,
         records=group,
         replies=replies,
         results=results,
         calls=_calls(group, frame, sources, results),
-        loads=tuple(load for record in group for load in _record_loads(record, reading)),
-        compactions=build_compactions(group, replies, frame, file_states(group, sources)),
-        times=tuple(sorted(moment for record in group if (moment := frame_time(frame, record)) is not None)),
+        loads=loads,
+        compactions=build_compactions(group, replies, frame, file_states(group, sources, regrouped)),
+        times=times,
         reply=_final_reply(group, frame),
+        firings=firings,
     )
 
 
@@ -256,8 +286,13 @@ def _detail(
             agent_cost(own.records, world.context.prices, frame.t0, carried, world.context.sources),
             composition,
         ),
-        in_context=build_in_context(own, run_type, down, series_of, world),
+        in_context=build_in_context(own, run_type, series_of, world, _brief_chars(own)),
     )
+
+
+def _run_type(own: AgentRecords) -> str | None:
+    """The agent type a subagent was launched as; None for the main agent and for a run that names none."""
+    return next((r.subagent_type for r in own.records if r.event == "subagent_run"), None)
 
 
 def _brief_chars(own: AgentRecords) -> int | None:
@@ -334,7 +369,7 @@ def main_records(records: Sequence[EventRecord]) -> list[EventRecord]:
 
 
 def _spine(own: AgentRecords, detail: XrayAgentDetail) -> ProducedSpine:
-    return ProducedSpine(detail.series, own.loads, own.calls, own.compactions, own.times)
+    return ProducedSpine(detail.series, own.loads, own.calls, own.compactions, own.times, own.firings)
 
 
 def _main_node(own: AgentRecords, world: AgentWorld) -> ProducedNode:
@@ -355,13 +390,31 @@ def _main_node(own: AgentRecords, world: AgentWorld) -> ProducedNode:
     )
 
 
-def _handoff(own: AgentRecords, parent: AgentRecords, meta: SubagentMeta | None, down: XrayDown, live: bool) -> Handoff:
+def _workflow_handoff(
+    own: AgentRecords, status: WorkflowStatus, agent: WorkflowAgent, live: bool
+) -> tuple[AgentOutcome, tuple[int | None, float | None, OutputSource | None]]:
+    """How an agent of a workflow run ended and what it handed back: the output the run accepted from it, at its
+    last record; with none, stopped when the run was stopped, running while the run and the session go on."""
+    if agent.result_chars is not None:
+        return "returned", (tokens_of(agent.result_chars), own.end, "handback")
+    if status == "killed":
+        return "stopped", (None, None, None)
+    return ("running" if live and status == "running" else "no_handback"), (None, None, None)
+
+
+def _handoff(
+    own: AgentRecords, parent: AgentRecords, meta: SubagentMeta | None, down: XrayDown, world: AgentWorld
+) -> Handoff:
     use_id = None if meta is None else meta.tool_use_id
     result = parent.results.get(use_id) if use_id is not None else None
     launch = next((call for call in parent.calls if call.use_id == use_id), None) if use_id is not None else None
-    outcome = _outcome(meta, own, result, live)
-    back, back_t, source = _back(meta, own, result, outcome)
-    return Handoff(down, back, own.start if launch is None else launch.t, back_t, outcome, source)
+    workflow = world.context.workflows.agent(own.key)
+    if workflow is None:
+        outcome = _outcome(meta, own, result, world.frame.live)
+        back = _back(meta, own, result, outcome)
+    else:
+        outcome, back = _workflow_handoff(own, *workflow, world.frame.live)
+    return Handoff(down, back[0], own.start if launch is None else launch.t, back[1], outcome, back[2])
 
 
 def _subagent_given(
@@ -372,7 +425,11 @@ def _subagent_given(
     harness, loaded = _given(own, world.context.sources)
     task = None if meta is None or meta.brief_chars is None else tokens_of(meta.brief_chars)
     definition = world.frame.agent_files.get(run_type or "")
-    inherited = [*([] if definition is None else [XrayGiven(run_type or "", definition, None)]), *loaded, *harness]
+    inherited = [
+        *([] if definition is None else [XrayGiven(run_type or "", tokens_of(definition), None)]),
+        *loaded,
+        *harness,
+    ]
     given = [*([] if task is None else [XrayGiven("task prompt", task, None)]), *inherited]
     return task, given, XrayDown(task, sum(item.tokens_est or 0 for item in inherited))
 
@@ -380,9 +437,9 @@ def _subagent_given(
 def _sub_node(
     own: AgentRecords, parent: AgentRecords, meta: SubagentMeta | None, world: AgentWorld
 ) -> tuple[ProducedNode, XrayEdge]:
-    run_type = next((r.subagent_type for r in own.records if r.event == "subagent_run"), None)
+    run_type = _run_type(own)
     task, given, down = _subagent_given(own, meta, run_type, world)
-    handoff = _handoff(own, parent, meta, down, world.frame.live)
+    handoff = _handoff(own, parent, meta, down, world)
     detail = _detail(own, given, (down, handoff.back, handoff.outcome, handoff.source), world, run_type)
     node = ProducedNode(
         id=own.key,
@@ -416,12 +473,31 @@ def _groups(records: Sequence[EventRecord]) -> dict[str, list[EventRecord]]:
     return groups
 
 
+def _world(records: Sequence[EventRecord], frame: Frame, context: ProducerContext) -> AgentWorld:
+    """What every agent of `records` is read against."""
+    times = sorted(moment for record in records if (moment := frame_time(frame, record)) is not None)
+    return AgentWorld(frame, context, times[-1] if times else 0.0)
+
+
+def agent_context_at(
+    records: Sequence[EventRecord], frame: Frame, context: ProducerContext, agent: str, moment: float
+) -> XrayInContext | None:
+    """What the context of the agent keyed `agent` held at its last reply at or before `moment`; None for an agent
+    `records` hold none of and for a moment before its first reply."""
+    group = _groups(records).get(agent)
+    if group is None:
+        return None
+    own = _own(agent, group, frame, context)
+    brief = _brief_chars(own)
+    series = composition_series(own, context.sources, frame, brief)
+    return build_in_context(own, _run_type(own), series, _world(records, frame, context), brief, moment=moment)
+
+
 def produce_agents(records: Sequence[EventRecord], frame: Frame, context: ProducerContext) -> Produced:
     """The agent nodes of `records`, the main agent first and the subagents in launch order, and one edge from each
     subagent's parent to it."""
-    owns = {key: _own(key, group, frame, context.sources) for key, group in _groups(records).items()}
-    times = sorted(moment for record in records if (moment := frame_time(frame, record)) is not None)
-    world = AgentWorld(frame, context, times[-1] if times else 0.0)
+    owns = {key: _own(key, group, frame, context) for key, group in _groups(records).items()}
+    world = _world(records, frame, context)
     metas = {key: _launch(own.records) for key, own in owns.items() if key != MAIN_ID}
     nodes = [_main_node(owns[MAIN_ID], world)]
     edges: list[XrayEdge] = []

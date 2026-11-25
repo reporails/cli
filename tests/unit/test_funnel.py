@@ -311,7 +311,7 @@ class TestPreflightOversized:
     @pytest.mark.subsys_funnel
     def test_files_over_cap_uses_its_own_token_not_payload_too_large(self) -> None:
         """The 500-file cap is universal — it must not reuse `payload_too_large`,
-        whose CTA promises Pro raises a 2 MB byte cap that has nothing to do with
+        whose CTA promises a raised byte cap that has nothing to do with
         a file-count rejection."""
         payload = {"files": [{}] * (WIRE_MAX_FILES + 1), "atoms": []}
         err = preflight_oversized(payload, has_api_key=True)
@@ -492,11 +492,11 @@ class TestFormatCta:
     def test_anonymous_cta_names_login_then_pro_with_their_limits(self, no_key: None) -> None:
         # Signing in raises the hourly limit to 100; Pro raises it to 1,200.
         # The anonymous rate message names both steps in that order; the payload
-        # message (the 2 MB cap is the same signed in) names Pro as the raise.
+        # message names the 5 MB signed-in step, then Pro's 20 MB.
         # Reddens if the copy returns to "Run `ails login` to raise it 40x".
         rate = format_cta(FunnelError(error="rate_limit_exceeded", tier="anonymous", limit=5))
         payload = format_cta(FunnelError(error="payload_too_large", tier="anonymous", limit=2 * 1024 * 1024))
-        assert payload.endswith("Sign in with `ails login`, then upgrade to Pro to raise it to 20 MB")
+        assert payload.endswith("Sign in with `ails login` to raise it to 5 MB, then upgrade to Pro for 20 MB")
         for cta in (rate, payload):
             assert "upgrade to Pro" in cta
             assert "ails login" in cta
@@ -651,8 +651,9 @@ class TestFreeTierCta:
     @pytest.mark.unit
     @pytest.mark.subsys_funnel
     def test_free_payload_too_large_is_upgrade_not_login(self, held_key: None) -> None:
-        err = FunnelError(error="payload_too_large", tier="free", limit=2 * 1024 * 1024)
+        err = FunnelError(error="payload_too_large", tier="free", limit=5 * 1024 * 1024)
         cta = format_cta(err)
+        assert "5 MB cap" in cta
         assert "Upgrade to Pro" in cta
         assert "20 MB" in cta
         assert "ails login" not in cta

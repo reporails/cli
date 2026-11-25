@@ -37,9 +37,9 @@ Feature: The Tool calls and Sources tables list every call and source, agree wit
     Then fewer than 200 rows are in the page and scrolling the table shows the last call
 
   @page @browser
-  Scenario: The Sources table lists every source and the built-in items
+  Scenario: The Sources table lists every source and none of the coding agent's own context
     Given the bundled page is served over the "view_sample" fixture view
-    Then the Sources table lists every source and every built-in item
+    Then the Sources table lists every source and nothing of the coding agent's own context
 
   @page @browser
   Scenario: The Sources table prints finding counts and hidden built-in items as they are

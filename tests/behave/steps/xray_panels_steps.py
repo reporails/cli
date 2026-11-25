@@ -55,7 +55,7 @@ def step_eye(context):
     agents = next(g for g in seen["after"] if g["kind"] == "agent")
     assert agents["off"] == "subagents hidden on the graph", agents
     assert agents["eye"] == "Show subagents on the graph", agents
-    assert seen["after"][0]["kind"] == "builtin"
+    assert seen["after"][0]["kind"] == context.fixture["adapter"]["source_kinds"][0]["key"], seen["after"]
 
 
 @then("headers carry one used of total figure and a findings line only with findings, and rows say their facts")
@@ -65,8 +65,7 @@ def step_headers(context):
         return
     view = context.fixture
     by_kind = {g["kind"]: g for g in seen["groups"]}
-    assert next(iter(by_kind)) == "builtin" and by_kind["builtin"]["eye"] is None
-    assert list(by_kind)[1:] == [k["key"] for k in view["adapter"]["source_kinds"]], list(by_kind)
+    assert list(by_kind) == [k["key"] for k in view["adapter"]["source_kinds"]], list(by_kind)
     for key, group in by_kind.items():
         assert group["dots"] == 0, f"{key} header carries a status dot"
     rules = by_kind["rule"]
@@ -78,7 +77,7 @@ def step_headers(context):
     assert rows["packages/cli/CLAUDE.md"]["line2"] == "not loaded", rows["packages/cli/CLAUDE.md"]
     assert rows[".claude/rules/rules-engine.md"]["scoped"], rows[".claude/rules/rules-engine.md"]
     assert rows["builtin-agent:Explore"]["line2"] == "built in · launched as 1 subagent", rows["builtin-agent:Explore"]
-    assert rows["builtin:system_prompt"]["line2"].startswith("~2.8k tok"), rows["builtin:system_prompt"]
+    assert not any(key.startswith("builtin:") for key in rows), list(rows)
 
 
 @then("the right column shows the main agent, then a selected subagent, and the context rows add up")
@@ -100,7 +99,7 @@ def step_column(context):
     for shown, node_id in ((seen["main"], "main"), (sub, "a4")):
         node = nodes[node_id]
         ic = node["detail"]["in_context"]
-        assert len(shown["rows"]) == len(ic["rows"]), shown["rows"]
+        assert len(shown["rows"]) == len(ic["rows"]) + 1, shown["rows"]
         assert not ic["over"]
         total = sum(_tokens(r["size"]) for r in shown["rows"])
         assert abs(total - ic["total"]) <= 0.02 * ic["total"], (total, ic["total"])
@@ -288,6 +287,24 @@ def step_open_mark(context):
     assert seen["afterRow"] and all(m["peek"] == "peak:main" and m["expanded"] == "true" for m in seen["afterRow"]), (
         seen["afterRow"]
     )
+
+
+@then("an opened Sources row and an opened In context row keep the layout of the rows beside them")
+def step_open_layout(context):
+    seen = _panels(context, "open_layout")
+    if seen is None:
+        return
+    assert len(seen["srKeys"]) == 2 and len(seen["icKeys"]) == 2, seen
+    for opened, plain, sibling in (("srOpen", "srPlain", "srSibling"), ("icOpen", "icPlain", "icSibling")):
+        assert seen[opened]["open"] and not seen[sibling]["open"], seen
+        for prop in ("display", "marginTop", "textAlign"):
+            assert seen[opened][prop] == seen[plain][prop] == seen[sibling][prop], (
+                prop,
+                seen[opened],
+                seen[plain],
+                seen[sibling],
+            )
+        assert seen[opened]["dot"] and seen[opened]["dot"] == seen[plain]["dot"], (seen[opened], seen[plain])
 
 
 @then("a station pill, and a Tool calls row scrolled away and back, stay marked open and the Tool calls strip never is")

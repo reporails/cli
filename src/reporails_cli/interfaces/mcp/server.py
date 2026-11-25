@@ -9,6 +9,7 @@ import asyncio
 import contextlib
 import json
 import threading
+from functools import partial
 from pathlib import Path
 
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
@@ -60,6 +61,7 @@ from reporails_cli.interfaces.mcp.validate_targets import (
     named_files,
     resolve_validate_targets,
     target_tokens,
+    validate_target_report,
 )
 from reporails_cli.interfaces.mcp.xray_tool import xray_page
 
@@ -188,7 +190,14 @@ async def _fresh_validate_payload(
         selection = resolved
     # Blocking pipeline work runs off the event loop.
     payload, ruleset_map, score = await asyncio.to_thread(
-        run_pipeline_for_path, path, True, named_files(selection), project_root=scan_root, run=run, models=models
+        run_pipeline_for_path,
+        path,
+        True,
+        named_files(selection),
+        project_root=scan_root,
+        run=run,
+        models=models,
+        report=partial(validate_target_report, run, tokens, scan_root) if tokens else None,
     )
     if selection is not None and "files" in payload:
         payload = keep_target_locations(payload, *selection, scan_root, tokens)

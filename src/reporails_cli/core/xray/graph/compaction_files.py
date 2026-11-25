@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 
 from reporails_cli.core.platform.dto.attachments import (
     NAMED_ATTACHMENT_KINDS,
@@ -55,7 +55,7 @@ def _compaction(record: EventRecord, held: set[str]) -> tuple[float, tuple[str, 
     return moment, tuple(sorted(held)), frozenset(() if record.boundary is None else record.boundary.kept)
 
 
-def _state(source: str, reloaded: set[str], whole: set[str], named: set[str], *, waiting: bool) -> FileState:
+def _state(source: str, reloaded: set[str], whole: Collection[str], named: set[str], *, waiting: bool) -> FileState:
     """The state of one file after a compaction: loaded again, attached whole or read in a message the compaction kept
     (`whole`), or only named (`named`). A file none of them holds is pending while the agent has not replied since the
     compaction (`waiting`), else summarized."""
@@ -74,51 +74,62 @@ def _attach(
     *,
     compacting: bool,
     held: set[str],
-    whole: set[str],
+    whole: dict[str, float],
     named: set[str],
+    moment: float | None,
 ) -> None:
-    """Record a file attachment: a named file as `named`, a whole file as `whole` while a compaction waits for the
-    agent's next reply, else as `held`."""
+    """Record a file attachment: a named file as `named`, a whole file as `whole` (with the `moment` it was attached
+    at) while a compaction waits for the agent's next reply, else as `held`."""
     if attached is None or how is None:
         return
     if how in NAMED_ATTACHMENT_KINDS:
         named.add(attached)
     elif compacting:
-        whole.add(attached)
+        whole.setdefault(attached, float("-inf") if moment is None else moment)
     else:
         held.add(attached)
 
 
-def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tuple[XrayFileState, ...]]:
-    """For each compaction among `records`, in time order, each instruction file loaded before it with its state
-    after it. The loads and file attachments that follow the compaction before the agent's next reply settle its
-    files, and so do the files read in the messages the compaction kept. A file whose content is in the context carries
-    on to the next compaction."""
+def _place(records: Sequence[EventRecord], moment: float) -> int:
+    """How many compactions among `records` came before the one at `moment`."""
+    return sum(
+        1
+        for record in records
+        if record.event == "post_compact" and (found := epoch(record.time)) is not None and found < moment
+    )
+
+
+def _walk(
+    records: Sequence[EventRecord], sources: SourceTable, regrouped: Sequence[frozenset[str]] | None
+) -> list[tuple[float, tuple[XrayFileState, ...], dict[str, float]]]:
+    """For each compaction among `records`, in time order: its moment, each instruction file loaded before it with its
+    state after it, and the moment each file attached whole after it was attached at. `regrouped` is one set of files
+    per compaction, or None when none is known."""
     held: set[str] = set()
     pending: tuple[float, tuple[str, ...], frozenset[str]] | None = None
     reloaded: set[str] = set()
-    whole: set[str] = set()
+    whole: dict[str, float] = {}
     named: set[str] = set()
     kept_in: dict[str | None, set[str]] = {}
-    done: list[tuple[float, tuple[XrayFileState, ...]]] = []
+    done: list[tuple[float, tuple[XrayFileState, ...], dict[str, float]]] = []
 
     def settle(*, waiting: bool = False) -> None:
         nonlocal held
         if pending is None:
             return
         kept = {sid for row_id in kept_in.keys() & pending[2] for sid in kept_in[row_id]}
-        states = tuple(
-            XrayFileState(src, _state(src, reloaded, whole | kept, named, waiting=waiting)) for src in pending[1]
-        )
-        done.append((pending[0], states))
-        held = {item.source for item in states if item.state in IN_CONTEXT_FILE_STATES} | reloaded | whole
+        back = reloaded | (regrouped[_place(records, pending[0])] if regrouped is not None else frozenset())
+        settled = [(src, _state(src, back, whole.keys() | kept, named, waiting=waiting)) for src in pending[1]]
+        states = tuple(XrayFileState(src, state, state in IN_CONTEXT_FILE_STATES) for src, state in settled)
+        done.append((pending[0], states, dict(whole)))
+        held = {item.source for item in states if item.state in IN_CONTEXT_FILE_STATES} | reloaded | set(whole)
 
     for record in records:
         sid, row_id = _loaded_file(record, sources)
         if record.event == "post_compact":
             settle()
             pending = _compaction(record, held)
-            reloaded, whole, named = set(), set(), set()
+            reloaded, whole, named = set(), {}, set()
         elif record.event == "assistant_usage" and pending is not None:
             settle()
             pending = None
@@ -130,7 +141,30 @@ def file_states(records: Sequence[EventRecord], sources: SourceTable) -> list[tu
                 held.add(sid)
         elif record.event == "file_attachment":
             _attach(
-                *_attached_file(record, sources), compacting=pending is not None, held=held, whole=whole, named=named
+                *_attached_file(record, sources),
+                compacting=pending is not None,
+                held=held,
+                whole=whole,
+                named=named,
+                moment=epoch(record.time),
             )
     settle(waiting=True)
-    return [states for _, states in sorted(done, key=lambda item: item[0])]
+    return sorted(done, key=lambda item: item[0])
+
+
+def file_states(
+    records: Sequence[EventRecord], sources: SourceTable, regrouped: Sequence[frozenset[str]]
+) -> list[tuple[XrayFileState, ...]]:
+    """For each compaction among `records`, in time order, each instruction file loaded before it with its state
+    after it. The loads and file attachments that follow the compaction before the agent's next reply settle its
+    files, and so do the files read in the messages the compaction kept and the files `regrouped` holds for it (one
+    set per compaction, in time order: the loads of a group its restart's hook firing caused, which count as loaded
+    again). A file whose content is in the context carries on to the next compaction."""
+    return [states for _, states, _ in _walk(records, sources, regrouped)]
+
+
+def restore_moments(records: Sequence[EventRecord], sources: SourceTable) -> list[dict[str, float]]:
+    """For each compaction among `records`, in time order, the moment (seconds since the epoch) each instruction file
+    attached whole after it was attached at. The transcript stamps these before the compaction's own record, so a
+    file `file_states` calls restored came back at this moment, not at the compaction's."""
+    return [moments for _, _, moments in _walk(records, sources, None)]

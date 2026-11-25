@@ -4,13 +4,16 @@ import { el, svg, sync } from '../dom.js';
 import { clock, k1, range, tk } from '../format.js';
 import { callDetail } from '../api.js';
 import {
-  BAND_OPACITY, BOT_H, BOT_W, CH, COLX, CW, GROUP_TILES, SH, SPINE_HALF_MAX, SPINE_HALF_MIN, SPX, STATION_EDGE, STRIPE_HALF, SW, TOP_W, TOP_Y, TRACK_STEP, TRACK_X0, W, Y0,
+  BAND_OPACITY, BOT_H, FOLD_H, SCOLX, BOT_W, CH, COLX, CW, GROUP_TILES, SH, SPINE_HALF_MAX, SPINE_HALF_MIN, SPX, STATION_EDGE, STRIPE_HALF, SW, TOP_W, TOP_Y, TRACK_STEP, TRACK_X0, W, Y0,
   bandColour, layoutTime, labelLeft, lengthFor, mergeStations, placeSources, replyAt, stationSide, tickMarks,
 } from '../geometry.js';
-import { groupOpen } from '../state.js';
+import { foldKey, groupOpen } from '../state.js';
+import { FILE_STATE_WORDS } from './compaction.js';
 import { markOpen } from './details.js';
-import { RESTART_S, callIndex, childrenOf, isSpine, kindOfSource, replyParts, segmentOf, sourceFirsts, startsSession, typeOf } from '../views.js';
+import { callIndex, childrenOf, groupFirsts, groupKey, isSpine, kindOfSource, replyParts, sourceFirsts, typeOf } from '../views.js';
 import { rendererFor } from './nodes/index.js';
+import './loadgroups.js';
+import { workflowCard } from './workflows.js';
 import * as rail from './rail.js';
 import { tile } from './nodes/agent.js';
 
@@ -101,7 +104,7 @@ function ptsOf(samples, from, to) {
 }
 
 function ticks(cur, scale) {
-  return tickMarks(cur, scale.y).map(m => {
+  return tickMarks(cur, scale.y).filter(m => !scale.inFold(m.t)).map(m => {
     const e = abs('tick', 0, m.y - 7);
     e.textContent = clock(m.t);
     return e;
@@ -302,26 +305,26 @@ const STATION_CLEAR = 12;
 const shownSource = (env, sid) => { const k = kindOfSource(env.ix, sid); return !k || env.state.layers[k.key]; };
 
 // Hooks stay on the spine: a one-off hook load is a station and a repeated stretch of firings is one pill at its middle.
-function stationItems(env, cur, scale, cutTimes) {
+function stationItems(env, cur, scale, folded) {
   const { ix } = env;
   const st = ix.stations.get(cur.id);
   if (!st) return [];
   const stripes = [...scale.cuts.values()].map(c => c.y);
-  // A pill keeps clear of a compaction stripe's band: it sits just above or just below it.
-  const clear = (yy, load) => {
-    const seg = segmentOf(cutTimes, load.t ?? cur.start, load);
+  // A pill keeps clear of a compaction stripe's band: it sits just above or just below it, and one of the segment after a
+  // compaction never above that compaction's stripe.
+  const clear = (yy, seg) => {
     const sy0 = seg > 0 ? scale.cuts.get(`cut:${seg - 1}`).y : null;
-    if (sy0 !== null && yy < sy0 + STRIPE_HALF + STATION_CLEAR && startsSession(load)) yy = sy0 + STRIPE_HALF + STATION_CLEAR;
+    if (sy0 !== null && yy < sy0 + STRIPE_HALF + STATION_CLEAR) yy = sy0 + STRIPE_HALF + STATION_CLEAR;
     const s = stripes.find(sy => Math.abs(yy - sy) < STRIPE_HALF + STATION_CLEAR);
     return s === undefined ? yy : s + (yy < s ? -1 : 1) * (STRIPE_HALF + STATION_CLEAR);
   };
   const items = [];
   for (const l of st.loads) {
-    if (!isSpine(ix, l.source) || !shownSource(env, l.source)) continue;
+    if (!isSpine(ix, l.source) || !shownSource(env, l.source) || folded.has(l.segment)) continue;
     const s = ix.sources.get(l.source);
     const k = kindOfSource(ix, l.source);
     items.push({
-      type: 'load', source: l.source, name: s ? s.label : l.source, when: ix.triggers.get(l.trigger) || l.trigger, y: clear(scale.y(l.t ?? cur.start), l), small: l.small, letter: k ? k.letter : '?',
+      type: 'load', source: l.source, name: s ? s.label : l.source, when: ix.triggers.get(l.trigger) || l.trigger, y: clear(scale.y(l.t ?? cur.start), l.segment), small: l.small, letter: k ? k.letter : '?',
       tokens: l.tokens_est, find: !!(s && s.findings && s.findings.count > 0),
       title: `${k ? k.label : 'Source'} · ${s ? s.label : l.source} · ${l.tokens_est == null ? 'size unknown' : tk(l.tokens_est, true) + ' loaded (estimated)'}` +
         ` · ${l.t == null ? 'time unknown, shown at the start' : 'at ' + clock(l.t)} · ${ix.triggers.get(l.trigger) || l.trigger}${l.event ? ' ' + l.event : ''}` +
@@ -329,11 +332,11 @@ function stationItems(env, cur, scale, cutTimes) {
     });
   }
   for (const h of st.hooks || []) {
-    if (!shownSource(env, h.source)) continue;
+    if (!shownSource(env, h.source) || folded.has(h.segment)) continue;
     const k = kindOfSource(ix, h.source);
     const s = ix.sources.get(h.source);
     items.push({
-      type: 'hook', source: h.source, y: clear(scale.y((h.first + h.last) / 2), { t: h.first, event: (st.loads.find(l => l.source === h.source && l.t === h.first) || {}).event }), letter: k ? k.letter : '?', calls: h.count, tokens: h.tokens_est,
+      type: 'hook', source: h.source, y: clear(scale.y((h.first + h.last) / 2), h.segment), letter: k ? k.letter : '?', calls: h.count, tokens: h.tokens_est,
       name: s ? s.label : h.source,
       title: `${s ? s.label : h.source} · ${h.count} firing${h.count === 1 ? '' : 's'} ${clock(h.first)}–${clock(h.last)} · ${tk(h.tokens_est, true)} loaded (estimated)`,
     });
@@ -341,7 +344,11 @@ function stationItems(env, cur, scale, cutTimes) {
   return items;
 }
 
-// The cards that load again within RESTART_S of one another right after a compaction: the compaction's unit in the scale.
+// Cards that load within this many seconds of one another right after a compaction share its unit in the scale.
+const RESTART_S = 5;
+
+// The cards (source cards and group cards) that load within RESTART_S of one another right after a compaction: the compaction's
+// unit in the scale.
 function restartCards(firsts, cuts) {
   return cuts.map((c, i) => {
     const out = [];
@@ -355,10 +362,16 @@ function restartCards(firsts, cuts) {
   });
 }
 
-function sourceItems(env, firsts, scale) {
-  const { ix } = env;
+// The y each card the scale put in a compaction's unit was given, by card key.
+function drawnCards(scale) {
   const drawn = new Map();
   for (const c of scale.cuts.values()) for (const [k, yy] of c.cards) drawn.set(k, yy);
+  return drawn;
+}
+
+function sourceItems(env, firsts, scale) {
+  const { ix } = env;
+  const drawn = drawnCards(scale);
   return firsts.map(f => {
     const id = f.id;
     const s = ix.sources.get(id);
@@ -377,12 +390,48 @@ function sourceItems(env, firsts, scale) {
   }).sort((a, b) => a.y - b.y);
 }
 
+// The instruction loads the view grouped (a hook's firing caused them, or one file loaded again and again) as source nodes: a
+// hook's group is one card named by the hook with its file and token counts that opens the loads; a file's repeats are its own
+// card carrying the count. Every number is the view's.
+function groupItems(env, cur, folded, scale) {
+  const { ix } = env;
+  const st = ix.stations.get(cur.id);
+  const drawn = drawnCards(scale);
+  const out = [];
+  ((st && st.groups) || []).forEach(g => {
+    const hooked = !!g.hook;
+    // The loads are instruction loads whatever caused them: with the hook's layer off the card stays, named by its first file,
+    // while a layer of one of its files is on.
+    const named = hooked && shownSource(env, g.hook);
+    if (folded.has(g.segment) || !(named || g.files.some(f => shownSource(env, f.source)))) return;
+    const sid = named ? g.hook : g.files[0].source;
+    const s = ix.sources.get(sid);
+    const k = kindOfSource(ix, sid);
+    const label = s ? s.label : sid;
+    const sub = hooked
+      ? `${g.files.length} file${g.files.length === 1 ? '' : 's'} · ${tk(g.tokens_est, true)}`
+      : `×${g.count} · ${tk(g.tokens_est, true)}`;
+    out.push({
+      key: groupKey(g), source: sid, label, letter: k ? k.letter : '?', t: g.first, y: drawn.get(groupKey(g)) ?? scale.y(g.first), tokens: g.tokens_est, find: false, clusters: [], calls: 0,
+      group: hooked ? g.id : null, sub,
+      title: `${label} · ${hooked ? `${named ? 'caused' : 'holds'} ${g.count} instruction load${g.count === 1 ? '' : 's'} of ${g.files.length} file${g.files.length === 1 ? '' : 's'}` : `loaded ${g.count} times`} · ${tk(g.tokens_est, true)} (estimated) · ${clock(g.first)}–${clock(g.last)}`,
+    });
+  });
+  return out;
+}
+
 function sourceNode(env, it, p) {
   const hot = env.graphFocus && env.graphFocus.id === it.source;
   const dim = env.graphFocus && !hot;
   const b = abs('snode' + (it.find ? ' find' : '') + (hot ? ' hot' : '') + (dim ? ' dim' : ''), p.left, p.top, 'button');
-  b.dataset.source = it.source;
-  markOpen(b, env.state.peek, [`src:${it.source}`]);
+  if (it.group) {
+    b.dataset.peek = `loadgroup:${it.group}`;
+    b.classList.add('lgroup');
+    markOpen(b, env.state.peek, [b.dataset.peek]);
+  } else {
+    b.dataset.source = it.source;
+    markOpen(b, env.state.peek, [`src:${it.source}`]);
+  }
   b.dataset.card = it.key;
   b.title = it.title;
   b.setAttribute('aria-label', it.title);
@@ -453,21 +502,38 @@ function stationPill(env, cl) {
   return b;
 }
 
-function stations(env, cur, scale, held, cuts) {
-  const out = mergeStations(stationItems(env, cur, scale, cuts)).map(cl => stationPill(env, cl));
-  held.forEach((c, i) => out.push(compactStripe(env, cur, c, i, scale.cuts.get(`cut:${i}`).y)));
+function stations(env, cur, scale, held, folded) {
+  const out = mergeStations(stationItems(env, cur, scale, folded)).map(cl => stationPill(env, cl));
+  held.forEach((c, i) => out.push(compactStripe(env, cur, c, i, scale.cuts.get(`cut:${i}`).y, env.ix, folded.has(i))));
   return out;
 }
 
+// The files a compaction left in the context and the ones it did not, as the view states them (`in_context`).
+const filesOf = (ix, c, back) => (c.files || []).filter(f => !!f.in_context === back).map(f => {
+  const s = ix.sources.get(f.source);
+  return { name: s ? s.label : f.source, state: f.state };
+});
+
 // A compaction: a thin band across the canvas at its time that opens its details.
-function compactStripe(env, cur, c, i, y) {
+function compactStripe(env, cur, c, i, y, ix, folded) {
   const both = c.before != null && c.after != null;
   const m = abs('compact', 0, y - STRIPE_HALF, 'button');
   m.type = 'button';
   m.dataset.peek = `compaction:${cur.id}:${i}`;
   markOpen(m, env.state.peek, [m.dataset.peek]);
   m.setAttribute('aria-label', `Compaction${c.trigger ? ', ' + c.trigger : ''}, at ${clock(c.t)}${both ? `, context ${k1(c.before)} to ${k1(c.after)}` : ''}: open details`);
-  m.append(el('span', null, `compacted${both ? ` · ${k1(c.before)} → ${k1(c.after)}` : ''} · at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`));
+  const label = el('span', null, `compacted${both ? ` · ${k1(c.before)} → ${k1(c.after)}` : ''} · at ${clock(c.t)}${c.trigger ? ' · ' + c.trigger : ''}`);
+  m.append(label);
+  if (folded) {
+    // The segment above is folded, so the stripe keeps what the compaction dropped in view.
+    const back = filesOf(ix, c, true), gone = filesOf(ix, c, false);
+    const list = (word, files) => `${word} ${files.length}${files.length ? ': ' + files.map(f => f.name).join(', ') : ''}`;
+    label.append(` · ${list('back', back)} · ${list('not back', gone)}`);
+    label.style.whiteSpace = 'nowrap';
+    m.dataset.back = back.map(f => f.name).join('\n');
+    m.dataset.notBack = gone.map(f => f.name).join('\n');
+    m.title = [...back.map(f => `${f.name} · came back`), ...gone.map(f => `${f.name} · ${(FILE_STATE_WORDS[f.state] || [f.state])[0]}`)].join('\n');
+  }
   return m;
 }
 
@@ -564,7 +630,7 @@ function sideTrack(env, cur, scale, sel, height) {
   for (const r of tr.failure_runs) {
     const first = tr.calls.find(c => c.use_id === r.call_id) || tr.calls.find(c => c.failed && c.t >= r.first && c.t <= r.last);
     const runX = first ? colX.get(first.category) : undefined;
-    if (runX === undefined) continue;
+    if (runX === undefined || scale.inFold(r.first)) continue;
     const y0 = scale.y(r.first);
     const br = abs('bracket', runX - 5, y0);
     br.style.height = `${Math.max(6, scale.y(r.last) - y0)}px`;
@@ -599,7 +665,7 @@ function agentsShown(ix, state) {
 // Landmarks for the jump rail, each with an anchor on the canvas.
 function railMarks(cur, tr, scale, groups, placedMap, sel, shownAgents) {
   const marks = [];
-  for (const r of tr.failure_runs) marks.push({ y: scale.y(r.first), kind: 'fail', label: `Repeated failure · ${r.count} times at ${clock(r.first)}` });
+  for (const r of tr.failure_runs.filter(r => !scale.inFold(r.first))) marks.push({ y: scale.y(r.first), kind: 'fail', label: `Repeated failure · ${r.count} times at ${clock(r.first)}` });
   if (shownAgents) {
     for (const g of groups) {
       const p = placedMap.get(g.key);
@@ -612,6 +678,50 @@ function railMarks(cur, tr, scale, groups, placedMap, sel, shownAgents) {
   return marks.map((m, i) => ({ ...m, id: `xr-j-${i}` }));
 }
 
+// The one line a folded segment keeps: what it loaded (its own loads, its groups' loads and its hook stretches' loads), the
+// agents it launched (every agent it started, the workflow runs' among them) and the context before and after its compaction.
+function foldBand(env, cur, f, scale, held, kids) {
+  const { ix } = env;
+  const cuts = held.map(c => c.t);
+  const c = held[f.seg];
+  const top = scale.folds.find(x => x.key === f.key).top;
+  const station = ix.stations.get(cur.id) || { loads: [], groups: [], hooks: [] };
+  const inSeg = list => (list || []).filter(x => x.segment === f.seg);
+  const loads = inSeg(station.loads).length + inSeg(station.groups).concat(inSeg(station.hooks)).reduce((n, x) => n + x.count, 0);
+  const agents = inSeg(kids).length;
+  const both = c.before != null && c.after != null;
+  const from = f.seg ? cuts[f.seg - 1] : cur.start;
+  const b = abs('card group fold', SCOLX.L2, top, 'button');
+  b.dataset.group = f.key;
+  b.dataset.loads = String(loads);
+  b.dataset.agents = String(agents);
+  if (c.before != null) b.dataset.before = String(c.before);
+  if (c.after != null) b.dataset.after = String(c.after);
+  b.setAttribute('aria-expanded', 'false');
+  b.style.width = `${COLX.R2 + CW - SCOLX.L2}px`;
+  b.style.height = `${FOLD_H}px`;
+  const stats = `${loads} load${loads === 1 ? '' : 's'} · ${agents} agent${agents === 1 ? '' : 's'}${both ? ` · context ${k1(c.before)} → ${k1(c.after)}` : ''}`;
+  b.setAttribute('aria-label', `Folded: ${range(from, c.t)}. ${stats}. Expand to see it.`);
+  const head = el('span', 'gh');
+  head.append(el('span', 'gn mono', '▸ folded'), el('b', 'nm', range(from, c.t)));
+  const when = el('span', 'gs');
+  when.append(el('span', 'sub mono', stats), el('span', 'gx', 'expand ›'));
+  b.append(head, when);
+  return b;
+}
+
+// The control that folds an open segment before the newest compaction again.
+function foldClose(f, scale) {
+  const at = f.seg ? scale.cuts.get(`cut:${f.seg - 1}`).y - STRIPE_HALF : Y0 - 20;
+  const head = abs('ghead', COLX.R2 + CW - 70, at);
+  const btn = el('button', 'gcollapse', 'fold');
+  btn.dataset.group = f.key;
+  btn.setAttribute('aria-expanded', 'true');
+  btn.setAttribute('aria-label', `Fold the segment before compaction ${f.seg + 1}`);
+  head.append(btn);
+  return head;
+}
+
 export function render(box, env) {
   const { ix, state, focus } = env;
   const cur = ix.nodes.get(state.path[state.path.length - 1]);
@@ -619,18 +729,33 @@ export function render(box, env) {
   const kids = childrenOf(ix, cur);
   const shownAgents = agentsShown(ix, state);
   const tr = ix.track.get(cur.id) || { calls: [], failure_runs: [], breaks: [] };
-  const groups = shownAgents ? groupsOf(cur, kids, state) : [];
-  const drawnKids = shownAgents ? kids : [];
+  const held = (ix.stations.get(cur.id) || { compactions: [] }).compactions;
+  const cuts = held.map(c => c.t);
+  // Every segment before the newest compaction folds, unless the user opened it or it holds the selected agent.
+  const allGroups = groupsOf(cur, kids, state);
+  // A picked call opens the segment it ran in, as a selected agent does.
+  const pickedCall = state.peek && state.peek.kind === 'call' ? tr.calls.find(c => c.use_id === state.peek.id) : null;
+  const pickedSeg = pickedCall ? pickedCall.segment : -1;
+  const folds = [];
+  for (let i = 0; i < held.length; i++) {
+    const key = foldKey(cur.id, i);
+    const ids = [...kids.filter(c => c.segment === i).map(c => c.id), ...allGroups.filter(g => g.burst.segment === i).flatMap(g => g.members.map(m => m.id))];
+    folds.push({ key, seg: i, open: groupOpen(state, key, ids) || pickedSeg === i });
+  }
+  const folded = new Set(folds.filter(f => !f.open).map(f => f.seg));
+  const groups = shownAgents ? allGroups.filter(g => !folded.has(g.burst.segment)) : [];
+  const drawnKids = shownAgents ? kids.filter(c => !folded.has(c.segment)) : [];
   const inGroup = new Set(groups.flatMap(g => g.members.map(m => m.id)));
   const units = [
     ...drawnKids.filter(c => !inGroup.has(c.id)).map(c => ({ key: c.id, t: c.start, members: 0, expanded: false })),
     ...groups.map(g => ({ key: g.key, t: g.burst.first_launch, members: g.members.length, expanded: g.expanded })),
   ];
-  const held = (ix.stations.get(cur.id) || { compactions: [] }).compactions;
-  const cuts = held.map(c => c.t);
-  const firsts = sourceFirsts(ix, cur, cuts);
-  const restarts = restartCards(firsts, held);
-  held.forEach((c, i) => units.push({ key: `cut:${i}`, t: c.t, cut: true, cards: restarts[i] }));
+  const runs = isRoot ? (ix.view.workflows || []).filter(w => !folded.has(w.segment)) : [];
+  units.push(...runs.map(w => ({ key: `wf:${w.run_id}`, t: w.start ?? cur.start, members: 0, expanded: false })));
+  const firsts = sourceFirsts(ix, cur);
+  const restarts = restartCards([...firsts, ...groupFirsts(ix, cur)], held);
+  held.forEach((c, i) => units.push({ key: `cut:${i}`, t: c.t, cut: true, cards: folded.has(i + 1) ? [] : restarts[i] }));
+  for (const f of folds) if (folded.has(f.seg)) units.push({ key: f.key, t: f.seg ? cuts[f.seg - 1] : cur.start, t1: cuts[f.seg], fold: true });
   const scale = layoutTime(cur, tr.breaks, lengthFor(isRoot), units);
   const placedMap = new Map();
   for (const p of scale.placed) {
@@ -643,7 +768,7 @@ export function render(box, env) {
   const sel = state.sel ? ix.nodes.get(state.sel) : null;
   const renderer = rendererFor(cur.kind);
   const hand = isRoot ? null : renderer.handback && renderer.handback(cur, env);
-  const items = sourceItems(env, firsts.filter(f => shownSource(env, f.id)), scale);
+  const items = [...sourceItems(env, firsts.filter(f => shownSource(env, f.id) && !folded.has(f.seg)), scale), ...groupItems(env, cur, folded, scale)].sort((a, b) => a.y - b.y);
   const walls = [...scale.cuts.values()].map(c => ({ top: c.y - STRIPE_HALF, bottom: c.y + STRIPE_HALF }));
   const placedSources = new Map(placeSources(items.map(it => ({ key: it.key, y: it.y })), walls).map(p => [p.key, p]));
   const sourcesBottom = Math.max(0, ...[...placedSources.values()].map(p => p.top + SH));
@@ -666,9 +791,11 @@ export function render(box, env) {
     if (grp.expanded) cv.append(...groupBox(grp, p));
     else cv.append(groupCard(env, grp, p, grp.members.some(matchOf)));
   }
+  for (const w of runs) cv.append(workflowCard(env, w, placedMap.get(`wf:${w.run_id}`), abs));
   for (const c of shownKids) cv.append(childCard(env, c, placedMap.get(c.id), matchOf(c), state.sel === c.id));
   for (const it of items) cv.append(sourceNode(env, it, placedSources.get(it.key)));
-  cv.append(...stations(env, cur, scale, held, cuts), ...drawn.pills);
+  cv.append(...stations(env, cur, scale, held, folded), ...drawn.pills);
+  for (const f of folds) cv.append(f.open ? foldClose(f, scale) : foldBand(env, cur, f, scale, held, kids));
   if (hand) {
     const b = abs('card bottom', SPX - BOT_W / 2, botY, hand.peek ? 'button' : 'div');
     b.style.width = `${BOT_W}px`;

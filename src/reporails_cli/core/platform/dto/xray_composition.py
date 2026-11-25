@@ -49,9 +49,11 @@ class RequestMeasure:
 
 @dataclass(frozen=True)
 class CarriedReply:
-    """One reply's usage and the estimated tokens each source (by source id) carried in its context."""
+    """One reply's usage, the request it was measured from (None when none was) and the characters each source
+    (by source id) carried in its context."""
 
     usage: TokenUsage
+    measured: RequestMeasure | None
     by_source: dict[str, int]
 
 
@@ -107,6 +109,14 @@ class XrayComposition:
 
     replies: tuple[ReplyComposition, ...]
     peak: int | None
+
+    def reply_at(self, moment: float | None) -> int | None:
+        """The index of the last reply at or before `moment` seconds, or of the latest reply when `moment` is None;
+        None when no reply is there."""
+        if moment is None:
+            return len(self.replies) - 1 if self.replies else None
+        found = [index for index, reply in enumerate(self.replies) if reply.t <= moment]
+        return found[-1] if found else None
 
     def to_json(self) -> JsonObject:
         """The composition as columns: the category keys, one row per reply and the peak index."""

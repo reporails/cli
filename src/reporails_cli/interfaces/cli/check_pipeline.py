@@ -82,7 +82,7 @@ def _flow_pipeline(state: CheckState) -> None:
             progress("Mapping instruction files...")
             state.pipeline.ruleset_map = map_instruction_files(
                 state.targets.target,
-                state.scope.instruction_files,
+                [f for f in state.scope.instruction_files if f not in state.scope.unloaded],
                 progress=map_progress,
                 filtered_agents=state.scope.filtered,
                 mapper=state.run.project_config(state.targets.target).mapper,
@@ -204,11 +204,10 @@ def _flow_assemble(state: CheckState) -> None:
     if state.targets.single_file is not None:
         state.render.capability_paths = {state.targets.single_file}
     if state.render.capability_paths:
-        state.render.display_result = filter_result_to_paths(
-            state.render.result, state.render.capability_paths, state.targets.target
-        )
+        shown_paths = state.render.capability_paths | set(state.scope.imported)
+        state.render.display_result = filter_result_to_paths(state.render.result, shown_paths, state.targets.target)
         state.render.display_map = filter_ruleset_map_to_paths(
-            state.pipeline.ruleset_map, state.render.capability_paths, state.targets.target
+            state.pipeline.ruleset_map, shown_paths, state.targets.target
         )
     else:
         state.render.display_result = state.render.result

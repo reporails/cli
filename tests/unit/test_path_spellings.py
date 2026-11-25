@@ -100,11 +100,11 @@ def test_a_file_in_the_run_folder_is_named_relative_to_it_with_slashes(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     guide = tmp_path / "docs" / "guide.md"
-    _emit_unlisted_file(guide, tmp_path, tmp_path, "json")
-    assert capsys.readouterr().err.strip() == "docs/guide.md is not an instruction file of this project."
+    _emit_unlisted_file(guide, tmp_path, tmp_path, "json", "claude")
+    assert capsys.readouterr().err.strip() == "docs/guide.md is not loaded by claude; checked as a referenced file."
 
 
 def test_a_file_of_another_project_is_named_by_its_path(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     rule = tmp_path / "proj" / ".claude" / "rules" / "x.md"
-    _emit_unlisted_file(rule, tmp_path / "proj", tmp_path / "cwd", "json")
+    _emit_unlisted_file(rule, tmp_path / "proj", tmp_path / "cwd", "json", "claude")
     assert capsys.readouterr().err.startswith(f"{rule} is not an instruction file in the project at ")

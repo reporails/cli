@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections.abc import Sequence
 from itertools import pairwise
 
 from reporails_cli.core.platform.dto.events import ToolCategory
 from reporails_cli.core.platform.dto.xray import AdapterVocabulary
-from reporails_cli.core.platform.dto.xray_build import ProducedCall, ProducedNode, SourceTable
+from reporails_cli.core.platform.dto.xray_build import Firing, ProducedCall, ProducedNode, SourceTable
 from reporails_cli.core.platform.dto.xray_composition import COMPOSITION_KEYS, SPOKEN_KEYS
 from reporails_cli.core.platform.dto.xray_graph import (
     ClusterItem,
@@ -16,7 +17,9 @@ from reporails_cli.core.platform.dto.xray_graph import (
     XrayBreak,
     XrayCall,
     XrayFailureRun,
+    XrayGroupFile,
     XrayHookStretch,
+    XrayLoadGroup,
     XrayMcpCluster,
     XraySlot,
     XrayToolCount,
@@ -28,6 +31,15 @@ from reporails_cli.core.platform.dto.xray_graph import (
 # node's span.
 CLUSTER_GAP_SHARE = 0.09
 
+# Instruction loads of one agent close together make a group when each is at most this many seconds after the one
+# before, whatever the agent's span; a hook's firing causes a group when it came at most this many seconds before
+# the group's first load.
+LOAD_GROUP_GAP_S = 30.0
+
+# A compaction restarts an agent's context: what is in the context after it is the segment after it. The loads a
+# session start stamps up to this many seconds before the compaction belong to that segment too.
+RESTART_S = 5.0
+
 # Loads of one hook in a run that make a stretch rather than separate loads.
 HOOK_STRETCH_MIN = 2
 
@@ -36,6 +48,29 @@ FAILURE_RUN_MIN = 3
 
 # A stretch with no record this long (seconds) is a break.
 BREAK_S = 1800.0
+
+
+def cuts_of(node: ProducedNode) -> tuple[float, ...]:
+    """When the node's compactions ran."""
+    return tuple(compaction.t for compaction in node.spine.compactions)
+
+
+def segment_of(cuts: Sequence[float], t: float, *, restarting: bool = False) -> int:
+    """The segment of a node's context at `t`: how many of its compactions (`cuts`) came at or before it, and for
+    something a session start loaded (`restarting`) also those up to `RESTART_S` seconds after it. The one rule
+    every load, call, group, launch and run is placed in a segment by."""
+    return sum(1 for cut in cuts if cut <= t or (restarting and cut - t <= RESTART_S))
+
+
+def load_segment(cuts: Sequence[float], start: float, load: LoadEvent) -> int:
+    """The segment of a node's context a load is in; a load with no time is at the node's `start`."""
+    restarting = load.trigger == "session_start" or load.event == "SessionStart"
+    return segment_of(cuts, start if load.t is None else load.t, restarting=restarting)
+
+
+def instruction_kinds(vocabulary: AdapterVocabulary) -> frozenset[SourceKind]:
+    """The source kinds the vocabulary marks as instructions."""
+    return frozenset(kind.key for kind in vocabulary.source_kinds if kind.instructions)
 
 
 def had_sources(node: ProducedNode) -> list[str]:
@@ -88,6 +123,7 @@ def tools(node: ProducedNode) -> tuple[XrayToolCount, ...]:
 
 def track_calls(node: ProducedNode) -> tuple[XrayCall, ...]:
     """Every call of the node, in time order."""
+    cuts = cuts_of(node)
     return tuple(
         XrayCall(
             t=call.t,
@@ -100,18 +136,23 @@ def track_calls(node: ProducedNode) -> tuple[XrayCall, ...]:
             duration_s=call.duration_s,
             server=call.mcp_source,
             result_tokens_est=call.back_tokens_est,
+            segment=segment_of(cuts, call.t),
         )
         for call in sorted(node.spine.calls, key=lambda item: item.t)
     )
 
 
-def _runs(items: Sequence[ClusterItem], node: ProducedNode) -> list[list[ClusterItem]]:
-    """`items` grouped by key, each group split into runs of items close together in time: the gap to the item
-    before is at most `CLUSTER_GAP_SHARE` of the node's span."""
-    limit = CLUSTER_GAP_SHARE * (node.end - node.start)
-    groups: dict[str, list[list[ClusterItem]]] = {}
+def _gap(node: ProducedNode) -> float:
+    """The most seconds between two items of one run: `CLUSTER_GAP_SHARE` of the node's span."""
+    return CLUSTER_GAP_SHARE * (node.end - node.start)
+
+
+def _runs(items: Sequence[ClusterItem], limit: float) -> list[list[ClusterItem]]:
+    """`items` grouped by key and segment, each group split into runs of items close together in time: the gap to
+    the item before is at most `limit` seconds."""
+    groups: dict[tuple[str, int], list[list[ClusterItem]]] = {}
     for item in sorted(items, key=lambda entry: entry.t):
-        runs = groups.setdefault(item.key, [])
+        runs = groups.setdefault((item.key, item.segment), [])
         if runs and item.t - runs[-1][-1].t <= limit:
             runs[-1].append(item)
         else:
@@ -121,14 +162,15 @@ def _runs(items: Sequence[ClusterItem], node: ProducedNode) -> list[list[Cluster
 
 def mcp_clusters(node: ProducedNode) -> tuple[XrayMcpCluster, ...]:
     """The node's MCP calls per server, merged into clusters of calls close together in time."""
+    cuts = cuts_of(node)
     items = [
-        ClusterItem(call.mcp_source, call.t, call.back_tokens_est or 0, number)
+        ClusterItem(call.mcp_source, call.t, call.back_tokens_est or 0, number, segment_of(cuts, call.t))
         for number, call in enumerate(node.spine.calls)
         if call.mcp_source is not None
     ]
     clusters = [
-        XrayMcpCluster(run[0].key, run[0].t, run[-1].t, len(run), sum(item.tokens for item in run))
-        for run in _runs(items, node)
+        XrayMcpCluster(run[0].key, run[0].t, run[-1].t, len(run), sum(item.tokens for item in run), run[0].segment)
+        for run in _runs(items, _gap(node))
     ]
     return tuple(sorted(clusters, key=lambda item: item.first))
 
@@ -136,18 +178,127 @@ def mcp_clusters(node: ProducedNode) -> tuple[XrayMcpCluster, ...]:
 def hook_stretches(node: ProducedNode, sources: SourceTable) -> tuple[tuple[XrayHookStretch, ...], frozenset[int]]:
     """The node's hook loads that came close together, a run of two or more per hook as one stretch, and the
     positions in `node.spine.loads` of the loads that went into a stretch."""
+    cuts = cuts_of(node)
     items = [
-        ClusterItem(load.source, load.t, load.tokens_est or 0, number)
+        ClusterItem(load.source, load.t, load.tokens_est or 0, number, load_segment(cuts, node.start, load))
         for number, load in enumerate(node.spine.loads)
         if load.t is not None and (entry := sources.get(load.source)) is not None and entry.kind == "hook"
     ]
     stretches = [
-        (XrayHookStretch(run[0].key, run[0].t, run[-1].t, len(run), sum(item.tokens for item in run)), run)
-        for run in _runs(items, node)
+        (
+            XrayHookStretch(
+                run[0].key, run[0].t, run[-1].t, len(run), sum(item.tokens for item in run), run[0].segment
+            ),
+            run,
+        )
+        for run in _runs(items, _gap(node))
         if len(run) >= HOOK_STRETCH_MIN
     ]
     stretches.sort(key=lambda found: found[0].first)
     return tuple(found for found, _ in stretches), frozenset(item.position for _, run in stretches for item in run)
+
+
+def _group(node: ProducedNode, hook: str | None, run: Sequence[ClusterItem]) -> XrayLoadGroup:
+    """The loads of `run` as one group, its files in the order they were first loaded; the group is named by the
+    node and its first load."""
+    files: dict[str, list[float | int]] = {}
+    for item in run:
+        entry = files.setdefault(item.key, [item.t, 0, 0])
+        entry[1] += 1
+        entry[2] += item.tokens
+    return XrayLoadGroup(
+        f"{node.id}@{run[0].key}@{run[0].t}",
+        run[0].segment,
+        hook,
+        run[0].t,
+        run[-1].t,
+        len(run),
+        sum(item.tokens for item in run),
+        tuple(
+            XrayGroupFile(source, float(first), int(count), int(tokens))
+            for source, (first, count, tokens) in files.items()
+        ),
+    )
+
+
+def _caused_by(run: Sequence[ClusterItem], firings: Sequence[Firing]) -> Firing | None:
+    """The firing the run began right after: the latest firing at or before the run's first load, when that load
+    came within `LOAD_GROUP_GAP_S` seconds of it."""
+    at = bisect_right([firing.t for firing in firings], run[0].t)
+    if at == 0 or run[0].t - firings[at - 1].t > LOAD_GROUP_GAP_S:
+        return None
+    return firings[at - 1]
+
+
+def hook_runs(
+    loads: Sequence[LoadEvent],
+    firings: Sequence[Firing],
+    cuts: Sequence[float],
+    start: float,
+    *,
+    sources: SourceTable,
+    kinds: frozenset[SourceKind],
+) -> tuple[list[tuple[Firing, list[ClusterItem]]], list[ClusterItem]]:
+    """A node's instruction loads (`loads` of a source of one of `kinds`) in runs, each run with the firing it began
+    right after, and the loads in no such run. A run is loads each at most `LOAD_GROUP_GAP_S` seconds after the one
+    before, whatever files, in one segment of the node's context (`cuts`, the node starting at `start`); a run of two
+    or more loads that began right after a firing that blocked or added text is that firing's. Each item's
+    `position` is the load's place in `loads`."""
+    items = [
+        ClusterItem(load.source, load.t, load.tokens_est or 0, number, load_segment(cuts, start, load))
+        for number, load in enumerate(loads)
+        if load.t is not None and (entry := sources.get(load.source)) is not None and entry.kind in kinds
+    ]
+    by_position = {item.position: item for item in items}
+    hooked: list[tuple[Firing, list[ClusterItem]]] = []
+    rest: list[ClusterItem] = []
+    for run in _runs([item._replace(key="") for item in items], LOAD_GROUP_GAP_S):
+        firing = _caused_by(run, firings) if len(run) >= HOOK_STRETCH_MIN else None
+        members = [by_position[item.position] for item in run]
+        if firing is None:
+            rest.extend(members)
+        else:
+            hooked.append((firing, members))
+    return hooked, rest
+
+
+def restart_reloads(
+    loads: Sequence[LoadEvent],
+    firings: Sequence[Firing],
+    cuts: Sequence[float],
+    start: float,
+    *,
+    sources: SourceTable,
+    kinds: frozenset[SourceKind],
+) -> tuple[frozenset[str], ...]:
+    """For each compaction (`cuts`, in time order), the sources loaded by the runs of `hook_runs` that a SessionStart
+    firing of its restart, at most `RESTART_S` seconds from it, began."""
+    back: list[set[str]] = [set() for _ in cuts]
+    for firing, run in hook_runs(loads, firings, cuts, start, sources=sources, kinds=kinds)[0]:
+        if firing.event != "SessionStart":
+            continue
+        at = next((number for number, cut in enumerate(cuts) if abs(firing.t - cut) <= RESTART_S), None)
+        if at is not None:
+            back[at].update(item.key for item in run)
+    return tuple(frozenset(found) for found in back)
+
+
+def load_groups(
+    node: ProducedNode, sources: SourceTable, kinds: frozenset[SourceKind]
+) -> tuple[tuple[XrayLoadGroup, ...], frozenset[int]]:
+    """The node's instruction loads that came close together, as groups, and the positions in `node.spine.loads` of
+    the loads that went into a group: each run `hook_runs` gives a firing is that hook's group; of the rest, a file
+    loaded two or more times in a run is a group of its own."""
+    hooked, rest = hook_runs(
+        node.spine.loads, node.spine.firings, cuts_of(node), node.start, sources=sources, kinds=kinds
+    )
+    found: list[tuple[XrayLoadGroup, Sequence[ClusterItem]]] = [
+        (_group(node, firing.hook, run), run) for firing, run in hooked
+    ]
+    stacks = _runs(rest, LOAD_GROUP_GAP_S)
+    found.extend((_group(node, None, run), run) for run in stacks if len(run) >= HOOK_STRETCH_MIN)
+    found.sort(key=lambda pair: pair[0].first)
+    return tuple(group for group, _ in found), frozenset(item.position for _, run in found for item in run)
 
 
 def failure_runs(node: ProducedNode) -> tuple[XrayFailureRun, ...]:
@@ -195,10 +346,11 @@ def _held_tokens(source: str, loads: Sequence[LoadEvent], sources: SourceTable) 
 def _conversation_at(node: ProducedNode, until: float) -> int | None:
     """The estimated tokens of the node's conversation and tool results at its last reply by `until`; None when it
     had not replied."""
-    replies = [reply for reply in node.detail.usage.composition.replies if reply.t <= until]
-    if not replies:
+    composition = node.detail.usage.composition
+    index = composition.reply_at(until)
+    if index is None:
         return None
-    parts = replies[-1].parts
+    parts = composition.replies[index].parts
     return sum(parts[COMPOSITION_KEYS.index(key)] for key in SPOKEN_KEYS)
 
 

@@ -27,7 +27,7 @@ class TestBuildRuleBasic:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_minimal_rule(self) -> None:
-        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None, load_checks(MINIMAL_FRONTMATTER))
+        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), load_checks(MINIMAL_FRONTMATTER))
         assert rule.id == "CORE:S:0001"
         assert rule.title == "Test Rule"
         assert rule.category == Category.STRUCTURE
@@ -47,7 +47,7 @@ class TestBuildRuleBasic:
             **MINIMAL_FRONTMATTER,
             "match": {"type": "generic", "loading_verb": ["read"], "link_source_type": ["main"]},
         }
-        rule = build_rule(fm, Path("test.md"), None, load_checks(fm))
+        rule = build_rule(fm, Path("test.md"), load_checks(fm))
         assert rule.match is not None
         assert rule.match.loading_verb == ["read"]
         assert rule.match.link_source_type == ["main"]
@@ -62,7 +62,7 @@ class TestBuildRuleBasic:
                 {"id": "CORE:S:0001:check:0002", "type": "deterministic", "severity": "high", "pattern-regex": "x"},
             ],
         }
-        rule = build_rule(fm, Path("test.md"), None, load_checks(fm))
+        rule = build_rule(fm, Path("test.md"), load_checks(fm))
         assert len(rule.checks) == 2
         assert rule.checks[0].id == "CORE:S:0001:check:0001"
         assert rule.checks[0].type == "mechanical"
@@ -88,7 +88,7 @@ class TestBuildRuleBasic:
                 },
             ],
         }
-        rule = build_rule(fm, Path("test.md"), None, load_checks(fm))
+        rule = build_rule(fm, Path("test.md"), load_checks(fm))
         assert rule.checks[0].args == {"max": 300}
 
     @pytest.mark.unit
@@ -98,7 +98,7 @@ class TestBuildRuleBasic:
             **MINIMAL_FRONTMATTER,
             "supersedes": "CORE:S:0003",
         }
-        rule = build_rule(fm, Path("test.md"), None, load_checks(fm))
+        rule = build_rule(fm, Path("test.md"), load_checks(fm))
         assert rule.supersedes == "CORE:S:0003"
 
 
@@ -109,26 +109,26 @@ class TestBuildRuleNewFields:
     @pytest.mark.subsys_lint
     def test_inherited_parsed(self) -> None:
         fm = {**MINIMAL_FRONTMATTER, "inherited": "CORE:S:0038"}
-        rule = build_rule(fm, Path("test.md"), None, load_checks(fm))
+        rule = build_rule(fm, Path("test.md"), load_checks(fm))
         assert rule.inherited == "CORE:S:0038"
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_inherited_none_when_absent(self) -> None:
-        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None, load_checks(MINIMAL_FRONTMATTER))
+        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), load_checks(MINIMAL_FRONTMATTER))
         assert rule.inherited is None
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_depends_on_parsed(self) -> None:
         fm = {**MINIMAL_FRONTMATTER, "depends_on": ["CORE:S:0001", "CORE:S:0002"]}
-        rule = build_rule(fm, Path("test.md"), None, load_checks(fm))
+        rule = build_rule(fm, Path("test.md"), load_checks(fm))
         assert rule.depends_on == ["CORE:S:0001", "CORE:S:0002"]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_depends_on_empty_when_absent(self) -> None:
-        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None, load_checks(MINIMAL_FRONTMATTER))
+        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), load_checks(MINIMAL_FRONTMATTER))
         assert rule.depends_on == []
 
 

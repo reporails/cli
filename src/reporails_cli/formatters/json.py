@@ -25,10 +25,18 @@ from reporails_cli.core.platform.dto.heal import HealRegression
 from reporails_cli.core.platform.dto.models import CATEGORY_CODES, Level
 from reporails_cli.core.platform.dto.platform import CombinedResult, Omissions
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.dto.targets import TargetReport, UnevaluatedTarget
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.formatters.text.funnel_cta import plain_cta
 from reporails_cli.formatters.text.scorecard import compute_surface_scores
 from reporails_cli.formatters.triage import classify_regime, resolve_leverage, tally_rules
+
+# The report of a run that named no target nothing was checked for.
+NO_TARGET_REPORT = TargetReport()
+
+# The version of the JSON this module writes for `ails check` and the MCP `validate` reply.
+# It rises when a key is renamed, retyped or removed; a key added beside the others leaves it as is.
+OUTPUT_FORMAT_VERSION = 1
 
 
 def _category_for_rule(rule_id: str) -> str:
@@ -300,12 +308,23 @@ def _surface_health(
     ]
 
 
+def _not_evaluated_items(
+    timeouts: tuple[tuple[str, str], ...], unevaluated: tuple[UnevaluatedTarget, ...]
+) -> list[JsonValue]:
+    """The `not_evaluated` list: a `{rule, file}` item per timed-out check, then a `{file, reason}` item per target."""
+    items: list[JsonValue] = [{"rule": rule, "file": file} for rule, file in timeouts]
+    items.extend({"file": t.target, "reason": t.reason} for t in unevaluated)
+    return items
+
+
 def format_combined_result(
     result: CombinedResult,
     ruleset_map: RulesetMap | _NotStated | None = _MAP_NOT_STATED,
     project_root: Path | None = None,
     file_type_by_path: dict[str, str] | None = None,
+    *,
     heal_regressions: tuple[HealRegression, ...] = (),
+    targets: TargetReport = NO_TARGET_REPORT,
 ) -> JsonObject:
     """Format CombinedResult as JSON dict.
 
@@ -317,6 +336,8 @@ def format_combined_result(
         file_type_by_path: Generic-scan file types, so surface_health routes @-imports
             to the Imported surface consistently with the text view
         heal_regressions: The healed files the run shows slipping, for the `heal_regressions` block
+        targets: How the run read its command-line targets: the ones no file was checked for join `not_evaluated`
+            with their reason, and the notices on them follow the server's in `notices`
 
     Returns:
         Dict with findings, stats, compliance, tier, category info.
@@ -336,11 +357,12 @@ def format_combined_result(
     mapped = None if isinstance(ruleset_map, _NotStated) else ruleset_map
 
     data: JsonObject = {
+        "format_version": OUTPUT_FORMAT_VERSION,
         "offline": result.offline,
         "server_error": format_server_error(result.reply.server_error),
         "tier": result.reply.tier,
-        "notices": format_notices(result.reply.notices),
-        "not_evaluated": [{"rule": rule, "file": file} for rule, file in result.omissions.not_evaluated],
+        "notices": format_notices((*result.reply.notices, *targets.notices)),
+        "not_evaluated": _not_evaluated_items(result.omissions.not_evaluated, targets.unevaluated),
         "excluded": {
             "dirs": list(result.omissions.excluded_dirs),
             "files": list(result.omissions.excluded_files),

@@ -38,20 +38,43 @@ def extract_patterns(spec: JsonObject, key: str = "patterns", *, user_maintained
         return patterns
 
     # v0.5.0: patterns inside scopes
+    groups = _scope_pattern_groups(spec, key, user_maintained)
+    return [pattern for _, scope_patterns in groups for pattern in scope_patterns]
+
+
+def _scope_pattern_groups(spec: JsonObject, key: str, user_maintained: bool) -> Iterator[tuple[JsonObject, list[str]]]:
+    """Each scope entry of a file type spec with the patterns it lists under `key`."""
     scopes = spec.get("scopes", {})
     if not isinstance(scopes, dict):
-        return []
-    all_patterns: list[str] = []
+        return
     for scope_name, scope_spec in scopes.items():
         if not isinstance(scope_spec, dict):
             continue
         if user_maintained and scope_spec.get("maintainer") == "system":
             continue
         if scope_name == plugin_roots.PLUGIN_SCOPE:
-            all_patterns.extend(plugin_roots.plugin_scope_patterns(scope_spec, key))
+            yield scope_spec, list(plugin_roots.plugin_scope_patterns(scope_spec, key))
             continue
-        all_patterns.extend(pattern_list(scope_spec.get(key, [])))
-    return all_patterns
+        yield scope_spec, pattern_list(scope_spec.get(key, []))
+
+
+def scope_holding_pattern(spec: JsonObject, pattern: str) -> JsonObject | None:
+    """The scope entry of a file type spec that lists `pattern` (a plugin scope's as `<marker>/pattern`), else None."""
+    for scope_spec, scope_patterns in _scope_pattern_groups(spec, "patterns", False):
+        if pattern in scope_patterns:
+            return scope_spec
+    return None
+
+
+def extract_scope_vcs(spec: JsonObject) -> dict[str, str]:
+    """The `vcs` value of the scope holding each pattern; a pattern whose scope declares none has no entry."""
+    result: dict[str, str] = {}
+    for pattern in extract_patterns(spec):
+        scope_spec = scope_holding_pattern(spec, pattern)
+        vcs = scope_spec.get("vcs") if scope_spec is not None else None
+        if isinstance(vcs, str):
+            result[pattern] = vcs
+    return result
 
 
 def extract_properties(spec: JsonObject) -> dict[str, str | list[str]]:

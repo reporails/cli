@@ -47,6 +47,13 @@ DEFAULT_EXCLUDE_DIRS: frozenset[str] = frozenset(
     }
 )
 
+# Folders skipped by `(parent name, folder name)`: what an agent writes into its own folder while it
+# works, never an instruction file of the project. Claude Code checks out each worktree under
+# `.claude/worktrees/<name>/` (https://code.claude.com/docs/en/worktrees#start-claude-in-a-worktree),
+# a fresh copy of the repository, and writes plan mode's plan files under `plans/`
+# (https://code.claude.com/docs/en/settings-reference#plansdirectory).
+DEFAULT_EXCLUDE_SUBDIRS: frozenset[tuple[str, str]] = frozenset({(".claude", "worktrees"), (".claude", "plans")})
+
 # How a file's text reaches the agent through another file: the same file under another
 # name (`link`) or a separate file with exactly the same text (`copy`).
 AliasHow = Literal["link", "copy"]
@@ -126,9 +133,12 @@ class RunExclusions:
         return any(d.holds(view) for d in dirs for view in views)
 
     @staticmethod
-    def default_pruned(name: str) -> bool:
-        """True when the listed folder `name` is a built-in default."""
-        return name in DEFAULT_EXCLUDE_DIRS
+    def default_pruned(path: str, name: str) -> bool:
+        """True when the listed folder `path` named `name` is a built-in default, by its name or by its
+        parent's name and its own."""
+        return (
+            name in DEFAULT_EXCLUDE_DIRS or (os.path.basename(os.path.dirname(path)), name) in DEFAULT_EXCLUDE_SUBDIRS
+        )
 
     def user_pruned(self, path: str, real: str) -> bool:
         """True when a user folder rule holds the folder `path` (canonical `real`) and it holds no named file."""
@@ -139,10 +149,10 @@ class RunExclusions:
     def prunes(self, path: str, name: str, real: str) -> bool:
         """True when a walk skips the listed folder `path` named `name` (`real` is its canonical path).
 
-        The built-in defaults are skipped by name. A folder the user left out is skipped too, unless
-        it holds a file the user named.
+        The built-in defaults are skipped by name, or by their parent's name and their own. A folder the
+        user left out is skipped too, unless it holds a file the user named.
         """
-        return self.default_pruned(name) or self.user_pruned(path, real)
+        return self.default_pruned(path, name) or self.user_pruned(path, real)
 
 
 @dataclass(frozen=True)

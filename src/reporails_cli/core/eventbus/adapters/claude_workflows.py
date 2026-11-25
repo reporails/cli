@@ -1,0 +1,153 @@
+"""Claude Code workflow runs: the run record file and, while it is not written yet, the run's agent files.
+
+A run record is the JSON object `<session>/workflows/<runId>.json`. Pinned keys: `runId` (a string equal to the
+file's run id), `status` (a string), `phases` (a list of objects with a string `title`) and `workflowProgress` (a
+list); when present, `workflowName` (a string), `durationMs`, `totalTokens` and `startTime` (whole
+numbers). The `workflowProgress` entries that carry an `agentId` are the run's agents, each with a string `agentId`,
+`phaseIndex` (a whole number numbering the record's phases from 1), `phaseTitle` and `label` (strings). A
+`journal.jsonl` row of type `started` carries `agentId`, `label` and `phase` (strings); a row of type `result`
+carries `agentId` (a string) and `result`, the output the run accepted from that agent, which reads as itself when
+it is a string and as indented JSON otherwise. An agent's meta file carries `workflowPhase` (a string). Anything
+else is ignored; a field of another shape refuses the record."""
+
+from __future__ import annotations
+
+import json
+
+from reporails_cli.core.eventbus.adapters.claude_rows import meta_field
+from reporails_cli.core.eventbus.port import PayloadRefused
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object
+from reporails_cli.core.platform.dto.workflows import RECORDED_STATUSES, WorkflowAgent, WorkflowRun, WorkflowStatus
+
+# The `phaseIndex` of a run's first phase: Claude Code numbers a run's phases from 1.
+_FIRST_PHASE_INDEX = 1
+
+
+def _required[Field: (str, int)](record: JsonObject, key: str, kind: type[Field]) -> Field:
+    value = _optional(record, key, kind)
+    if value is None:
+        raise PayloadRefused(f"workflow run record has no {key}")
+    return value
+
+
+def _optional[Field: (str, int)](record: JsonObject, key: str, kind: type[Field]) -> Field | None:
+    value: JsonValue = record.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, kind) or isinstance(value, bool):
+        raise PayloadRefused(f"workflow run record {key} is not a {kind.__name__}")
+    return value
+
+
+def _status(record: JsonObject) -> WorkflowStatus:
+    """The run's status the record names; refuses a word outside `RECORDED_STATUSES`."""
+    word = _required(record, "status", str)
+    for known in RECORDED_STATUSES:
+        if word == known:
+            return known
+    raise PayloadRefused(f"workflow run record status {word!r} is none of {', '.join(RECORDED_STATUSES)}")
+
+
+def _result_row(row: JsonObject) -> tuple[str, str] | None:
+    """The agent id and, as text, the output a journal `result` row says the run accepted from that agent; None for
+    any other row. Refuses a `result` row with no string `agentId` or no `result`."""
+    if row.get("type") != "result":
+        return None
+    agent_id = row.get("agentId")
+    if not isinstance(agent_id, str):
+        raise PayloadRefused("workflow journal result row has no string agentId")
+    if "result" not in row:
+        raise PayloadRefused("workflow journal result row has no result")
+    value = row["result"]
+    return agent_id, value if isinstance(value, str) else json.dumps(value, indent=2, ensure_ascii=False)
+
+
+def accepted_output(row: JsonObject, agent_id: str) -> str | None:
+    """The output a journal `result` row says the run accepted from `agent_id`; None for any other row."""
+    found = _result_row(row)
+    return None if found is None or found[0] != agent_id else found[1]
+
+
+def _accepted(journal: list[JsonObject]) -> dict[str, str]:
+    """The output the run accepted from each agent, by agent id: its first journal `result` row's."""
+    found: dict[str, str] = {}
+    for row in journal:
+        pair = _result_row(row)
+        if pair is not None:
+            found.setdefault(*pair)
+    return found
+
+
+def _result_chars(accepted: dict[str, str], agent_id: str) -> int | None:
+    text = accepted.get(agent_id)
+    return None if text is None else len(text)
+
+
+def _recorded_agent(entry: JsonObject, accepted: dict[str, str]) -> WorkflowAgent:
+    """The agent one `workflowProgress` entry names, with its phase's place among the run's phases."""
+    agent_id = _required(entry, "agentId", str)
+    return WorkflowAgent(
+        agent_id,
+        _required(entry, "phaseIndex", int) - _FIRST_PHASE_INDEX,
+        _required(entry, "phaseTitle", str),
+        _required(entry, "label", str),
+        _result_chars(accepted, agent_id),
+    )
+
+
+def _resolve_recorded_run(run_id: str, record: JsonObject, journal: list[JsonObject]) -> WorkflowRun:
+    """The run a record file holds; refuses a record that is not the pinned shape."""
+    if _required(record, "runId", str) != run_id:
+        raise PayloadRefused(f"workflow run record names a run other than {run_id}")
+    if not isinstance(record.get("phases"), list) or not isinstance(record.get("workflowProgress"), list):
+        raise PayloadRefused("workflow run record phases or workflowProgress is not a list")
+    phases = tuple(_required(as_object(phase), "title", str) for phase in as_list(record["phases"]))
+    entries = [as_object(entry) for entry in as_list(record["workflowProgress"])]
+    accepted = _accepted(journal)
+    agents = tuple(_recorded_agent(entry, accepted) for entry in entries if "agentId" in entry)
+    return WorkflowRun(
+        run_id=run_id,
+        name=_optional(record, "workflowName", str),
+        status=_status(record),
+        phases=phases,
+        duration_ms=_optional(record, "durationMs", int),
+        total_tokens=_optional(record, "totalTokens", int),
+        start_time=_optional(record, "startTime", int),
+        agents=agents,
+    )
+
+
+def _resolve_running_run(run_id: str, journal: list[JsonObject], metas: dict[str, JsonObject]) -> WorkflowRun:
+    """The run that has no record file yet, from its agents' meta files (their phase) and its journal (their
+    label and start order). The run's name, duration, token total and start time are not known."""
+    labels: dict[str, str | None] = {}
+    for row in journal:
+        agent_id = row.get("agentId")
+        if row.get("type") == "started" and isinstance(agent_id, str):
+            label = row.get("label")
+            labels[agent_id] = label if isinstance(label, str) else None
+    ordered = [
+        *(agent for agent in labels if agent in metas),
+        *(agent for agent in sorted(metas) if agent not in labels),
+    ]
+    accepted = _accepted(journal)
+    phases: list[str] = []
+    agents: list[WorkflowAgent] = []
+    for agent_id in ordered:
+        phase = meta_field(metas[agent_id], "workflowPhase", str)
+        if phase is not None and phase not in phases:
+            phases.append(phase)
+        index = None if phase is None else phases.index(phase)
+        agents.append(WorkflowAgent(agent_id, index, phase, labels.get(agent_id), _result_chars(accepted, agent_id)))
+    return WorkflowRun(run_id, None, "running", tuple(phases), None, None, None, tuple(agents))
+
+
+def resolve_workflow_run(
+    run_id: str, record: JsonObject | None, journal: list[JsonObject], metas: dict[str, JsonObject]
+) -> WorkflowRun:
+    """The run its record file holds, each agent with the size of the output the journal says the run accepted
+    from it; with no record file (`record` None), the running run its journal rows and agent meta files show. Refuses
+    a record or a journal `result` row that is not the pinned shape."""
+    if record is None:
+        return _resolve_running_run(run_id, journal, metas)
+    return _resolve_recorded_run(run_id, record, journal)

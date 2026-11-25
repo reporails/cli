@@ -33,13 +33,14 @@ the adapter refuses any other shape of a row type it reads:
   (`addedNames` and `addedBlocks`, lists of strings), `deferred_tools_delta`
   (`addedNames` and `addedLines`, lists of strings, or in a subagent file `content`, a string; and optionally
   `pendingMcpServers`, a list of strings, and `failedMcpServers`, a list of objects each with a string
-  `name` and optionally string `errorCode` and `error`),
-  `session_context` (`context`, an object of strings). The three delta rows may also carry `removedTypes` or
-  `removedNames`, lists of strings, counted off their item count; a deferred-tools delta row whose
-  added items list is empty names tools re-added by name: `readdedNames`, a list of strings, must name every
-  added name, and each counts with size 0 and is recorded as re-added; any other row whose added names and
-  items differ in length, empty items included, is refused; each added item's size is kept under its
+  `name` and optionally string `errorCode` and `error`), `session_context` (`context`, an object of strings). The three
+  delta rows may also carry `removedTypes` or `removedNames`, lists of strings, counted off their item count; a
+  deferred-tools delta row whose added items list is empty names tools re-added by name: `readdedNames`, a list of
+  strings, must name every added name, and each counts with size 0 and is recorded as re-added; any other row whose
+  added names and items differ in length, empty items included, is refused; each added item's size is kept under its
   name (never its text) and each removed name is kept, so a later removal takes its size off too.
+- a name-only harness record: `type: "attachment"` with an `attachment.type` of `environment`, `auto_mode`,
+  `plan_mode`, `task_reminder`, `silent_turn_reminder`, `credential_org` or `date`: kind `unsized`, size 0.
 - a hook note: `type: "attachment"` with `hookEvent` and `hookName` strings and one of `attachment.type`
   `hook_additional_context` (`content`, a list of strings), `hook_success` (`content`, a string, read only when
   it is not empty and its `hookEvent` is one of `UserPromptSubmit`, `UserPromptExpansion`, `SessionStart` or
@@ -60,6 +61,8 @@ the adapter refuses any other shape of a row type it reads:
   `status`, a string, which is `forked` when the skill ran in a subagent of its own (`context: fork`); no other
   key of the object is read. A `success: false` run, and a `toolUseResult` that is not an object or has no
   `commandName`, yield nothing.
+- a stop hook summary: `type: "system"` with `subtype: "stop_hook_summary"` and `hookInfos`, a list of objects
+  with the `command` that ran and its `durationMs` where it has one; each entry yields one `Stop` firing.
 - a compaction: `type: "system"` with `subtype: "compact_boundary"`, `compactMetadata.trigger` and, when present,
   `compactMetadata.preservedMessages.uuids`, a list of the ids of the rows Claude Code kept across it.
 - a file attachment: `type: "attachment"` with `attachment.type: "file"` and `attachment.filename`, a string, which
@@ -87,8 +90,9 @@ the adapter refuses any other shape of a row type it reads:
   or a list of blocks, sized by the characters of its text; a block of any other type counts nothing.
 - a subagent file: its first row's `timestamp`, the `agentType` of `agent-<id>.meta.json` and, when present, the
   meta fields `description`, `parentAgentId`, `toolUseId`, `requestShape` (strings; `background` marks a background
-  run), `model` (a string), `launchedWithDefaults` (a boolean), `spawnDepth` (a whole number) and
-  `stoppedByUser` (a boolean).
+  run), `model` (a string), `launchedWithDefaults` (a boolean), `spawnDepth` (a whole number),
+  `stoppedByUser` (a boolean) and `workflowPhase` (a string, on an agent a workflow run started). A workflow run's
+  record file is read by `claude_workflows`.
 - API request rows, recorded on Claude Code 2.1.309 and later: `api-request-shape`, `api-request-blob` and
   `api-request`, sized and dropped by `claude_requests` when `resolve_row` is given a request chain, ignored
   otherwise; their fields are listed there.
@@ -103,6 +107,7 @@ size and a command's hash; on request, a command's text, a hand-back's message a
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import ClassVar
 
 from reporails_cli.core.eventbus.adapters.claude_calls import (
     blocks_text,
@@ -118,34 +123,35 @@ from reporails_cli.core.eventbus.adapters.claude_calls import (
     tool_call,
     tool_result,
 )
+from reporails_cli.core.eventbus.adapters.claude_harness import ClaudeContextReader, harness_parts
 from reporails_cli.core.eventbus.adapters.claude_hooks import (
     HOOK_NOTE_ATTACHMENTS,
     hook_firing,
     hook_note,
     hook_output,
+    stop_summary_firings,
 )
+from reporails_cli.core.eventbus.adapters.claude_launch import subagent_launch
 from reporails_cli.core.eventbus.adapters.claude_requests import (
     feed_row,
-    request_shape_hash,
-    shape_system_text,
+    request_blocks,
+    request_shape_ref,
+    shape_text,
 )
 from reporails_cli.core.eventbus.adapters.claude_rows import (
     attached_paths,
     brief_text,
     compact_summary_link,
     compact_summary_text,
-    meta_field,
     required_text,
-    sized_by_name,
-    string_list,
     usage_counts,
 )
-from reporails_cli.core.eventbus.port import PayloadRefused
+from reporails_cli.core.eventbus.adapters.claude_workflows import accepted_output, resolve_workflow_run
+from reporails_cli.core.eventbus.port import ContextReader, PayloadRefused
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
     as_list,
     as_object,
-    opt_int,
     opt_str,
     strict_str_list,
 )
@@ -154,35 +160,19 @@ from reporails_cli.core.platform.dto.events import (
     CompactionBoundary,
     EventKind,
     EventRecord,
-    HarnessAttachment,
     HarnessEntry,
     InstructionLoad,
+    MessageText,
     PromptEntry,
     ReplyText,
     RequestChain,
     SkillRun,
-    SubagentMeta,
     TokenUsage,
 )
 
 # The `message.model` Claude Code writes on a reply it made itself, for an API error or an interrupt.
 SYNTHETIC_MODEL = "<synthetic>"
 NESTED_MARKER = "nested"
-BACKGROUND_SHAPE = "background"
-
-
-_HARNESS: dict[str, HarnessAttachment] = {
-    "prompt_snapshot": HarnessAttachment(
-        "system_prompt", "system prompt", "systemPrompt", False, "systemPrompt", False
-    ),
-    "skill_listing": HarnessAttachment("skill_list", "skills", "skillCount", True, "content", True),
-    "agent_listing_delta": HarnessAttachment(
-        "agent_list", "agents", "addedTypes", False, "addedLines", False, "removedTypes"
-    ),
-    "mcp_instructions_delta": HarnessAttachment(
-        "mcp_instructions", "MCP server instructions", "addedNames", False, "addedBlocks", False, "removedNames"
-    ),
-}
 
 
 # The command row a `/clear` opens the new session's transcript with.
@@ -194,6 +184,7 @@ class ClaudeTranscriptAdapter:
 
     agent = "claude"
     session_env = "CLAUDE_CODE_SESSION_ID"  # https://code.claude.com/docs/en/env-vars
+    context: ClassVar[ContextReader] = ClaudeContextReader()
 
     def resolve_row(
         self, row: JsonObject, subagent_id: str | None, requests: RequestChain | None = None
@@ -229,6 +220,11 @@ class ClaudeTranscriptAdapter:
             return [self._record(row, "turn_end", subagent_id)]
         if subtype == "compact_boundary":
             return [self._compaction(row, subagent_id)]
+        if subtype == "stop_hook_summary":
+            return [
+                replace(self._record(row, "hook_firing", subagent_id), item=firing)
+                for firing in stop_summary_firings(row)
+            ]
         return []
 
     def resolve_call(self, row: JsonObject, use_id: str) -> str:
@@ -248,9 +244,10 @@ class ClaudeTranscriptAdapter:
         """The text of the result of the tool call `use_id` in a user row, for the route that shows it."""
         return result_text(row, use_id)
 
-    def resolve_handback(self, row: JsonObject) -> str | None:
-        """The message of the hand-back call an assistant row holds; None for any other row."""
-        return handback_message(row)
+    def resolve_handback(self, row: JsonObject, agent_id: str) -> str | None:
+        """The message of the hand-back call an assistant row holds, or the output a workflow journal `result` row
+        says the run accepted from `agent_id`; None for any other row."""
+        return handback_message(row) if row.get("type") == "assistant" else accepted_output(row, agent_id)
 
     def resolve_reply(self, row: JsonObject) -> str | None:
         """The text of an assistant row; None for any other row or a row with no text."""
@@ -266,14 +263,17 @@ class ClaudeTranscriptAdapter:
             raise PayloadRefused("subagent first row holds no text content")
         return text
 
-    def resolve_request_shape(self, row: JsonObject) -> str | None:
-        """The hash of the request shape an `api-request` row names; None for any other row."""
-        return request_shape_hash(row)
+    def resolve_request(self, row: JsonObject) -> tuple[str, str] | None:
+        """The id and the request shape hash of an `api-request` row; None for any other row."""
+        return request_shape_ref(row)
 
-    def resolve_system(self, row: JsonObject, shape_hash: str) -> str | None:
-        """The system prompt of the `api-request-shape` row recorded under `shape_hash`, for the route that shows
-        it; None for any other row."""
-        return shape_system_text(row, shape_hash)
+    def resolve_shape_text(self, row: JsonObject, shape_hash: str, item: str) -> str | None:
+        """The system prompt or tool definitions of the shape row recorded under `shape_hash`; None for any other."""
+        return shape_text(row, shape_hash, item)
+
+    def request_blocks(self, chain: RequestChain) -> list[MessageText]:
+        """The notes and thinking of the messages of the request `chain` last took, in order."""
+        return request_blocks(chain)
 
     def holds_call(self, row: JsonObject, use_id: str) -> bool:
         """Whether `row` is an assistant row holding the tool call `use_id`."""
@@ -308,24 +308,19 @@ class ClaudeTranscriptAdapter:
         """The `timestamp` of a row; None for a row without one."""
         return opt_str(row.get("timestamp")) or None
 
-    def resolve_subagent(self, subagent_id: str, meta: JsonObject, first_row: JsonObject) -> EventRecord:
+    resolve_workflow_run = staticmethod(resolve_workflow_run)
+
+    def resolve_subagent(
+        self, subagent_id: str, meta: JsonObject, first_row: JsonObject, workflow_run: str | None = None
+    ) -> EventRecord:
         """The `subagent_run` record of a subagent file; refuses a meta file without `agentType` or a first row that
-        is not a user row. A first row with no text leaves the brief size unknown."""
+        is not a user row. A first row with no text leaves the brief size unknown. For an agent of a workflow run,
+        the record names the run and the meta's `workflowPhase`."""
         agent_type = opt_str(meta.get("agentType"))
         if not agent_type:
             raise PayloadRefused(f"subagent {subagent_id} meta has no agentType")
         brief = brief_text(first_row)
-        launch = SubagentMeta(
-            description=meta_field(meta, "description", str),
-            parent_id=meta_field(meta, "parentAgentId", str),
-            tool_use_id=meta_field(meta, "toolUseId", str),
-            depth=meta_field(meta, "spawnDepth", int),
-            brief_chars=None if brief is None else len(brief),
-            stopped=meta_field(meta, "stoppedByUser", bool) is True,
-            background=meta_field(meta, "requestShape", str) == BACKGROUND_SHAPE,
-            asked_model=meta_field(meta, "model", str),
-            with_defaults=meta_field(meta, "launchedWithDefaults", bool),
-        )
+        launch = subagent_launch(meta, brief, workflow_run)
         return replace(self._record(first_row, "subagent_run", subagent_id), subagent_type=agent_type, item=launch)
 
     def _tool_calls(self, row: JsonObject, subagent_id: str | None) -> list[EventRecord]:
@@ -458,8 +453,8 @@ class ClaudeTranscriptAdapter:
             return self._hook_note(row, attachment, subagent_id)
         if kind == "queued_command":
             return self._prompt(row, subagent_id)
-        entry = self._harness_entry(attachment, kind)
-        return [] if entry is None else [self._harness(row, entry, subagent_id)]
+        parts = harness_parts(attachment, kind)
+        return [] if parts is None else [self._harness(row, parts[0], subagent_id)]
 
     def _instructions(self, row: JsonObject, attachment: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         loads: list[EventRecord] = []
@@ -469,15 +464,6 @@ class ClaudeTranscriptAdapter:
             loads.append(self._load(row, path, opt_str(entry.get("type")), subagent_id))
         return loads
 
-    def _harness_entry(self, attachment: JsonObject, kind: object) -> HarnessEntry | None:
-        if kind == "session_context":
-            return self._session_context(attachment)
-        if kind == "deferred_tools_delta":
-            return self._deferred_tools(attachment)
-        if isinstance(kind, str) and kind in _HARNESS:
-            return self._listing(attachment, kind)
-        return None
-
     def _load(self, row: JsonObject, path: str, memory_type: str | None, subagent_id: str | None) -> EventRecord:
         return replace(
             self._record(row, "instruction_load", subagent_id),
@@ -486,97 +472,6 @@ class ClaudeTranscriptAdapter:
 
     def _harness(self, row: JsonObject, entry: HarnessEntry, subagent_id: str | None) -> EventRecord:
         return replace(self._record(row, "harness", subagent_id), item=entry)
-
-    def _listing(self, attachment: JsonObject, kind: str) -> HarnessEntry:
-        spec = _HARNESS[kind]
-        what = f"{kind} attachment"
-        if spec.count_is_number:
-            count = opt_int(attachment.get(spec.count_key))
-            if count is None:
-                raise PayloadRefused(f"{what} {spec.count_key} is not a whole number")
-            names: list[str] = []
-        else:
-            names = string_list(attachment.get(spec.count_key), spec.count_key, what)
-            count = len(names)
-        text = attachment.get(spec.chars_key)
-        added: tuple[tuple[str, int], ...] = ()
-        if spec.chars_is_text:
-            if not isinstance(text, str):
-                raise PayloadRefused(f"{what} {spec.chars_key} is not a string")
-            chars = len(text)
-        else:
-            items = string_list(text, spec.chars_key, what)
-            chars = sum(len(item) for item in items)
-            if spec.removed_key is not None:
-                added = sized_by_name(names, items, (), what)
-        removed = self._removed_names(attachment, spec.removed_key, what)
-        listed = (
-            tuple(string_list(attachment["names"], "names", what))
-            if kind == "skill_listing" and "names" in attachment
-            else None
-        )
-        return HarnessEntry(
-            spec.kind, spec.label, count - len(removed), chars, added=added, removed=removed, names=listed
-        )
-
-    def _removed_names(self, attachment: JsonObject, key: str | None, what: str) -> tuple[str, ...]:
-        """The names a delta row removed; none when the row does not carry the list."""
-        if key is None or key not in attachment:
-            return ()
-        return tuple(string_list(attachment.get(key), key, what))
-
-    def _failed_servers(self, attachment: JsonObject, what: str) -> tuple[str, ...]:
-        """The names of the servers that failed to connect; each entry is an object with a string name."""
-        if "failedMcpServers" not in attachment:
-            return ()
-        entries = attachment["failedMcpServers"]
-        if not isinstance(entries, list):
-            raise PayloadRefused(f"{what} failedMcpServers is not a list of objects")
-        names: list[str] = []
-        for entry in entries:
-            fields = as_object(entry)
-            name = opt_str(fields.get("name"))
-            if not name:
-                raise PayloadRefused(f"{what} failedMcpServers entry has no string name")
-            for key in ("errorCode", "error"):
-                if key in fields and opt_str(fields[key]) is None:
-                    raise PayloadRefused(f"{what} failedMcpServers entry {key} is not a string")
-            names.append(name)
-        return tuple(names)
-
-    def _deferred_tools(self, attachment: JsonObject) -> HarnessEntry:
-        what = "deferred_tools_delta attachment"
-        if "content" in attachment:
-            content = attachment.get("content")
-            if not isinstance(content, str):
-                raise PayloadRefused(f"{what} content is not a string")
-            return HarnessEntry("deferred_tools", "deferred tools", None, len(content))
-        names = string_list(attachment.get("addedNames"), "addedNames", what)
-        lines = string_list(attachment.get("addedLines"), "addedLines", what)
-        removed = self._removed_names(attachment, "removedNames", what)
-        readded = self._removed_names(attachment, "readdedNames", what)
-        added = sized_by_name(names, lines, readded, what)
-        return HarnessEntry(
-            "deferred_tools",
-            "deferred tools",
-            len(names) - len(removed),
-            sum(len(item) for item in lines),
-            added=added,
-            removed=removed,
-            readded=() if added else tuple(names),
-            pending=self._removed_names(attachment, "pendingMcpServers", what),
-            failed=self._failed_servers(attachment, what),
-        )
-
-    def _session_context(self, attachment: JsonObject) -> HarnessEntry:
-        context = attachment.get("context")
-        if not isinstance(context, dict):
-            raise PayloadRefused("session_context attachment context is not an object")
-        values = strict_str_list(list(context.values()))
-        if values is None:
-            raise PayloadRefused("session_context attachment context is not an object of strings")
-        chars = sum(len(value) for value in values)
-        return HarnessEntry("session_context", "session context", None, chars)
 
     def _hook_note(self, row: JsonObject, attachment: JsonObject, subagent_id: str | None) -> list[EventRecord]:
         what = f"{attachment.get('type')} attachment"

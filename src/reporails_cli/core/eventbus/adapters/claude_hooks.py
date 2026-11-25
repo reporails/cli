@@ -25,26 +25,32 @@ def _context_items(attachment: JsonObject, what: str) -> list[str]:
     return items
 
 
-def hook_note(attachment: JsonObject, event: str) -> tuple[NoteKind, int] | None:
-    """The kind and size in characters of the note a hook row puts into the context; None when it puts none. A
-    `hook_success` row's `content` counts only for the events whose stdout Claude Code adds to the context."""
+def hook_note_texts(attachment: JsonObject, event: str) -> tuple[NoteKind, list[str]] | None:
+    """The kind and texts of the note a hook row puts into the context; None when it puts none. A `hook_success`
+    row's `content` counts only for the events whose stdout Claude Code adds to the context."""
     kind = attachment.get("type")
     what = f"{kind} attachment"
     if kind == "hook_blocking_error":
         blocked = as_object(attachment.get("blockingError")).get("blockingError")
         if not isinstance(blocked, str):
             raise PayloadRefused(f"{what} blockingError is not an object holding a string")
-        return "stop_block", len(blocked)
+        return "stop_block", [blocked]
     if kind == "hook_success":
         content = attachment.get("content")
         if content is None or content == "" or event not in HOOK_STDOUT_CONTEXT_EVENTS:
             return None
         if not isinstance(content, str):
             raise PayloadRefused(f"{what} content is not a string")
-        return "hook_note", len(content)
+        return "hook_note", [content]
     if kind == "hook_additional_context":
-        return "hook_note", sum(len(item) for item in _context_items(attachment, what))
+        return "hook_note", _context_items(attachment, what)
     return None
+
+
+def hook_note(attachment: JsonObject, event: str) -> tuple[NoteKind, int] | None:
+    """The kind and size in characters of the note a hook row puts into the context; None when it puts none."""
+    found = hook_note_texts(attachment, event)
+    return None if found is None else (found[0], sum(len(text) for text in found[1]))
 
 
 def hook_firing(row: JsonObject, attachment: JsonObject, label: str, event: str) -> HookFiring:
@@ -97,3 +103,17 @@ def hook_output(attachment: JsonObject) -> str:
     if kind == "hook_system_message" and isinstance(content, str):
         return content
     raise PayloadRefused("row is not a hook row")
+
+
+def stop_summary_firings(row: JsonObject) -> list[HookFiring]:
+    """The firings a `stop_hook_summary` row records: one for each entry of its `hookInfos`, with the command and
+    duration the entry holds."""
+    infos = row.get("hookInfos")
+    if not isinstance(infos, list):
+        raise PayloadRefused("stop_hook_summary hookInfos is not a list")
+    firings: list[HookFiring] = []
+    for info in infos:
+        entry = as_object(info)
+        command = opt_str(entry.get("command"))
+        firings.append(HookFiring("Stop", "Stop", None, command, None, opt_int(entry.get("durationMs")), "ran", 0))
+    return firings

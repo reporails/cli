@@ -8,9 +8,11 @@ from typing import Literal, TypeGuard, get_args
 
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
-from reporails_cli.core.platform.dto.events import HarnessKind, HookDecision
+from reporails_cli.core.platform.dto.events import HookDecision, HookFiring
 from reporails_cli.core.platform.dto.exclusion import FileLeftOut
-from reporails_cli.core.platform.dto.xray_graph import ContextKey, SourceKind
+from reporails_cli.core.platform.dto.hooks import CannotFire
+from reporails_cli.core.platform.dto.xray_graph import SourceKind
+from reporails_cli.core.platform.dto.xray_own import ContextKey, OwnBasis, Visibility
 
 ArtifactKind = Literal["instructions", "rule", "memory", "skill", "agent", "command", "hook"]
 
@@ -26,7 +28,6 @@ MemoryRole = Literal["index", "item"]
 
 
 # Whether a built-in context item's text can be read in the transcript.
-Visibility = Literal["hidden", "partial", "shown"]
 
 
 # Where an MCP server stands in a session: connected, still connecting, failed to connect, turned off for the
@@ -106,34 +107,6 @@ def _tally_json(tally: FindingTally | None) -> JsonValue:
 
 
 @dataclass(frozen=True)
-class XrayBuiltin:
-    """One item of the coding agent's own context: its key, label, estimated size, a note on what it holds, whether
-    its text can be read in the transcript and whether its size carries what the estimates leave of the total. For
-    the system prompt, `system_shapes` is how many different system prompts the main agent's requests were sent
-    with (0 when no request was recorded)."""
-
-    key: HarnessKind
-    label: str
-    tokens_est: int
-    note: str | None
-    visible: Visibility
-    remainder: bool
-    system_shapes: int = 0
-
-    def to_json(self) -> JsonObject:
-        """The item as a JSON object."""
-        return {
-            "key": self.key,
-            "label": self.label,
-            "tokens_est": self.tokens_est,
-            "note": self.note,
-            "visible": self.visible,
-            "remainder": self.remainder,
-            "system_shapes": self.system_shapes,
-        }
-
-
-@dataclass(frozen=True)
 class McpDetail:
     """An MCP server as the configuration and the session show it: the plugin that provides it (None for any other
     server), the scope and file that declare it (None when no file does) and its state."""
@@ -172,13 +145,83 @@ class HookRun:
 
 
 @dataclass(frozen=True)
+class DeclaredHook:
+    """One hook handler a hook config declares: its event and matcher, its command, the file that declares it as the
+    page shows it, the folder of the plugin that ships the file (None for any other file) and where it sits in the
+    file."""
+
+    event: str
+    matcher: str
+    command: str
+    file: str
+    plugin_root: str | None
+    place: str
+    # The settings file, as the page shows it, whose `disableAllHooks: true` turns the handler off; None when none does.
+    hooks_off: str | None = None
+
+    @property
+    def handler(self) -> str:
+        """The id of the handler: its file and its place in it."""
+        return f"{self.file}:{self.place}"
+
+
+@dataclass(frozen=True)
+class HookEarlier:
+    """When a hook last fired in another session of the project: that session's id and the time of the firing as the
+    transcript wrote it."""
+
+    session: str
+    at: str
+
+
+@dataclass(frozen=True)
+class EarlierFiring:
+    """The latest firing of one hook name and command in another session of the project."""
+
+    session: str
+    at: str
+    moment: float
+    firing: HookFiring
+
+
+@dataclass(frozen=True)
+class EarlierFirings:
+    """What reading the project's other recent sessions found: the latest firing per hook name and command in each,
+    and whether the read is still going (a view built meanwhile cannot say a hook never fired)."""
+
+    checking: bool
+    firings: tuple[EarlierFiring, ...] = ()
+
+
+@dataclass(frozen=True)
+class HookHealth:
+    """Whether a declared hook can fire: why it cannot (None when nothing shows it cannot) and the line that
+    recovers it (None when it can fire or no line applies)."""
+
+    cannot_fire: CannotFire | None
+    recovery: str | None
+
+
+@dataclass(frozen=True)
 class HookDetail:
     """A hook as the session shows it: the commands it ran with their declaring files, how many times it fired and
-    its latest firings."""
+    its latest firings, the event and matcher it is registered under (None when no hook config declares it), its
+    health, the phrase that states its status (its `{time}`, `{when}` and `{session}` filled by the page), when it last
+    fired, in seconds from the session's start (None when it did not fire this session), the other session it last
+    fired in (None when none is known), whether the read of the other sessions is still going, and the ids of the
+    declared handlers it stands for (its own id when no hook config declares it)."""
 
     commands: tuple[HookCommand, ...]
     firing_count: int
     firings: tuple[HookRun, ...]
+    event: str | None = None
+    matcher: str = ""
+    health: HookHealth = field(default_factory=lambda: HookHealth(None, None))
+    status: str = ""
+    last_fired: float | None = None
+    earlier: HookEarlier | None = None
+    checking: bool = False
+    handlers: tuple[str, ...] = ()
 
     def to_json(self) -> JsonObject:
         """The detail as a JSON object."""
@@ -196,7 +239,19 @@ class HookDetail:
             }
             for run in self.firings
         ]
-        return {"commands": commands, "firing_count": self.firing_count, "firings": firings}
+        return {
+            "commands": commands,
+            "firing_count": self.firing_count,
+            "firings": firings,
+            "event": self.event,
+            "matcher": self.matcher,
+            "cannot_fire": self.health.cannot_fire,
+            "recovery": self.health.recovery,
+            "status": self.status,
+            "last_fired": self.last_fired,
+            "earlier": None if self.earlier is None else {"session": self.earlier.session, "at": self.earlier.at},
+            "checking": self.checking,
+        }
 
 
 @dataclass(frozen=True)
@@ -227,15 +282,15 @@ class SourceEntry(SourceFacts):
     excluded: FileLeftOut = field(default_factory=FileLeftOut)
     # An MCP server's configuration and state, or a hook's commands and firings.
     detail: McpDetail | HookDetail | None = None
+    # A file's size in bytes, which `tokens_est` is counted from; None for a source with no file.
+    chars: int | None = None
 
 
 @dataclass(frozen=True)
 class AgentLaunch:
-    """What the launches of an agent type were sent with: the system prompt size in tokens of the first that recorded
-    a request (None when none did), each tool the launches were sent with and how many launches had it, and the
-    settings they were set up with."""
+    """What the launches of an agent type were sent with: each tool the launches were sent with and how many launches
+    had it, and the settings they were set up with."""
 
-    system_tokens_est: int | None
     tools: tuple[tuple[str, int], ...]
     # What the launches were set up with, as (label, value) lines the page lists as written.
     settings: tuple[tuple[str, str], ...] = ()
@@ -249,8 +304,6 @@ class XraySource(SourceFacts):
     availability: Availability
     had_by: tuple[str, ...]
     actionable: bool
-    # How many agents ran from an agent definition (None for any other kind).
-    launches: int | None
     # What the source cost across every reply that carried it, an estimate; None when no priced reply carried it.
     cost_usd_est: float | None
     # The name the page shows the source by.
@@ -267,6 +320,13 @@ class XraySource(SourceFacts):
     # What an agent source's launches were sent with (None when no launch recorded a request), an MCP server's
     # configuration and state, or a hook's commands and firings (None for any other kind).
     detail: AgentLaunch | McpDetail | HookDetail | None = None
+    # Why an agent had the source, in the wording the "in context" rows use (None when no agent had it).
+    why: str | None = None
+
+    @property
+    def launches(self) -> int | None:
+        """How many agents ran from an agent definition (None for any other kind)."""
+        return len(self.had_by) if self.kind == "agent" else None
 
     @property
     def launch(self) -> AgentLaunch | None:
@@ -300,10 +360,10 @@ class XraySource(SourceFacts):
             "agent_type": self.agent_type,
             "builtin": self.builtin,
             "memory_role": self.memory_role,
-            "system_tokens_est": self.launch.system_tokens_est if self.launch else None,
             "launch_settings": [[label, value] for label, value in (self.launch.settings if self.launch else ())],
             "mcp": self.detail.to_json() if isinstance(self.detail, McpDetail) else None,
             "hook": self.detail.to_json() if isinstance(self.detail, HookDetail) else None,
+            "why": self.why,
         }
 
 
@@ -333,6 +393,8 @@ class XrayArtifact(ArtifactFile):
     advertised: bool | None
     scopes: tuple[str, ...]
     excluded: FileLeftOut
+    # The file's size in bytes, which `tokens_est` is counted from; None when it is not a readable file.
+    chars: int | None = None
 
 
 @dataclass(frozen=True)
@@ -348,29 +410,35 @@ class XrayPeek:
 
 @dataclass(frozen=True)
 class XrayBuiltinInfo:
-    """One built-in context item of the coding agent: its harness kind, label, whether its text can be read in the
-    transcript and a note template filled from the item's count (`{count}`); a template that needs a count the
-    item lacks gives no note; `note_once` words a count of one."""
+    """One item of the coding agent's own context: its row key, label, whether its text can be read in the
+    transcript and what it holds, as a template filled from the item's count (`{count}`); a template that needs a
+    count the item lacks gives no description; `note_once` words a count of one. A template with `{kinds}` takes the
+    names the item lists, and `note_none` words the item when it has none. `unread` names what the item's
+    characters hold besides its readable text (None when all of them are readable)."""
 
-    key: HarnessKind
+    key: ContextKey
     label: str
     visible: Visibility
     note: str | None
     note_once: str | None = None
-    # The note when the size is measured from the recorded request.
-    measured_note: str | None = None
-    # The note when the size is measured from the latest complete request before the reply; `{request}` is its id.
-    earlier_note: str | None = None
+    note_none: str | None = None
+    unread: str | None = None
+
+
+@dataclass(frozen=True)
+class XrayBasisLabel:
+    """The words the coding agent uses for one basis of the size of its own context."""
+
+    key: OwnBasis
+    label: str
 
 
 @dataclass(frozen=True)
 class XrayContextText:
     """The label and reason the coding agent words one kind of "in context" row with; a reason may hold the
-    fire count as `{count}`; `reason_once` words a count of one; `reason_earlier` words a row measured from the
-    latest complete request before its reply."""
+    fire count as `{count}`, and `reason_once` words a count of one."""
 
     key: ContextKey
     label: str
     reason: str
     reason_once: str | None = None
-    reason_earlier: str | None = None

@@ -20,7 +20,9 @@ from reporails_cli.core.heal.apply import heal_withheld_for_run
 from reporails_cli.core.pipeline.assemble import with_exclusions
 from reporails_cli.core.platform.dto.pipeline import Refusal
 from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.dto.targets import TargetReport
 from reporails_cli.formatters.github import escape_workflow_data
+from reporails_cli.formatters.text.not_evaluated import RUN_IN_ITS_PROJECT, unevaluated_target_lines
 from reporails_cli.formatters.text.verdict import render_excluded_line
 from reporails_cli.interfaces.cli.check_orchestration import RenderContext, _dispatch_output
 from reporails_cli.interfaces.cli.helpers import _print_no_instruction_files, console
@@ -62,24 +64,36 @@ def _emit_heal_withheld(output_format: str, *, funnel_error: object, tier: str |
     console.print(f"[yellow]{message}[/yellow]")
 
 
-def _emit_unlisted_file(file: Path, root: Path, run_folder: Path, output_format: str) -> None:
+def _emit_unlisted_file(file: Path, root: Path, run_folder: Path, output_format: str, agent: str) -> None:
     """Say that a named file is checked outside any project listing, in the active output format.
 
-    A file whose project is the folder the command runs in is told only that it is not listed; a file
+    A file whose project is the folder the command runs in is told which agent does not load it and
+    that it is checked as a referenced file; a file
     of another project is told to run the check in that project's folder.
     Under json/github the diagnosis owns stdout, so the notice goes to stderr."""
     if root == run_folder:
         inside = [p for p in (file, *own_name_spellings(file)) if p.is_relative_to(root)]
         shown = inside[0].relative_to(root).as_posix() if inside else str(file)
-        message = f"{shown} is not an instruction file of this project."
+        message = f"{shown} is not loaded by {agent or 'any agent'}; checked as a referenced file."
     else:
-        message = (
-            f"{file} is not an instruction file in the project at {root}; run ails check in that project's folder."
-        )
+        message = f"{file} is not an instruction file in the project at {root}; {RUN_IN_ITS_PROJECT}."
     if output_format in MACHINE_READABLE_CHECK_FORMATS:
         print(message, file=sys.stderr)
         return
     console.print(f"[yellow]{message}[/yellow]", soft_wrap=True)
+
+
+def _emit_target_report(state: CheckState) -> None:
+    """Say how the run read its targets: the capability-or-folder words and the targets nothing was checked for.
+
+    The machine formats carry both themselves (JSON in its own keys, github as annotations).
+    Text prints them above the result.
+    """
+    if state.targets.output_format in MACHINE_READABLE_CHECK_FORMATS:
+        return
+    lines = [n.text for n in state.targets.notices] + unevaluated_target_lines(state.targets.unevaluated)
+    for line in lines:
+        console.print(f"[yellow]{escape_markup(line)}[/yellow]", soft_wrap=True)
 
 
 def _emit_heal_scope_refusal(output_format: str) -> None:
@@ -148,15 +162,22 @@ def _emit_empty_run(state: CheckState) -> None:
                 capability_paths=set(),
                 ascii_mode=state.inputs.ascii_mode,
                 verbose=state.inputs.verbose,
+                targets=TargetReport(tuple(state.targets.unevaluated), tuple(state.targets.notices)),
             ),
         )
         return
+    _emit_target_report(state)
     whole_project = not state.targets.capability_specs and all(
-        t == state.inputs.project_root for t in state.targets.path_targets
+        t == state.targets.target for t in state.targets.path_targets
     )
     others = state.scope.detected if whole_project and _agent_is_pinned(state) else None
-    _print_no_instruction_files(state.scope.effective_agent, console, others)
+    _print_no_instruction_files(state.scope.effective_agent, console, others, create_hint=not _agent_has_files(state))
     _print_excluded_record(state)
+
+
+def _agent_has_files(state: CheckState) -> bool:
+    """True when the project already holds instruction files of the run's agent, so there is none to create."""
+    return any(a.agent_type.id == state.scope.effective_agent and a.instruction_files for a in state.scope.detected)
 
 
 def _print_excluded_record(state: CheckState) -> None:

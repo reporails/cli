@@ -21,16 +21,16 @@ from typing import TYPE_CHECKING
 
 import typer
 
-from reporails_cli.core.classify.capability_paths import canonicalize_capability, classify_target_token
 from reporails_cli.core.discovery.exclusions import no_exclusions
 from reporails_cli.core.discovery.file_aliases import get_file_aliases
-from reporails_cli.core.discovery.walk import file_under_target, safe_resolve
+from reporails_cli.core.discovery.walk import file_under_target, is_markdown_file, safe_resolve
 from reporails_cli.core.heal.apply import heal_scope_files, heal_scope_outside
 from reporails_cli.core.pipeline.mapping import (
     apply_generic_scan,
     discover_scope,
     is_listed_file,
 )
+from reporails_cli.core.pipeline.named_targets import read_targets, unchecked_capability, unchecked_paths
 from reporails_cli.core.pipeline.server_gate import server_gate
 from reporails_cli.core.platform.adapters.http_get import http_get
 from reporails_cli.core.platform.adapters.key_check import handshake
@@ -38,12 +38,15 @@ from reporails_cli.core.platform.config.bootstrap import running_in_ci
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.heal import HealRegression
 from reporails_cli.core.platform.dto.platform import CombinedResult
+from reporails_cli.core.platform.dto.targets import TargetReport, UnevaluatedTarget
 from reporails_cli.core.platform.observability.stage_timer import Stopwatch, get_stage_timer
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.interfaces.cli.check_notices import (
     _emit_empty_run,
     _emit_heal_scope_refusal,
     _emit_heal_withheld,
     _emit_server_refusal,
+    _emit_target_report,
     _emit_unlisted_file,
     _notify_heal_scope_skips,
 )
@@ -58,7 +61,7 @@ from reporails_cli.interfaces.cli.check_orchestration import (
     _resolve_capability_paths,
     _run_heal_pass,
     _should_exit_strict,
-    _token_agent,
+    project_files,
     scan_scope,
 )
 from reporails_cli.interfaces.cli.check_pipeline import _flow_assemble, _flow_pipeline
@@ -76,6 +79,7 @@ from reporails_cli.interfaces.cli.helpers import (
 
 if TYPE_CHECKING:
     from reporails_cli.core.mapper.models import Models
+    from reporails_cli.core.platform.dto.classify import UnresolvedSkill
     from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResult, Notice, RemediationWorkflow
     from reporails_cli.core.platform.dto.discovery import DetectedAgent, RunExclusions
     from reporails_cli.core.platform.dto.models import LocalFinding
@@ -106,7 +110,11 @@ class CheckTargets:
     """Resolved target scope — capability specs, path targets, scan root, output format."""
 
     capability_specs: list[tuple[str, str]] = field(default_factory=list)
+    # The word each capability spec was written as, in the same order.
+    capability_words: list[str] = field(default_factory=list)
     path_targets: set[Path] = field(default_factory=set)
+    # The folder targets written as a path inside the project.
+    spelled_inside: set[Path] = field(default_factory=set)
     single_path: Path | None = None
     single_file: Path | None = None
     # A lone directory target that lives INSIDE the project and is NOT a project root
@@ -118,6 +126,9 @@ class CheckTargets:
     subtree_scoped: bool = False
     target: Path = field(default_factory=Path)
     output_format: str = ""
+    # The targets no file of the run came from, and the notices on how the run read its targets.
+    unevaluated: list[UnevaluatedTarget] = field(default_factory=list)
+    notices: list[Notice] = field(default_factory=list)
 
 
 @dataclass
@@ -134,7 +145,10 @@ class CheckScope:
     upfront_paths: set[Path] = field(default_factory=set)
     is_targeted: bool = False
     file_type_by_path: dict[str, str] = field(default_factory=dict)
-    generic_scanning: bool = False
+    # The named markdown files no agent loads: checked through their `referenced` class, never mapped.
+    unloaded: list[Path] = field(default_factory=list)
+    # The files an `@` import in the files in scope brings into the run: shown beside the named files.
+    imported: list[Path] = field(default_factory=list)
 
 
 @dataclass
@@ -188,28 +202,22 @@ class CheckState:
 def _flow_targets(state: CheckState) -> None:
     """Classify target tokens, pick the scan root + output format, enforce heal scope-safety."""
     if state.inputs.targets:
-        sniffed: dict[Path, str] = {}
-        for token in state.inputs.targets:
-            sniff_agent = _token_agent(state.run, token, state.inputs.agent, state.inputs.project_root, sniffed)
-            kind, payload = classify_target_token(state.run, token, sniff_agent, state.inputs.project_root)
-            if kind == "capability" and isinstance(payload, tuple):
-                state.targets.capability_specs.append(payload)
-            elif isinstance(payload, Path):
-                if not payload.exists():
-                    suggestion = ""
-                    if (
-                        sniff_agent
-                        and canonicalize_capability(
-                            token, sniff_agent, state.run.project_config(state.inputs.project_root)
-                        )
-                        is not None
-                    ):
-                        suggestion = (
-                            f"\n[dim]'{token}' is a known capability — did you mean `ails check {token}`?[/dim]"
-                        )
-                    console.print(f"[red]Error:[/red] Path not found: {payload}{suggestion}")
-                    raise typer.Exit(2)
-                state.targets.path_targets.add(payload)
+        reading = read_targets(state.run, state.inputs.targets, state.inputs.agent, state.inputs.project_root)
+        if reading.missing:
+            missing = reading.missing[0]
+            suggestion = (
+                f"\n[dim]'{missing.token}' is a known capability — did you mean `ails check {missing.token}`?[/dim]"
+                if missing.capability_hint
+                else ""
+            )
+            console.print(f"[red]Error:[/red] Path not found: {missing.path}{suggestion}")
+            raise typer.Exit(2)
+        state.targets.capability_specs.extend(reading.capability_specs)
+        state.targets.capability_words.extend(reading.capability_words)
+        state.targets.path_targets |= reading.path_targets
+        state.targets.spelled_inside |= reading.spelled_inside
+        state.targets.unevaluated.extend(reading.unevaluated)
+        state.targets.notices.extend(reading.notices)
 
     state.targets.single_path = (
         next(iter(state.targets.path_targets))
@@ -243,7 +251,6 @@ def _resolve_scope_at_target(state: CheckState, capability_paths: frozenset[Path
     """
 
     config = state.run.project_config(state.targets.target)
-    state.scope.generic_scanning = bool(config.generic_scanning)
     agent_arg = state.inputs.agent or config.default_agent
     if agent_arg:
         _validate_agent(agent_arg, console)
@@ -275,20 +282,43 @@ def _resolve_scope_at_target(state: CheckState, capability_paths: frozenset[Path
 def _flow_scope(state: CheckState) -> bool:
     """Detect agents, discover instruction files, narrow to scope. False = nothing in scope."""
     _resolve_scope_at_target(state)
-    single = state.targets.single_file
-    if single is not None and not is_listed_file(state.run, single, state.targets.target):
-        _emit_unlisted_file(single, state.targets.target, state.inputs.project_root, state.targets.output_format)
+    _list_unchecked_paths(state)
     # A scope-to-subtree run keeps the project scan root, so its narrowing runs here
     # with the capability/multi-path narrowing rather than through the re-root branch.
     narrows = state.targets.single_path is None or state.targets.subtree_scoped
     named_targets = bool(state.targets.capability_specs or state.targets.path_targets)
+    if state.targets.unevaluated and not named_targets:
+        _emit_empty_run(state)
+        return False
     if not state.scope.instruction_files and not (narrows and named_targets):
         _emit_empty_run(state)
         return False
     if narrows and not _narrow_upfront(state):
         return False
+    _emit_target_report(state)
 
     return _apply_generic_scan(state)
+
+
+def _list_unchecked_paths(state: CheckState) -> None:
+    """List each named file or folder no file is checked for, and say a named file no agent loads is checked anyway."""
+    single = state.targets.single_file
+    if (
+        single is not None
+        and not is_markdown_file(single)
+        and not is_listed_file(state.run, single, state.targets.target)
+    ):
+        state.scope.instruction_files = []
+    state.targets.unevaluated.extend(
+        unchecked_paths(
+            state.run,
+            state.targets.path_targets,
+            state.scope.instruction_files,
+            exclusions=state.scope.exclusions,
+            project_root=state.inputs.project_root,
+            scan_target=state.targets.target,
+        )
+    )
 
 
 def _narrow_upfront(state: CheckState) -> bool:
@@ -303,13 +333,20 @@ def _narrow_upfront(state: CheckState) -> bool:
         )
         raise typer.Exit(2)
     if state.targets.capability_specs:
-        cap_paths, unresolved_skills = _resolve_capability_paths(
-            state.run,
-            state.targets.capability_specs,
-            state.scope.effective_agent,
-            state.inputs.project_root,
-            state.scope.exclusions,
-        )
+        unresolved_skills: list[UnresolvedSkill] = []
+        for spec, word in zip(state.targets.capability_specs, state.targets.capability_words, strict=True):
+            paths, unresolved = _resolve_capability_paths(
+                state.run,
+                [spec],
+                state.scope.effective_agent,
+                state.inputs.project_root,
+                state.scope.exclusions,
+            )
+            cap_paths |= paths
+            unresolved_skills += unresolved
+            entry = unchecked_capability(word, paths, unresolved)
+            if entry is not None:
+                state.targets.unevaluated.append(entry)
         state.scope.upfront_paths |= cap_paths
         _warn_unresolved_skills(unresolved_skills, state.inputs.project_root)
     if cap_paths:
@@ -334,22 +371,67 @@ def _narrow_upfront(state: CheckState) -> bool:
 
 def _apply_generic_scan(state: CheckState) -> bool:
     """Fold @-import-reached files into the scored set and compute is_targeted. Always True."""
-    import_extra, state.scope.file_type_by_path = apply_generic_scan(
-        state.run,
-        state.targets.target,
-        state.scope.instruction_files,
-        state.scope.effective_agent,
-        generic_scanning=state.scope.generic_scanning,
-        exclusions=state.scope.exclusions,
-    )
-    if import_extra:
-        state.scope.instruction_files = list(state.scope.instruction_files) + import_extra
+    state.scope.imported, state.scope.file_type_by_path = _classify_generic(state)
+    if state.scope.imported:
+        state.scope.instruction_files = list(state.scope.instruction_files) + state.scope.imported
+    for path in state.scope.instruction_files:
+        if safe_resolve(path) in state.scope.exclusions.named and is_markdown_file(path):
+            key = normalize_finding_path(str(path), state.targets.target)
+            if key not in state.scope.file_type_by_path and not is_listed_file(state.run, path, state.targets.target):
+                state.scope.file_type_by_path[key] = "referenced"
+                state.scope.unloaded.append(path)
+    _announce_unlisted(state)
     state.scope.is_targeted = (
         state.targets.target != state.inputs.project_root
         or bool(state.scope.upfront_paths)
         or state.targets.single_file is not None
     )
     return True
+
+
+def _classify_generic(state: CheckState) -> tuple[list[Path], dict[str, str]]:
+    """The `(import_extra, file_type_by_path)` of the files in scope.
+
+    A run that names files is classified from the whole project's files, so a named file an `@` import
+    reaches keeps the class and loading its importer gives it. The files the named files import join
+    the run; only those and the named files keep their class.
+    """
+    files = state.scope.instruction_files
+    generic_scanning = bool(state.run.project_config(state.targets.target).generic_scanning)
+    import_extra, file_types = _generic_scan(state, files, generic_scanning=generic_scanning)
+    if not (generic_scanning and state.scope.exclusions.named):
+        return import_extra, file_types
+    held = set(files)
+    _, file_types = _generic_scan(
+        state, [*files, *(f for f in project_files(state) if f not in held)], generic_scanning=True
+    )
+    keep = {normalize_finding_path(str(f), state.targets.target) for f in (*files, *import_extra)}
+    return import_extra, {key: kind for key, kind in file_types.items() if key in keep}
+
+
+def _generic_scan(state: CheckState, seeds: list[Path], *, generic_scanning: bool) -> tuple[list[Path], dict[str, str]]:
+    """`apply_generic_scan` over `seeds` in the run's target, agent and exclusions."""
+    return apply_generic_scan(
+        state.run,
+        state.targets.target,
+        seeds,
+        state.scope.effective_agent,
+        generic_scanning=generic_scanning,
+        exclusions=state.scope.exclusions,
+    )
+
+
+def _announce_unlisted(state: CheckState) -> None:
+    """Say a named markdown file no agent lists is checked anyway, unless an import brings it in as a loaded file."""
+    file = state.targets.single_file
+    if file is None or not is_markdown_file(file) or is_listed_file(state.run, file, state.targets.target):
+        return
+    key = normalize_finding_path(str(file), state.targets.target)
+    if state.scope.file_type_by_path.get(key) == "generic":
+        return
+    _emit_unlisted_file(
+        file, state.targets.target, state.inputs.project_root, state.targets.output_format, state.scope.effective_agent
+    )
 
 
 def _flow_render(state: CheckState) -> None:
@@ -372,6 +454,7 @@ def _flow_render(state: CheckState) -> None:
                 verbose=state.inputs.verbose,
                 heal_regressions=state.render.heal_regressions,
                 aliases=get_file_aliases(state.run, state.targets.target),
+                targets=TargetReport(tuple(state.targets.unevaluated), tuple(state.targets.notices)),
             ),
         )
     state.pipeline.stage_timer.mark("render")
@@ -427,6 +510,12 @@ def _flow_heal(state: CheckState) -> None:
     )
 
 
+def _exit_on_unknown_capability(state: CheckState) -> None:
+    """End the run with exit 2 when a named capability is one the agent lacks, as a path that does not exist does."""
+    if any(entry.reason == "unknown_capability" for entry in state.targets.unevaluated):
+        raise typer.Exit(2)
+
+
 def run_check_flow(state: CheckState) -> None:
     """Run the ``ails check`` phases over `state`, raising ``typer.Exit`` on scoped-exit paths.
 
@@ -439,6 +528,7 @@ def run_check_flow(state: CheckState) -> None:
         _emit_server_refusal(state.targets.output_format, refusal)
         raise typer.Exit(1)
     if not _flow_scope(state):
+        _exit_on_unknown_capability(state)
         return
     # Fetch the model only once there are files to map: a mistyped path or an empty
     # scope exits above without downloading it.
@@ -448,6 +538,7 @@ def run_check_flow(state: CheckState) -> None:
         _flow_assemble(state)
         _flow_render(state)
         _flow_heal(state)
+    _exit_on_unknown_capability(state)
     if _should_exit_strict(
         state.inputs.strict,
         state.render.capability_paths,

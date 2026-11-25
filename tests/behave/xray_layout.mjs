@@ -1,6 +1,6 @@
-// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions|summaries|stripe|restart|recorded|excluded|agent> [source id]
+// usage: node xray_layout.mjs <page-url> <memory|prompt|markup|check|compactions|summaries|stripe|restart|recorded|excluded|agent|moments> [source id | call ids]
 // Drives the real `ails xray` page in headless Chrome and prints one JSON object describing what it drew.
-import { openPage, toGraph } from './xray_cdp.mjs';
+import { openPage, sleep, toGraph } from './xray_cdp.mjs';
 
 const [url, mode] = [process.argv[2], process.argv[3]];
 const page = await openPage(url, 1440);
@@ -75,10 +75,15 @@ if (mode === 'agent' && ready) {
   await page.ev(`document.querySelector('[data-groups="open"]').click(); 0`);
   await page.until(`!!document.querySelector('#sources .ssec[data-kind="agent"] .sr')`);
   out.row = await openRow('general');
-  out.text = out.row ? await peekText() : '';
   out.tools = out.row ? await page.ev(`(document.querySelector('.pk-pre') || {}).textContent || ''`) : '';
   out.pres = out.row ? await page.ev(`[...document.querySelectorAll('.pk-pre')].map(e => e.textContent)`) : [];
   out.dialog = await page.ev(`(document.querySelector('.pk-dialog') || {}).textContent || ''`);
+  out.action = await page.ev(`(([...document.querySelectorAll('.pk-dialog .pk-act')].find(b => b.dataset.peek) || {}).textContent) || null`);
+  if (out.action) {
+    await page.ev(`[...document.querySelectorAll('.pk-dialog .pk-act')].find(b => b.dataset.peek).click(); 0`);
+    out.text = await peekText();
+    out.opened = await page.ev(`document.querySelector('.pk-title').textContent`);
+  }
 }
 
 if (mode === 'compactions' && ready) {
@@ -167,6 +172,29 @@ if (mode === 'restart' && ready) {
   await page.until(`!document.querySelector('.pk-dialog')`);
   out.belowCard = below;
   out.focusedCard = await page.ev(`document.activeElement.dataset.card || null`);
+}
+
+// The inspector's In context list as the page draws it with nothing picked, then with each call (argv[4..]) picked in turn.
+if (mode === 'moments' && ready) {
+  const list = () => page.ev(`(() => { const s = document.querySelector('#inspector .ix-ctx'); return s ? { heading: (s.querySelector('.ix-total') || {}).textContent || null, sources: [...s.querySelectorAll('[data-source]')].map(b => b.dataset.source), text: s.textContent } : null; })()`);
+  out.base = await list();
+  out.picked = [];
+  out.opened = [];
+  out.closed = [];
+  for (const id of process.argv.slice(4)) {
+    await page.ev(`(() => { const x = document.createElement('button'); x.dataset.peek = 'call:' + ${JSON.stringify(id)}; document.body.append(x); x.click(); x.remove(); return 0; })()`);
+    await page.until(`(() => { const s = document.querySelector('#inspector .ix-ctx'); return !!s && !!s.querySelector('.ix-total') && !/Loading/.test(s.textContent); })()`, 120);
+    await sleep(300);
+    out.picked.push(await list());
+    // A row of the picked list that is not a source opens the details of that list's reply, and the list stays.
+    await page.ev(`(document.querySelector('#inspector .ix-ctx [data-peek^="reply:"]') || { click() {} }).click(); 0`);
+    await page.until(`!!document.querySelector('.pk-dialog .pk-lg')`, 120);
+    out.opened.push({ kicker: await page.ev(`(document.querySelector('.pk-dialog .pk-k') || {}).textContent || null`), title: await page.ev(`(document.querySelector('.pk-title') || {}).textContent || null`), list: await list() });
+    await page.ev(`(document.querySelector('[data-close-peek].pk-x') || { click() {} }).click(); 0`);
+    await sleep(300);
+    // Closing a row's details returns to the call details the row's list was for, and the list stays at the call's moment.
+    out.closed.push({ kicker: await page.ev(`(document.querySelector('.pk-dialog .pk-k') || {}).textContent || null`), list: await list() });
+  }
 }
 
 console.log(JSON.stringify(out));

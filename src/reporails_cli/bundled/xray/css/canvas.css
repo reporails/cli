@@ -70,7 +70,7 @@ button.card.bottom{cursor:pointer;font-family:inherit}
 .station.dim .kl{background:transparent;color:var(--t3)}
 .compact{position:absolute;left:0;width:100%;height:16px;box-sizing:border-box;padding:0;border:0;border-top:1px dashed var(--find2);border-bottom:1px dashed var(--find2);background:rgba(240,136,62,.08);color:var(--find2);z-index:1;cursor:pointer;text-align:left}
 .compact:hover,.compact:focus-visible{background:rgba(240,136,62,.18)}
-.compact span{position:absolute;left:84px;top:0;line-height:14px;font:calc(10.5px / var(--z,1)) 'JetBrains Mono',monospace;color:var(--find2);background:var(--canvas);padding:0 6px}
+.compact span{position:absolute;left:84px;top:0;max-width:calc(100% - 96px);box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:14px;font:calc(10.5px / var(--z,1)) 'JetBrains Mono',monospace;color:var(--find2);background:var(--canvas);padding:0 6px}
 .pill-arch{position:absolute;z-index:4;white-space:nowrap;font-size:calc(11px / var(--z,1));padding:2px 9px;border-radius:999px}
 .pill-arch.right{transform:translate(10px,-50%)} .pill-arch.left{transform:translate(calc(-100% - 10px),-50%)}
 .pill-arch.left.above{transform:translate(calc(-100% - 10px),calc(-100% - 2px))} .pill-arch.left.below{transform:translate(calc(-100% - 10px),2px)}
@@ -105,6 +105,7 @@ button.pill-arch{border:0;font-family:inherit;cursor:pointer}
 .snode .sx{display:flex;flex-direction:column;min-width:0;line-height:1.25}
 .snode .sn{font-size:calc(11.5px / var(--z,1));font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .snode .ss{font-size:calc(10.5px / var(--z,1));color:var(--t3);white-space:nowrap}
+.snode.lgroup{border-style:dashed}
 .snode.dim{background:transparent;border-color:rgba(255,255,255,.05);color:var(--t3)}
 .snode.dim .kl,.snode.find.dim .kl{background:transparent;color:var(--t3)}
 /* The open details' opener: a canvas element takes the selected card's look, a row in a column its inset bar. */
@@ -135,3 +136,13 @@ button.pill-arch{border:0;font-family:inherit;cursor:pointer}
 /* loading skeleton of the graph: stacked agent cards */
 .sk-graph{display:flex;flex-direction:column;align-items:center;gap:28px;padding:20px 0}
 .sk-card{width:min(320px,80%);height:84px;border-radius:12px}
+.pk-list .lg-file{font-size:12px;padding:2px 6px}
+.card.workflow{position:absolute;display:flex;flex-direction:column;gap:2px;padding:8px 10px;box-sizing:border-box;overflow:hidden;text-align:left;border:1px dashed rgba(165,148,255,.55);background:#16171B;color:var(--t1);border-radius:10px;cursor:pointer;z-index:2}
+.card.workflow.unreadable{border-color:rgba(242,166,110,.55)}
+.card.workflow.open{background:#22242A}
+.card.workflow .wf-k{font-size:calc(9.5px / var(--z,1));color:var(--t3)}
+.card.workflow .wf-n,.card.workflow .wf-s,.card.workflow .wf-p{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card.workflow .wf-n{font-size:calc(11.5px / var(--z,1))}
+.card.workflow .wf-s,.card.workflow .wf-p{font-size:calc(10px / var(--z,1));color:var(--t3)}
+.pk-list .wf-phase{font-size:12px;padding:6px 6px 2px;font-weight:600}
+.pk-list .wf-agent{font-size:12px;padding:2px 6px 2px 18px;text-align:left;background:none;border:0;color:var(--t2);cursor:pointer}

@@ -611,7 +611,7 @@ class TestMatchFilesLoadingVerbAndLinkSourceType:
             "slug": "probe",
             "match": match_frontmatter,
         }
-        rule = build_rule(frontmatter, Path("test.md"), None, load_checks(frontmatter))
+        rule = build_rule(frontmatter, Path("test.md"), load_checks(frontmatter))
         assert rule.match is not None
         return rule.match
 

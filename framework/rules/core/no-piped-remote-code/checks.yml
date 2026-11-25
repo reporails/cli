@@ -1,0 +1,25 @@
+checks:
+- id: CORE.G.0012.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.G.0012.pattern_check
+  type: deterministic
+  follow_imports: true
+  paths:
+    include: ["*.{md,mdc}", "*.txt", ".cursorrules", ".cursorignore", ".geminiignore", ".worktreeinclude"]
+  pattern-regex: &line_pattern '(?im)\b(?:curl|wget)\b[^\n]*?(?<!\|)\|(?!\|)&?[ \t]*(?:sudo(?:[ \t]+-\S+)*[ \t]+)?(?:env[ \t]+(?:\w+=\S+[ \t]+)*)?(?:/(?:usr/)?(?:local/)?bin/)?(?:(?:sh|bash|zsh|dash|ksh|fish)|(?:python3?|node|perl|ruby)(?![ \t]+-[mce]\b))(?![-.\w/])|\b(?:(?:sh|bash|zsh|dash|ksh|fish|python3?|node|perl|ruby)|source|eval|exec)\b[ \t]+(?:-[\w-]+[ \t]+)*[\"'']?(?:<\(|\$\()[ \t]*(?:curl|wget)\b|(?<![\w.])\.[ \t]+<\([ \t]*(?:curl|wget)\b|\b(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\b[^\n]*?\|[ \t]*(?:iex|Invoke-Expression)\b|\bDownloadString\b[^\n]*?\|[ \t]*(?:iex|Invoke-Expression)\b|\b(?:iex|Invoke-Expression)\b[ \t(\"$]*(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod|New-Object[ \t]+(?:System\.)?Net\.WebClient)\b'
+  expect: absent
+  message: "Remote code piped into a shell or interpreter — download it, review it, pin a checksum or version, then run it"
+- id: CORE.G.0012.hook_command_check
+  type: mechanical
+  check: hook_handlers
+  severity: medium
+  args:
+    message: "Hook command pipes remote code into a shell or interpreter — download it, review it, pin a checksum or version, then run it"
+    block: hooks
+    handlers: grouped
+    select:
+      type: [command]
+    require:
+      not_matches:
+        command: *line_pattern

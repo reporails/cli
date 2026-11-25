@@ -12,6 +12,7 @@ from reporails_cli.core.lint.harness_quality import lint_rules
 from reporails_cli.core.lint.regex.compiler import compile_rules
 from reporails_cli.core.platform.rules import registry
 from reporails_cli.core.platform.rules.registry import RuleReadError, read_rule
+from tests.conftest import rules_from_checks
 
 _FRONTMATTER = (
     "---\nid: {rid}\ntitle: T\ncategory: structure\ntype: deterministic\nslug: {slug}\nseverity: medium\n---\n\nbody\n"
@@ -40,6 +41,19 @@ _FAULTS = [
         id="not-regex-no-compile",
     ),
     pytest.param("patterns: []", "patterns", "at least 1 item", id="empty-patterns"),
+    pytest.param("pattern-either: []", "pattern-either", "at least 1 item", id="empty-either"),
+    pytest.param(
+        "pattern-either:\n    - pattern-regex: '[bad'",
+        "pattern-either.0.pattern-regex",
+        "does not compile",
+        id="either-item-no-compile",
+    ),
+    pytest.param(
+        "pattern-either:\n    - pattern-metavar: x\n    - metavariable-regex: y",
+        "pattern-either.0",
+        "holds `pattern-metavar`; an item of `pattern-either` holds one of `pattern-regex`",
+        id="either-all-unsupported",
+    ),
 ]
 
 _EXACT_FAULTS = [
@@ -222,6 +236,15 @@ def test_an_invalid_pattern_operator_refuses_the_rule(tmp_path: Path, body: str,
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
+def test_a_check_without_an_id_is_refused_by_the_loader() -> None:
+    from reporails_cli.core.platform.rules.rule_builder import load_checks
+
+    with pytest.raises(ValueError, match=r"check 1: id: Field required"):
+        load_checks({"checks": [{"pattern-regex": "x"}]})
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
 @pytest.mark.parametrize(("body", "field", "problem"), _EXACT_FAULTS)
 def test_a_refused_check_reports_exactly_its_problem(tmp_path: Path, body: str, field: str, problem: str) -> None:
     md = _write_rule(tmp_path, "r", "CORE:S:0001", body)
@@ -272,7 +295,7 @@ def test_a_valid_checks_file_compiles_every_check_field(tmp_path: Path) -> None:
         "- id: D\n  type: mechanical\n  check: file_exists\n"
     )
 
-    a, b, c = compile_rules([yml]).checks
+    a, b, c = compile_rules(rules_from_checks([yml])).checks
 
     assert (a.id, a.message, a.severity, a.every_match, a.min_lines, a.follow_imports, a.entry_only) == (
         "A",
@@ -293,60 +316,29 @@ def test_a_valid_checks_file_compiles_every_check_field(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_a_checks_file_without_a_checks_list_is_logged(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    yml = tmp_path / "checks.yml"
-    yml.write_text("foo: bar\n")
-
-    with caplog.at_level(logging.WARNING):
-        result = compile_rules([yml])
-
-    assert result.checks == []
-    assert "has no valid 'checks' list" in caplog.text
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
 @pytest.mark.parametrize("pattern", ["(?m)^(?!---)", "^$", "foo|", ".*", "(?:)", "x*", "(?<!\\n)\\Z"])
 def test_a_pattern_that_can_match_empty_text_loads(tmp_path: Path, pattern: str) -> None:
     yml = tmp_path / "checks.yml"
     yml.write_text(f"checks:\n- id: A\n  pattern-regex: '{pattern}'\n")
 
-    (check,) = compile_rules([yml]).checks
+    (check,) = compile_rules(rules_from_checks([yml])).checks
 
     assert [p.pattern for p in check.patterns] == [pattern]
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_ails_test_reports_the_problem_that_refused_the_checks_not_an_empty_file(tmp_path: Path) -> None:
-    from reporails_cli.core.lint.harness import _run_deterministic_check
-    from reporails_cli.core.platform.dto.models import Check
+def test_ails_test_reports_the_problem_that_refused_the_checks(tmp_path: Path) -> None:
+    from reporails_cli.core.lint.harness import _build_platform_rule
+    from reporails_cli.core.platform.dto.lint import RuleInfo
 
     md = _write_rule(tmp_path, "r", "CORE:S:0001", "pattern-regex: x\n  pattern-inside: b")
-    checks_yml = md.parent / "checks.yml"
+    info = RuleInfo(rule_id="CORE:S:0001", slug="r", title="T", category="structure", checks=[], rule_dir=md.parent)
 
-    ok, count, message = _run_deterministic_check(
-        checks_yml, Check.model_validate({"id": "CORE.S.0001.check", "pattern-regex": "x"}), tmp_path
-    )
+    message = _build_platform_rule(info)
 
-    assert (ok, count) == (False, 0)
-    assert message == f"{checks_yml}: check 1 (CORE.S.0001.check): pattern-inside: is not a known key"
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_ails_test_keeps_its_message_for_a_file_that_holds_no_checks(tmp_path: Path) -> None:
-    from reporails_cli.core.lint.harness import _run_deterministic_check
-    from reporails_cli.core.platform.dto.models import Check
-
-    checks_yml = tmp_path / "checks.yml"
-    checks_yml.write_text("checks: []\n")
-
-    _, _, message = _run_deterministic_check(
-        checks_yml, Check.model_validate({"id": "CORE.S.0001.check", "pattern-regex": "x"}), tmp_path
-    )
-
-    assert message == "checks.yml has no patterns (checks: [])"
+    assert isinstance(message, str)
+    assert "check 1 (CORE.S.0001.check): pattern-inside: is not a known key" in message
 
 
 @pytest.mark.unit
@@ -366,3 +358,33 @@ def test_a_tests_or_deferred_folder_below_the_root_is_still_skipped(tmp_path: Pa
     _write_rule(tmp_path / "_deferred", "later", "CORE:S:0003", "pattern-regex: x")
 
     assert list(registry._scan_rules(tmp_path)) == ["CORE:S:0001"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_ails_test_reports_a_rule_that_does_not_load_as_a_load_failure_not_a_regex_error(tmp_path: Path) -> None:
+    from reporails_cli.core.lint.harness import fixture_mapper, run_rule
+    from reporails_cli.core.platform.dto.lint import RuleInfo
+    from reporails_cli.core.platform.dto.models import Check
+    from tests.fake_models import no_models
+
+    md = _write_rule(tmp_path, "r", "CORE:S:0001", "pattern-regex: x")
+    md.write_text(md.read_text().replace("severity: medium\n", "severity: medium\nmatch:\n  type:\n    nested: x\n"))
+    (md.parent / "tests" / "pass").mkdir(parents=True)
+    (md.parent / "tests" / "pass" / "CLAUDE.md").write_text("hello\n")
+    check = Check.model_validate({"id": "CORE.S.0001.check", "pattern-regex": "x"})
+    info = RuleInfo(
+        rule_id="CORE:S:0001",
+        slug="r",
+        title="R",
+        category="structure",
+        checks=[check],
+        rule_dir=md.parent,
+    )
+
+    result = run_rule(info, [], fixture_mapper(no_models()))
+
+    (run,) = result.check_runs
+    assert run.message.startswith("could not load rule CORE:S:0001: ")
+    assert "match" in run.message
+    assert "Regex engine error" not in run.message

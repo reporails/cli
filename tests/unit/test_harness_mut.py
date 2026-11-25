@@ -13,15 +13,26 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.lint.harness import HarnessStatus, RuleInfo, fixture_mapper, run_rule
+from reporails_cli.core.platform.dto.models import FileTypeDeclaration
 from tests.fake_models import no_models
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
+_MAIN = [FileTypeDeclaration(name="main", patterns=("**/CLAUDE.md",), required=True, properties={})]
 
 
 def _rule_dir(tmp_path: Path, slug: str) -> Path:
     d = tmp_path / "core" / slug
     d.mkdir(parents=True)
     return d
+
+
+def _rule_md(rule_dir: Path, rule_id: str = "CORE:S:0001") -> None:
+    """A registry-loadable rule.md; checks live only in checks.yml, as in the real rules."""
+    (rule_dir / "rule.md").write_text(
+        f"---\nid: {rule_id}\nslug: {rule_dir.name}\ntitle: T\ncategory: structure\n"
+        "type: deterministic\nseverity: medium\nbacked_by: [x]\nmatch: {type: main}\n---\n# T\n\nBody.\n"
+    )
 
 
 def _pass(rule_dir: Path, content: str, name: str = "CLAUDE.md") -> None:
@@ -44,7 +55,6 @@ def _info(rule_dir: Path, checks: list[dict], rule_id: str = "CORE:S:0001") -> R
         category="structure",
         checks=checks,
         rule_dir=rule_dir,
-        checks_yml=rule_dir / "checks.yml",
     )
 
 
@@ -79,90 +89,6 @@ def _fail_run(result):
 
 def _pass_run(result):
     return next(r for r in result.check_runs if r.fixture == "pass")
-
-
-# ── engine_ok defaults in _run_deterministic_check ───────────────────
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_missing_checks_yml_is_engine_failure(tmp_path: Path) -> None:
-    """No checks.yml → engine_ok=False → the pass fixture fails (kills L89 False->True)."""
-    rd = _rule_dir(tmp_path, "no-yml")
-    _pass(rd, "# ok\n")  # no checks.yml written
-    result = run_rule(_info(rd, [_det_check(expect="absent")]), [], fixture_mapper(no_models()))
-    assert result.status == HarnessStatus.FAILED
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_empty_checks_yml_is_engine_failure(tmp_path: Path) -> None:
-    """checks.yml with `checks: []` → engine_ok=False (kills L98 False->True)."""
-    rd = _rule_dir(tmp_path, "empty-yml")
-    _pass(rd, "# ok\n")
-    _checks_yml(rd, "checks: []\n")
-    result = run_rule(_info(rd, [_det_check(expect="absent")]), [], fixture_mapper(no_models()))
-    assert result.status == HarnessStatus.FAILED
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_no_matching_rule_reports_no_pattern(tmp_path: Path) -> None:
-    """2 rules, none matching the check id → no pattern → engine failure
-    (kills L109 and->or fallback and L113 False->True)."""
-    rd = _rule_dir(tmp_path, "no-match")
-    _pass(rd, "# ok\n")
-    _checks_yml(
-        rd,
-        "checks:\n"
-        "- id: CORE.S.9991.other\n"
-        "  message: m\n  severity: medium\n"
-        "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'ZZZNOMATCH'\n"
-        "- id: CORE.S.9992.other2\n"
-        "  message: m\n  severity: medium\n"
-        "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'QQQNOMATCH'\n",
-    )
-    result = run_rule(
-        _info(rd, [_det_check(check_id="CORE.S.0001.check", expect="absent")]), [], fixture_mapper(no_models())
-    )
-    assert result.status == HarnessStatus.FAILED
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_single_nonmatching_rule_falls_back(tmp_path: Path) -> None:
-    """A single rule with a non-matching id is still used via fallback
-    (kills L109 == -> != so the single-rule fallback survives)."""
-    rd = _rule_dir(tmp_path, "fallback")
-    _pass(rd, "# Commands here\n")
-    _checks_yml(rd, _one_pattern("CORE.S.9990.other", "Commands"))
-    # expect=present: fallback runs the rule → finding → pass; no fallback → fail
-    result = run_rule(
-        _info(rd, [_det_check(check_id="CORE.S.0001.check", expect="present")]), [], fixture_mapper(no_models())
-    )
-    assert result.status == HarnessStatus.PASSED
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_matching_rule_selected_by_id(tmp_path: Path) -> None:
-    """The rule whose id equals the check id is the one run (kills L105 == -> !=)."""
-    rd = _rule_dir(tmp_path, "by-id")
-    _pass(rd, "# Commands here\n")
-    _checks_yml(
-        rd,
-        "checks:\n"
-        "- id: CORE.S.0001.check\n"  # WRONG rule: pattern would not fire
-        "  message: m\n  severity: medium\n"
-        "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'ZZZNOMATCH'\n"
-        "- id: CORE.S.0002.check\n"  # RIGHT rule: matches the check id + fixture
-        "  message: m\n  severity: medium\n"
-        "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'Commands'\n",
-    )
-    result = run_rule(
-        _info(rd, [_det_check(check_id="CORE.S.0002.check", expect="present")]), [], fixture_mapper(no_models())
-    )
-    assert result.status == HarnessStatus.PASSED
 
 
 # ── expect gate (L297) ───────────────────────────────────────────────

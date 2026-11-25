@@ -1,4 +1,4 @@
-# Reporails CLI (v0.6.8)
+# Reporails CLI (v0.6.9)
 
 > **AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 120+ rules across six rule packs (core + per-agent). Supports Antigravity, Claude, Codex, Copilot, and Cursor.**
 > 
@@ -99,7 +99,7 @@ Puts `ails` on your PATH, installs the reporails plugin into Claude Code and Cod
 
 ## Free vs Pro
 
-Anonymous mode needs no account, and signing in is free. Signing in raises the hourly limit from 5 to 100 checks; anonymous and signed-in free accounts share the same payload cap and the same full diagnosis — every finding, the score, and the fix text of the local checks in `-f json` and MCP — and `ails check --heal` writes fixes on a Pro account only (an anonymous or free run gets the diagnosis and no changes). `ails check` also shows messages about your account (a failed payment, Pro ending) when there are any. Pro is the paid subscription: it raises the rate and payload caps and unlocks the remedies for the findings worth fixing, the exact line of each cross-file repetition and topic overlap, and the ordered remediation workflow your coding agent runs end to end.
+Anonymous mode needs no account, and signing in is free. Signing in raises the hourly limit from 5 to 100 checks and the payload cap from 2 MB to 5 MB; anonymous and signed-in free accounts get the same full diagnosis — every finding, the score, and the fix text of the local checks in `-f json` and MCP — and `ails check --heal` writes fixes on a Pro account only (an anonymous or free run gets the diagnosis and no changes). `ails check` also shows messages about your account (a failed payment, Pro ending) when there are any. Pro is the paid subscription: it raises the rate and payload caps and unlocks the remedies for the findings worth fixing, the exact line of each cross-file repetition and topic overlap, and the ordered remediation workflow your coding agent runs end to end.
 
 ```bash
 # Sign in through your browser; one sign-in per machine
@@ -113,14 +113,14 @@ Full breakdown: [Tiers and Limits](https://github.com/reporails/cli/blob/main/do
 Run on every PR so instruction-quality regressions (vague or buried instructions, oversized files, weak reinforcement, instructions repeated across files) get caught the same way test or lint regressions do — before merge, not after a teammate's agent has been silently misbehaving for a week.
 
 ```yaml
-- uses: reporails/cli/action@0.6.8
+- uses: reporails/cli/action@0.6.9
   with:
-    api-key: ${{ secrets.REPORAILS_API_KEY }}   # optional - a Pro key unlocks the full diagnostic detail
+    api-key: ${{ secrets.REPORAILS_API_KEY }}   # optional; the action exports it as AILS_API_KEY - a Pro key unlocks the full diagnostic detail
     strict: "true"                              # exit 1 if any rule fires
     min-score: "7.0"                            # exit 1 if Quality < 7.0
 ```
 
-Create an API key on [reporails.com/account](https://reporails.com/account) and store it as `REPORAILS_API_KEY` in your CI secret store. See [Configuration → Authentication](https://github.com/reporails/cli/blob/main/docs/configuration.md#authentication).
+Create an API key on [reporails.com/account](https://reporails.com/account) and store it in your CI secret store under any name; the action takes it through `api-key` (`REPORAILS_API_KEY` above is only an example name). The CLI itself reads the key from `AILS_API_KEY`, so a job that runs `ails` directly, for example after an `npm` install, sets that variable. See [Configuration → Authentication](https://github.com/reporails/cli/blob/main/docs/configuration.md#authentication).
 
 The action keeps the analysis model (~275 MB) in the repository's Actions cache: the first run downloads it, and later runs restore it instead of downloading it again, even when the check fails. Running `ails` directly in a workflow? See [Configuration → Caching the model in CI](https://github.com/reporails/cli/blob/main/docs/configuration.md#caching-the-model-in-ci).
 

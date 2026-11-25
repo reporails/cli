@@ -14,11 +14,13 @@ from reporails_cli.core.platform.dto.xray_build import (
     ProducedNode,
     ProducerContext,
     SourceTable,
+    WorkflowReading,
 )
 from reporails_cli.core.platform.dto.xray_cost import PriceList
 from reporails_cli.core.platform.dto.xray_graph import (
     LoadEvent,
     SourceKind,
+    XrayInContext,
     XrayLoad,
     XrayNode,
     XrayStation,
@@ -29,17 +31,17 @@ from reporails_cli.core.platform.dto.xray_sources import (
     Availability,
     HookDetail,
     SourceEntry,
-    XrayBuiltin,
     XraySource,
 )
 from reporails_cli.core.xray.cost import session_cost
 from reporails_cli.core.xray.graph import spine
-from reporails_cli.core.xray.graph.agents import MAIN_ID, main_records
-from reporails_cli.core.xray.graph.builtin import builtin_items
+from reporails_cli.core.xray.graph.agents import agent_context_at
 from reporails_cli.core.xray.graph.bursts import bursts
+from reporails_cli.core.xray.graph.in_context import source_reasons
 from reporails_cli.core.xray.graph.port import PRODUCERS
 from reporails_cli.core.xray.graph.shapes import first_requests, launch_metas, launched_with
 from reporails_cli.core.xray.graph.sources import builtin_agent_id, memory_role, source_label
+from reporails_cli.core.xray.graph.workflows import workflow_nodes
 
 # A load smaller than this many tokens is small.
 SMALL_TOKENS = 1000
@@ -70,25 +72,31 @@ def _layout(nodes: Sequence[ProducedNode]) -> NodeLayout:
 def _station(node: ProducedNode, sources: SourceTable, vocabulary: AdapterVocabulary) -> XrayStation:
     small_kinds = {kind.key for kind in vocabulary.source_kinds if kind.small}
     hooks, stretched = spine.hook_stretches(node, sources)
+    groups, grouped = spine.load_groups(node, sources, spine.instruction_kinds(vocabulary))
+    taken = stretched | grouped
+    cuts = spine.cuts_of(node)
     return XrayStation(
         node.id,
         tuple(
-            _load(load, sources, small_kinds) for number, load in enumerate(node.spine.loads) if number not in stretched
+            _load(load, sources, small_kinds, spine.load_segment(cuts, node.start, load))
+            for number, load in enumerate(node.spine.loads)
+            if number not in taken
         ),
         spine.mcp_clusters(node),
         node.spine.compactions,
         hooks,
+        groups,
     )
 
 
-def _load(load: LoadEvent, sources: SourceTable, small_kinds: set[SourceKind]) -> XrayLoad:
+def _load(load: LoadEvent, sources: SourceTable, small_kinds: set[SourceKind], segment: int) -> XrayLoad:
     entry = sources.get(load.source)
     small = (
         load.tokens_est < SMALL_TOKENS
         if load.tokens_est is not None
         else entry is not None and entry.kind in small_kinds
     )
-    return XrayLoad(load.source, load.t, load.tokens_est, load.trigger, load.event, small)
+    return XrayLoad(load.source, load.t, load.tokens_est, load.trigger, load.event, load.chars, small, segment)
 
 
 def _availability(entry: SourceEntry, had_by: Sequence[str], unrecorded: frozenset[SourceKind]) -> Availability:
@@ -105,6 +113,8 @@ def _xray_node(node: ProducedNode, build: BuildContext) -> XrayNode:
     edge = build.launch.get(node.id)
     parent = build.by_id.get(edge.parent) if edge is not None else None
     layout = build.layout
+    above_id = layout.parents[node.id]
+    above = None if above_id is None else build.by_id[above_id]
     withheld = (
         spine.withheld(parent, node, edge.out_t, build.sources)
         if node.kind in build.has_spine and edge is not None and parent is not None
@@ -114,7 +124,7 @@ def _xray_node(node: ProducedNode, build: BuildContext) -> XrayNode:
         id=node.id,
         kind=node.kind,
         tree=XrayTree(
-            layout.parents[node.id],
+            above_id,
             layout.depth[node.id],
             tuple(layout.children[node.id]),
             layout.descendants[node.id],
@@ -123,7 +133,9 @@ def _xray_node(node: ProducedNode, build: BuildContext) -> XrayNode:
                 node.end - node.start,
                 build.vocabulary.burst,
                 {item.id: item.end for item in build.by_id.values()},
+                spine.cuts_of(node),
             ),
+            0 if above is None else spine.segment_of(spine.cuts_of(above), node.start),
         ),
         name=node.name,
         type=node.type,
@@ -143,9 +155,12 @@ def build_graph(
     sources: SourceTable,
     vocabulary: AdapterVocabulary,
     prices: PriceList,
+    *,
+    workflows: WorkflowReading,
 ) -> Graph:
-    """The graph of `records`: the nodes and edges of every registered producer, linked by parent."""
-    context = ProducerContext(sources, vocabulary, prices)
+    """The graph of `records`: the nodes and edges of every registered producer, linked by parent, and the
+    session's workflow runs."""
+    context = ProducerContext(sources, vocabulary, prices, workflows)
     produced = [producer.produce(records, frame, context) for producer in PRODUCERS]
     pnodes = [node for item in produced for node in item.nodes]
     edges = tuple(edge for item in produced for edge in item.edges)
@@ -159,6 +174,7 @@ def build_graph(
         vocabulary=vocabulary,
     )
     spined = [node for node in pnodes if node.kind in build.has_spine]
+    root = next((node for node in pnodes if build.layout.parents[node.id] is None), None)
     return Graph(
         tuple(_xray_node(node, build) for node in pnodes),
         edges,
@@ -167,17 +183,25 @@ def build_graph(
         tuple(
             XrayTrack(node.id, spine.track_calls(node), spine.failure_runs(node), spine.breaks(node)) for node in spined
         ),
-        _builtin(pnodes, records, vocabulary),
         session_cost([(node.id, node.detail.usage.cost) for node in pnodes]),
+        workflow_nodes(workflows, records, pnodes, frame, root),
     )
 
 
-def _builtin(
-    nodes: Sequence[ProducedNode], records: Sequence[EventRecord], vocabulary: AdapterVocabulary
-) -> tuple[XrayBuiltin, ...]:
-    """The coding agent's own context, read from the main agent's records; none when the graph has no main agent."""
-    main = next((node for node in nodes if node.id == MAIN_ID), None)
-    return () if main is None else builtin_items(main, main_records(records), vocabulary)
+def context_at(
+    records: Sequence[EventRecord],
+    frame: Frame,
+    sources: SourceTable,
+    vocabulary: AdapterVocabulary,
+    prices: PriceList,
+    *,
+    workflows: WorkflowReading,
+    agent: str,
+    at: float,
+) -> XrayInContext | None:
+    """What the context of the agent keyed `agent` held at its last reply at or before `at` seconds into the
+    session: the agent's "in context" list for that moment, from the same records `build_graph` reads."""
+    return agent_context_at(records, frame, ProducerContext(sources, vocabulary, prices, workflows), agent, at)
 
 
 def _had_by(
@@ -234,7 +258,6 @@ def _builtin_agent(
         availability="loaded",
         had_by=tuple(ids),
         actionable=False,
-        launches=len(ids),
         cost_usd_est=None,
         label=labels.get(agent_type, agent_type),
         agent_type=agent_type,
@@ -252,6 +275,7 @@ def _sources(
     had, launched, vocabulary = build.had, set(build.launch), build.vocabulary
     out: list[XraySource] = []
     costs = _source_costs(nodes)
+    reasons = source_reasons(nodes, sources, vocabulary)
     for entry in sources.entries:
         had_by = _had_by(entry, nodes, had, launched)
         out.append(
@@ -266,7 +290,6 @@ def _sources(
                 had_by=had_by,
                 actionable=entry.actionable,
                 excluded=entry.excluded,
-                launches=len(had_by) if entry.kind == "agent" else None,
                 cost_usd_est=costs.get(entry.id),
                 label=source_label(entry),
                 scopes=entry.scopes,
@@ -274,6 +297,7 @@ def _sources(
                 agent_type=entry.name if entry.kind == "agent" else None,
                 memory_role=memory_role(entry),
                 detail=launched_with(had_by, first, metas) if entry.kind == "agent" else entry.detail,
+                why=reasons.get(entry.id),
             )
         )
     defined = {entry.name for entry in sources.entries if entry.kind == "agent"}

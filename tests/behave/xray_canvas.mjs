@@ -82,5 +82,39 @@ if (mode === 'rail' && ready) {
   out.after = here;
 }
 
+// What the canvas draws for the compaction segments: each fold band, each open earlier segment's fold control, each stripe's
+// back / not-back lists and the canvas height. The optional fourth argument picks that agent first (down to it and back up,
+// which selects it), `open` clicks the first fold band.
+if (mode === 'folds' && ready) {
+  const arg = process.argv[5];
+  const snap = () => page.ev(`({
+    folds: [...document.querySelectorAll('.cv .fold')].map(e => ({ group: e.dataset.group, expanded: e.getAttribute('aria-expanded'), loads: Number(e.dataset.loads), agents: Number(e.dataset.agents), before: e.dataset.before ? Number(e.dataset.before) : null, after: e.dataset.after ? Number(e.dataset.after) : null, text: e.textContent, tag: e.tagName })),
+    closers: [...document.querySelectorAll('.cv .gcollapse[data-group^="fold:"]')].map(e => e.dataset.group),
+    stripes: [...document.querySelectorAll('.cv .compact')].map(e => ({ peek: e.dataset.peek, text: e.textContent, back: e.dataset.back || '', notBack: e.dataset.notBack || '' })),
+    height: document.querySelector('.cv').offsetHeight,
+    cards: document.querySelectorAll('.cv .card[data-node]:not(.top):not(.bottom)').length,
+  })`);
+  if (arg && arg.startsWith('call:')) {
+    // Picks a call: opens its details from the Tool calls table, then returns to the Graph tab.
+    await page.ev(`document.querySelector('.tab[data-tab="calls"]').click(); 0`);
+    await page.until(`!!document.querySelector('[data-peek=${JSON.stringify(arg)}]')`);
+    await page.ev(`document.querySelector('[data-peek=${JSON.stringify(arg)}]').click(); 0`);
+    await page.until(`!!document.querySelector('.pk-dialog')`);
+    await page.ev(`document.querySelector('.tab[data-tab="graph"]').click(); 0`);
+    await sleep(500);
+  } else if (arg && arg !== 'open') {
+    await page.ev(`location.hash = '#/agent/main/' + ${JSON.stringify(arg)}; 0`);
+    await sleep(400);
+    await page.ev(`location.hash = '#/agent/main'; 0`);
+    await sleep(500);
+  }
+  out.before = await snap();
+  if (arg === 'open') {
+    await click('.cv .fold');
+    await sleep(400);
+    out.after = await snap();
+  }
+}
+
 console.log(JSON.stringify(out));
 await page.close();

@@ -16,7 +16,6 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from reporails_cli.core.classify import classify_files, load_file_types
-from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.lint.content_checker import run_content_checks
 from reporails_cli.core.lint.mechanical.runner import run_mechanical_checks
 from reporails_cli.core.lint.regex import run_checks
@@ -28,7 +27,7 @@ from reporails_cli.core.platform.dto.discovery import RunExclusions
 from reporails_cli.core.platform.dto.models import ClassifiedFile, Execution, LocalFinding, Rule, RuleType
 from reporails_cli.core.platform.dto.results import ConfiguredRoot, ProjectConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.core.platform.policy.matching import match_files
+from reporails_cli.core.platform.policy.matching import deterministic_targets
 from reporails_cli.core.platform.rules.registry import load_rules
 
 logger = logging.getLogger(__name__)
@@ -85,25 +84,17 @@ def _min_lines_overrides(thresholds: Mapping[str, Mapping[str, int]]) -> dict[st
     return overrides
 
 
-def _deterministic_targets(rule: Rule, instruction_files: list[Path], classified: list[ClassifiedFile]) -> list[Path]:
-    """The files a deterministic rule runs on: those its `match` criteria select, else every instruction file."""
-    if rule.match:
-        return [cf.path for cf in match_files(classified, rule.match)]
-    return instruction_files
-
-
 def _collect_deterministic_findings(
     rules: dict[str, Rule],
     project_dir: Path,
     instruction_files: list[Path],
     classified: list[ClassifiedFile],
     *,
-    exclusions: RunExclusions,
     thresholds: Mapping[str, Mapping[str, int]],
 ) -> list[LocalFinding]:
     """Run deterministic checks against matched target files.
 
-    Uses property-based matching (match_files) so rules targeting specific
+    Uses property-based matching (deterministic_targets) so rules targeting specific
     scopes, formats, or other properties get the correct file set.
     Rules of any type are included if they contain deterministic checks.
     """
@@ -113,18 +104,15 @@ def _collect_deterministic_findings(
     for rule in rules.values():
         if rule.type != RuleType.DETERMINISTIC and not _has_deterministic_checks(rule):
             continue
-        if not rule.yml_path or not rule.yml_path.exists():
-            continue
-        target_files = _deterministic_targets(rule, instruction_files, classified)
+        target_files = deterministic_targets(rule.match, instruction_files, classified)
         if not target_files:
             continue
 
         findings.extend(
             run_checks(
-                [rule.yml_path],
+                [rule],
                 project_dir,
-                exclusions,
-                instruction_files=target_files,
+                target_files,
                 min_lines_overrides=min_lines_overrides,
                 fix_by_rule={rule.id: rule.fix} if rule.fix else None,
                 skill_entries=skill_entries,
@@ -150,6 +138,13 @@ def _extend_with_generic(
     return effective
 
 
+def _loaded_files(instruction_files: list[Path], classified: list[ClassifiedFile]) -> list[Path]:
+    """`instruction_files` without the ones classified `referenced`: a file named on the command line that no
+    agent loads reaches the rules the way a file only a link reaches does, through its class."""
+    referenced = {cf.path for cf in classified if cf.file_type == "referenced"}
+    return [f for f in instruction_files if f not in referenced]
+
+
 def _classify_agent_files(
     project_dir: Path,
     instruction_files: list[Path],
@@ -173,9 +168,10 @@ def _classify_agent_files(
 
 
 def _rule_roots(run: RunContext, project_dir: Path) -> tuple[ConfiguredRoot, ConfiguredRoot]:
-    """The project folder and the folder scanned (itself, or a file's parent), each with its config."""
-    scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
-    return run.configured_root(project_dir), run.configured_root(scan_dir)
+    """The project folder and the folder scanned, each with its config. A run's `project_dir` is always a folder,
+    so both are the one root."""
+    root = run.configured_root(project_dir)
+    return root, root
 
 
 def run_m_probes(
@@ -204,7 +200,7 @@ def run_m_probes(
     classified = _classify_agent_files(
         project_dir, instruction_files, agent, project.config, skills=skills, exclusions=exclusions
     )
-    effective_files = _extend_with_generic(instruction_files, classified, generic_scanning)
+    effective_files = _extend_with_generic(_loaded_files(instruction_files, classified), classified, generic_scanning)
 
     findings: list[LocalFinding] = []
     findings.extend(
@@ -219,7 +215,6 @@ def run_m_probes(
                 project_dir,
                 effective_files,
                 classified,
-                exclusions=load_run_exclusions(run, project_dir),
                 thresholds=project.config.rule_thresholds,
             )
         )

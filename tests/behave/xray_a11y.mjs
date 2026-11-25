@@ -121,6 +121,19 @@ if (mode === 'stripe' && ready) {
   out.afterEsc = await page.ev(`(() => { const a = document.activeElement; return { cls: String(a.className), tag: a.tagName, peek: a.dataset.peek || null, inCanvas: !!a.closest('.canvaswrap') }; })()`);
 }
 
+// A folded segment opens from the keyboard: Enter on its band opens it, and the open segment offers a control to fold it again.
+if (mode === 'fold-key' && ready) {
+  await toGraph(page);
+  await page.until(`!!document.querySelector('#canvas .fold')`);
+  out.folds = await page.ev(`document.querySelectorAll('#canvas .fold').length`);
+  out.focused = await focus('#canvas .fold');
+  out.tag = await page.ev(`document.activeElement.tagName`);
+  await keys.enter();
+  await sleep(400);
+  out.foldsAfter = await page.ev(`document.querySelectorAll('#canvas .fold').length`);
+  out.closers = await page.ev(`document.querySelectorAll('#canvas .gcollapse[data-group^="fold:"]').length`);
+}
+
 // Puts a time label, a stretch bar and the Tool calls link into the first compaction stripe's band and asks the page
 // which element a pointer at each of them reaches, and at the stripe's own label.
 if (mode === 'stripe-layers' && ready) {

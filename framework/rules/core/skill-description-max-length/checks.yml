@@ -1,0 +1,13 @@
+checks:
+- id: CORE.S.0060.skill-file-exists
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0060.description-max-length
+  type: mechanical
+  check: frontmatter_key
+  args:
+    path: "**/SKILL.md"
+    entry_only: true
+    key: description
+    max_length: 1024
+  message: "Skill description is longer than 1,024 characters -- agents truncate or refuse it"

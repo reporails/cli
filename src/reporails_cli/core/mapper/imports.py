@@ -135,7 +135,7 @@ def expand_imports(
         if target is None:
             return match.group(0)
         try:
-            imported = read_file_text(target, errors="replace")
+            imported = read_file_text(target, encoding="utf-8-sig", errors="replace")
         except OSError:
             return match.group(0)
         # Add for the duration of this target's own expansion (ancestor-chain
@@ -199,7 +199,7 @@ def _expand_one_match(
     if target is None:
         return None
     try:
-        imported = read_file_text(target, errors="replace")
+        imported = read_file_text(target, encoding="utf-8-sig", errors="replace")
     except OSError:
         return None
     visited.add(str(target))

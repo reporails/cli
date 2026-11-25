@@ -330,9 +330,11 @@ if (mode === 'inctx' && ready) {
 if (mode === 'measuredrow' && ready) {
   // The details a measured System prompt row opens, on the main agent and on the first subagent.
   const open = async () => {
-    await page.until(`!!document.querySelector('#inspector .ix-ctx .ic[data-peek*="system_prompt"]')`);
-    const peek = await page.ev(`document.querySelector('#inspector .ix-ctx .ic[data-peek*="system_prompt"]').dataset.peek`);
-    await click('#inspector .ix-ctx .ic[data-peek*="system_prompt"]');
+    await page.until(`!!document.querySelector('#inspector [data-own-group]')`);
+    if ((await page.ev(`document.querySelector('#inspector [data-own-group]').getAttribute('aria-expanded')`)) !== 'true') await click('#inspector [data-own-group]');
+    await page.until(`!!document.querySelector('#inspector [data-own-item="system_prompt"]')`);
+    const peek = await page.ev(`document.querySelector('#inspector [data-own-item="system_prompt"]').dataset.peek`);
+    await click('#inspector [data-own-item="system_prompt"]');
     await page.until(`!!document.querySelector('.pk-dialog')`);
     const text = await page.ev(`document.querySelector('.pk-dialog').textContent`);
     await click('.pk-x');
@@ -347,11 +349,48 @@ if (mode === 'measuredrow' && ready) {
 
 if (mode === 'mainsystem' && ready) {
   // The details of the main agent's measured System prompt row, once the system prompt text has come in.
-  await page.until(`!!document.querySelector('#inspector .ix-ctx .ic[data-peek*="system_prompt"]')`);
-  await click('#inspector .ix-ctx .ic[data-peek*="system_prompt"]');
+  await page.until(`!!document.querySelector('#inspector [data-own-group]')`);
+  await click('#inspector [data-own-group]');
+  await page.until(`!!document.querySelector('#inspector [data-own-item="system_prompt"]')`);
+  await click('#inspector [data-own-item="system_prompt"]');
   await page.until(`!!document.querySelector('.pk-dialog')`);
   out.text = await page.until(`(document.querySelector('.pk-dialog pre.peek') || {}).textContent`) || '';
   out.dialog = await page.ev(`document.querySelector('.pk-dialog').textContent`);
+}
+
+if (mode === 'own' && ready) {
+  // The coding agent's own context group of the selected agent: collapsed, then expanded, with every item opened.
+  const read = async () => {
+    await page.until(`!!document.querySelector('#inspector .ix-ctx [data-own-group]')`);
+    const r = {};
+    r.start = await page.ev(`({ groups: document.querySelectorAll('#inspector .ix-ctx [data-own-group]').length, subs: document.querySelectorAll('#inspector .ix-ctx .ic-sub').length, expanded: document.querySelector('#inspector [data-own-group]').getAttribute('aria-expanded'), rows: [...document.querySelectorAll('#inspector .ix-ctx > .ic')].length })`);
+    if (r.start.expanded !== 'true') await click('#inspector [data-own-group]');
+    await page.until(`!!document.querySelector('#inspector [data-own-item]')`);
+    r.items = await page.ev(`[...document.querySelectorAll('#inspector [data-own-item]')].map(b => ({ key: b.dataset.ownItem, label: b.querySelector('.ic-n').textContent, size: b.querySelector('.ic-k').textContent, peek: b.dataset.peek }))`);
+    r.counts = {};
+    for (const it of r.items) r.counts[it.key] = await page.ev(`document.querySelectorAll('#inspector [data-own-item="${it.key}"]').length`);
+    r.inspector = await page.ev(`document.querySelector('#inspector').textContent`);
+    r.sources = await page.ev(`document.querySelector('#sources').textContent`);
+    await click('.tab[data-tab="sources"]');
+    await page.until(`!!document.querySelector('#view-sources .vl-row')`);
+    r.table = await page.ev(`document.querySelector('#view-sources').textContent`);
+    await click('.tab[data-tab="graph"]');
+    await page.until(`!!document.querySelector('#inspector [data-own-item]')`);
+    r.opened = [];
+    for (const it of r.items) {
+      await click(`#inspector [data-own-item="${it.key}"]`);
+      await page.until(`!!document.querySelector('.pk-dialog')`);
+      await page.until(`!document.querySelector('.pk-dialog').textContent.includes('Loading')`);
+      r.opened.push(await page.ev(`({ key: ${JSON.stringify(it.key)}, tag: document.querySelector('.pk-dialog .pk-tags').textContent, text: (document.querySelector('.pk-dialog pre.peek') || {}).textContent || null, sections: document.querySelectorAll('.pk-dialog .pk-main .pk-kv .lb').length, dialog: document.querySelector('.pk-dialog').textContent, marked: !!document.querySelector('#inspector [data-own-item="${it.key}"].open') })`));
+      await click('.pk-x');
+    }
+    return r;
+  };
+  out.main = await read();
+  const before = await page.ev(`document.querySelector('#inspector .nm').textContent`);
+  await click('.card[data-node]:not(.top):not(.bottom)');
+  await page.until(`document.querySelector('#inspector .nm').textContent !== ${JSON.stringify(before)}`);
+  out.sub = await read();
 }
 
 if (mode === 'words' && ready) {

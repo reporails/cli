@@ -122,14 +122,12 @@ class RuleReadError(ValueError):
         self.field_problems = field_problems
 
 
-def _rejected_fields(
-    frontmatter: JsonObject, md_path: Path, yml_path: Path | None, checks: list[Check]
-) -> tuple[FieldProblem, ...]:
+def _rejected_fields(frontmatter: JsonObject, md_path: Path, checks: list[Check]) -> tuple[FieldProblem, ...]:
     """The `rule.md` fields of a non-empty `frontmatter` that do not validate; empty when it is unread."""
     if not frontmatter:
         return ()
     try:
-        build_rule(frontmatter, md_path, yml_path, checks)
+        build_rule(frontmatter, md_path, checks)
     except RuleFieldError as exc:
         return tuple(exc.problems)
     return ()
@@ -170,7 +168,7 @@ def read_rule(md_path: Path) -> RuleRead | None:
             md_path,
             "is not UTF-8 text",
             recovered or {},
-            field_problems=_rejected_fields(recovered or {}, md_path, None, []),
+            field_problems=_rejected_fields(recovered or {}, md_path, []),
         ) from exc
     frontmatter = read_frontmatter(content).data
     if not frontmatter:
@@ -188,7 +186,7 @@ def read_rule(md_path: Path) -> RuleRead | None:
                 exc.path,
                 exc.problem,
                 frontmatter,
-                field_problems=_rejected_fields(frontmatter, md_path, yml_path, []),
+                field_problems=_rejected_fields(frontmatter, md_path, []),
             ) from exc
     try:
         checks = load_checks(frontmatter)
@@ -197,10 +195,10 @@ def read_rule(md_path: Path) -> RuleRead | None:
             checks_source,
             str(exc),
             frontmatter,
-            field_problems=_rejected_fields(frontmatter, md_path, yml_path, []),
+            field_problems=_rejected_fields(frontmatter, md_path, []),
         ) from exc
     try:
-        return RuleRead(build_rule(frontmatter, md_path, yml_path, checks), frontmatter)
+        return RuleRead(build_rule(frontmatter, md_path, checks), frontmatter)
     except RuleFieldError as exc:
         raise RuleReadError(md_path, "", frontmatter, checks=checks, field_problems=tuple(exc.problems)) from exc
 

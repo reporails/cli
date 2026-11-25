@@ -1,0 +1,138 @@
+"""The workflow runs of a session as the view lists them: their phases, their agents and their status."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from reporails_cli.core.platform.dto.xray import XrayView
+from reporails_cli.core.platform.dto.xray_graph import XrayAgentDetail
+from reporails_cli.core.platform.dto.xray_workflows import XrayWorkflow
+from reporails_cli.core.xray.derive import tokens_of
+from reporails_cli.core.xray.session import XraySession
+from tests.unit.xray.test_xray_session import _project, _session, _view
+
+pytestmark = [pytest.mark.unit, pytest.mark.subsys_xray]
+
+WORKFLOW = "2.1.311-workflow"
+FIRST, SECOND = "awf0000000000001", "awf0000000000002"
+
+
+def _setup(tmp_path: Path) -> tuple[XraySession, Path]:
+    session = _session(tmp_path, WORKFLOW, _project(tmp_path))
+    return session, tmp_path / WORKFLOW / "session" / "workflows" / "wf_test01.json"
+
+
+def _edited(record: Path, **changes: object) -> None:
+    record.write_text(json.dumps(json.loads(record.read_text()) | changes))
+
+
+def _run(view: XrayView) -> XrayWorkflow:
+    (run,) = view.workflows
+    return run
+
+
+def test_a_run_finishing_raises_the_version_so_the_page_draws_it_again(tmp_path: Path) -> None:
+    session, record = _setup(tmp_path)
+    finished = record.read_text()
+    _edited(record, status="running", totalTokens=100)
+    running = _view(session)
+    assert _view(session).version == running.version
+    record.write_text(finished)
+    done = _view(session)
+    assert done.version > running.version
+    assert (_run(done).status, _run(done).total_tokens) == ("completed", 4200)
+    record.unlink()
+    assert _view(session).version > done.version
+
+
+def test_two_phases_with_one_title_list_each_agent_under_its_own_phase_once(tmp_path: Path) -> None:
+    session, record = _setup(tmp_path)
+    data = json.loads(record.read_text())
+    progress = [{**e, "phaseTitle": "Build"} if "agentId" in e else e for e in data["workflowProgress"]]
+    _edited(record, phases=[{"title": "Build"}, {"title": "Build"}], workflowProgress=progress)
+    run = _run(_view(session))
+    assert [(p.title, p.agents) for p in run.phases] == [("Build", (FIRST,)), ("Build", (SECOND,))]
+    assert (run.unphased, run.agent_count) == ((), 2)
+
+
+def test_an_agent_whose_phase_the_run_does_not_hold_is_listed_apart_and_counted(tmp_path: Path) -> None:
+    session, record = _setup(tmp_path)
+    progress = [
+        {**e, "phaseIndex": 7} if e.get("agentId") == SECOND else e
+        for e in json.loads(record.read_text())["workflowProgress"]
+    ]
+    _edited(record, workflowProgress=progress)
+    run = _run(_view(session))
+    assert [(p.title, p.agents) for p in run.phases] == [("Build", (FIRST,)), ("Verify", ())]
+    assert (run.unphased, run.agent_count) == ((SECOND,), 2)
+
+
+def test_a_record_file_that_is_not_json_shows_the_run_as_not_readable_not_as_running(tmp_path: Path) -> None:
+    session, record = _setup(tmp_path)
+    record.write_text('{"runId": "wf_test01", "status": "comp')
+    run = _run(_view(session))
+    assert (run.status, run.status_text) == ("unreadable", "not readable")
+    assert run.refusal is not None and "wf_test01.json" in run.refusal
+    assert run.agent_count == 2
+
+
+def test_a_record_with_status_killed_shows_the_run_as_stopped_not_as_not_readable(tmp_path: Path) -> None:
+    session, record = _setup(tmp_path)
+    _edited(record, status="killed")
+    run = _run(_view(session))
+    assert (run.status, run.status_text, run.refusal) == ("killed", "stopped", None)
+
+
+def test_each_agent_is_listed_under_the_phase_its_record_numbers_from_one(tmp_path: Path) -> None:
+    session, record = _setup(tmp_path)
+    data = json.loads(record.read_text())
+    phases = [{"title": "Preflight"}, {"title": "Build"}, {"title": "Verify"}]
+    numbered = {FIRST: (1, "Preflight"), SECOND: (3, "Verify")}
+    agents = [
+        {**e, "phaseIndex": numbered[e["agentId"]][0], "phaseTitle": numbered[e["agentId"]][1]}
+        for e in data["workflowProgress"]
+        if "agentId" in e
+    ]
+    markers = [{"type": "workflow_phase", "index": n, "title": p["title"]} for n, p in enumerate(phases, 1)]
+    _edited(record, phases=phases, workflowProgress=markers + agents)
+    run = _run(_view(session))
+    assert [(p.title, p.agents) for p in run.phases] == [("Preflight", (FIRST,)), ("Build", ()), ("Verify", (SECOND,))]
+    assert run.unphased == ()
+
+
+def _handbacks(view: XrayView) -> dict[str, tuple[str | None, int | None, str | None]]:
+    """Each workflow agent's outcome, hand-back size and the source it was sized from."""
+    details = {node.id: node.detail for node in view.nodes if node.id in (FIRST, SECOND)}
+    return {
+        key: (detail.outcome, detail.back.tokens_est, detail.back.source)
+        for key, detail in details.items()
+        if isinstance(detail, XrayAgentDetail)
+    }
+
+
+def test_a_workflow_agent_hands_back_the_result_its_run_accepted(tmp_path: Path) -> None:
+    session, _ = _setup(tmp_path)
+    view = _view(session)
+    accepted = json.dumps({"status": "built", "note": "PLACEHOLDER-WF-HANDBACK-1"}, indent=2)
+    assert _handbacks(view) == {
+        FIRST: ("returned", tokens_of(len(accepted)), "handback"),
+        SECOND: ("returned", tokens_of(len("PLACEHOLDER-WF-HANDBACK-2")), "handback"),
+    }
+    edge = next(edge for edge in view.edges if edge.child == FIRST)
+    node = next(node for node in view.nodes if node.id == FIRST)
+    assert (edge.outcome, edge.back, edge.back_t) == ("returned", tokens_of(len(accepted)), node.end)
+    assert session.output(FIRST) == accepted
+
+
+def test_the_agent_a_killed_run_left_without_an_accepted_result_reads_stopped(tmp_path: Path) -> None:
+    session, record = _setup(tmp_path)
+    _edited(record, status="killed")
+    journal = record.parents[1] / "subagents" / "workflows" / "wf_test01" / "journal.jsonl"
+    rows = journal.read_text().splitlines()
+    journal.write_text("\n".join(row for row in rows if not (SECOND in row and '"result"' in row)) + "\n")
+    handbacks = _handbacks(_view(session))
+    assert handbacks[SECOND] == ("stopped", None, None)
+    assert handbacks[FIRST][0] == "returned"

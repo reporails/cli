@@ -104,13 +104,13 @@ def _print_unknown_rule(rule_id: str, loaded_rules: dict[str, Rule]) -> None:
 
 
 def _print_no_instruction_files(
-    effective_agent: str, con: Console, detected_agents: list[DetectedAgent] | None = None
+    effective_agent: str, con: Console, detected_agents: list[DetectedAgent] | None, *, create_hint: bool
 ) -> None:
     """Print the human message for a run that found nothing to check.
 
-    Text surface only. The machine surfaces (`json` / `github`) render the same
-    outcome as an ordinary empty result through their normal formatter, so a
-    consumer reads one envelope shape whether or not anything was in scope —
+    `create_hint` adds the line that names the file to create. Text surface only. The machine
+    surfaces (`json` / `github`) render the same outcome as an ordinary empty result through their
+    normal formatter, so a consumer reads one envelope shape whether or not anything was in scope —
     see `check_notices._emit_empty_run`.
     """
 
@@ -126,9 +126,9 @@ def _print_no_instruction_files(
             f"Run with --agent {others[0]}, or: ails config set default_agent {others[0]}[/dim]"
         )
         return
+    con.print(f"No instruction files found.\nLevel: L0 {LEVEL_LABELS[Level.L0]}")
+    if not create_hint:
+        return
     hint = at.instruction_patterns[0] if at else "AGENTS.md"
     article = "an" if hint[:1].upper() in "AEIOU" else "a"
-    con.print(
-        f"No instruction files found.\nLevel: L0 {LEVEL_LABELS[Level.L0]}\n\n"
-        f"[dim]Create {article} {hint} to get started.[/dim]"
-    )
+    con.print(f"\n[dim]Create {article} {hint} to get started.[/dim]")

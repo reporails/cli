@@ -33,6 +33,7 @@ from reporails_cli.core.platform.rules.rules_query import rule_category, rule_ti
 from reporails_cli.formatters.mcp_view import render_heal_receipt
 from reporails_cli.formatters.text.rule_meta import rule_docs_url
 from reporails_cli.interfaces.cli import xray_launch, xray_server
+from reporails_cli.interfaces.cli.xray_fields import finding_fields
 from tests.fake_daemon import FakeDaemonTransport
 from tests.fake_models import no_models
 
@@ -54,8 +55,8 @@ PORT = 8765
 ORIGIN = f"http://127.0.0.1:{PORT}"
 TOP_KEYS = {
     "version", "session", "project", "started_at", "length_s", "picked", "model", "window", "adapter", "price_list",
-    "nodes", "edges", "sources", "stations", "track", "builtin", "session_cost", "funnel", "facts", "check", "refusals",
-    "not_known",
+    "nodes", "edges", "sources", "stations", "track", "session_cost", "workflows", "funnel", "facts", "check",
+    "refusals", "not_known",
 }  # fmt: skip
 # The transcript of a long session (megabytes of rows, many subagent files), named by this variable.
 LONG_SESSION_ENV = "XRAY_TEST_LONG_SESSION"
@@ -884,8 +885,8 @@ def test_a_heal_ordered_after_the_launch_check_keeps_its_dropped_tally(
 def test_file_level_is_the_whole_file_sentinel_line_zero_never_line_one() -> None:
     one = FindingItem(file="CLAUDE.md", line=1, severity="info", rule="CORE:C:0053", message="m", check_id="x")
     zero = FindingItem(file="CLAUDE.md", line=0, severity="info", rule="CORE:C:0053", message="m", check_id="x")
-    assert xray_server._line(one)["file_level"] is False
-    assert xray_server._line(zero)["file_level"] is True
+    assert finding_fields(one)["file_level"] is False
+    assert finding_fields(zero)["file_level"] is True
 
 
 @pytest.fixture
@@ -1071,37 +1072,40 @@ def test_a_page_whose_record_cannot_be_written_still_serves_and_forgets_nothing(
     assert any("will not be reused" in r.getMessage() for r in caplog.records)
 
 
-def _record_request(tmp_path: Path, system: list[str]) -> None:
-    """Append the request shape and request row Claude Code 2.1.309 writes to the fixture subagent's file."""
-    file = tmp_path / "session" / "session" / "subagents" / f"agent-{SUB_ID}.jsonl"
-    blocks = [{"type": "text", "text": text} for text in system]
-    shape = {"type": "api-request-shape", "shapeHash": "sh", "shape": {"system": blocks, "tools": [{"name": "Read"}]}}
-    own = {"sessionId": "session", "timestamp": "2026-10-31T10:00:00.000Z"}
-    request = {"type": "api-request", "id": "r1", "shapeHash": "sh", "keep": 0, "tail": [], **own}
-    with file.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(shape) + "\n" + json.dumps(request) + "\n")
-
-
-def test_system_replies_with_the_system_prompt_a_launched_agent_type_was_sent(
-    client: TestClient, tmp_path: Path
+def test_context_text_refuses_an_item_no_recorded_request_holds_and_a_missing_or_unknown_query(
+    client: TestClient,
 ) -> None:
-    _record_request(tmp_path, ["SYSTEM_ONE", "SYSTEM_TWO"])
-    view = client.get("/view", headers={"X-Xray-Token": TOKEN})
-    assert "SYSTEM_ONE" not in view.text
-    (source,) = [item for item in view.json()["sources"] if item["agent_type"] == "general-purpose"]
-    assert source["launch_tools"] == [["Read", 1]] and source["system_tokens_est"] is not None
-    reply = _get(client, "/system", {"type": "general-purpose"})
-    assert reply.status_code == 200 and reply.headers["Cache-Control"] == "no-store"
-    assert reply.json() == {"id": "general-purpose", "text": "SYSTEM_ONE\n\nSYSTEM_TWO"}
-
-
-def test_system_refuses_a_type_no_launch_recorded_a_request_for_and_a_missing_query(client: TestClient) -> None:
     client.get("/view", headers={"X-Xray-Token": TOKEN})
-    for query in ({"type": "general-purpose"}, {"type": "Explore"}):
-        reply = _get(client, "/system", query)
+    for query in ({"agent": "", "item": "system_prompt"}, {"agent": SUB_ID, "item": "thinking"}):
+        reply = _get(client, "/context-text", query)
         assert reply.status_code == 400 and "recorded request" in reply.json()["error"]
-    assert _get(client, "/system", {}).status_code == 400
-    assert _get(client, "/system", {"type": "general-purpose"}, token=None).status_code == 403
+    for query in ({}, {"agent": ""}, {"item": "builtin"}, {"item": "not-an-item"}):
+        assert _get(client, "/context-text", query).status_code == 400
+    assert _get(client, "/context-text", {"item": "system_prompt"}, token=None).status_code == 403
+    assert _get(client, "/system", {"type": ""}).status_code == 404
+
+
+def test_context_replies_with_what_an_agents_context_held_at_a_moment_and_refuses_what_it_cannot_place(
+    client: TestClient,
+) -> None:
+    view = client.get("/view", headers={"X-Xray-Token": TOKEN}).json()
+    detail = next(node for node in view["nodes"] if node["id"] == "main")["detail"]
+    first, last = detail["composition"]["replies"][0], detail["composition"]["replies"][-1]
+    assert first[0] < last[0]
+    now = _get(client, "/context", {"agent": "", "at": str(last[0])})
+    assert now.status_code == 200 and now.json()["latest"] is True
+    assert now.json()["total"] == last[1] == detail["in_context"]["total"]
+    earlier = _get(client, "/context", {"agent": "", "at": str(first[0])})
+    assert earlier.status_code == 200 and earlier.json()["latest"] is False
+    assert earlier.json()["total"] == first[1] and earlier.json()["t"] == first[0]
+    for query in ({}, {"agent": ""}, {"agent": "nosuch", "at": "9"}):
+        assert _get(client, "/context", query).status_code == 400
+    for at in ("", "soon", "nan", "inf", "-1"):
+        refused = _get(client, "/context", {"agent": "", "at": at})
+        assert refused.status_code == 400 and "at is not a number" in refused.json()["error"], at
+    unknown = _get(client, "/context", {"agent": "nosuch", "at": "9"}).json()["error"]
+    assert "at is not" not in unknown
+    assert _get(client, "/context", {"agent": "", "at": "9"}, token=None).status_code == 403
 
 
 @pytest.fixture

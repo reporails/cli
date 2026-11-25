@@ -1,12 +1,11 @@
-// The Sources panel: an inventory of everything the session had, whatever the graph shows. Built in first, then one group
+// The Sources panel: an inventory of the files, servers and hooks the session had, whatever the graph shows. One group
 // per source kind the adapter declares; each header says how many were used and carries the kind's eye for the graph.
 import { el, svg, sync } from '../dom.js';
 import { markOpen } from './details.js';
-import { costEst, fill, tk, plural, MCP_STATES } from '../format.js';
+import { costEst, fill, hookStatus, tk, plural, MCP_STATES } from '../format.js';
 import { SOURCES_SHOWN } from '../geometry.js';
 import { UNRECORDED, revealedSource } from '../views.js';
 
-const BUILTIN = 'builtin';
 const EYE = 'M2 12s4-7 10-7s10 7 10 7s-4 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z';
 
 // Used of total from the funnel row (loaded of on disk); a kind with no funnel row counts its own list.
@@ -17,6 +16,7 @@ function counts(ix, key, list) {
 }
 
 const findingsText = n => `${n} finding${n === 1 ? '' : 's'}`;
+const cannotFire = n => `${n} cannot fire`;
 const findingsOf = s => (s.findings && s.findings.count) || 0;
 
 // Line 2 of a row: its size, its cost and its findings, or that it never entered a context.
@@ -29,6 +29,7 @@ function facts(s, kind) {
     if (s.availability === 'loaded' && s.tokens_est != null) bits.push(`${tk(s.tokens_est, true)} tok`);
     return bits;
   }
+  if (s.hook) return [hookStatus(s.hook)];
   if (s.builtin) return [`built in · launched as ${plural(s.launches || 0, 'subagent')}`];
   const bits = [];
   const finds = findingsOf(s);
@@ -70,22 +71,6 @@ function row(env, s) {
   top.append(el('b', 'sn', label));
   if (s.scopes && s.scopes.length) top.append(el('span', 'scoped', 'scoped'));
   text.append(top, el('span', 'sw', facts(s, kind).join(' · ')));
-  r.append(text);
-  return r;
-}
-
-function builtinRow(env, item) {
-  const r = el('div', 'sr');
-  r.dataset.peek = `${BUILTIN}:${item.key}`;
-  markOpen(r, env.state.peek, [r.dataset.peek]);
-  r.tabIndex = 0;
-  r.setAttribute('role', 'button');
-  r.setAttribute('aria-label', `${item.label}. Open details.`);
-  r.append(el('span', 'sdot'));
-  const text = el('span', 'stx');
-  const top = el('span', 'sline');
-  top.append(el('b', 'sn', item.label));
-  text.append(top, el('span', 'sw', [`${tk(item.tokens_est, true)} tok`, item.remainder ? 'remainder' : null, item.visible === 'hidden' ? 'not in transcript' : null].filter(Boolean).join(' · ')));
   r.append(text);
   return r;
 }
@@ -138,7 +123,7 @@ export function click(t, env) {
   if (more) { if (!state.more.delete(more.dataset.more)) state.more.add(more.dataset.more); return true; }
   const all = t.closest('[data-groups]');
   if (all) {
-    for (const key of [BUILTIN, ...ix.view.adapter.source_kinds.map(k => k.key)]) state.sourceGroups[key] = all.dataset.groups === 'open';
+    for (const key of ix.view.adapter.source_kinds.map(k => k.key)) state.sourceGroups[key] = all.dataset.groups === 'open';
     return true;
   }
   return false;
@@ -170,7 +155,7 @@ function eyeButton(k, on) {
   return b;
 }
 
-// A group: its header (chevron, chip, name, used/total, findings line, hidden line, eye) and its items when open.
+// A group: its header (chevron, chip, name, used/total, findings line, alert line, hidden line, eye) and its items when open.
 function group(env, spec) {
   const { state, ix } = env;
   const open = isOpen(state, ix, spec.key);
@@ -181,7 +166,7 @@ function group(env, spec) {
   button.type = 'button';
   button.dataset.sourceGroup = spec.key;
   button.setAttribute('aria-expanded', String(open));
-  button.setAttribute('aria-label', [spec.label, spec.usage, spec.finds ? findingsText(spec.finds) : null].filter(Boolean).join(', '));
+  button.setAttribute('aria-label', [spec.label, spec.usage, spec.finds ? findingsText(spec.finds) : null, spec.alert ? cannotFire(spec.alert) : null].filter(Boolean).join(', '));
   button.append(el('span', 'chev', open ? '▾' : '▸'), el('span', 'chip on', spec.letter), el('span', 'sx-title', spec.label));
   const ct = el('span', 'ct');
   ct.title = spec.usage;
@@ -189,6 +174,7 @@ function group(env, spec) {
   if (spec.total != null) ct.append(el('span', 'tot', `/${spec.total}`));
   button.append(ct);
   if (spec.finds) button.append(el('span', 'sx-sub gf', findingsText(spec.finds)));
+  if (spec.alert) button.append(el('span', 'sx-sub gf', cannotFire(spec.alert)));
   if (spec.hidden) button.append(el('span', 'sx-sub off', `${spec.graphLabel} hidden on the graph`));
   head.append(button);
   if (spec.eye) head.append(eyeButton(spec.eye, !spec.hidden));
@@ -219,20 +205,13 @@ export function render(box, env) {
   const lists = new Map(ix.view.adapter.source_kinds.map(k => [k.key, ix.view.sources.filter(s => s.kind === k.key).sort((a, b) => roleRank(a) - roleRank(b) || (a.availability !== 'loaded') - (b.availability !== 'loaded'))]));
   reveal(env, lists);
   const parts = [controls()];
-  const builtin = ix.view.builtin || [];
-  if (builtin.length) {
-    parts.push(group(env, {
-      key: BUILTIN, label: 'Built in', letter: '·', used: builtin.length, total: null, usage: plural(builtin.length, 'item'),
-      finds: 0, rows: builtin.map(item => builtinRow(env, item)),
-    }));
-  }
   for (const k of ix.view.adapter.source_kinds) {
     const list = lists.get(k.key);
     const { used, total } = counts(ix, k.key, list);
     const absent = ix.view.facts.find(f => f.kind === 'kind_absent' && f.target && f.target.value === k.key);
     parts.push(group(env, {
       key: k.key, label: k.label, letter: k.letter, used, total, usage: used == null ? `${UNRECORDED}, ${total} on disk` : `${used} of ${total} ${k.verb}`,
-      finds: list.reduce((n, s) => n + findingsOf(s), 0), hidden: !state.layers[k.key], graphLabel: k.graph_label, eye: k,
+      finds: list.reduce((n, s) => n + findingsOf(s), 0), alert: list.filter(s => s.hook && s.hook.cannot_fire).length, hidden: !state.layers[k.key], graphLabel: k.graph_label, eye: k,
       absent: absent && templates.kind_absent ? fill(templates.kind_absent, { ...absent.numbers, label: k.label.toLowerCase() }) : null,
       rows: list.map(s => row(env, s)), heads: roleHeads(list),
     }));

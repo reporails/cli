@@ -1,0 +1,1 @@
+{"agentType": "general-purpose", "description": "PLACEHOLDER-WF-DESC-Verify", "workflowPhase": "Verify", "spawnDepth": 1, "requestShape": "background", "model": "claude-sonnet-5-5"}

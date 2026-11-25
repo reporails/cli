@@ -60,6 +60,7 @@ export async function openPage(url, width = 925, height = 1000, view = null) {
     });
     await send('Fetch.enable', { patterns: [{ urlPattern: '*/view*', requestStage: 'Request' }] });
   }
+  await send('Page.enable');
   await send('Page.navigate', { url });
   // Polls every 25 ms up to the ceiling the old 250 ms x tries loop gave.
   const until = async (expr, tries = 60) => { const end = Date.now() + tries * 250; for (;;) { const v = await ev(expr); if (v) return v; if (Date.now() >= end) { if (process.env.XRAY_DEBUG) appendFileSync(process.env.XRAY_DEBUG, `until timed out: ${expr.slice(0, 200)}\n`); return null; } await sleep(25); } };
@@ -72,6 +73,13 @@ export async function openPage(url, width = 925, height = 1000, view = null) {
   // Lets every held /view request through, and the ones after it.
   const release = async () => { releasing = true; await Promise.all(held.splice(0).map(requestId => send('Fetch.continueRequest', { requestId }))); };
   const heldCount = () => held.length;
+  // Compaction segments before the newest draw folded. Scenarios that look at the whole canvas get each one opened once, after
+  // the first view renders; XRAY_KEEP_FOLDS=1 leaves them folded, for the scenarios that test the fold itself. A scenario that
+  // holds or refuses the view has no canvas to open.
+  if (!process.env.XRAY_KEEP_FOLDS && !view && await until(`!!document.querySelector('.cv')`, 40)) {
+    await ev(`(() => { for (let i = 0, b; i < 50 && (b = document.querySelector('.cv .fold')); i++) b.click(); return 0; })()`);
+    await until(`!document.querySelector('.cv .fold')`, 20);
+  }
   return { ev, until, frame, send, close, release, heldCount };
 }
 

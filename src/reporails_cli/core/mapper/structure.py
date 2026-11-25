@@ -11,6 +11,7 @@ import re
 from bisect import bisect_right
 from collections.abc import Sequence
 from functools import lru_cache
+from itertools import pairwise
 
 import mdurl
 from markdown_it.token import Token
@@ -25,6 +26,7 @@ from reporails_cli.core.mapper.md_parser import (
     html_spans,
     line_offsets,
     link_spans,
+    parser_line_starts,
     recorded_spans,
     tok_line,
 )
@@ -32,6 +34,7 @@ from reporails_cli.core.mapper.parse import inline_line, parse_blocks
 from reporails_cli.core.mapper.source_columns import token_columns
 from reporails_cli.core.platform.dto.mapping import BlockReading, EmphasisRun, LineSpans, SourceRanges
 from reporails_cli.core.platform.dto.structure import DocumentStructure
+from reporails_cli.core.platform.dto.xray_prompt import OPENING_HEADING, PromptSection
 
 _LEAF_BLOCKS = frozenset({"paragraph_open", "heading_open", "table_open", "html_block", "hr", *CODE_BLOCK_TOKENS})
 
@@ -205,6 +208,26 @@ def section_span(content: str, heading: str) -> tuple[int, int] | None:
         elif level in (2, 3) and tokens[i + 1].content.strip() == heading:
             depth, start = level, tok_line(tok, offset)
     return (start, content.count("\n") + 2) if depth else None
+
+
+def top_level_sections(text: str) -> tuple[PromptSection, ...]:
+    """The `# ` sections of `text` with the characters each spans, from its heading line to the next heading.
+
+    Text before the first heading is an `OPENING_HEADING` section, left out when blank. A heading inside a fenced
+    block does not start a section. The characters add up to the length of `text`."""
+    tokens, offset = parse_blocks(text)
+    starts = parser_line_starts(text)
+    found = [
+        (starts[tok_line(tok, offset) - 1], tokens[i + 1].content.strip())
+        for i, tok in enumerate(tokens)
+        if tok.type == "heading_open" and tok.tag == "h1" and not tok.level and tok.map
+    ]
+    bounds = [*found, (len(text), "")]
+    sections = [PromptSection(heading, end - begin) for (begin, heading), (end, _) in pairwise(bounds)]
+    first = found[0][0] if found else len(text)
+    if text[:first].strip():
+        sections.insert(0, PromptSection(OPENING_HEADING, first))
+    return tuple(sections)
 
 
 @lru_cache(maxsize=64)

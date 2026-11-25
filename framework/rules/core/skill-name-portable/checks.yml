@@ -1,0 +1,14 @@
+checks:
+- id: CORE.S.0059.skill-file-exists
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0059.name-portable
+  type: mechanical
+  check: frontmatter_key
+  args:
+    path: "**/SKILL.md"
+    entry_only: true
+    key: name
+    max_length: 64
+    value_pattern_absent: "(?i:anthropic|claude)"
+  message: "Skill name is longer than 64 characters or contains a reserved word (anthropic, claude) -- some agents refuse to load the skill"

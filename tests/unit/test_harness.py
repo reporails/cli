@@ -262,7 +262,6 @@ class TestMechanicalChecks:
                 {"id": "CORE.S.0001.file-exists", "type": "mechanical", "severity": "medium", "check": "file_exists"}
             ],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         result = run_rule(info, _fts_claude(), fixture_mapper(no_models()))
@@ -286,7 +285,6 @@ class TestMechanicalChecks:
             category="structure",
             checks=[],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         result = run_rule(info, [], fixture_mapper(no_models()))
@@ -312,7 +310,6 @@ class TestMechanicalChecks:
             category="structure",
             checks=[{"id": "CORE.S.0098.check", "type": "mechanical", "severity": "medium", "check": "file_exists"}],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         result = run_rule(info, [], fixture_mapper(no_models()))
@@ -334,8 +331,7 @@ class TestDeterministicChecks:
             tmp_path,
             "det-rule",
             "id: CORE:S:0003\nslug: det-rule\ntitle: Det Rule\n"
-            "category: structure\ntype: deterministic\nlevel: L1\nmatch: {}\n"
-            "checks:\n- id: CORE.S.0003.check\n  type: deterministic\n  severity: medium\n  name: wall-of-prose",
+            "category: structure\ntype: deterministic\nlevel: L1\nmatch: {}\n",
         )
         _make_checks_yml(
             rule_dir,
@@ -364,12 +360,12 @@ class TestDeterministicChecks:
                     "id": "CORE.S.0003.check",
                     "type": "deterministic",
                     "severity": "medium",
-                    "pattern-regex": "x",
+                    "paths": {"include": ["**/*.md"]},
+                    "pattern-regex": "\\.\\s+[A-Z][a-z]+\\s.*\\.\\s+[A-Z][a-z]+\\s.*\\.",
                     "expect": "absent",
                 }
             ],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         result = run_rule(info, _fts_claude(), fixture_mapper(no_models()))
@@ -385,9 +381,7 @@ class TestDeterministicChecks:
             tmp_path,
             "evidence-rule",
             "id: CORE:C:0001\nslug: evidence-rule\ntitle: Evidence Rule\n"
-            "category: content\ntype: deterministic\nlevel: L1\nmatch: {}\n"
-            "checks:\n- id: CORE.C.0001.check\n  type: deterministic\n"
-            "  severity: medium\n  expect: present\n  name: has-context",
+            "category: coherence\ntype: deterministic\nseverity: medium\nbacked_by: [x]\nmatch: {}\n",
         )
         _make_checks_yml(
             rule_dir,
@@ -417,11 +411,11 @@ class TestDeterministicChecks:
                     "type": "deterministic",
                     "severity": "medium",
                     "expect": "present",
-                    "pattern-regex": "x",
+                    "paths": {"include": ["**/*.md"]},
+                    "pattern-regex": "## (Commands|Architecture)",
                 }
             ],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         result = run_rule(info, _fts_claude(), fixture_mapper(no_models()))
@@ -503,8 +497,7 @@ class TestFixtureDiscovery:
             tmp_path,
             "json-rule",
             "id: CORE:S:0099\nslug: json-rule\ntitle: JSON Rule\n"
-            "category: structure\ntype: deterministic\nlevel: L1\nmatch: {type: config}\n"
-            "checks:\n- id: CORE.S.0099.check\n  type: deterministic\n  severity: medium\n  name: json-check",
+            "category: structure\ntype: deterministic\nlevel: L1\nmatch: {type: config}\n",
         )
         _make_checks_yml(
             rule_dir,
@@ -516,11 +509,11 @@ class TestFixtureDiscovery:
             "  pattern-regex: 'dangerous_setting'\n",
         )
         # Pass fixture: .json file without violation
-        pass_dir = rule_dir / "tests" / "pass"
+        pass_dir = rule_dir / "tests" / "pass" / ".claude"
         pass_dir.mkdir(parents=True)
         (pass_dir / "settings.json").write_text('{"safe": true}')
         # Fail fixture: .json file with violation
-        fail_dir = rule_dir / "tests" / "fail"
+        fail_dir = rule_dir / "tests" / "fail" / ".claude"
         fail_dir.mkdir(parents=True)
         (fail_dir / "settings.json").write_text('{"dangerous_setting": true}')
 
@@ -535,11 +528,11 @@ class TestFixtureDiscovery:
                     "type": "deterministic",
                     "severity": "medium",
                     "expect": "absent",
-                    "pattern-regex": "x",
+                    "paths": {"include": ["**/*.json"]},
+                    "pattern-regex": "dangerous_setting",
                 }
             ],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         file_types = [*_fts_claude(), _ft("config", (".claude/settings.json",))]
@@ -936,7 +929,6 @@ class TestFailScaffoldIntegration:
                 }
             ],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         result = run_rule(info, _fts_claude(), fixture_mapper(no_models()))
@@ -979,7 +971,6 @@ class TestFailScaffoldIntegration:
                 }
             ],
             rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
         )
 
         result = run_rule(info, [], fixture_mapper(no_models()))
