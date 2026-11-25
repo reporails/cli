@@ -135,7 +135,10 @@ def _named_paths(state: CheckState, capability_paths: frozenset[Path]) -> tuple[
 def _folder_markdown(state: CheckState) -> set[Path]:
     """The markdown files the run keeps under the folders it names; a project's folder names none."""
     folders = markdown_folders(
-        state.targets.path_targets, project_root=state.inputs.project_root, scan_root=state.targets.target
+        state.targets.path_targets,
+        project_root=state.inputs.project_root,
+        scan_root=state.targets.target,
+        spelled_inside=frozenset(state.targets.spelled_inside),
     )
     if not folders:
         return set()

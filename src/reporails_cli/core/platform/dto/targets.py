@@ -46,6 +46,8 @@ class TargetReading:
     capability_specs: tuple[tuple[str, str], ...] = ()
     capability_words: tuple[str, ...] = ()
     path_targets: frozenset[Path] = frozenset()
+    # The folder targets written as a path inside the project, whatever a link on that path resolves to.
+    spelled_inside: frozenset[Path] = frozenset()
     missing: tuple[MissingTarget, ...] = ()
     unevaluated: tuple[UnevaluatedTarget, ...] = ()
     notices: tuple[Notice, ...] = ()

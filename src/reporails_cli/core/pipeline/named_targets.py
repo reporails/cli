@@ -6,6 +6,7 @@ both a folder and a capability gets a notice saying which meaning was used.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from reporails_cli.core.classify.capability_paths import (
 )
 from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
 from reporails_cli.core.discovery.exclusions import leaves_out, markdown_folder_reason
-from reporails_cli.core.discovery.project_root import is_project_root, outermost_agent_dir
+from reporails_cli.core.discovery.project_root import outermost_agent_dir
 from reporails_cli.core.discovery.walk import file_under_target, is_markdown_file, safe_resolve, walk_files
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.pipeline.mapping import is_listed_file
@@ -85,6 +86,7 @@ class _TargetReader:
         self.specs: list[tuple[str, str]] = []
         self.words: list[str] = []
         self.paths: set[Path] = set()
+        self.spelled_inside: set[Path] = set()
         self.missing: list[MissingTarget] = []
         self.unevaluated: list[UnevaluatedTarget] = []
         self.notices: list[Notice] = []
@@ -108,9 +110,17 @@ class _TargetReader:
         elif isinstance(payload, Path):
             if payload.exists():
                 self.paths.add(payload)
+                if payload.is_dir() and self._spelled_inside(token):
+                    self.spelled_inside.add(payload)
                 return
             hint = bool(token_agent) and canonicalize_capability(token, token_agent, config) is not None
             self.missing.append(MissingTarget(token, payload, hint))
+
+    def _spelled_inside(self, token: str) -> bool:
+        """Whether the path `token` is written inside the project, a final link on it left unresolved."""
+        spelled = Path(token[len("file:") :] if token.startswith("file:") else token)
+        full = spelled if self.base is None or spelled.is_absolute() else self.base / spelled
+        return (safe_resolve(Path(os.path.abspath(full)).parent) / full.name).is_relative_to(self.project_root)
 
     def reading(self) -> TargetReading:
         """What the tokens read."""
@@ -118,6 +128,7 @@ class _TargetReader:
             tuple(self.specs),
             tuple(self.words),
             frozenset(self.paths),
+            frozenset(self.spelled_inside),
             tuple(self.missing),
             tuple(self.unevaluated),
             tuple(self.notices),
@@ -137,10 +148,12 @@ def read_targets(
     return reader.reading()
 
 
-def markdown_folders(path_targets: Iterable[Path], *, project_root: Path, scan_root: Path) -> list[Path]:
+def markdown_folders(
+    path_targets: Iterable[Path], *, project_root: Path, scan_root: Path, spelled_inside: frozenset[Path]
+) -> list[Path]:
     """The named folders whose markdown is checked whether or not an agent loads it: every folder target
-    but the run's project and a scan root that is a project's root, which are checked as projects."""
-    return [t for t in path_targets if t.is_dir() and t != project_root and not (t == scan_root and is_project_root(t))]
+    but the run's project and a scan root written outside it, which are checked as projects."""
+    return [t for t in path_targets if t.is_dir() and t != project_root and (t != scan_root or t in spelled_inside)]
 
 
 def markdown_under_folders(folders: Iterable[Path], exclusions: RunExclusions) -> set[Path]:

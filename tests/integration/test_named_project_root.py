@@ -1,8 +1,6 @@
-"""A project's root named by path is checked as that project, exactly as `ails check` run inside it.
-
-Its file set, exclusions, agent and config are the project's own: the markdown in it that no agent
-loads is not checked as referenced files. A named folder that is not a project's root still has its
-markdown checked.
+"""The folder `ails check` runs in is the project root; a folder inside it is checked within that
+project; a folder outside it is checked at itself, as `ails check` run inside it does. Nothing walks up
+looking for `.git` or markers.
 """
 
 from __future__ import annotations
@@ -27,8 +25,9 @@ def _git_project(root: Path) -> Path:
     return root
 
 
-def _sample(root: Path) -> Path:
-    project = _git_project(root)
+def _sample(root: Path, *, git: bool = True) -> Path:
+    project = _git_project(root) if git else root
+    project.mkdir(parents=True, exist_ok=True)
     (project / "CLAUDE.md").write_text(MAIN_FILE, encoding="utf-8")
     (project / ".claude" / "rules").mkdir(parents=True)
     (project / ".claude" / "rules" / "style.md").write_text(RULE, encoding="utf-8")
@@ -70,31 +69,50 @@ def test_project_root_named_from_another_git_project_is_checked_as_that_project(
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
 @pytest.mark.requires_model
-def test_project_root_named_from_a_folder_above_it_is_checked_as_that_project(
+def test_folder_named_from_a_plain_parent_is_checked_within_the_parent_project(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """From a plain folder holding the project, `ails check ./sample` gives the files and score of
-    `ails check` run inside it."""
-    sample = _sample(tmp_path / "sample")
+    """From a plain folder holding `sample`, `ails check ./sample` is inside the cwd: it is checked
+    within the parent project, so the markdown under the named folder is checked."""
+    _sample(tmp_path / "sample")
 
-    inside = _run(monkeypatch, sample)
     named = _run(monkeypatch, tmp_path, "./sample")
 
-    assert _outcome(named) == _outcome(inside)
+    checked = set(named.get("capability_paths", []))
+    for shown in ("sample/CLAUDE.md", "sample/README.md", "sample/docs/notes.md"):
+        assert shown in checked, (shown, sorted(checked))
 
 
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
 @pytest.mark.requires_model
-def test_folder_that_is_no_project_root_still_has_its_markdown_checked(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A named folder outside the run's project that is not a project's root has its markdown checked."""
+def test_outside_folder_is_checked_at_itself_as_run_inside_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A folder outside the cwd with no `.git` is checked at itself, exactly as `ails check` run in it."""
     folder = tmp_path / "loose"
     folder.mkdir()
     (folder / "notes.md").write_text(NOTES, encoding="utf-8")
     elsewhere = _sample(tmp_path / "elsewhere")
 
+    inside = _run(monkeypatch, folder)
     named = _run(monkeypatch, elsewhere, str(folder))
 
-    assert any(key.endswith("notes.md") for key in named["files"]), sorted(named["files"])
+    assert _outcome(named) == _outcome(inside)
+    assert named["not_evaluated"] == inside["not_evaluated"]
+
+
+@pytest.mark.e2e
+@pytest.mark.subsys_cli_ux
+@pytest.mark.requires_model
+def test_outside_folder_without_git_holding_sample_content_needs_no_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An outside folder with the sample's content but no `.git` gives the outcome of a run inside it."""
+    folder = _sample(tmp_path / "nogit", git=False)
+    elsewhere = _git_project(tmp_path / "elsewhere")
+
+    inside = _run(monkeypatch, folder)
+    named = _run(monkeypatch, elsewhere, str(folder))
+
+    assert "README.md" not in inside["files"], sorted(inside["files"])
+    assert _outcome(named) == _outcome(inside)
+    assert named["not_evaluated"] == inside["not_evaluated"]

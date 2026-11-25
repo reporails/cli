@@ -113,6 +113,8 @@ class CheckTargets:
     # The word each capability spec was written as, in the same order.
     capability_words: list[str] = field(default_factory=list)
     path_targets: set[Path] = field(default_factory=set)
+    # The folder targets written as a path inside the project.
+    spelled_inside: set[Path] = field(default_factory=set)
     single_path: Path | None = None
     single_file: Path | None = None
     # A lone directory target that lives INSIDE the project and is NOT a project root
@@ -213,6 +215,7 @@ def _flow_targets(state: CheckState) -> None:
         state.targets.capability_specs.extend(reading.capability_specs)
         state.targets.capability_words.extend(reading.capability_words)
         state.targets.path_targets |= reading.path_targets
+        state.targets.spelled_inside |= reading.spelled_inside
         state.targets.unevaluated.extend(reading.unevaluated)
         state.targets.notices.extend(reading.notices)
 
