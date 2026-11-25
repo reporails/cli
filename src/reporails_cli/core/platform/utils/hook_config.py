@@ -179,6 +179,34 @@ _INLINE_ARGUMENTS: dict[str, frozenset[str]] = {
 }
 
 
+# The interpreter options that take the next argument as their value; that value is never the script.
+_VALUE_OPTIONS = frozenset(
+    {
+        "-r", "--require", "--import", "--loader", "--experimental-loader", "-C", "--conditions", "--config",
+        "--env-file", "-W", "-X", "-Q", "-I", "-o", "-O", "--rcfile", "--init-file", "--preload",
+    }
+)  # fmt: skip
+# The option after which a python interpreter runs a module instead of a script file.
+_MODULE_OPTION = "-m"
+
+
+def _script_token(interpreter: str, arguments: list[str]) -> str | None:
+    """The first positional argument that is a path, after the interpreter options and their values; None when the
+    interpreter runs a module or names no path."""
+    family = _VERSION_SUFFIX_RE.sub("", interpreter)
+    skip = False
+    for argument in arguments:
+        if skip:
+            skip = False
+        elif family == "python" and argument == _MODULE_OPTION:
+            return None
+        elif argument.startswith("-"):
+            skip = argument in _VALUE_OPTIONS
+        elif _is_path(argument):
+            return argument
+    return None
+
+
 def _expand_folders(token: str, project_root: Path, plugin_root: Path | None) -> str | None:
     """The token with the folder variables put in: the project folder, and the folder of the plugin that declares
     the hook; None when it names a variable whose value is not known here."""
@@ -223,7 +251,7 @@ def hook_script(command: str, project_root: Path, plugin_root: Path | None = Non
     interpreted = interpreter in _INTERPRETERS
     if interpreted and _runs_inline(interpreter, tokens[1:]):
         return None
-    token = next((item for item in tokens[1:] if _is_path(item)), None) if interpreted else tokens[0]
+    token = _script_token(interpreter, tokens[1:]) if interpreted else tokens[0]
     if token is None or not _is_path(token):
         return None
     expanded = _expand_folders(token, project_root, plugin_root)

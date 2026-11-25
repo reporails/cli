@@ -36,6 +36,29 @@ def test_a_script_run_through_an_interpreter_needs_no_executable_bit(tmp_path: P
     assert cannot_fire("python3 ${CLAUDE_PROJECT_DIR}/hooks/guard.py --flag", tmp_path) is None
 
 
+@pytest.mark.parametrize(
+    "command",
+    ["python3 -m mypkg.hook --config ~/.config/x/hook.json", "python3 -m mypkg.hook ./sub/run.json"],
+)
+def test_a_python_module_run_names_no_script(tmp_path: Path, command: str) -> None:
+    assert hook_script(command, tmp_path) is None
+    assert cannot_fire(command, tmp_path) is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "node -r tsnode/register ./hooks/run.js",
+        "node --require tsnode/register ./hooks/run.js",
+        "node --import tsx/esm ./hooks/run.js",
+        "python3 --config ~/.config/x/hook.json ./hooks/run.js",
+    ],
+)
+def test_an_option_value_is_never_the_script(tmp_path: Path, command: str) -> None:
+    found = hook_script(command, tmp_path)
+    assert found is not None and found[0] == tmp_path / "hooks" / "run.js"
+
+
 @pytest.mark.parametrize("spelling", ["${CLAUDE_PROJECT_DIR}", "$CLAUDE_PROJECT_DIR"])
 def test_the_project_folder_variable_is_expanded_in_both_spellings(tmp_path: Path, spelling: str) -> None:
     _script(tmp_path / "hooks", "guard.sh", executable=False)

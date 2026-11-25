@@ -87,3 +87,38 @@ def test_an_earlier_session_firing_naming_no_command_settles_every_handler_it_se
         if isinstance(e.detail, HookDetail) and e.detail.earlier is not None
     ]
     assert settled == [True]
+
+
+def test_a_blocking_stop_hook_is_one_firing_when_the_stop_summary_lists_it_again(tmp_path: Path) -> None:
+    command = "$CLAUDE_PROJECT_DIR/.claude/hooks/dispatch.sh"
+    blocking = {
+        "type": "attachment",
+        "uuid": "b1",
+        "attachment": {
+            "type": "hook_blocking_error",
+            "hookName": "Stop",
+            "hookEvent": "Stop",
+            "blockingError": {"blockingError": "revise the message", "command": command},
+        },
+        "timestamp": TIME,
+        "sessionId": "s",
+    }
+    summary = {
+        "type": "system",
+        "subtype": "stop_hook_summary",
+        "hookCount": 2,
+        "hookInfos": [{"command": command}, {"command": "./other.sh", "durationMs": 12}],
+        "timestamp": TIME,
+        "sessionId": "s",
+    }
+    session = tmp_path / "s.jsonl"
+    session.write_text(json.dumps(blocking) + "\n" + json.dumps(summary) + "\n")
+    records, _ = read_transcript("claude", session, TranscriptCursor())
+    firings = [(r.hook.command, r.hook.decision) for r in records if r.hook]
+    assert firings == [(command, "blocked"), ("./other.sh", "ran")]
+    session.write_text(json.dumps(blocking) + "\n")
+    first, cursor = read_transcript("claude", session, TranscriptCursor())
+    with session.open("a") as handle:
+        handle.write(json.dumps(summary) + "\n")
+    later, _ = read_transcript("claude", session, cursor)
+    assert [r.hook.command for r in [*first, *later] if r.hook] == [command, "./other.sh"]

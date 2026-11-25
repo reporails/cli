@@ -416,13 +416,16 @@ class RequestChain:
 @dataclass(frozen=True)
 class FileCursor:
     """Where a transcript read stopped in one file: the byte offset, the last assistant message id and, for a
-    subagent file, whether its run record is settled (emitted, or refused for its meta file)."""
+    subagent file, whether its run record is settled (emitted, or refused for its meta file), and the blocked Stop
+    handlers still waiting for their stop summary."""
 
     subagent_id: str | None
     offset: int = 0
     last_message_id: str | None = None
     run_settled: bool = False
     requests: RequestChain = field(default_factory=RequestChain, compare=False)
+    # The commands of the Stop firings a blocking row reported that no stop summary has listed yet.
+    stop_blocked: tuple[str | None, ...] = ()
 
 
 @dataclass(frozen=True)
