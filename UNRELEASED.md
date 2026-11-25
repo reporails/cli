@@ -46,6 +46,7 @@
 - A settings file without hooks is no longer reported by a rule that another rule supersedes.
 - The x-ray compaction stripe's one-line text stays inside the stripe at 1280 and 1920 px instead of running past it.
 - The hidden-character check no longer times out on large files, so it is no longer reported as not evaluated.
+- The secret-file and piped-remote-code checks no longer report a settings file's deny list.
 
 ### Removed
 
