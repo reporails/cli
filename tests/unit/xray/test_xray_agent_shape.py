@@ -63,7 +63,8 @@ def test_the_serialized_source_holds_sizes_and_names_only(tmp_path: Path) -> Non
 
 
 def test_launch_settings_group_values_that_differ_and_say_agreement_once() -> None:
-    from reporails_cli.core.platform.dto.events import MessageSize, RequestConfig, RequestSize, SubagentMeta
+    from reporails_cli.core.platform.dto.events import RequestConfig, RequestSize, SubagentMeta
+    from reporails_cli.core.platform.dto.message_size import MessageSize
     from reporails_cli.core.xray.graph.shapes import launched_with
 
     def meta(model: str | None, background: bool, defaults: bool | None = None) -> SubagentMeta:

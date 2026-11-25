@@ -38,15 +38,8 @@ from reporails_cli.core.platform.contract.json_value import (
     opt_str,
     strict_str_list,
 )
-from reporails_cli.core.platform.dto.events import (
-    AssistantMerge,
-    ImageTokens,
-    MessageSize,
-    MessageText,
-    RequestChain,
-    RequestConfig,
-    RequestSize,
-)
+from reporails_cli.core.platform.dto.events import AssistantMerge, MessageText, RequestChain, RequestConfig, RequestSize
+from reporails_cli.core.platform.dto.message_size import ImageTokens, MessageSize
 from reporails_cli.core.platform.utils.utils import compact_json
 
 # What joins the text blocks of one message or system prompt.

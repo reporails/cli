@@ -14,14 +14,8 @@ from reporails_cli.core.eventbus.adapters.claude_requests import content_size, f
 from reporails_cli.core.eventbus.port import PayloadRefused
 from reporails_cli.core.eventbus.transcript import read_transcript
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
-from reporails_cli.core.platform.dto.events import (
-    EventRecord,
-    ImageTokens,
-    MessageSize,
-    RequestChain,
-    RequestSize,
-    TranscriptCursor,
-)
+from reporails_cli.core.platform.dto.events import EventRecord, RequestChain, RequestSize, TranscriptCursor
+from reporails_cli.core.platform.dto.message_size import ImageTokens, MessageSize
 from reporails_cli.core.platform.utils.utils import compact_json
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_eventbus]

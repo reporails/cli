@@ -20,7 +20,7 @@ import math
 import re
 
 from reporails_cli.core.platform.contract.json_value import JsonObject
-from reporails_cli.core.platform.dto.events import ImageTokens
+from reporails_cli.core.platform.dto.message_size import ImageTokens
 
 _PATCH = 28
 _STANDARD = (1568, 1568)

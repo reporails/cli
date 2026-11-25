@@ -8,14 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.dto.events import (
-    EventRecord,
-    HarnessEntry,
-    ImageTokens,
-    MessageSize,
-    RequestSize,
-    TokenUsage,
-)
+from reporails_cli.core.platform.dto.events import EventRecord, HarnessEntry, RequestSize, TokenUsage
+from reporails_cli.core.platform.dto.message_size import ImageTokens, MessageSize
 from reporails_cli.core.platform.dto.xray_composition import COMPOSITION_KEYS, REMAINDER_KEY
 from reporails_cli.core.platform.dto.xray_graph import XrayContextRow, XrayInContext
 from reporails_cli.core.platform.dto.xray_own import XrayListed, XrayOwnItem, XrayRowMeasure

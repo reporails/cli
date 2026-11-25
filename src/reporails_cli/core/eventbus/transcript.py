@@ -17,6 +17,7 @@ from reporails_cli.core.eventbus.port import (
     register_transcript,
     utc_now,
 )
+from reporails_cli.core.eventbus.stop_firings import one_stop_firing_per_handler
 from reporails_cli.core.eventbus.store import UNSAFE_ID_CHARS
 from reporails_cli.core.eventbus.tail import read_appended_lines
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
@@ -469,21 +470,8 @@ def _read_file(
     )
     if run is not None:
         records.append(run)
-    last_id = before.last_message_id
-    blocked = before.stop_blocked
-    for row in rows:
-        try:
-            resolved = adapter.resolve_row(row, before.subagent_id, before.requests)
-        except PayloadRefused as err:
-            records.append(_refusal(agent, session_id, f"{path.name}: {err.reason}"))
-            continue
-        resolved, blocked = _one_stop_firing_per_handler(resolved, blocked)
-        for record in resolved:
-            if record.usage is not None:
-                if record.usage.message_id == last_id:
-                    continue
-                last_id = record.usage.message_id
-            records.append(record)
+    resolved_records, last_id, blocked = _resolve_rows(adapter, agent, session_id, path, before=before, rows=rows)
+    records.extend(resolved_records)
     return records, FileCursor(
         before.subagent_id,
         offset,
@@ -494,25 +482,28 @@ def _read_file(
     )
 
 
-def _one_stop_firing_per_handler(
-    resolved: list[EventRecord], blocked: tuple[str | None, ...]
-) -> tuple[list[EventRecord], tuple[str | None, ...]]:
-    """The records of one row without the stop summary entry of a handler a blocking row already reported, and the
-    blocked handlers still waiting for their summary. A stop summary row, whose entries carry no row id and no exit
-    code, settles every waiting handler."""
-    stop = [r.hook for r in resolved if r.event == "hook_firing" and r.hook is not None and r.hook.event == "Stop"]
-    waiting = (*blocked, *(f.command for f in stop if f.decision == "blocked" and f.command is not None))
-    summary = [f for f in stop if f.decision == "ran" and f.id is None and f.exit_code is None]
-    if not summary:
-        return resolved, waiting
-    pending = list(blocked)
-    kept: list[EventRecord] = []
-    for record in resolved:
-        if record.hook in summary and record.hook is not None and record.hook.command in pending:
-            pending.remove(record.hook.command)
+def _resolve_rows(
+    adapter: TranscriptAdapter, agent: str, session_id: str, path: Path, *, before: FileCursor, rows: list[JsonObject]
+) -> tuple[list[EventRecord], str | None, tuple[str | None, ...]]:
+    """The records of the rows of one file, a refused row a refusal record and a reply already recorded dropped, the
+    last message id seen and the blocked Stop handlers still waiting for their summary."""
+    records: list[EventRecord] = []
+    last_id = before.last_message_id
+    blocked = before.stop_blocked
+    for row in rows:
+        try:
+            resolved = adapter.resolve_row(row, before.subagent_id, before.requests)
+        except PayloadRefused as err:
+            records.append(_refusal(agent, session_id, f"{path.name}: {err.reason}"))
             continue
-        kept.append(record)
-    return kept, ()
+        resolved, blocked = one_stop_firing_per_handler(resolved, blocked)
+        for record in resolved:
+            if record.usage is not None:
+                if record.usage.message_id == last_id:
+                    continue
+                last_id = record.usage.message_id
+            records.append(record)
+    return records, last_id, blocked
 
 
 def _run_record(
