@@ -19,7 +19,7 @@ from reporails_cli.core.classify.capability_paths import (
 )
 from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
 from reporails_cli.core.discovery.exclusions import leaves_out, markdown_folder_reason
-from reporails_cli.core.discovery.project_root import outermost_agent_dir
+from reporails_cli.core.discovery.project_root import is_project_root, outermost_agent_dir
 from reporails_cli.core.discovery.walk import file_under_target, is_markdown_file, safe_resolve, walk_files
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.pipeline.mapping import is_listed_file
@@ -135,6 +135,12 @@ def read_targets(
     for token in tokens:
         reader.read(token)
     return reader.reading()
+
+
+def markdown_folders(path_targets: Iterable[Path], *, project_root: Path, scan_root: Path) -> list[Path]:
+    """The named folders whose markdown is checked whether or not an agent loads it: every folder target
+    but the run's project and a scan root that is a project's root, which are checked as projects."""
+    return [t for t in path_targets if t.is_dir() and t != project_root and not (t == scan_root and is_project_root(t))]
 
 
 def markdown_under_folders(folders: Iterable[Path], exclusions: RunExclusions) -> set[Path]:

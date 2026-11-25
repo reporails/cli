@@ -13,7 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import get_known_agents
-from reporails_cli.core.discovery.project_root import user_level_agent_dir
+from reporails_cli.core.discovery.project_root import is_project_root, user_level_agent_dir
 from reporails_cli.core.discovery.walk import file_under_target, own_name_spellings, safe_resolve
 from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.lint.regex.not_evaluated import not_evaluated_scope
@@ -61,10 +61,10 @@ def resolve_scan_target(target: Path, project_root: Path) -> tuple[Path, Path | 
     """Map a target to `(scan_root, single_file)` for a run in `project_root`.
 
     A file inside `project_root` is checked in that project; a file outside it roots at its own folder.
-    A folder outside `project_root`, or `project_root` itself, roots at itself; a folder inside it stays
-    in the project, scoped to that folder by the caller. A linked file named inside the project or under
-    a user-level agent folder keeps its own path as the `single_file` (its content is read through the
-    link); a linked file named elsewhere is the file it links to.
+    A folder outside `project_root`, `project_root` itself, or a project's root inside it, roots at itself;
+    any other folder inside it stays in the project, scoped to that folder by the caller. A linked file
+    named inside the project or under a user-level agent folder keeps its own path as the `single_file`
+    (its content is read through the link); a linked file named elsewhere is the file it links to.
     """
 
     if target.is_file() and target.is_symlink():
@@ -79,7 +79,8 @@ def resolve_scan_target(target: Path, project_root: Path) -> tuple[Path, Path | 
         return user_dir, target if target.is_file() else None
     if target.is_file():
         return (project_root if target.is_relative_to(project_root) else target.parent), target
-    return (project_root if target != project_root and target.is_relative_to(project_root) else target), None
+    in_project = target != project_root and target.is_relative_to(project_root) and not is_project_root(target)
+    return (project_root if in_project else target), None
 
 
 def discover_files(

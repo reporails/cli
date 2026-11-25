@@ -28,6 +28,15 @@ def resolve_project_root(target: Path) -> Path:
     return target if target.is_dir() else target.parent
 
 
+# What a folder holds when it is a project's root: a git repository, or reporails project config.
+PROJECT_ROOT_MARKERS: tuple[str, ...] = (".git", ".ails")
+
+
+def is_project_root(folder: Path) -> bool:
+    """Whether `folder` is a project's root: it holds a `.git` or an `.ails` folder."""
+    return folder.is_dir() and any((folder / marker).exists() for marker in PROJECT_ROOT_MARKERS)
+
+
 @functools.lru_cache(maxsize=1)
 def root_markers() -> tuple[frozenset[str], ...]:
     """Per supported agent: the dot-directories it declares surfaces in (`.claude/`, `.codex/`,

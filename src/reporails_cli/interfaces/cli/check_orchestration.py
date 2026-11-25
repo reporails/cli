@@ -25,7 +25,7 @@ from reporails_cli.core.discovery.walk import file_under_target
 from reporails_cli.core.heal.apply import suppressed_by_path
 from reporails_cli.core.pipeline.check_one import resolve_scan_target
 from reporails_cli.core.pipeline.mapping import discover_scope
-from reporails_cli.core.pipeline.named_targets import markdown_under_folders, shown_path
+from reporails_cli.core.pipeline.named_targets import markdown_folders, markdown_under_folders, shown_path
 from reporails_cli.core.platform.adapters.notices_seen import due_notices
 from reporails_cli.core.platform.config.run_context import RunContext
 from reporails_cli.core.platform.dto.classify import UnresolvedSkill
@@ -133,8 +133,10 @@ def _named_paths(state: CheckState, capability_paths: frozenset[Path]) -> tuple[
 
 
 def _folder_markdown(state: CheckState) -> set[Path]:
-    """The markdown files the run keeps under the folders it names; the project folder itself names none."""
-    folders = [t for t in state.targets.path_targets if t.is_dir() and t != state.inputs.project_root]
+    """The markdown files the run keeps under the folders it names; a project's folder names none."""
+    folders = markdown_folders(
+        state.targets.path_targets, project_root=state.inputs.project_root, scan_root=state.targets.target
+    )
     if not folders:
         return set()
     exclusions = load_run_exclusions(
